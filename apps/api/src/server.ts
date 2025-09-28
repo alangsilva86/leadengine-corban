@@ -30,6 +30,7 @@ const io = new SocketIOServer(server, {
     origin: [
       process.env.FRONTEND_URL || 'http://localhost:3000',
       'https://ticketz-leadengine.vercel.app',
+      'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
       'http://localhost:5173',
       'http://localhost:3000'
     ],
@@ -56,6 +57,7 @@ app.use(cors({
   origin: [
     process.env.FRONTEND_URL || 'http://localhost:3000',
     'https://ticketz-leadengine.vercel.app',
+    'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
     'http://localhost:5173',
     'http://localhost:3000'
   ],
