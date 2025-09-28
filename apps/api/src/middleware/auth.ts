@@ -1,0 +1,459 @@
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import * as bcrypt from 'bcryptjs';
+import { prisma } from '../lib/prisma';
+import { logger } from '../config/logger';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface AuthenticatedUser {
+  id: string;
+  tenantId: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+  isActive: boolean;
+  permissions: string[];
+}
+
+export interface JWTPayload {
+  id: string;
+  tenantId: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+  iat?: number;
+  exp?: number;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  tenantId?: string;
+}
+
+export interface LoginResponse {
+  success: boolean;
+  token: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    tenantId: string;
+  };
+  expiresIn: string;
+}
+
+// Estender o tipo Request para incluir user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthenticatedUser;
+    }
+  }
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+
+/**
+ * Gera hash da senha usando bcrypt
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const saltRounds = 10;
+  return bcrypt.hash(password, saltRounds);
+}
+
+/**
+ * Verifica se a senha corresponde ao hash
+ */
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+/**
+ * Gera token JWT para o usuário
+ */
+export function generateToken(user: {
+  id: string;
+  tenantId: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+}): string {
+  const payload: JWTPayload = {
+    id: user.id,
+    tenantId: user.tenantId,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  };
+
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+/**
+ * Verifica e decodifica token JWT
+ */
+export function verifyToken(token: string): JWTPayload {
+  return jwt.verify(token, JWT_SECRET) as JWTPayload;
+}
+
+/**
+ * Define permissões baseadas no papel do usuário
+ */
+function getPermissionsByRole(role: 'ADMIN' | 'SUPERVISOR' | 'AGENT'): string[] {
+  const permissions: Record<string, string[]> = {
+    ADMIN: [
+      'users:read',
+      'users:write',
+      'users:delete',
+      'tenants:read',
+      'tenants:write',
+      'tickets:read',
+      'tickets:write',
+      'tickets:delete',
+      'leads:read',
+      'leads:write',
+      'leads:delete',
+      'campaigns:read',
+      'campaigns:write',
+      'campaigns:delete',
+      'reports:read',
+      'settings:read',
+      'settings:write',
+    ],
+    SUPERVISOR: [
+      'users:read',
+      'tickets:read',
+      'tickets:write',
+      'leads:read',
+      'leads:write',
+      'campaigns:read',
+      'campaigns:write',
+      'reports:read',
+      'settings:read',
+    ],
+    AGENT: [
+      'tickets:read',
+      'tickets:write',
+      'leads:read',
+      'leads:write',
+      'campaigns:read',
+    ],
+  };
+
+  return permissions[role] || [];
+}
+
+// ============================================================================
+// Authentication Service
+// ============================================================================
+
+/**
+ * Autentica usuário com email e senha
+ */
+export async function authenticateUser(credentials: LoginRequest): Promise<LoginResponse> {
+  const { email, password, tenantId } = credentials;
+
+  logger.info('[Auth] Tentativa de login', { email, tenantId });
+
+  // Buscar usuário no banco
+  const user = await prisma.user.findFirst({
+    where: {
+      email: email.toLowerCase(),
+      isActive: true,
+      ...(tenantId && { tenantId }),
+    },
+    include: {
+      tenant: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          isActive: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    logger.warn('[Auth] Usuário não encontrado', { email, tenantId });
+    throw new Error('Credenciais inválidas');
+  }
+
+  if (!user.tenant.isActive) {
+    logger.warn('[Auth] Tenant inativo', { email, tenantId: user.tenantId });
+    throw new Error('Conta inativa');
+  }
+
+  // Verificar senha
+  const isPasswordValid = await verifyPassword(password, user.passwordHash);
+  if (!isPasswordValid) {
+    logger.warn('[Auth] Senha inválida', { email, userId: user.id });
+    throw new Error('Credenciais inválidas');
+  }
+
+  // Atualizar último login
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  // Gerar token
+  const token = generateToken({
+    id: user.id,
+    tenantId: user.tenantId,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  });
+
+  logger.info('[Auth] ✅ Login realizado com sucesso', {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    tenantId: user.tenantId,
+  });
+
+  return {
+    success: true,
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+    },
+    expiresIn: JWT_EXPIRES_IN,
+  };
+}
+
+/**
+ * Busca usuário completo pelo ID
+ */
+export async function getUserById(userId: string): Promise<AuthenticatedUser | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId, isActive: true },
+    include: {
+      tenant: {
+        select: {
+          isActive: true,
+        },
+      },
+    },
+  });
+
+  if (!user || !user.tenant.isActive) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    tenantId: user.tenantId,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    isActive: user.isActive,
+    permissions: getPermissionsByRole(user.role),
+  };
+}
+
+// ============================================================================
+// Middleware Functions
+// ============================================================================
+
+/**
+ * Middleware de autenticação JWT
+ */
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Extrair token do header Authorization
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'MISSING_TOKEN',
+          message: 'Token de acesso requerido',
+        },
+      });
+    }
+
+    const token = authHeader.substring(7); // Remove "Bearer "
+
+    // Verificar e decodificar o token
+    let decoded: JWTPayload;
+    try {
+      decoded = verifyToken(token);
+    } catch (error) {
+      if (error instanceof jwt.TokenExpiredError) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'TOKEN_EXPIRED',
+            message: 'Token expirado',
+          },
+        });
+      }
+      
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Token inválido',
+        },
+      });
+    }
+
+    // Buscar usuário completo no banco
+    const user = await getUserById(decoded.id);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'Usuário não encontrado ou inativo',
+        },
+      });
+    }
+
+    // Adicionar usuário ao request
+    req.user = user;
+    next();
+  } catch (error) {
+    logger.error('[Auth] Erro no middleware de autenticação', { error });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'AUTH_ERROR',
+        message: 'Erro interno de autenticação',
+      },
+    });
+  }
+};
+
+/**
+ * Middleware para verificar permissões específicas
+ */
+export const requirePermission = (permission: string) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'NOT_AUTHENTICATED',
+          message: 'Usuário não autenticado',
+        },
+      });
+    }
+
+    if (!req.user.permissions.includes(permission) && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_PERMISSIONS',
+          message: `Permissão requerida: ${permission}`,
+        },
+      });
+    }
+
+    next();
+  };
+};
+
+/**
+ * Middleware para verificar papel específico
+ */
+export const requireRole = (requiredRole: 'ADMIN' | 'SUPERVISOR') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'NOT_AUTHENTICATED',
+          message: 'Usuário não autenticado',
+        },
+      });
+    }
+
+    if (req.user.role !== requiredRole && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_ROLE',
+          message: `Papel requerido: ${requiredRole}`,
+        },
+      });
+    }
+
+    next();
+  };
+};
+
+/**
+ * Middleware para verificar se o usuário pertence ao tenant
+ */
+export const requireTenant = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'NOT_AUTHENTICATED',
+        message: 'Usuário não autenticado',
+      },
+    });
+  }
+
+  // Verificar se o tenantId do parâmetro corresponde ao do usuário
+  const tenantId =
+    (req.params?.tenantId as string | undefined) ||
+    (req.body?.tenantId as string | undefined) ||
+    (typeof req.query?.tenantId === 'string' ? req.query.tenantId : undefined);
+
+  if (tenantId && tenantId !== req.user.tenantId && req.user.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'TENANT_ACCESS_DENIED',
+        message: 'Acesso negado a este tenant',
+      },
+    });
+  }
+
+  next();
+};
+
+/**
+ * Middleware opcional de autenticação (não falha se não houver token)
+ */
+export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next(); // Continua sem usuário
+  }
+
+  try {
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token);
+    const user = await getUserById(decoded.id);
+    
+    if (user) {
+      req.user = user;
+    }
+  } catch (error) {
+    // Ignora erros de token em auth opcional
+    logger.debug('[Auth] Token opcional inválido ignorado', { error });
+  }
+
+  next();
+};

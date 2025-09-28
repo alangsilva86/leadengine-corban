@@ -1,0 +1,56 @@
+{
+  "name": "ticketz-leadengine",
+  "version": "1.0.0",
+  "description": "Sistema híbrido de tickets e gestão de leads com arquitetura moderna",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "type-check": "pnpm -r type-check",
+    "clean": "pnpm -r clean && rm -rf node_modules",
+    "api:dev": "pnpm --filter @ticketz/api dev",
+    "web:dev": "pnpm --filter @ticketz/web dev",
+    "admin:dev": "pnpm --filter @ticketz/admin dev",
+    "core:build": "pnpm --filter @ticketz/core build",
+    "shared:build": "pnpm --filter @ticketz/shared build",
+    "storage:build": "pnpm --filter @ticketz/storage build",
+    "integrations:build": "pnpm --filter @ticketz/integrations build"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.0",
+    "prettier": "^3.1.1",
+    "prisma": "^5.7.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "keywords": [
+    "tickets",
+    "leads",
+    "crm",
+    "whatsapp",
+    "typescript",
+    "nodejs",
+    "monorepo"
+  ],
+  "author": "Manus AI",
+  "license": "MIT"
+}

@@ -1,0 +1,163 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Banco de dados PostgreSQL
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: ticketz-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ticketz}
+      POSTGRES_USER: ${POSTGRES_USER:-ticketz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ticketz123}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=pt_BR.UTF-8"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - ticketz-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ticketz} -d ${POSTGRES_DB:-ticketz}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # ============================================================================
+  # Cache Redis
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: ticketz-redis-prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ticketz-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # ============================================================================
+  # API Backend
+  # ============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    container_name: ticketz-api-prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ticketz}:${POSTGRES_PASSWORD:-ticketz123}@postgres:5432/${POSTGRES_DB:-ticketz}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      LEAD_ENGINE_BASE_URL: ${LEAD_ENGINE_BASE_URL}
+      LEAD_ENGINE_CREDIT_BASE_URL: ${LEAD_ENGINE_CREDIT_BASE_URL}
+      LEAD_ENGINE_BASIC_TOKEN: ${LEAD_ENGINE_BASIC_TOKEN}
+      WHATSAPP_BROKER_URL: ${WHATSAPP_BROKER_URL}
+      WHATSAPP_BROKER_API_KEY: ${WHATSAPP_BROKER_API_KEY}
+      USE_REAL_DATA: ${USE_REAL_DATA:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      - ./sessions:/app/sessions
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticketz-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # ============================================================================
+  # Frontend Web
+  # ============================================================================
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: runtime
+    container_name: ticketz-web-prod
+    restart: unless-stopped
+    environment:
+      NGINX_WORKER_PROCESSES: auto
+      NGINX_WORKER_CONNECTIONS: 1024
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - ticketz-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+# ============================================================================
+# Volumes persistentes
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ============================================================================
+# Rede interna
+# ============================================================================
+networks:
+  ticketz-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

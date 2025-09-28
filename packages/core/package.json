@@ -1,0 +1,59 @@
+{
+  "name": "@ticketz/core",
+  "version": "1.0.0",
+  "description": "Domínio e casos de uso do sistema Ticketz-LeadEngine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "^3.22.4",
+    "lodash": "^4.17.21",
+    "date-fns": "^3.0.6"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.14.202",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./tickets": {
+      "types": "./dist/tickets/index.d.ts",
+      "import": "./dist/tickets/index.mjs",
+      "require": "./dist/tickets/index.js"
+    },
+    "./leads": {
+      "types": "./dist/leads/index.d.ts",
+      "import": "./dist/leads/index.mjs",
+      "require": "./dist/leads/index.js"
+    },
+    "./contacts": {
+      "types": "./dist/contacts/index.d.ts",
+      "import": "./dist/contacts/index.mjs",
+      "require": "./dist/contacts/index.js"
+    },
+    "./campaigns": {
+      "types": "./dist/campaigns/index.d.ts",
+      "import": "./dist/campaigns/index.mjs",
+      "require": "./dist/campaigns/index.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics/index.d.ts",
+      "import": "./dist/analytics/index.mjs",
+      "require": "./dist/analytics/index.js"
+    }
+  },
+  "files": ["dist"]
+}

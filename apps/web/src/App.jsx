@@ -1,0 +1,169 @@
+import { useEffect, useMemo, useState } from 'react';
+import Layout from './components/Layout.jsx';
+import Dashboard from './components/Dashboard.jsx';
+import UnderConstruction from './components/UnderConstruction.jsx';
+import AgreementGrid from './components/AgreementGrid.jsx';
+import WhatsAppConnect from './components/WhatsAppConnect.jsx';
+import LeadInbox from './components/LeadInbox.jsx';
+import './App.css';
+
+const STORAGE_KEY = 'leadengine_onboarding_v1';
+
+const journeyStages = [
+  { id: 'dashboard', label: 'Visão Geral' },
+  { id: 'agreements', label: 'Convênios' },
+  { id: 'whatsapp', label: 'WhatsApp' },
+  { id: 'inbox', label: 'Inbox' },
+];
+
+function App() {
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [selectedAgreement, setSelectedAgreement] = useState(null);
+  const [whatsappStatus, setWhatsappStatus] = useState('disconnected');
+  const [activeCampaign, setActiveCampaign] = useState(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const persisted = JSON.parse(raw);
+      setCurrentPage(persisted.currentPage || 'dashboard');
+      setSelectedAgreement(persisted.selectedAgreement || null);
+      setWhatsappStatus(persisted.whatsappStatus || 'disconnected');
+      setActiveCampaign(persisted.activeCampaign || null);
+    } catch (error) {
+      console.warn('Failed to restore onboarding state', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    const payload = {
+      currentPage,
+      selectedAgreement,
+      whatsappStatus,
+      activeCampaign,
+      updatedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.warn('Failed to persist onboarding state', error);
+    }
+  }, [currentPage, selectedAgreement, whatsappStatus, activeCampaign]);
+
+  const activeStep = useMemo(() => {
+    const stageIndex = journeyStages.findIndex((stage) => stage.id === currentPage);
+    return stageIndex === -1 ? 0 : stageIndex;
+  }, [currentPage]);
+
+  const computeNextSetupPage = () => {
+    if (!selectedAgreement) {
+      return 'agreements';
+    }
+
+    if (whatsappStatus !== 'connected' || !activeCampaign) {
+      return 'whatsapp';
+    }
+
+    return 'inbox';
+  };
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return (
+          <Dashboard
+            onboarding={{
+              stages: journeyStages,
+              activeStep,
+              selectedAgreement,
+              whatsappStatus,
+              activeCampaign,
+            }}
+            onStart={() => setCurrentPage(computeNextSetupPage())}
+          />
+        );
+      case 'agreements':
+        return (
+          <AgreementGrid
+            onboarding={{
+              stages: journeyStages,
+              activeStep,
+              selectedAgreement,
+              whatsappStatus,
+              activeCampaign,
+            }}
+            selectedAgreement={selectedAgreement}
+            onSelect={(agreement) => {
+              setSelectedAgreement(agreement);
+              setActiveCampaign(null);
+              setCurrentPage('whatsapp');
+            }}
+          />
+        );
+      case 'whatsapp':
+        return (
+          <WhatsAppConnect
+            selectedAgreement={selectedAgreement}
+            status={whatsappStatus}
+            activeCampaign={activeCampaign}
+            onboarding={{
+              stages: journeyStages,
+              activeStep,
+            }}
+            onStatusChange={setWhatsappStatus}
+            onCampaignReady={setActiveCampaign}
+            onContinue={() => setCurrentPage('inbox')}
+            onBack={() => setCurrentPage('agreements')}
+          />
+        );
+      case 'inbox':
+        return (
+          <LeadInbox
+            selectedAgreement={selectedAgreement}
+            campaign={activeCampaign}
+            onboarding={{
+              stages: journeyStages,
+              activeStep,
+            }}
+            onSelectAgreement={() => setCurrentPage('agreements')}
+            onBackToWhatsApp={() => setCurrentPage('whatsapp')}
+          />
+        );
+      case 'reports':
+        return (
+          <UnderConstruction
+            title="Relatórios e Insights"
+            description="Dashboards avançados de produtividade e receita chegarão aqui em breve."
+          />
+        );
+      case 'settings':
+        return (
+          <UnderConstruction
+            title="Configurações"
+            description="Gerencie equipes, permissões e integrações. Estamos concluindo o módulo administrativo."
+          />
+        );
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  return (
+    <Layout
+      currentPage={currentPage}
+      onNavigate={setCurrentPage}
+      onboarding={{
+        stages: journeyStages,
+        activeStep,
+        selectedAgreement,
+        whatsappStatus,
+        activeCampaign,
+      }}
+    >
+      {renderPage()}
+    </Layout>
+  );
+}
+
+export default App;

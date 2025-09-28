@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@ticketz/core": ["./packages/core/src/index.ts"],
+      "@ticketz/core/*": ["./packages/core/src/*"],
+      "@ticketz/shared": ["./packages/shared/src/index.ts"],
+      "@ticketz/shared/*": ["./packages/shared/src/*"],
+      "@ticketz/storage": ["./packages/storage/src/index.ts"],
+      "@ticketz/storage/*": ["./packages/storage/src/*"],
+      "@ticketz/integrations": ["./packages/integrations/src/index.ts"],
+      "@ticketz/integrations/*": ["./packages/integrations/src/*"]
+    }
+  }
+}

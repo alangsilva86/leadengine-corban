@@ -1,0 +1,31 @@
+{
+  "name": "@ticketz/integrations",
+  "version": "1.0.0",
+  "description": "Integrações externas do sistema Ticketz-LeadEngine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ticketz/core": "workspace:*",
+    "@whiskeysockets/baileys": "^6.7.8",
+    "@hapi/boom": "^10.0.1",
+    "axios": "^1.6.2",
+    "qrcode": "^1.5.3",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  },
+  "files": [
+    "dist"
+  ]
+}
