@@ -26,37 +26,7 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({
   ],
 });
 
-// Log das queries em desenvolvimento
-if (process.env.NODE_ENV === 'development') {
-  prisma.$on('query', (e) => {
-    logger.debug('[Prisma] Query executed', {
-      query: e.query,
-      params: e.params,
-      duration: `${e.duration}ms`,
-    });
-  });
-}
-
-prisma.$on('error', (e) => {
-  logger.error('[Prisma] Database error', {
-    message: e.message,
-    target: e.target,
-  });
-});
-
-prisma.$on('info', (e) => {
-  logger.info('[Prisma] Database info', {
-    message: e.message,
-    target: e.target,
-  });
-});
-
-prisma.$on('warn', (e) => {
-  logger.warn('[Prisma] Database warning', {
-    message: e.message,
-    target: e.target,
-  });
-});
+// Logs do Prisma são configurados via log array acima
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
