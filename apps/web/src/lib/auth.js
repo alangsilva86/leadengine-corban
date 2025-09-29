@@ -193,12 +193,19 @@ export const loginWithCredentials = async ({ email, password, tenantId } = {}) =
     throw new Error('A resposta da API não retornou um token de autenticação');
   }
 
-  const resolvedTenant = tenantId || payload?.tenantId || payload?.tenant?.id;
+  const resolvedTenant =
+    tenantId ||
+    payload?.tenantId ||
+    payload?.tenant?.id ||
+    payload?.user?.tenantId ||
+    payload?.user?.tenant?.id ||
+    payload?.data?.tenantId ||
+    payload?.data?.tenant?.id ||
+    payload?.data?.user?.tenantId ||
+    payload?.data?.user?.tenant?.id;
 
   commitToken(token, { persist: true, notify: true });
-  if (resolvedTenant) {
-    commitTenantId(resolvedTenant, { persist: true, notify: true });
-  }
+  commitTenantId(resolvedTenant, { persist: true, notify: true });
 
   return {
     token,
