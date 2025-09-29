@@ -77,7 +77,7 @@ class WhatsAppBrokerClient {
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     if (!this.isConfigured) {
-      throw new Error('WhatsApp broker not configured');
+      throw new WhatsAppBrokerNotConfiguredError();
     }
 
     const url = `${this.baseUrl}${path}`;
@@ -93,8 +93,16 @@ class WhatsAppBrokerClient {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      throw new Error(`Broker request failed (${response.status}): ${text}`);
+      const rawText = await response.text().catch(() => response.statusText);
+      const normalizedMessage = this.extractErrorMessage(rawText);
+
+      if (response.status === 401 || response.status === 403) {
+        throw new WhatsAppBrokerNotConfiguredError(
+          normalizedMessage || 'WhatsApp broker rejected credentials'
+        );
+      }
+
+      throw new Error(`Broker request failed (${response.status}): ${normalizedMessage}`);
     }
 
     if (response.status === 204) {
@@ -106,7 +114,7 @@ class WhatsAppBrokerClient {
 
   private async requestBuffer(path: string): Promise<Buffer> {
     if (!this.isConfigured) {
-      throw new Error('WhatsApp broker not configured');
+      throw new WhatsAppBrokerNotConfiguredError();
     }
 
     const url = `${this.baseUrl}${path}`;
@@ -117,8 +125,16 @@ class WhatsAppBrokerClient {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      throw new Error(`Broker request failed (${response.status}): ${text}`);
+      const rawText = await response.text().catch(() => response.statusText);
+      const normalizedMessage = this.extractErrorMessage(rawText);
+
+      if (response.status === 401 || response.status === 403) {
+        throw new WhatsAppBrokerNotConfiguredError(
+          normalizedMessage || 'WhatsApp broker rejected credentials'
+        );
+      }
+
+      throw new Error(`Broker request failed (${response.status}): ${normalizedMessage}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -157,6 +173,26 @@ class WhatsAppBrokerClient {
 
     const match = user.id.match(/^(\d{12,})/);
     return match ? match[1] : null;
+  }
+
+  private extractErrorMessage(rawText: string | null | undefined): string {
+    if (!rawText) {
+      return '';
+    }
+
+    try {
+      const parsed = JSON.parse(rawText);
+      const message =
+        (typeof parsed?.message === 'string' && parsed.message) ||
+        (typeof parsed?.error?.message === 'string' && parsed.error.message);
+      if (message) {
+        return message;
+      }
+    } catch (error) {
+      logger.debug('Failed to parse broker error message as JSON', { error, rawText });
+    }
+
+    return rawText;
   }
 
   private mapInstance(
@@ -225,6 +261,10 @@ class WhatsAppBrokerClient {
 
       return mapped;
     } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+
       logger.warn('Failed to list WhatsApp instances via broker, returning fallback', { error });
       return [fallbackInstance(tenantId)];
     }
@@ -357,6 +397,10 @@ class WhatsAppBrokerClient {
       const connected = Boolean(item?.connected);
       return { status: connected ? 'connected' : 'qr_required', connected };
     } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+
       logger.warn('Failed to get WhatsApp instance status via broker; assuming disconnected', { instanceId, error });
       return { status: 'disconnected', connected: false };
     }
