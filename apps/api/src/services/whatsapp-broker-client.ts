@@ -1,6 +1,13 @@
 import { fetch, type RequestInit } from 'undici';
 import { logger } from '../config/logger';
 
+export class WhatsAppBrokerNotConfiguredError extends Error {
+  constructor(message = 'WhatsApp broker not configured') {
+    super(message);
+    this.name = 'WhatsAppBrokerNotConfiguredError';
+  }
+}
+
 export interface WhatsAppInstance {
   id: string;
   tenantId: string;
@@ -60,6 +67,12 @@ class WhatsAppBrokerClient {
 
   private get isConfigured() {
     return this.baseUrl.length > 0 && this.apiKey.length > 0;
+  }
+
+  private ensureConfigured(): void {
+    if (!this.isConfigured) {
+      throw new WhatsAppBrokerNotConfiguredError();
+    }
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -191,9 +204,7 @@ class WhatsAppBrokerClient {
   }
 
   async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
-    if (!this.isConfigured) {
-      return [fallbackInstance(tenantId)];
-    }
+    this.ensureConfigured();
 
     try {
       const result = await this.request<RawInstance[]>(`/instances`);
@@ -224,9 +235,7 @@ class WhatsAppBrokerClient {
     name: string;
     webhookUrl?: string;
   }): Promise<WhatsAppInstance> {
-    if (!this.isConfigured) {
-      return fallbackInstance(args.tenantId);
-    }
+    this.ensureConfigured();
 
     const tenantPrefix = this.tenantPrefix(args.tenantId);
     const normalizedName = `${tenantPrefix}${this.slugify(args.name)}`.slice(0, 60);
@@ -324,12 +333,7 @@ class WhatsAppBrokerClient {
   }
 
   async getQrCode(instanceId: string): Promise<WhatsAppQrCode> {
-    if (!this.isConfigured) {
-      return {
-        qrCode: FALLBACK_QR,
-        expiresAt: new Date(Date.now() + QR_EXPIRATION_MS).toISOString(),
-      };
-    }
+    this.ensureConfigured();
 
     try {
       const buffer = await this.requestBuffer(`/instances/${encodeURIComponent(instanceId)}/qr.png`);
@@ -345,9 +349,7 @@ class WhatsAppBrokerClient {
   }
 
   async getStatus(instanceId: string): Promise<WhatsAppStatus> {
-    if (!this.isConfigured) {
-      return { status: 'connected', connected: true };
-    }
+    this.ensureConfigured();
     try {
       // Alguns brokers não expõem /status; usar /instances e inferir
       const result = await this.request<RawInstance[]>(`/instances`);
@@ -374,13 +376,7 @@ class WhatsAppBrokerClient {
     type?: string;
     mediaUrl?: string;
   }): Promise<WhatsAppMessageResult> {
-    if (!this.isConfigured) {
-      return {
-        externalId: `msg-${Date.now()}`,
-        status: 'sent',
-        timestamp: new Date().toISOString(),
-      };
-    }
+    this.ensureConfigured();
 
     const hasMedia = Boolean(payload.mediaUrl);
     const endpoint = this.resolveSendEndpoint(instanceId, payload.type, hasMedia);
