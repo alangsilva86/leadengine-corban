@@ -36,7 +36,7 @@ const stopServer = (server: Server) =>
   });
 
 describe('root availability handlers', () => {
-  it('returns ok for GET /', async () => {
+  it('returns availability payload for GET /', async () => {
     const { server, url } = await startServer();
 
     try {
@@ -44,7 +44,16 @@ describe('root availability handlers', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toEqual({ status: 'ok' });
+      expect(body).toMatchObject({
+        status: 'ok',
+        service: 'ticketz-api',
+        environment: 'test',
+      });
+      expect(typeof body.timestamp).toBe('string');
+      expect(new Date(body.timestamp).toString()).not.toBe('Invalid Date');
+      expect(typeof body.uptime).toBe('number');
+      expect(body.uptime).toBeGreaterThanOrEqual(0);
+      expect(body.version).toBeDefined();
     } finally {
       await stopServer(server);
     }
