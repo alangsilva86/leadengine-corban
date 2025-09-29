@@ -127,17 +127,39 @@ io.on('connection', (socket) => {
   });
 });
 
+const buildRootAvailabilityPayload = () => ({
+  status: 'ok',
+  service: 'ticketz-api',
+  environment: NODE_ENV,
+  version: process.env.npm_package_version,
+  timestamp: new Date().toISOString(),
+  uptime: process.uptime(),
+});
+
+const respondWithAvailability = (req: express.Request, res: express.Response) => {
+  const payload = buildRootAvailabilityPayload();
+
+  res.status(200).set({
+    'x-service-name': payload.service,
+    'x-service-environment': payload.environment,
+    'x-service-version': payload.version ?? 'unknown',
+  });
+
+  if (req.method === 'HEAD') {
+    res.setHeader('content-length', '0');
+    res.end();
+    return;
+  }
+
+  res.json(payload);
+};
+
+// Root availability check
+app.get('/', respondWithAvailability);
+app.head('/', respondWithAvailability);
+
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
-
-// Root availability checks
-app.get('/', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
-app.head('/', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
 
 // 404 handler
 app.use('*', (req, res) => {

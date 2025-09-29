@@ -36,7 +36,7 @@ const stopServer = (server: Server) =>
   });
 
 describe('root availability handlers', () => {
-  it('returns ok for GET /', async () => {
+  it('returns availability payload for GET /', async () => {
     const { server, url } = await startServer();
 
     try {
@@ -44,19 +44,32 @@ describe('root availability handlers', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toEqual({ status: 'ok' });
+      expect(body).toMatchObject({
+        status: 'ok',
+        service: 'ticketz-api',
+        environment: 'test',
+      });
+      expect(typeof body.timestamp).toBe('string');
+      expect(new Date(body.timestamp).toString()).not.toBe('Invalid Date');
+      expect(typeof body.uptime).toBe('number');
+      expect(body.uptime).toBeGreaterThanOrEqual(0);
+      expect(body.version).toBeDefined();
     } finally {
       await stopServer(server);
     }
   });
 
-  it('returns ok for HEAD /', async () => {
+  it('returns headers for HEAD / without a response body', async () => {
     const { server, url } = await startServer();
 
     try {
       const response = await fetch(`${url}/`, { method: 'HEAD' });
 
       expect(response.status).toBe(200);
+      expect(response.headers.get('x-service-name')).toBe('ticketz-api');
+      expect(response.headers.get('x-service-environment')).toBe('test');
+      expect(response.headers.get('x-service-version')).toBeDefined();
+      expect(response.headers.get('content-length')).toBe('0');
     } finally {
       await stopServer(server);
     }
