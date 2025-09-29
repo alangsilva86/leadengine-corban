@@ -130,6 +130,15 @@ io.on('connection', (socket) => {
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
 
+// Root availability checks
+app.get('/', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.head('/', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
