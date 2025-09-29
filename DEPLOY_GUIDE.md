@@ -100,6 +100,17 @@ docker compose -f docker-compose.prod.yml run --rm api sh -c "cd apps/api && pnp
 docker compose -f docker-compose.prod.yml up -d
 ```
 
+### 3. Deploy no Render.com
+
+Caso utilize o Render.com para hospedar a API como serviço web, configure os comandos conforme abaixo para garantir que os pacotes compartilhados estejam compilados antes da execução do servidor:
+
+| Etapa | Comando |
+| --- | --- |
+| Build Command | `pnpm --filter @ticketz/api run build` |
+| Start Command | `pnpm --filter @ticketz/api start` |
+
+> ℹ️ O script `build` da API dispara `build:dependencies` (com `pnpm --dir ../.. -r --filter ... run build`) antes do `tsup`. Assim, os diretórios `dist` dos pacotes `@ticketz/{core,shared,storage,integrations}` são gerados antes do `node dist/server.js`, evitando erros de resolução de módulos nas etapas de deploy e runtime.
+
 ## 🔍 Verificação
 
 ### 1. Verificar Status dos Serviços
