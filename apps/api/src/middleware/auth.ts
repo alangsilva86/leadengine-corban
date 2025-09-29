@@ -4,6 +4,8 @@ import * as bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 
+type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -13,17 +15,18 @@ export interface AuthenticatedUser {
   tenantId: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+  role: UserRole;
   isActive: boolean;
   permissions: string[];
 }
 
 export interface JWTPayload {
   id: string;
-  tenantId: string;
-  email: string;
-  name: string;
-  role: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+  tenantId?: string;
+  email?: string;
+  name?: string;
+  role?: string | UserRole;
+  permissions?: string[];
   iat?: number;
   exp?: number;
 }
@@ -86,7 +89,7 @@ export function generateToken(user: {
   tenantId: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+  role: UserRole;
 }): string {
   const payload: JWTPayload = {
     id: user.id,
@@ -109,7 +112,7 @@ export function verifyToken(token: string): JWTPayload {
 /**
  * Define permissões baseadas no papel do usuário
  */
-function getPermissionsByRole(role: 'ADMIN' | 'SUPERVISOR' | 'AGENT'): string[] {
+function getPermissionsByRole(role: UserRole): string[] {
   const permissions: Record<string, string[]> = {
     ADMIN: [
       'users:read',
@@ -152,6 +155,64 @@ function getPermissionsByRole(role: 'ADMIN' | 'SUPERVISOR' | 'AGENT'): string[] 
 
   return permissions[role] || [];
 }
+
+const isProductionEnv = process.env.NODE_ENV === 'production';
+const allowJwtPayloadFallback =
+  process.env.AUTH_ALLOW_JWT_FALLBACK === 'true' || (!isProductionEnv && process.env.AUTH_ALLOW_JWT_FALLBACK !== 'false');
+
+const ensureArrayOfStrings = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+};
+
+const normalizeRole = (role?: string | UserRole): UserRole => {
+  const normalized = (role || '').toString().trim().toUpperCase();
+  if (normalized === 'ADMIN' || normalized === 'SUPERVISOR' || normalized === 'AGENT') {
+    return normalized;
+  }
+  return 'AGENT';
+};
+
+const resolveTenantIdFromRequest = (req: Request, decoded: JWTPayload): string | undefined => {
+  const headerTenant = req.headers['x-tenant-id'];
+  if (typeof headerTenant === 'string' && headerTenant.trim().length > 0) {
+    return headerTenant.trim();
+  }
+  if (Array.isArray(headerTenant) && headerTenant.length > 0) {
+    return headerTenant[0];
+  }
+
+  if (decoded.tenantId && decoded.tenantId.trim().length > 0) {
+    return decoded.tenantId.trim();
+  }
+
+  return undefined;
+};
+
+const buildUserFromToken = (req: Request, decoded: JWTPayload): AuthenticatedUser | null => {
+  if (!decoded.id) {
+    return null;
+  }
+
+  const tenantId = resolveTenantIdFromRequest(req, decoded) || 'demo-tenant';
+  const role = normalizeRole(decoded.role);
+  const tokenPermissions = ensureArrayOfStrings(decoded.permissions);
+  const basePermissions = getPermissionsByRole(role);
+  const mergedPermissions = Array.from(new Set([...basePermissions, ...tokenPermissions]));
+
+  return {
+    id: decoded.id,
+    tenantId,
+    email: decoded.email || `${decoded.id}@example.com`,
+    name: decoded.name || decoded.email || 'Authenticated User',
+    role,
+    isActive: true,
+    permissions: mergedPermissions,
+  };
+};
 
 // ============================================================================
 // Authentication Service
@@ -315,15 +376,36 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     }
 
     // Buscar usuário completo no banco
-    const user = await getUserById(decoded.id);
+    const user = decoded.id ? await getUserById(decoded.id) : null;
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'Usuário não encontrado ou inativo',
-        },
+      if (!allowJwtPayloadFallback) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'Usuário não encontrado ou inativo',
+          },
+        });
+      }
+
+      const fallbackUser = buildUserFromToken(req, decoded);
+      if (!fallbackUser) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'Usuário não encontrado ou inativo',
+          },
+        });
+      }
+
+      logger.warn('[Auth] Usuário não encontrado no banco, utilizando dados do token JWT', {
+        userId: decoded.id,
+        tenantId: fallbackUser.tenantId,
       });
+
+      req.user = fallbackUser;
+      return next();
     }
 
     // Adicionar usuário ao request
@@ -414,7 +496,16 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
   }
 
   // Verificar se o tenantId do parâmetro corresponde ao do usuário
+  const headerTenant = req.headers['x-tenant-id'];
+  const normalizedHeaderTenant =
+    typeof headerTenant === 'string'
+      ? headerTenant.trim()
+      : Array.isArray(headerTenant) && headerTenant.length > 0
+        ? headerTenant[0]
+        : undefined;
+
   const tenantId =
+    normalizedHeaderTenant ||
     (req.params?.tenantId as string | undefined) ||
     (req.body?.tenantId as string | undefined) ||
     (typeof req.query?.tenantId === 'string' ? req.query.tenantId : undefined);
