@@ -112,6 +112,21 @@ Caso utilize o Render.com para hospedar a API como serviço web, configure os co
 
 > ℹ️ O script `build` da API dispara `build:dependencies` (com `pnpm --dir ../.. -r --filter ... run build`) antes do `tsup`. Assim, os diretórios `dist` dos pacotes `@ticketz/{core,shared,storage,integrations}` são gerados antes do `node dist/server.js`, evitando erros de resolução de módulos nas etapas de deploy e runtime.
 
+#### Variáveis de ambiente obrigatórias no Render
+
+Além das variáveis já definidas na seção de configuração (como `DATABASE_URL`, `JWT_SECRET`, `VITE_API_URL`, etc.), configure explicitamente no Render:
+
+- **Serviço da API**
+  - `JWT_SECRET`, `POSTGRES_PASSWORD`, `DATABASE_URL` (ou parâmetros individuais), `REDIS_URL` (quando aplicável).
+  - Garanta que exista um operador demo com e-mail/senha conhecidos rodando `pnpm --filter @ticketz/api db:seed` após provisionar o banco ou criando o usuário manualmente.
+- **Serviço Web (frontend)**
+  - `VITE_API_URL`: URL pública da API (ex.: `https://api.seudominio.com`).
+  - `VITE_DEMO_TENANT_ID`: tenant padrão para o operador demo (ex.: `demo-tenant`).
+  - `VITE_DEMO_OPERATOR_EMAIL` e `VITE_DEMO_OPERATOR_PASSWORD`: credenciais que serão pré-preenchidas no modal de login do frontend.
+  - (Opcional) `VITE_API_AUTH_TOKEN`: token JWT estático usado apenas como fallback caso nenhuma sessão seja gerada no navegador.
+
+> 🔐 Caso prefira não armazenar a senha do operador em variáveis do Render, gere manualmente um JWT válido com o comando `pnpm --filter @ticketz/api exec ts-node scripts/generate-jwt.ts --email operador@exemplo.com` e preencha o valor em `VITE_API_AUTH_TOKEN`. Sem o token ou o usuário seedado, o modal de autenticação não conseguirá criar a sessão demo.
+
 ## 🔍 Verificação
 
 ### 1. Verificar Status dos Serviços

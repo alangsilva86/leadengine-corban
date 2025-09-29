@@ -1,27 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input.jsx';
+import { getTenantId, onTenantIdChange, setTenantId } from '@/lib/auth.js';
 
 export default function TenantSelector({ onChange }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(() => getTenantId() || '');
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('tenantId');
-      if (saved) setValue(saved);
-    } catch (error) {
-      console.debug('Não foi possível ler tenant salvo', error);
-    }
+    const unsubscribe = onTenantIdChange((nextTenant) => {
+      setValue(nextTenant || '');
+    });
+    return () => unsubscribe();
   }, []);
 
   const apply = (next) => {
     setValue(next);
-    try {
-      if (next) localStorage.setItem('tenantId', next);
-      else localStorage.removeItem('tenantId');
-    } catch (error) {
-      console.debug('Não foi possível atualizar tenant salvo', error);
-    }
-    onChange?.(next || undefined);
+    const applied = next || undefined;
+    setTenantId(applied);
+    onChange?.(applied);
   };
 
   return (

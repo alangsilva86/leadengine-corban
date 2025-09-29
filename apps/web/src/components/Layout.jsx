@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge.jsx';
 import './Layout.css';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
+import DemoAuthDialog from './DemoAuthDialog.jsx';
 
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -123,6 +124,7 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
           </div>
 
           <div className="header-right" style={{ gap: 12 }}>
+            <DemoAuthDialog />
             <TenantSelector />
             <Button variant="ghost" size="sm" className="notification-btn">
               <Bell className="h-5 w-5" />
