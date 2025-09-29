@@ -1,6 +1,13 @@
 import { fetch, type RequestInit } from 'undici';
 import { logger } from '../config/logger';
 
+export class WhatsAppBrokerNotConfiguredError extends Error {
+  constructor(message = 'WhatsApp broker not configured') {
+    super(message);
+    this.name = 'WhatsAppBrokerNotConfiguredError';
+  }
+}
+
 export interface WhatsAppInstance {
   id: string;
   tenantId: string;
@@ -62,9 +69,15 @@ class WhatsAppBrokerClient {
     return this.baseUrl.length > 0 && this.apiKey.length > 0;
   }
 
+  private ensureConfigured(): void {
+    if (!this.isConfigured) {
+      throw new WhatsAppBrokerNotConfiguredError();
+    }
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     if (!this.isConfigured) {
-      throw new Error('WhatsApp broker not configured');
+      throw new WhatsAppBrokerNotConfiguredError();
     }
 
     const url = `${this.baseUrl}${path}`;
@@ -80,8 +93,16 @@ class WhatsAppBrokerClient {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      throw new Error(`Broker request failed (${response.status}): ${text}`);
+      const rawText = await response.text().catch(() => response.statusText);
+      const normalizedMessage = this.extractErrorMessage(rawText);
+
+      if (response.status === 401 || response.status === 403) {
+        throw new WhatsAppBrokerNotConfiguredError(
+          normalizedMessage || 'WhatsApp broker rejected credentials'
+        );
+      }
+
+      throw new Error(`Broker request failed (${response.status}): ${normalizedMessage}`);
     }
 
     if (response.status === 204) {
@@ -93,7 +114,7 @@ class WhatsAppBrokerClient {
 
   private async requestBuffer(path: string): Promise<Buffer> {
     if (!this.isConfigured) {
-      throw new Error('WhatsApp broker not configured');
+      throw new WhatsAppBrokerNotConfiguredError();
     }
 
     const url = `${this.baseUrl}${path}`;
@@ -104,8 +125,16 @@ class WhatsAppBrokerClient {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      throw new Error(`Broker request failed (${response.status}): ${text}`);
+      const rawText = await response.text().catch(() => response.statusText);
+      const normalizedMessage = this.extractErrorMessage(rawText);
+
+      if (response.status === 401 || response.status === 403) {
+        throw new WhatsAppBrokerNotConfiguredError(
+          normalizedMessage || 'WhatsApp broker rejected credentials'
+        );
+      }
+
+      throw new Error(`Broker request failed (${response.status}): ${normalizedMessage}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -144,6 +173,26 @@ class WhatsAppBrokerClient {
 
     const match = user.id.match(/^(\d{12,})/);
     return match ? match[1] : null;
+  }
+
+  private extractErrorMessage(rawText: string | null | undefined): string {
+    if (!rawText) {
+      return '';
+    }
+
+    try {
+      const parsed = JSON.parse(rawText);
+      const message =
+        (typeof parsed?.message === 'string' && parsed.message) ||
+        (typeof parsed?.error?.message === 'string' && parsed.error.message);
+      if (message) {
+        return message;
+      }
+    } catch (error) {
+      logger.debug('Failed to parse broker error message as JSON', { error, rawText });
+    }
+
+    return rawText;
   }
 
   private mapInstance(
@@ -191,9 +240,7 @@ class WhatsAppBrokerClient {
   }
 
   async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
-    if (!this.isConfigured) {
-      return [fallbackInstance(tenantId)];
-    }
+    this.ensureConfigured();
 
     try {
       const result = await this.request<RawInstance[]>(`/instances`);
@@ -214,6 +261,10 @@ class WhatsAppBrokerClient {
 
       return mapped;
     } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+
       logger.warn('Failed to list WhatsApp instances via broker, returning fallback', { error });
       return [fallbackInstance(tenantId)];
     }
@@ -224,9 +275,7 @@ class WhatsAppBrokerClient {
     name: string;
     webhookUrl?: string;
   }): Promise<WhatsAppInstance> {
-    if (!this.isConfigured) {
-      return fallbackInstance(args.tenantId);
-    }
+    this.ensureConfigured();
 
     const tenantPrefix = this.tenantPrefix(args.tenantId);
     const normalizedName = `${tenantPrefix}${this.slugify(args.name)}`.slice(0, 60);
@@ -304,12 +353,7 @@ class WhatsAppBrokerClient {
   }
 
   async getQrCode(instanceId: string): Promise<WhatsAppQrCode> {
-    if (!this.isConfigured) {
-      return {
-        qrCode: FALLBACK_QR,
-        expiresAt: new Date(Date.now() + QR_EXPIRATION_MS).toISOString(),
-      };
-    }
+    this.ensureConfigured();
 
     try {
       const buffer = await this.requestBuffer(`/instances/${encodeURIComponent(instanceId)}/qr.png`);
@@ -325,9 +369,7 @@ class WhatsAppBrokerClient {
   }
 
   async getStatus(instanceId: string): Promise<WhatsAppStatus> {
-    if (!this.isConfigured) {
-      return { status: 'connected', connected: true };
-    }
+    this.ensureConfigured();
     try {
       // Alguns brokers não expõem /status; usar /instances e inferir
       const result = await this.request<RawInstance[]>(`/instances`);
@@ -335,6 +377,10 @@ class WhatsAppBrokerClient {
       const connected = Boolean(item?.connected);
       return { status: connected ? 'connected' : 'qr_required', connected };
     } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+
       logger.warn('Failed to get WhatsApp instance status via broker; assuming disconnected', { instanceId, error });
       return { status: 'disconnected', connected: false };
     }
@@ -354,13 +400,7 @@ class WhatsAppBrokerClient {
     type?: string;
     mediaUrl?: string;
   }): Promise<WhatsAppMessageResult> {
-    if (!this.isConfigured) {
-      return {
-        externalId: `msg-${Date.now()}`,
-        status: 'sent',
-        timestamp: new Date().toISOString(),
-      };
-    }
+    this.ensureConfigured();
 
     const hasMedia = Boolean(payload.mediaUrl);
     const endpoint = this.resolveSendEndpoint(instanceId, payload.type, hasMedia);

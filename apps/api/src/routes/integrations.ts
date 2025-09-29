@@ -3,7 +3,25 @@ import { body, param, query } from 'express-validator';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
-import { whatsappBrokerClient } from '../services/whatsapp-broker-client';
+import {
+  whatsappBrokerClient,
+  WhatsAppBrokerNotConfiguredError,
+} from '../services/whatsapp-broker-client';
+
+const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {
+  if (error instanceof WhatsAppBrokerNotConfiguredError) {
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'WHATSAPP_NOT_CONFIGURED',
+        message: error.message,
+      },
+    });
+    return true;
+  }
+
+  return false;
+};
 
 const router: Router = Router();
 
@@ -18,12 +36,19 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
 
-    const instances = await whatsappBrokerClient.listInstances(tenantId);
+    try {
+      const instances = await whatsappBrokerClient.listInstances(tenantId);
 
-    res.json({
-      success: true,
-      data: instances,
-    });
+      res.json({
+        success: true,
+        data: instances,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
@@ -38,16 +63,23 @@ router.post(
     const { name, webhookUrl } = req.body as { name: string; webhookUrl?: string };
     const tenantId = req.user!.tenantId;
 
-    const instance = await whatsappBrokerClient.createInstance({
-      tenantId,
-      name,
-      webhookUrl,
-    });
+    try {
+      const instance = await whatsappBrokerClient.createInstance({
+        tenantId,
+        name,
+        webhookUrl,
+      });
 
-    res.status(201).json({
-      success: true,
-      data: instance,
-    });
+      res.status(201).json({
+        success: true,
+        data: instance,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
@@ -113,12 +145,19 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const qr = await whatsappBrokerClient.getQrCode(instanceId);
+    try {
+      const qr = await whatsappBrokerClient.getQrCode(instanceId);
 
-    res.json({
-      success: true,
-      data: qr,
-    });
+      res.json({
+        success: true,
+        data: qr,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
@@ -130,12 +169,19 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const status = await whatsappBrokerClient.getStatus(instanceId);
+    try {
+      const status = await whatsappBrokerClient.getStatus(instanceId);
 
-    res.json({
-      success: true,
-      data: status,
-    });
+      res.json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
@@ -158,17 +204,24 @@ router.post(
       mediaUrl?: string;
     };
 
-    const result = await whatsappBrokerClient.sendMessage(instanceId, {
-      to,
-      content,
-      type,
-      mediaUrl,
-    });
+    try {
+      const result = await whatsappBrokerClient.sendMessage(instanceId, {
+        to,
+        content,
+        type,
+        mediaUrl,
+      });
 
-    res.json({
-      success: true,
-      data: result,
-    });
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
