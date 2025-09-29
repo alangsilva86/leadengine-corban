@@ -5,6 +5,8 @@ import UnderConstruction from './components/UnderConstruction.jsx';
 import AgreementGrid from './components/AgreementGrid.jsx';
 import WhatsAppConnect from './components/WhatsAppConnect.jsx';
 import LeadInbox from './components/LeadInbox.jsx';
+import Reports from './components/Reports.jsx';
+import Settings from './components/Settings.jsx';
 import './App.css';
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
@@ -131,19 +133,9 @@ function App() {
           />
         );
       case 'reports':
-        return (
-          <UnderConstruction
-            title="Relatórios e Insights"
-            description="Dashboards avançados de produtividade e receita chegarão aqui em breve."
-          />
-        );
+        return <Reports />;
       case 'settings':
-        return (
-          <UnderConstruction
-            title="Configurações"
-            description="Gerencie equipes, permissões e integrações. Estamos concluindo o módulo administrativo."
-          />
-        );
+        return <Settings />;
       default:
         return <Dashboard />;
     }
