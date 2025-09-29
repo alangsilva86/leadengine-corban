@@ -31,6 +31,7 @@ O `docker-compose.yml` lê variáveis do ambiente (ou de um arquivo `.env`, se v
 PORT=4000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 DATABASE_URL=postgresql://ticketz:ticketz123@postgres:5432/ticketz
 DATABASE_SSL=false
 REDIS_URL=redis://redis:6379
@@ -46,7 +47,7 @@ RATE_LIMIT_MAX_REQUESTS=100 # opcional (padrão: 100 requisições)
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
 
-As variáveis `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX_REQUESTS` permitem ajustar a janela e o número máximo de requisições por IP aplicados pelo middleware de rate limiting da API. Valores não numéricos ou inválidos são ignorados e os padrões (15 minutos / 100 requisições) são utilizados.
+As variáveis `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX_REQUESTS` permitem ajustar a janela e o número máximo de requisições por IP aplicados pelo middleware de rate limiting da API. Valores não numéricos ou inválidos são ignorados e os padrões (15 minutos / 100 requisições) são utilizados. Use `CORS_ALLOWED_ORIGINS` para informar uma lista (separada por vírgula) de domínios extras autorizados a consumir a API via navegador; quando ausente, a aplicação libera apenas os domínios padrão (`FRONTEND_URL`, ambientes locais e os domínios históricos do projeto).
 
 ## 4. Subindo os serviços
 

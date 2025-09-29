@@ -90,6 +90,8 @@ NODE_ENV=development
 
 # Frontend URL
 FRONTEND_URL=http://localhost:5173
+# Lista adicional de domínios autorizados (separados por vírgula)
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 
 # JWT
 JWT_SECRET=your-super-secret-jwt-key
@@ -108,6 +110,8 @@ URA_API_KEY=your-ura-api-key
 # Logs
 LOG_LEVEL=info
 ```
+
+> **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal.
 
 #### Frontend (apps/web/.env.local)
 ```env
