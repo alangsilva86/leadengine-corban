@@ -32,6 +32,8 @@ const defaultCorsOrigins = [
   'http://localhost:3000',
   'https://ticketz-leadengine.vercel.app',
   'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
+  'https://leadengine-corban.onrender.com',
+  'https://leadengine-corban-1.onrender.com',
 ];
 
 const configuredCorsOrigins = (process.env.FRONTEND_URL ?? '')
@@ -114,6 +116,7 @@ const limiter = rateLimit({
 app.use(helmet());
 app.use(compression());
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
