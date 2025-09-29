@@ -96,12 +96,12 @@ router.get(
       const rawValues = Array.isArray(value) ? value : [value];
       return rawValues
         .flatMap((item) => (typeof item === 'string' ? item.split(',') : []))
-        .map((item) => item.trim())
+        .map((item) => item.trim().toUpperCase())
         .filter(Boolean);
     })
     .custom((value) => {
       const values = Array.isArray(value) ? value : [value];
-      const allowed = new Set(Object.values(CampaignStatus));
+      const allowed = new Set([...Object.values(CampaignStatus), 'ALL']);
       const isValid = values.every((status) => allowed.has(status as CampaignStatus));
       if (!isValid) {
         throw new Error('Invalid campaign status');
@@ -115,7 +115,13 @@ router.get(
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const rawStatus = req.query.status as string[] | undefined;
-    const statusFilter = rawStatus && rawStatus.length > 0 ? rawStatus.map((status) => status as CampaignStatus) : undefined;
+    const normalizedStatus = rawStatus?.filter((status) => status !== 'ALL');
+    const statusFilter =
+      normalizedStatus && normalizedStatus.length > 0
+        ? (normalizedStatus.filter((status): status is CampaignStatus =>
+            Object.values(CampaignStatus).includes(status as CampaignStatus)
+          ) as CampaignStatus[])
+        : undefined;
 
     logger.info('[LeadEngine] GET /campaigns', {
       tenantId,
@@ -339,11 +345,15 @@ router.post(
     .optional()
     .isString()
     .trim()
+    .customSanitizer((status) => (typeof status === 'string' ? status.toUpperCase() : status))
     .custom((status) => {
-      if (!Object.values(CampaignStatus).includes(status as CampaignStatus)) {
-        throw new Error('Invalid campaign status');
+      if (
+        typeof status === 'string' &&
+        Object.values(CampaignStatus).includes(status as CampaignStatus)
+      ) {
+        return true;
       }
-      return true;
+      throw new Error('Invalid campaign status');
     }),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
@@ -355,7 +365,11 @@ router.post(
       instanceId: string;
       name: string;
     };
-    const status = req.body.status as CampaignStatus | undefined;
+    const rawStatusValue = typeof req.body.status === 'string' ? req.body.status : undefined;
+    const status =
+      rawStatusValue && Object.values(CampaignStatus).includes(rawStatusValue as CampaignStatus)
+        ? (rawStatusValue as CampaignStatus)
+        : undefined;
 
     logger.info('[LeadEngine] POST /campaigns', {
       tenantId,

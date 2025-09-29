@@ -55,10 +55,16 @@ if (allowAllOrigins) {
 
 const resolvedCorsOrigins = Array.from(corsAllowedOrigins);
 
+const sharedCorsSettings = {
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as string[],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'Accept'] as string[],
+};
+
 const corsOptions: CorsOptions = allowAllOrigins
   ? {
       origin: true,
-      credentials: true,
+      ...sharedCorsSettings,
     }
   : {
       origin: (origin, callback) => {
@@ -68,7 +74,7 @@ const corsOptions: CorsOptions = allowAllOrigins
 
         return callback(new Error(`Origin ${origin} not allowed by CORS`));
       },
-      credentials: true,
+      ...sharedCorsSettings,
     };
 
 const io = new SocketIOServer(server, {
@@ -113,10 +119,15 @@ const limiter = rateLimit({
 });
 
 // Middlewares globais
-app.use(helmet());
-app.use(compression());
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
