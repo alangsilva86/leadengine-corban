@@ -128,11 +128,25 @@ io.on('connection', (socket) => {
 });
 
 // Root availability check
+const rootAvailabilityPayload = {
+  status: 'ok',
+  environment: NODE_ENV,
+};
+
 app.get('/', (_req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    environment: NODE_ENV,
-  });
+  res.status(200).json(rootAvailabilityPayload);
+});
+
+app.head('/', (_req, res) => {
+  const payloadString = JSON.stringify(rootAvailabilityPayload);
+
+  res
+    .status(200)
+    .set({
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(payloadString).toString(),
+    })
+    .end();
 });
 
 // Middleware de tratamento de erros (deve ser o último)

@@ -36,6 +36,11 @@ const stopServer = (server: Server) =>
   });
 
 describe('root availability handlers', () => {
+  const expectedPayload = {
+    status: 'ok',
+    environment: process.env.NODE_ENV || 'development',
+  };
+
   it('returns ok for GET /', async () => {
     const { server, url } = await startServer();
 
@@ -44,7 +49,7 @@ describe('root availability handlers', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body).toEqual({ status: 'ok' });
+      expect(body).toEqual(expectedPayload);
     } finally {
       await stopServer(server);
     }
@@ -57,6 +62,10 @@ describe('root availability handlers', () => {
       const response = await fetch(`${url}/`, { method: 'HEAD' });
 
       expect(response.status).toBe(200);
+      expect(response.headers.get('content-length')).toBe(
+        Buffer.byteLength(JSON.stringify(expectedPayload)).toString(),
+      );
+      expect(response.headers.get('content-type')).toContain('application/json');
     } finally {
       await stopServer(server);
     }
