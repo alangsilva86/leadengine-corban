@@ -80,6 +80,8 @@ dist
 # Gatsby files
 .cache/
 public
+!apps/web/public/
+!apps/web/public/favicon.ico
 
 # Storybook build outputs
 .out

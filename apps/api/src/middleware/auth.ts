@@ -64,6 +64,7 @@ declare global {
 // ============================================================================
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
+const DEMO_JWT_SECRET = process.env.DEMO_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
 /**
@@ -106,6 +107,29 @@ export function generateToken(user: {
  * Verifica e decodifica token JWT
  */
 export function verifyToken(token: string): JWTPayload {
+  const attemptedSecrets = [JWT_SECRET, DEMO_JWT_SECRET].filter(
+    (secret): secret is string => typeof secret === 'string' && secret.length > 0
+  );
+
+  let lastError: unknown;
+
+  for (const secret of attemptedSecrets) {
+    try {
+      const payload = jwt.verify(token, secret) as JWTPayload;
+      if (secret !== JWT_SECRET) {
+        logger.debug('[Auth] JWT verificado usando segredo alternativo');
+      }
+      return payload;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  // Em última instância, preserve o comportamento padrão para não mascarar erros
   return jwt.verify(token, JWT_SECRET) as JWTPayload;
 }
 
