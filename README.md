@@ -221,6 +221,19 @@ PUT    /api/leads/:id
 DELETE /api/leads/:id
 ```
 
+#### Lead Engine
+```
+GET    /api/lead-engine/campaigns?agreementId={id}&status=ACTIVE,PAUSED
+POST   /api/lead-engine/campaigns
+GET    /api/lead-engine/agreements
+GET    /api/lead-engine/agreements/available
+```
+
+> `status` aceita múltiplos valores separados por vírgula ou repetidos na query string
+> (por exemplo: `status=ACTIVE,PAUSED` ou `status=ACTIVE&status=PAUSED`).
+> O payload de criação exige `agreementId`, `instanceId` e `name`, além de um `status`
+> opcional (`ACTIVE`, `PAUSED` ou `COMPLETED`).
+
 #### WhatsApp
 ```
 GET    /api/integrations/whatsapp/instances

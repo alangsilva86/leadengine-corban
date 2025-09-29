@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
+import { CampaignStatus, createOrActivateCampaign, listCampaigns } from '@ticketz/storage';
 import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
 import { leadEngineClient } from '../services/lead-engine-client';
@@ -77,6 +78,81 @@ router.get(
         error: {
           code: 'AGREEMENTS_FETCH_FAILED',
           message: 'Falha ao buscar convênios',
+        },
+      });
+    }
+  })
+);
+
+/**
+ * GET /api/lead-engine/campaigns - Lista campanhas com filtros opcionais
+ */
+router.get(
+  '/campaigns',
+  query('agreementId').optional().isString().trim(),
+  query('status')
+    .optional()
+    .customSanitizer((value) => {
+      const rawValues = Array.isArray(value) ? value : [value];
+      return rawValues
+        .flatMap((item) => (typeof item === 'string' ? item.split(',') : []))
+        .map((item) => item.trim())
+        .filter(Boolean);
+    })
+    .custom((value) => {
+      const values = Array.isArray(value) ? value : [value];
+      const allowed = new Set(Object.values(CampaignStatus));
+      const isValid = values.every((status) => allowed.has(status as CampaignStatus));
+      if (!isValid) {
+        throw new Error('Invalid campaign status');
+      }
+      return true;
+    }),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = ensureTenantContext(req, res);
+    if (!tenantId) return;
+
+    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
+    const rawStatus = req.query.status as string[] | undefined;
+    const statusFilter = rawStatus && rawStatus.length > 0 ? rawStatus.map((status) => status as CampaignStatus) : undefined;
+
+    logger.info('[LeadEngine] GET /campaigns', {
+      tenantId,
+      agreementId,
+      status: statusFilter,
+    });
+
+    try {
+      const campaigns = await listCampaigns({
+        tenantId,
+        agreementId,
+        status: statusFilter,
+      });
+
+      res.json({
+        success: true,
+        data: campaigns,
+      });
+
+      logger.info('[LeadEngine] ✅ Campaigns listed', {
+        tenantId,
+        agreementId,
+        status: statusFilter,
+        count: campaigns.length,
+      });
+    } catch (error) {
+      logger.error('[LeadEngine] ❌ Failed to list campaigns', {
+        tenantId,
+        agreementId,
+        status: statusFilter,
+        error,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'CAMPAIGNS_LIST_FAILED',
+          message: 'Falha ao listar campanhas',
         },
       });
     }
@@ -245,6 +321,82 @@ router.post(
         error: {
           code: 'LEADS_INGEST_FAILED',
           message: 'Falha ao ingerir leads',
+        },
+      });
+    }
+  })
+);
+
+/**
+ * POST /api/lead-engine/campaigns - Cria ou reativa uma campanha para o tenant
+ */
+router.post(
+  '/campaigns',
+  body('agreementId').isString().notEmpty(),
+  body('instanceId').isString().notEmpty(),
+  body('name').isString().notEmpty(),
+  body('status')
+    .optional()
+    .isString()
+    .trim()
+    .custom((status) => {
+      if (!Object.values(CampaignStatus).includes(status as CampaignStatus)) {
+        throw new Error('Invalid campaign status');
+      }
+      return true;
+    }),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = ensureTenantContext(req, res);
+    if (!tenantId) return;
+
+    const { agreementId, instanceId, name } = req.body as {
+      agreementId: string;
+      instanceId: string;
+      name: string;
+    };
+    const status = req.body.status as CampaignStatus | undefined;
+
+    logger.info('[LeadEngine] POST /campaigns', {
+      tenantId,
+      agreementId,
+      instanceId,
+      status: status ?? CampaignStatus.ACTIVE,
+    });
+
+    try {
+      const campaign = await createOrActivateCampaign({
+        tenantId,
+        agreementId,
+        instanceId,
+        name,
+        status,
+      });
+
+      res.json({
+        success: true,
+        data: campaign,
+      });
+
+      logger.info('[LeadEngine] ✅ Campaign created or activated', {
+        tenantId,
+        agreementId,
+        instanceId,
+        campaignId: campaign.id,
+        status: campaign.status,
+      });
+    } catch (error) {
+      logger.error('[LeadEngine] ❌ Failed to create or activate campaign', {
+        tenantId,
+        agreementId,
+        instanceId,
+        error,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'CAMPAIGN_SAVE_FAILED',
+          message: 'Falha ao criar ou reativar campanha',
         },
       });
     }
