@@ -4,8 +4,10 @@
   "description": "API REST para o sistema Ticketz-LeadEngine",
   "main": "dist/server.js",
   "scripts": {
-    "build": "prisma generate --schema=../../prisma/schema.prisma && tsup",
+    "build:dependencies": "pnpm --dir ../.. --filter @ticketz/core --filter @ticketz/shared --filter @ticketz/storage --filter @ticketz/integrations run build",
+    "build": "pnpm run build:dependencies && pnpm run db:generate && tsup",
     "dev": "tsx watch src/server.ts",
+    "prestart": "pnpm run build:dependencies && pnpm run db:generate",
     "start": "node dist/server.js",
     "test": "vitest",
     "test:watch": "vitest --watch",
