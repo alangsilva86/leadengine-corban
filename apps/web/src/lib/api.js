@@ -1,4 +1,22 @@
+import {
+  getAuthToken,
+  getTenantId,
+  onAuthTokenChange,
+  onTenantIdChange,
+} from './auth.js';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+
+let persistedToken = getAuthToken();
+let persistedTenantId = getTenantId();
+
+onAuthTokenChange((nextToken) => {
+  persistedToken = nextToken;
+});
+
+onTenantIdChange((nextTenant) => {
+  persistedTenantId = nextTenant;
+});
 
 const prepareAuthorization = (rawToken) => {
   if (!rawToken) {
@@ -19,21 +37,18 @@ const baseHeaders = () => {
   };
 
   // Prioriza seleção feita pelo usuário (persistida no navegador)
-  let tenantId = undefined;
-  try {
-    tenantId = localStorage.getItem('tenantId') || undefined;
-  } catch (storageError) {
-    console.debug('Falha ao recuperar tenantId do storage local', storageError);
-  }
-  tenantId =
-    tenantId || import.meta.env.VITE_API_TENANT_ID || import.meta.env.VITE_TENANT_ID || 'demo-tenant';
+  let tenantId =
+    persistedTenantId ||
+    import.meta.env.VITE_API_TENANT_ID ||
+    import.meta.env.VITE_TENANT_ID ||
+    'demo-tenant';
   if (tenantId) {
     headers['x-tenant-id'] = tenantId;
   }
 
-  const authHeader = prepareAuthorization(
-    import.meta.env.VITE_API_AUTH_TOKEN || import.meta.env.VITE_API_TOKEN
-  );
+  const tokenCandidate =
+    persistedToken || import.meta.env.VITE_API_AUTH_TOKEN || import.meta.env.VITE_API_TOKEN;
+  const authHeader = prepareAuthorization(tokenCandidate);
   if (authHeader) {
     headers.Authorization = authHeader;
   }
