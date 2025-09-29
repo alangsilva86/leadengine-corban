@@ -39,6 +39,8 @@ WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=<API_KEY>
 LEAD_ENGINE_BROKER_BASE_URL=https://lead-engine-production.up.railway.app
 LEAD_ENGINE_BASIC_TOKEN=bGVhZC1...
+LOG_FILE=logs/api/combined.log
+LOG_FILE_ERROR=logs/api/error.log
 ```
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
@@ -79,5 +81,6 @@ docker compose down -v
 - `docker compose logs -f api`
 - `docker compose logs -f web`
 - `docker compose exec api sh` (para abrir shell dentro do container)
+- Os caminhos configurados em `LOG_FILE` e `LOG_FILE_ERROR` serão criados automaticamente caso não existam. Em produção considere apontá-los para um volume persistente (ex.: `/var/log/ticketz/combined.log`).
 
 Mantenha o arquivo `.env` fora do controle de versão (listado em `.gitignore`) e lembre-se de girar senhas/tokens ao mover para produção.

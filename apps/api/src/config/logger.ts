@@ -7,6 +7,27 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
+const resolveLogFilePath = (envPath: string | undefined, fallbackFileName: string) => {
+  if (envPath && envPath.trim().length > 0) {
+    return path.resolve(process.cwd(), envPath);
+  }
+
+  return path.join(logsDir, fallbackFileName);
+};
+
+const ensureDirectoryForFile = (filePath: string) => {
+  const directory = path.dirname(filePath);
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+};
+
+const combinedLogPath = resolveLogFilePath(process.env.LOG_FILE, 'combined.log');
+const errorLogPath = resolveLogFilePath(process.env.LOG_FILE_ERROR, 'error.log');
+
+ensureDirectoryForFile(combinedLogPath);
+ensureDirectoryForFile(errorLogPath);
+
 const { combine, timestamp, errors, json, simple, colorize } = winston.format;
 
 // Configuração do logger
@@ -22,15 +43,16 @@ export const logger = winston.createLogger({
     environment: process.env.NODE_ENV || 'development',
   },
   transports: [
-    // Arquivo para todos os logs
+    // Arquivo para logs de erro
     new winston.transports.File({
-      filename: 'logs/error.log',
+      filename: errorLogPath,
       level: 'error',
       maxsize: 5242880, // 5MB
       maxFiles: 5,
     }),
+    // Arquivo com todos os logs
     new winston.transports.File({
-      filename: 'logs/combined.log',
+      filename: combinedLogPath,
       maxsize: 5242880, // 5MB
       maxFiles: 5,
     }),

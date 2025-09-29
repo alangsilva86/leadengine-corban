@@ -54,6 +54,7 @@ nano .env
 - `JWT_SECRET`: Gere com `openssl rand -base64 64`
 - `FRONTEND_URL`: Seu domínio real
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
+- `LOG_FILE` / `LOG_FILE_ERROR`: Caminhos absolutos ou relativos para os arquivos de log combinado e de erros da API. Garanta que apontem para um diretório persistente.
 
 ### 2. Configurar Domínio (Opcional)
 
@@ -206,6 +207,8 @@ docker compose -f docker-compose.prod.yml logs api
 docker compose -f docker-compose.prod.yml logs web
 docker compose -f docker-compose.prod.yml logs postgres
 ```
+
+> ℹ️ A API grava logs de aplicação e de erros nos caminhos definidos pelas variáveis `LOG_FILE` e `LOG_FILE_ERROR`. Caso utilize caminhos personalizados (ex.: `/var/log/ticketz/api.log`), os diretórios serão criados automaticamente durante a inicialização do serviço.
 
 ### 2. Métricas
 
