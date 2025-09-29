@@ -69,13 +69,10 @@ const AVAILABLE_AGREEMENTS = [
   { id: 'saec-goiania', name: 'SAEC Goiânia', slug: 'SaecGoiania', region: 'GO' },
   { id: 'saec-curaca', name: 'SAEC Curaçá', slug: 'SaecCuraca', region: 'BA' },
   { id: 'saec-caldas-novas', name: 'SAEC Caldas Novas', slug: 'SaecCaldasNovas', region: 'GO' },
-  { id: 'saec-fme-caldas-novas', name: 'SAEC FME Caldas Novas', slug: 'SaecFmeCaldasNovas', region: 'GO' },
-  { id: 'saec-fms-caldas-novas', name: 'SAEC FMS Caldas Novas', slug: 'SaecFmsCaldasNovas', region: 'GO' },
-  { id: 'saec-comurg', name: 'SAEC COMURG', slug: 'SaecComurg', region: 'GO' },
-  { id: 'saec-pr-tce', name: 'SAEC PR TCE', slug: 'SaecPrTce', region: 'PR' },
   { id: 'rf1-boa-vista', name: 'RF1 Boa Vista', slug: 'Rf1BoaVista', region: 'RR' },
   { id: 'econsig-londrina', name: 'EConsig Londrina', slug: 'EConsigLondrina', region: 'PR' },
-  { id: 'inss', name: 'INSS', slug: 'INSS', region: 'BR' },
+  { id: 'consigtec-maringa', name: 'ConsigTec Maringá', slug: 'ConsigTecMaringa', region: 'PR' },
+  { id: 'econsig-guaratuba', name: 'EConsig Guaratuba', slug: 'EConsigGuaratuba', region: 'PR' },
 ];
 
 // ============================================================================
