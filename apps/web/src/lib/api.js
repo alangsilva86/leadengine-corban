@@ -37,11 +37,20 @@ const baseHeaders = () => {
   };
 
   // Prioriza seleção feita pelo usuário (persistida no navegador)
-  let tenantId =
-    persistedTenantId ||
-    import.meta.env.VITE_API_TENANT_ID ||
-    import.meta.env.VITE_TENANT_ID ||
-    'demo-tenant';
+  let tenantId = persistedTenantId;
+
+  if (!tenantId) {
+    const envTenant =
+      import.meta.env.VITE_API_TENANT_ID ?? import.meta.env.VITE_TENANT_ID ?? undefined;
+    if (typeof envTenant === 'string') {
+      const normalized = envTenant.trim();
+      tenantId = normalized.length > 0 ? normalized : undefined;
+    }
+  }
+
+  if (!tenantId) {
+    tenantId = 'demo-tenant';
+  }
   if (tenantId) {
     headers['x-tenant-id'] = tenantId;
   }
