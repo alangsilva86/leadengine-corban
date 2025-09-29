@@ -37,6 +37,7 @@ REDIS_URL=redis://redis:6379
 JWT_SECRET=troque-por-uma-chave-forte
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=<API_KEY>
+WHATSAPP_VERIFY_TOKEN=<token_gerado_no_Meta>
 LEAD_ENGINE_BROKER_BASE_URL=https://lead-engine-production.up.railway.app
 LEAD_ENGINE_BASIC_TOKEN=bGVhZC1...
 ```
