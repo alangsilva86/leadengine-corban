@@ -127,17 +127,35 @@ io.on('connection', (socket) => {
   });
 });
 
-// Middleware de tratamento de erros (deve ser o último)
-app.use(errorHandler);
+const buildRootAvailabilityPayload = () => ({
+  status: 'ok',
+  service: 'ticketz-api',
+  environment: NODE_ENV,
+  version: process.env.npm_package_version,
+  timestamp: new Date().toISOString(),
+  uptime: process.uptime(),
+});
 
-// Root availability checks
+// Root availability check
 app.get('/', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json(buildRootAvailabilityPayload());
 });
 
 app.head('/', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
+  const payload = buildRootAvailabilityPayload();
+
+  res
+    .status(200)
+    .set({
+      'x-service-name': payload.service,
+      'x-service-environment': payload.environment,
+      'x-service-version': payload.version ?? 'unknown',
+    })
+    .end();
 });
+
+// Middleware de tratamento de erros (deve ser o último)
+app.use(errorHandler);
 
 // 404 handler
 app.use('*', (req, res) => {
