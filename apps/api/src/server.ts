@@ -43,10 +43,26 @@ const io = new SocketIOServer(server, {
 const PORT = process.env.PORT || 4000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Rate limit configuration
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
+
+const parsedRateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS);
+const rateLimitWindowMs =
+  Number.isFinite(parsedRateLimitWindowMs) && parsedRateLimitWindowMs > 0
+    ? parsedRateLimitWindowMs
+    : DEFAULT_RATE_LIMIT_WINDOW_MS;
+
+const parsedRateLimitMaxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
+const rateLimitMaxRequests =
+  Number.isInteger(parsedRateLimitMaxRequests) && parsedRateLimitMaxRequests > 0
+    ? parsedRateLimitMaxRequests
+    : DEFAULT_RATE_LIMIT_MAX_REQUESTS;
+
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // máximo 100 requests por IP por janela
+  windowMs: rateLimitWindowMs, // 15 minutos por padrão
+  max: rateLimitMaxRequests, // máximo 100 requests por IP por janela por padrão
   message: 'Too many requests from this IP, please try again later.',
 });
 
