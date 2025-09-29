@@ -18,4 +18,5 @@ export {
   findCampaignById,
   findActiveCampaign,
   listCampaigns,
+  resetCampaignStore,
 } from './repositories/campaign-repository';
