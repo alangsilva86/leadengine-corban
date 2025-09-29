@@ -136,12 +136,7 @@ const buildRootAvailabilityPayload = () => ({
   uptime: process.uptime(),
 });
 
-// Root availability check
-app.get('/', (_req, res) => {
-  res.status(200).json(buildRootAvailabilityPayload());
-});
-
-app.head('/', (_req, res) => {
+const respondWithAvailability = (_req: express.Request, res: express.Response) => {
   const payload = buildRootAvailabilityPayload();
 
   res
@@ -151,8 +146,12 @@ app.head('/', (_req, res) => {
       'x-service-environment': payload.environment,
       'x-service-version': payload.version ?? 'unknown',
     })
-    .end();
-});
+    .json(payload);
+};
+
+// Root availability check
+app.get('/', respondWithAvailability);
+app.head('/', respondWithAvailability);
 
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);

@@ -59,13 +59,16 @@ describe('root availability handlers', () => {
     }
   });
 
-  it('returns ok for HEAD /', async () => {
+  it('returns headers for HEAD /', async () => {
     const { server, url } = await startServer();
 
     try {
       const response = await fetch(`${url}/`, { method: 'HEAD' });
 
       expect(response.status).toBe(200);
+      expect(response.headers.get('x-service-name')).toBe('ticketz-api');
+      expect(response.headers.get('x-service-environment')).toBe('test');
+      expect(response.headers.get('x-service-version')).toBeDefined();
     } finally {
       await stopServer(server);
     }
