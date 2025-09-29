@@ -139,11 +139,14 @@ const buildRootAvailabilityPayload = () => ({
 const respondWithAvailability = (req: express.Request, res: express.Response) => {
   const payload = buildRootAvailabilityPayload();
 
-  res.status(200).set({
-    'x-service-name': payload.service,
-    'x-service-environment': payload.environment,
-    'x-service-version': payload.version ?? 'unknown',
-  });
+  res
+    .status(200)
+    .set({
+      'x-service-name': payload.service,
+      'x-service-environment': payload.environment,
+      'x-service-version': payload.version ?? 'unknown',
+    })
+    .type('application/json');
 
   if (req.method === 'HEAD') {
     res.setHeader('content-length', '0');

@@ -69,6 +69,7 @@ describe('root availability handlers', () => {
       expect(response.headers.get('x-service-name')).toBe('ticketz-api');
       expect(response.headers.get('x-service-environment')).toBe('test');
       expect(response.headers.get('x-service-version')).toBeDefined();
+      expect(response.headers.get('content-type')).toContain('application/json');
       expect(response.headers.get('content-length')).toBe('0');
     } finally {
       await stopServer(server);
