@@ -39,9 +39,13 @@ WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=<API_KEY>
 LEAD_ENGINE_BROKER_BASE_URL=https://lead-engine-production.up.railway.app
 LEAD_ENGINE_BASIC_TOKEN=bGVhZC1...
+RATE_LIMIT_WINDOW_MS=900000 # opcional (padrão: 15 minutos)
+RATE_LIMIT_MAX_REQUESTS=100 # opcional (padrão: 100 requisições)
 ```
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
+
+As variáveis `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX_REQUESTS` permitem ajustar a janela e o número máximo de requisições por IP aplicados pelo middleware de rate limiting da API. Valores não numéricos ou inválidos são ignorados e os padrões (15 minutos / 100 requisições) são utilizados.
 
 ## 4. Subindo os serviços
 
