@@ -259,14 +259,34 @@ class WhatsAppBrokerClient {
       return;
     }
 
-    try {
-      await this.request(`/instances/${encodeURIComponent(instanceId)}/logout`, {
-        method: 'POST',
-      });
-    } catch (error) {
-      logger.warn('Unable to trigger WhatsApp reconnect via broker; continuing anyway', {
+    const encodedId = encodeURIComponent(instanceId);
+    const startEndpoints = [
+      `/instances/${encodedId}/start`,
+      `/instances/${encodedId}/request-pairing-code`,
+    ];
+
+    let lastError: unknown;
+
+    for (const endpoint of startEndpoints) {
+      try {
+        await this.request(endpoint, {
+          method: 'POST',
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        logger.warn('Unable to trigger WhatsApp start endpoint via broker; attempting fallback', {
+          instanceId,
+          endpoint,
+          error,
+        });
+      }
+    }
+
+    if (lastError) {
+      logger.warn('All attempts to trigger WhatsApp instance start via broker failed; continuing anyway', {
         instanceId,
-        error,
+        error: lastError,
       });
     }
   }

@@ -112,6 +112,8 @@ Caso utilize o Render.com para hospedar a API como serviço web, configure os co
 
 > ℹ️ O script `build` da API dispara `build:dependencies` (com `pnpm --dir ../.. -r --filter ... run build`) antes do `tsup`. Assim, os diretórios `dist` dos pacotes `@ticketz/{core,shared,storage,integrations}` são gerados antes do `node dist/server.js`, evitando erros de resolução de módulos nas etapas de deploy e runtime.
 
+> ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/start` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
+
 #### Variáveis de ambiente obrigatórias no Render
 
 Além das variáveis já definidas na seção de configuração (como `DATABASE_URL`, `JWT_SECRET`, `VITE_API_URL`, etc.), configure explicitamente no Render:
