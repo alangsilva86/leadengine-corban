@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "pnpm --filter @ticketz/api start",
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
