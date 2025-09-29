@@ -53,6 +53,7 @@ nano .env
 - `POSTGRES_PASSWORD`: Use uma senha forte
 - `JWT_SECRET`: Gere com `openssl rand -base64 64`
 - `FRONTEND_URL`: Seu domínio real
+- `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
 
 ### 2. Configurar Domínio (Opcional)

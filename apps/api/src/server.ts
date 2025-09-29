@@ -1,5 +1,6 @@
 import express, { type Application } from 'express';
 import cors from 'cors';
+import type { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
@@ -25,18 +26,61 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app: Application = express();
 const server = createServer(app);
+
+const defaultCorsOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://ticketz-leadengine.vercel.app',
+  'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
+];
+
+const configuredCorsOrigins = (process.env.FRONTEND_URL ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const parsedCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsAllowedOrigins = new Set<string>([...defaultCorsOrigins, ...configuredCorsOrigins, ...parsedCorsOrigins]);
+const allowAllOrigins = corsAllowedOrigins.has('*');
+
+if (allowAllOrigins) {
+  corsAllowedOrigins.delete('*');
+}
+
+const resolvedCorsOrigins = Array.from(corsAllowedOrigins);
+
+const corsOptions: CorsOptions = allowAllOrigins
+  ? {
+      origin: true,
+      credentials: true,
+    }
+  : {
+      origin: (origin, callback) => {
+        if (!origin || corsAllowedOrigins.has(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`Origin ${origin} not allowed by CORS`));
+      },
+      credentials: true,
+    };
+
 const io = new SocketIOServer(server, {
-  cors: {
-    origin: [
-      process.env.FRONTEND_URL || 'http://localhost:3000',
-      'https://ticketz-leadengine.vercel.app',
-      'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
-      'http://localhost:5173',
-      'http://localhost:3000'
-    ],
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: allowAllOrigins
+    ? {
+        origin: '*',
+        methods: ['GET', 'POST'],
+        credentials: true,
+      }
+    : {
+        origin: resolvedCorsOrigins,
+        methods: ['GET', 'POST'],
+        credentials: true,
+      },
 });
 
 // Configurações básicas
@@ -69,16 +113,7 @@ const limiter = rateLimit({
 // Middlewares globais
 app.use(helmet());
 app.use(compression());
-app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://ticketz-leadengine.vercel.app',
-    'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
