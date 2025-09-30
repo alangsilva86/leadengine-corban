@@ -28,8 +28,11 @@ const PROCESSED_EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1_000; // 7 days
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1_000; // 1 hour
 
 interface BrokerFetchResponse {
+  items?: unknown[];
   events?: unknown[];
   nextCursor?: string | null;
+  ack?: unknown;
+  ackAt?: string | null;
 }
 
 interface AckState {
@@ -103,6 +106,33 @@ const parseAckState = (value: Prisma.JsonValue | null | undefined): AckState => 
   const cursor = typeof raw.cursor === 'string' ? raw.cursor : null;
   const count = typeof raw.count === 'number' && Number.isFinite(raw.count) ? raw.count : 0;
   return { timestamp, cursor, count };
+};
+
+const extractAckIds = (value: unknown): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : null))
+      .filter((item): item is string => Boolean(item && item.length > 0));
+  }
+
+  if (typeof value === 'object') {
+    const candidate = (value as Record<string, unknown>).ids;
+    if (Array.isArray(candidate)) {
+      return candidate
+        .map((item) => (typeof item === 'string' ? item.trim() : null))
+        .filter((item): item is string => Boolean(item && item.length > 0));
+    }
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return [value.trim()];
+  }
+
+  return [];
 };
 
 class WhatsAppEventPoller {
@@ -223,10 +253,14 @@ class WhatsAppEventPoller {
   private async pollOnce(): Promise<number> {
     const response = await whatsappBrokerClient.fetchEvents<BrokerFetchResponse>({
       limit: FETCH_LIMIT,
-      cursor: this.cursor ?? undefined,
+      after: this.cursor ?? undefined,
     });
 
-    const rawEvents = Array.isArray(response?.events) ? response.events : [];
+    const rawEvents = Array.isArray(response?.items)
+      ? response.items
+      : Array.isArray(response?.events)
+      ? response.events
+      : [];
 
     this.metrics.lastFetchAt = new Date().toISOString();
     this.metrics.lastFetchCount = rawEvents.length;
@@ -236,7 +270,7 @@ class WhatsAppEventPoller {
       return 0;
     }
 
-    const ackIds: string[] = [];
+    const eventIds: string[] = [];
     const candidateEvents: WhatsAppBrokerEvent[] = [];
 
     for (const raw of rawEvents) {
@@ -251,7 +285,7 @@ class WhatsAppEventPoller {
         continue;
       }
 
-      ackIds.push(id);
+      eventIds.push(id);
 
       const normalized = normalizeWhatsAppBrokerEvent(record);
       if (normalized) {
@@ -261,13 +295,13 @@ class WhatsAppEventPoller {
       }
     }
 
-    if (!ackIds.length) {
+    if (!eventIds.length) {
       return 0;
     }
 
     const existing = await prisma.processedIntegrationEvent.findMany({
       where: {
-        id: { in: ackIds },
+        id: { in: eventIds },
         source: SOURCE_KEY,
       },
       select: { id: true },
@@ -292,24 +326,30 @@ class WhatsAppEventPoller {
       enqueueWhatsAppBrokerEvents(freshEvents);
     }
 
-    await whatsappBrokerClient.ackEvents(ackIds);
+    const ackTokens = extractAckIds(response?.ack);
+    const idsToAck = ackTokens.length > 0 ? ackTokens : eventIds;
+    if (!idsToAck.length) {
+      return 0;
+    }
 
-    const timestamp = new Date().toISOString();
+    await whatsappBrokerClient.ackEvents(idsToAck);
+
+    const timestamp = typeof response?.ackAt === 'string' ? response.ackAt : new Date().toISOString();
     const nextCursor = typeof response?.nextCursor === 'string' ? response.nextCursor : null;
 
     await this.persistAckState({
       timestamp,
       cursor: nextCursor,
-      count: ackIds.length,
+      count: idsToAck.length,
     });
 
     await this.persistCursorIfNeeded(nextCursor);
 
     this.metrics.lastAckAt = timestamp;
     this.metrics.lastAckCursor = nextCursor;
-    this.metrics.lastAckCount = ackIds.length;
+    this.metrics.lastAckCount = idsToAck.length;
 
-    return ackIds.length;
+    return idsToAck.length;
   }
 
   private async persistCursorIfNeeded(cursor: string | null): Promise<void> {

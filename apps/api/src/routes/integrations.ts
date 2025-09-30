@@ -5,6 +5,7 @@ import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import {
   whatsappBrokerClient,
+  WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
 } from '../services/whatsapp-broker-client';
 
@@ -15,6 +16,26 @@ const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean =>
       error: {
         code: 'WHATSAPP_NOT_CONFIGURED',
         message: error.message,
+      },
+    });
+    return true;
+  }
+
+  return false;
+};
+
+const respondWhatsAppError = (res: Response, error: unknown): boolean => {
+  if (respondWhatsAppNotConfigured(res, error)) {
+    return true;
+  }
+
+  if (error instanceof WhatsAppBrokerError) {
+    res.status(error.status).json({
+      success: false,
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.details !== undefined ? { details: error.details } : {}),
       },
     });
     return true;
@@ -134,7 +155,7 @@ router.post(
         data: normalizeSessionStatus(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;
@@ -159,7 +180,7 @@ router.post(
         data: normalizeSessionStatus(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;
@@ -183,7 +204,70 @@ router.get(
         data: normalizeSessionStatus(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// POST /api/integrations/whatsapp/instances/:id/start - Iniciar instância específica
+router.post(
+  '/whatsapp/instances/:id/start',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.connectInstance(instanceId);
+      res.status(202).json({ success: true });
+    } catch (error) {
+      if (respondWhatsAppError(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// POST /api/integrations/whatsapp/instances/:id/stop - Parar instância específica
+router.post(
+  '/whatsapp/instances/:id/stop',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.disconnectInstance(instanceId);
+      res.json({ success: true });
+    } catch (error) {
+      if (respondWhatsAppError(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// DELETE /api/integrations/whatsapp/instances/:id - Remover instância específica
+router.delete(
+  '/whatsapp/instances/:id',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.deleteInstance(instanceId);
+      res.json({ success: true });
+    } catch (error) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;
@@ -195,44 +279,63 @@ router.get(
 router.post(
   '/whatsapp/messages',
   body('to').isString().isLength({ min: 1 }),
-  body('message').isString().isLength({ min: 1 }),
+  body('text').isString().isLength({ min: 1 }),
   body('previewUrl').optional().isBoolean().toBoolean(),
   body('externalId').optional().isString().isLength({ min: 1 }),
+  body('waitAckMs').optional().isInt({ min: 0 }).toInt(),
+  body('timeoutMs').optional().isInt({ min: 0 }).toInt(),
+  body('skipNormalize').optional().isBoolean().toBoolean(),
+  body('instanceId').optional().isString().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const sessionId = resolveTenantSessionId(tenantId);
-    const { to, message, previewUrl, externalId } = req.body as {
+    const defaultSessionId = resolveTenantSessionId(tenantId);
+    const { to, text, previewUrl, externalId, waitAckMs, timeoutMs, skipNormalize, instanceId } = req.body as {
       to: string;
-      message: string;
+      text: string;
       previewUrl?: boolean;
       externalId?: string;
+      waitAckMs?: number;
+      timeoutMs?: number;
+      skipNormalize?: boolean;
+      instanceId?: string;
     };
+    const normalizedInstanceId =
+      typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : undefined;
+    const sessionId = normalizedInstanceId ?? defaultSessionId;
 
     try {
       const result = await whatsappBrokerClient.sendText<{
         externalId?: string;
         status?: string;
         rate?: unknown;
+        ack?: unknown;
+        ackAt?: string;
       }>({
         sessionId,
+        instanceId: normalizedInstanceId,
         to,
-        message,
+        text,
         previewUrl,
         externalId,
+        waitAckMs,
+        timeoutMs,
+        skipNormalize,
       });
 
-      res.status(202).json({
+      res.status(201).json({
         success: true,
         data: {
           externalId: typeof result?.externalId === 'string' ? result.externalId : null,
           status: typeof result?.status === 'string' ? result.status : 'queued',
+          ack: result?.ack ?? null,
+          ackAt: typeof result?.ackAt === 'string' ? result.ackAt : null,
           rate: parseRateLimit(result?.rate ?? null),
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;
@@ -247,26 +350,32 @@ router.post(
   body('question').isString().isLength({ min: 1 }),
   body('options').isArray({ min: 2 }),
   body('options.*').isString().isLength({ min: 1 }),
-  body('allowMultipleAnswers').optional().isBoolean().toBoolean(),
+  body('selectableCount').optional().isInt({ min: 1 }).toInt(),
+  body('instanceId').optional().isString().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const sessionId = resolveTenantSessionId(tenantId);
-    const { to, question, options, allowMultipleAnswers } = req.body as {
+    const defaultSessionId = resolveTenantSessionId(tenantId);
+    const { to, question, options, selectableCount, instanceId } = req.body as {
       to: string;
       question: string;
       options: string[];
-      allowMultipleAnswers?: boolean;
+      selectableCount?: number;
+      instanceId?: string;
     };
+    const normalizedInstanceId =
+      typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : undefined;
+    const sessionId = normalizedInstanceId ?? defaultSessionId;
 
     try {
       const poll = await whatsappBrokerClient.createPoll<{ rate?: unknown } & Record<string, unknown>>({
         sessionId,
+        instanceId: normalizedInstanceId,
         to,
         question,
         options,
-        allowMultipleAnswers,
+        selectableCount,
       });
 
       res.status(201).json({
@@ -277,7 +386,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;
@@ -289,32 +398,49 @@ router.post(
 router.get(
   '/whatsapp/events',
   query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-  query('cursor').optional().isString(),
+  query('after').optional().isString(),
+  query('instanceId').optional().isString().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const { limit, cursor } = req.query as { limit?: number; cursor?: string };
+    const { limit, after, instanceId } = req.query as {
+      limit?: number;
+      after?: string;
+      instanceId?: string;
+    };
+    const normalizedInstanceId =
+      typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : undefined;
 
     try {
       const events = await whatsappBrokerClient.fetchEvents<{
+        items?: unknown[];
         events?: unknown[];
         nextCursor?: string | null;
+        ack?: unknown;
+        ackAt?: string | null;
         rate?: BrokerRateLimit | Record<string, unknown> | null;
       }>({
         limit,
-        cursor,
+        after,
+        instanceId: normalizedInstanceId,
       });
 
       res.json({
         success: true,
         data: {
-          items: Array.isArray(events?.events) ? events.events : [],
+          items: Array.isArray(events?.items)
+            ? events.items
+            : Array.isArray(events?.events)
+            ? events.events
+            : [],
           nextCursor: typeof events?.nextCursor === 'string' ? events.nextCursor : null,
+          ack: events?.ack ?? null,
+          ackAt: typeof events?.ackAt === 'string' ? events.ackAt : null,
           rate: parseRateLimit(events?.rate ?? null),
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;
@@ -325,21 +451,25 @@ router.get(
 // POST /api/integrations/whatsapp/events/ack - Confirmar processamento de eventos
 router.post(
   '/whatsapp/events/ack',
-  body('eventIds').isArray({ min: 1 }),
-  body('eventIds.*').isString().isLength({ min: 1 }),
+  body('ids').isArray({ min: 1 }),
+  body('ids.*').isString().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const { eventIds } = req.body as { eventIds: string[] };
+    const { ids } = req.body as { ids: string[] };
 
     try {
-      await whatsappBrokerClient.ackEvents(eventIds);
+      await whatsappBrokerClient.ackEvents(ids);
 
       res.json({
         success: true,
+        data: {
+          ack: { ids },
+          ackAt: new Date().toISOString(),
+        },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (respondWhatsAppError(res, error)) {
         return;
       }
       throw error;

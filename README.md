@@ -255,6 +255,18 @@ GET    /api/integrations/whatsapp/events
 POST   /api/integrations/whatsapp/events/ack
 ```
 
+- `POST /api/integrations/whatsapp/messages`
+  - Corpo: `{ to, text, previewUrl?, externalId?, waitAckMs?, timeoutMs?, skipNormalize?, instanceId? }`
+  - Resposta: `{ success, data: { externalId, status, ack, ackAt, rate } }` (HTTP 201 quando aceito pelo broker)
+- `POST /api/integrations/whatsapp/polls`
+  - Corpo: `{ to, question, options, selectableCount?, instanceId? }`
+- `GET /api/integrations/whatsapp/events`
+  - Query string: `limit?`, `after?`, `instanceId?`
+  - Resposta: `{ success, data: { items, nextCursor, ack, ackAt, rate } }`
+- `POST /api/integrations/whatsapp/events/ack`
+  - Corpo: `{ ids: string[] }`
+  - Resposta: `{ success, data: { ack: { ids }, ackAt } }`
+
 #### Webhooks
 ```
 POST   /api/integrations/whatsapp/webhook

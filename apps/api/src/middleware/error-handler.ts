@@ -47,7 +47,7 @@ export const errorHandler = (
   let apiError: ApiError;
 
   // Tratar diferentes tipos de erro
-  if (error instanceof ValidationError) {
+  if (error instanceof ValidationError || error.name === 'ValidationError') {
     apiError = {
       status: 400,
       code: 'VALIDATION_ERROR',

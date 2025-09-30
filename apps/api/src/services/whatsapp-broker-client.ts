@@ -11,12 +11,14 @@ export class WhatsAppBrokerNotConfiguredError extends Error {
 export class WhatsAppBrokerError extends Error {
   readonly code: string;
   readonly status: number;
+  readonly details?: unknown;
 
-  constructor(message: string, code: string, status: number) {
+  constructor(message: string, code: string, status: number, details?: unknown) {
     super(message);
     this.name = 'WhatsAppBrokerError';
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -176,7 +178,8 @@ class WhatsAppBrokerClient {
       const candidate = parsed?.error && typeof parsed.error === 'object' ? (parsed.error as Record<string, unknown>) : parsed;
       const code = typeof candidate?.code === 'string' ? candidate.code : undefined;
       const message = typeof candidate?.message === 'string' ? candidate.message : undefined;
-      return { code, message };
+      const details = 'details' in (candidate ?? {}) ? (candidate as Record<string, unknown>).details : undefined;
+      return { code, message, details };
     })();
 
     if (response.status === 401 || response.status === 403) {
@@ -189,7 +192,7 @@ class WhatsAppBrokerClient {
     const message =
       normalizedError.message || `WhatsApp broker request failed (${response.status})`;
 
-    throw new WhatsAppBrokerError(message, code, response.status);
+    throw new WhatsAppBrokerError(message, code, response.status, normalizedError.details);
   }
 
   private async request<T>(
@@ -287,9 +290,13 @@ class WhatsAppBrokerClient {
     payload: {
       sessionId: string;
       to: string;
-      message: string;
+      text: string;
       previewUrl?: boolean;
       externalId?: string;
+      waitAckMs?: number;
+      timeoutMs?: number;
+      skipNormalize?: boolean;
+      instanceId?: string;
     }
   ): Promise<T> {
     return this.request<T>('/broker/messages', {
@@ -297,11 +304,14 @@ class WhatsAppBrokerClient {
       body: JSON.stringify(
         compactObject({
           sessionId: payload.sessionId,
+          instanceId: payload.instanceId,
           to: payload.to,
-          message: payload.message,
+          text: payload.text,
           previewUrl: payload.previewUrl,
           externalId: payload.externalId,
-          type: 'text',
+          waitAckMs: payload.waitAckMs,
+          timeoutMs: payload.timeoutMs,
+          skipNormalize: payload.skipNormalize,
         })
       ),
     });
@@ -310,10 +320,11 @@ class WhatsAppBrokerClient {
   async createPoll<T = Record<string, unknown>>(
     payload: {
       sessionId: string;
+      instanceId?: string;
       to: string;
       question: string;
       options: string[];
-      allowMultipleAnswers?: boolean;
+      selectableCount?: number;
     }
   ): Promise<T> {
     return this.request<T>('/broker/polls', {
@@ -321,16 +332,19 @@ class WhatsAppBrokerClient {
       body: JSON.stringify(
         compactObject({
           sessionId: payload.sessionId,
+          instanceId: payload.instanceId,
           to: payload.to,
           question: payload.question,
           options: payload.options,
-          allowMultipleAnswers: payload.allowMultipleAnswers,
+          selectableCount: payload.selectableCount,
         })
       ),
     });
   }
 
-  async fetchEvents<T = { events: unknown[] }>(params: { limit?: number; cursor?: string } = {}): Promise<T> {
+  async fetchEvents<T = { items: unknown[] }>(
+    params: { limit?: number; after?: string; instanceId?: string } = {}
+  ): Promise<T> {
     return this.request<T>(
       '/broker/events',
       {
@@ -340,14 +354,15 @@ class WhatsAppBrokerClient {
         apiKey: this.webhookApiKey,
         searchParams: {
           limit: params.limit,
-          cursor: params.cursor,
+          after: params.after,
+          instanceId: params.instanceId,
         },
       }
     );
   }
 
-  async ackEvents(eventIds: string[]): Promise<void> {
-    if (!Array.isArray(eventIds) || eventIds.length === 0) {
+  async ackEvents(ids: string[]): Promise<void> {
+    if (!Array.isArray(ids) || ids.length === 0) {
       return;
     }
 
@@ -355,7 +370,7 @@ class WhatsAppBrokerClient {
       '/broker/events/ack',
       {
         method: 'POST',
-        body: JSON.stringify({ eventIds }),
+        body: JSON.stringify({ ids }),
       },
       {
         apiKey: this.webhookApiKey,
@@ -461,11 +476,18 @@ class WhatsAppBrokerClient {
       );
     }
 
-    const response = await this.sendText<{ externalId?: string; id?: string; status?: string }>(
+    const response = await this.sendText<{
+      externalId?: string;
+      id?: string;
+      status?: string;
+      ack?: boolean;
+      ackAt?: string;
+    }>(
       {
         sessionId: instanceId,
+        instanceId,
         to: payload.to,
-        message: payload.content,
+        text: payload.content,
         previewUrl: payload.previewUrl,
         externalId: payload.externalId,
       }

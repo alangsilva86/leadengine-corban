@@ -69,7 +69,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     fetchMock.mockResolvedValueOnce(createJsonResponse(200, { id: 'msg-1' }));
     const client = await loadClient();
 
-    await client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    await client.sendText({ sessionId: 'session-1', to: '5511987654321', text: 'Hello' });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://broker.example/broker/messages');
@@ -78,8 +78,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(body).toEqual({
       sessionId: 'session-1',
       to: '5511987654321',
-      message: 'Hello',
-      type: 'text',
+      text: 'Hello',
     });
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('broker-key');
@@ -94,7 +93,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
       to: '5511987654321',
       question: 'Qual opção?',
       options: ['A', 'B', 'C'],
-      allowMultipleAnswers: true,
+      selectableCount: 2,
     });
 
     const [url, init] = fetchMock.mock.calls[0];
@@ -105,7 +104,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
       to: '5511987654321',
       question: 'Qual opção?',
       options: ['A', 'B', 'C'],
-      allowMultipleAnswers: true,
+      selectableCount: 2,
     });
   });
 
@@ -113,10 +112,10 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     fetchMock.mockResolvedValueOnce(createJsonResponse(200, { events: [] }));
     const client = await loadClient();
 
-    await client.fetchEvents({ limit: 10, cursor: 'abc' });
+    await client.fetchEvents({ limit: 10, after: 'abc' });
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://broker.example/broker/events?limit=10&cursor=abc');
+    expect(url).toBe('https://broker.example/broker/events?limit=10&after=abc');
     expect(init?.method).toBe('GET');
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('webhook-key');
@@ -131,7 +130,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://broker.example/broker/events/ack');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ eventIds: ['evt-1', 'evt-2'] });
+    expect(body).toEqual({ ids: ['evt-1', 'evt-2'] });
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('webhook-key');
   });
@@ -151,7 +150,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const client = await loadClient();
 
     await expect(
-      client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' })
+      client.sendText({ sessionId: 'session-1', to: '5511987654321', text: 'Hello' })
     ).rejects.toMatchObject({
       name: 'WhatsAppBrokerError',
       code: 'RATE_LIMIT_EXCEEDED',
@@ -166,7 +165,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     );
     const client = await loadClient();
 
-    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', text: 'Hello' });
 
     await expect(promise).rejects.toMatchObject({
       name: 'WhatsAppBrokerNotConfiguredError',
