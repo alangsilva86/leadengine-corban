@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
-import { 
-  CreateTicketDTO, 
-  UpdateTicketDTO, 
+import {
+  CreateTicketDTO,
+  UpdateTicketDTO,
   SendMessageDTO,
   TicketFilters,
   Pagination,
@@ -10,6 +10,16 @@ import {
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
+import {
+  assignTicket,
+  closeTicket,
+  createTicket,
+  getTicketById,
+  listMessages,
+  listTickets,
+  sendMessage,
+  updateTicket,
+} from '../services/ticket-service';
 
 const router: Router = Router();
 
@@ -103,16 +113,8 @@ router.get(
       sortOrder,
     };
 
-    // TODO: Implementar GetTicketsQuery
-    const result = {
-      items: [],
-      total: 0,
-      page: pagination.page,
-      limit: pagination.limit,
-      totalPages: 0,
-      hasNext: false,
-      hasPrev: false,
-    };
+    const tenantId = req.user!.tenantId;
+    const result = await listTickets(tenantId, filters, pagination);
 
     res.json({
       success: true,
@@ -133,25 +135,9 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const ticket = await getTicketById(req.user!.tenantId, ticketId);
 
-    // TODO: Implementar GetTicketByIdQuery
-    const ticket = null;
-
-    if (!ticket) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'NOT_FOUND',
-          message: `Ticket ${ticketId} not found for tenant ${tenantId}`,
-        },
-      });
-    }
-
-    res.json({
-      success: true,
-      data: ticket,
-    });
+    res.json({ success: true, data: ticket });
   })
 );
 
@@ -173,19 +159,12 @@ router.post(
       metadata: req.body.metadata ?? {},
     };
 
-    // TODO: Implementar CreateTicketUseCase
-    const result = {
-      success: true,
-      data: {
-        id: 'mock-ticket-id',
-        ...createTicketDTO,
-        status: 'OPEN',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    };
+    const ticket = await createTicket(createTicketDTO);
 
-    res.status(201).json(result);
+    res.status(201).json({
+      success: true,
+      data: ticket,
+    });
   })
 );
 
@@ -209,18 +188,12 @@ router.put(
       closeReason: req.body.closeReason,
     };
 
-    // TODO: Implementar UpdateTicketUseCase
-    const result = {
-      success: true,
-      data: {
-        id: ticketId,
-        ...updateData,
-        tenantId: req.user!.tenantId,
-        updatedAt: new Date(),
-      },
-    };
+    const ticket = await updateTicket(req.user!.tenantId, ticketId, updateData);
 
-    res.json(result);
+    res.json({
+      success: true,
+      data: ticket,
+    });
   })
 );
 
@@ -234,16 +207,12 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
     const userId = req.body.userId as string;
+    const ticket = await assignTicket(req.user!.tenantId, ticketId, userId);
 
-    // TODO: Implementar AssignTicketUseCase
     res.json({
       success: true,
       message: 'Ticket assigned successfully',
-      data: {
-        ticketId,
-        userId,
-        tenantId: req.user!.tenantId,
-      },
+      data: ticket,
     });
   })
 );
@@ -258,17 +227,12 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
     const reason = req.body.reason as string | undefined;
+    const ticket = await closeTicket(req.user!.tenantId, ticketId, reason, req.user!.id);
 
-    // TODO: Implementar CloseTicketUseCase
     res.json({
       success: true,
       message: 'Ticket closed successfully',
-      data: {
-        ticketId,
-        reason,
-        tenantId: req.user!.tenantId,
-        userId: req.user!.id,
-      },
+      data: ticket,
     });
   })
 );
@@ -296,16 +260,7 @@ router.get(
       sortOrder,
     };
 
-    // TODO: Implementar GetMessagesQuery
-    const result = {
-      items: [],
-      total: 0,
-      page: pagination.page,
-      limit: pagination.limit,
-      totalPages: 0,
-      hasNext: false,
-      hasPrev: false,
-    };
+    const result = await listMessages(req.user!.tenantId, ticketId, pagination);
 
     res.json({
       success: true,
@@ -337,20 +292,12 @@ router.post(
       userId: req.user!.id,
     };
 
-    // TODO: Implementar SendMessageUseCase
-    const result = {
-      success: true,
-      data: {
-        id: 'mock-message-id',
-        ...sendMessageDTO,
-        direction: 'OUTBOUND',
-        status: 'SENT',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    };
+    const message = await sendMessage(req.user!.tenantId, req.user!.id, sendMessageDTO);
 
-    res.status(201).json(result);
+    res.status(201).json({
+      success: true,
+      data: message,
+    });
   })
 );
 
