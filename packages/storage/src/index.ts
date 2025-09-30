@@ -20,3 +20,16 @@ export {
   listCampaigns,
   resetCampaignStore,
 } from './repositories/campaign-repository';
+
+export {
+  resetTicketStore,
+  findTicketById,
+  findTicketsByContact,
+  createTicket,
+  updateTicket,
+  assignTicket,
+  closeTicket,
+  listTickets,
+  createMessage,
+  listMessages,
+} from './repositories/ticket-repository';
