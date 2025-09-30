@@ -1,4 +1,11 @@
 import { fetch, Headers, type HeadersInit, type RequestInit } from 'undici';
+import {
+  agreementDefinitions,
+  leadEngineConfig,
+  type AgreementDefinition,
+  type AgreementSummary as ConfigAgreementSummary,
+  type BrokerLeadRecord as ConfigBrokerLeadRecord,
+} from '../config/lead-engine';
 import { logger } from '../config/logger';
 
 const LOG_PREFIX = '[LeadEngine]';
@@ -35,45 +42,18 @@ export interface LeadResponse {
   };
 }
 
-export interface BrokerLeadRecord {
-  id: string;
-  fullName?: string;
-  document: string;
-  registrations?: string[];
-  agreementId?: string;
+export type BrokerLeadRecord = ConfigBrokerLeadRecord & {
   agreementCode?: string;
-  phone?: string;
-  margin?: number;
-  netMargin?: number;
-  score?: number;
-  tags?: string[];
   createdAt?: string;
   updatedAt?: string;
-}
+};
 
-export interface AgreementSummary {
-  id: string;
-  name: string;
-  slug: string;
-  region?: string;
-  availableLeads: number;
-  hotLeads: number;
-  lastSyncAt: string | null;
-}
+export type AgreementSummary = ConfigAgreementSummary;
 
 // ============================================================================
 // Convênios disponíveis baseados na collection Postman
 // ============================================================================
 
-const AVAILABLE_AGREEMENTS = [
-  { id: 'saec-goiania', name: 'SAEC Goiânia', slug: 'SaecGoiania', region: 'GO' },
-  { id: 'saec-curaca', name: 'SAEC Curaçá', slug: 'SaecCuraca', region: 'BA' },
-  { id: 'saec-caldas-novas', name: 'SAEC Caldas Novas', slug: 'SaecCaldasNovas', region: 'GO' },
-  { id: 'rf1-boa-vista', name: 'RF1 Boa Vista', slug: 'Rf1BoaVista', region: 'RR' },
-  { id: 'econsig-londrina', name: 'EConsig Londrina', slug: 'EConsigLondrina', region: 'PR' },
-  { id: 'consigtec-maringa', name: 'ConsigTec Maringá', slug: 'ConsigTecMaringa', region: 'PR' },
-  { id: 'econsig-guaratuba', name: 'EConsig Guaratuba', slug: 'EConsigGuaratuba', region: 'PR' },
-];
 
 // ============================================================================
 // Dados de fallback para desenvolvimento
@@ -130,57 +110,71 @@ const FALLBACK_LEADS: BrokerLeadRecord[] = [
 
 class LeadEngineClient {
   private readonly baseUrl: string;
-  private readonly creditBaseUrl: string;
+  private readonly creditBaseUrl?: string;
   private readonly timeoutMs: number;
   private readonly token: string;
   private readonly useRealData: boolean;
 
   constructor() {
-    this.baseUrl = (process.env.LEAD_ENGINE_BASE_URL || '').replace(/\/$/, '');
-    this.creditBaseUrl = (process.env.LEAD_ENGINE_CREDIT_BASE_URL || '').replace(/\/$/, '');
-    this.timeoutMs = parseInt(process.env.LEAD_ENGINE_TIMEOUT_MS || '8000');
-    this.token = process.env.LEAD_ENGINE_BASIC_TOKEN || '';
+    this.baseUrl = leadEngineConfig.baseUrl.replace(/\/$/, '');
+    this.creditBaseUrl = leadEngineConfig.creditBaseUrl?.replace(/\/$/, '');
+    this.timeoutMs = leadEngineConfig.timeoutMs;
+    this.token = leadEngineConfig.basicToken;
     this.useRealData = process.env.USE_REAL_DATA === 'true';
 
     logger.info(`${LOG_PREFIX} ✨ Cliente inicializado`, {
       baseUrl: this.baseUrl,
-      creditBaseUrl: this.creditBaseUrl,
+      creditBaseUrl: this.creditBaseUrl ?? null,
       timeoutMs: this.timeoutMs,
       hasToken: Boolean(this.token),
       useRealData: this.useRealData,
+      defaultStartDate: leadEngineConfig.defaultStartDate ?? null,
+      defaultEndDate: leadEngineConfig.defaultEndDate ?? null,
     });
   }
 
-  private get isConfigured(): boolean {
-    return Boolean(this.baseUrl && this.token);
-  }
-
-  private ensureBasicAuth(token: string): string {
+  private ensureBasic(token?: string): string | undefined {
+    if (!token) {
+      return undefined;
+    }
     return token.startsWith('Basic ') ? token : `Basic ${token}`;
   }
 
-  private async request<T>(
-    path: string, 
-    init?: RequestInit, 
-    baseUrl?: string
-  ): Promise<T> {
-    if (!this.isConfigured) {
-      throw new Error('Lead Engine não está configurado (baseUrl/token ausentes)');
+  private assertConfigured(path: string, baseUrl?: string): void {
+    const resolvedBaseUrl = baseUrl ?? this.baseUrl;
+    if (!resolvedBaseUrl || !this.token) {
+      logger.error(`${LOG_PREFIX} 🚨 Configuração ausente para chamada`, {
+        baseUrl: resolvedBaseUrl || null,
+        hasToken: Boolean(this.token),
+        path,
+      });
+      throw new Error('Lead Engine broker não está configurado (baseUrl/token ausentes).');
     }
+  }
+
+  private async request<T>(path: string, init?: RequestInit, baseUrl?: string): Promise<T> {
+    this.assertConfigured(path, baseUrl);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    const url = `${baseUrl || this.baseUrl}${path}`;
+    const resolvedBaseUrl = baseUrl ?? this.baseUrl;
+    const url = `${resolvedBaseUrl}${path}`;
     const startedAt = Date.now();
 
-    logger.info(`${LOG_PREFIX} 🛰️ ${init?.method || 'GET'} ${url}`);
+    logger.info(`${LOG_PREFIX} 🛰️ ${init?.method || 'GET'} ${url}`, {
+      path,
+    });
 
     try {
       const headers = new Headers(init?.headers as HeadersInit | undefined);
       headers.set('Content-Type', 'application/json');
       headers.set('Accept', 'application/json');
-      headers.set('Authorization', this.ensureBasicAuth(this.token));
+
+      const authorization = this.ensureBasic(this.token);
+      if (authorization) {
+        headers.set('Authorization', authorization);
+      }
 
       const response = await fetch(url, {
         ...init,
@@ -191,208 +185,172 @@ class LeadEngineClient {
       const elapsedMs = Date.now() - startedAt;
 
       if (!response.ok) {
-        const text = await response.text().catch(() => response.statusText);
+        const raw = await response.text();
+        const preview = raw.slice(0, 500);
         logger.error(`${LOG_PREFIX} 💥 ${response.status} erro na requisição`, {
           url,
+          path,
           elapsedMs,
-          error: text.slice(0, 500),
+          preview,
         });
-        throw new Error(`Lead Engine respondeu ${response.status}: ${text}`);
+        throw new Error(`Lead Engine respondeu ${response.status}: ${preview}`);
       }
 
       const data = (await response.json()) as T;
       logger.info(`${LOG_PREFIX} ✅ Resposta recebida`, {
         url,
+        path,
         elapsedMs,
       });
       return data;
     } catch (error) {
       const elapsedMs = Date.now() - startedAt;
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const name = error instanceof Error ? error.name : 'UnknownError';
       logger.error(`${LOG_PREFIX} ❌ Falha na requisição`, {
         url,
+        path,
         elapsedMs,
+        name,
         error: message,
       });
-      throw error;
+      throw error instanceof Error ? error : new Error('Erro desconhecido ao chamar Lead Engine');
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  // ============================================================================
-  // Métodos públicos baseados na API real
-  // ============================================================================
+  private applyDefaultRange(params: URLSearchParams): { start?: string; end?: string } {
+    const range: { start?: string; end?: string } = {};
 
-  /**
-   * Busca leads paginados do Lead Engine principal
-   */
-  async getLeads(params: {
-    startDateUtc?: string;
-    endDateUtc?: string;
-    page?: number;
-    size?: number;
-    documentNumber?: string;
-    agreementCode?: string;
-  }): Promise<LeadResponse> {
-    if (!this.useRealData || !this.isConfigured) {
-      return this.getFallbackLeads(params);
+    if (!params.has('startDateUtc') && leadEngineConfig.defaultStartDate) {
+      params.set('startDateUtc', leadEngineConfig.defaultStartDate);
+      range.start = leadEngineConfig.defaultStartDate;
+    }
+    if (!params.has('endDateUtc') && leadEngineConfig.defaultEndDate) {
+      params.set('endDateUtc', leadEngineConfig.defaultEndDate);
+      range.end = leadEngineConfig.defaultEndDate;
     }
 
-    const queryParams = new URLSearchParams({
-      startDateUtc: params.startDateUtc || process.env.LEAD_ENGINE_DEFAULT_START_DATE || '2025-01-01T00:00:00Z',
-      endDateUtc: params.endDateUtc || process.env.LEAD_ENGINE_DEFAULT_END_DATE || '2025-12-31T23:59:59Z',
-      _page: (params.page || 0).toString(),
-      _size: (params.size || 100).toString(),
+    return range;
+  }
+
+  private fallback(agreementId: string, take: number): BrokerLeadRecord[] {
+    const scoped = FALLBACK_LEADS.filter((lead) => lead.agreementId === agreementId);
+    const candidates = scoped.length > 0 ? scoped : FALLBACK_LEADS;
+    const quantity = Math.min(Math.max(take, 1), Math.max(candidates.length, 1));
+    const timestamp = Date.now();
+
+    return Array.from({ length: quantity }, (_, index) => {
+      const base = candidates[index % candidates.length];
+      return {
+        ...base,
+        id: `${base.id}-${timestamp}-${index}`,
+        agreementId,
+      } satisfies BrokerLeadRecord;
     });
-
-    if (params.documentNumber) {
-      queryParams.append('documentNumber', params.documentNumber);
-    }
-    if (params.agreementCode) {
-      queryParams.append('agreementCode', params.agreementCode);
-    }
-
-    try {
-      return await this.request<LeadResponse>(`/api/v1/lead?${queryParams}`);
-    } catch (error) {
-      logger.warn(`${LOG_PREFIX} Fallback para dados locais`, { error });
-      return this.getFallbackLeads(params);
-    }
   }
 
-  /**
-   * Ingere leads no Lead Engine principal
-   */
-  async ingestLead(leads: IngestLeadRequest[]): Promise<void> {
-    if (!this.useRealData || !this.isConfigured) {
-      logger.info(`${LOG_PREFIX} Simulando ingestão de ${leads.length} leads`);
-      return;
-    }
-
-    await this.request('/api/v1/lead', {
-      method: 'POST',
-      body: JSON.stringify(leads),
-    });
-
-    logger.info(`${LOG_PREFIX} ✅ ${leads.length} leads ingeridos com sucesso`);
+  private buildFallbackSummary(definition: AgreementDefinition): AgreementSummary {
+    const fallbackLeads = FALLBACK_LEADS.filter((lead) => lead.agreementId === definition.id);
+    return {
+      ...definition,
+      availableLeads: fallbackLeads.length,
+      hotLeads: Math.min(fallbackLeads.length, 5),
+      lastSyncAt: null,
+    } satisfies AgreementSummary;
   }
 
-  /**
-   * Ingere leads de crédito por convênio específico
-   */
-  async ingestCreditLead(agreementSlug: string, leads: CreditLeadRequest[]): Promise<void> {
-    if (!this.useRealData || !this.isConfigured) {
-      logger.info(`${LOG_PREFIX} Simulando ingestão de ${leads.length} leads de crédito para ${agreementSlug}`);
-      return;
-    }
+  private async countLeads(
+    filters: Record<string, string | number | boolean | undefined>
+  ): Promise<number> {
+    if (!this.useRealData) {
+      const agreementCode = typeof filters.agreementCode === 'string' ? filters.agreementCode : undefined;
+      const definition = agreementCode
+        ? agreementDefinitions.find(
+            (item) => item.slug === agreementCode || item.id === agreementCode
+          )
+        : undefined;
 
-    await this.request(`/api/v1/lead-credit/${agreementSlug}`, {
-      method: 'POST',
-      body: JSON.stringify(leads),
-    }, this.creditBaseUrl);
+      const scoped = agreementCode
+        ? FALLBACK_LEADS.filter(
+            (lead) =>
+              lead.agreementCode === agreementCode ||
+              lead.agreementId === (definition?.id ?? agreementCode)
+          )
+        : FALLBACK_LEADS;
 
-    logger.info(`${LOG_PREFIX} ✅ ${leads.length} leads de crédito ingeridos para ${agreementSlug}`);
-  }
+      const isHotQuery =
+        Object.prototype.hasOwnProperty.call(filters, 'classification') ||
+        Object.prototype.hasOwnProperty.call(filters, 'leadStatus');
 
-  /**
-   * Busca leads por convênio específico
-   */
-  async fetchLeadsByAgreement(agreementId: string, take: number = 25): Promise<BrokerLeadRecord[]> {
-    const agreement = AVAILABLE_AGREEMENTS.find(a => a.id === agreementId);
-    if (!agreement) {
-      throw new Error(`Convênio não encontrado: ${agreementId}`);
-    }
-
-    const response = await this.getLeads({
-      agreementCode: agreement.slug,
-      size: take,
-      page: 0,
-    });
-
-    const leads = response.data || response.items || response.value?.data || [];
-    
-    return leads.map(lead => ({
-      ...lead,
-      agreementId: agreementId,
-      agreementCode: agreement.slug,
-    }));
-  }
-
-  /**
-   * Obtém resumo de todos os convênios
-   */
-  async getAgreementSummaries(): Promise<{
-    summaries: AgreementSummary[];
-    warnings: Array<{ agreementId: string; reason: string }>;
-  }> {
-    const summaries: AgreementSummary[] = [];
-    const warnings: Array<{ agreementId: string; reason: string }> = [];
-
-    for (const agreement of AVAILABLE_AGREEMENTS) {
-      try {
-        const response = await this.getLeads({
-          agreementCode: agreement.slug,
-          size: 1,
-          page: 0,
-        });
-
-        const total = response.total || response.value?.total || response.pagination?.total || 0;
-        
-        // Simular leads "quentes" como 20% do total
-        const hotLeads = Math.floor(total * 0.2);
-
-        summaries.push({
-          id: agreement.id,
-          name: agreement.name,
-          slug: agreement.slug,
-          region: agreement.region,
-          availableLeads: total,
-          hotLeads: hotLeads,
-          lastSyncAt: new Date().toISOString(),
-        });
-
-        logger.info(`${LOG_PREFIX} 📊 Estatísticas para ${agreement.name}`, {
-          total,
-          hotLeads,
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Erro desconhecido';
-        warnings.push({ agreementId: agreement.id, reason });
-        
-        // Fallback com dados simulados
-        summaries.push({
-          id: agreement.id,
-          name: agreement.name,
-          slug: agreement.slug,
-          region: agreement.region,
-          availableLeads: Math.floor(Math.random() * 100) + 10,
-          hotLeads: Math.floor(Math.random() * 20) + 2,
-          lastSyncAt: null,
-        });
-
-        logger.warn(`${LOG_PREFIX} ⚠️ Fallback para ${agreement.name}`, { reason });
+      if (isHotQuery) {
+        return Math.min(scoped.length, Math.max(Math.floor(scoped.length * 0.2), scoped.length > 0 ? 1 : 0));
       }
+
+      return scoped.length;
     }
 
-    return { summaries, warnings };
+    const params = new URLSearchParams();
+    params.set('_page', '0');
+    params.set('_size', '1');
+    const range = this.applyDefaultRange(params);
+
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.set(key, String(value));
+      }
+    });
+
+    type CountResponse =
+      | { value?: { total?: number } }
+      | { total?: number }
+      | { success?: boolean; value?: { total?: number } };
+    const payload = await this.request<CountResponse>(`/api/v1/lead?${params.toString()}`);
+    const total = (payload as any)?.value?.total ?? (payload as any)?.total;
+    const parsedTotal = Number.isFinite(total) ? Number(total) : 0;
+
+    const printableFilters = Object.fromEntries(
+      Object.entries(filters).filter(([_, value]) => value !== undefined && value !== null)
+    );
+
+    logger.info(`${LOG_PREFIX} 📊 Contagem de leads concluída`, {
+      filters: printableFilters,
+      total: parsedTotal,
+      rangeStart: range.start ?? null,
+      rangeEnd: range.end ?? null,
+    });
+
+    if (parsedTotal === 0) {
+      logger.warn(`${LOG_PREFIX} ℹ️ Consulta retornou zero leads`, {
+        filters: printableFilters,
+      });
+    }
+
+    return parsedTotal;
   }
 
-  /**
-   * Dados de fallback para desenvolvimento
-   */
-  private getFallbackLeads(params: any): LeadResponse {
+  private getFallbackLeads(params: {
+    agreementCode?: string;
+    documentNumber?: string;
+    size?: number;
+    page?: number;
+  }): LeadResponse {
     const agreementCode = params.agreementCode;
     let leads = FALLBACK_LEADS;
 
     if (agreementCode) {
-      leads = FALLBACK_LEADS.filter(lead => 
-        lead.agreementCode === agreementCode || lead.agreementId === agreementCode
+      leads = FALLBACK_LEADS.filter(
+        (lead) => lead.agreementCode === agreementCode || lead.agreementId === agreementCode
       );
     }
 
-    const size = params.size || 25;
-    const page = params.page || 0;
+    if (params.documentNumber) {
+      leads = leads.filter((lead) => lead.document === params.documentNumber);
+    }
+
+    const size = Math.min(Math.max(params.size ?? 25, 1), 100);
+    const page = Math.max(params.page ?? 0, 0);
     const start = page * size;
     const end = start + size;
 
@@ -407,11 +365,199 @@ class LeadEngineClient {
     };
   }
 
-  /**
-   * Lista convênios disponíveis
-   */
+  private async buildAgreementSummary(
+    definition: AgreementDefinition
+  ): Promise<AgreementSummary> {
+    if (!this.useRealData) {
+      return this.buildFallbackSummary(definition);
+    }
+
+    const agreementCode = definition.slug;
+
+    const availableLeads = await this.countLeads({ agreementCode });
+    const hotLeads = await this.countLeads({ agreementCode, classification: 2 });
+
+    const summary: AgreementSummary = {
+      ...definition,
+      availableLeads,
+      hotLeads,
+      lastSyncAt: new Date().toISOString(),
+    } satisfies AgreementSummary;
+
+    logger.info(`${LOG_PREFIX} 🧮 Estatísticas atualizadas`, {
+      agreementCode,
+      availableLeads,
+      hotLeads,
+    });
+
+    return summary;
+  }
+
+  async getAgreementSummaries(): Promise<{
+    summaries: AgreementSummary[];
+    warnings: Array<{ agreementId: string; reason: string }>;
+  }> {
+    const settled = await Promise.allSettled(
+      agreementDefinitions.map((definition) => this.buildAgreementSummary(definition))
+    );
+
+    const summaries: AgreementSummary[] = [];
+    const warnings: Array<{ agreementId: string; reason: string }> = [];
+
+    settled.forEach((result, index) => {
+      const definition = agreementDefinitions[index];
+      if (result.status === 'fulfilled') {
+        summaries.push(result.value);
+        return;
+      }
+
+      const reason = result.reason instanceof Error ? result.reason.message : 'Erro desconhecido';
+      warnings.push({ agreementId: definition.id, reason });
+
+      logger.error(`${LOG_PREFIX} 🧨 Falha ao atualizar convênio`, {
+        agreementId: definition.id,
+        agreementCode: definition.slug,
+        message: reason,
+      });
+
+      summaries.push(this.buildFallbackSummary(definition));
+    });
+
+    if (warnings.length > 0) {
+      logger.warn(`${LOG_PREFIX} ⚠️ Estatísticas concluídas com alertas`, {
+        warnings,
+      });
+    }
+
+    return { summaries, warnings };
+  }
+
+  async getLeads(params: {
+    startDateUtc?: string;
+    endDateUtc?: string;
+    page?: number;
+    size?: number;
+    documentNumber?: string;
+    agreementCode?: string;
+  }): Promise<LeadResponse> {
+    const queryParams = new URLSearchParams();
+    queryParams.set('_page', String(Math.max(params.page ?? 0, 0)));
+    queryParams.set('_size', String(Math.min(Math.max(params.size ?? 100, 1), 100)));
+
+    if (params.startDateUtc) {
+      queryParams.set('startDateUtc', params.startDateUtc);
+    }
+    if (params.endDateUtc) {
+      queryParams.set('endDateUtc', params.endDateUtc);
+    }
+    if (params.documentNumber) {
+      queryParams.set('documentNumber', params.documentNumber);
+    }
+    if (params.agreementCode) {
+      queryParams.set('agreementCode', params.agreementCode);
+    }
+
+    const range = this.applyDefaultRange(queryParams);
+
+    if (!this.useRealData) {
+      logger.info(`${LOG_PREFIX} 🧪 Retornando leads de fallback`, {
+        agreementCode: params.agreementCode ?? null,
+        rangeStart: range.start ?? null,
+        rangeEnd: range.end ?? null,
+      });
+      return this.getFallbackLeads(params);
+    }
+
+    try {
+      return await this.request<LeadResponse>(`/api/v1/lead?${queryParams.toString()}`);
+    } catch (error) {
+      logger.warn(`${LOG_PREFIX} Fallback para dados locais`, {
+        agreementCode: params.agreementCode ?? null,
+        error,
+      });
+      return this.getFallbackLeads(params);
+    }
+  }
+
+  async ingestLead(leads: IngestLeadRequest[]): Promise<void> {
+    if (!this.useRealData) {
+      logger.info(`${LOG_PREFIX} Simulando ingestão de ${leads.length} leads`);
+      return;
+    }
+
+    await this.request('/api/v1/lead', {
+      method: 'POST',
+      body: JSON.stringify(leads),
+    });
+
+    logger.info(`${LOG_PREFIX} ✅ ${leads.length} leads ingeridos com sucesso`);
+  }
+
+  async ingestCreditLead(agreementSlug: string, leads: CreditLeadRequest[]): Promise<void> {
+    if (!this.useRealData) {
+      logger.info(
+        `${LOG_PREFIX} Simulando ingestão de ${leads.length} leads de crédito para ${agreementSlug}`
+      );
+      return;
+    }
+
+    if (!this.creditBaseUrl) {
+      throw new Error('Lead Engine credit broker não está configurado.');
+    }
+
+    await this.request(
+      `/api/v1/lead-credit/${agreementSlug}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(leads),
+      },
+      this.creditBaseUrl
+    );
+
+    logger.info(`${LOG_PREFIX} ✅ ${leads.length} leads de crédito ingeridos para ${agreementSlug}`);
+  }
+
+  async fetchLeadsByAgreement(
+    agreementId: string,
+    take: number = 25
+  ): Promise<BrokerLeadRecord[]> {
+    const agreement = agreementDefinitions.find((item) => item.id === agreementId);
+    if (!agreement) {
+      throw new Error(`Convênio não encontrado: ${agreementId}`);
+    }
+
+    const response = await this.getLeads({
+      agreementCode: agreement.slug,
+      size: take,
+      page: 0,
+    });
+
+    const leads = response.data || response.items || response.value?.data || [];
+
+    if (!Array.isArray(leads) || leads.length === 0) {
+      logger.warn(`${LOG_PREFIX} ⚠️ Broker retornou zero leads`, {
+        agreementId,
+        agreementCode: agreement.slug,
+        take,
+      });
+      return this.fallback(agreementId, take);
+    }
+
+    logger.info(`${LOG_PREFIX} ✅ Leads recebidos`, {
+      agreementId,
+      requested: take,
+      received: leads.length,
+    });
+
+    return (leads as BrokerLeadRecord[]).map((lead) => ({
+      ...lead,
+      agreementId: lead.agreementId || agreementId,
+      agreementCode: lead.agreementCode || agreement.slug,
+    }));
+  }
+
   getAvailableAgreements() {
-    return AVAILABLE_AGREEMENTS;
+    return agreementDefinitions;
   }
 }
 
