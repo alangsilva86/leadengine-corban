@@ -1,0 +1,19 @@
+# Render configuration for the baileys-acessuswpp broker.
+#
+# The service itself is managed through the Render dashboard, but we
+# keep the required environment variables versioned so secrets are not
+# accidentally removed when the infrastructure is reapplied.
+services:
+  - type: web
+    name: baileys-acessuswpp
+    envVars:
+      - key: API_KEY
+        sync: false
+        comment: >-
+          Shared secret used by LeadEngine clients (exported as
+          WHATSAPP_BROKER_API_KEY) to authenticate via the x-api-key header.
+      - key: WEBHOOK_URL
+        sync: false
+        comment: >-
+          HTTPS endpoint that receives broker events. Ensure whatever
+          service owns this URL enforces the same x-api-key secret.
