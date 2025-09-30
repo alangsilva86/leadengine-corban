@@ -257,6 +257,28 @@ model LeadActivity {
   @@map("lead_activities")
 }
 
+model IntegrationState {
+  key       String   @id
+  value     Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("integration_states")
+}
+
+model ProcessedIntegrationEvent {
+  id          String   @id
+  source      String
+  type        String?
+  cursor      String?
+  metadata    Json?
+  processedAt DateTime @default(now())
+  expiresAt   DateTime?
+
+  @@index([source, processedAt])
+  @@map("processed_integration_events")
+}
+
 // ============================================================================
 // Enums
 // ============================================================================
