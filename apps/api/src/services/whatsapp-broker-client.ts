@@ -39,6 +39,28 @@ export interface WhatsAppMessageResult {
   timestamp?: string;
 }
 
+type LocationPayload = {
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+};
+
+type ContactPayload = {
+  displayName?: string;
+  vcard: string;
+};
+
+type TemplatePayload = {
+  name: string;
+  namespace?: string;
+  language?: string;
+  languageCode?: string;
+  components?: unknown;
+  variables?: unknown;
+  parameters?: unknown;
+};
+
 interface RawInstance {
   id?: string;
   name?: string;
@@ -60,6 +82,12 @@ const fallbackInstance = (tenantId: string): WhatsAppInstance => ({
   lastActivity: new Date().toISOString(),
   connected: true,
 });
+
+const compactObject = <T extends Record<string, unknown>>(input: T): T => {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as T;
+};
 
 class WhatsAppBrokerClient {
   private readonly baseUrl = process.env.WHATSAPP_BROKER_URL?.replace(/\/$/, '') || '';
@@ -408,10 +436,32 @@ class WhatsAppBrokerClient {
 
   private resolveSendEndpoint(instanceId: string, type?: string, hasMedia?: boolean): string {
     const normalizedType = (type || '').toLowerCase();
-    if (normalizedType === 'image' && hasMedia) {
-      return `/instances/${encodeURIComponent(instanceId)}/send-image`;
+    const basePath = `/instances/${encodeURIComponent(instanceId)}`;
+
+    if (!normalizedType || normalizedType === 'text') {
+      return `${basePath}/send-text`;
     }
-    return `/instances/${encodeURIComponent(instanceId)}/send-text`;
+
+    const endpointByType: Record<string, string> = {
+      image: 'send-image',
+      audio: 'send-audio',
+      video: 'send-video',
+      document: 'send-document',
+      location: 'send-location',
+      contact: 'send-contact',
+      template: 'send-template',
+    };
+
+    const mappedEndpoint = endpointByType[normalizedType];
+    if (mappedEndpoint) {
+      return `${basePath}/${mappedEndpoint}`;
+    }
+
+    if (hasMedia) {
+      return `${basePath}/send-document`;
+    }
+
+    return `${basePath}/send-text`;
   }
 
   async sendMessage(instanceId: string, payload: {
@@ -419,21 +469,115 @@ class WhatsAppBrokerClient {
     content: string;
     type?: string;
     mediaUrl?: string;
+    caption?: string;
+    mimeType?: string;
+    fileName?: string;
+    ptt?: boolean;
+    location?: LocationPayload;
+    contact?: ContactPayload;
+    template?: TemplatePayload;
   }): Promise<WhatsAppMessageResult> {
     this.ensureConfigured();
 
+    const normalizedType = (payload.type || 'text').toLowerCase();
     const hasMedia = Boolean(payload.mediaUrl);
-    const endpoint = this.resolveSendEndpoint(instanceId, payload.type, hasMedia);
-    const body = endpoint.includes('send-image')
-      ? {
-          to: payload.to,
-          url: payload.mediaUrl,
-          caption: payload.content,
+    const endpoint = this.resolveSendEndpoint(instanceId, normalizedType, hasMedia);
+
+    const body = (() => {
+      switch (normalizedType) {
+        case 'image': {
+          if (!payload.mediaUrl) {
+            throw new Error('Media URL is required for image messages');
+          }
+          return compactObject({
+            to: payload.to,
+            url: payload.mediaUrl,
+            caption: payload.caption ?? payload.content,
+          });
         }
-      : {
-          to: payload.to,
-          message: payload.content,
-        };
+        case 'audio': {
+          if (!payload.mediaUrl) {
+            throw new Error('Media URL is required for audio messages');
+          }
+          return compactObject({
+            to: payload.to,
+            url: payload.mediaUrl,
+            mimetype: payload.mimeType,
+            ptt: payload.ptt ?? false,
+          });
+        }
+        case 'video': {
+          if (!payload.mediaUrl) {
+            throw new Error('Media URL is required for video messages');
+          }
+          return compactObject({
+            to: payload.to,
+            url: payload.mediaUrl,
+            caption: payload.caption ?? payload.content,
+            mimetype: payload.mimeType,
+          });
+        }
+        case 'document': {
+          if (!payload.mediaUrl) {
+            throw new Error('Media URL is required for document messages');
+          }
+          return compactObject({
+            to: payload.to,
+            url: payload.mediaUrl,
+            caption: payload.caption ?? payload.content,
+            fileName: payload.fileName,
+            mimetype: payload.mimeType,
+          });
+        }
+        case 'location': {
+          const location = payload.location;
+          if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
+            throw new Error('Latitude and longitude are required for location messages');
+          }
+          return compactObject({
+            to: payload.to,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            name: location.name ?? payload.content,
+            address: location.address,
+          });
+        }
+        case 'contact': {
+          const contact = payload.contact;
+          if (!contact?.vcard) {
+            throw new Error('vCard data is required for contact messages');
+          }
+          return {
+            to: payload.to,
+            contact: compactObject({
+              displayName: contact.displayName ?? payload.content,
+              vcard: contact.vcard,
+            }),
+          };
+        }
+        case 'template': {
+          const template = payload.template;
+          if (!template?.name) {
+            throw new Error('Template name is required for template messages');
+          }
+          const language = template.language ?? template.languageCode;
+          const components = template.components ?? template.variables ?? template.parameters;
+          return compactObject({
+            to: payload.to,
+            namespace: template.namespace,
+            name: template.name,
+            language,
+            components,
+          });
+        }
+        default: {
+          return {
+            to: payload.to,
+            message: payload.content,
+          };
+        }
+      }
+    })();
 
     try {
       const result = await this.request<Record<string, unknown>>(endpoint, {

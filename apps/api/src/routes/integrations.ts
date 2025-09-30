@@ -191,17 +191,74 @@ router.post(
   param('id').isString(),
   body('to').isString(),
   body('content').isString(),
-  body('type').optional().isIn(['text', 'image', 'audio', 'video', 'document']),
+  body('type')
+    .optional()
+    .isIn(['text', 'image', 'audio', 'video', 'document', 'location', 'contact', 'template']),
   body('mediaUrl').optional().isURL(),
+  body('caption').optional().isString(),
+  body('mimeType').optional().isString(),
+  body('fileName').optional().isString(),
+  body('ptt').optional().isBoolean().toBoolean(),
+  body('location').optional().isObject(),
+  body('location.latitude').optional().isFloat({ min: -90, max: 90 }).toFloat(),
+  body('location.longitude').optional().isFloat({ min: -180, max: 180 }).toFloat(),
+  body('location.name').optional().isString(),
+  body('location.address').optional().isString(),
+  body('contact').optional().isObject(),
+  body('contact.displayName').optional().isString(),
+  body('contact.vcard').optional().isString(),
+  body('template').optional().isObject(),
+  body('template.name').optional().isString(),
+  body('template.namespace').optional().isString(),
+  body('template.language').optional().isString(),
+  body('template.languageCode').optional().isString(),
+  body('template.components').optional().isArray(),
+  body('template.variables').optional().isArray(),
+  body('template.parameters').optional().isArray(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const { to, content, type = 'text', mediaUrl } = req.body as {
+    const {
+      to,
+      content,
+      type = 'text',
+      mediaUrl,
+      caption,
+      mimeType,
+      fileName,
+      ptt,
+      location,
+      contact,
+      template,
+    } = req.body as {
       to: string;
       content: string;
       type?: string;
       mediaUrl?: string;
+      caption?: string;
+      mimeType?: string;
+      fileName?: string;
+      ptt?: boolean;
+      location?: {
+        latitude: number;
+        longitude: number;
+        name?: string;
+        address?: string;
+      };
+      contact?: {
+        displayName?: string;
+        vcard: string;
+      };
+      template?: {
+        name: string;
+        namespace?: string;
+        language?: string;
+        languageCode?: string;
+        components?: unknown[];
+        variables?: unknown[];
+        parameters?: unknown[];
+      };
     };
 
     try {
@@ -210,6 +267,13 @@ router.post(
         content,
         type,
         mediaUrl,
+        caption,
+        mimeType,
+        fileName,
+        ptt,
+        location,
+        contact,
+        template,
       });
 
       res.json({
