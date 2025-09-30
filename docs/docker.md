@@ -47,6 +47,8 @@ RATE_LIMIT_MAX_REQUESTS=100 # opcional (padrão: 100 requisições)
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
 
+> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esse segredo no cabeçalho `x-api-key` ao chamar o broker.
+
 As variáveis `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX_REQUESTS` permitem ajustar a janela e o número máximo de requisições por IP aplicados pelo middleware de rate limiting da API. Valores não numéricos ou inválidos são ignorados e os padrões (15 minutos / 100 requisições) são utilizados. Use `CORS_ALLOWED_ORIGINS` para informar uma lista (separada por vírgula) de domínios extras autorizados a consumir a API via navegador; quando ausente, a aplicação libera apenas os domínios padrão (`FRONTEND_URL`, ambientes locais e os domínios históricos do projeto).
 
 ## 4. Subindo os serviços

@@ -103,6 +103,8 @@ DATABASE_URL="postgresql://user:password@localhost:5432/ticketz"
 
 # WhatsApp
 WHATSAPP_SESSIONS_PATH=./sessions
+WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
+WHATSAPP_BROKER_API_KEY=troque-por-uma-chave-forte
 
 # URA
 URA_API_URL=https://api.ura-provider.com
@@ -111,6 +113,8 @@ URA_API_KEY=your-ura-api-key
 # Logs
 LOG_LEVEL=info
 ```
+
+> **Importante:** o valor de `WHATSAPP_BROKER_API_KEY` deve coincidir com a variável `API_KEY` configurada na Render para o serviço `baileys-acessuswpp`. Esse segredo precisa ser enviado em todas as chamadas para o broker através do cabeçalho `x-api-key`, inclusive por quaisquer serviços que consumam o `WEBHOOK_URL` configurado na instância.
 
 > **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.
@@ -179,6 +183,8 @@ cd apps/web && npm run build
 - ✅ Envio de mensagens e mídias
 - ✅ Webhooks para recebimento
 - ✅ Status de conexão em tempo real
+
+> **Segurança:** defina `WHATSAPP_BROKER_API_KEY` no backend e configure o serviço `baileys-acessuswpp` na Render com a variável `API_KEY` correspondente. Toda chamada ao broker (incluindo webhooks e testes manuais) deve enviar o cabeçalho `x-api-key` com esse valor.
 
 ### ☎️ Sistema URA
 - ✅ Fluxos de atendimento
