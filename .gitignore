@@ -129,3 +129,5 @@ backups/
 # Prisma
 prisma/migrations/
 .env.backup
+**/pnpm-lock.yaml
+!/pnpm-lock.yaml
