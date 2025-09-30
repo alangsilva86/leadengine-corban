@@ -51,8 +51,8 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
               <Ticket className="h-5 w-5" />
             </div>
             <div className="logo-text">
-              <h1>Ticketz</h1>
-              <p>LeadEngine</p>
+              <h1>Lead Engine</h1>
+              <p>Maquina de Vendas</p>
             </div>
           </div>
           <Button

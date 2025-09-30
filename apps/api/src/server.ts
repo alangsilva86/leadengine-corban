@@ -28,10 +28,6 @@ const app: Application = express();
 const server = createServer(app);
 
 const defaultCorsOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://ticketz-leadengine.vercel.app',
-  'https://3000-i5oqgkzbpmyda4vo6tuz9-326b496f.manusvm.computer',
   'https://leadengine-corban.onrender.com',
   'https://leadengine-corban-1.onrender.com',
 ];
