@@ -109,6 +109,7 @@ Caso utilize o Render.com para hospedar a API como serviço web, configure os co
 | --- | --- |
 | Build Command | `pnpm --filter @ticketz/api run build` |
 | Start Command | `pnpm --filter @ticketz/api start` |
+| Node version | Defina `NODE_VERSION=20` nas variáveis de ambiente ou no blueprint |
 
 > ℹ️ O script `build` da API dispara `build:dependencies` (com `pnpm --dir ../.. -r --filter ... run build`) antes do `tsup`. Assim, os diretórios `dist` dos pacotes `@ticketz/{core,shared,storage,integrations}` são gerados antes do `node dist/server.js`, evitando erros de resolução de módulos nas etapas de deploy e runtime.
 
