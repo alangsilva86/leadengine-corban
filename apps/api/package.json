@@ -9,7 +9,7 @@
     "dev": "tsx watch src/server.ts",
     "prestart": "pnpm run build:dependencies && pnpm run db:generate",
     "start": "node dist/server.js",
-    "test": "vitest",
+    "test": "vitest --run",
     "test:watch": "vitest --watch",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",

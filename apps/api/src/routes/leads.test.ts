@@ -2,12 +2,34 @@ import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import type { RequestHandler, Router } from 'express';
-import { LeadStatus, LeadSource } from '@prisma/client';
-
 const leadFindMany = vi.fn();
 const leadCount = vi.fn();
 const leadCreate = vi.fn();
 const contactFindUnique = vi.fn();
+
+const leadStatusMock = {
+  NEW: 'NEW',
+  CONTACTED: 'CONTACTED',
+  QUALIFIED: 'QUALIFIED',
+  CONVERTED: 'CONVERTED',
+  LOST: 'LOST',
+} as const;
+
+const leadSourceMock = {
+  WHATSAPP: 'WHATSAPP',
+  MANUAL: 'MANUAL',
+  PHONE: 'PHONE',
+  EMAIL: 'EMAIL',
+  OTHER: 'OTHER',
+} as const;
+
+vi.mock('@prisma/client', () => ({
+  LeadStatus: leadStatusMock,
+  LeadSource: leadSourceMock,
+}));
+
+let LeadStatus: typeof leadStatusMock = leadStatusMock;
+let LeadSource: typeof leadSourceMock = leadSourceMock;
 
 vi.mock('../lib/prisma', () => ({
   prisma: {
@@ -26,6 +48,7 @@ let leadsRouter: Router;
 let errorHandler: RequestHandler;
 
 beforeAll(async () => {
+  ({ LeadStatus, LeadSource } = await import('@prisma/client'));
   ({ leadsRouter } = await import('./leads'));
   ({ errorHandler } = await import('../middleware/error-handler'));
 });
