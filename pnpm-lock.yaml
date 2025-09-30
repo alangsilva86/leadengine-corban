@@ -7720,7 +7720,7 @@ packages:
     dev: false
 
   github.com/WhiskeySockets/libsignal-node/e81ecfc32eb74951d789ab37f7e341ab66d5fff1:
-    resolution: {commit: e81ecfc32eb74951d789ab37f7e341ab66d5fff1, repo: git+ssh://git@github.com/WhiskeySockets/libsignal-node.git, type: git}
+    resolution: {commit: e81ecfc32eb74951d789ab37f7e341ab66d5fff1, repo: git+https://github.com/WhiskeySockets/libsignal-node.git, type: git}
     name: '@whiskeysockets/libsignal-node'
     version: 2.0.1
     dependencies:
@@ -7729,7 +7729,7 @@ packages:
     dev: false
 
   github.com/whiskeysockets/eslint-config/299e8389baf62f9aa3034de18ff0d62cc0a5e838(eslint@9.36.0)(typescript@5.9.2):
-    resolution: {commit: 299e8389baf62f9aa3034de18ff0d62cc0a5e838, repo: git+ssh://git@github.com/whiskeysockets/eslint-config.git, type: git}
+    resolution: {commit: 299e8389baf62f9aa3034de18ff0d62cc0a5e838, repo: git+https://github.com/whiskeysockets/eslint-config.git, type: git}
     id: github.com/whiskeysockets/eslint-config/299e8389baf62f9aa3034de18ff0d62cc0a5e838
     name: '@whiskeysockets/eslint-config'
     version: 1.0.0
