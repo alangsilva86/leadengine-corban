@@ -21,7 +21,9 @@ type MessageRecord = Message;
 const ticketsByTenant = new Map<string, Map<string, TicketRecord>>();
 const messagesByTenant = new Map<string, Map<string, MessageRecord>>();
 
-const defaultPagination = (pagination: Pagination): Required<Pagination> => ({
+const defaultPagination = (
+  pagination: Pagination
+): Pagination & Required<Pick<Pagination, 'page' | 'limit' | 'sortOrder'>> => ({
   page: pagination.page ?? 1,
   limit: pagination.limit ?? 20,
   sortBy: pagination.sortBy,
