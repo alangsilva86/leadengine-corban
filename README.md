@@ -39,7 +39,7 @@ ticketz-leadengine/
 ### Stack Tecnológica
 
 #### Backend
-- **Node.js 18+** com TypeScript
+- **Node.js 20+** com TypeScript
 - **Express.js** para API REST
 - **Socket.IO** para tempo real
 - **Prisma** para ORM (preparado)
@@ -61,7 +61,7 @@ ticketz-leadengine/
 ## 🚀 Instalação e Configuração
 
 ### Pré-requisitos
-- Node.js 18+
+- Node.js 20+
 - pnpm (recomendado) ou npm
 - Git
 

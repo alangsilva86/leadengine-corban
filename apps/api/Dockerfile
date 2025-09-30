@@ -3,7 +3,7 @@
 # ============================================================================
 
 # Stage 1: Base com dependências do sistema
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 # Instalar dependências do sistema necessárias
 RUN apk add --no-cache \

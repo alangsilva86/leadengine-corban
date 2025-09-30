@@ -1,5 +1,5 @@
 # Stage 1: install dependencies and build everything
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN pnpm --filter ./apps/api --prod deploy /app/deploy
 WORKDIR /app/deploy
 
 # Stage 3: runtime image
-FROM node:18-alpine AS runtime
+FROM node:20-alpine AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
