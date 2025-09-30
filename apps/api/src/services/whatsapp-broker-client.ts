@@ -281,11 +281,18 @@ class WhatsAppBrokerClient {
     const normalizedName = `${tenantPrefix}${this.slugify(args.name)}`.slice(0, 60);
 
     try {
+      const webhookUrl = args.webhookUrl?.trim();
+      const requestBody: Record<string, unknown> = {
+        name: normalizedName,
+      };
+
+      if (webhookUrl) {
+        requestBody.webhookUrl = webhookUrl;
+      }
+
       const payload = await this.request<RawInstance>(`/instances`, {
         method: 'POST',
-        body: JSON.stringify({
-          name: normalizedName,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       return (
