@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest",
+    "test": "vitest --passWithNoTests",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
