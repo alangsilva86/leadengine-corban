@@ -246,12 +246,13 @@ GET    /api/lead-engine/agreements/available
 
 #### WhatsApp
 ```
-GET    /api/integrations/whatsapp/instances
-POST   /api/integrations/whatsapp/instances
-POST   /api/integrations/whatsapp/instances/:id/start
-POST   /api/integrations/whatsapp/instances/:id/stop
-GET    /api/integrations/whatsapp/instances/:id/qr
-POST   /api/integrations/whatsapp/instances/:id/send
+POST   /api/integrations/whatsapp/session/connect
+POST   /api/integrations/whatsapp/session/logout
+GET    /api/integrations/whatsapp/session/status
+POST   /api/integrations/whatsapp/messages
+POST   /api/integrations/whatsapp/polls
+GET    /api/integrations/whatsapp/events
+POST   /api/integrations/whatsapp/events/ack
 ```
 
 #### URA
