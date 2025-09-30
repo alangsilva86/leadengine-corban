@@ -92,12 +92,19 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
 
-    await whatsappBrokerClient.connectInstance(instanceId);
+    try {
+      await whatsappBrokerClient.connectInstance(instanceId);
 
-    res.json({
-      success: true,
-      message: 'Instance started successfully',
-    });
+      res.json({
+        success: true,
+        message: 'Instance started successfully',
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
@@ -110,12 +117,19 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
 
-    await whatsappBrokerClient.disconnectInstance(instanceId);
+    try {
+      await whatsappBrokerClient.disconnectInstance(instanceId);
 
-    res.json({
-      success: true,
-      message: 'Instance stopped successfully',
-    });
+      res.json({
+        success: true,
+        message: 'Instance stopped successfully',
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
@@ -128,12 +142,19 @@ router.delete(
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
 
-    await whatsappBrokerClient.deleteInstance(instanceId);
+    try {
+      await whatsappBrokerClient.deleteInstance(instanceId);
 
-    res.json({
-      success: true,
-      message: 'Instance deleted successfully',
-    });
+      res.json({
+        success: true,
+        message: 'Instance deleted successfully',
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
   })
 );
 
