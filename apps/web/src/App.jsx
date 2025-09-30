@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import Layout from './components/Layout.jsx';
-import Dashboard from './components/Dashboard.jsx';
 import UnderConstruction from './components/UnderConstruction.jsx';
-import AgreementGrid from './components/AgreementGrid.jsx';
-import WhatsAppConnect from './components/WhatsAppConnect.jsx';
-import LeadInbox from './components/LeadInbox.jsx';
-import Reports from './components/Reports.jsx';
-import Settings from './components/Settings.jsx';
 import './App.css';
+
+const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
+const AgreementGrid = lazy(() => import('./components/AgreementGrid.jsx'));
+const WhatsAppConnect = lazy(() => import('./components/WhatsAppConnect.jsx'));
+const LeadInbox = lazy(() => import('./components/LeadInbox.jsx'));
+const Reports = lazy(() => import('./components/Reports.jsx'));
+const Settings = lazy(() => import('./components/Settings.jsx'));
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
@@ -17,6 +18,12 @@ const journeyStages = [
   { id: 'whatsapp', label: 'WhatsApp' },
   { id: 'inbox', label: 'Inbox' },
 ];
+
+const PageFallback = () => (
+  <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">
+    Carregando módulo...
+  </div>
+);
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -153,7 +160,9 @@ function App() {
         activeCampaign,
       }}
     >
-      {renderPage()}
+      <Suspense fallback={<PageFallback />}>
+        {renderPage()}
+      </Suspense>
     </Layout>
   );
 }
