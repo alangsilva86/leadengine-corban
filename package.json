@@ -43,6 +43,11 @@
     "pnpm": ">=8.0.0"
   },
   "packageManager": "pnpm@8.15.0",
+  "pnpm": {
+    "overrides": {
+      "libsignal": "npm:libsignal@1.0.7"
+    }
+  },
   "keywords": [
     "tickets",
     "leads",

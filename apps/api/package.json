@@ -4,19 +4,10 @@
   "description": "API REST para o sistema Ticketz-LeadEngine",
   "main": "dist/server.js",
   "scripts": {
-
-    "build:dependencies": "pnpm --dir ../.. -r --filter @ticketz/core --filter @ticketz/shared --filter @ticketz/storage --filter @ticketz/integrations run build",
+    "build:dependencies": "pnpm --filter @ticketz/core --filter @ticketz/shared --filter @ticketz/storage --filter @ticketz/integrations build",
     "build": "pnpm run build:dependencies && pnpm run db:generate && tsup",
     "dev": "tsx watch src/server.ts",
     "prestart": "pnpm run build:dependencies && pnpm run db:generate",
-    "dev": "tsx watch src/server.ts",
-    "prestart": "pnpm run build:dependencies && pnpm run db:generate",
-
-    "build:dependencies": "pnpm --filter @ticketz/core --filter @ticketz/shared --filter @ticketz/storage --filter @ticketz/integrations build",
-    "build": "pnpm run build:dependencies && prisma generate --schema=../../prisma/schema.prisma && tsup",
-    "dev": "tsx watch src/server.ts",
-    "prestart": "pnpm run build:dependencies",
-
     "start": "node dist/server.js",
     "test": "vitest",
     "test:watch": "vitest --watch",
