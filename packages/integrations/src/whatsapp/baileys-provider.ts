@@ -4,7 +4,7 @@ import makeWASocket, {
   type WAMessage,
   type WASocket,
   type ConnectionState,
-} from '@whiskeysockets/baileys';
+} from 'baileys';
 import { Boom } from '@hapi/boom';
 import type { MessageProvider } from '../types/message-provider';
 import { EventEmitter } from 'events';
