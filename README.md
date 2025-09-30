@@ -200,8 +200,10 @@ cd apps/web && npm run build
 #### Autenticação
 ```
 POST /api/auth/login
-POST /api/auth/register
-POST /api/auth/refresh
+POST /api/auth/register *(requer usuário autenticado com permissão de administração)*
+GET  /api/auth/me
+PUT  /api/auth/profile
+PUT  /api/auth/password
 POST /api/auth/logout
 ```
 
@@ -394,7 +396,7 @@ tail -f apps/api/logs/ura.log
 
 ## 🔒 Segurança
 
-- 🔐 **JWT Authentication** com refresh tokens
+- 🔐 **JWT Authentication** com controle de permissões por tenant
 - 🛡️ **Rate Limiting** para APIs
 - 🔒 **CORS** configurado
 - 🛡️ **Helmet** para headers de segurança
