@@ -1,14 +1,42 @@
 import express from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CampaignStatus, resetCampaignStore } from '@ticketz/storage';
 
-import { leadEngineRouter } from './lead-engine';
 import { errorHandler } from '../middleware/error-handler';
 
-const startTestServer = () =>
-  new Promise<{ server: Server; url: string }>((resolve) => {
+const originalLeadEngineEnv = {
+  baseUrl: process.env.LEAD_ENGINE_BROKER_BASE_URL,
+  basicToken: process.env.LEAD_ENGINE_BASIC_TOKEN,
+};
+
+const ensureLeadEngineEnv = () => {
+  process.env.LEAD_ENGINE_BROKER_BASE_URL =
+    process.env.LEAD_ENGINE_BROKER_BASE_URL || 'https://lead-engine.test';
+  process.env.LEAD_ENGINE_BASIC_TOKEN = process.env.LEAD_ENGINE_BASIC_TOKEN || 'basic-token';
+};
+
+const restoreLeadEngineEnv = () => {
+  if (typeof originalLeadEngineEnv.baseUrl === 'string') {
+    process.env.LEAD_ENGINE_BROKER_BASE_URL = originalLeadEngineEnv.baseUrl;
+  } else {
+    delete process.env.LEAD_ENGINE_BROKER_BASE_URL;
+  }
+
+  if (typeof originalLeadEngineEnv.basicToken === 'string') {
+    process.env.LEAD_ENGINE_BASIC_TOKEN = originalLeadEngineEnv.basicToken;
+  } else {
+    delete process.env.LEAD_ENGINE_BASIC_TOKEN;
+  }
+};
+
+const startTestServer = async () => {
+  vi.resetModules();
+  ensureLeadEngineEnv();
+  const { leadEngineRouter } = await import('./lead-engine');
+
+  return new Promise<{ server: Server; url: string }>((resolve) => {
     const app = express();
     app.use(express.json());
     app.use('/api/lead-engine', leadEngineRouter);
@@ -19,6 +47,7 @@ const startTestServer = () =>
       resolve({ server, url: `http://127.0.0.1:${port}` });
     });
   });
+};
 
 const stopTestServer = (server: Server) =>
   new Promise<void>((resolve, reject) => {
@@ -34,6 +63,10 @@ const stopTestServer = (server: Server) =>
 describe('Lead Engine campaigns routes', () => {
   beforeEach(() => {
     resetCampaignStore();
+  });
+
+  afterEach(() => {
+    restoreLeadEngineEnv();
   });
 
   it('creates or reactivates a campaign', async () => {
