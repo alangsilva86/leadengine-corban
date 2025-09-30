@@ -1,0 +1,133 @@
+import { EventEmitter } from 'node:events';
+import { logger } from '../config/logger';
+
+export type WhatsAppBrokerEventType = 'MESSAGE_INBOUND' | 'MESSAGE_OUTBOUND' | 'POLL_CHOICE';
+
+export interface WhatsAppBrokerEvent {
+  id: string;
+  type: WhatsAppBrokerEventType;
+  payload: unknown;
+  tenantId?: string;
+  sessionId?: string;
+  timestamp?: string;
+  cursor?: string | null;
+}
+
+interface NormalizedEventInput {
+  id?: unknown;
+  type?: unknown;
+  payload?: unknown;
+  tenantId?: unknown;
+  sessionId?: unknown;
+  timestamp?: unknown;
+  cursor?: unknown;
+}
+
+const eventEmitter = new EventEmitter();
+const listeners = new Map<WhatsAppBrokerEventType | '*', Set<(event: WhatsAppBrokerEvent) => unknown>>();
+
+let pendingEvents = 0;
+let tail = Promise.resolve();
+
+const VALID_EVENT_TYPES: WhatsAppBrokerEventType[] = [
+  'MESSAGE_INBOUND',
+  'MESSAGE_OUTBOUND',
+  'POLL_CHOICE',
+];
+
+const ensureListenerBucket = (type: WhatsAppBrokerEventType | '*') => {
+  let bucket = listeners.get(type);
+  if (!bucket) {
+    bucket = new Set();
+    listeners.set(type, bucket);
+  }
+  return bucket;
+};
+
+const dispatchEvent = async (event: WhatsAppBrokerEvent) => {
+  const handlers = [
+    ...ensureListenerBucket(event.type),
+    ...ensureListenerBucket('*'),
+  ];
+
+  if (!handlers.length) {
+    eventEmitter.emit('event', event);
+    return;
+  }
+
+  for (const handler of handlers) {
+    try {
+      await handler(event);
+    } catch (error) {
+      logger.error('Failed to process WhatsApp event handler', { error, event, handler });
+    }
+  }
+};
+
+export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): WhatsAppBrokerEvent | null => {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const id = typeof input.id === 'string' && input.id.trim().length > 0 ? input.id.trim() : null;
+  if (!id) {
+    return null;
+  }
+
+  const rawType = typeof input.type === 'string' ? input.type.trim().toUpperCase() : '';
+  if (!VALID_EVENT_TYPES.includes(rawType as WhatsAppBrokerEventType)) {
+    return null;
+  }
+
+  const payload = 'payload' in input ? input.payload : null;
+  const tenantId = typeof input.tenantId === 'string' && input.tenantId.trim().length > 0 ? input.tenantId.trim() : undefined;
+  const sessionId = typeof input.sessionId === 'string' && input.sessionId.trim().length > 0 ? input.sessionId.trim() : undefined;
+  const timestamp = typeof input.timestamp === 'string' && input.timestamp.trim().length > 0 ? input.timestamp.trim() : undefined;
+  const cursor = typeof input.cursor === 'string' && input.cursor.trim().length > 0 ? input.cursor.trim() : null;
+
+  return {
+    id,
+    type: rawType as WhatsAppBrokerEventType,
+    payload,
+    tenantId,
+    sessionId,
+    timestamp,
+    cursor,
+  };
+};
+
+export const enqueueWhatsAppBrokerEvents = (events: WhatsAppBrokerEvent[]): void => {
+  events.forEach((event) => {
+    pendingEvents += 1;
+    tail = tail
+      .then(async () => {
+        try {
+          await dispatchEvent(event);
+          eventEmitter.emit('processed', event);
+        } catch (error) {
+          logger.error('Unexpected WhatsApp event queue failure', { error, event });
+        }
+      })
+      .finally(() => {
+        pendingEvents = Math.max(0, pendingEvents - 1);
+      });
+  });
+};
+
+export const onWhatsAppBrokerEvent = (
+  type: WhatsAppBrokerEventType | '*',
+  handler: (event: WhatsAppBrokerEvent) => unknown
+): (() => void) => {
+  const bucket = ensureListenerBucket(type);
+  bucket.add(handler);
+
+  return () => {
+    bucket.delete(handler);
+  };
+};
+
+export const getWhatsAppEventQueueStats = () => ({
+  pending: pendingEvents,
+});
+
+export { eventEmitter as whatsappEventQueueEmitter };

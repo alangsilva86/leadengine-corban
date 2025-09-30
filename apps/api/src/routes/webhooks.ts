@@ -1,6 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../middleware/error-handler';
 import { logger } from '../config/logger';
+import {
+  enqueueWhatsAppBrokerEvents,
+  normalizeWhatsAppBrokerEvent,
+  type WhatsAppBrokerEvent,
+} from '../workers/whatsapp-event-queue';
 
 const router: Router = Router();
 
@@ -9,8 +14,30 @@ router.post(
   '/whatsapp',
   asyncHandler(async (req: Request, res: Response) => {
     const payload = req.body;
-    
+
     logger.info('WhatsApp webhook received', { payload });
+
+    const rawEvents = Array.isArray((payload as { events?: unknown[] })?.events)
+      ? (payload as { events: unknown[] }).events
+      : [];
+
+    if (rawEvents.length > 0) {
+      const normalizedEvents = rawEvents
+        .map((event) => normalizeWhatsAppBrokerEvent(event as Record<string, unknown>))
+        .filter((event): event is WhatsAppBrokerEvent => Boolean(event));
+
+      if (normalizedEvents.length > 0) {
+        enqueueWhatsAppBrokerEvents(normalizedEvents);
+        logger.info('Queued WhatsApp webhook events', {
+          received: rawEvents.length,
+          queued: normalizedEvents.length,
+        });
+      } else {
+        logger.warn('WhatsApp webhook payload did not contain supported events', {
+          received: rawEvents.length,
+        });
+      }
+    }
 
     // TODO: Processar webhook do WhatsApp
     // - Verificar assinatura

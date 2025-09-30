@@ -19,6 +19,7 @@ import { integrationsRouter } from './routes/integrations';
 import { leadEngineRouter } from './routes/lead-engine';
 import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
+import { getWhatsAppEventPollerMetrics, whatsappEventPoller } from './workers/whatsapp-event-poller';
 
 if (process.env.NODE_ENV !== 'production') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -150,6 +151,7 @@ app.get('/health', (_req, res) => {
     uptime: process.uptime(),
     environment: NODE_ENV,
     storage: 'in-memory',
+    whatsappEventPoller: getWhatsAppEventPollerMetrics(),
   };
 
   res.json({ status: 'ok', ...details });
@@ -236,11 +238,26 @@ server.listen(PORT, () => {
   logger.info(`🚀 Server running on port ${PORT} in ${NODE_ENV} mode`);
   logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
+
+  const pollerDisabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
+  const isTestEnv = NODE_ENV === 'test';
+
+  if (pollerDisabled) {
+    logger.info('WhatsApp event poller is disabled via configuration');
+  } else if (isTestEnv) {
+    logger.info('WhatsApp event poller skipped in test environment');
+  } else {
+    whatsappEventPoller.start();
+    logger.info('WhatsApp event poller started');
+  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  whatsappEventPoller.stop().catch((error) => {
+    logger.warn('Failed to stop WhatsApp event poller on SIGTERM', { error });
+  });
   server.close(() => {
     logger.info('Process terminated');
     process.exit(0);
@@ -249,6 +266,9 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully');
+  whatsappEventPoller.stop().catch((error) => {
+    logger.warn('Failed to stop WhatsApp event poller on SIGINT', { error });
+  });
   server.close(() => {
     logger.info('Process terminated');
     process.exit(0);
