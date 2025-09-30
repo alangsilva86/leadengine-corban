@@ -1,260 +1,203 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RequestInit } from 'undici';
 
-const originalBrokerUrl = process.env.WHATSAPP_BROKER_URL;
-const originalBrokerKey = process.env.WHATSAPP_BROKER_API_KEY;
+const fetchMock = vi.fn<Promise<unknown>, [string, RequestInit?]>();
 
-describe('WhatsAppBrokerClient sendMessage', () => {
+vi.mock('undici', () => ({
+  fetch: fetchMock,
+}));
+
+const createJsonResponse = (status: number, body: unknown = {}): Response => {
+  const jsonBody = status === 204 ? undefined : body;
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => jsonBody,
+    text: async () => (jsonBody === undefined ? '' : JSON.stringify(jsonBody)),
+  } as Response;
+};
+
+describe('WhatsAppBrokerClient (minimal broker)', () => {
+  const originalEnv = { ...process.env };
+
   const loadClient = async () => {
     const module = await import('./whatsapp-broker-client');
     return module.whatsappBrokerClient;
   };
 
-  const mockRequest = (client: unknown) =>
-    vi
-      .spyOn(client as unknown as { request: (path: string, init: unknown) => Promise<unknown> }, 'request')
-      .mockResolvedValue({ id: '123', status: 'sent' });
-
-  const restoreEnv = () => {
-    if (originalBrokerUrl === undefined) {
-      delete process.env.WHATSAPP_BROKER_URL;
-    } else {
-      process.env.WHATSAPP_BROKER_URL = originalBrokerUrl;
-    }
-
-    if (originalBrokerKey === undefined) {
-      delete process.env.WHATSAPP_BROKER_API_KEY;
-    } else {
-      process.env.WHATSAPP_BROKER_API_KEY = originalBrokerKey;
-    }
-  };
-
   beforeEach(() => {
     vi.resetModules();
+    fetchMock.mockReset();
+
+    process.env.WHATSAPP_MODE = 'http';
     process.env.WHATSAPP_BROKER_URL = 'https://broker.example';
-    process.env.WHATSAPP_BROKER_API_KEY = 'secret';
+    process.env.WHATSAPP_BROKER_API_KEY = 'broker-key';
+    process.env.WHATSAPP_WEBHOOK_API_KEY = 'webhook-key';
+    delete process.env.WHATSAPP_BROKER_TIMEOUT_MS;
   });
 
   afterEach(() => {
-    vi.resetAllMocks();
-    restoreEnv();
+    fetchMock.mockReset();
+    Object.keys(process.env).forEach((key) => {
+      if (!(key in originalEnv)) {
+        delete process.env[key];
+      }
+    });
+    Object.assign(process.env, originalEnv);
+    vi.useRealTimers();
   });
 
-  it('sends text messages', async () => {
+  it('connectSession sends payload with broker API key', async () => {
+    fetchMock.mockResolvedValueOnce(createJsonResponse(200));
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
-    await client.sendMessage('instance-1', {
-      to: '5511999999999',
-      content: 'Hello world',
-      type: 'TEXT',
-    });
+    await client.connectSession('session-1', { webhookUrl: 'https://hooks.example', forceReopen: true });
 
-    expect(requestSpy).toHaveBeenCalledTimes(1);
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-1/send-text');
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toEqual({ to: '5511999999999', message: 'Hello world' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/session/connect');
+    expect(init?.method).toBe('POST');
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({ sessionId: 'session-1', webhookUrl: 'https://hooks.example', forceReopen: true });
+    const headers = init?.headers as Headers;
+    expect(headers.get('x-api-key')).toBe('broker-key');
+    expect(headers.get('content-type')).toBe('application/json');
   });
 
-  it('sends image messages with caption', async () => {
+  it('sendText posts message with broker API key header', async () => {
+    fetchMock.mockResolvedValueOnce(createJsonResponse(200, { id: 'msg-1' }));
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
-    await client.sendMessage('instance-2', {
-      to: '5511888888888',
-      content: 'Check this image',
-      type: 'image',
-      mediaUrl: 'https://cdn.example.com/image.jpg',
-      caption: 'Custom caption',
-    });
+    await client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
 
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-2/send-image');
-    const body = JSON.parse((init as { body: string }).body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/messages');
+    expect(init?.method).toBe('POST');
+    const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
-      to: '5511888888888',
-      url: 'https://cdn.example.com/image.jpg',
-      caption: 'Custom caption',
+      sessionId: 'session-1',
+      to: '5511987654321',
+      message: 'Hello',
+      type: 'text',
     });
+    const headers = init?.headers as Headers;
+    expect(headers.get('x-api-key')).toBe('broker-key');
   });
 
-  it('sends audio messages with mimetype and ptt flag', async () => {
+  it('createPoll posts payload to broker', async () => {
+    fetchMock.mockResolvedValueOnce(createJsonResponse(201, { id: 'poll-1' }));
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
-    await client.sendMessage('instance-3', {
-      to: '5511777777777',
-      content: 'Audio note',
-      type: 'audio',
-      mediaUrl: 'https://cdn.example.com/audio.ogg',
-      mimeType: 'audio/ogg',
-      ptt: true,
+    await client.createPoll({
+      sessionId: 'session-1',
+      to: '5511987654321',
+      question: 'Qual opção?',
+      options: ['A', 'B', 'C'],
+      allowMultipleAnswers: true,
     });
 
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-3/send-audio');
-    const body = JSON.parse((init as { body: string }).body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/polls');
+    const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
-      to: '5511777777777',
-      url: 'https://cdn.example.com/audio.ogg',
-      mimetype: 'audio/ogg',
-      ptt: true,
+      sessionId: 'session-1',
+      to: '5511987654321',
+      question: 'Qual opção?',
+      options: ['A', 'B', 'C'],
+      allowMultipleAnswers: true,
     });
   });
 
-  it('sends video messages with caption and mimetype', async () => {
+  it('fetchEvents uses webhook API key and query params', async () => {
+    fetchMock.mockResolvedValueOnce(createJsonResponse(200, { events: [] }));
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
-    await client.sendMessage('instance-4', {
-      to: '5511666666666',
-      content: 'Video clip',
-      type: 'VIDEO',
-      mediaUrl: 'https://cdn.example.com/video.mp4',
-      caption: 'Watch this',
-      mimeType: 'video/mp4',
-    });
+    await client.fetchEvents({ limit: 10, cursor: 'abc' });
 
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-4/send-video');
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toEqual({
-      to: '5511666666666',
-      url: 'https://cdn.example.com/video.mp4',
-      caption: 'Watch this',
-      mimetype: 'video/mp4',
-    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/events?limit=10&cursor=abc');
+    expect(init?.method).toBe('GET');
+    const headers = init?.headers as Headers;
+    expect(headers.get('x-api-key')).toBe('webhook-key');
   });
 
-  it('sends document messages with filename', async () => {
+  it('ackEvents posts ids with webhook api key', async () => {
+    fetchMock.mockResolvedValueOnce(createJsonResponse(204));
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
-    await client.sendMessage('instance-5', {
-      to: '5511555555555',
-      content: 'See attached document',
-      type: 'document',
-      mediaUrl: 'https://cdn.example.com/report.pdf',
-      mimeType: 'application/pdf',
-      fileName: 'report.pdf',
-    });
+    await client.ackEvents(['evt-1', 'evt-2']);
 
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-5/send-document');
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toEqual({
-      to: '5511555555555',
-      url: 'https://cdn.example.com/report.pdf',
-      caption: 'See attached document',
-      fileName: 'report.pdf',
-      mimetype: 'application/pdf',
-    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/events/ack');
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({ eventIds: ['evt-1', 'evt-2'] });
+    const headers = init?.headers as Headers;
+    expect(headers.get('x-api-key')).toBe('webhook-key');
   });
 
-  it('sends location messages using coordinates', async () => {
+  it('does not call ackEvents when ids list is empty', async () => {
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
-    await client.sendMessage('instance-6', {
-      to: '5511444444444',
-      content: 'Office location',
-      type: 'location',
-      location: {
-        latitude: -23.561684,
-        longitude: -46.625378,
-        name: 'Headquarters',
-        address: 'Av. Paulista, 1000',
-      },
-    });
+    await client.ackEvents([]);
 
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-6/send-location');
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toEqual({
-      to: '5511444444444',
-      latitude: -23.561684,
-      longitude: -46.625378,
-      name: 'Headquarters',
-      address: 'Av. Paulista, 1000',
-    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('sends contact messages with vcard data', async () => {
+  it('throws WhatsAppBrokerError with broker code for failed requests', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(429, { error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too fast' } })
+    );
     const client = await loadClient();
-    const requestSpy = mockRequest(client);
-
-    await client.sendMessage('instance-7', {
-      to: '5511333333333',
-      content: 'Contact info',
-      type: 'contact',
-      contact: {
-        displayName: 'Support',
-        vcard: 'BEGIN:VCARD\nFN:Support\nTEL;TYPE=CELL:+5511333333333\nEND:VCARD',
-      },
-    });
-
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-7/send-contact');
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toEqual({
-      to: '5511333333333',
-      contact: {
-        displayName: 'Support',
-        vcard: 'BEGIN:VCARD\nFN:Support\nTEL;TYPE=CELL:+5511333333333\nEND:VCARD',
-      },
-    });
-  });
-
-  it('sends template messages with namespace and components', async () => {
-    const client = await loadClient();
-    const requestSpy = mockRequest(client);
-
-    await client.sendMessage('instance-8', {
-      to: '5511222222222',
-      content: 'Template trigger',
-      type: 'template',
-      template: {
-        name: 'order_update',
-        namespace: 'ecommerce',
-        languageCode: 'pt_BR',
-        components: [
-          {
-            type: 'body',
-            parameters: [{ type: 'text', text: '12345' }],
-          },
-        ],
-      },
-    });
-
-    const [endpoint, init] = requestSpy.mock.calls[0];
-    expect(endpoint).toBe('/instances/instance-8/send-template');
-    const body = JSON.parse((init as { body: string }).body);
-    expect(body).toEqual({
-      to: '5511222222222',
-      namespace: 'ecommerce',
-      name: 'order_update',
-      language: 'pt_BR',
-      components: [
-        {
-          type: 'body',
-          parameters: [{ type: 'text', text: '12345' }],
-        },
-      ],
-    });
-  });
-
-  it('validates required media for audio messages', async () => {
-    const client = await loadClient();
-    const requestSpy = mockRequest(client);
 
     await expect(
-      client.sendMessage('instance-9', {
-        to: '5511111111111',
-        content: 'Missing media',
-        type: 'audio',
-      } as unknown as Parameters<typeof client.sendMessage>[1])
-    ).rejects.toThrow('Media URL is required for audio messages');
+      client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' })
+    ).rejects.toMatchObject({
+      name: 'WhatsAppBrokerError',
+      code: 'RATE_LIMIT_EXCEEDED',
+      status: 429,
+      message: 'Too fast',
+    });
+  });
 
-    expect(requestSpy).not.toHaveBeenCalled();
+  it('throws WhatsAppBrokerNotConfiguredError on unauthorized', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(403, { error: { message: 'Forbidden' } })
+    );
+    const client = await loadClient();
+
+    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'WhatsAppBrokerNotConfiguredError',
+      message: 'Forbidden',
+    });
+  });
+
+  it('aborts requests after the configured timeout', async () => {
+    vi.useFakeTimers();
+    process.env.WHATSAPP_BROKER_TIMEOUT_MS = '50';
+
+    fetchMock.mockImplementationOnce((_, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        signal?.addEventListener('abort', () => {
+          const error = new Error('Aborted');
+          error.name = 'AbortError';
+          reject(error);
+        });
+      });
+    });
+
+    const client = await loadClient();
+    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    const expectation = expect(promise).rejects.toMatchObject({
+      code: 'REQUEST_TIMEOUT',
+      name: 'WhatsAppBrokerError',
+    });
+
+    await vi.advanceTimersByTimeAsync(60);
+
+    await expectation;
   });
 });

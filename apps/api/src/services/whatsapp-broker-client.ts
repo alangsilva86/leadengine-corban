@@ -8,6 +8,18 @@ export class WhatsAppBrokerNotConfiguredError extends Error {
   }
 }
 
+export class WhatsAppBrokerError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = 'WhatsAppBrokerError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
 export interface WhatsAppInstance {
   id: string;
   tenantId: string;
@@ -28,6 +40,7 @@ export interface WhatsAppQrCode {
   qrCode: string;
   expiresAt: string;
 }
+
 export interface WhatsAppStatus {
   status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
   connected: boolean;
@@ -39,35 +52,7 @@ export interface WhatsAppMessageResult {
   timestamp?: string;
 }
 
-type LocationPayload = {
-  latitude: number;
-  longitude: number;
-  name?: string;
-  address?: string;
-};
-
-type ContactPayload = {
-  displayName?: string;
-  vcard: string;
-};
-
-type TemplatePayload = {
-  name: string;
-  namespace?: string;
-  language?: string;
-  languageCode?: string;
-  components?: unknown;
-  variables?: unknown;
-  parameters?: unknown;
-};
-
-interface RawInstance {
-  id?: string;
-  name?: string;
-  connected?: boolean;
-  user?: { id?: string; name?: string } | null;
-  counters?: { sent?: number; status?: Record<string, unknown> };
-}
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 const FALLBACK_QR =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -83,90 +68,80 @@ const fallbackInstance = (tenantId: string): WhatsAppInstance => ({
   connected: true,
 });
 
-const compactObject = <T extends Record<string, unknown>>(input: T): T => {
+type BrokerRequestOptions = {
+  apiKey?: string;
+  timeoutMs?: number;
+  searchParams?: Record<string, string | number | undefined>;
+};
+
+const compactObject = <T extends Record<string, unknown>>(value: T): T => {
   return Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined)
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
   ) as T;
 };
 
 class WhatsAppBrokerClient {
-  private readonly baseUrl = process.env.WHATSAPP_BROKER_URL?.replace(/\/$/, '') || '';
-  private readonly apiKey = process.env.WHATSAPP_BROKER_API_KEY || '';
+  private get mode(): string {
+    return (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
+  }
 
-  private get isConfigured() {
-    return this.baseUrl.length > 0 && this.apiKey.length > 0;
+  private get baseUrl(): string {
+    return process.env.WHATSAPP_BROKER_URL?.replace(/\/$/, '') || '';
+  }
+
+  private get brokerApiKey(): string {
+    return process.env.WHATSAPP_BROKER_API_KEY || '';
+  }
+
+  private get webhookApiKey(): string {
+    return process.env.WHATSAPP_WEBHOOK_API_KEY || this.brokerApiKey;
+  }
+
+  private get timeoutMs(): number {
+    const parsed = Number.parseInt(process.env.WHATSAPP_BROKER_TIMEOUT_MS || '', 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+    return DEFAULT_TIMEOUT_MS;
   }
 
   private ensureConfigured(): void {
-    if (!this.isConfigured) {
+    if (this.mode && this.mode !== 'http') {
+      throw new WhatsAppBrokerNotConfiguredError(
+        'WhatsApp broker only available when WHATSAPP_MODE is set to "http"'
+      );
+    }
+
+    if (!this.baseUrl || !this.brokerApiKey) {
       throw new WhatsAppBrokerNotConfiguredError();
     }
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    if (!this.isConfigured) {
-      throw new WhatsAppBrokerNotConfiguredError();
+  private buildUrl(path: string, searchParams?: BrokerRequestOptions['searchParams']): string {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const url = new URL(`${this.baseUrl}${normalizedPath}`);
+
+    if (searchParams) {
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && `${value}`.length > 0) {
+          url.searchParams.set(key, String(value));
+        }
+      });
     }
 
-    const url = `${this.baseUrl}${path}`;
-    const headers = new Headers(init?.headers as HeadersInit | undefined);
-    headers.set('x-api-key', this.apiKey);
-    if (init?.body && !headers.has('content-type')) {
-      headers.set('content-type', 'application/json');
-    }
-
-    const response = await fetch(url, {
-      ...init,
-      headers,
-    });
-
-    if (!response.ok) {
-      const rawText = await response.text().catch(() => response.statusText);
-      const normalizedMessage = this.extractErrorMessage(rawText);
-
-      if (response.status === 401 || response.status === 403) {
-        throw new WhatsAppBrokerNotConfiguredError(
-          normalizedMessage || 'WhatsApp broker rejected credentials'
-        );
-      }
-
-      throw new Error(`Broker request failed (${response.status}): ${normalizedMessage}`);
-    }
-
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    return (await response.json()) as T;
+    return url.toString();
   }
 
-  private async requestBuffer(path: string): Promise<Buffer> {
-    if (!this.isConfigured) {
-      throw new WhatsAppBrokerNotConfiguredError();
-    }
+  private createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort(new Error('Request timed out'));
+    }, timeoutMs);
 
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      headers: {
-        'x-api-key': this.apiKey,
-      },
-    });
-
-    if (!response.ok) {
-      const rawText = await response.text().catch(() => response.statusText);
-      const normalizedMessage = this.extractErrorMessage(rawText);
-
-      if (response.status === 401 || response.status === 403) {
-        throw new WhatsAppBrokerNotConfiguredError(
-          normalizedMessage || 'WhatsApp broker rejected credentials'
-        );
-      }
-
-      throw new Error(`Broker request failed (${response.status}): ${normalizedMessage}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    return {
+      signal: controller.signal,
+      cancel: () => clearTimeout(timeout),
+    };
   }
 
   private slugify(value: string, fallback = 'whatsapp'): string {
@@ -178,424 +153,337 @@ class WhatsAppBrokerClient {
     return slug.length > 0 ? slug : fallback;
   }
 
-  private tenantPrefix(tenantId: string): string {
-    return `${this.slugify(tenantId, 'tenant') }--`;
-  }
-
-  private humanizeName(raw: string, prefix: string, fallback: string): string {
-    if (!raw) {
-      return fallback;
-    }
-    const withoutPrefix = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
-    return withoutPrefix
-      .split('-')
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ') || fallback;
-  }
-
-  private extractPhone(user: RawInstance['user']): string | null {
-    if (!user?.id) {
-      return null;
-    }
-
-    const match = user.id.match(/^(\d{12,})/);
-    return match ? match[1] : null;
-  }
-
-  private extractErrorMessage(rawText: string | null | undefined): string {
-    if (!rawText) {
-      return '';
-    }
+  private async handleError(response: Response): Promise<never> {
+    let bodyText = '';
 
     try {
-      const parsed = JSON.parse(rawText);
-      const message =
-        (typeof parsed?.message === 'string' && parsed.message) ||
-        (typeof parsed?.error?.message === 'string' && parsed.error.message);
-      if (message) {
-        return message;
-      }
+      bodyText = await response.text();
     } catch (error) {
-      logger.debug('Failed to parse broker error message as JSON', { error, rawText });
+      logger.debug('Unable to read WhatsApp broker error response', { error });
     }
 
-    return rawText;
+    let parsed: Record<string, unknown> | undefined;
+
+    if (bodyText) {
+      try {
+        parsed = JSON.parse(bodyText) as Record<string, unknown>;
+      } catch (error) {
+        logger.debug('WhatsApp broker error response is not JSON', { error, bodyText });
+      }
+    }
+
+    const normalizedError = (() => {
+      const candidate = parsed?.error && typeof parsed.error === 'object' ? (parsed.error as Record<string, unknown>) : parsed;
+      const code = typeof candidate?.code === 'string' ? candidate.code : undefined;
+      const message = typeof candidate?.message === 'string' ? candidate.message : undefined;
+      return { code, message };
+    })();
+
+    if (response.status === 401 || response.status === 403) {
+      throw new WhatsAppBrokerNotConfiguredError(
+        normalizedError.message || 'WhatsApp broker rejected credentials'
+      );
+    }
+
+    const code = normalizedError.code || 'BROKER_ERROR';
+    const message =
+      normalizedError.message || `WhatsApp broker request failed (${response.status})`;
+
+    throw new WhatsAppBrokerError(message, code, response.status);
   }
 
-  private mapInstance(
-    raw: RawInstance | null | undefined,
-    tenantId: string,
-    fallbackName?: string,
-    enforcePrefix = true
-  ): WhatsAppInstance | null {
-    if (!raw) {
-      return null;
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    options: BrokerRequestOptions = {}
+  ): Promise<T> {
+    this.ensureConfigured();
+
+    const url = this.buildUrl(path, options.searchParams);
+    const headers = new Headers(init.headers as HeadersInit | undefined);
+
+    if (init.body && !headers.has('content-type')) {
+      headers.set('content-type', 'application/json');
     }
 
-    const id = raw.id || raw.name;
-    if (!id) {
-      return null;
+    headers.set('x-api-key', options.apiKey || this.brokerApiKey);
+
+    const { signal, cancel } = this.createTimeoutSignal(options.timeoutMs ?? this.timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers,
+        signal,
+      });
+
+      if (!response.ok) {
+        await this.handleError(response);
+      }
+
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      const contentType = response.headers?.get?.('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const empty = (await response.text()) || '';
+        return (empty ? (JSON.parse(empty) as T) : (undefined as T));
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerError || error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new WhatsAppBrokerError('WhatsApp broker request timed out', 'REQUEST_TIMEOUT', 408);
+      }
+
+      logger.error('Unexpected WhatsApp broker request failure', { path, error });
+      throw error;
+    } finally {
+      cancel();
     }
+  }
 
-    const prefix = this.tenantPrefix(tenantId);
-    if (
-      enforcePrefix &&
-      !id.startsWith(prefix) &&
-      !(raw.name && raw.name.startsWith(prefix))
-    ) {
-      return null;
-    }
+  async connectSession(sessionId: string, payload: { webhookUrl?: string; forceReopen?: boolean } = {}): Promise<void> {
+    await this.request<void>(
+      '/broker/session/connect',
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          compactObject({
+            sessionId,
+            webhookUrl: payload.webhookUrl,
+            forceReopen: payload.forceReopen,
+          })
+        ),
+      }
+    );
+  }
 
-    const displayName = this.humanizeName(raw.name || id, prefix, fallbackName || 'WhatsApp');
-    const isConnected = Boolean(raw.connected);
-    const status: WhatsAppInstance['status'] = isConnected ? 'connected' : 'qr_required';
+  async logoutSession(sessionId: string): Promise<void> {
+    await this.request<void>('/broker/session/logout', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+  }
 
-    return {
-      id,
-      tenantId,
-      name: displayName,
-      status,
-      connected: isConnected,
-      lastActivity: null,
-      user: raw.user?.id || raw.user?.name || null,
-      phoneNumber: this.extractPhone(raw.user),
-      stats: {
-        sent: raw.counters?.sent,
-        byStatus: raw.counters?.status,
+  async getSessionStatus<T = Record<string, unknown>>(sessionId: string): Promise<T> {
+    return this.request<T>(
+      '/broker/session/status',
+      {
+        method: 'GET',
       },
-    };
+      {
+        searchParams: { sessionId },
+      }
+    );
+  }
+
+  async sendText<T = Record<string, unknown>>(
+    payload: {
+      sessionId: string;
+      to: string;
+      message: string;
+      previewUrl?: boolean;
+      externalId?: string;
+    }
+  ): Promise<T> {
+    return this.request<T>('/broker/messages', {
+      method: 'POST',
+      body: JSON.stringify(
+        compactObject({
+          sessionId: payload.sessionId,
+          to: payload.to,
+          message: payload.message,
+          previewUrl: payload.previewUrl,
+          externalId: payload.externalId,
+          type: 'text',
+        })
+      ),
+    });
+  }
+
+  async createPoll<T = Record<string, unknown>>(
+    payload: {
+      sessionId: string;
+      to: string;
+      question: string;
+      options: string[];
+      allowMultipleAnswers?: boolean;
+    }
+  ): Promise<T> {
+    return this.request<T>('/broker/polls', {
+      method: 'POST',
+      body: JSON.stringify(
+        compactObject({
+          sessionId: payload.sessionId,
+          to: payload.to,
+          question: payload.question,
+          options: payload.options,
+          allowMultipleAnswers: payload.allowMultipleAnswers,
+        })
+      ),
+    });
+  }
+
+  async fetchEvents<T = { events: unknown[] }>(params: { limit?: number; cursor?: string } = {}): Promise<T> {
+    return this.request<T>(
+      '/broker/events',
+      {
+        method: 'GET',
+      },
+      {
+        apiKey: this.webhookApiKey,
+        searchParams: {
+          limit: params.limit,
+          cursor: params.cursor,
+        },
+      }
+    );
+  }
+
+  async ackEvents(eventIds: string[]): Promise<void> {
+    if (!Array.isArray(eventIds) || eventIds.length === 0) {
+      return;
+    }
+
+    await this.request<void>(
+      '/broker/events/ack',
+      {
+        method: 'POST',
+        body: JSON.stringify({ eventIds }),
+      },
+      {
+        apiKey: this.webhookApiKey,
+      }
+    );
   }
 
   async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
     this.ensureConfigured();
-
-    try {
-      const result = await this.request<RawInstance[]>(`/instances`);
-      const rawList = Array.isArray(result) ? result : [];
-      let mapped = rawList
-        .map((item) => this.mapInstance(item, tenantId, undefined, true))
-        .filter((item): item is WhatsAppInstance => Boolean(item));
-
-      if (mapped.length === 0) {
-        mapped = rawList
-          .map((item) => this.mapInstance(item, tenantId, item.name || item.id || undefined, false))
-          .filter((item): item is WhatsAppInstance => Boolean(item));
-      }
-
-      if (mapped.length === 0) {
-        return [fallbackInstance(tenantId)];
-      }
-
-      return mapped;
-    } catch (error) {
-      if (error instanceof WhatsAppBrokerNotConfiguredError) {
-        throw error;
-      }
-
-      logger.warn('Failed to list WhatsApp instances via broker, returning fallback', { error });
-      return [fallbackInstance(tenantId)];
-    }
+    logger.warn('WhatsApp minimal broker does not expose instance listing; returning fallback instance');
+    return [fallbackInstance(tenantId)];
   }
 
-  async createInstance(args: {
-    tenantId: string;
-    name: string;
-    webhookUrl?: string;
-  }): Promise<WhatsAppInstance> {
+  async createInstance(args: { tenantId: string; name: string; webhookUrl?: string }): Promise<WhatsAppInstance> {
     this.ensureConfigured();
 
-    const tenantPrefix = this.tenantPrefix(args.tenantId);
-    const normalizedName = `${tenantPrefix}${this.slugify(args.name)}`.slice(0, 60);
+    const sessionId = `${this.slugify(args.tenantId, 'tenant')}--${this.slugify(args.name)}`;
 
     try {
-      const payload = await this.request<RawInstance>(`/instances`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: normalizedName,
-        }),
-      });
-
-      return (
-        this.mapInstance(payload, args.tenantId, args.name) || {
-          ...fallbackInstance(args.tenantId),
-          name: args.name,
-          status: 'qr_required',
-        }
-      );
+      await this.connectSession(sessionId, { webhookUrl: args.webhookUrl });
     } catch (error) {
-      logger.error('Failed to create WhatsApp instance via broker', {
-        error,
-      });
-      throw error;
+      logger.warn('Unable to pre-connect WhatsApp session via minimal broker', { error });
     }
+
+    return {
+      ...fallbackInstance(args.tenantId),
+      id: sessionId,
+      name: args.name,
+      connected: false,
+      status: 'connecting',
+    };
   }
 
   async connectInstance(instanceId: string): Promise<void> {
-    this.ensureConfigured();
-
-    const encodedId = encodeURIComponent(instanceId);
-    const startEndpoints = [
-      `/instances/${encodedId}/start`,
-      `/instances/${encodedId}/request-pairing-code`,
-    ];
-
-    let lastError: unknown;
-
-    for (const endpoint of startEndpoints) {
-      try {
-        await this.request(endpoint, {
-          method: 'POST',
-        });
-        return;
-      } catch (error) {
-        lastError = error;
-        logger.warn('Unable to trigger WhatsApp start endpoint via broker; attempting fallback', {
-          instanceId,
-          endpoint,
-          error,
-        });
-      }
-    }
-
-    if (lastError) {
-      logger.warn('All attempts to trigger WhatsApp instance start via broker failed; continuing anyway', {
-        instanceId,
-        error: lastError,
-      });
-    }
+    await this.connectSession(instanceId);
   }
 
   async disconnectInstance(instanceId: string): Promise<void> {
-    this.ensureConfigured();
-
-    try {
-      await this.request(`/instances/${encodeURIComponent(instanceId)}/logout`, {
-        method: 'POST',
-      });
-    } catch (error) {
-      logger.warn('Unable to disconnect WhatsApp instance via broker; continuing anyway', {
-        instanceId,
-        error,
-      });
-    }
+    await this.logoutSession(instanceId);
   }
 
   async deleteInstance(instanceId: string): Promise<void> {
-    this.ensureConfigured();
-
-    try {
-      await this.request(`/instances/${encodeURIComponent(instanceId)}/session/wipe`, {
-        method: 'POST',
-      });
-    } catch (error) {
-      logger.error('Failed to wipe WhatsApp instance via broker', { instanceId, error });
-      throw error;
-    }
+    await this.logoutSession(instanceId);
   }
 
-  async getQrCode(instanceId: string): Promise<WhatsAppQrCode> {
+  async getQrCode(_instanceId: string): Promise<WhatsAppQrCode> {
     this.ensureConfigured();
-
-    try {
-      const buffer = await this.requestBuffer(`/instances/${encodeURIComponent(instanceId)}/qr.png`);
-      const qrCode = `data:image/png;base64,${buffer.toString('base64')}`;
-      return {
-        qrCode,
-        expiresAt: new Date(Date.now() + QR_EXPIRATION_MS).toISOString(),
-      };
-    } catch (error) {
-      logger.error('Failed to fetch WhatsApp QR code via broker', { instanceId, error });
-      throw error;
-    }
+    return {
+      qrCode: FALLBACK_QR,
+      expiresAt: new Date(Date.now() + QR_EXPIRATION_MS).toISOString(),
+    };
   }
 
   async getStatus(instanceId: string): Promise<WhatsAppStatus> {
     this.ensureConfigured();
+
     try {
-      // Alguns brokers não expõem /status; usar /instances e inferir
-      const result = await this.request<RawInstance[]>(`/instances`);
-      const item = (Array.isArray(result) ? result : []).find((i) => i.id === instanceId || i.name === instanceId);
-      const connected = Boolean(item?.connected);
-      return { status: connected ? 'connected' : 'qr_required', connected };
+      const result = await this.getSessionStatus<{ status?: string; connected?: boolean }>(instanceId);
+      const connected = Boolean(result?.connected ?? (result?.status === 'connected'));
+      const normalizedStatus = ((): WhatsAppStatus['status'] => {
+        const raw = typeof result?.status === 'string' ? result.status.toLowerCase() : undefined;
+        switch (raw) {
+          case 'connected':
+          case 'connecting':
+          case 'qr_required':
+          case 'disconnected':
+            return raw;
+          default:
+            return connected ? 'connected' : 'disconnected';
+        }
+      })();
+
+      return {
+        status: normalizedStatus,
+        connected,
+      };
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         throw error;
       }
 
-      logger.warn('Failed to get WhatsApp instance status via broker; assuming disconnected', { instanceId, error });
+      logger.warn('Failed to resolve WhatsApp session status via minimal broker; assuming disconnected', { error });
       return { status: 'disconnected', connected: false };
     }
   }
 
-  private resolveSendEndpoint(instanceId: string, type?: string, hasMedia?: boolean): string {
-    const normalizedType = (type || '').toLowerCase();
-    const basePath = `/instances/${encodeURIComponent(instanceId)}`;
-
-    if (!normalizedType || normalizedType === 'text') {
-      return `${basePath}/send-text`;
+  async sendMessage(
+    instanceId: string,
+    payload: {
+      to: string;
+      content: string;
+      type?: string;
+      previewUrl?: boolean;
+      externalId?: string;
     }
-
-    const endpointByType: Record<string, string> = {
-      image: 'send-image',
-      audio: 'send-audio',
-      video: 'send-video',
-      document: 'send-document',
-      location: 'send-location',
-      contact: 'send-contact',
-      template: 'send-template',
-    };
-
-    const mappedEndpoint = endpointByType[normalizedType];
-    if (mappedEndpoint) {
-      return `${basePath}/${mappedEndpoint}`;
-    }
-
-    if (hasMedia) {
-      return `${basePath}/send-document`;
-    }
-
-    return `${basePath}/send-text`;
-  }
-
-  async sendMessage(instanceId: string, payload: {
-    to: string;
-    content: string;
-    type?: string;
-    mediaUrl?: string;
-    caption?: string;
-    mimeType?: string;
-    fileName?: string;
-    ptt?: boolean;
-    location?: LocationPayload;
-    contact?: ContactPayload;
-    template?: TemplatePayload;
-  }): Promise<WhatsAppMessageResult> {
-    this.ensureConfigured();
-
+  ): Promise<WhatsAppMessageResult> {
     const normalizedType = (payload.type || 'text').toLowerCase();
-    const hasMedia = Boolean(payload.mediaUrl);
-    const endpoint = this.resolveSendEndpoint(instanceId, normalizedType, hasMedia);
-
-    const body = (() => {
-      switch (normalizedType) {
-        case 'image': {
-          if (!payload.mediaUrl) {
-            throw new Error('Media URL is required for image messages');
-          }
-          return compactObject({
-            to: payload.to,
-            url: payload.mediaUrl,
-            caption: payload.caption ?? payload.content,
-          });
-        }
-        case 'audio': {
-          if (!payload.mediaUrl) {
-            throw new Error('Media URL is required for audio messages');
-          }
-          return compactObject({
-            to: payload.to,
-            url: payload.mediaUrl,
-            mimetype: payload.mimeType,
-            ptt: payload.ptt ?? false,
-          });
-        }
-        case 'video': {
-          if (!payload.mediaUrl) {
-            throw new Error('Media URL is required for video messages');
-          }
-          return compactObject({
-            to: payload.to,
-            url: payload.mediaUrl,
-            caption: payload.caption ?? payload.content,
-            mimetype: payload.mimeType,
-          });
-        }
-        case 'document': {
-          if (!payload.mediaUrl) {
-            throw new Error('Media URL is required for document messages');
-          }
-          return compactObject({
-            to: payload.to,
-            url: payload.mediaUrl,
-            caption: payload.caption ?? payload.content,
-            fileName: payload.fileName,
-            mimetype: payload.mimeType,
-          });
-        }
-        case 'location': {
-          const location = payload.location;
-          if (!location || typeof location.latitude !== 'number' || typeof location.longitude !== 'number') {
-            throw new Error('Latitude and longitude are required for location messages');
-          }
-          return compactObject({
-            to: payload.to,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            name: location.name ?? payload.content,
-            address: location.address,
-          });
-        }
-        case 'contact': {
-          const contact = payload.contact;
-          if (!contact?.vcard) {
-            throw new Error('vCard data is required for contact messages');
-          }
-          return {
-            to: payload.to,
-            contact: compactObject({
-              displayName: contact.displayName ?? payload.content,
-              vcard: contact.vcard,
-            }),
-          };
-        }
-        case 'template': {
-          const template = payload.template;
-          if (!template?.name) {
-            throw new Error('Template name is required for template messages');
-          }
-          const language = template.language ?? template.languageCode;
-          const components = template.components ?? template.variables ?? template.parameters;
-          return compactObject({
-            to: payload.to,
-            namespace: template.namespace,
-            name: template.name,
-            language,
-            components,
-          });
-        }
-        default: {
-          return {
-            to: payload.to,
-            message: payload.content,
-          };
-        }
-      }
-    })();
-
-    try {
-      const result = await this.request<Record<string, unknown>>(endpoint, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-
-      const externalId =
-        (typeof result?.id === 'string' && result.id) ||
-        (typeof result?.externalId === 'string' && result.externalId) ||
-        `msg-${Date.now()}`;
-      const status =
-        (typeof result?.status === 'string' && result.status) ||
-        (result?.ok === true ? 'sent' : 'unknown');
-
-      return {
-        externalId,
-        status,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      logger.error('Failed to send WhatsApp message via broker', { instanceId, error });
-      throw error;
+    if (normalizedType !== 'text') {
+      throw new WhatsAppBrokerError(
+        `Message type "${payload.type}" is not supported by the HTTP WhatsApp broker`,
+        'NOT_SUPPORTED',
+        400
+      );
     }
+
+    const response = await this.sendText<{ externalId?: string; id?: string; status?: string }>(
+      {
+        sessionId: instanceId,
+        to: payload.to,
+        message: payload.content,
+        previewUrl: payload.previewUrl,
+        externalId: payload.externalId,
+      }
+    );
+
+    const externalId =
+      (typeof response?.externalId === 'string' && response.externalId) ||
+      (typeof response?.id === 'string' && response.id) ||
+      payload.externalId ||
+      `msg-${Date.now()}`;
+
+    const status = (typeof response?.status === 'string' && response.status) || 'sent';
+
+    return {
+      externalId,
+      status,
+      timestamp: new Date().toISOString(),
+    };
   }
 }
 
