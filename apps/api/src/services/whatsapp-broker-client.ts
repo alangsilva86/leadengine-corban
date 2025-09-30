@@ -413,12 +413,28 @@ class WhatsAppBrokerClient {
     }
   }
 
-  private resolveSendEndpoint(instanceId: string, type?: string, hasMedia?: boolean): string {
-    const normalizedType = (type || '').toLowerCase();
-    if (normalizedType === 'image' && hasMedia) {
-      return `/instances/${encodeURIComponent(instanceId)}/send-image`;
+  private resolveSendEndpoint(instanceId: string, type?: string): string {
+    const normalizedType = (type || 'text').toLowerCase();
+    const encodedId = encodeURIComponent(instanceId);
+
+    switch (normalizedType) {
+      case 'image':
+        return `/instances/${encodedId}/send-image`;
+      case 'audio':
+        return `/instances/${encodedId}/send-audio`;
+      case 'video':
+        return `/instances/${encodedId}/send-video`;
+      case 'document':
+        return `/instances/${encodedId}/send-document`;
+      case 'location':
+        return `/instances/${encodedId}/send-location`;
+      case 'contact':
+        return `/instances/${encodedId}/send-contact`;
+      case 'template':
+        return `/instances/${encodedId}/send-template`;
+      default:
+        return `/instances/${encodedId}/send-text`;
     }
-    return `/instances/${encodeURIComponent(instanceId)}/send-text`;
   }
 
   async sendMessage(instanceId: string, payload: {
@@ -426,21 +442,169 @@ class WhatsAppBrokerClient {
     content: string;
     type?: string;
     mediaUrl?: string;
+    caption?: string;
+    mimeType?: string;
+    fileName?: string;
+    ptt?: boolean;
+    location?: {
+      latitude: number;
+      longitude: number;
+      name?: string;
+      address?: string;
+    };
+    contact?: {
+      displayName: string;
+      vcard: string;
+    };
+    template?: {
+      name: string;
+      namespace: string;
+      languageCode?: string;
+      components?: unknown[];
+    };
   }): Promise<WhatsAppMessageResult> {
     this.ensureConfigured();
 
-    const hasMedia = Boolean(payload.mediaUrl);
-    const endpoint = this.resolveSendEndpoint(instanceId, payload.type, hasMedia);
-    const body = endpoint.includes('send-image')
-      ? {
+    const normalizedType = (payload.type || 'text').toLowerCase();
+    const endpoint = this.resolveSendEndpoint(instanceId, normalizedType);
+    let body: Record<string, unknown>;
+
+    switch (normalizedType) {
+      case 'image': {
+        if (!payload.mediaUrl) {
+          throw new Error('Media URL is required for image messages');
+        }
+
+        body = {
           to: payload.to,
           url: payload.mediaUrl,
-          caption: payload.content,
+        };
+
+        const caption = payload.caption ?? payload.content;
+        if (caption) {
+          body.caption = caption;
         }
-      : {
+        break;
+      }
+      case 'audio': {
+        if (!payload.mediaUrl) {
+          throw new Error('Media URL is required for audio messages');
+        }
+
+        body = {
+          to: payload.to,
+          url: payload.mediaUrl,
+        };
+
+        if (payload.mimeType) {
+          body.mimetype = payload.mimeType;
+        }
+
+        if (typeof payload.ptt === 'boolean') {
+          body.ptt = payload.ptt;
+        }
+        break;
+      }
+      case 'video': {
+        if (!payload.mediaUrl) {
+          throw new Error('Media URL is required for video messages');
+        }
+
+        body = {
+          to: payload.to,
+          url: payload.mediaUrl,
+        };
+
+        const caption = payload.caption ?? payload.content;
+        if (caption) {
+          body.caption = caption;
+        }
+
+        if (payload.mimeType) {
+          body.mimetype = payload.mimeType;
+        }
+        break;
+      }
+      case 'document': {
+        if (!payload.mediaUrl) {
+          throw new Error('Media URL is required for document messages');
+        }
+
+        body = {
+          to: payload.to,
+          url: payload.mediaUrl,
+        };
+
+        const caption = payload.caption ?? payload.content;
+        if (caption) {
+          body.caption = caption;
+        }
+
+        if (payload.fileName) {
+          body.fileName = payload.fileName;
+        }
+
+        if (payload.mimeType) {
+          body.mimetype = payload.mimeType;
+        }
+        break;
+      }
+      case 'location': {
+        if (!payload.location) {
+          throw new Error('Location payload is required for location messages');
+        }
+
+        body = {
+          to: payload.to,
+          latitude: payload.location.latitude,
+          longitude: payload.location.longitude,
+        };
+
+        if (payload.location.name) {
+          body.name = payload.location.name;
+        }
+
+        if (payload.location.address) {
+          body.address = payload.location.address;
+        }
+        break;
+      }
+      case 'contact': {
+        if (!payload.contact) {
+          throw new Error('Contact payload is required for contact messages');
+        }
+
+        body = {
+          to: payload.to,
+          contact: payload.contact,
+        };
+        break;
+      }
+      case 'template': {
+        if (!payload.template) {
+          throw new Error('Template payload is required for template messages');
+        }
+
+        body = {
+          to: payload.to,
+          namespace: payload.template.namespace,
+          name: payload.template.name,
+          components: payload.template.components ?? [],
+        };
+
+        if (payload.template.languageCode) {
+          body.language = payload.template.languageCode;
+        }
+        break;
+      }
+      default: {
+        body = {
           to: payload.to,
           message: payload.content,
         };
+        break;
+      }
+    }
 
     try {
       const result = await this.request<Record<string, unknown>>(endpoint, {
