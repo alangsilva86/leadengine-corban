@@ -126,12 +126,12 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     fetchMock.mockResolvedValueOnce(createJsonResponse(204));
     const client = await loadClient();
 
-    await client.ackEvents(['evt-1', 'evt-2']);
+    await client.ackEvents({ ids: ['evt-1', 'evt-2'] });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://broker.example/broker/events/ack');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ eventIds: ['evt-1', 'evt-2'] });
+    expect(body).toEqual({ ids: ['evt-1', 'evt-2'] });
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('webhook-key');
   });
@@ -139,7 +139,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
   it('does not call ackEvents when ids list is empty', async () => {
     const client = await loadClient();
 
-    await client.ackEvents([]);
+    await client.ackEvents({ ids: [] });
 
     expect(fetchMock).not.toHaveBeenCalled();
   });

@@ -29,7 +29,9 @@ const CLEANUP_INTERVAL_MS = 60 * 60 * 1_000; // 1 hour
 
 interface BrokerFetchResponse {
   events?: unknown[];
+  items?: unknown[];
   nextCursor?: string | null;
+  nextId?: string | null;
 }
 
 interface AckState {
@@ -226,7 +228,11 @@ class WhatsAppEventPoller {
       cursor: this.cursor ?? undefined,
     });
 
-    const rawEvents = Array.isArray(response?.events) ? response.events : [];
+    const rawEvents = Array.isArray(response?.items)
+      ? response.items
+      : Array.isArray(response?.events)
+        ? response.events
+        : [];
 
     this.metrics.lastFetchAt = new Date().toISOString();
     this.metrics.lastFetchCount = rawEvents.length;
@@ -292,21 +298,26 @@ class WhatsAppEventPoller {
       enqueueWhatsAppBrokerEvents(freshEvents);
     }
 
-    await whatsappBrokerClient.ackEvents(ackIds);
+    await whatsappBrokerClient.ackEvents({ ids: ackIds });
 
     const timestamp = new Date().toISOString();
-    const nextCursor = typeof response?.nextCursor === 'string' ? response.nextCursor : null;
+    const nextCursorCandidate =
+      typeof response?.nextCursor === 'string' && response.nextCursor.trim().length > 0
+        ? response.nextCursor.trim()
+        : typeof response?.nextId === 'string' && response.nextId.trim().length > 0
+          ? response.nextId.trim()
+          : null;
 
     await this.persistAckState({
       timestamp,
-      cursor: nextCursor,
+      cursor: nextCursorCandidate,
       count: ackIds.length,
     });
 
-    await this.persistCursorIfNeeded(nextCursor);
+    await this.persistCursorIfNeeded(nextCursorCandidate);
 
     this.metrics.lastAckAt = timestamp;
-    this.metrics.lastAckCursor = nextCursor;
+    this.metrics.lastAckCursor = nextCursorCandidate;
     this.metrics.lastAckCount = ackIds.length;
 
     return ackIds.length;

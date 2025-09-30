@@ -298,18 +298,33 @@ router.get(
     try {
       const events = await whatsappBrokerClient.fetchEvents<{
         events?: unknown[];
+        items?: unknown[];
         nextCursor?: string | null;
+        nextId?: string | null;
         rate?: BrokerRateLimit | Record<string, unknown> | null;
       }>({
         limit,
         cursor,
       });
 
+      const items = Array.isArray(events?.items)
+        ? events.items
+        : Array.isArray(events?.events)
+          ? events.events
+          : [];
+
+      const nextCursorValue =
+        typeof events?.nextCursor === 'string' && events.nextCursor.trim().length > 0
+          ? events.nextCursor.trim()
+          : typeof events?.nextId === 'string' && events.nextId.trim().length > 0
+            ? events.nextId.trim()
+            : null;
+
       res.json({
         success: true,
         data: {
-          items: Array.isArray(events?.events) ? events.events : [],
-          nextCursor: typeof events?.nextCursor === 'string' ? events.nextCursor : null,
+          items,
+          nextCursor: nextCursorValue,
           rate: parseRateLimit(events?.rate ?? null),
         },
       });
@@ -333,7 +348,7 @@ router.post(
     const { eventIds } = req.body as { eventIds: string[] };
 
     try {
-      await whatsappBrokerClient.ackEvents(eventIds);
+      await whatsappBrokerClient.ackEvents({ ids: eventIds });
 
       res.json({
         success: true,

@@ -346,8 +346,14 @@ class WhatsAppBrokerClient {
     );
   }
 
-  async ackEvents(eventIds: string[]): Promise<void> {
-    if (!Array.isArray(eventIds) || eventIds.length === 0) {
+  async ackEvents(payload: { ids: string[] }): Promise<void> {
+    const ids = Array.isArray(payload?.ids)
+      ? payload.ids
+          .map((id) => (typeof id === 'string' ? id.trim() : ''))
+          .filter((id) => id.length > 0)
+      : [];
+
+    if (ids.length === 0) {
       return;
     }
 
@@ -355,7 +361,7 @@ class WhatsAppBrokerClient {
       '/broker/events/ack',
       {
         method: 'POST',
-        body: JSON.stringify({ eventIds }),
+        body: JSON.stringify({ ids }),
       },
       {
         apiKey: this.webhookApiKey,
