@@ -91,8 +91,15 @@ const io = new SocketIOServer(server, {
 registerSocketServer(io);
 
 // Configurações básicas
-const PORT = process.env.PORT || 4000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const fallbackPort = NODE_ENV !== 'production' ? '4000' : undefined;
+const resolvedPort = process.env.PORT ?? fallbackPort;
+
+if (!resolvedPort) {
+  throw new Error('PORT environment variable must be defined in production environments.');
+}
+
+const PORT = Number(resolvedPort);
 
 // Rate limit configuration
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
