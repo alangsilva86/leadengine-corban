@@ -118,9 +118,33 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   logger.info('WhatsApp webhook received', { payload });
 
-  const rawEvents = Array.isArray((payload as { events?: unknown[] })?.events)
-    ? (payload as { events: unknown[] }).events
-    : [];
+  const extractEvents = (input: unknown): unknown[] => {
+    if (!input) {
+      return [];
+    }
+
+    if (Array.isArray(input)) {
+      return input;
+    }
+
+    if (typeof input === 'object') {
+      const maybeEvents = (input as { events?: unknown }).events;
+
+      if (Array.isArray(maybeEvents)) {
+        return maybeEvents;
+      }
+
+      if (maybeEvents && typeof maybeEvents === 'object') {
+        return [maybeEvents];
+      }
+
+      return [input];
+    }
+
+    return [];
+  };
+
+  const rawEvents = extractEvents(payload);
 
   if (rawEvents.length > 0) {
     const normalizedEvents = rawEvents
@@ -128,7 +152,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       .filter((event): event is WhatsAppBrokerEvent => Boolean(event));
 
     if (normalizedEvents.length > 0) {
-      enqueueWhatsAppBrokerEvents(normalizedEvents);
+      normalizedEvents.forEach((event) => enqueueWhatsAppBrokerEvents([event]));
       logger.info('Queued WhatsApp webhook events', {
         received: rawEvents.length,
         queued: normalizedEvents.length,
