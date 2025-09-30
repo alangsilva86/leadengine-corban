@@ -131,11 +131,41 @@ const normalizeSessionStatus = (status: BrokerSessionStatus | null | undefined) 
     return null;
   })();
 
+  const qr = (() => {
+    if (qrSource) {
+      const content = typeof qrSource.content === 'string' ? qrSource.content.trim() : '';
+      if (content.length > 0) {
+        return {
+          content,
+          expiresAt: typeof qrSource.expiresAt === 'string' ? qrSource.expiresAt : qrExpiresAt,
+        };
+      }
+    }
+
+    if (qrCode) {
+      return {
+        content: qrCode,
+        expiresAt: qrExpiresAt,
+      };
+    }
+
+    return null;
+  })();
+
+  const user = (() => {
+    if (status?.user && typeof status.user === 'object') {
+      return status.user;
+    }
+    return null;
+  })();
+
   return {
     status: normalizedStatus,
     connected,
     qrCode,
     qrExpiresAt,
+    qr,
+    user,
     rate: parseRateLimit(status?.rate ?? null),
   };
 };
