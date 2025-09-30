@@ -4,7 +4,7 @@ import type { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { createServer } from 'http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 
 import { errorHandler } from './middleware/error-handler';
@@ -14,7 +14,7 @@ import { ticketsRouter } from './routes/tickets';
 import { leadsRouter } from './routes/leads';
 import { contactsRouter } from './routes/contacts';
 import { authRouter } from './routes/auth';
-import { webhooksRouter } from './routes/webhooks';
+import { integrationWebhooksRouter, webhooksRouter } from './routes/webhooks';
 import { integrationsRouter } from './routes/integrations';
 import { leadEngineRouter } from './routes/lead-engine';
 import { logger } from './config/logger';
@@ -28,6 +28,14 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app: Application = express();
 const server = createServer(app);
+
+type RawBodyIncomingMessage = IncomingMessage & { originalUrl?: string; rawBody?: Buffer };
+
+const captureRawBody = (req: RawBodyIncomingMessage, _res: ServerResponse, buf: Buffer): void => {
+  if (req.originalUrl?.startsWith('/api/integrations/whatsapp/webhook')) {
+    req.rawBody = Buffer.from(buf);
+  }
+};
 
 const defaultCorsOrigins = [
   'https://leadengine-corban.onrender.com',
@@ -135,7 +143,7 @@ app.use(
   })
 );
 app.use(compression());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '10mb', verify: captureRawBody }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 
@@ -159,6 +167,7 @@ app.get('/health', (_req, res) => {
 
 // Rotas públicas (sem autenticação)
 app.use('/api/auth', authRouter);
+app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', leadEngineRouter);
 

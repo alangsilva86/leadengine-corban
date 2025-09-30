@@ -7,7 +7,10 @@ vi.mock('./routes/tickets', () => ({ ticketsRouter: express.Router() }));
 vi.mock('./routes/leads', () => ({ leadsRouter: express.Router() }));
 vi.mock('./routes/contacts', () => ({ contactsRouter: express.Router() }));
 vi.mock('./routes/auth', () => ({ authRouter: express.Router() }));
-vi.mock('./routes/webhooks', () => ({ webhooksRouter: express.Router() }));
+vi.mock('./routes/webhooks', () => ({
+  webhooksRouter: express.Router(),
+  integrationWebhooksRouter: express.Router(),
+}));
 vi.mock('./routes/integrations', () => ({ integrationsRouter: express.Router() }));
 vi.mock('./routes/lead-engine', () => ({ leadEngineRouter: express.Router() }));
 vi.mock('./middleware/auth', () => ({ authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next() }));
