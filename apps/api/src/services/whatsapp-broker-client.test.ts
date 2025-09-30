@@ -190,7 +190,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     });
 
     const client = await loadClient();
-    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', text: 'Hello' });
     const expectation = expect(promise).rejects.toMatchObject({
       code: 'REQUEST_TIMEOUT',
       name: 'WhatsAppBrokerError',
