@@ -332,9 +332,7 @@ class WhatsAppBrokerClient {
   }
 
   async connectInstance(instanceId: string): Promise<void> {
-    if (!this.isConfigured) {
-      return;
-    }
+    this.ensureConfigured();
 
     const encodedId = encodeURIComponent(instanceId);
     const startEndpoints = [
@@ -369,9 +367,7 @@ class WhatsAppBrokerClient {
   }
 
   async disconnectInstance(instanceId: string): Promise<void> {
-    if (!this.isConfigured) {
-      return;
-    }
+    this.ensureConfigured();
 
     try {
       await this.request(`/instances/${encodeURIComponent(instanceId)}/logout`, {
@@ -386,9 +382,7 @@ class WhatsAppBrokerClient {
   }
 
   async deleteInstance(instanceId: string): Promise<void> {
-    if (!this.isConfigured) {
-      return;
-    }
+    this.ensureConfigured();
 
     try {
       await this.request(`/instances/${encodeURIComponent(instanceId)}/session/wipe`, {
