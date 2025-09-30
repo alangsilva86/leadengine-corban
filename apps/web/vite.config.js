@@ -14,6 +14,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: ['@tanstack/react-query', '@tanstack/query-core', 'recharts'],
+  },
   server: {
     port: 5173,
     host: true,
@@ -26,11 +29,47 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     minify: 'esbuild',
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+
+          if (id.includes('/react@') || id.includes('/react/')) {
+            return 'vendor-react-core';
+          }
+
+          if (id.includes('react-dom') || id.includes('scheduler')) {
+            return 'vendor-react-dom';
+          }
+
+          if (id.includes('react-router-dom')) {
+            return 'vendor-react-router';
+          }
+
+          if (id.includes('@tanstack/react-query')) {
+            return 'vendor-react-query';
+          }
+
+          if (id.includes('recharts')) {
+            return 'vendor-recharts';
+          }
+
+          if (id.includes('@radix-ui')) {
+            return 'vendor-radix';
+          }
+
+          if (id.includes('framer-motion')) {
+            return 'vendor-framer-motion';
+          }
+
+          if (id.includes('lucide-react')) {
+            return 'vendor-icons';
+          }
+
+          return undefined;
         },
       },
     },
