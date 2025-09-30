@@ -12,6 +12,6 @@
     "libsignal": "1.0.7"
   },
   "overrides": {
-    "libsignal": "1.0.7"
+    "libsignal": "npm:libsignal@1.0.7"
   }
 }
