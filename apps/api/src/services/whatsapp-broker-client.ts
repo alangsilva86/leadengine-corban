@@ -248,14 +248,17 @@ class WhatsAppBrokerClient {
     }
   }
 
-  async connectSession(sessionId: string, payload: { webhookUrl?: string; forceReopen?: boolean } = {}): Promise<void> {
+  async connectSession(
+    instanceId: string,
+    payload: { webhookUrl?: string; forceReopen?: boolean } = {}
+  ): Promise<void> {
     await this.request<void>(
       '/broker/session/connect',
       {
         method: 'POST',
         body: JSON.stringify(
           compactObject({
-            sessionId,
+            instanceId,
             webhookUrl: payload.webhookUrl,
             forceReopen: payload.forceReopen,
           })
@@ -264,43 +267,75 @@ class WhatsAppBrokerClient {
     );
   }
 
-  async logoutSession(sessionId: string): Promise<void> {
+  async logoutSession(instanceId: string): Promise<void> {
     await this.request<void>('/broker/session/logout', {
       method: 'POST',
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({ instanceId }),
     });
   }
 
-  async getSessionStatus<T = Record<string, unknown>>(sessionId: string): Promise<T> {
-    return this.request<T>(
-      '/broker/session/status',
-      {
-        method: 'GET',
-      },
-      {
-        searchParams: { sessionId },
+  async getSessionStatus<T extends Record<string, unknown> = Record<string, unknown>>(
+    instanceId: string
+  ): Promise<T> {
+    const path = `/broker/session/${encodeURIComponent(instanceId)}/status`;
+    const response = (await this.request<Record<string, unknown>>(path, {
+      method: 'GET',
+    })) as Record<string, unknown>;
+
+    const connected = Boolean(response?.connected);
+    const rate =
+      response?.rate && typeof response.rate === 'object' ? (response.rate as Record<string, unknown>) : undefined;
+    const user =
+      response?.user && typeof response.user === 'object' ? (response.user as Record<string, unknown>) : undefined;
+    const qr = (() => {
+      const raw = response?.qr;
+      if (!raw || typeof raw !== 'object') {
+        return undefined;
       }
-    );
+
+      const record = raw as Record<string, unknown>;
+      const content = typeof record.content === 'string' && record.content.trim().length > 0 ? record.content : undefined;
+      if (!content) {
+        return undefined;
+      }
+
+      const expiresAt = typeof record.expiresAt === 'string' ? record.expiresAt : undefined;
+      return compactObject({ content, expiresAt });
+    })();
+
+    return {
+      ...response,
+      connected,
+      rate,
+      user,
+      qr,
+    } as unknown as T;
   }
 
   async sendText<T = Record<string, unknown>>(
     payload: {
-      sessionId: string;
+      instanceId: string;
       to: string;
-      message: string;
+      text: string;
       previewUrl?: boolean;
       externalId?: string;
+      waitAckMs?: number;
+      timeoutMs?: number;
+      skipNormalize?: boolean;
     }
   ): Promise<T> {
     return this.request<T>('/broker/messages', {
       method: 'POST',
       body: JSON.stringify(
         compactObject({
-          sessionId: payload.sessionId,
+          instanceId: payload.instanceId,
           to: payload.to,
-          message: payload.message,
+          text: payload.text,
           previewUrl: payload.previewUrl,
           externalId: payload.externalId,
+          waitAckMs: payload.waitAckMs,
+          timeoutMs: payload.timeoutMs,
+          skipNormalize: payload.skipNormalize,
           type: 'text',
         })
       ),
@@ -309,29 +344,35 @@ class WhatsAppBrokerClient {
 
   async createPoll<T = Record<string, unknown>>(
     payload: {
-      sessionId: string;
+      instanceId: string;
       to: string;
       question: string;
       options: string[];
       allowMultipleAnswers?: boolean;
+      selectableCount?: number;
     }
   ): Promise<T> {
     return this.request<T>('/broker/polls', {
       method: 'POST',
       body: JSON.stringify(
         compactObject({
-          sessionId: payload.sessionId,
+          instanceId: payload.instanceId,
           to: payload.to,
           question: payload.question,
           options: payload.options,
-          allowMultipleAnswers: payload.allowMultipleAnswers,
+          selectableCount:
+            typeof payload.selectableCount === 'number'
+              ? payload.selectableCount
+              : payload.allowMultipleAnswers
+              ? payload.options.length
+              : 1,
         })
       ),
     });
   }
 
   async fetchEvents<T = { events: unknown[] }>(params: { limit?: number; cursor?: string } = {}): Promise<T> {
-    return this.request<T>(
+    const response = (await this.request<Record<string, unknown>>(
       '/broker/events',
       {
         method: 'GET',
@@ -340,10 +381,25 @@ class WhatsAppBrokerClient {
         apiKey: this.webhookApiKey,
         searchParams: {
           limit: params.limit,
-          cursor: params.cursor,
+          after: params.cursor,
         },
       }
-    );
+    )) as Record<string, unknown>;
+
+    const items = Array.isArray(response?.items) ? response.items : [];
+    const nextCursor = typeof response?.nextCursor === 'string' ? response.nextCursor : null;
+    const pending = typeof response?.pending === 'number' ? response.pending : undefined;
+    const ack =
+      response?.ack && typeof response.ack === 'object' ? (response.ack as Record<string, unknown>) : undefined;
+
+    return {
+      ...response,
+      items,
+      events: items,
+      nextCursor,
+      pending,
+      ack,
+    } as unknown as T;
   }
 
   async ackEvents(eventIds: string[]): Promise<void> {
@@ -355,7 +411,7 @@ class WhatsAppBrokerClient {
       '/broker/events/ack',
       {
         method: 'POST',
-        body: JSON.stringify({ eventIds }),
+        body: JSON.stringify({ ids: eventIds }),
       },
       {
         apiKey: this.webhookApiKey,
@@ -461,28 +517,65 @@ class WhatsAppBrokerClient {
       );
     }
 
-    const response = await this.sendText<{ externalId?: string; id?: string; status?: string }>(
+    const response = await this.sendText<
       {
-        sessionId: instanceId,
+        externalId?: string;
+        id?: string;
+        status?: string;
+        ack?: Record<string, unknown>;
+      }
+    >(
+      {
+        instanceId,
         to: payload.to,
-        message: payload.content,
+        text: payload.content,
         previewUrl: payload.previewUrl,
         externalId: payload.externalId,
       }
     );
 
-    const externalId =
-      (typeof response?.externalId === 'string' && response.externalId) ||
-      (typeof response?.id === 'string' && response.id) ||
-      payload.externalId ||
-      `msg-${Date.now()}`;
+    const ackRecord =
+      response?.ack && typeof response.ack === 'object' ? (response.ack as Record<string, unknown>) : undefined;
 
-    const status = (typeof response?.status === 'string' && response.status) || 'sent';
+    const externalId = (() => {
+      const ackId = typeof ackRecord?.id === 'string' && ackRecord.id.trim().length > 0 ? ackRecord.id.trim() : null;
+      if (ackId) {
+        return ackId;
+      }
+      if (typeof response?.externalId === 'string' && response.externalId.trim().length > 0) {
+        return response.externalId.trim();
+      }
+      if (typeof response?.id === 'string' && response.id.trim().length > 0) {
+        return response.id.trim();
+      }
+      if (payload.externalId && payload.externalId.trim().length > 0) {
+        return payload.externalId.trim();
+      }
+      return `msg-${Date.now()}`;
+    })();
+
+    const status = (() => {
+      const ackStatus = typeof ackRecord?.status === 'string' ? ackRecord.status : undefined;
+      if (ackStatus) {
+        return ackStatus;
+      }
+      if (typeof response?.status === 'string' && response.status.trim().length > 0) {
+        return response.status.trim();
+      }
+      return 'sent';
+    })();
+
+    const timestamp = (() => {
+      if (typeof ackRecord?.timestamp === 'string' && ackRecord.timestamp.trim().length > 0) {
+        return ackRecord.timestamp.trim();
+      }
+      return new Date().toISOString();
+    })();
 
     return {
       externalId,
       status,
-      timestamp: new Date().toISOString(),
+      timestamp,
     };
   }
 }

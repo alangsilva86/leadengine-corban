@@ -59,26 +59,36 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(url).toBe('https://broker.example/broker/session/connect');
     expect(init?.method).toBe('POST');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ sessionId: 'session-1', webhookUrl: 'https://hooks.example', forceReopen: true });
+    expect(body).toEqual({ instanceId: 'session-1', webhookUrl: 'https://hooks.example', forceReopen: true });
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('broker-key');
     expect(headers.get('content-type')).toBe('application/json');
   });
 
-  it('sendText posts message with broker API key header', async () => {
-    fetchMock.mockResolvedValueOnce(createJsonResponse(200, { id: 'msg-1' }));
+  it('sendText posts message with broker API key header and extended payload', async () => {
+    fetchMock.mockResolvedValueOnce(createJsonResponse(200, { ack: { id: 'msg-1', status: 'queued' } }));
     const client = await loadClient();
 
-    await client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    await client.sendText({
+      instanceId: 'session-1',
+      to: '5511987654321',
+      text: 'Hello',
+      waitAckMs: 200,
+      timeoutMs: 1000,
+      skipNormalize: true,
+    });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://broker.example/broker/messages');
     expect(init?.method).toBe('POST');
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
-      sessionId: 'session-1',
+      instanceId: 'session-1',
       to: '5511987654321',
-      message: 'Hello',
+      text: 'Hello',
+      waitAckMs: 200,
+      timeoutMs: 1000,
+      skipNormalize: true,
       type: 'text',
     });
     const headers = init?.headers as Headers;
@@ -90,7 +100,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const client = await loadClient();
 
     await client.createPoll({
-      sessionId: 'session-1',
+      instanceId: 'session-1',
       to: '5511987654321',
       question: 'Qual opção?',
       options: ['A', 'B', 'C'],
@@ -101,25 +111,49 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(url).toBe('https://broker.example/broker/polls');
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
-      sessionId: 'session-1',
+      instanceId: 'session-1',
       to: '5511987654321',
       question: 'Qual opção?',
       options: ['A', 'B', 'C'],
-      allowMultipleAnswers: true,
+      selectableCount: 3,
     });
   });
 
   it('fetchEvents uses webhook API key and query params', async () => {
-    fetchMock.mockResolvedValueOnce(createJsonResponse(200, { events: [] }));
+    fetchMock.mockResolvedValueOnce(createJsonResponse(200, { items: [] }));
     const client = await loadClient();
 
     await client.fetchEvents({ limit: 10, cursor: 'abc' });
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://broker.example/broker/events?limit=10&cursor=abc');
+    expect(url).toBe('https://broker.example/broker/events?limit=10&after=abc');
     expect(init?.method).toBe('GET');
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('webhook-key');
+  });
+
+  it('fetchEvents normalizes broker response fields', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        items: [{ id: 'evt-1' }],
+        nextCursor: 'cursor-2',
+        pending: 5,
+        ack: { received: true },
+      })
+    );
+    const client = await loadClient();
+
+    const response = await client.fetchEvents<{
+      events: unknown[];
+      nextCursor?: string | null;
+      pending?: number;
+      ack?: Record<string, unknown>;
+    }>();
+
+    expect(response.events).toEqual([{ id: 'evt-1' }]);
+    expect(response.nextCursor).toBe('cursor-2');
+    expect(response.pending).toBe(5);
+    expect(response.ack).toEqual({ received: true });
   });
 
   it('ackEvents posts ids with webhook api key', async () => {
@@ -131,9 +165,37 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://broker.example/broker/events/ack');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ eventIds: ['evt-1', 'evt-2'] });
+    expect(body).toEqual({ ids: ['evt-1', 'evt-2'] });
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('webhook-key');
+  });
+
+  it('getSessionStatus hits new endpoint and normalizes broker payload', async () => {
+    const qrContent = 'data:image/png;base64,QR';
+    const expiresAt = '2024-01-01T00:00:00.000Z';
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        connected: false,
+        status: 'qr_required',
+        qr: { content: qrContent, expiresAt },
+        user: { name: 'Tester', phone: '5511' },
+        rate: { remaining: 10 },
+      })
+    );
+    const client = await loadClient();
+
+    const result = await client.getSessionStatus('session-1');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/session/session-1/status');
+    expect(init?.method).toBe('GET');
+    expect(result).toMatchObject({
+      connected: false,
+      status: 'qr_required',
+      qr: { content: qrContent, expiresAt },
+      user: { name: 'Tester', phone: '5511' },
+      rate: { remaining: 10 },
+    });
   });
 
   it('does not call ackEvents when ids list is empty', async () => {
@@ -144,6 +206,26 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('sendMessage maps ack payload to WhatsAppMessageResult', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        ack: { id: 'ack-1', status: 'delivered', timestamp: '2024-01-01T00:00:00.000Z' },
+      })
+    );
+    const client = await loadClient();
+
+    const result = await client.sendMessage('session-1', {
+      to: '5511987654321',
+      content: 'Hello',
+    });
+
+    expect(result).toEqual({
+      externalId: 'ack-1',
+      status: 'delivered',
+      timestamp: '2024-01-01T00:00:00.000Z',
+    });
+  });
+
   it('throws WhatsAppBrokerError with broker code for failed requests', async () => {
     fetchMock.mockResolvedValueOnce(
       createJsonResponse(429, { error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too fast' } })
@@ -151,7 +233,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const client = await loadClient();
 
     await expect(
-      client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' })
+      client.sendText({ instanceId: 'session-1', to: '5511987654321', text: 'Hello' })
     ).rejects.toMatchObject({
       name: 'WhatsAppBrokerError',
       code: 'RATE_LIMIT_EXCEEDED',
@@ -166,7 +248,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     );
     const client = await loadClient();
 
-    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    const promise = client.sendText({ instanceId: 'session-1', to: '5511987654321', text: 'Hello' });
 
     await expect(promise).rejects.toMatchObject({
       name: 'WhatsAppBrokerNotConfiguredError',
@@ -190,7 +272,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     });
 
     const client = await loadClient();
-    const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
+    const promise = client.sendText({ instanceId: 'session-1', to: '5511987654321', text: 'Hello' });
     const expectation = expect(promise).rejects.toMatchObject({
       code: 'REQUEST_TIMEOUT',
       name: 'WhatsAppBrokerError',

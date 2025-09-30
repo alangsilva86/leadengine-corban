@@ -38,9 +38,14 @@ type BrokerRateLimit = {
 type BrokerSessionStatus = {
   status?: string;
   connected?: boolean;
+  qr?: {
+    content?: string;
+    expiresAt?: string;
+  } | null;
   qrCode?: string;
   qrExpiresAt?: string;
   rate?: unknown;
+  user?: unknown;
 };
 
 const parseNumber = (input: unknown): number | null => {
@@ -96,11 +101,41 @@ const normalizeSessionStatus = (status: BrokerSessionStatus | null | undefined) 
     }
   })();
 
+  const qrSource = (() => {
+    if (status?.qr && typeof status.qr === 'object') {
+      return status.qr as Record<string, unknown>;
+    }
+    return null;
+  })();
+
+  const qrCode = (() => {
+    if (qrSource) {
+      const content = qrSource.content;
+      if (typeof content === 'string' && content.trim().length > 0) {
+        return content;
+      }
+    }
+    if (typeof status?.qrCode === 'string' && status.qrCode.trim().length > 0) {
+      return status.qrCode.trim();
+    }
+    return null;
+  })();
+
+  const qrExpiresAt = (() => {
+    if (qrSource && typeof qrSource.expiresAt === 'string') {
+      return qrSource.expiresAt;
+    }
+    if (typeof status?.qrExpiresAt === 'string') {
+      return status.qrExpiresAt;
+    }
+    return null;
+  })();
+
   return {
     status: normalizedStatus,
     connected,
-    qrCode: typeof status?.qrCode === 'string' ? status.qrCode : null,
-    qrExpiresAt: typeof status?.qrExpiresAt === 'string' ? status.qrExpiresAt : null,
+    qrCode,
+    qrExpiresAt,
     rate: parseRateLimit(status?.rate ?? null),
   };
 };
@@ -213,21 +248,54 @@ router.post(
     try {
       const result = await whatsappBrokerClient.sendText<{
         externalId?: string;
+        id?: string;
         status?: string;
         rate?: unknown;
+        ack?: Record<string, unknown>;
       }>({
-        sessionId,
+        instanceId: sessionId,
         to,
-        message,
+        text: message,
         previewUrl,
         externalId,
       });
 
+      const ackRecord =
+        result?.ack && typeof result.ack === 'object' ? (result.ack as Record<string, unknown>) : undefined;
+
+      const normalizedExternalId = (() => {
+        const ackId = typeof ackRecord?.id === 'string' && ackRecord.id.trim().length > 0 ? ackRecord.id.trim() : null;
+        if (ackId) {
+          return ackId;
+        }
+        if (typeof result?.externalId === 'string' && result.externalId.trim().length > 0) {
+          return result.externalId.trim();
+        }
+        if (typeof result?.id === 'string' && result.id.trim().length > 0) {
+          return result.id.trim();
+        }
+        if (typeof externalId === 'string' && externalId.trim().length > 0) {
+          return externalId.trim();
+        }
+        return null;
+      })();
+
+      const normalizedStatus = (() => {
+        const ackStatus = typeof ackRecord?.status === 'string' ? ackRecord.status : undefined;
+        if (ackStatus) {
+          return ackStatus;
+        }
+        if (typeof result?.status === 'string' && result.status.trim().length > 0) {
+          return result.status.trim();
+        }
+        return 'queued';
+      })();
+
       res.status(202).json({
         success: true,
         data: {
-          externalId: typeof result?.externalId === 'string' ? result.externalId : null,
-          status: typeof result?.status === 'string' ? result.status : 'queued',
+          externalId: normalizedExternalId,
+          status: normalizedStatus,
           rate: parseRateLimit(result?.rate ?? null),
         },
       });
@@ -262,7 +330,7 @@ router.post(
 
     try {
       const poll = await whatsappBrokerClient.createPoll<{ rate?: unknown } & Record<string, unknown>>({
-        sessionId,
+        instanceId: sessionId,
         to,
         question,
         options,
@@ -310,6 +378,8 @@ router.get(
         data: {
           items: Array.isArray(events?.events) ? events.events : [],
           nextCursor: typeof events?.nextCursor === 'string' ? events.nextCursor : null,
+          pending: typeof events?.pending === 'number' ? events.pending : null,
+          ack: events?.ack ?? null,
           rate: parseRateLimit(events?.rate ?? null),
         },
       });
