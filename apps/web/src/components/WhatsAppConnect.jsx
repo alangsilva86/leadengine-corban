@@ -33,6 +33,14 @@ const statusCopy = {
   },
 };
 
+const statusCodeMeta = [
+  { code: '1', label: 'Status 1', description: 'Total de mensagens reportadas com status 1 pelo broker.' },
+  { code: '2', label: 'Status 2', description: 'Total de mensagens reportadas com status 2 pelo broker.' },
+  { code: '3', label: 'Status 3', description: 'Total de mensagens reportadas com status 3 pelo broker.' },
+  { code: '4', label: 'Status 4', description: 'Total de mensagens reportadas com status 4 pelo broker.' },
+  { code: '5', label: 'Status 5', description: 'Total de mensagens reportadas com status 5 pelo broker.' },
+];
+
 const pickMetric = (source, keys) => {
   if (!source) return undefined;
   for (const key of keys) {
@@ -43,12 +51,170 @@ const pickMetric = (source, keys) => {
   return undefined;
 };
 
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric)) {
+      return numeric;
+    }
+  }
+
+  return null;
+};
+
+const findStatusCountsSource = (source) => {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  const candidates = [
+    source.statusCounts,
+    source.status_counts,
+    source.messageStatusCounts,
+    source.message_status_counts,
+    source.messagesStatusCounts,
+    source.messages_status_counts,
+    source.statusMap,
+    source.statuses,
+    source.counts,
+    source.counters,
+    source.status,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && (typeof candidate === 'object' || Array.isArray(candidate))) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeStatusCounts = (rawCounts) => {
+  const defaultKeys = ['1', '2', '3', '4', '5'];
+  const normalized = {};
+
+  if (Array.isArray(rawCounts)) {
+    rawCounts.forEach((value, index) => {
+      const numeric = toNumber(value);
+      if (numeric !== null) {
+        normalized[String(index + 1)] = numeric;
+      }
+    });
+  } else if (rawCounts && typeof rawCounts === 'object') {
+    for (const [key, value] of Object.entries(rawCounts)) {
+      const numeric = toNumber(value);
+      if (numeric === null) continue;
+      const keyMatch = `${key}`.match(/\d+/);
+      const normalizedKey = keyMatch ? keyMatch[0] : `${key}`;
+      normalized[normalizedKey] = numeric;
+    }
+  }
+
+  return defaultKeys.reduce((acc, key, index) => {
+    const fallbackKeys = [key, String(index), String(index + 1), `status_${key}`, `status${key}`];
+    const value = fallbackKeys.reduce((current, candidate) => {
+      if (current !== undefined) return current;
+      if (Object.prototype.hasOwnProperty.call(normalized, candidate)) {
+        return normalized[candidate];
+      }
+      return undefined;
+    }, undefined);
+
+    acc[key] = typeof value === 'number' ? value : 0;
+    return acc;
+  }, {});
+};
+
+const findRateSource = (source) => {
+  if (!source || typeof source !== 'object') {
+    return undefined;
+  }
+
+  const candidates = [
+    source.rateUsage,
+    source.rate,
+    source.rateLimiter,
+    source.rateLimit,
+    source.limits?.rate,
+    source.limits,
+    source.limit,
+    source.throttle,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object') {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeRateUsage = (rawRate) => {
+  const defaults = {
+    used: 0,
+    limit: 0,
+    remaining: 0,
+    percentage: 0,
+  };
+
+  if (!rawRate || typeof rawRate !== 'object') {
+    return defaults;
+  }
+
+  const usedCandidate = toNumber(
+    pickMetric(rawRate, ['usage', 'used', 'current', 'value', 'count', 'consumed'])
+  );
+  const limitCandidate = toNumber(pickMetric(rawRate, ['limit', 'max', 'maximum', 'quota', 'total', 'capacity']));
+  const remainingCandidate = toNumber(
+    pickMetric(rawRate, ['remaining', 'left', 'available', 'saldo', 'restante'])
+  );
+
+  let used = usedCandidate !== null ? usedCandidate : null;
+  const limit = limitCandidate !== null ? limitCandidate : null;
+  let remaining = remainingCandidate !== null ? remainingCandidate : null;
+
+  if (used === null && remaining !== null && limit !== null) {
+    used = limit - remaining;
+  }
+
+  if (remaining === null && limit !== null && used !== null) {
+    remaining = limit - used;
+  }
+
+  used = typeof used === 'number' && Number.isFinite(used) ? Math.max(0, used) : 0;
+  const safeLimit = typeof limit === 'number' && Number.isFinite(limit) ? Math.max(0, limit) : 0;
+  remaining = typeof remaining === 'number' && Number.isFinite(remaining) ? Math.max(0, remaining) : safeLimit ? Math.max(safeLimit - used, 0) : 0;
+
+  const percentage = safeLimit > 0 ? Math.min(100, Math.max(0, Math.round((used / safeLimit) * 100))) : used > 0 ? 100 : 0;
+
+  return {
+    used,
+    limit: safeLimit,
+    remaining,
+    percentage,
+  };
+};
+
 const getInstanceMetrics = (instance) => {
   const metricsSource = instance?.metrics || instance?.stats || instance || {};
   const sent = pickMetric(metricsSource, ['messagesSent', 'sent', 'totalSent', 'enviadas', 'messages']) ?? 0;
   const queued = pickMetric(metricsSource, ['queued', 'pending', 'fila', 'queueSize', 'waiting']) ?? 0;
   const failed = pickMetric(metricsSource, ['failed', 'errors', 'falhas', 'errorCount']) ?? 0;
-  return { sent, queued, failed };
+  const statusCountsSource =
+    findStatusCountsSource(metricsSource) ||
+    findStatusCountsSource(metricsSource?.status) ||
+    findStatusCountsSource(metricsSource?.messages) ||
+    findStatusCountsSource(instance?.statusMetrics);
+  const status = normalizeStatusCounts(statusCountsSource);
+  const rateUsage = normalizeRateUsage(findRateSource(metricsSource));
+
+  return { sent, queued, failed, status, rateUsage };
 };
 
 const getStatusInfo = (instance) => {
@@ -830,6 +996,9 @@ const WhatsAppConnect = ({
                     const isCurrent = instance?.id === item.id;
                     const statusInfo = getStatusInfo(item);
                     const metrics = getInstanceMetrics(item);
+                    const statusValues = metrics.status || {};
+                    const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
+                    const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
                     const phoneLabel =
                       item.phoneNumber || item.number || item.msisdn || item.jid || item.session || '';
                     const addressLabel = item.address || item.jid || item.session || '';
@@ -861,24 +1030,64 @@ const WhatsAppConnect = ({
                           <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                         </div>
 
-                        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                            <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
-                            <p className="mt-1 text-base font-semibold text-foreground">
-                              {formatMetricValue(metrics.sent)}
-                            </p>
+                        <div className="mt-4 space-y-3">
+                          <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
+                            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
+                              <p className="mt-1 text-base font-semibold text-foreground">
+                                {formatMetricValue(metrics.sent)}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
+                              <p className="mt-1 text-base font-semibold text-foreground">
+                                {formatMetricValue(metrics.queued)}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
+                              <p className="mt-1 text-base font-semibold text-foreground">
+                                {formatMetricValue(metrics.failed)}
+                              </p>
+                            </div>
                           </div>
-                          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                            <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
-                            <p className="mt-1 text-base font-semibold text-foreground">
-                              {formatMetricValue(metrics.queued)}
-                            </p>
+
+                          <div className="grid gap-2 text-center sm:grid-cols-3 lg:grid-cols-5">
+                            {statusCodeMeta.map((meta) => (
+                              <div
+                                key={meta.code}
+                                className="rounded-lg border border-white/10 bg-white/5 p-3"
+                                title={meta.description}
+                              >
+                                <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                                  {meta.label}
+                                </p>
+                                <p className="mt-1 text-base font-semibold text-foreground">
+                                  {formatMetricValue(statusValues[meta.code])}
+                                </p>
+                              </div>
+                            ))}
                           </div>
-                          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                            <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
-                            <p className="mt-1 text-base font-semibold text-foreground">
-                              {formatMetricValue(metrics.failed)}
-                            </p>
+
+                          <div
+                            className="rounded-lg border border-white/10 bg-white/5 p-3 text-left"
+                            title="Uso do limite de envio reportado pelo broker."
+                          >
+                            <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                              <span>Utilização do limite</span>
+                              <span>{ratePercentage}%</span>
+                            </div>
+                            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                              <div
+                                className="h-full rounded-full bg-primary transition-all"
+                                style={{ width: `${ratePercentage}%` }}
+                              />
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                              <span>Usadas: {formatMetricValue(rateUsage.used)}</span>
+                              <span>Disponível: {formatMetricValue(rateUsage.remaining)}</span>
+                              <span>Limite: {formatMetricValue(rateUsage.limit)}</span>
+                            </div>
                           </div>
                         </div>
 
