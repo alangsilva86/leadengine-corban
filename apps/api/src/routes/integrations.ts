@@ -29,6 +29,175 @@ const router: Router = Router();
 // WhatsApp Routes
 // ============================================================================
 
+router.get(
+  '/whatsapp/instances',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+
+    try {
+      const instances = await whatsappBrokerClient.listInstances(tenantId);
+
+      res.json({
+        success: true,
+        data: instances,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.post(
+  '/whatsapp/instances',
+  body('name').isString().isLength({ min: 1 }),
+  body('webhookUrl').optional().isURL(),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const { name, webhookUrl } = req.body as { name: string; webhookUrl?: string };
+
+    try {
+      const instance = await whatsappBrokerClient.createInstance({
+        tenantId,
+        name,
+        webhookUrl,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: instance,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.post(
+  '/whatsapp/instances/:id/start',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.connectInstance(instanceId);
+
+      res.status(202).json({
+        success: true,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.post(
+  '/whatsapp/instances/:id/stop',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.disconnectInstance(instanceId);
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.delete(
+  '/whatsapp/instances/:id',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.deleteInstance(instanceId);
+
+      res.json({
+        success: true,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/:id/status',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      const status = await whatsappBrokerClient.getStatus(instanceId);
+
+      res.json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/:id/qr',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      const qrCode = await whatsappBrokerClient.getQrCode(instanceId);
+
+      res.json({
+        success: true,
+        data: qrCode,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
 type BrokerRateLimit = {
   limit: number | null;
   remaining: number | null;
