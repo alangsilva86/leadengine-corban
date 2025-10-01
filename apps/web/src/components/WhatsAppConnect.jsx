@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { QrCode, CheckCircle2, Link2, ArrowLeft, RefreshCcw, Clock, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { apiGet, apiPost } from '@/lib/api.js';
+import { getAuthToken, onAuthTokenChange } from '@/lib/auth.js';
+import DemoAuthDialog from './DemoAuthDialog.jsx';
 
 const statusCopy = {
   disconnected: {
@@ -109,11 +111,21 @@ const WhatsAppConnect = ({
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [loadingQr, setLoadingQr] = useState(false);
-  const [error, setError] = useState(null);
+  const [authToken, setAuthTokenState] = useState(() => getAuthToken());
+  const [errorState, setErrorState] = useState(null);
   const [localStatus, setLocalStatus] = useState(status);
   const [campaign, setCampaign] = useState(activeCampaign || null);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
+  const loadInstancesRef = useRef(() => {});
+
+  const setErrorMessage = (message, meta = {}) => {
+    if (message) {
+      setErrorState({ message, ...meta });
+    } else {
+      setErrorState(null);
+    }
+  };
 
   const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
 
@@ -131,6 +143,7 @@ const WhatsAppConnect = ({
   const hasCampaign = Boolean(campaign);
   const qrImageSrc = getQrImageSrc(qrData);
   const hasQr = Boolean(qrImageSrc);
+  const isAuthenticated = Boolean(authToken);
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || 'border-white/10 bg-white/10 text-white';
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -140,7 +153,8 @@ const WhatsAppConnect = ({
     : creatingCampaign
     ? 'Sincronizando…'
     : 'Confirmar e criar campanha';
-  const confirmDisabled = creatingCampaign || (!hasCampaign && (!canContinue || isBusy));
+  const confirmDisabled =
+    creatingCampaign || (!hasCampaign && (!canContinue || isBusy)) || !isAuthenticated;
   const qrStatusMessage = localStatus === 'connected'
     ? 'Conexão ativa — QR oculto.'
     : countdownMessage || (loadingQr ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
@@ -226,8 +240,24 @@ const WhatsAppConnect = ({
 
   const loadInstances = async () => {
     if (!selectedAgreement) return;
+    const token = getAuthToken();
+    setAuthTokenState(token);
+    if (!token) {
+      setLoadingInstances(false);
+      setLoadingQr(false);
+      setErrorMessage(
+        'Para consultar as instâncias de WhatsApp, autentique-se usando o botão “Login demo” e gere um token ativo.',
+        { requiresAuth: true }
+      );
+      setInstances([]);
+      setInstance(null);
+      setLocalStatus('disconnected');
+      setQrData(null);
+      setSecondsLeft(null);
+      return;
+    }
     setLoadingInstances(true);
-    setError(null);
+    setErrorMessage(null);
     try {
       const response = await apiGet('/api/integrations/whatsapp/instances');
       const list = Array.isArray(response?.data) ? response.data : [];
@@ -267,16 +297,47 @@ const WhatsAppConnect = ({
         setSecondsLeft(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp');
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
+      );
     } finally {
       setLoadingInstances(false);
     }
   };
+  loadInstancesRef.current = loadInstances;
+
+  useEffect(() => {
+    const unsubscribe = onAuthTokenChange((token) => {
+      setAuthTokenState(token);
+      if (token) {
+        setErrorMessage(null);
+        if (selectedAgreement) {
+          void loadInstancesRef.current?.();
+        }
+      } else {
+        setLoadingInstances(false);
+        setLoadingQr(false);
+        setErrorMessage(
+          'Sessão expirada. Utilize o botão “Login demo” para gerar um novo token e continuar a configuração.',
+          { requiresAuth: true }
+        );
+        setInstances([]);
+        setInstance(null);
+        setLocalStatus('disconnected');
+        setQrData(null);
+        setSecondsLeft(null);
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAgreement?.id]);
 
   const handleCreateInstance = async () => {
     if (!selectedAgreement) return;
     setLoadingInstances(true);
-    setError(null);
+    setErrorMessage(null);
     const defaultName = `${selectedAgreement.name} • ${instances.length + 1}`;
     try {
       const payload = await apiPost('/api/integrations/whatsapp/instances', {
@@ -290,7 +351,7 @@ const WhatsAppConnect = ({
         await loadInstances();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível criar uma nova instância');
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível criar uma nova instância');
     } finally {
       setLoadingInstances(false);
     }
@@ -320,7 +381,7 @@ const WhatsAppConnect = ({
   const generateQr = async (id) => {
     const myPollId = ++pollIdRef.current;
     setLoadingQr(true);
-    setError(null);
+    setErrorMessage(null);
     try {
       // Solicita reinício/logout para forçar emissão de novo QR (ignora erros de rede momentâneos)
       await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {}).catch((error) => {
@@ -352,7 +413,7 @@ const WhatsAppConnect = ({
 
       setQrData(received);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível gerar o QR Code');
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível gerar o QR Code');
     } finally {
       setLoadingQr(false);
     }
@@ -397,7 +458,9 @@ const WhatsAppConnect = ({
       const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`).catch(() => null);
       const connected = Boolean(status?.data?.connected);
       if (!connected) {
-        setError('A instância ainda não está conectada. Escaneie o QR e tente novamente.');
+        setErrorMessage(
+          'A instância ainda não está conectada. Escaneie o QR e tente novamente.'
+        );
         return;
       }
     } catch {
@@ -414,7 +477,7 @@ const WhatsAppConnect = ({
     if (localStatus !== 'connected' || !instance || !selectedAgreement) return;
 
     setCreatingCampaign(true);
-    setError(null);
+    setErrorMessage(null);
 
     try {
       const payload = await apiPost('/api/lead-engine/campaigns', {
@@ -432,7 +495,7 @@ const WhatsAppConnect = ({
 
       onContinue?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível salvar a campanha');
+      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível salvar a campanha');
     } finally {
       setCreatingCampaign(false);
     }
@@ -632,7 +695,7 @@ const WhatsAppConnect = ({
                             size="sm"
                             variant="secondary"
                             onClick={() => void handleViewQr(item)}
-                            disabled={isBusy}
+                            disabled={isBusy || !isAuthenticated}
                           >
                             <QrCode className="mr-2 h-3.5 w-3.5" /> Ver QR
                           </Button>
@@ -648,7 +711,7 @@ const WhatsAppConnect = ({
                     size="sm"
                     className="mt-4"
                     onClick={() => void handleCreateInstance()}
-                    disabled={isBusy || !hasAgreement}
+                    disabled={isBusy || !hasAgreement || !isAuthenticated}
                   >
                     Criar instância agora
                   </Button>
@@ -656,16 +719,31 @@ const WhatsAppConnect = ({
               )}
             </div>
 
-            {error ? (
+            {errorState ? (
               <div className="flex flex-wrap items-start gap-3 rounded-[var(--radius)] border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
                 <AlertCircle className="mt-0.5 h-4 w-4" />
                 <div className="flex-1 space-y-1">
                   <p className="font-medium">Algo deu errado</p>
-                  <p>{error}</p>
+                  <p>{errorState.message}</p>
+                  {errorState.requiresAuth ? (
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      O botão “Login demo” abre o DemoAuthDialog para gerar o token necessário.
+                    </p>
+                  ) : null}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => void loadInstances()}>
-                  Tentar novamente
-                </Button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {errorState.requiresAuth ? (
+                    <DemoAuthDialog />
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void loadInstances()}
+                    disabled={errorState.requiresAuth}
+                  >
+                    Tentar novamente
+                  </Button>
+                </div>
               </div>
             ) : null}
           </CardContent>
@@ -676,7 +754,7 @@ const WhatsAppConnect = ({
             </div>
             <div className="flex flex-wrap gap-2">
               {localStatus !== 'connected' ? (
-                <Button onClick={handleMarkConnected} disabled={isBusy}>
+                <Button onClick={handleMarkConnected} disabled={isBusy || !isAuthenticated}>
                   Marcar como conectado
                 </Button>
               ) : null}
@@ -713,7 +791,7 @@ const WhatsAppConnect = ({
                   size="sm"
                   variant="ghost"
                   onClick={() => void handleGenerateQr()}
-                  disabled={isBusy || !instance}
+                  disabled={isBusy || !instance || !isAuthenticated}
                 >
                   <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR
                 </Button>
