@@ -11,12 +11,14 @@ export class WhatsAppBrokerNotConfiguredError extends Error {
 export class WhatsAppBrokerError extends Error {
   readonly code: string;
   readonly status: number;
+  readonly requestId?: string;
 
-  constructor(message: string, code: string, status: number) {
+  constructor(message: string, code: string, status: number, requestId?: string) {
     super(message);
     this.name = 'WhatsAppBrokerError';
     this.code = code;
     this.status = status;
+    this.requestId = requestId;
   }
 }
 
@@ -172,11 +174,30 @@ class WhatsAppBrokerClient {
       }
     }
 
+    const readRequestId = (...candidates: unknown[]): string | undefined => {
+      for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim().length > 0) {
+          return candidate;
+        }
+      }
+      return undefined;
+    };
+
     const normalizedError = (() => {
       const candidate = parsed?.error && typeof parsed.error === 'object' ? (parsed.error as Record<string, unknown>) : parsed;
       const code = typeof candidate?.code === 'string' ? candidate.code : undefined;
       const message = typeof candidate?.message === 'string' ? candidate.message : undefined;
-      return { code, message };
+      const requestId = readRequestId(
+        candidate?.requestId,
+        candidate?.request_id,
+        parsed?.requestId,
+        parsed?.request_id,
+        candidate?.traceId,
+        candidate?.trace_id,
+        parsed?.traceId,
+        parsed?.trace_id
+      );
+      return { code, message, requestId };
     })();
 
     if (response.status === 401 || response.status === 403) {
@@ -188,8 +209,17 @@ class WhatsAppBrokerClient {
     const code = normalizedError.code || 'BROKER_ERROR';
     const message =
       normalizedError.message || `WhatsApp broker request failed (${response.status})`;
+    const headerRequestId =
+      response.headers?.get?.('x-request-id') ||
+      response.headers?.get?.('x-requestid') ||
+      undefined;
 
-    throw new WhatsAppBrokerError(message, code, response.status);
+    throw new WhatsAppBrokerError(
+      message,
+      code,
+      response.status,
+      normalizedError.requestId || headerRequestId
+    );
   }
 
   private async request<T>(
@@ -238,7 +268,11 @@ class WhatsAppBrokerClient {
       }
 
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new WhatsAppBrokerError('WhatsApp broker request timed out', 'REQUEST_TIMEOUT', 408);
+        throw new WhatsAppBrokerError(
+          'WhatsApp broker request timed out',
+          'REQUEST_TIMEOUT',
+          408
+        );
       }
 
       logger.error('Unexpected WhatsApp broker request failure', { path, error });
