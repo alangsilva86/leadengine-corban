@@ -384,6 +384,10 @@ export async function getUserById(userId: string): Promise<AuthenticatedUser | n
  * Middleware de autenticação JWT
  */
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   try {
     if (AUTH_DISABLED_FOR_MVP) {
       req.user = buildMvpBypassUser();
@@ -580,6 +584,10 @@ export const requireRole = (requiredRole: 'ADMIN' | 'SUPERVISOR') => {
  * Middleware para verificar se o usuário pertence ao tenant
  */
 export const requireTenant = (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   if (!req.user && AUTH_DISABLED_FOR_MVP) {
     req.user = buildMvpBypassUser();
   }

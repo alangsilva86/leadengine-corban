@@ -8,6 +8,7 @@ import { QrCode, CheckCircle2, Link2, ArrowLeft, RefreshCcw, Clock, AlertCircle,
 import { cn } from '@/lib/utils.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken, onAuthTokenChange } from '@/lib/auth.js';
+import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import DemoAuthDialog from './DemoAuthDialog.jsx';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 
@@ -64,38 +65,6 @@ const toNumber = (value) => {
     const numeric = Number(value);
     if (!Number.isNaN(numeric)) {
       return numeric;
-    }
-  }
-
-  return null;
-};
-
-const parseRetryAfterMs = (retryAfter) => {
-  if (retryAfter === null || retryAfter === undefined) {
-    return null;
-  }
-
-  if (typeof retryAfter === 'number' && Number.isFinite(retryAfter)) {
-    const asMilliseconds = retryAfter > 1000 ? retryAfter : retryAfter * 1000;
-    return Math.max(0, Math.round(asMilliseconds));
-  }
-
-  if (typeof retryAfter === 'string') {
-    const trimmed = retryAfter.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const numericCandidate = Number(trimmed);
-    if (Number.isFinite(numericCandidate)) {
-      const asMilliseconds = numericCandidate > 1000 ? numericCandidate : numericCandidate * 1000;
-      return Math.max(0, Math.round(asMilliseconds));
-    }
-
-    const parsedDate = Date.parse(trimmed);
-    if (!Number.isNaN(parsedDate)) {
-      const diff = parsedDate - Date.now();
-      return diff > 0 ? diff : 0;
     }
   }
 
@@ -802,61 +771,41 @@ const WhatsAppConnect = ({
     return connected || list[0];
   };
 
-  const connectDefaultInstance = async () => {
-    const response = await apiPost('/api/integrations/whatsapp/instances/connect', {});
+  const connectInstance = async (instanceId = null) => {
+    const response = await apiPost('/api/integrations/whatsapp/instances/connect', instanceId ? { instanceId } : {});
     setSessionActive(true);
     const payload = response?.data ?? {};
+    const instanceFromPayload = extractInstanceFromPayload(payload) || null;
 
     let status = typeof payload.status === 'string' ? payload.status : null;
-    const hasConnectedFlag = typeof payload.connected === 'boolean';
-    const connected = hasConnectedFlag
-      ? payload.connected
-      : typeof status === 'string'
-      ? status === 'connected'
-      : null;
-
-    if (!status && hasConnectedFlag) {
-      status = payload.connected ? 'connected' : 'disconnected';
-    }
-
-    const instance =
-      payload && typeof payload.instance === 'object' && payload.instance !== null
-        ? payload.instance
-        : null;
-    const instances = Array.isArray(payload?.instances)
-      ? payload.instances.filter((item) => item && typeof item === 'object')
-      : [];
-
-    return {
-      status,
-      connected,
-      qr: extractQrPayload(payload),
-      instance,
-      instances,
-    };
-  };
-
-  const startInstanceConnection = async (id) => {
-    if (!id) return null;
-
-    const response = await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {});
-    setSessionActive(true);
-    const payload = response?.data ?? {};
-    const instance = extractInstanceFromPayload(payload) || null;
-
-    let status = typeof payload.status === 'string' ? payload.status : null;
-    if (!status && typeof instance?.status === 'string') {
-      status = instance.status;
+    if (!status && typeof instanceFromPayload?.status === 'string') {
+      status = instanceFromPayload.status;
     }
 
     const hasConnectedFlag = typeof payload.connected === 'boolean';
     let connected = hasConnectedFlag
       ? payload.connected
-      : typeof instance?.connected === 'boolean'
-      ? instance.connected
+      : typeof instanceFromPayload?.connected === 'boolean'
+      ? instanceFromPayload.connected
       : null;
     if (connected === null && status) {
       connected = status === 'connected';
+    }
+
+    const resolvedInstanceId =
+      typeof payload.instanceId === 'string' && payload.instanceId
+        ? payload.instanceId
+        : instanceId || instanceFromPayload?.id || instanceFromPayload?.instanceId || null;
+
+    let instance = instanceFromPayload;
+    if (!instance && resolvedInstanceId) {
+      instance = {
+        id: resolvedInstanceId,
+        status,
+        connected,
+      };
+    } else if (instance && resolvedInstanceId && !instance.id) {
+      instance = { ...instance, id: resolvedInstanceId };
     }
 
     const instances = Array.isArray(payload.instances)
@@ -864,6 +813,7 @@ const WhatsAppConnect = ({
       : [];
 
     return {
+      instanceId: resolvedInstanceId,
       status,
       connected,
       qr: extractQrPayload(payload),
@@ -884,7 +834,8 @@ const WhatsAppConnect = ({
       let connectResult = providedConnect || null;
 
       if (!Array.isArray(list) || list.length === 0) {
-        connectResult = connectResult || (await connectDefaultInstance());
+        const fallbackInstanceId = preferredInstanceId || campaign?.instanceId || null;
+        connectResult = connectResult || (await connectInstance(fallbackInstanceId));
 
         if (connectResult?.instances?.length) {
           list = connectResult.instances;
@@ -1029,7 +980,7 @@ const WhatsAppConnect = ({
 
       if (createdInstanceId) {
         try {
-          const startResult = await startInstanceConnection(createdInstanceId);
+          const startResult = await connectInstance(createdInstanceId);
           if (startResult) {
             connectResult = {
               ...startResult,
@@ -1113,7 +1064,7 @@ const WhatsAppConnect = ({
     setErrorMessage(null);
     try {
       if (!skipConnect) {
-        const connectResult = await connectDefaultInstance();
+        const connectResult = await connectInstance(id);
         const nextStatus =
           connectResult?.status ||
           (typeof connectResult?.connected === 'boolean'
@@ -1162,11 +1113,11 @@ const WhatsAppConnect = ({
           );
         }
 
-        const connectQr = extractQrPayload(connectResult);
-        if (connectResult?.connected === false && connectQr?.qrCode) {
-          setQrData(connectQr);
-          return;
-        }
+       const connectQr = extractQrPayload(connectResult);
+       if (connectResult?.connected === false && connectQr?.qrCode) {
+         setQrData(connectQr);
+         return;
+       }
 
         if (connectResult?.connected) {
           setQrData(null);
@@ -1174,15 +1125,6 @@ const WhatsAppConnect = ({
           return;
         }
       }
-
-      // Fallback para fluxo legado caso o QR não tenha sido retornado pelo endpoint de conexão
-      await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {})
-        .then(() => {
-          setSessionActive(true);
-        })
-        .catch((error) => {
-          console.debug('Falha temporária ao iniciar instância do WhatsApp', error);
-        });
 
       setLocalStatus('qr_required');
       onStatusChange?.('disconnected');
@@ -1197,7 +1139,9 @@ const WhatsAppConnect = ({
         }
         let qrResponse = null;
         try {
-          qrResponse = await apiGet(`/api/integrations/whatsapp/instances/${id}/qr`);
+          qrResponse = await apiGet(
+            `/api/integrations/whatsapp/instances/qr?instanceId=${encodeURIComponent(id)}`
+          );
           setSessionActive(true);
         } catch (error) {
           if (isAuthError(error)) {

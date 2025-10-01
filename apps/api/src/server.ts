@@ -150,12 +150,44 @@ const rateLimitMaxRequests =
 const limiter = rateLimit({
   windowMs: rateLimitWindowMs, // 15 minutos por padrão
   max: rateLimitMaxRequests, // máximo 100 requests por IP por janela por padrão
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, next, options) => {
+    const resetTime = req.rateLimit?.resetTime;
+    let retryAfterSeconds: number | null = null;
+
+    if (resetTime instanceof Date) {
+      const diffSeconds = Math.ceil((resetTime.getTime() - Date.now()) / 1000);
+      retryAfterSeconds = diffSeconds > 0 ? diffSeconds : 1;
+    } else if (typeof options?.windowMs === 'number' && Number.isFinite(options.windowMs)) {
+      retryAfterSeconds = Math.max(1, Math.ceil(options.windowMs / 1000));
+    }
+
+    if (retryAfterSeconds !== null) {
+      res.setHeader('Retry-After', retryAfterSeconds.toString());
+    }
+
+    res.status(429).json({
+      success: false,
+      error: {
+        code: 'RATE_LIMITED',
+        message: options?.message || 'Too many requests from this IP, please try again later.',
+      },
+    });
+  },
   message: 'Too many requests from this IP, please try again later.',
 });
 
 // Middlewares globais
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
 app.use(
   helmet({
     contentSecurityPolicy: false,
