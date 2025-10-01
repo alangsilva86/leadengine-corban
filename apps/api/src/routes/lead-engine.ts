@@ -14,6 +14,8 @@ import {
   addAllocations,
   listAllocations as listTenantAllocations,
   updateAllocation as updateTenantAllocation,
+  isStorageInitializationError,
+  isStorageUnavailableError,
 } from '../data/lead-allocation-store';
 
 const router: Router = Router();
@@ -668,6 +670,49 @@ router.get(
         },
       });
     } catch (error) {
+      if (isStorageInitializationError(error)) {
+        logger.warn('[LeadEngine] ⚠️ Storage not initialized when listing allocations', {
+          tenantId,
+          agreementId,
+          campaignId,
+          statuses,
+          error,
+        });
+
+        const allocations: Awaited<ReturnType<typeof listTenantAllocations>> = [];
+        const summary = buildAllocationSummary(allocations);
+
+        res.json({
+          success: true,
+          data: allocations,
+          meta: {
+            total: summary.total,
+            summary,
+          },
+        });
+        return;
+      }
+
+      if (isStorageUnavailableError(error)) {
+        logger.error('[LeadEngine] 🚫 Storage unavailable when listing allocations', {
+          tenantId,
+          agreementId,
+          campaignId,
+          statuses,
+          error,
+        });
+
+        res.status(503).json({
+          success: false,
+          error: {
+            code: 'ALLOCATIONS_STORAGE_UNAVAILABLE',
+            message:
+              'Serviço de armazenamento indisponível no momento. Tente novamente mais tarde.',
+          },
+        });
+        return;
+      }
+
       logger.error('[LeadEngine] ❌ Failed to list allocations', {
         tenantId,
         agreementId,
