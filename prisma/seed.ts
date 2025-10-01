@@ -176,25 +176,45 @@ async function main() {
 
   console.log('✅ Contatos demo criados');
 
+  // Criar instância WhatsApp demo
+  const demoInstance = await prisma.whatsAppInstance.upsert({
+    where: { id: 'demo-whatsapp' },
+    update: {
+      tenantId: demoTenant.id,
+      name: 'WhatsApp Demo',
+      brokerId: 'demo-whatsapp',
+      status: 'connected',
+      connected: true,
+      metadata: {
+        note: 'Instância demo criada pelo seed',
+      },
+    },
+    create: {
+      id: 'demo-whatsapp',
+      tenantId: demoTenant.id,
+      name: 'WhatsApp Demo',
+      brokerId: 'demo-whatsapp',
+      status: 'connected',
+      connected: true,
+      metadata: {
+        note: 'Instância demo criada pelo seed',
+      },
+    },
+  });
+
+  console.log('✅ Instância WhatsApp demo criada:', demoInstance.name);
+
   // Criar campanha demo
   const demoCampaign = await prisma.campaign.create({
     data: {
       tenantId: demoTenant.id,
-      name: 'Campanha SAEC Goiânia',
-      description: 'Campanha de leads para SAEC Goiânia',
-      type: 'WHATSAPP',
-      status: 'RUNNING',
-      startDate: new Date(),
-      targetAudience: {
-        region: 'GO',
-        agreement: 'saec-goiania',
-      },
-      content: {
-        message: 'Olá! Temos uma proposta de crédito consignado para você.',
-      },
-      settings: {
-        autoAssign: true,
-        maxLeadsPerDay: 100,
+      name: 'ConsigTec Goiânia • demo-whatsapp',
+      agreementId: 'saec-goiania',
+      agreementName: 'Convênio SAEC Goiânia',
+      whatsappInstanceId: demoInstance.id,
+      status: 'active',
+      metadata: {
+        note: 'Campanha demo criada pelo seed',
       },
     },
   });

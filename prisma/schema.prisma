@@ -216,26 +216,24 @@ model Lead {
 }
 
 model Campaign {
-  id             String         @id @default(cuid())
-  tenantId       String
-  name           String
-  description    String?
-  type           CampaignType
-  status         CampaignStatus @default(DRAFT)
-  startDate      DateTime?
-  endDate        DateTime?
-  budget         Float?
-  targetAudience Json           @default("{}")
-  content        Json           @default("{}")
-  settings       Json           @default("{}")
-  metrics        Json           @default("{}")
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                 String   @id @default(cuid())
+  tenantId           String
+  name               String
+  agreementId        String?
+  agreementName      String?
+  whatsappInstanceId String?
+  status             String   @default("active")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  metadata           Json?
 
   // Relations
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  leads  Lead[]
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads             Lead[]
+  whatsappInstance  WhatsAppInstance? @relation(fields: [whatsappInstanceId], references: [id])
 
+  @@index([tenantId, status])
+  @@index([tenantId, agreementId])
   @@map("campaigns")
 }
 
@@ -267,16 +265,42 @@ model IntegrationState {
 }
 
 model ProcessedIntegrationEvent {
-  id          String   @id
-  source      String
-  type        String?
-  cursor      String?
-  metadata    Json?
-  processedAt DateTime @default(now())
-  expiresAt   DateTime?
+  id        String   @id
+  source    String
+  cursor    String?
+  payload   Json?
+  createdAt DateTime @default(now())
 
-  @@index([source, processedAt])
+  @@index([source, createdAt])
   @@map("processed_integration_events")
+}
+
+enum WhatsAppInstanceStatus {
+  disconnected
+  connecting
+  connected
+  error
+}
+
+model WhatsAppInstance {
+  id          String                   @id
+  tenantId    String
+  name        String
+  brokerId    String
+  phoneNumber String?
+  status      WhatsAppInstanceStatus   @default(disconnected)
+  connected   Boolean                  @default(false)
+  lastSeenAt  DateTime?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  metadata    Json?
+
+  campaigns   Campaign[]
+
+  @@index([tenantId])
+  @@unique([tenantId, id])
+  @@unique([brokerId])
+  @@map("whatsapp_instances")
 }
 
 // ============================================================================
@@ -362,25 +386,6 @@ enum LeadSource {
   PARTNER
   IMPORT
   OTHER
-}
-
-enum CampaignType {
-  EMAIL
-  WHATSAPP
-  SMS
-  VOICE
-  SOCIAL
-  DISPLAY
-  SEARCH
-}
-
-enum CampaignStatus {
-  DRAFT
-  SCHEDULED
-  RUNNING
-  PAUSED
-  COMPLETED
-  CANCELLED
 }
 
 enum LeadActivityType {

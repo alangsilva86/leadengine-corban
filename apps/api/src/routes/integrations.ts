@@ -1,12 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
+import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import {
   whatsappBrokerClient,
   WhatsAppBrokerNotConfiguredError,
+  type WhatsAppStatus,
 } from '../services/whatsapp-broker-client';
+import { prisma } from '../lib/prisma';
 
 const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {
   if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -67,13 +70,14 @@ type NormalizedInstance = {
   id: string;
   tenantId: string | null;
   name: string | null;
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
+  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'error';
   connected: boolean;
   createdAt: string | null;
   lastActivity: string | null;
   phoneNumber: string | null;
   user: string | null;
   stats?: unknown;
+  metadata?: Record<string, unknown> | null;
 };
 
 const normalizeInstanceStatus = (
@@ -90,6 +94,8 @@ const normalizeInstanceStatus = (
       case 'qr_required':
       case 'disconnected':
         return rawStatus;
+      case 'error':
+        return 'error';
       default:
         return connected ? 'connected' : 'disconnected';
     }
@@ -196,6 +202,76 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
   };
 };
 
+const slugify = (value: string, fallback = 'instance'): string => {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+};
+
+type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>>;
+
+const mapDbStatusToNormalized = (
+  status: WhatsAppInstanceStatus | null | undefined
+): NormalizedInstance['status'] => {
+  switch (status) {
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+      return 'connecting';
+    case 'error':
+      return 'error';
+    default:
+      return 'disconnected';
+  }
+};
+
+const mapBrokerStatusToDbStatus = (
+  status: WhatsAppStatus | null | undefined
+): WhatsAppInstanceStatus => {
+  if (!status) {
+    return 'disconnected';
+  }
+
+  switch (status.status) {
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+      return 'connecting';
+    case 'qr_required':
+      return 'connecting';
+    case 'disconnected':
+      return 'disconnected';
+    default:
+      return 'error';
+  }
+};
+
+const serializeStoredInstance = (
+  instance: StoredInstance,
+  brokerStatus?: WhatsAppStatus | null
+): NormalizedInstance & { brokerId: string } => {
+  const normalizedStatus = brokerStatus?.status ?? mapDbStatusToNormalized(instance.status);
+  const connected = brokerStatus?.connected ?? instance.connected;
+
+  return {
+    id: instance.id,
+    tenantId: instance.tenantId,
+    name: instance.name,
+    status: normalizedStatus,
+    connected,
+    createdAt: instance.createdAt.toISOString(),
+    lastActivity: instance.lastSeenAt ? instance.lastSeenAt.toISOString() : null,
+    phoneNumber: instance.phoneNumber ?? null,
+    user: null,
+    stats: undefined,
+    metadata: (instance.metadata as Record<string, unknown> | null) ?? null,
+    brokerId: instance.brokerId,
+  };
+};
+
 const normalizeQr = (
   value: unknown
 ): { qr: string | null; qrCode: string | null; expiresAt: string | null; qrExpiresAt: string | null } => {
@@ -241,7 +317,7 @@ const normalizeQr = (
 };
 
 const normalizeInstanceStatusResponse = (
-  status: unknown
+  status: WhatsAppStatus | null | undefined
 ): {
   status: NormalizedInstance['status'];
   connected: boolean;
@@ -250,11 +326,10 @@ const normalizeInstanceStatusResponse = (
   expiresAt: string | null;
   qrExpiresAt: string | null;
 } => {
-  if (!status || typeof status !== 'object') {
-    const { status: normalizedStatus, connected } = normalizeInstanceStatus(undefined, undefined);
+  if (!status) {
     return {
-      status: normalizedStatus,
-      connected,
+      status: 'disconnected',
+      connected: false,
       qr: null,
       qrCode: null,
       expiresAt: null,
@@ -262,14 +337,13 @@ const normalizeInstanceStatusResponse = (
     };
   }
 
-  const source = status as Record<string, unknown>;
-  const { status: normalizedStatus, connected } = normalizeInstanceStatus(source.status, source.connected);
-  const qr = normalizeQr(source);
-
   return {
-    status: normalizedStatus,
-    connected,
-    ...qr,
+    status: status.status,
+    connected: status.connected,
+    qr: status.qr,
+    qrCode: status.qrCode,
+    expiresAt: status.expiresAt,
+    qrExpiresAt: status.qrExpiresAt,
   };
 };
 
@@ -345,10 +419,55 @@ router.get(
     const tenantId = req.user!.tenantId;
 
     try {
-      const instances = await whatsappBrokerClient.listInstances(tenantId);
-      const normalized = instances
-        .map((instance) => normalizeInstance(instance))
-        .filter((instance): instance is NormalizedInstance => instance !== null);
+      const storedInstances = await prisma.whatsAppInstance.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const normalized = await Promise.all(
+        storedInstances.map(async (instance) => {
+          let brokerStatus: WhatsAppStatus | null = null;
+
+          try {
+            brokerStatus = await whatsappBrokerClient.getStatus(instance.brokerId, {
+              instanceId: instance.id,
+            });
+          } catch (error) {
+            if (error instanceof WhatsAppBrokerNotConfiguredError) {
+              throw error;
+            }
+            brokerStatus = null;
+          }
+
+          const derivedStatus = brokerStatus ? mapBrokerStatusToDbStatus(brokerStatus) : instance.status;
+          const derivedConnected = brokerStatus?.connected ?? instance.connected;
+          const derivedLastSeenAt = brokerStatus?.connected ? new Date() : instance.lastSeenAt;
+
+          if (brokerStatus) {
+            await prisma.whatsAppInstance.update({
+              where: { id: instance.id },
+              data: {
+                status: derivedStatus,
+                connected: derivedConnected,
+                lastSeenAt: derivedLastSeenAt,
+              },
+            });
+          }
+
+          const serialized = serializeStoredInstance(
+            {
+              ...instance,
+              status: derivedStatus,
+              connected: derivedConnected,
+              lastSeenAt: derivedLastSeenAt,
+            } as StoredInstance,
+            brokerStatus
+          );
+
+          const { brokerId: _brokerId, ...responseInstance } = serialized;
+          return responseInstance;
+        })
+      );
 
       res.json({
         success: true,
@@ -366,31 +485,50 @@ router.get(
 // POST /api/integrations/whatsapp/instances - Create a WhatsApp instance
 router.post(
   '/whatsapp/instances',
+  body('id').isString().isLength({ min: 1 }),
   body('name').isString().isLength({ min: 1 }),
-  body('webhookUrl').optional().isURL(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const { name, webhookUrl } = req.body as { name: string; webhookUrl?: string };
+    const { id, name } = req.body as { id: string; name: string };
+
+    const normalizedId = slugify(id);
+    const normalizedName = name.trim();
 
     try {
-      const instance = await whatsappBrokerClient.createInstance({
-        tenantId,
-        name,
-        webhookUrl,
+      const instance = await prisma.whatsAppInstance.create({
+        data: {
+          id: normalizedId,
+          tenantId,
+          name: normalizedName,
+          brokerId: normalizedId,
+          status: 'disconnected',
+          connected: false,
+          metadata: {
+            displayId: id,
+          },
+        },
       });
 
-      const normalized = normalizeInstance(instance);
+      const { brokerId: _brokerId, ...payload } = serializeStoredInstance(instance as StoredInstance, null);
 
       res.status(201).json({
         success: true,
-        data: normalized,
+        data: payload,
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_ALREADY_EXISTS',
+            message: 'Já existe uma instância WhatsApp com este identificador.',
+          },
+        });
         return;
       }
+
       throw error;
     }
   })
@@ -404,10 +542,38 @@ router.post(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
+    const tenantId = req.user!.tenantId;
 
     try {
-      await whatsappBrokerClient.connectInstance(instanceId);
-      const status = await whatsappBrokerClient.getStatus(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
+
+      const updates: Prisma.WhatsAppInstanceUpdateInput = {
+        status: mapBrokerStatusToDbStatus(status),
+        connected: status.connected,
+      };
+
+      if (status.connected) {
+        updates.lastSeenAt = new Date();
+      }
+
+      await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: updates,
+      });
 
       res.json({
         success: true,
@@ -432,15 +598,29 @@ router.post(
     const requestedInstanceId =
       typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
+    const tenantId = req.user!.tenantId;
 
     try {
-      await whatsappBrokerClient.connectInstance(instanceId);
-      const status = await whatsappBrokerClient.getStatus(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
       res.json({
         success: true,
         data: {
-          instanceId,
+          instanceId: instance.id,
           ...normalizeInstanceStatusResponse(status),
         },
       });
@@ -464,15 +644,118 @@ router.post(
     const instanceId = req.params.id;
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
     const disconnectOptions = wipe === undefined ? undefined : { wipe };
+    const tenantId = req.user!.tenantId;
 
     try {
-      await whatsappBrokerClient.disconnectInstance(instanceId, disconnectOptions);
-      const status = await whatsappBrokerClient.getStatus(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      await whatsappBrokerClient.disconnectInstance(instance.brokerId, {
+        ...(disconnectOptions ?? {}),
+        instanceId: instance.id,
+      });
+      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
+
+      const updates: Prisma.WhatsAppInstanceUpdateInput = {
+        status: mapBrokerStatusToDbStatus(status),
+        connected: status.connected,
+      };
+
+      if (!status.connected) {
+        updates.lastSeenAt = new Date();
+      }
+
+      await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: updates,
+      });
 
       res.json({
         success: true,
         data: normalizeInstanceStatusResponse(status),
       });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.delete(
+  '/whatsapp/instances/:id',
+  param('id').isString().isLength({ min: 1 }),
+  query('wipe').optional().isBoolean().toBoolean(),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+    const tenantId = req.user!.tenantId;
+    const wipe = typeof req.query?.wipe === 'boolean' ? (req.query.wipe as boolean) : false;
+
+    try {
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      if (instance.connected) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_CONNECTED',
+            message: 'Desconecte a instância antes de removê-la.',
+          },
+        });
+        return;
+      }
+
+      const activeCampaigns = await prisma.campaign.count({
+        where: {
+          tenantId,
+          whatsappInstanceId: instance.id,
+          status: 'active',
+        },
+      });
+
+      if (activeCampaigns > 0) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_IN_USE',
+            message: 'Existem campanhas ativas associadas a esta instância.',
+          },
+        });
+        return;
+      }
+
+      await whatsappBrokerClient.deleteInstance(instance.brokerId, {
+        instanceId: instance.id,
+        wipe,
+      });
+
+      await prisma.whatsAppInstance.delete({ where: { id: instance.id } });
+
+      res.status(204).send();
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
         return;
@@ -495,15 +778,46 @@ router.post(
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
     const disconnectOptions = wipe === undefined ? undefined : { wipe };
+    const tenantId = req.user!.tenantId;
 
     try {
-      await whatsappBrokerClient.disconnectInstance(instanceId, disconnectOptions);
-      const status = await whatsappBrokerClient.getStatus(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      await whatsappBrokerClient.disconnectInstance(instance.brokerId, {
+        ...(disconnectOptions ?? {}),
+        instanceId: instance.id,
+      });
+      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
+
+      const updates: Prisma.WhatsAppInstanceUpdateInput = {
+        status: mapBrokerStatusToDbStatus(status),
+        connected: status.connected,
+      };
+
+      if (!status.connected) {
+        updates.lastSeenAt = new Date();
+      }
+
+      await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: updates,
+      });
 
       res.json({
         success: true,
         data: {
-          instanceId,
+          instanceId: instance.id,
           ...normalizeInstanceStatusResponse(status),
         },
       });
@@ -524,9 +838,23 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
+    const tenantId = req.user!.tenantId;
 
     try {
-      const qrCode = await whatsappBrokerClient.getQrCode(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
 
       res.json({
         success: true,
@@ -551,14 +879,28 @@ router.get(
     const requestedInstanceId =
       typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
+    const tenantId = req.user!.tenantId;
 
     try {
-      const qrCode = await whatsappBrokerClient.getQrCode(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
 
       res.json({
         success: true,
         data: {
-          instanceId,
+          instanceId: instance.id,
           ...normalizeQr(qrCode),
         },
       });
@@ -579,9 +921,32 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
+    const tenantId = req.user!.tenantId;
 
     try {
-      const status = await whatsappBrokerClient.getStatus(instanceId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
+
+      await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: {
+          status: mapBrokerStatusToDbStatus(status),
+          connected: status.connected,
+          lastSeenAt: status.connected ? new Date() : instance.lastSeenAt,
+        },
+      });
 
       res.json({
         success: true,

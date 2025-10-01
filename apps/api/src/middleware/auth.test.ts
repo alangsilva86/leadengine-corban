@@ -30,6 +30,7 @@ describe('authMiddleware fallback behaviour', () => {
     vi.restoreAllMocks();
     vi.resetModules();
     process.env = { ...originalEnv } as NodeJS.ProcessEnv;
+    process.env.AUTH_DISABLE_FOR_MVP = 'false';
   });
 
   afterEach(() => {

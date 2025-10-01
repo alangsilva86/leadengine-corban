@@ -13,8 +13,18 @@ vi.mock('./routes/webhooks', () => ({
 }));
 vi.mock('./routes/integrations', () => ({ integrationsRouter: express.Router() }));
 vi.mock('./routes/lead-engine', () => ({ leadEngineRouter: express.Router() }));
-vi.mock('./middleware/auth', () => ({ authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next() }));
-vi.mock('./middleware/error-handler', () => ({ errorHandler: (_err: unknown, _req: unknown, _res: unknown, next: () => void) => next() }));
+vi.mock('./middleware/auth', () => ({
+  authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
+  requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+vi.mock('./middleware/error-handler', () => ({
+  errorHandler: (_err: unknown, _req: unknown, _res: unknown, next: () => void) => next(),
+  asyncHandler:
+    <T extends (...args: unknown[]) => unknown>(handler: T) =>
+    ((req: unknown, res: unknown, next: () => void) => {
+      Promise.resolve(handler(req, res, next)).catch(next);
+    }),
+}));
 
 import { app } from './server';
 
