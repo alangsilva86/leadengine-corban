@@ -369,10 +369,211 @@ class WhatsAppBrokerClient {
     );
   }
 
+  private pickString(...values: unknown[]): string | null {
+    for (const value of values) {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+    }
+    return null;
+  }
+
+  private normalizeStatus(
+    statusValue: unknown,
+    connectedValue?: unknown
+  ): { status: WhatsAppInstance['status']; connected: boolean } {
+    const rawStatus = typeof statusValue === 'string' ? statusValue.trim().toLowerCase() : undefined;
+
+    const connected = (() => {
+      if (typeof connectedValue === 'boolean') {
+        return connectedValue;
+      }
+
+      if (typeof connectedValue === 'string') {
+        const normalized = connectedValue.trim().toLowerCase();
+        if (['true', '1', 'yes', 'y', 'connected'].includes(normalized)) {
+          return true;
+        }
+        if (['false', '0', 'no', 'n', 'disconnected'].includes(normalized)) {
+          return false;
+        }
+      }
+
+      if (connectedValue !== undefined && connectedValue !== null) {
+        return Boolean(connectedValue);
+      }
+
+      return rawStatus === 'connected';
+    })();
+
+    const normalizedStatus = (() => {
+      switch (rawStatus) {
+        case 'connected':
+        case 'connecting':
+        case 'disconnected':
+        case 'qr_required':
+          return rawStatus;
+        case 'qr required':
+          return 'qr_required';
+        default:
+          return connected ? 'connected' : 'disconnected';
+      }
+    })();
+
+    return { status: normalizedStatus, connected };
+  }
+
+  private normalizeBrokerInstance(
+    tenantId: string,
+    value: unknown
+  ): WhatsAppInstance | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const source = value as Record<string, unknown>;
+    const metadata =
+      source.metadata && typeof source.metadata === 'object'
+        ? (source.metadata as Record<string, unknown>)
+        : {};
+
+    const idCandidate = this.pickString(
+      source.id,
+      source._id,
+      source.instanceId,
+      source.sessionId,
+      metadata.id,
+      metadata._id,
+      metadata.instanceId,
+      metadata.sessionId
+    );
+
+    if (!idCandidate) {
+      return null;
+    }
+
+    const { status, connected } = this.normalizeStatus(
+      source.status ?? metadata.status ?? metadata.state,
+      source.connected ?? metadata.connected ?? metadata.isConnected ?? metadata.connected_at
+    );
+
+    const resolvedTenantId =
+      this.pickString(source.tenantId, metadata.tenantId, metadata.tenant_id) ?? tenantId;
+
+    const createdAt =
+      this.pickString(source.createdAt, source.created_at, metadata.createdAt, metadata.created_at) ||
+      undefined;
+
+    const lastActivity =
+      this.pickString(
+        source.lastActivity,
+        metadata.lastActivity,
+        metadata.last_activity,
+        metadata.lastActiveAt,
+        metadata.last_active_at,
+        metadata.lastSeen,
+        metadata.last_seen
+      ) || null;
+
+    const phoneNumber =
+      this.pickString(
+        source.phoneNumber,
+        metadata.phoneNumber,
+        metadata.phone_number,
+        metadata.msisdn,
+        metadata.phone
+      ) || null;
+
+    const user =
+      this.pickString(
+        source.user,
+        metadata.user,
+        metadata.userName,
+        metadata.username,
+        metadata.operator
+      ) || null;
+
+    const name =
+      this.pickString(
+        source.name,
+        metadata.name,
+        metadata.displayName,
+        metadata.sessionName,
+        metadata.instanceName,
+        metadata.profileName
+      ) || undefined;
+
+    const statsCandidate =
+      (typeof source.stats === 'object' && source.stats !== null
+        ? (source.stats as Record<string, unknown>)
+        : null) ||
+      (typeof metadata.stats === 'object' && metadata.stats !== null
+        ? (metadata.stats as Record<string, unknown>)
+        : null);
+
+    return {
+      id: idCandidate,
+      tenantId: resolvedTenantId,
+      name,
+      status,
+      createdAt,
+      lastActivity,
+      connected,
+      phoneNumber: phoneNumber ?? undefined,
+      user: user ?? undefined,
+      stats: statsCandidate ?? undefined,
+    };
+  }
+
   async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
-    this.ensureConfigured();
-    logger.warn('WhatsApp minimal broker does not expose instance listing; returning fallback instance');
-    return [fallbackInstance(tenantId)];
+    const response = await this.request<unknown>(
+      '/broker/instances',
+      {
+        method: 'GET',
+      },
+      {
+        searchParams: { tenantId },
+      }
+    );
+
+    const items = (() => {
+      if (Array.isArray(response)) {
+        return response;
+      }
+
+      if (response && typeof response === 'object') {
+        const record = response as Record<string, unknown>;
+
+        if (Array.isArray(record.data)) {
+          return record.data;
+        }
+
+        if (Array.isArray(record.instances)) {
+          return record.instances;
+        }
+
+        if (record.data && typeof record.data === 'object') {
+          const nested = record.data as Record<string, unknown>;
+          if (Array.isArray(nested.data)) {
+            return nested.data;
+          }
+          if (Array.isArray(nested.items)) {
+            return nested.items;
+          }
+        }
+      }
+
+      return [];
+    })();
+
+    const normalized = items
+      .map((item) => this.normalizeBrokerInstance(tenantId, item))
+      .filter((instance): instance is WhatsAppInstance => instance !== null);
+
+    return normalized.filter((instance) => instance.tenantId === tenantId);
   }
 
   async createInstance(args: { tenantId: string; name: string; webhookUrl?: string }): Promise<WhatsAppInstance> {

@@ -65,6 +65,69 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(headers.get('content-type')).toBe('application/json');
   });
 
+  it('listInstances fetches broker instances and normalizes metadata response', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        data: [
+          {
+            id: 'instance-1',
+            status: 'CONNECTED',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            metadata: {
+              tenant_id: 'tenant-123',
+              name: 'Main Instance',
+              last_activity: '2024-01-02T00:00:00.000Z',
+              phone_number: '+5511987654321',
+              userName: 'Agent Smith',
+              stats: { sent: 10 },
+            },
+          },
+          {
+            metadata: {
+              sessionId: 'metadata-instance',
+              tenantId: 'tenant-123',
+              status: 'DISCONNECTED',
+              connected: false,
+            },
+          },
+          {
+            id: 'ignored-instance',
+            metadata: { tenantId: 'tenant-999' },
+          },
+        ],
+      })
+    );
+
+    const client = await loadClient();
+    const instances = await client.listInstances('tenant-123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/instances?tenantId=tenant-123');
+    expect(init?.method).toBe('GET');
+    expect((init?.headers as Headers).get('x-api-key')).toBe('broker-key');
+
+    expect(instances).toHaveLength(2);
+    expect(instances[0]).toMatchObject({
+      id: 'instance-1',
+      tenantId: 'tenant-123',
+      name: 'Main Instance',
+      status: 'connected',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      lastActivity: '2024-01-02T00:00:00.000Z',
+      connected: true,
+      phoneNumber: '+5511987654321',
+      user: 'Agent Smith',
+      stats: { sent: 10 },
+    });
+    expect(instances[1]).toMatchObject({
+      id: 'metadata-instance',
+      tenantId: 'tenant-123',
+      status: 'disconnected',
+      connected: false,
+    });
+  });
+
   it('sendText posts message with broker API key header', async () => {
     fetchMock.mockResolvedValueOnce(createJsonResponse(200, { id: 'msg-1' }));
     const client = await loadClient();
