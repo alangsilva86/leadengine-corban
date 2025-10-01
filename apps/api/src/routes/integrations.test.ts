@@ -353,6 +353,39 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('fetches the default WhatsApp instance QR code', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const qrSpy = vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qrCode: 'data:image/png;base64,DEFAULT_QR',
+      expiresAt: '2024-01-04T00:00:00.000Z',
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/qr`, {
+        method: 'GET',
+        headers: {
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      const body = await response.json();
+
+      expect(qrSpy).toHaveBeenCalledWith('leadengine');
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          qrCode: 'data:image/png;base64,DEFAULT_QR',
+          expiresAt: '2024-01-04T00:00:00.000Z',
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('retrieves WhatsApp instance status', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');

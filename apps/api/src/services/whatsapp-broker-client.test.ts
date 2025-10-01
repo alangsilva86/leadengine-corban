@@ -109,6 +109,52 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     });
   });
 
+  it('getQrCode fetches QR payload from broker', async () => {
+    const qrPayload = {
+      qrCode: 'data:image/png;base64,REAL_QR',
+      expiresAt: '2024-02-01T00:00:00.000Z',
+    };
+
+    fetchMock.mockResolvedValueOnce(createJsonResponse(200, qrPayload));
+    const client = await loadClient();
+
+    const result = await client.getQrCode('session-qr');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/session/qr?sessionId=session-qr');
+    expect(init?.method).toBe('GET');
+    const headers = init?.headers as Headers;
+    expect(headers.get('x-api-key')).toBe('broker-key');
+    expect(result).toEqual(qrPayload);
+  });
+
+  it('getQrCode falls back to static QR on timeout', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-01T00:00:00.000Z'));
+
+    fetchMock.mockImplementationOnce((_, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        signal?.addEventListener('abort', () => {
+          const error = new Error('Aborted');
+          error.name = 'AbortError';
+          reject(error);
+        });
+      });
+    });
+
+    const client = await loadClient();
+    const promise = client.getQrCode('session-timeout');
+
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    const result = await promise;
+
+    expect(result.qrCode).toMatch(/^data:image\/png;base64/);
+    expect(result.expiresAt).toBe('2024-01-01T00:01:15.000Z');
+  });
+
   it('fetchEvents uses webhook API key and query params', async () => {
     fetchMock.mockResolvedValueOnce(createJsonResponse(200, { events: [] }));
     const client = await loadClient();
