@@ -202,8 +202,16 @@ class WhatsAppBrokerClient {
     })();
 
     if (response.status === 401 || response.status === 403) {
-      throw new WhatsAppBrokerNotConfiguredError(
-        normalizedError.message || 'WhatsApp broker rejected credentials'
+      const headerRequestId =
+        response.headers?.get?.('x-request-id') ||
+        response.headers?.get?.('x-requestid') ||
+        undefined;
+
+      throw new WhatsAppBrokerError(
+        normalizedError.message || 'WhatsApp broker rejected credentials',
+        'BROKER_AUTH',
+        502,
+        normalizedError.requestId || headerRequestId
       );
     }
 
@@ -563,52 +571,133 @@ class WhatsAppBrokerClient {
     };
   }
 
+  private findSessionPayload(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const queue: Record<string, unknown>[] = [value as Record<string, unknown>];
+    const visited = new Set<unknown>();
+
+    const looksLikeSession = (candidate: Record<string, unknown>): boolean => {
+      return [
+        'id',
+        '_id',
+        'sessionId',
+        'instanceId',
+        'status',
+        'metadata',
+      ].some((key) => key in candidate);
+    };
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) {
+        continue;
+      }
+      visited.add(current);
+
+      if (looksLikeSession(current)) {
+        return current;
+      }
+
+      Object.values(current).forEach((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return;
+        }
+
+        if (Array.isArray(entry)) {
+          entry.forEach((item) => {
+            if (item && typeof item === 'object') {
+              queue.push(item as Record<string, unknown>);
+            }
+          });
+          return;
+        }
+
+        queue.push(entry as Record<string, unknown>);
+      });
+    }
+
+    return null;
+  }
+
   async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
-    const response = await this.request<unknown>(
-      '/broker/instances',
-      {
-        method: 'GET',
-      },
-      {
-        searchParams: { tenantId },
-      }
-    );
+    const candidatePaths = [
+      '/broker/session/status',
+      '/broker/sessions/status',
+      '/broker/sessionStatus',
+    ];
 
-    const items = (() => {
-      if (Array.isArray(response)) {
-        return response;
-      }
+    let lastError: unknown;
 
-      if (response && typeof response === 'object') {
-        const record = response as Record<string, unknown>;
+    const tenantApiKey = typeof tenantId === 'string' ? tenantId.trim() : '';
+    const apiKey = tenantApiKey.length > 0 ? tenantApiKey : undefined;
 
-        if (Array.isArray(record.data)) {
-          return record.data;
-        }
+    for (let index = 0; index < candidatePaths.length; index += 1) {
+      const path = candidatePaths[index];
 
-        if (Array.isArray(record.instances)) {
-          return record.instances;
-        }
-
-        if (record.data && typeof record.data === 'object') {
-          const nested = record.data as Record<string, unknown>;
-          if (Array.isArray(nested.data)) {
-            return nested.data;
+      try {
+        const response = await this.request<unknown>(
+          path,
+          {
+            method: 'GET',
+          },
+          {
+            apiKey,
           }
-          if (Array.isArray(nested.items)) {
-            return nested.items;
+        );
+
+        const session = this.findSessionPayload(response);
+        if (!session) {
+          logger.debug('WhatsApp broker session status payload missing session data', {
+            tenantId,
+            path,
+            response,
+          });
+
+          if (index === candidatePaths.length - 1) {
+            return [];
           }
+
+          continue;
         }
+
+        const normalized = this.normalizeBrokerInstance(tenantId, session);
+
+        if (!normalized) {
+          if (index === candidatePaths.length - 1) {
+            return [];
+          }
+          continue;
+        }
+
+        return [normalized];
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerNotConfiguredError) {
+          throw error;
+        }
+
+        if (
+          error instanceof WhatsAppBrokerError &&
+          (error.status === 404 || error.status === 405)
+        ) {
+          lastError = error;
+          continue;
+        }
+
+        throw error;
       }
+    }
 
-      return [];
-    })();
+    if (lastError) {
+      logger.debug('All WhatsApp broker session status endpoints unavailable', {
+        tenantId,
+        error: lastError,
+      });
+    }
 
-    const normalized = items
-      .map((item) => this.normalizeBrokerInstance(tenantId, item))
-      .filter((instance): instance is WhatsAppInstance => instance !== null);
-
-    return normalized.filter((instance) => instance.tenantId === tenantId);
+    return [];
   }
 
   async createInstance(args: { tenantId: string; name: string; webhookUrl?: string }): Promise<WhatsAppInstance> {
