@@ -74,3 +74,24 @@ describe('root availability handlers', () => {
     }
   });
 });
+
+describe('CORS configuration', () => {
+  it('allows equivalent origins with trailing slash', async () => {
+    const { server, url } = await startServer();
+
+    try {
+      const origin = 'https://leadengine-corban.onrender.com/';
+      const response = await fetch(`${url}/`, {
+        method: 'GET',
+        headers: {
+          Origin: origin,
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    } finally {
+      await stopServer(server);
+    }
+  });
+});
