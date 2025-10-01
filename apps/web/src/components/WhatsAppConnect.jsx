@@ -263,11 +263,27 @@ const formatPhoneNumber = (value) => {
 const extractQrPayload = (payload) => {
   if (!payload) return null;
 
+  const mergeQr = (primary, secondary) => {
+    if (!primary) return secondary;
+    if (!secondary) return primary;
+    return {
+      qr: primary.qr ?? secondary.qr ?? null,
+      qrCode: primary.qrCode ?? secondary.qrCode ?? primary.qr ?? secondary.qr ?? null,
+      qrExpiresAt: primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
+      expiresAt:
+        primary.expiresAt ??
+        secondary.expiresAt ??
+        primary.qrExpiresAt ??
+        secondary.qrExpiresAt ??
+        null,
+    };
+  };
+
   const parseCandidate = (candidate) => {
     if (!candidate) return null;
 
     if (typeof candidate === 'string') {
-      return { qrCode: candidate, expiresAt: null };
+      return { qr: candidate, qrCode: candidate, qrExpiresAt: null, expiresAt: null };
     }
 
     if (typeof candidate !== 'object') {
@@ -276,9 +292,13 @@ const extractQrPayload = (payload) => {
 
     const source = candidate;
 
-    const qrCandidate =
-      typeof source.qrCode === 'string'
+    const directQr =
+      typeof source.qr === 'string'
+        ? source.qr
+        : typeof source.qrCode === 'string'
         ? source.qrCode
+        : typeof source.qr_code === 'string'
+        ? source.qr_code
         : typeof source.code === 'string'
         ? source.code
         : typeof source.image === 'string'
@@ -287,10 +307,22 @@ const extractQrPayload = (payload) => {
         ? source.value
         : null;
 
-    const expiresCandidate =
+    const qrCodeCandidate =
+      typeof source.qrCode === 'string'
+        ? source.qrCode
+        : typeof source.qr_code === 'string'
+        ? source.qr_code
+        : null;
+
+    const qrExpiresCandidate =
       typeof source.qrExpiresAt === 'string'
         ? source.qrExpiresAt
-        : typeof source.expiresAt === 'string'
+        : typeof source.qr_expires_at === 'string'
+        ? source.qr_expires_at
+        : null;
+
+    const expiresCandidate =
+      typeof source.expiresAt === 'string'
         ? source.expiresAt
         : typeof source.expiration === 'string'
         ? source.expiration
@@ -298,31 +330,60 @@ const extractQrPayload = (payload) => {
         ? source.expires
         : null;
 
-    if (qrCandidate) {
-      return {
-        qrCode: qrCandidate,
-        expiresAt: expiresCandidate,
+    let normalized = null;
+
+    if (directQr || qrCodeCandidate || qrExpiresCandidate || expiresCandidate) {
+      normalized = {
+        qr: directQr ?? qrCodeCandidate ?? null,
+        qrCode: qrCodeCandidate ?? directQr ?? null,
+        qrExpiresAt: qrExpiresCandidate ?? null,
+        expiresAt: expiresCandidate ?? qrExpiresCandidate ?? null,
       };
     }
 
-    if (Object.prototype.hasOwnProperty.call(source, 'qr')) {
-      const nested = parseCandidate(source.qr);
+    const nestedCandidates = [
+      source.qr,
+      source.qrData,
+      source.qrPayload,
+      source.qr_info,
+      source.data,
+      source.payload,
+      source.result,
+      source.response,
+    ];
+
+    for (const nestedSource of nestedCandidates) {
+      const nested = parseCandidate(nestedSource);
       if (nested) {
-        return nested;
+        normalized = mergeQr(normalized, nested);
+        break;
       }
     }
 
-    if (Object.prototype.hasOwnProperty.call(source, 'data')) {
-      const nested = parseCandidate(source.data);
-      if (nested) {
-        return nested;
-      }
-    }
-
-    return null;
+    return normalized;
   };
 
-  return parseCandidate(payload) || null;
+  const normalized = parseCandidate(payload);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const finalPayload = { ...normalized };
+  if (!finalPayload.qr && finalPayload.qrCode) {
+    finalPayload.qr = finalPayload.qrCode;
+  }
+  if (!finalPayload.qrCode && finalPayload.qr) {
+    finalPayload.qrCode = finalPayload.qr;
+  }
+  if (!finalPayload.expiresAt && finalPayload.qrExpiresAt) {
+    finalPayload.expiresAt = finalPayload.qrExpiresAt;
+  }
+  if (!finalPayload.qrExpiresAt && finalPayload.expiresAt) {
+    finalPayload.qrExpiresAt = finalPayload.expiresAt;
+  }
+
+  return finalPayload;
 };
 
 const extractInstanceFromPayload = (payload) => {
@@ -666,11 +727,12 @@ const WhatsAppConnect = ({
       setLocalStatus(statusFromInstance);
       onStatusChange?.(statusFromInstance);
 
+      const connectQr = extractQrPayload(connectResult);
       const shouldShowQrFromConnect =
-        connectResult && connectResult.connected === false && connectResult.qr?.qrCode;
+        connectResult && connectResult.connected === false && Boolean(connectQr?.qrCode);
 
       if (shouldShowQrFromConnect) {
-        setQrData(connectResult.qr);
+        setQrData(connectQr);
       } else if (current && statusFromInstance !== 'connected') {
         await generateQr(current.id, { skipConnect: Boolean(connectResult) });
       } else {
@@ -878,8 +940,9 @@ const WhatsAppConnect = ({
           );
         }
 
-        if (connectResult?.connected === false && connectResult.qr?.qrCode) {
-          setQrData(connectResult.qr);
+        const connectQr = extractQrPayload(connectResult);
+        if (connectResult?.connected === false && connectQr?.qrCode) {
+          setQrData(connectQr);
           return;
         }
 

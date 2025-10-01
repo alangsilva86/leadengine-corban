@@ -150,50 +150,104 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     });
   });
 
-  it('getQrCode fetches QR payload from broker', async () => {
-    const qrPayload = {
-      qrCode: 'data:image/png;base64,REAL_QR',
-      expiresAt: '2024-02-01T00:00:00.000Z',
-    };
+  it('getQrCode reuses QR data from session status when available', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        status: 'qr_required',
+        qr: {
+          code: 'data:image/png;base64,REAL_QR',
+          expiresAt: '2024-02-01T00:00:00.000Z',
+        },
+      })
+    );
 
-    fetchMock.mockResolvedValueOnce(createJsonResponse(200, qrPayload));
     const client = await loadClient();
-
     const result = await client.getQrCode('session-qr');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://broker.example/broker/session/qr?sessionId=session-qr');
+    expect(url).toBe('https://broker.example/broker/session/status?sessionId=session-qr');
     expect(init?.method).toBe('GET');
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('broker-key');
-    expect(result).toEqual(qrPayload);
+    expect(result).toEqual({
+      qr: 'data:image/png;base64,REAL_QR',
+      qrCode: 'data:image/png;base64,REAL_QR',
+      qrExpiresAt: '2024-02-01T00:00:00.000Z',
+      expiresAt: '2024-02-01T00:00:00.000Z',
+    });
   });
 
-  it('getQrCode falls back to static QR on timeout', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2024-01-01T00:00:00.000Z'));
-
-    fetchMock.mockImplementationOnce((_, init) => {
-      return new Promise((_resolve, reject) => {
-        const signal = init?.signal as AbortSignal | undefined;
-        signal?.addEventListener('abort', () => {
-          const error = new Error('Aborted');
-          error.name = 'AbortError';
-          reject(error);
-        });
-      });
-    });
+  it('getQrCode falls back to broker QR endpoint when status is missing data', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse(200, {
+          status: 'qr_required',
+          connected: false,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(200, {
+          qrCode: 'data:image/png;base64,REAL_QR',
+          expiresAt: '2024-02-01T00:00:00.000Z',
+        })
+      );
 
     const client = await loadClient();
-    const promise = client.getQrCode('session-timeout');
+    const result = await client.getQrCode('session-qr');
 
-    await vi.advanceTimersByTimeAsync(20_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [statusUrl] = fetchMock.mock.calls[0];
+    expect(statusUrl).toBe('https://broker.example/broker/session/status?sessionId=session-qr');
+    const [qrUrl] = fetchMock.mock.calls[1];
+    expect(qrUrl).toBe('https://broker.example/broker/session/qr?sessionId=session-qr');
+    expect(result).toEqual({
+      qr: 'data:image/png;base64,REAL_QR',
+      qrCode: 'data:image/png;base64,REAL_QR',
+      qrExpiresAt: null,
+      expiresAt: '2024-02-01T00:00:00.000Z',
+    });
+  });
 
-    const result = await promise;
+  it('getQrCode returns null fields when broker requests fail', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
 
-    expect(result.qrCode).toMatch(/^data:image\/png;base64/);
-    expect(result.expiresAt).toBe('2024-01-01T00:01:15.000Z');
+    const client = await loadClient();
+    const result = await client.getQrCode('session-timeout');
+
+    expect(result).toEqual({
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+    });
+  });
+
+  it('getStatus normalizes qr data with status metadata', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        status: 'qr_required',
+        connected: false,
+        qr: 'data:image/png;base64,REAL_QR',
+        qrExpiresAt: '2024-02-02T00:00:00.000Z',
+      })
+    );
+
+    const client = await loadClient();
+    const result = await client.getStatus('session-status');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://broker.example/broker/session/status?sessionId=session-status',
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(result).toEqual({
+      status: 'qr_required',
+      connected: false,
+      qr: 'data:image/png;base64,REAL_QR',
+      qrCode: 'data:image/png;base64,REAL_QR',
+      qrExpiresAt: '2024-02-02T00:00:00.000Z',
+      expiresAt: '2024-02-02T00:00:00.000Z',
+    });
   });
 
   it('fetchEvents uses webhook API key and query params', async () => {

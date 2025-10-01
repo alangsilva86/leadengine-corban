@@ -39,11 +39,13 @@ export interface WhatsAppInstance {
 }
 
 export interface WhatsAppQrCode {
-  qrCode: string;
-  expiresAt: string;
+  qr: string | null;
+  qrCode: string | null;
+  qrExpiresAt: string | null;
+  expiresAt: string | null;
 }
 
-export interface WhatsAppStatus {
+export interface WhatsAppStatus extends WhatsAppQrCode {
   status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
   connected: boolean;
 }
@@ -55,10 +57,6 @@ export interface WhatsAppMessageResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-
-const FALLBACK_QR =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-const QR_EXPIRATION_MS = 60_000;
 
 const fallbackInstance = (tenantId: string): WhatsAppInstance => ({
   id: 'whatsapp-demo',
@@ -469,6 +467,58 @@ class WhatsAppBrokerClient {
     return { status: normalizedStatus, connected };
   }
 
+  private normalizeQrPayload(value: unknown): WhatsAppQrCode {
+    if (!value || typeof value !== 'object') {
+      return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
+    }
+
+    const source = value as Record<string, unknown>;
+    const qrSource =
+      typeof source.qr === 'object' && source.qr !== null
+        ? (source.qr as Record<string, unknown>)
+        : {};
+
+    const directQr = this.pickString(
+      typeof source.qr === 'string' ? source.qr : null,
+      qrSource.code,
+      qrSource.qr,
+      qrSource.qrCode,
+      qrSource.qr_code
+    );
+
+    const qrCodeCandidate = this.pickString(
+      typeof source.qrCode === 'string' ? source.qrCode : null,
+      source.qr_code,
+      qrSource.qrCode,
+      qrSource.qr_code,
+      qrSource.code
+    );
+    const resolvedQr = directQr ?? qrCodeCandidate;
+
+    const qrExpiresAt =
+      this.pickString(
+        source.qrExpiresAt,
+        source.qr_expires_at,
+        qrSource.expiresAt,
+        qrSource.expires_at
+      ) ?? null;
+
+    const expiresAt =
+      this.pickString(
+        source.expiresAt,
+        source.expires_at,
+        qrSource.expiresAt,
+        qrSource.expires_at
+      ) ?? qrExpiresAt;
+
+    return {
+      qr: resolvedQr,
+      qrCode: qrCodeCandidate ?? resolvedQr,
+      qrExpiresAt,
+      expiresAt: expiresAt ?? null,
+    };
+  }
+
   private normalizeBrokerInstance(
     tenantId: string,
     value: unknown
@@ -736,52 +786,41 @@ class WhatsAppBrokerClient {
     this.ensureConfigured();
 
     try {
-      const payload = await this.request<WhatsAppQrCode & Record<string, unknown>>(
+      const statusPayload = await this.getSessionStatus<Record<string, unknown>>(
+        instanceId
+      );
+      const normalized = this.normalizeQrPayload(statusPayload);
+
+      if (normalized.qr || normalized.qrCode || normalized.qrExpiresAt || normalized.expiresAt) {
+        return normalized;
+      }
+
+      const payload = await this.request<Record<string, unknown>>(
         '/broker/session/qr',
         { method: 'GET' },
         { searchParams: { sessionId: instanceId } }
       );
 
-      if (payload && typeof payload === 'object') {
-        const qrCode = typeof payload.qrCode === 'string' ? payload.qrCode : undefined;
-        const expiresAt = typeof payload.expiresAt === 'string' ? payload.expiresAt : undefined;
-
-        if (qrCode && expiresAt) {
-          return { qrCode, expiresAt };
-        }
-
-        logger.warn('WhatsApp broker returned incomplete QR payload', {
-          instanceId,
-          payload,
-        });
-      } else {
-        logger.warn('WhatsApp broker returned invalid QR payload', {
-          instanceId,
-          payload,
-        });
-      }
+      return this.normalizeQrPayload(payload);
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         throw error;
       }
 
-      logger.warn('Failed to fetch WhatsApp QR code from broker; using fallback', {
+      logger.warn('Failed to fetch WhatsApp QR code from broker', {
         instanceId,
         error,
       });
+      return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
     }
-
-    return {
-      qrCode: FALLBACK_QR,
-      expiresAt: new Date(Date.now() + QR_EXPIRATION_MS).toISOString(),
-    };
   }
 
   async getStatus(instanceId: string): Promise<WhatsAppStatus> {
     this.ensureConfigured();
 
     try {
-      const result = await this.getSessionStatus<{ status?: string; connected?: boolean }>(instanceId);
+      const result = await this.getSessionStatus<Record<string, unknown>>(instanceId);
+      const normalizedQr = this.normalizeQrPayload(result);
       const connected = Boolean(result?.connected ?? (result?.status === 'connected'));
       const normalizedStatus = ((): WhatsAppStatus['status'] => {
         const raw = typeof result?.status === 'string' ? result.status.toLowerCase() : undefined;
@@ -799,6 +838,7 @@ class WhatsAppBrokerClient {
       return {
         status: normalizedStatus,
         connected,
+        ...normalizedQr,
       };
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -806,7 +846,14 @@ class WhatsAppBrokerClient {
       }
 
       logger.warn('Failed to resolve WhatsApp session status via minimal broker; assuming disconnected', { error });
-      return { status: 'disconnected', connected: false };
+      return {
+        status: 'disconnected',
+        connected: false,
+        qr: null,
+        qrCode: null,
+        qrExpiresAt: null,
+        expiresAt: null,
+      };
     }
   }
 

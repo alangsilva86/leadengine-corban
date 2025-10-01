@@ -196,30 +196,81 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
   };
 };
 
-const normalizeQrCode = (
+const normalizeQr = (
   value: unknown
-): { qrCode: string | null; expiresAt: string | null } => {
+): { qr: string | null; qrCode: string | null; expiresAt: string | null; qrExpiresAt: string | null } => {
   if (!value || typeof value !== 'object') {
-    return { qrCode: null, expiresAt: null };
+    return { qr: null, qrCode: null, expiresAt: null, qrExpiresAt: null };
   }
 
   const source = value as Record<string, unknown>;
+  const qrSource =
+    typeof source.qr === 'object' && source.qr !== null
+      ? (source.qr as Record<string, unknown>)
+      : {};
+
+  const qrCandidate = pickString(
+    typeof source.qr === 'string' ? source.qr : null,
+    qrSource.qr,
+    qrSource.qrCode,
+    qrSource.qr_code,
+    qrSource.code,
+    source.qrCode,
+    source.qr_code
+  );
+
+  const qrCodeCandidate = pickString(
+    source.qrCode,
+    source.qr_code,
+    qrSource.qrCode,
+    qrSource.qr_code,
+    qrSource.code,
+    typeof source.qr === 'string' ? source.qr : null
+  );
+
+  const qrExpiresAt =
+    pickString(source.qrExpiresAt, source.qr_expires_at, qrSource.expiresAt, qrSource.expires_at) ?? null;
 
   return {
-    qrCode: typeof source.qrCode === 'string' ? source.qrCode : null,
-    expiresAt: typeof source.expiresAt === 'string' ? source.expiresAt : null,
+    qr: qrCandidate,
+    qrCode: qrCodeCandidate ?? qrCandidate,
+    expiresAt:
+      pickString(source.expiresAt, source.expires_at, qrSource.expiresAt, qrSource.expires_at) ?? qrExpiresAt,
+    qrExpiresAt,
   };
 };
 
 const normalizeInstanceStatusResponse = (
   status: unknown
-): { status: NormalizedInstance['status']; connected: boolean } => {
+): {
+  status: NormalizedInstance['status'];
+  connected: boolean;
+  qr: string | null;
+  qrCode: string | null;
+  expiresAt: string | null;
+  qrExpiresAt: string | null;
+} => {
   if (!status || typeof status !== 'object') {
-    return normalizeInstanceStatus(undefined, undefined);
+    const { status: normalizedStatus, connected } = normalizeInstanceStatus(undefined, undefined);
+    return {
+      status: normalizedStatus,
+      connected,
+      qr: null,
+      qrCode: null,
+      expiresAt: null,
+      qrExpiresAt: null,
+    };
   }
 
   const source = status as Record<string, unknown>;
-  return normalizeInstanceStatus(source.status, source.connected);
+  const { status: normalizedStatus, connected } = normalizeInstanceStatus(source.status, source.connected);
+  const qr = normalizeQr(source);
+
+  return {
+    status: normalizedStatus,
+    connected,
+    ...qr,
+  };
 };
 
 const parseNumber = (input: unknown): number | null => {
@@ -466,7 +517,7 @@ router.get(
 
       res.json({
         success: true,
-        data: normalizeQrCode(qrCode),
+        data: normalizeQr(qrCode),
       });
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
@@ -489,7 +540,7 @@ router.get(
 
       res.json({
         success: true,
-        data: normalizeQrCode(qrCode),
+        data: normalizeQr(qrCode),
       });
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
