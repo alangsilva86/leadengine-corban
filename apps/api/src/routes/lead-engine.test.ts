@@ -2,7 +2,7 @@ import express from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CampaignStatus, resetCampaignStore } from '@ticketz/storage';
+import { CampaignStatus, resetCampaignStore, resetAllocationStore } from '@ticketz/storage';
 
 import { errorHandler } from '../middleware/error-handler';
 
@@ -63,6 +63,7 @@ const stopTestServer = (server: Server) =>
 describe('Lead Engine campaigns routes', () => {
   beforeEach(() => {
     resetCampaignStore();
+    resetAllocationStore();
   });
 
   afterEach(() => {
@@ -211,6 +212,131 @@ describe('Lead Engine campaigns routes', () => {
       const body = JSON.parse(text);
       expect(body.error?.code).toBe('VALIDATION_ERROR');
       expect(body.error?.details).toBeDefined();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+});
+
+describe('Lead Engine allocations routes', () => {
+  beforeEach(() => {
+    resetCampaignStore();
+    resetAllocationStore();
+  });
+
+  afterEach(() => {
+    restoreLeadEngineEnv();
+  });
+
+  it('pulls, lists, updates and exports allocations', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const postResponse = await fetch(`${url}/api/lead-engine/allocations`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-alloc',
+        },
+        body: JSON.stringify({
+          campaignId: 'campaign-123',
+          agreementId: 'saec-goiania',
+          take: 3,
+        }),
+      });
+
+      expect(postResponse.status).toBe(200);
+      const postBody = await postResponse.json();
+      expect(postBody.success).toBe(true);
+      expect(Array.isArray(postBody.data)).toBe(true);
+      expect(postBody.data.length).toBeGreaterThan(0);
+
+      const listResponse = await fetch(
+        `${url}/api/lead-engine/allocations?campaignId=campaign-123`,
+        {
+          headers: {
+            'x-tenant-id': 'tenant-alloc',
+          },
+        }
+      );
+
+      expect(listResponse.status).toBe(200);
+      const listBody = await listResponse.json();
+      expect(listBody.success).toBe(true);
+      expect(Array.isArray(listBody.data)).toBe(true);
+      expect(listBody.data.length).toBe(postBody.data.length);
+      expect(listBody.meta.summary.total).toBe(postBody.data.length);
+
+      const allocationId = listBody.data[0].allocationId;
+
+      const patchResponse = await fetch(
+        `${url}/api/lead-engine/allocations/${allocationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            'x-tenant-id': 'tenant-alloc',
+          },
+          body: JSON.stringify({ status: 'won' }),
+        }
+      );
+
+      expect(patchResponse.status).toBe(200);
+      const patchBody = await patchResponse.json();
+      expect(patchBody.success).toBe(true);
+      expect(patchBody.data.status).toBe('won');
+
+      const filteredResponse = await fetch(
+        `${url}/api/lead-engine/allocations?campaignId=campaign-123&status=won`,
+        {
+          headers: {
+            'x-tenant-id': 'tenant-alloc',
+          },
+        }
+      );
+
+      expect(filteredResponse.status).toBe(200);
+      const filteredBody = await filteredResponse.json();
+      expect(filteredBody.success).toBe(true);
+      expect(filteredBody.data.length).toBeGreaterThan(0);
+      expect(filteredBody.data[0].status).toBe('won');
+
+      const exportResponse = await fetch(
+        `${url}/api/lead-engine/allocations/export?campaignId=campaign-123`,
+        {
+          headers: {
+            'x-tenant-id': 'tenant-alloc',
+          },
+        }
+      );
+
+      expect(exportResponse.status).toBe(200);
+      expect(exportResponse.headers.get('content-type')).toContain('text/csv');
+      const csv = await exportResponse.text();
+      expect(csv).toContain('allocationId');
+      expect(csv).toContain(allocationId);
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects invalid status filters', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(
+        `${url}/api/lead-engine/allocations?status=unknown`,
+        {
+          headers: {
+            'x-tenant-id': 'tenant-alloc',
+          },
+        }
+      );
+
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe('INVALID_ALLOCATION_STATUS');
     } finally {
       await stopTestServer(server);
     }
