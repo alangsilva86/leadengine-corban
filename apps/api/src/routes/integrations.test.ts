@@ -14,6 +14,7 @@ vi.mock('../middleware/auth', () => ({
 const originalWhatsAppEnv = {
   url: process.env.WHATSAPP_BROKER_URL,
   apiKey: process.env.WHATSAPP_BROKER_API_KEY,
+  mode: process.env.WHATSAPP_MODE,
 };
 
 const restoreWhatsAppEnv = () => {
@@ -28,6 +29,12 @@ const restoreWhatsAppEnv = () => {
   } else {
     delete process.env.WHATSAPP_BROKER_API_KEY;
   }
+
+  if (typeof originalWhatsAppEnv.mode === 'string') {
+    process.env.WHATSAPP_MODE = originalWhatsAppEnv.mode;
+  } else {
+    delete process.env.WHATSAPP_MODE;
+  }
 };
 
 afterEach(() => {
@@ -40,9 +47,11 @@ const startTestServer = async ({
 }: { configureWhatsApp?: boolean } = {}) => {
   vi.resetModules();
   if (configureWhatsApp) {
+    process.env.WHATSAPP_MODE = 'http';
     process.env.WHATSAPP_BROKER_URL = 'http://broker.test';
     process.env.WHATSAPP_BROKER_API_KEY = 'test-key';
   } else {
+    delete process.env.WHATSAPP_MODE;
     delete process.env.WHATSAPP_BROKER_URL;
     delete process.env.WHATSAPP_BROKER_API_KEY;
   }

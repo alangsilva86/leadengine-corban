@@ -55,6 +55,7 @@ nano .env
 - `FRONTEND_URL`: Seu domínio real
 - `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
+- `WHATSAPP_MODE`: Defina como `http` para habilitar a integração com o broker externo, juntamente com `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_API_KEY`
 
 ### 2. Configurar Domínio (Opcional)
 
@@ -151,6 +152,18 @@ curl http://localhost:4000/health
 # Testar Frontend
 curl http://localhost/health
 ```
+
+### 3. Validar Integração WhatsApp
+
+Após configurar o broker HTTP (`WHATSAPP_MODE=http` e variáveis relacionadas) e finalizar o deploy, valide os fluxos principais:
+
+```bash
+curl -H "x-tenant-id: <TENANT_ID>" http://localhost:4000/api/integrations/whatsapp/instances
+curl -H "x-tenant-id: <TENANT_ID>" http://localhost:4000/api/integrations/whatsapp/instances/<INSTANCE_ID>/qr
+curl -H "x-tenant-id: <TENANT_ID>" http://localhost:4000/api/integrations/whatsapp/instances/<INSTANCE_ID>/status
+```
+
+Os retornos devem refletir os dados reais do broker, sem recorrer ao QR de fallback, confirmando que a criação e conexão das instâncias estão operando end-to-end.
 
 ## 🔒 SSL/HTTPS (Recomendado)
 
