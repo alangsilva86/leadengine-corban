@@ -37,19 +37,33 @@ const captureRawBody = (req: RawBodyIncomingMessage, _res: ServerResponse, buf: 
   }
 };
 
+const normalizeOrigin = (origin: string): string => {
+  const trimmed = origin.trim();
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed === '*') {
+    return '*';
+  }
+
+  return trimmed.toLowerCase().replace(/\/+$/, '');
+};
+
 const defaultCorsOrigins = [
   'https://leadengine-corban.onrender.com',
   'https://leadengine-corban-1.onrender.com',
-];
+].map(normalizeOrigin);
 
 const configuredCorsOrigins = (process.env.FRONTEND_URL ?? '')
   .split(',')
-  .map((origin) => origin.trim())
+  .map(normalizeOrigin)
   .filter(Boolean);
 
 const parsedCorsOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? '')
   .split(',')
-  .map((origin) => origin.trim())
+  .map(normalizeOrigin)
   .filter(Boolean);
 
 const corsAllowedOrigins = new Set<string>([...defaultCorsOrigins, ...configuredCorsOrigins, ...parsedCorsOrigins]);
@@ -74,7 +88,13 @@ const corsOptions: CorsOptions = allowAllOrigins
     }
   : {
       origin: (origin, callback) => {
-        if (!origin || corsAllowedOrigins.has(origin)) {
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        const normalizedOrigin = normalizeOrigin(origin);
+
+        if (corsAllowedOrigins.has(normalizedOrigin)) {
           return callback(null, true);
         }
 
