@@ -366,7 +366,7 @@ describe('Lead Engine allocations routes', () => {
     });
 
     try {
-      const response = await fetch(`${url}/api/lead-engine/allocations`, {
+      const response = await fetch(`${url}/api/lead-engine/allocations?campaignId=campaign-123`, {
         headers: {
           'x-tenant-id': 'tenant-alloc',
         },

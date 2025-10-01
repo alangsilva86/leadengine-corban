@@ -95,8 +95,8 @@ describe('WhatsApp event poller', () => {
     });
     expect(processedIntegrationEventCreateMany).toHaveBeenCalledWith({
       data: expect.arrayContaining([
-        expect.objectContaining({ id: 'evt-1', type: 'MESSAGE_INBOUND' }),
-        expect.objectContaining({ id: 'evt-2', type: 'MESSAGE_OUTBOUND' }),
+        expect.objectContaining({ id: 'evt-1', payload: expect.anything() }),
+        expect.objectContaining({ id: 'evt-2', payload: expect.anything() }),
       ]),
       skipDuplicates: true,
     });

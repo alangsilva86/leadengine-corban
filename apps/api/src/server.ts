@@ -20,6 +20,7 @@ import { leadEngineRouter } from './routes/lead-engine';
 import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import { getWhatsAppEventPollerMetrics, whatsappEventPoller } from './workers/whatsapp-event-poller';
+import { campaignsRouter } from './routes/campaigns';
 
 if (process.env.NODE_ENV !== 'production') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -228,6 +229,7 @@ app.use('/api/tickets', authMiddleware, ticketsRouter);
 app.use('/api/leads', authMiddleware, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
+app.use('/api/campaigns', authMiddleware, campaignsRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {

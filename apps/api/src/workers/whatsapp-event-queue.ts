@@ -9,6 +9,7 @@ export interface WhatsAppBrokerEvent {
   payload: unknown;
   tenantId?: string;
   sessionId?: string;
+  instanceId?: string;
   timestamp?: string;
   cursor?: string | null;
 }
@@ -19,6 +20,7 @@ interface NormalizedEventInput {
   payload?: unknown;
   tenantId?: unknown;
   sessionId?: unknown;
+  instanceId?: unknown;
   timestamp?: unknown;
   cursor?: unknown;
 }
@@ -82,6 +84,10 @@ export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): Whats
   const payload = 'payload' in input ? input.payload : null;
   const tenantId = typeof input.tenantId === 'string' && input.tenantId.trim().length > 0 ? input.tenantId.trim() : undefined;
   const sessionId = typeof input.sessionId === 'string' && input.sessionId.trim().length > 0 ? input.sessionId.trim() : undefined;
+  const instanceId =
+    typeof input.instanceId === 'string' && input.instanceId.trim().length > 0
+      ? input.instanceId.trim()
+      : undefined;
   const timestamp = typeof input.timestamp === 'string' && input.timestamp.trim().length > 0 ? input.timestamp.trim() : undefined;
   const cursor = typeof input.cursor === 'string' && input.cursor.trim().length > 0 ? input.cursor.trim() : null;
 
@@ -91,6 +97,7 @@ export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): Whats
     payload,
     tenantId,
     sessionId,
+    instanceId,
     timestamp,
     cursor,
   };

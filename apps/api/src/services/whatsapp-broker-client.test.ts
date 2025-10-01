@@ -59,7 +59,12 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(url).toBe('https://broker.example/broker/session/connect');
     expect(init?.method).toBe('POST');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ sessionId: 'session-1', webhookUrl: 'https://hooks.example', forceReopen: true });
+    expect(body).toEqual({
+      sessionId: 'session-1',
+      instanceId: 'session-1',
+      webhookUrl: 'https://hooks.example',
+      forceReopen: true,
+    });
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('broker-key');
     expect(headers.get('content-type')).toBe('application/json');
@@ -147,6 +152,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
       sessionId: 'session-1',
+      instanceId: 'session-1',
       to: '5511987654321',
       message: 'Hello',
       type: 'text',
@@ -172,6 +178,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
       sessionId: 'session-1',
+      instanceId: 'session-1',
       to: '5511987654321',
       question: 'Qual opção?',
       options: ['A', 'B', 'C'],
@@ -195,7 +202,9 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://broker.example/broker/session/status?sessionId=session-qr');
+    expect(url).toBe(
+      'https://broker.example/broker/session/status?sessionId=session-qr&instanceId=session-qr'
+    );
     expect(init?.method).toBe('GET');
     const headers = init?.headers as Headers;
     expect(headers.get('x-api-key')).toBe('broker-key');
@@ -227,9 +236,13 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [statusUrl] = fetchMock.mock.calls[0];
-    expect(statusUrl).toBe('https://broker.example/broker/session/status?sessionId=session-qr');
+    expect(statusUrl).toBe(
+      'https://broker.example/broker/session/status?sessionId=session-qr&instanceId=session-qr'
+    );
     const [qrUrl] = fetchMock.mock.calls[1];
-    expect(qrUrl).toBe('https://broker.example/broker/session/qr?sessionId=session-qr');
+    expect(qrUrl).toBe(
+      'https://broker.example/broker/session/qr?sessionId=session-qr&instanceId=session-qr'
+    );
     expect(result).toEqual({
       qr: 'data:image/png;base64,REAL_QR',
       qrCode: 'data:image/png;base64,REAL_QR',
@@ -266,7 +279,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const result = await client.getStatus('session-status');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://broker.example/broker/session/status?sessionId=session-status',
+      'https://broker.example/broker/session/status?sessionId=session-status&instanceId=session-status',
       expect.objectContaining({ method: 'GET' })
     );
     expect(result).toEqual({

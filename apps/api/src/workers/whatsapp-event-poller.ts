@@ -287,10 +287,8 @@ class WhatsAppEventPoller {
         data: freshEvents.map((event) => ({
           id: event.id,
           source: SOURCE_KEY,
-          type: event.type,
           cursor: event.cursor ?? this.cursor ?? null,
-          metadata: toJsonValue(event.payload ?? null),
-          expiresAt: new Date(Date.now() + PROCESSED_EVENT_TTL_MS),
+          payload: toJsonValue(event),
         } satisfies Prisma.ProcessedIntegrationEventCreateManyInput)),
         skipDuplicates: true,
       });
@@ -366,10 +364,7 @@ class WhatsAppEventPoller {
       const result = await prisma.processedIntegrationEvent.deleteMany({
         where: {
           source: SOURCE_KEY,
-          OR: [
-            { expiresAt: { lt: new Date() } },
-            { processedAt: { lt: threshold } },
-          ],
+          createdAt: { lt: threshold },
         },
       });
       if (result.count > 0) {

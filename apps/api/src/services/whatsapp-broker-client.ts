@@ -289,7 +289,10 @@ class WhatsAppBrokerClient {
     }
   }
 
-  async connectSession(sessionId: string, payload: { webhookUrl?: string; forceReopen?: boolean } = {}): Promise<void> {
+  async connectSession(
+    sessionId: string,
+    payload: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
+  ): Promise<void> {
     await this.request<void>(
       '/broker/session/connect',
       {
@@ -297,6 +300,7 @@ class WhatsAppBrokerClient {
         body: JSON.stringify(
           compactObject({
             sessionId,
+            instanceId: payload.instanceId ?? sessionId,
             webhookUrl: payload.webhookUrl,
             forceReopen: payload.forceReopen,
           })
@@ -305,21 +309,36 @@ class WhatsAppBrokerClient {
     );
   }
 
-  async logoutSession(sessionId: string, options: { wipe?: boolean } = {}): Promise<void> {
+  async logoutSession(
+    sessionId: string,
+    options: { instanceId?: string; wipe?: boolean } = {}
+  ): Promise<void> {
     await this.request<void>('/broker/session/logout', {
       method: 'POST',
-      body: JSON.stringify(compactObject({ sessionId, wipe: options.wipe })),
+      body: JSON.stringify(
+        compactObject({
+          sessionId,
+          instanceId: options.instanceId ?? sessionId,
+          wipe: options.wipe,
+        })
+      ),
     });
   }
 
-  async getSessionStatus<T = Record<string, unknown>>(sessionId: string): Promise<T> {
+  async getSessionStatus<T = Record<string, unknown>>(
+    sessionId: string,
+    options: { instanceId?: string } = {}
+  ): Promise<T> {
     return this.request<T>(
       '/broker/session/status',
       {
         method: 'GET',
       },
       {
-        searchParams: { sessionId },
+        searchParams: {
+          sessionId,
+          instanceId: options.instanceId ?? sessionId,
+        },
       }
     );
   }
@@ -327,6 +346,7 @@ class WhatsAppBrokerClient {
   async sendText<T = Record<string, unknown>>(
     payload: {
       sessionId: string;
+      instanceId?: string;
       to: string;
       message: string;
       previewUrl?: boolean;
@@ -338,6 +358,7 @@ class WhatsAppBrokerClient {
       body: JSON.stringify(
         compactObject({
           sessionId: payload.sessionId,
+          instanceId: payload.instanceId ?? payload.sessionId,
           to: payload.to,
           message: payload.message,
           previewUrl: payload.previewUrl,
@@ -351,6 +372,7 @@ class WhatsAppBrokerClient {
   async createPoll<T = Record<string, unknown>>(
     payload: {
       sessionId: string;
+      instanceId?: string;
       to: string;
       question: string;
       options: string[];
@@ -362,6 +384,7 @@ class WhatsAppBrokerClient {
       body: JSON.stringify(
         compactObject({
           sessionId: payload.sessionId,
+          instanceId: payload.instanceId ?? payload.sessionId,
           to: payload.to,
           question: payload.question,
           options: payload.options,
@@ -371,7 +394,9 @@ class WhatsAppBrokerClient {
     });
   }
 
-  async fetchEvents<T = { events: unknown[] }>(params: { limit?: number; cursor?: string } = {}): Promise<T> {
+  async fetchEvents<T = { events: unknown[] }>(
+    params: { limit?: number; cursor?: string; instanceId?: string } = {}
+  ): Promise<T> {
     return this.request<T>(
       '/broker/events',
       {
@@ -382,12 +407,13 @@ class WhatsAppBrokerClient {
         searchParams: {
           limit: params.limit,
           cursor: params.cursor,
+          instanceId: params.instanceId,
         },
       }
     );
   }
 
-  async ackEvents(payload: { ids: string[] }): Promise<void> {
+  async ackEvents(payload: { ids: string[]; instanceId?: string }): Promise<void> {
     const ids = Array.isArray(payload?.ids)
       ? payload.ids
           .map((id) => (typeof id === 'string' ? id.trim() : ''))
@@ -402,7 +428,12 @@ class WhatsAppBrokerClient {
       '/broker/events/ack',
       {
         method: 'POST',
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify(
+          compactObject({
+            ids,
+            instanceId: payload.instanceId,
+          })
+        ),
       },
       {
         apiKey: this.webhookApiKey,
@@ -771,24 +802,34 @@ class WhatsAppBrokerClient {
     };
   }
 
-  async connectInstance(instanceId: string): Promise<void> {
-    await this.connectSession(instanceId);
+  async connectInstance(
+    brokerId: string,
+    options: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
+  ): Promise<void> {
+    await this.connectSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
   }
 
-  async disconnectInstance(instanceId: string, options: { wipe?: boolean } = {}): Promise<void> {
-    await this.logoutSession(instanceId, options);
+  async disconnectInstance(
+    brokerId: string,
+    options: { instanceId?: string; wipe?: boolean } = {}
+  ): Promise<void> {
+    await this.logoutSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
   }
 
-  async deleteInstance(instanceId: string, options: { wipe?: boolean } = {}): Promise<void> {
-    await this.logoutSession(instanceId, options);
+  async deleteInstance(
+    brokerId: string,
+    options: { instanceId?: string; wipe?: boolean } = {}
+  ): Promise<void> {
+    await this.logoutSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
   }
 
-  async getQrCode(instanceId: string): Promise<WhatsAppQrCode> {
+  async getQrCode(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppQrCode> {
     this.ensureConfigured();
 
     try {
       const statusPayload = await this.getSessionStatus<Record<string, unknown>>(
-        instanceId
+        brokerId,
+        { instanceId: options.instanceId ?? brokerId }
       );
       const normalized = this.normalizeQrPayload(statusPayload);
 
@@ -799,7 +840,12 @@ class WhatsAppBrokerClient {
       const payload = await this.request<Record<string, unknown>>(
         '/broker/session/qr',
         { method: 'GET' },
-        { searchParams: { sessionId: instanceId } }
+        {
+          searchParams: {
+            sessionId: brokerId,
+            instanceId: options.instanceId ?? brokerId,
+          },
+        }
       );
 
       return this.normalizeQrPayload(payload);
@@ -809,18 +855,20 @@ class WhatsAppBrokerClient {
       }
 
       logger.warn('Failed to fetch WhatsApp QR code from broker', {
-        instanceId,
+        instanceId: options.instanceId ?? brokerId,
         error,
       });
       return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
     }
   }
 
-  async getStatus(instanceId: string): Promise<WhatsAppStatus> {
+  async getStatus(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppStatus> {
     this.ensureConfigured();
 
     try {
-      const result = await this.getSessionStatus<Record<string, unknown>>(instanceId);
+      const result = await this.getSessionStatus<Record<string, unknown>>(brokerId, {
+        instanceId: options.instanceId ?? brokerId,
+      });
       const normalizedQr = this.normalizeQrPayload(result);
       const connected = Boolean(result?.connected ?? (result?.status === 'connected'));
       const normalizedStatus = ((): WhatsAppStatus['status'] => {
@@ -880,6 +928,7 @@ class WhatsAppBrokerClient {
     const response = await this.sendText<{ externalId?: string; id?: string; status?: string }>(
       {
         sessionId: instanceId,
+        instanceId,
         to: payload.to,
         message: payload.content,
         previewUrl: payload.previewUrl,
