@@ -19,13 +19,17 @@ export interface AllocationResult {
 
 export const listAllocations = async (
   tenantId: string,
-  agreementId?: string,
-  campaignId?: string
+  options: {
+    agreementId?: string;
+    campaignId?: string;
+    statuses?: LeadAllocationStatus[];
+  } = {}
 ): Promise<LeadAllocation[]> => {
   return listPersistedAllocations({
     tenantId,
-    agreementId,
-    campaignId,
+    agreementId: options.agreementId,
+    campaignId: options.campaignId,
+    statuses: options.statuses,
   });
 };
 

@@ -7,6 +7,7 @@ export {
   allocateBrokerLeads,
   listAllocations,
   updateAllocation,
+  resetAllocationStore,
   type LeadAllocationDto,
   type LeadAllocationStatus,
   type AllocationSummary,
