@@ -427,12 +427,34 @@ const WhatsAppConnect = ({
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [loadingQr, setLoadingQr] = useState(false);
   const [authToken, setAuthTokenState] = useState(() => getAuthToken());
+  const [sessionActive, setSessionActive] = useState(() => Boolean(getAuthToken()));
   const [errorState, setErrorState] = useState(null);
   const [localStatus, setLocalStatus] = useState(status);
   const [campaign, setCampaign] = useState(activeCampaign || null);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
   const loadInstancesRef = useRef(() => {});
+  const sessionActiveRef = useRef(sessionActive);
+
+  const requireAuthMessage =
+    'Para consultar as instâncias de WhatsApp, autentique-se usando o botão “Login demo” e gere um token ativo.';
+
+  const isAuthError = (error) => {
+    const status = typeof error?.status === 'number' ? error.status : null;
+    return status === 401 || status === 403;
+  };
+
+  const enforceAuthPrompt = () => {
+    setSessionActive(false);
+    setLoadingInstances(false);
+    setLoadingQr(false);
+    setErrorMessage(requireAuthMessage, { requiresAuth: true });
+    setInstances([]);
+    setInstance(null);
+    setLocalStatus('disconnected');
+    setQrData(null);
+    setSecondsLeft(null);
+  };
 
   const setErrorMessage = (message, meta = {}) => {
     if (message) {
@@ -458,7 +480,7 @@ const WhatsAppConnect = ({
   const hasCampaign = Boolean(campaign);
   const qrImageSrc = getQrImageSrc(qrData);
   const hasQr = Boolean(qrImageSrc);
-  const isAuthenticated = Boolean(authToken);
+  const isAuthenticated = sessionActive || Boolean(authToken);
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || 'border-white/10 bg-white/10 text-white';
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -479,11 +501,15 @@ const WhatsAppConnect = ({
   }, [status]);
 
   useEffect(() => {
+    sessionActiveRef.current = sessionActive;
+  }, [sessionActive]);
+
+  useEffect(() => {
     setCampaign(activeCampaign || null);
   }, [activeCampaign]);
 
   useEffect(() => {
-    if (!selectedAgreement?.id || !authToken) {
+    if (!selectedAgreement?.id) {
       return undefined;
     }
 
@@ -491,19 +517,26 @@ const WhatsAppConnect = ({
 
     const poll = () => {
       if (cancelled) return;
+      if (!isAuthenticated) return;
       if (loadingInstances || loadingQr) return;
       void loadInstancesRef.current?.();
     };
 
-    poll();
+    void loadInstancesRef.current?.();
+
+    if (!isAuthenticated) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const interval = setInterval(poll, 5000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAgreement?.id, authToken, loadingInstances, loadingQr]);
+  }, [selectedAgreement?.id, isAuthenticated, loadingInstances, loadingQr]);
 
   useEffect(() => {
     if (!selectedAgreement) {
@@ -572,6 +605,7 @@ const WhatsAppConnect = ({
 
   const connectDefaultInstance = async () => {
     const response = await apiPost('/api/integrations/whatsapp/instances/connect', {});
+    setSessionActive(true);
     const payload = response?.data ?? {};
 
     let status = typeof payload.status === 'string' ? payload.status : null;
@@ -607,6 +641,7 @@ const WhatsAppConnect = ({
     if (!id) return null;
 
     const response = await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {});
+    setSessionActive(true);
     const payload = response?.data ?? {};
     const instance = extractInstanceFromPayload(payload) || null;
 
@@ -642,24 +677,11 @@ const WhatsAppConnect = ({
     if (!selectedAgreement) return;
     const token = getAuthToken();
     setAuthTokenState(token);
-    if (!token) {
-      setLoadingInstances(false);
-      setLoadingQr(false);
-      setErrorMessage(
-        'Para consultar as instâncias de WhatsApp, autentique-se usando o botão “Login demo” e gere um token ativo.',
-        { requiresAuth: true }
-      );
-      setInstances([]);
-      setInstance(null);
-      setLocalStatus('disconnected');
-      setQrData(null);
-      setSecondsLeft(null);
-      return;
-    }
     setLoadingInstances(true);
     setErrorMessage(null);
     try {
       const response = await apiGet('/api/integrations/whatsapp/instances');
+      setSessionActive(true);
       let list = Array.isArray(response?.data) ? response.data : [];
       let connectResult = providedConnect || null;
 
@@ -740,9 +762,13 @@ const WhatsAppConnect = ({
         setSecondsLeft(null);
       }
     } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
-      );
+      if (isAuthError(err)) {
+        enforceAuthPrompt();
+      } else {
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
+        );
+      }
     } finally {
       setLoadingInstances(false);
     }
@@ -753,22 +779,13 @@ const WhatsAppConnect = ({
     const unsubscribe = onAuthTokenChange((token) => {
       setAuthTokenState(token);
       if (token) {
+        setSessionActive(true);
         setErrorMessage(null);
         if (selectedAgreement) {
           void loadInstancesRef.current?.();
         }
-      } else {
-        setLoadingInstances(false);
-        setLoadingQr(false);
-        setErrorMessage(
-          'Sessão expirada. Utilize o botão “Login demo” para gerar um novo token e continuar a configuração.',
-          { requiresAuth: true }
-        );
-        setInstances([]);
-        setInstance(null);
-        setLocalStatus('disconnected');
-        setQrData(null);
-        setSecondsLeft(null);
+      } else if (!sessionActiveRef.current) {
+        enforceAuthPrompt();
       }
     });
     return () => {
@@ -805,6 +822,7 @@ const WhatsAppConnect = ({
       const response = await apiPost('/api/integrations/whatsapp/instances', {
         name: normalizedName,
       });
+      setSessionActive(true);
       const payload = response?.data ?? {};
       const createdInstance = extractInstanceFromPayload(payload);
       const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
@@ -858,7 +876,13 @@ const WhatsAppConnect = ({
         preferredInstanceId: createdInstanceId || normalizedName,
       });
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível criar uma nova instância');
+      if (isAuthError(err)) {
+        enforceAuthPrompt();
+      } else {
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Não foi possível criar uma nova instância'
+        );
+      }
     } finally {
       setLoadingInstances(false);
     }
@@ -954,9 +978,13 @@ const WhatsAppConnect = ({
       }
 
       // Fallback para fluxo legado caso o QR não tenha sido retornado pelo endpoint de conexão
-      await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {}).catch((error) => {
-        console.debug('Falha temporária ao iniciar instância do WhatsApp', error);
-      });
+      await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {})
+        .then(() => {
+          setSessionActive(true);
+        })
+        .catch((error) => {
+          console.debug('Falha temporária ao iniciar instância do WhatsApp', error);
+        });
 
       setLocalStatus('qr_required');
       onStatusChange?.('disconnected');
@@ -969,7 +997,16 @@ const WhatsAppConnect = ({
           // polling cancelado (nova instância/QR solicitado)
           return;
         }
-        const qrResponse = await apiGet(`/api/integrations/whatsapp/instances/${id}/qr`).catch(() => null);
+        let qrResponse = null;
+        try {
+          qrResponse = await apiGet(`/api/integrations/whatsapp/instances/${id}/qr`);
+          setSessionActive(true);
+        } catch (error) {
+          if (isAuthError(error)) {
+            enforceAuthPrompt();
+            return;
+          }
+        }
         const parsed = extractQrPayload(qrResponse?.data);
         if (parsed?.qrCode) {
           received = parsed;
@@ -984,7 +1021,11 @@ const WhatsAppConnect = ({
 
       setQrData(received);
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível gerar o QR Code');
+      if (isAuthError(err)) {
+        enforceAuthPrompt();
+      } else {
+        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível gerar o QR Code');
+      }
     } finally {
       setLoadingQr(false);
     }
@@ -1026,7 +1067,8 @@ const WhatsAppConnect = ({
     if (!instance?.id) return;
     try {
       // Valida com o servidor, se rota existir
-      const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`).catch(() => null);
+      const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`);
+      setSessionActive(true);
       const connected = Boolean(status?.data?.connected);
       if (!connected) {
         setErrorMessage(
@@ -1034,7 +1076,11 @@ const WhatsAppConnect = ({
         );
         return;
       }
-    } catch {
+    } catch (err) {
+      if (isAuthError(err)) {
+        enforceAuthPrompt();
+        return;
+      }
       // Continua em modo otimista caso a rota não exista
     }
     setLocalStatus('connected');
