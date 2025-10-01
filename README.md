@@ -97,6 +97,10 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 JWT_SECRET=your-super-secret-jwt-key
 JWT_EXPIRES_IN=7d
 AUTH_ALLOW_JWT_FALLBACK=true
+AUTH_DISABLE_FOR_MVP=true
+AUTH_MVP_TENANT_ID=demo-tenant
+AUTH_MVP_USER_NAME="MVP Anonymous"
+AUTH_MVP_USER_EMAIL=mvp-anonymous@leadengine.local
 
 # Database (quando configurar)
 DATABASE_URL="postgresql://user:password@localhost:5432/ticketz"
@@ -118,6 +122,7 @@ LOG_LEVEL=info
 
 > **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.
+> **MVP:** `AUTH_DISABLE_FOR_MVP` vem habilitado por padrão para liberar o fluxo completo sem login. Ajuste os dados padrão com as variáveis `AUTH_MVP_*` ou defina `AUTH_DISABLE_FOR_MVP=false` quando quiser reativar a autenticação obrigatória.
 
 #### Frontend (apps/web/.env.local)
 ```env

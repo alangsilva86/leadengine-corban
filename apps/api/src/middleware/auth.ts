@@ -67,6 +67,13 @@ declare global {
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
 const DEMO_JWT_SECRET = process.env.DEMO_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+const AUTH_DISABLED_FOR_MVP = process.env.AUTH_DISABLE_FOR_MVP !== 'false';
+const AUTH_MVP_USER_ID = process.env.AUTH_MVP_USER_ID || 'mvp-anonymous';
+const AUTH_MVP_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
+const AUTH_MVP_USER_NAME = process.env.AUTH_MVP_USER_NAME || 'MVP Anonymous';
+const AUTH_MVP_USER_EMAIL =
+  process.env.AUTH_MVP_USER_EMAIL || 'mvp-anonymous@leadengine.local';
+const AUTH_MVP_ROLE = (process.env.AUTH_MVP_ROLE || 'ADMIN') as UserRole;
 
 /**
  * Gera hash da senha usando bcrypt
@@ -202,6 +209,19 @@ const normalizeRole = (role?: string | UserRole): UserRole => {
     return normalized;
   }
   return 'AGENT';
+};
+
+const buildMvpBypassUser = (): AuthenticatedUser => {
+  const resolvedRole = normalizeRole(AUTH_MVP_ROLE);
+  return {
+    id: AUTH_MVP_USER_ID,
+    tenantId: AUTH_MVP_TENANT_ID,
+    email: AUTH_MVP_USER_EMAIL,
+    name: AUTH_MVP_USER_NAME,
+    role: resolvedRole,
+    isActive: true,
+    permissions: getPermissionsByRole(resolvedRole),
+  };
 };
 
 const resolveTenantIdFromRequest = (req: Request, decoded: JWTPayload): string | undefined => {
@@ -365,6 +385,11 @@ export async function getUserById(userId: string): Promise<AuthenticatedUser | n
  */
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    if (AUTH_DISABLED_FOR_MVP) {
+      req.user = buildMvpBypassUser();
+      return next();
+    }
+
     // Extrair token do header Authorization
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -555,6 +580,10 @@ export const requireRole = (requiredRole: 'ADMIN' | 'SUPERVISOR') => {
  * Middleware para verificar se o usuário pertence ao tenant
  */
 export const requireTenant = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user && AUTH_DISABLED_FOR_MVP) {
+    req.user = buildMvpBypassUser();
+  }
+
   if (!req.user) {
     return res.status(401).json({
       success: false,
@@ -597,8 +626,13 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
  * Middleware opcional de autenticação (não falha se não houver token)
  */
 export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
+  if (AUTH_DISABLED_FOR_MVP) {
+    req.user = buildMvpBypassUser();
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return next(); // Continua sem usuário
   }
