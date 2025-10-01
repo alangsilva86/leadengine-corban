@@ -675,8 +675,12 @@ const WhatsAppConnect = ({
   };
 
   const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
-    if (!selectedAgreement) return;
-    if (loadingRef.current) return;
+    if (!selectedAgreement) {
+      return { success: false, skipped: true, reason: 'missing-agreement' };
+    }
+    if (loadingRef.current) {
+      return { success: false, skipped: true, reason: 'in-flight' };
+    }
     loadingRef.current = true;
     const token = getAuthToken();
     setAuthTokenState(token);
@@ -760,6 +764,12 @@ const WhatsAppConnect = ({
         setQrData(null);
         setSecondsLeft(null);
       }
+      return {
+        success: true,
+        instances: list,
+        currentInstance: current,
+        status: statusFromInstance,
+      };
     } catch (err) {
       if (isAuthError(err)) {
         enforceAuthPrompt();
@@ -768,6 +778,7 @@ const WhatsAppConnect = ({
           err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
         );
       }
+      return { success: false, error: err };
     } finally {
       loadingRef.current = false;
       setLoadingInstances(false);
