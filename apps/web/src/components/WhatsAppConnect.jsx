@@ -325,6 +325,29 @@ const extractQrPayload = (payload) => {
   return parseCandidate(payload) || null;
 };
 
+const extractInstanceFromPayload = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  if (payload.instance && typeof payload.instance === 'object') {
+    return payload.instance;
+  }
+
+  if (payload.data && typeof payload.data === 'object') {
+    const nested = extractInstanceFromPayload(payload.data);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  if (payload.id || payload.name || payload.status || payload.connected) {
+    return payload;
+  }
+
+  return null;
+};
+
 const WhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -519,7 +542,42 @@ const WhatsAppConnect = ({
     };
   };
 
-  const loadInstances = async ({ connectResult: providedConnect } = {}) => {
+  const startInstanceConnection = async (id) => {
+    if (!id) return null;
+
+    const response = await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {});
+    const payload = response?.data ?? {};
+    const instance = extractInstanceFromPayload(payload) || null;
+
+    let status = typeof payload.status === 'string' ? payload.status : null;
+    if (!status && typeof instance?.status === 'string') {
+      status = instance.status;
+    }
+
+    const hasConnectedFlag = typeof payload.connected === 'boolean';
+    let connected = hasConnectedFlag
+      ? payload.connected
+      : typeof instance?.connected === 'boolean'
+      ? instance.connected
+      : null;
+    if (connected === null && status) {
+      connected = status === 'connected';
+    }
+
+    const instances = Array.isArray(payload.instances)
+      ? payload.instances.filter((item) => item && typeof item === 'object')
+      : [];
+
+    return {
+      status,
+      connected,
+      qr: extractQrPayload(payload),
+      instance,
+      instances,
+    };
+  };
+
+  const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
     if (!selectedAgreement) return;
     const token = getAuthToken();
     setAuthTokenState(token);
@@ -561,7 +619,13 @@ const WhatsAppConnect = ({
       }
 
       let current = null;
-      if (campaign?.instanceId) {
+      if (preferredInstanceId) {
+        current =
+          list.find(
+            (item) => item.id === preferredInstanceId || item.name === preferredInstanceId
+          ) || null;
+      }
+      if (!current && campaign?.instanceId) {
         current =
           list.find(
             (item) => item.id === campaign.instanceId || item.name === campaign.instanceId
@@ -653,11 +717,84 @@ const WhatsAppConnect = ({
 
   const handleCreateInstance = async () => {
     if (!selectedAgreement) return;
+
+    const defaultName = `Instância ${instances.length + 1}`;
+    let providedName = defaultName;
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+      const promptValue = window.prompt(
+        'Como deseja chamar a nova instância do WhatsApp?',
+        defaultName
+      );
+      if (promptValue === null) {
+        return;
+      }
+      providedName = promptValue;
+    }
+
+    const normalizedName = `${providedName ?? ''}`.trim();
+    if (!normalizedName) {
+      setErrorMessage('Informe um nome válido para a nova instância.');
+      return;
+    }
+
     setLoadingInstances(true);
     setErrorMessage(null);
     try {
-      const connectResult = await connectDefaultInstance();
-      await loadInstances({ connectResult });
+      const response = await apiPost('/api/integrations/whatsapp/instances', {
+        name: normalizedName,
+      });
+      const payload = response?.data ?? {};
+      const createdInstance = extractInstanceFromPayload(payload);
+      const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
+
+      let connectResult = null;
+
+      if (createdInstanceId) {
+        try {
+          const startResult = await startInstanceConnection(createdInstanceId);
+          if (startResult) {
+            connectResult = {
+              ...startResult,
+              instance: {
+                ...createdInstance,
+                ...(startResult.instance || {}),
+              },
+            };
+          }
+        } catch (startError) {
+          console.warn('Não foi possível iniciar a instância recém-criada', startError);
+          connectResult = {
+            status: createdInstance?.status,
+            connected:
+              typeof createdInstance?.connected === 'boolean'
+                ? createdInstance.connected
+                : createdInstance?.status === 'connected'
+                ? true
+                : undefined,
+            qr: null,
+            instance: createdInstance || null,
+          };
+        }
+      }
+
+      if (!connectResult && createdInstance) {
+        connectResult = {
+          status: createdInstance.status,
+          connected:
+            typeof createdInstance.connected === 'boolean'
+              ? createdInstance.connected
+              : createdInstance.status === 'connected'
+              ? true
+              : undefined,
+          qr: extractQrPayload(payload),
+          instance: createdInstance,
+        };
+      }
+
+      await loadInstances({
+        connectResult: connectResult || undefined,
+        preferredInstanceId: createdInstanceId || normalizedName,
+      });
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Não foi possível criar uma nova instância');
     } finally {
