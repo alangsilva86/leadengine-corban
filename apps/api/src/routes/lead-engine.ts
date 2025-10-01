@@ -56,6 +56,68 @@ const ensureTenantContext = (req: Request, res: Response): string | null => {
 
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
 
+const toErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error && typeof error.message === 'string' && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
+  }
+
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error.trim();
+  }
+
+  return fallback;
+};
+
+const extractStatusCode = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  if ('status' in error && typeof (error as { status?: unknown }).status === 'number') {
+    return (error as { status?: number }).status;
+  }
+
+  if ('statusCode' in error && typeof (error as { statusCode?: unknown }).statusCode === 'number') {
+    return (error as { statusCode?: number }).statusCode;
+  }
+
+  if ('response' in error && error.response && typeof error.response === 'object') {
+    const responseStatus = (error.response as { status?: unknown }).status;
+    if (typeof responseStatus === 'number') {
+      return responseStatus;
+    }
+  }
+
+  return undefined;
+};
+
+const extractRetryAfterHeader = (error: unknown): string | undefined => {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  const candidate = (error as { retryAfter?: unknown }).retryAfter;
+
+  if (typeof candidate === 'string') {
+    const trimmed = candidate.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+    const seconds = candidate > 1000 ? Math.ceil(candidate / 1000) : Math.ceil(candidate);
+    return seconds > 0 ? seconds.toString() : undefined;
+  }
+
+  return undefined;
+};
+
 const parseStatusFilter = (
   value: unknown
 ): { statuses?: LeadAllocationStatus[]; error?: string } => {
@@ -645,6 +707,17 @@ router.get(
       return;
     }
 
+    if (!agreementId && !campaignId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'ALLOCATIONS_FILTER_REQUIRED',
+          message: 'Informe campaignId ou agreementId para listar alocações.',
+        },
+      });
+      return;
+    }
+
     logger.info('[LeadEngine] GET /allocations', {
       tenantId,
       agreementId,
@@ -713,18 +786,31 @@ router.get(
         return;
       }
 
+      const statusCandidate = extractStatusCode(error);
+      const status = statusCandidate && statusCandidate >= 400 && statusCandidate < 600 ? statusCandidate : 500;
+      const retryAfter = extractRetryAfterHeader(error);
+
+      if (retryAfter) {
+        res.setHeader('Retry-After', retryAfter);
+      }
+
+      const message = toErrorMessage(error, 'Falha ao listar leads alocados');
+
       logger.error('[LeadEngine] ❌ Failed to list allocations', {
         tenantId,
         agreementId,
         campaignId,
         statuses,
+        status,
+        retryAfter,
         error,
       });
-      res.status(500).json({
+
+      res.status(status).json({
         success: false,
         error: {
-          code: 'ALLOCATIONS_LIST_FAILED',
-          message: 'Falha ao listar leads alocados',
+          code: status >= 500 ? 'ALLOCATIONS_LIST_FAILED' : 'ALLOCATIONS_LIST_ERROR',
+          message,
         },
       });
     }
@@ -769,18 +855,31 @@ router.post(
         },
       });
     } catch (error) {
+      const statusCandidate = extractStatusCode(error);
+      const status = statusCandidate && statusCandidate >= 400 && statusCandidate < 600 ? statusCandidate : 502;
+      const retryAfter = extractRetryAfterHeader(error);
+
+      if (retryAfter) {
+        res.setHeader('Retry-After', retryAfter);
+      }
+
+      const message = toErrorMessage(error, 'Falha ao buscar novos leads');
+
       logger.error('[LeadEngine] ❌ Failed to allocate leads', {
         tenantId,
         campaignId,
         agreementId,
         take,
+        status,
+        retryAfter,
         error,
       });
-      res.status(500).json({
+
+      res.status(status).json({
         success: false,
         error: {
-          code: 'ALLOCATIONS_PULL_FAILED',
-          message: 'Falha ao buscar novos leads',
+          code: status >= 500 ? 'ALLOCATIONS_PULL_FAILED' : 'ALLOCATIONS_PULL_ERROR',
+          message,
         },
       });
     }

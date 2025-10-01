@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquare, RefreshCcw, Sparkles, Trophy, XCircle, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { apiGet, apiPatch, apiPost } from '@/lib/api.js';
+import { computeBackoffDelay, parseRetryAfterMs } from '@/lib/rate-limit.js';
 
 const statusVariant = {
   allocated: 'info',
@@ -27,6 +28,44 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
   const [pulling, setPulling] = useState(false);
   const [error, setError] = useState(null);
 
+  const loadingRef = useRef(false);
+  const retryStateRef = useRef({ attempts: 0, timeoutId: null });
+
+  const clearScheduledReload = useCallback(() => {
+    if (retryStateRef.current.timeoutId) {
+      clearTimeout(retryStateRef.current.timeoutId);
+      retryStateRef.current.timeoutId = null;
+    }
+  }, []);
+
+  const resetRateLimiter = useCallback(() => {
+    retryStateRef.current.attempts = 0;
+    clearScheduledReload();
+  }, [clearScheduledReload]);
+
+  const loadAllocationsRef = useRef(() => {});
+
+  const scheduleNextLoad = useCallback(
+    (retryAfterMs) => {
+      const attempts = retryStateRef.current.attempts + 1;
+      retryStateRef.current.attempts = attempts;
+      const waitMs =
+        typeof retryAfterMs === 'number' && Number.isFinite(retryAfterMs)
+          ? Math.max(0, retryAfterMs)
+          : computeBackoffDelay(attempts);
+
+      clearScheduledReload();
+
+      retryStateRef.current.timeoutId = setTimeout(() => {
+        retryStateRef.current.timeoutId = null;
+        loadAllocationsRef.current?.();
+      }, waitMs);
+
+      return waitMs;
+    },
+    [clearScheduledReload]
+  );
+
   const agreementId = selectedAgreement?.id;
   const campaignId = campaign?.id;
   const batchSize = selectedAgreement?.suggestedBatch || 10;
@@ -36,25 +75,57 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
   const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : 'Passo 4';
 
   const loadAllocations = useCallback(async () => {
-    if (!agreementId && !campaignId) return;
+    if (!agreementId && !campaignId) {
+      return;
+    }
+
+    if (loadingRef.current) {
+      return;
+    }
+
+    loadingRef.current = true;
+
     try {
       setLoading(true);
+      clearScheduledReload();
+
       const params = new URLSearchParams();
       if (campaignId) params.set('campaignId', campaignId);
       else if (agreementId) params.set('agreementId', agreementId);
+
       const payload = await apiGet(`/api/lead-engine/allocations?${params.toString()}`);
       setAllocations(payload.data || []);
       setError(null);
+      resetRateLimiter();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar leads');
+      const message = err instanceof Error ? err.message : 'Falha ao carregar leads';
+      const status = err?.status ?? err?.statusCode;
+      const retryAfterMs = parseRetryAfterMs(err?.retryAfter ?? err?.payload?.retryAfter ?? err?.rateLimitDelayMs);
+
+      if (status === 429 || status === 503 || (typeof status === 'number' && status >= 500)) {
+        const waitMs = scheduleNextLoad(retryAfterMs);
+        const seconds = Math.ceil(waitMs / 1000);
+        setError(`Muitas requisições. Nova tentativa em ${seconds}s.`);
+      } else {
+        resetRateLimiter();
+        setError(message);
+      }
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
-  }, [agreementId, campaignId]);
+  }, [agreementId, campaignId, clearScheduledReload, resetRateLimiter, scheduleNextLoad]);
+
+  useEffect(() => {
+    loadAllocationsRef.current = loadAllocations;
+  }, [loadAllocations]);
 
   useEffect(() => {
     loadAllocations();
-  }, [loadAllocations]);
+    return () => {
+      clearScheduledReload();
+    };
+  }, [loadAllocations, clearScheduledReload]);
 
   const handlePull = async () => {
     if (!agreementId || !campaignId) return;
@@ -66,6 +137,7 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
         agreementId,
         take: batchSize,
       });
+      resetRateLimiter();
       await loadAllocations();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível buscar novos leads');

@@ -1,4 +1,4 @@
-import { fetch, Headers, type HeadersInit, type RequestInit } from 'undici';
+import { fetch, Headers, type HeadersInit, type RequestInit, type Response } from 'undici';
 import {
   agreementDefinitions,
   leadEngineConfig,
@@ -9,6 +9,33 @@ import {
 import { logger } from '../config/logger';
 
 const LOG_PREFIX = '[LeadEngine]';
+
+export interface LeadEngineError extends Error {
+  status?: number;
+  statusText?: string;
+  retryAfter?: string | number;
+  details?: unknown;
+}
+
+const createLeadEngineError = (
+  message: string,
+  options: { status?: number; statusText?: string; retryAfter?: string | number; details?: unknown } = {}
+): LeadEngineError => {
+  const error = new Error(message) as LeadEngineError;
+  if (options.status !== undefined) {
+    error.status = options.status;
+  }
+  if (options.statusText !== undefined) {
+    error.statusText = options.statusText;
+  }
+  if (options.retryAfter !== undefined) {
+    error.retryAfter = options.retryAfter;
+  }
+  if (options.details !== undefined) {
+    error.details = options.details;
+  }
+  return error;
+};
 
 // ============================================================================
 // Types baseados na API real
@@ -176,24 +203,64 @@ class LeadEngineClient {
         headers.set('Authorization', authorization);
       }
 
-      const response = await fetch(url, {
-        ...init,
-        headers,
-        signal: controller.signal,
-      });
+      let response: Response;
+
+      try {
+        response = await fetch(url, {
+          ...init,
+          headers,
+          signal: controller.signal,
+        });
+      } catch (fetchError) {
+        const elapsedMs = Date.now() - startedAt;
+        logger.error(`${LOG_PREFIX} ❌ Falha na requisição`, {
+          url,
+          path,
+          elapsedMs,
+          error: fetchError,
+        });
+
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          throw createLeadEngineError('Lead Engine timeout ao processar a requisição.', { status: 504 });
+        }
+
+        throw createLeadEngineError(
+          `Falha ao comunicar com o Lead Engine: ${
+            fetchError instanceof Error ? fetchError.message : String(fetchError)
+          }`,
+          { status: 503 }
+        );
+      }
 
       const elapsedMs = Date.now() - startedAt;
 
       if (!response.ok) {
+        const retryAfter = response.headers.get('Retry-After') ?? undefined;
         const raw = await response.text();
-        const preview = raw.slice(0, 500);
+        let details: unknown = raw;
+        try {
+          details = raw ? JSON.parse(raw) : undefined;
+        } catch {
+          // Mantém representação textual
+        }
+        const preview = typeof raw === 'string' ? raw.slice(0, 500) : undefined;
+
         logger.error(`${LOG_PREFIX} 💥 ${response.status} erro na requisição`, {
           url,
           path,
           elapsedMs,
           preview,
         });
-        throw new Error(`Lead Engine respondeu ${response.status}: ${preview}`);
+
+        throw createLeadEngineError(
+          `Lead Engine respondeu ${response.status}: ${response.statusText || preview || 'Erro desconhecido'}`,
+          {
+            status: response.status,
+            statusText: response.statusText,
+            retryAfter,
+            details,
+          }
+        );
       }
 
       const data = (await response.json()) as T;
@@ -203,18 +270,6 @@ class LeadEngineClient {
         elapsedMs,
       });
       return data;
-    } catch (error) {
-      const elapsedMs = Date.now() - startedAt;
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      const name = error instanceof Error ? error.name : 'UnknownError';
-      logger.error(`${LOG_PREFIX} ❌ Falha na requisição`, {
-        url,
-        path,
-        elapsedMs,
-        name,
-        error: message,
-      });
-      throw error instanceof Error ? error : new Error('Erro desconhecido ao chamar Lead Engine');
     } finally {
       clearTimeout(timeout);
     }
@@ -523,7 +578,9 @@ class LeadEngineClient {
   ): Promise<BrokerLeadRecord[]> {
     const agreement = agreementDefinitions.find((item) => item.id === agreementId);
     if (!agreement) {
-      throw new Error(`Convênio não encontrado: ${agreementId}`);
+      throw createLeadEngineError(`Convênio não encontrado: ${agreementId}`, {
+        status: 400,
+      });
     }
 
     const response = await this.getLeads({

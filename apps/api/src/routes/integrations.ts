@@ -425,9 +425,13 @@ router.post(
 // POST /api/integrations/whatsapp/instances/connect - Connect the default WhatsApp instance
 router.post(
   '/whatsapp/instances/connect',
+  body('instanceId').optional().isString().trim().notEmpty(),
+  validateRequest,
   requireTenant,
-  asyncHandler(async (_req: Request, res: Response) => {
-    const instanceId = resolveDefaultInstanceId();
+  asyncHandler(async (req: Request, res: Response) => {
+    const requestedInstanceId =
+      typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
+    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
 
     try {
       await whatsappBrokerClient.connectInstance(instanceId);
@@ -435,7 +439,10 @@ router.post(
 
       res.json({
         success: true,
-        data: normalizeInstanceStatusResponse(status),
+        data: {
+          instanceId,
+          ...normalizeInstanceStatusResponse(status),
+        },
       });
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
@@ -479,10 +486,13 @@ router.post(
 router.post(
   '/whatsapp/instances/disconnect',
   body('wipe').optional().isBoolean(),
+  body('instanceId').optional().isString().trim().notEmpty(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = resolveDefaultInstanceId();
+    const requestedInstanceId =
+      typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
+    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
     const disconnectOptions = wipe === undefined ? undefined : { wipe };
 
@@ -492,7 +502,10 @@ router.post(
 
       res.json({
         success: true,
-        data: normalizeInstanceStatusResponse(status),
+        data: {
+          instanceId,
+          ...normalizeInstanceStatusResponse(status),
+        },
       });
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
@@ -531,16 +544,23 @@ router.get(
 // GET /api/integrations/whatsapp/instances/qr - Fetch QR code for the default WhatsApp instance
 router.get(
   '/whatsapp/instances/qr',
+  query('instanceId').optional().isString().trim().notEmpty(),
+  validateRequest,
   requireTenant,
-  asyncHandler(async (_req: Request, res: Response) => {
-    const instanceId = resolveDefaultInstanceId();
+  asyncHandler(async (req: Request, res: Response) => {
+    const requestedInstanceId =
+      typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
+    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
 
     try {
       const qrCode = await whatsappBrokerClient.getQrCode(instanceId);
 
       res.json({
         success: true,
-        data: normalizeQr(qrCode),
+        data: {
+          instanceId,
+          ...normalizeQr(qrCode),
+        },
       });
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
