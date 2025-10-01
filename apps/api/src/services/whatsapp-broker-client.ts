@@ -608,8 +608,45 @@ class WhatsAppBrokerClient {
     await this.logoutSession(instanceId);
   }
 
-  async getQrCode(_instanceId: string): Promise<WhatsAppQrCode> {
+  async getQrCode(instanceId: string): Promise<WhatsAppQrCode> {
     this.ensureConfigured();
+
+    try {
+      const payload = await this.request<WhatsAppQrCode & Record<string, unknown>>(
+        '/broker/session/qr',
+        { method: 'GET' },
+        { searchParams: { sessionId: instanceId } }
+      );
+
+      if (payload && typeof payload === 'object') {
+        const qrCode = typeof payload.qrCode === 'string' ? payload.qrCode : undefined;
+        const expiresAt = typeof payload.expiresAt === 'string' ? payload.expiresAt : undefined;
+
+        if (qrCode && expiresAt) {
+          return { qrCode, expiresAt };
+        }
+
+        logger.warn('WhatsApp broker returned incomplete QR payload', {
+          instanceId,
+          payload,
+        });
+      } else {
+        logger.warn('WhatsApp broker returned invalid QR payload', {
+          instanceId,
+          payload,
+        });
+      }
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+
+      logger.warn('Failed to fetch WhatsApp QR code from broker; using fallback', {
+        instanceId,
+        error,
+      });
+    }
+
     return {
       qrCode: FALLBACK_QR,
       expiresAt: new Date(Date.now() + QR_EXPIRATION_MS).toISOString(),
