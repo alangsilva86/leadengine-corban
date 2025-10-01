@@ -64,7 +64,7 @@ const resolvedCorsOrigins = Array.from(corsAllowedOrigins);
 const sharedCorsSettings = {
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as string[],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'Accept', 'x-api-key'] as string[],
+  allowedHeaders: ['content-type', 'authorization', 'x-tenant-id', 'accept', 'x-api-key'] as string[],
 };
 
 const corsOptions: CorsOptions = allowAllOrigins
