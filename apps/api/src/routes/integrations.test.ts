@@ -280,9 +280,14 @@ describe('WhatsApp integration routes with configured broker', () => {
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
     const connectSpy = vi.spyOn(whatsappBrokerClient, 'connectInstance').mockResolvedValue();
-    const statusSpy = vi
-      .spyOn(whatsappBrokerClient, 'getStatus')
-      .mockResolvedValue({ status: 'connected', connected: true });
+    const statusSpy = vi.spyOn(whatsappBrokerClient, 'getStatus').mockResolvedValue({
+      status: 'connected',
+      connected: true,
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+    });
 
     try {
       const response = await fetch(
@@ -305,6 +310,10 @@ describe('WhatsApp integration routes with configured broker', () => {
         data: {
           status: 'connected',
           connected: true,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
         },
       });
     } finally {
@@ -319,9 +328,14 @@ describe('WhatsApp integration routes with configured broker', () => {
     const disconnectSpy = vi
       .spyOn(whatsappBrokerClient, 'disconnectInstance')
       .mockResolvedValue();
-    const statusSpy = vi
-      .spyOn(whatsappBrokerClient, 'getStatus')
-      .mockResolvedValue({ status: 'disconnected', connected: false });
+    const statusSpy = vi.spyOn(whatsappBrokerClient, 'getStatus').mockResolvedValue({
+      status: 'disconnected',
+      connected: false,
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+    });
 
     try {
       const response = await fetch(
@@ -344,6 +358,10 @@ describe('WhatsApp integration routes with configured broker', () => {
         data: {
           status: 'disconnected',
           connected: false,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
         },
       });
     } finally {
@@ -361,9 +379,14 @@ describe('WhatsApp integration routes with configured broker', () => {
     const disconnectSpy = vi
       .spyOn(whatsappBrokerClient, 'disconnectInstance')
       .mockResolvedValue();
-    const statusSpy = vi
-      .spyOn(whatsappBrokerClient, 'getStatus')
-      .mockResolvedValue({ status: 'disconnected', connected: false });
+    const statusSpy = vi.spyOn(whatsappBrokerClient, 'getStatus').mockResolvedValue({
+      status: 'disconnected',
+      connected: false,
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+    });
 
     try {
       const response = await fetch(
@@ -388,6 +411,10 @@ describe('WhatsApp integration routes with configured broker', () => {
         data: {
           status: 'disconnected',
           connected: false,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
         },
       });
     } finally {
@@ -405,9 +432,14 @@ describe('WhatsApp integration routes with configured broker', () => {
     const disconnectSpy = vi
       .spyOn(whatsappBrokerClient, 'disconnectInstance')
       .mockResolvedValue();
-    const statusSpy = vi
-      .spyOn(whatsappBrokerClient, 'getStatus')
-      .mockResolvedValue({ status: 'disconnected', connected: false });
+    const statusSpy = vi.spyOn(whatsappBrokerClient, 'getStatus').mockResolvedValue({
+      status: 'disconnected',
+      connected: false,
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+    });
 
     try {
       const response = await fetch(
@@ -432,6 +464,10 @@ describe('WhatsApp integration routes with configured broker', () => {
         data: {
           status: 'disconnected',
           connected: false,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
         },
       });
     } finally {
@@ -444,7 +480,9 @@ describe('WhatsApp integration routes with configured broker', () => {
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
     const qrSpy = vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qr: 'data:image/png;base64,QR',
       qrCode: 'data:image/png;base64,QR',
+      qrExpiresAt: '2024-01-03T00:00:00.000Z',
       expiresAt: '2024-01-03T00:00:00.000Z',
     });
 
@@ -466,7 +504,9 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(body).toMatchObject({
         success: true,
         data: {
+          qr: 'data:image/png;base64,QR',
           qrCode: 'data:image/png;base64,QR',
+          qrExpiresAt: '2024-01-03T00:00:00.000Z',
           expiresAt: '2024-01-03T00:00:00.000Z',
         },
       });
@@ -480,7 +520,9 @@ describe('WhatsApp integration routes with configured broker', () => {
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
     const qrSpy = vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qr: 'data:image/png;base64,DEFAULT_QR',
       qrCode: 'data:image/png;base64,DEFAULT_QR',
+      qrExpiresAt: null,
       expiresAt: '2024-01-04T00:00:00.000Z',
     });
 
@@ -499,7 +541,9 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(body).toMatchObject({
         success: true,
         data: {
+          qr: 'data:image/png;base64,DEFAULT_QR',
           qrCode: 'data:image/png;base64,DEFAULT_QR',
+          qrExpiresAt: null,
           expiresAt: '2024-01-04T00:00:00.000Z',
         },
       });
@@ -512,9 +556,14 @@ describe('WhatsApp integration routes with configured broker', () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
-    const statusSpy = vi
-      .spyOn(whatsappBrokerClient, 'getStatus')
-      .mockResolvedValue({ status: 'qr_required', connected: false });
+    const statusSpy = vi.spyOn(whatsappBrokerClient, 'getStatus').mockResolvedValue({
+      status: 'qr_required',
+      connected: false,
+      qr: 'data:image/png;base64,QR',
+      qrCode: 'data:image/png;base64,QR',
+      qrExpiresAt: '2024-01-05T00:00:00.000Z',
+      expiresAt: '2024-01-05T00:00:00.000Z',
+    });
 
     try {
       const response = await fetch(
@@ -536,6 +585,10 @@ describe('WhatsApp integration routes with configured broker', () => {
         data: {
           status: 'qr_required',
           connected: false,
+          qr: 'data:image/png;base64,QR',
+          qrCode: 'data:image/png;base64,QR',
+          qrExpiresAt: '2024-01-05T00:00:00.000Z',
+          expiresAt: '2024-01-05T00:00:00.000Z',
         },
       });
     } finally {
