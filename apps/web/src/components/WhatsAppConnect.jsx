@@ -41,6 +41,9 @@ const statusCodeMeta = [
   { code: '5', label: 'Status 5', description: 'Total de mensagens reportadas com status 5 pelo broker.' },
 ];
 
+const DEFAULT_POLL_INTERVAL_MS = 15000;
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+
 const pickMetric = (source, keys) => {
   if (!source) return undefined;
   for (const key of keys) {
@@ -60,6 +63,38 @@ const toNumber = (value) => {
     const numeric = Number(value);
     if (!Number.isNaN(numeric)) {
       return numeric;
+    }
+  }
+
+  return null;
+};
+
+const parseRetryAfterMs = (retryAfter) => {
+  if (retryAfter === null || retryAfter === undefined) {
+    return null;
+  }
+
+  if (typeof retryAfter === 'number' && Number.isFinite(retryAfter)) {
+    const asMilliseconds = retryAfter > 1000 ? retryAfter : retryAfter * 1000;
+    return Math.max(0, Math.round(asMilliseconds));
+  }
+
+  if (typeof retryAfter === 'string') {
+    const trimmed = retryAfter.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const numericCandidate = Number(trimmed);
+    if (Number.isFinite(numericCandidate)) {
+      const asMilliseconds = numericCandidate > 1000 ? numericCandidate : numericCandidate * 1000;
+      return Math.max(0, Math.round(asMilliseconds));
+    }
+
+    const parsedDate = Date.parse(trimmed);
+    if (!Number.isNaN(parsedDate)) {
+      const diff = parsedDate - Date.now();
+      return diff > 0 ? diff : 0;
     }
   }
 
@@ -435,6 +470,8 @@ const WhatsAppConnect = ({
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
   const loadInstancesRef = useRef(() => {});
   const sessionActiveRef = useRef(sessionActive);
+  const loadingInstancesRef = useRef(loadingInstances);
+  const loadingQrRef = useRef(loadingQr);
 
   const requireAuthMessage =
     'Para consultar as instâncias de WhatsApp, autentique-se usando o botão “Login demo” e gere um token ativo.';
@@ -509,34 +546,90 @@ const WhatsAppConnect = ({
   }, [activeCampaign]);
 
   useEffect(() => {
+    loadingInstancesRef.current = loadingInstances;
+  }, [loadingInstances]);
+
+  useEffect(() => {
+    loadingQrRef.current = loadingQr;
+  }, [loadingQr]);
+
+  useEffect(() => {
     if (!selectedAgreement?.id) {
       return undefined;
     }
 
-    let cancelled = false;
-
-    const poll = () => {
-      if (cancelled) return;
-      if (!isAuthenticated) return;
-      if (loadingInstances || loadingQr) return;
-      void loadInstancesRef.current?.();
-    };
-
-    void loadInstancesRef.current?.();
-
     if (!isAuthenticated) {
-      return () => {
-        cancelled = true;
-      };
+      return undefined;
     }
 
-    const interval = setInterval(poll, 5000);
+    let cancelled = false;
+    let timeoutId;
+
+    const resolveNextDelay = (result) => {
+      if (!result || result.success || result.skipped) {
+        return DEFAULT_POLL_INTERVAL_MS;
+      }
+
+      const retryAfterMs = parseRetryAfterMs(result.error?.retryAfter);
+      if (retryAfterMs !== null) {
+        return retryAfterMs > 0 ? retryAfterMs : DEFAULT_POLL_INTERVAL_MS;
+      }
+
+      if (result.error?.status === 429) {
+        return RATE_LIMIT_COOLDOWN_MS;
+      }
+
+      return DEFAULT_POLL_INTERVAL_MS;
+    };
+
+    const scheduleNext = (delay = DEFAULT_POLL_INTERVAL_MS) => {
+      if (cancelled) {
+        return;
+      }
+
+      const normalizedDelay =
+        typeof delay === 'number' && Number.isFinite(delay) && delay >= 0
+          ? delay
+          : DEFAULT_POLL_INTERVAL_MS;
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      timeoutId = setTimeout(runPoll, normalizedDelay);
+    };
+
+    const runPoll = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (loadingInstancesRef.current || loadingQrRef.current) {
+        scheduleNext(DEFAULT_POLL_INTERVAL_MS);
+        return;
+      }
+
+      const result = await Promise.resolve()
+        .then(() => loadInstancesRef.current?.())
+        .catch((error) => ({ success: false, error }));
+
+      if (cancelled) {
+        return;
+      }
+
+      const delay = resolveNextDelay(result);
+      scheduleNext(delay);
+    };
+
+    runPoll();
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     };
-  }, [selectedAgreement?.id, isAuthenticated, loadingInstances, loadingQr]);
+  }, [selectedAgreement?.id, isAuthenticated]);
 
   useEffect(() => {
     if (!selectedAgreement) {
@@ -674,7 +767,9 @@ const WhatsAppConnect = ({
   };
 
   const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
-    if (!selectedAgreement) return;
+    if (!selectedAgreement) {
+      return { success: false, skipped: true };
+    }
     const token = getAuthToken();
     setAuthTokenState(token);
     setLoadingInstances(true);
@@ -761,6 +856,7 @@ const WhatsAppConnect = ({
         setQrData(null);
         setSecondsLeft(null);
       }
+      return { success: true, status: statusFromInstance };
     } catch (err) {
       if (isAuthError(err)) {
         enforceAuthPrompt();
@@ -769,6 +865,7 @@ const WhatsAppConnect = ({
           err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
         );
       }
+      return { success: false, error: err };
     } finally {
       setLoadingInstances(false);
     }

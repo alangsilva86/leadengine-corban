@@ -85,6 +85,10 @@ const handleResponse = async (response) => {
     error.status = response.status;
     error.statusText = response.statusText;
     error.payload = payload;
+    const retryAfterHeader = response.headers.get('Retry-After');
+    if (retryAfterHeader) {
+      error.retryAfter = retryAfterHeader;
+    }
     throw error;
   }
   return payload;
