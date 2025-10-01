@@ -31,9 +31,14 @@ const restoreLeadEngineEnv = () => {
   }
 };
 
-const startTestServer = async () => {
+const startTestServer = async (
+  options: { setupMocks?: () => void | Promise<void> } = {}
+) => {
   vi.resetModules();
   ensureLeadEngineEnv();
+  if (options.setupMocks) {
+    await options.setupMocks();
+  }
   const { leadEngineRouter } = await import('./lead-engine');
 
   return new Promise<{ server: Server; url: string }>((resolve) => {
@@ -338,6 +343,42 @@ describe('Lead Engine allocations routes', () => {
       expect(body.success).toBe(false);
       expect(body.error.code).toBe('INVALID_ALLOCATION_STATUS');
     } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns an empty list when storage is not initialized', async () => {
+    const storageError = Object.assign(new Error('Storage not initialized'), {
+      code: 'STORAGE_NOT_INITIALIZED',
+    });
+
+    const { server, url } = await startTestServer({
+      setupMocks: async () => {
+        const actual = await vi.importActual<
+          typeof import('../data/lead-allocation-store')
+        >('../data/lead-allocation-store');
+
+        vi.doMock('../data/lead-allocation-store', () => ({
+          ...actual,
+          listAllocations: vi.fn().mockRejectedValue(storageError),
+        }));
+      },
+    });
+
+    try {
+      const response = await fetch(`${url}/api/lead-engine/allocations`, {
+        headers: {
+          'x-tenant-id': 'tenant-alloc',
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.success).toBe(true);
+      expect(body.data).toEqual([]);
+      expect(body.meta.summary).toEqual({ total: 0, contacted: 0, won: 0, lost: 0 });
+    } finally {
+      vi.doUnmock('../data/lead-allocation-store');
       await stopTestServer(server);
     }
   });
