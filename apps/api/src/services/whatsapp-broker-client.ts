@@ -681,8 +681,11 @@ class WhatsAppBrokerClient {
 
     let lastError: unknown;
 
-    const tenantApiKey = typeof tenantId === 'string' ? tenantId.trim() : '';
-    const apiKey = tenantApiKey.length > 0 ? tenantApiKey : undefined;
+    const normalizedTenantId =
+      typeof tenantId === 'string' ? tenantId.trim() : '';
+    const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
+      ? { searchParams: { tenantId: normalizedTenantId } }
+      : {};
 
     for (let index = 0; index < candidatePaths.length; index += 1) {
       const path = candidatePaths[index];
@@ -693,9 +696,7 @@ class WhatsAppBrokerClient {
           {
             method: 'GET',
           },
-          {
-            apiKey,
-          }
+          requestOptions
         );
 
         const session = this.findSessionPayload(response);
