@@ -471,7 +471,21 @@ router.post(
   '/campaigns',
   body('agreementId').isString().notEmpty(),
   body('instanceId').isString().notEmpty(),
-  body('name').isString().notEmpty(),
+  body('agreementName').optional().isString().trim().notEmpty(),
+  body('name').optional().isString().trim().notEmpty(),
+  body()
+    .custom((_, { req }) => {
+      const hasName = typeof req.body.name === 'string' && req.body.name.trim().length > 0;
+      const hasAgreementName =
+        typeof req.body.agreementName === 'string' && req.body.agreementName.trim().length > 0;
+
+      if (!hasName && !hasAgreementName) {
+        throw new Error('Campaign name is required');
+      }
+
+      return true;
+    })
+    .bail(),
   body('status')
     .optional()
     .isString()
@@ -491,11 +505,15 @@ router.post(
     const tenantId = ensureTenantContext(req, res);
     if (!tenantId) return;
 
-    const { agreementId, instanceId, name } = req.body as {
+    const { agreementId, instanceId } = req.body as {
       agreementId: string;
       instanceId: string;
-      name: string;
     };
+    const normalizedNameSource =
+      typeof req.body.name === 'string' && req.body.name.trim().length > 0
+        ? req.body.name
+        : (req.body.agreementName as string);
+    const normalizedName = normalizedNameSource.trim();
     const rawStatusValue = typeof req.body.status === 'string' ? req.body.status : undefined;
     const status =
       rawStatusValue && Object.values(CampaignStatus).includes(rawStatusValue as CampaignStatus)
@@ -506,6 +524,7 @@ router.post(
       tenantId,
       agreementId,
       instanceId,
+      name: normalizedName,
       status: status ?? CampaignStatus.ACTIVE,
     });
 
@@ -514,7 +533,7 @@ router.post(
         tenantId,
         agreementId,
         instanceId,
-        name,
+        name: normalizedName,
         status,
       });
 

@@ -72,6 +72,7 @@ const resetPrismaMocks = () => {
   const instanceModel = prismaMock.whatsAppInstance as ReturnType<typeof createModelMock>;
   instanceModel.findMany.mockResolvedValue([]);
   instanceModel.findUnique.mockResolvedValue(null);
+  instanceModel.findFirst.mockResolvedValue(null);
   instanceModel.update.mockResolvedValue(null);
   instanceModel.create.mockResolvedValue(null);
   instanceModel.delete.mockResolvedValue(null);
@@ -453,11 +454,15 @@ describe('WhatsApp integration routes with configured broker', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ id: 'Created Instance', name: 'Created Instance' }),
+        body: JSON.stringify({ name: 'Created Instance' }),
       });
 
       const body = await response.json();
 
+      expect(prisma.whatsAppInstance.findFirst).toHaveBeenCalledWith({
+        where: { tenantId: 'tenant-123', id: 'created-instance' },
+        select: { id: true },
+      });
       expect(prisma.whatsAppInstance.create).toHaveBeenCalledWith({
         data: {
           id: 'created-instance',
@@ -466,7 +471,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           brokerId: 'created-instance',
           status: 'disconnected',
           connected: false,
-          metadata: { displayId: 'Created Instance' },
+          metadata: { displayId: 'created-instance' },
         },
       });
       expect(response.status).toBe(201);
@@ -478,6 +483,69 @@ describe('WhatsApp integration routes with configured broker', () => {
           status: 'disconnected',
           connected: false,
         },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('creates a WhatsApp instance with a sequential identifier when the slug already exists', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+
+    (prisma.whatsAppInstance.findFirst as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ id: 'created-instance' })
+      .mockResolvedValueOnce(null);
+
+    prisma.whatsAppInstance.create.mockResolvedValue({
+      id: 'created-instance-2',
+      tenantId: 'tenant-123',
+      name: 'Created Instance',
+      brokerId: 'created-instance-2',
+      phoneNumber: null,
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-05T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-05T00:00:00.000Z'),
+      metadata: { displayId: 'created-instance-2' },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.create>>);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ name: 'Created Instance' }),
+      });
+
+      const body = await response.json();
+
+      expect(prisma.whatsAppInstance.findFirst).toHaveBeenNthCalledWith(1, {
+        where: { tenantId: 'tenant-123', id: 'created-instance' },
+        select: { id: true },
+      });
+      expect(prisma.whatsAppInstance.findFirst).toHaveBeenNthCalledWith(2, {
+        where: { tenantId: 'tenant-123', id: 'created-instance-2' },
+        select: { id: true },
+      });
+      expect(prisma.whatsAppInstance.create).toHaveBeenCalledWith({
+        data: {
+          id: 'created-instance-2',
+          tenantId: 'tenant-123',
+          name: 'Created Instance',
+          brokerId: 'created-instance-2',
+          status: 'disconnected',
+          connected: false,
+          metadata: { displayId: 'created-instance-2' },
+        },
+      });
+      expect(response.status).toBe(201);
+      expect(body).toMatchObject({
+        success: true,
+        data: expect.objectContaining({ id: 'created-instance-2' }),
       });
     } finally {
       await stopTestServer(server);
@@ -859,6 +927,136 @@ describe('WhatsApp integration routes with configured broker', () => {
           expiresAt: '2024-01-04T00:00:00.000Z',
         },
       });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('streams a WhatsApp instance QR code as PNG', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const { prisma } = await import('../lib/prisma');
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({
+      id: 'instance-png',
+      tenantId: 'tenant-123',
+      name: 'Instance PNG',
+      brokerId: 'instance-png',
+      phoneNumber: null,
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: null,
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>);
+
+    const qrSpy = vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qr: 'data:image/png;base64,QR',
+      qrCode: 'data:image/png;base64,QR',
+      qrExpiresAt: '2024-01-05T00:00:00.000Z',
+      expiresAt: '2024-01-05T00:00:00.000Z',
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/instance-png/qr.png`, {
+        method: 'GET',
+        headers: {
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      const arrayBuffer = await response.arrayBuffer();
+
+      expect(qrSpy).toHaveBeenCalledWith('instance-png', { instanceId: 'instance-png' });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe('image/png');
+      expect(Buffer.from(arrayBuffer)).toEqual(Buffer.from('QR', 'base64'));
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns 404 when QR code image is unavailable for an instance', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const { prisma } = await import('../lib/prisma');
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({
+      id: 'instance-missing',
+      tenantId: 'tenant-123',
+      name: 'Instance Missing',
+      brokerId: 'instance-missing',
+      phoneNumber: null,
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: null,
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>);
+
+    vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/instance-missing/qr.png`, {
+        method: 'GET',
+        headers: {
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      expect(response.status).toBe(404);
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('streams the default WhatsApp instance QR code as PNG', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const { prisma } = await import('../lib/prisma');
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({
+      id: 'leadengine',
+      tenantId: 'tenant-123',
+      name: 'Default Instance',
+      brokerId: 'leadengine',
+      phoneNumber: '+5511987654321',
+      status: 'connected',
+      connected: true,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: null,
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>);
+
+    const qrSpy = vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qr: 'data:image/png;base64,DEFAULT_QR',
+      qrCode: 'data:image/png;base64,DEFAULT_QR',
+      qrExpiresAt: null,
+      expiresAt: '2024-01-04T00:00:00.000Z',
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/qr.png`, {
+        method: 'GET',
+        headers: {
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      const arrayBuffer = await response.arrayBuffer();
+
+      expect(qrSpy).toHaveBeenCalledWith('leadengine', { instanceId: 'leadengine' });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe('image/png');
+      expect(Buffer.from(arrayBuffer)).toEqual(Buffer.from('DEFAULT_QR', 'base64'));
     } finally {
       await stopTestServer(server);
     }
