@@ -87,9 +87,9 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://broker.example/broker/session/status');
+    expect(url).toBe('https://broker.example/broker/session/status?tenantId=tenant-123');
     expect(init?.method).toBe('GET');
-    expect((init?.headers as Headers).get('x-api-key')).toBe('tenant-123');
+    expect((init?.headers as Headers).get('x-api-key')).toBe('broker-key');
 
     expect(instances).toHaveLength(1);
     expect(instances[0]).toMatchObject({
@@ -103,6 +103,35 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
       phoneNumber: '+5511987654321',
       user: 'Agent Smith',
       stats: { sent: 10 },
+    });
+  });
+
+  it('listInstances uses broker credentials without tenant filter by default', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(200, {
+        id: 'instance-2',
+        status: 'DISCONNECTED',
+        metadata: {
+          tenantId: 'tenant-from-broker',
+        },
+      })
+    );
+
+    const client = await loadClient();
+    const instances = await client.listInstances('  ');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://broker.example/broker/session/status');
+    expect(init?.method).toBe('GET');
+    expect((init?.headers as Headers).get('x-api-key')).toBe('broker-key');
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0]).toMatchObject({
+      id: 'instance-2',
+      tenantId: 'tenant-from-broker',
+      status: 'disconnected',
+      connected: false,
     });
   });
 
