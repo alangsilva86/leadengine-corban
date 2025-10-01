@@ -133,6 +133,33 @@ describe('Lead Engine campaigns routes', () => {
     }
   });
 
+  it('creates a campaign using agreementName as alias for name', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/lead-engine/campaigns`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({
+          agreementId: 'agreement-1',
+          instanceId: 'instance-1',
+          agreementName: 'Alias Campaign',
+        }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.success).toBe(true);
+      expect(body.data.name).toBe('Alias Campaign');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('lists campaigns filtered by agreement and status', async () => {
     const { server, url } = await startTestServer();
 

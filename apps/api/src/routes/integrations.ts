@@ -211,6 +211,27 @@ const slugify = (value: string, fallback = 'instance'): string => {
   return normalized || fallback;
 };
 
+const ensureUniqueInstanceId = async (tenantId: string, base: string): Promise<string> => {
+  const normalizedBase = slugify(base, 'instance');
+
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const candidate = attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
+    const existing = await prisma.whatsAppInstance.findFirst({
+      where: {
+        tenantId,
+        id: candidate,
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Unable to allocate unique WhatsApp instance id');
+};
+
 type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>>;
 
 const mapDbStatusToNormalized = (
@@ -314,6 +335,26 @@ const normalizeQr = (
       pickString(source.expiresAt, source.expires_at, qrSource.expiresAt, qrSource.expires_at) ?? qrExpiresAt,
     qrExpiresAt,
   };
+};
+
+const extractQrImageBuffer = (qr: ReturnType<typeof normalizeQr>): Buffer | null => {
+  const candidate = (qr.qrCode || qr.qr || '').trim();
+  if (!candidate) {
+    return null;
+  }
+
+  const dataUrlMatch = candidate.match(/^data:image\/(?:png|jpeg);base64,(?<data>[a-z0-9+/=_-]+)$/i);
+  const base64Candidate = dataUrlMatch?.groups?.data ?? candidate;
+  const sanitized = base64Candidate.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const padding = sanitized.length % 4 === 0 ? '' : '='.repeat(4 - (sanitized.length % 4));
+  const normalized = sanitized + padding;
+
+  try {
+    const buffer = Buffer.from(normalized, 'base64');
+    return buffer.length > 0 ? buffer : null;
+  } catch (_error) {
+    return null;
+  }
 };
 
 const normalizeInstanceStatusResponse = (
@@ -485,16 +526,17 @@ router.get(
 // POST /api/integrations/whatsapp/instances - Create a WhatsApp instance
 router.post(
   '/whatsapp/instances',
-  body('id').isString().isLength({ min: 1 }),
+  body('id').optional().isString().isLength({ min: 1 }),
   body('name').isString().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const { id, name } = req.body as { id: string; name: string };
+    const { id, name } = req.body as { id?: string; name: string };
 
-    const normalizedId = slugify(id);
     const normalizedName = name.trim();
+    const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : normalizedName;
+    const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
 
     try {
       const instance = await prisma.whatsAppInstance.create({
@@ -506,7 +548,7 @@ router.post(
           status: 'disconnected',
           connected: false,
           metadata: {
-            displayId: id,
+            displayId: normalizedId,
           },
         },
       });
@@ -869,6 +911,45 @@ router.get(
   })
 );
 
+// GET /api/integrations/whatsapp/instances/:id/qr.png - Fetch QR code image for a WhatsApp instance
+router.get(
+  '/whatsapp/instances/:id/qr.png',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+    const tenantId = req.user!.tenantId;
+
+    try {
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.sendStatus(404);
+        return;
+      }
+
+      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
+      const normalized = normalizeQr(qrCode);
+      const buffer = extractQrImageBuffer(normalized);
+
+      if (!buffer) {
+        res.sendStatus(404);
+        return;
+      }
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'private, max-age=5');
+      res.send(buffer);
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
 // GET /api/integrations/whatsapp/instances/qr - Fetch QR code for the default WhatsApp instance
 router.get(
   '/whatsapp/instances/qr',
@@ -904,6 +985,47 @@ router.get(
           ...normalizeQr(qrCode),
         },
       });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// GET /api/integrations/whatsapp/instances/qr.png - Fetch QR code image for the default WhatsApp instance
+router.get(
+  '/whatsapp/instances/qr.png',
+  query('instanceId').optional().isString().trim().notEmpty(),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const requestedInstanceId =
+      typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
+    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
+    const tenantId = req.user!.tenantId;
+
+    try {
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.sendStatus(404);
+        return;
+      }
+
+      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
+      const normalized = normalizeQr(qrCode);
+      const buffer = extractQrImageBuffer(normalized);
+
+      if (!buffer) {
+        res.sendStatus(404);
+        return;
+      }
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'private, max-age=5');
+      res.send(buffer);
     } catch (error) {
       if (respondWhatsAppNotConfigured(res, error)) {
         return;
