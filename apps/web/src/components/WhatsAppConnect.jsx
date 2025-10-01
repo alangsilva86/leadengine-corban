@@ -94,6 +94,71 @@ const formatPhoneNumber = (value) => {
   return `(${ddd}) ${nine}${prefix}-${suffix}`;
 };
 
+const extractQrPayload = (payload) => {
+  if (!payload) return null;
+
+  const parseCandidate = (candidate) => {
+    if (!candidate) return null;
+
+    if (typeof candidate === 'string') {
+      return { qrCode: candidate, expiresAt: null };
+    }
+
+    if (typeof candidate !== 'object') {
+      return null;
+    }
+
+    const source = candidate;
+
+    const qrCandidate =
+      typeof source.qrCode === 'string'
+        ? source.qrCode
+        : typeof source.code === 'string'
+        ? source.code
+        : typeof source.image === 'string'
+        ? source.image
+        : typeof source.value === 'string'
+        ? source.value
+        : null;
+
+    const expiresCandidate =
+      typeof source.qrExpiresAt === 'string'
+        ? source.qrExpiresAt
+        : typeof source.expiresAt === 'string'
+        ? source.expiresAt
+        : typeof source.expiration === 'string'
+        ? source.expiration
+        : typeof source.expires === 'string'
+        ? source.expires
+        : null;
+
+    if (qrCandidate) {
+      return {
+        qrCode: qrCandidate,
+        expiresAt: expiresCandidate,
+      };
+    }
+
+    if (Object.prototype.hasOwnProperty.call(source, 'qr')) {
+      const nested = parseCandidate(source.qr);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(source, 'data')) {
+      const nested = parseCandidate(source.data);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return null;
+  };
+
+  return parseCandidate(payload) || null;
+};
+
 const WhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -238,7 +303,40 @@ const WhatsAppConnect = ({
     return connected || list[0];
   };
 
-  const loadInstances = async () => {
+  const connectDefaultInstance = async () => {
+    const response = await apiPost('/api/integrations/whatsapp/instances/connect', {});
+    const payload = response?.data ?? {};
+
+    let status = typeof payload.status === 'string' ? payload.status : null;
+    const hasConnectedFlag = typeof payload.connected === 'boolean';
+    const connected = hasConnectedFlag
+      ? payload.connected
+      : typeof status === 'string'
+      ? status === 'connected'
+      : null;
+
+    if (!status && hasConnectedFlag) {
+      status = payload.connected ? 'connected' : 'disconnected';
+    }
+
+    const instance =
+      payload && typeof payload.instance === 'object' && payload.instance !== null
+        ? payload.instance
+        : null;
+    const instances = Array.isArray(payload?.instances)
+      ? payload.instances.filter((item) => item && typeof item === 'object')
+      : [];
+
+    return {
+      status,
+      connected,
+      qr: extractQrPayload(payload),
+      instance,
+      instances,
+    };
+  };
+
+  const loadInstances = async ({ connectResult: providedConnect } = {}) => {
     if (!selectedAgreement) return;
     const token = getAuthToken();
     setAuthTokenState(token);
@@ -260,8 +358,24 @@ const WhatsAppConnect = ({
     setErrorMessage(null);
     try {
       const response = await apiGet('/api/integrations/whatsapp/instances');
-      const list = Array.isArray(response?.data) ? response.data : [];
-      setInstances(list);
+      let list = Array.isArray(response?.data) ? response.data : [];
+      let connectResult = providedConnect || null;
+
+      if (!Array.isArray(list) || list.length === 0) {
+        connectResult = connectResult || (await connectDefaultInstance());
+
+        if (connectResult?.instances?.length) {
+          list = connectResult.instances;
+        } else if (connectResult?.instance) {
+          list = [connectResult.instance];
+        } else {
+          const refreshed = await apiGet('/api/integrations/whatsapp/instances').catch(() => null);
+          const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
+          if (refreshedList.length > 0) {
+            list = refreshedList;
+          }
+        }
+      }
 
       let current = null;
       if (campaign?.instanceId) {
@@ -275,23 +389,43 @@ const WhatsAppConnect = ({
         current = pickCurrentInstance(list);
       }
 
-      if (!current) {
-        const created = await apiPost('/api/integrations/whatsapp/instances', {
-          name: selectedAgreement.name,
-        });
-        current = created?.data || null;
-        if (current) {
-          setInstances([current]);
-        }
+      if (!current && connectResult?.instance) {
+        current = connectResult.instance;
       }
 
+      if (current && connectResult?.status) {
+        const merged = {
+          ...current,
+          status: connectResult.status,
+          connected:
+            connectResult.connected ?? (typeof current.connected === 'boolean' ? current.connected : false),
+        };
+        current = merged;
+        list = list.map((item) => (item.id === merged.id ? { ...item, ...merged } : item));
+      }
+
+      setInstances(list);
       setInstance(current);
-      const statusFromInstance = current?.status || 'disconnected';
+
+      const statusFromInstance =
+        connectResult?.status ||
+        (typeof connectResult?.connected === 'boolean'
+          ? connectResult.connected
+            ? 'connected'
+            : 'disconnected'
+          : null) ||
+        current?.status ||
+        'disconnected';
       setLocalStatus(statusFromInstance);
       onStatusChange?.(statusFromInstance);
 
-      if (current && statusFromInstance !== 'connected') {
-        await generateQr(current.id);
+      const shouldShowQrFromConnect =
+        connectResult && connectResult.connected === false && connectResult.qr?.qrCode;
+
+      if (shouldShowQrFromConnect) {
+        setQrData(connectResult.qr);
+      } else if (current && statusFromInstance !== 'connected') {
+        await generateQr(current.id, { skipConnect: Boolean(connectResult) });
       } else {
         setQrData(null);
         setSecondsLeft(null);
@@ -338,18 +472,9 @@ const WhatsAppConnect = ({
     if (!selectedAgreement) return;
     setLoadingInstances(true);
     setErrorMessage(null);
-    const defaultName = `${selectedAgreement.name} • ${instances.length + 1}`;
     try {
-      const payload = await apiPost('/api/integrations/whatsapp/instances', {
-        name: defaultName,
-      });
-      const created = payload?.data || null;
-      if (created) {
-        setInstances((current) => [created, ...current]);
-        await handleInstanceSelect(created);
-      } else {
-        await loadInstances();
-      }
+      const connectResult = await connectDefaultInstance();
+      await loadInstances({ connectResult });
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Não foi possível criar uma nova instância');
     } finally {
@@ -378,12 +503,74 @@ const WhatsAppConnect = ({
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  const generateQr = async (id) => {
+  const generateQr = async (id, { skipConnect = false } = {}) => {
     const myPollId = ++pollIdRef.current;
     setLoadingQr(true);
     setErrorMessage(null);
     try {
-      // Solicita reinício/logout para forçar emissão de novo QR (ignora erros de rede momentâneos)
+      if (!skipConnect) {
+        const connectResult = await connectDefaultInstance();
+        const nextStatus =
+          connectResult?.status ||
+          (typeof connectResult?.connected === 'boolean'
+            ? connectResult.connected
+              ? 'connected'
+              : 'disconnected'
+            : null);
+
+        if (nextStatus) {
+          setLocalStatus(nextStatus);
+          onStatusChange?.(nextStatus);
+          setInstance((current) => {
+            if (!current || current.id !== id) {
+              return current;
+            }
+            return {
+              ...current,
+              status: nextStatus,
+              connected:
+                typeof connectResult?.connected === 'boolean'
+                  ? connectResult.connected
+                  : nextStatus === 'connected'
+                  ? true
+                  : typeof current.connected === 'boolean'
+                  ? current.connected
+                  : false,
+            };
+          });
+          setInstances((prev) =>
+            prev.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    status: nextStatus,
+                    connected:
+                      typeof connectResult?.connected === 'boolean'
+                        ? connectResult.connected
+                        : nextStatus === 'connected'
+                        ? true
+                        : typeof item.connected === 'boolean'
+                        ? item.connected
+                        : false,
+                  }
+                : item
+            )
+          );
+        }
+
+        if (connectResult?.connected === false && connectResult.qr?.qrCode) {
+          setQrData(connectResult.qr);
+          return;
+        }
+
+        if (connectResult?.connected) {
+          setQrData(null);
+          setSecondsLeft(null);
+          return;
+        }
+      }
+
+      // Fallback para fluxo legado caso o QR não tenha sido retornado pelo endpoint de conexão
       await apiPost(`/api/integrations/whatsapp/instances/${id}/start`, {}).catch((error) => {
         console.debug('Falha temporária ao iniciar instância do WhatsApp', error);
       });
@@ -400,8 +587,9 @@ const WhatsAppConnect = ({
           return;
         }
         const qrResponse = await apiGet(`/api/integrations/whatsapp/instances/${id}/qr`).catch(() => null);
-        if (qrResponse?.data?.qrCode) {
-          received = qrResponse.data;
+        const parsed = extractQrPayload(qrResponse?.data);
+        if (parsed?.qrCode) {
+          received = parsed;
           break;
         }
         await sleep(1000);
