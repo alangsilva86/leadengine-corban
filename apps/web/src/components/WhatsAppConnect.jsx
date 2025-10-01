@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
-import { QrCode, CheckCircle2, Link2, ArrowLeft, RefreshCcw, Clock, AlertCircle } from 'lucide-react';
+import { QrCode, CheckCircle2, Link2, ArrowLeft, RefreshCcw, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken, onAuthTokenChange } from '@/lib/auth.js';
 import DemoAuthDialog from './DemoAuthDialog.jsx';
+import { toDataURL as generateQrDataUrl } from 'qrcode';
 
 const statusCopy = {
   disconnected: {
@@ -274,14 +275,118 @@ const formatMetricValue = (value) => {
   return '—';
 };
 
-const getQrImageSrc = (qrPayload) => {
-  if (!qrPayload) return null;
-  const code = qrPayload.qrCode || qrPayload.image || (typeof qrPayload === 'string' ? qrPayload : null);
-  if (!code) return null;
-  if (code.startsWith('data:') || code.startsWith('http')) {
-    return code;
+const isDataUrl = (value) => typeof value === 'string' && value.trim().toLowerCase().startsWith('data:');
+
+const isHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+
+const isLikelyBase64 = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.replace(/\s+/g, '');
+  if (normalized.length < 16 || normalized.length % 4 !== 0) {
+    return false;
   }
-  return `data:image/png;base64,${code}`;
+  return /^[A-Za-z0-9+/=]+$/.test(normalized);
+};
+
+const isLikelyBaileysString = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
+  const commaCount = (normalized.match(/,/g) || []).length;
+  return normalized.includes('@') || commaCount >= 3 || /::/.test(normalized);
+};
+
+const getQrImageSrc = (qrPayload) => {
+  if (!qrPayload) {
+    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+  }
+
+  const codeCandidate =
+    qrPayload.qrCode ||
+    qrPayload.image ||
+    (typeof qrPayload === 'string' ? qrPayload : null) ||
+    null;
+
+  if (!codeCandidate) {
+    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+  }
+
+  const normalized = `${codeCandidate}`.trim();
+
+  if (isDataUrl(normalized) || isHttpUrl(normalized)) {
+    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false };
+  }
+
+  if (isLikelyBase64(normalized)) {
+    return {
+      code: normalized,
+      immediate: `data:image/png;base64,${normalized}`,
+      needsGeneration: false,
+      isBaileys: false,
+    };
+  }
+
+  const isBaileys = isLikelyBaileysString(normalized);
+
+  return {
+    code: normalized,
+    immediate: null,
+    needsGeneration: true,
+    isBaileys,
+  };
+};
+
+const useQrImageSource = (qrPayload) => {
+  const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
+  const { code, immediate, needsGeneration } = qrMeta;
+  const [src, setSrc] = useState(immediate ?? null);
+  const [isGenerating, setIsGenerating] = useState(Boolean(needsGeneration && !immediate));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (immediate) {
+      setSrc(immediate);
+      setIsGenerating(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!code || !needsGeneration) {
+      setSrc(null);
+      setIsGenerating(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSrc(null);
+    setIsGenerating(true);
+    generateQrDataUrl(code, { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 })
+      .then((url) => {
+        if (!cancelled) {
+          setSrc(url);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Falha ao gerar QR Code', error);
+          setSrc(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGenerating(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, immediate, needsGeneration]);
+
+  return { src, isGenerating };
 };
 
 const formatPhoneNumber = (value) => {
@@ -515,13 +620,14 @@ const WhatsAppConnect = ({
   const nextStage = onboarding?.stages?.[Math.min(stageIndex + 1, totalStages - 1)]?.label ?? 'Inbox de Leads';
   const hasAgreement = Boolean(selectedAgreement);
   const hasCampaign = Boolean(campaign);
-  const qrImageSrc = getQrImageSrc(qrData);
+  const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
+  const generatingQrRef = useRef(isGeneratingQrImage);
   const hasQr = Boolean(qrImageSrc);
   const isAuthenticated = sessionActive || Boolean(authToken);
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || 'border-white/10 bg-white/10 text-white';
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
-  const isBusy = loadingInstances || loadingQr;
+  const isBusy = loadingInstances || loadingQr || isGeneratingQrImage;
   const confirmLabel = hasCampaign
     ? 'Ir para a inbox de leads'
     : creatingCampaign
@@ -531,7 +637,7 @@ const WhatsAppConnect = ({
     creatingCampaign || (!hasCampaign && (!canContinue || isBusy)) || !isAuthenticated;
   const qrStatusMessage = localStatus === 'connected'
     ? 'Conexão ativa — QR oculto.'
-    : countdownMessage || (loadingQr ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
+    : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
 
   useEffect(() => {
     setLocalStatus(status);
@@ -552,6 +658,10 @@ const WhatsAppConnect = ({
   useEffect(() => {
     loadingQrRef.current = loadingQr;
   }, [loadingQr]);
+
+  useEffect(() => {
+    generatingQrRef.current = isGeneratingQrImage;
+  }, [isGeneratingQrImage]);
 
   useEffect(() => {
     if (!selectedAgreement?.id) {
@@ -604,7 +714,7 @@ const WhatsAppConnect = ({
         return;
       }
 
-      if (loadingInstancesRef.current || loadingQrRef.current) {
+      if (loadingInstancesRef.current || loadingQrRef.current || generatingQrRef.current) {
         scheduleNext(DEFAULT_POLL_INTERVAL_MS);
         return;
       }
@@ -1535,6 +1645,8 @@ const WhatsAppConnect = ({
               <div className="flex h-44 w-44 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">
                 {hasQr ? (
                   <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-36 w-36 rounded-lg shadow-inner" />
+                ) : isGeneratingQrImage ? (
+                  <Loader2 className="h-12 w-12 animate-spin" />
                 ) : (
                   <QrCode className="h-24 w-24" />
                 )}
@@ -1596,6 +1708,8 @@ const WhatsAppConnect = ({
             <div className="flex h-64 w-64 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">
               {hasQr ? (
                 <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-56 w-56 rounded-lg shadow-inner" />
+              ) : isGeneratingQrImage ? (
+                <Loader2 className="h-16 w-16 animate-spin" />
               ) : (
                 <QrCode className="h-32 w-32" />
               )}
