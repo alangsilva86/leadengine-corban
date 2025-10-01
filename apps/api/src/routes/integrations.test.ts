@@ -155,15 +155,30 @@ describe('WhatsApp integration routes with configured broker', () => {
     const listSpy = vi.spyOn(whatsappBrokerClient, 'listInstances').mockResolvedValue([
       {
         id: 'instance-1',
-        tenantId: 'tenant-123',
-        name: 'Main Instance',
         status: 'CONNECTED',
-        connected: true,
         createdAt: '2024-01-01T00:00:00.000Z',
-        lastActivity: null,
-        stats: { sent: 10 },
+        metadata: {
+          tenant_id: 'tenant-123',
+          name: 'Main Instance',
+          last_activity: '2024-01-02T00:00:00.000Z',
+          phone_number: '+5511987654321',
+          user: 'Agent Smith',
+          stats: { sent: 10 },
+        },
       },
-    ]);
+      {
+        metadata: {
+          sessionId: 'instance-2',
+          tenantId: 'tenant-123',
+          status: 'DISCONNECTED',
+          connected: false,
+        },
+      },
+    ] as unknown as typeof whatsappBrokerClient.listInstances extends (...args: any[]) => infer R
+      ? R extends Promise<infer I>
+        ? I
+        : never
+      : never);
 
     try {
       const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
@@ -186,8 +201,17 @@ describe('WhatsApp integration routes with configured broker', () => {
             status: 'connected',
             connected: true,
             tenantId: 'tenant-123',
-            lastActivity: null,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            lastActivity: '2024-01-02T00:00:00.000Z',
+            phoneNumber: '+5511987654321',
+            user: 'Agent Smith',
             stats: { sent: 10 },
+          },
+          {
+            id: 'instance-2',
+            status: 'disconnected',
+            connected: false,
+            tenantId: 'tenant-123',
           },
         ],
       });

@@ -94,14 +94,39 @@ const normalizeInstanceStatus = (
   return { status: normalizedStatus, connected };
 };
 
+const pickString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+};
+
 const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
   if (!instance || typeof instance !== 'object') {
     return null;
   }
 
   const source = instance as BrokerInstance & Record<string, unknown>;
+  const metadata =
+    source.metadata && typeof source.metadata === 'object'
+      ? (source.metadata as Record<string, unknown>)
+      : {};
 
-  const idCandidate = [source.id, source.instanceId, source.sessionId]
+  const idCandidate = [
+    source.id,
+    source.instanceId,
+    source.sessionId,
+    source._id,
+    metadata.id,
+    metadata.instanceId,
+    metadata.sessionId,
+    metadata._id,
+  ]
     .map((value) => (typeof value === 'string' ? value.trim() : ''))
     .find((value) => value.length > 0);
 
@@ -109,23 +134,54 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
     return null;
   }
 
-  const { status, connected } = normalizeInstanceStatus(source.status, source.connected);
+  const { status, connected } = normalizeInstanceStatus(
+    source.status ?? metadata.status ?? metadata.state,
+    source.connected ?? metadata.connected ?? metadata.isConnected ?? metadata.connected_at
+  );
 
   return {
     id: idCandidate,
-    tenantId: typeof source.tenantId === 'string' ? source.tenantId : null,
-    name: typeof source.name === 'string' ? source.name : null,
+    tenantId:
+      pickString(source.tenantId, metadata.tenantId, metadata.tenant_id) ?? null,
+    name:
+      pickString(
+        source.name,
+        metadata.name,
+        metadata.displayName,
+        metadata.sessionName,
+        metadata.instanceName,
+        metadata.profileName
+      ) ?? null,
     status,
     connected,
-    createdAt: typeof source.createdAt === 'string' ? source.createdAt : null,
+    createdAt:
+      pickString(source.createdAt, source.created_at, metadata.createdAt, metadata.created_at) ??
+      null,
     lastActivity:
-      typeof source.lastActivity === 'string' || source.lastActivity === null
-        ? (source.lastActivity as string | null)
-        : null,
+      pickString(
+        source.lastActivity,
+        metadata.lastActivity,
+        metadata.last_activity,
+        metadata.lastActiveAt,
+        metadata.last_active_at,
+        metadata.lastSeen,
+        metadata.last_seen
+      ) ?? null,
     phoneNumber:
-      typeof source.phoneNumber === 'string' ? source.phoneNumber : null,
-    user: typeof source.user === 'string' ? source.user : null,
-    stats: typeof source.stats === 'object' && source.stats !== null ? source.stats : undefined,
+      pickString(
+        source.phoneNumber,
+        metadata.phoneNumber,
+        metadata.phone_number,
+        metadata.msisdn,
+        metadata.phone
+      ) ?? null,
+    user: pickString(source.user, metadata.user, metadata.userName, metadata.username, metadata.operator) ?? null,
+    stats:
+      (typeof source.stats === 'object' && source.stats !== null
+        ? source.stats
+        : typeof metadata.stats === 'object' && metadata.stats !== null
+          ? metadata.stats
+          : undefined),
   };
 };
 
