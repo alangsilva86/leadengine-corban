@@ -664,10 +664,6 @@ const WhatsAppConnect = ({
   }, [isGeneratingQrImage]);
 
   useEffect(() => {
-    if (!selectedAgreement?.id) {
-      return undefined;
-    }
-
     if (!isAuthenticated) {
       return undefined;
     }
@@ -877,9 +873,6 @@ const WhatsAppConnect = ({
   };
 
   const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
-    if (!selectedAgreement) {
-      return { success: false, skipped: true };
-    }
     const token = getAuthToken();
     setAuthTokenState(token);
     setLoadingInstances(true);
@@ -988,9 +981,7 @@ const WhatsAppConnect = ({
       if (token) {
         setSessionActive(true);
         setErrorMessage(null);
-        if (selectedAgreement) {
-          void loadInstancesRef.current?.();
-        }
+        void loadInstancesRef.current?.();
       } else if (!sessionActiveRef.current) {
         enforceAuthPrompt();
       }
