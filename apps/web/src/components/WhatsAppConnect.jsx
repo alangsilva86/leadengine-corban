@@ -233,10 +233,27 @@ const WhatsAppConnect = ({
   }, [activeCampaign]);
 
   useEffect(() => {
-    if (!selectedAgreement) return;
-    void loadInstances();
+    if (!selectedAgreement?.id || !authToken) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const poll = () => {
+      if (cancelled) return;
+      if (loadingInstances || loadingQr) return;
+      void loadInstancesRef.current?.();
+    };
+
+    poll();
+    const interval = setInterval(poll, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAgreement?.id]);
+  }, [selectedAgreement?.id, authToken, loadingInstances, loadingQr]);
 
   useEffect(() => {
     if (!selectedAgreement) {
