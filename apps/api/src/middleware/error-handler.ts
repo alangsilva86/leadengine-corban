@@ -9,6 +9,7 @@ import {
   ForbiddenError,
 } from '@ticketz/core';
 import { logger } from '../config/logger';
+import { WhatsAppBrokerError } from '../services/whatsapp-broker-client';
 
 const readErrorDetails = (err: unknown): unknown => {
   if (typeof err === 'object' && err !== null && 'details' in err) {
@@ -25,6 +26,34 @@ const readErrorCode = (err: unknown): string | undefined => {
   return undefined;
 };
 
+const hasErrorName = (error: unknown, expected: string): boolean => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === expected
+  );
+};
+
+type WhatsAppBrokerErrorShape = {
+  status?: number;
+  code?: string;
+  requestId?: string | null;
+};
+
+const toWhatsAppBrokerError = (
+  error: unknown
+): (WhatsAppBrokerError & WhatsAppBrokerErrorShape) | (Error & WhatsAppBrokerErrorShape) | null => {
+  if (
+    error instanceof WhatsAppBrokerError ||
+    hasErrorName(error, 'WhatsAppBrokerError')
+  ) {
+    return error as WhatsAppBrokerError & WhatsAppBrokerErrorShape;
+  }
+
+  return null;
+};
+
 export interface ApiError {
   status: number;
   code: string;
@@ -32,6 +61,26 @@ export interface ApiError {
   details?: unknown;
   stack?: string;
 }
+
+const WHATSAPP_BROKER_ERROR_MESSAGES: Record<string, string> = {
+  REQUEST_TIMEOUT: 'WhatsApp broker request timed out',
+  RATE_LIMIT_EXCEEDED: 'WhatsApp broker request rate limit exceeded',
+  INVALID_SESSION: 'WhatsApp session is invalid or unavailable',
+  SESSION_NOT_FOUND: 'WhatsApp session not found',
+  MESSAGE_REJECTED: 'WhatsApp message was rejected by the broker',
+  BROKER_ERROR: 'WhatsApp broker request failed',
+  INTERNAL_ERROR: 'WhatsApp broker encountered an internal error',
+};
+
+const getWhatsAppBrokerMessage = (code: string | undefined): { code: string; message: string } => {
+  const normalizedCode = (code || 'BROKER_ERROR').toUpperCase();
+  const message =
+    WHATSAPP_BROKER_ERROR_MESSAGES[normalizedCode] ||
+    WHATSAPP_BROKER_ERROR_MESSAGES.BROKER_ERROR ||
+    'WhatsApp broker request failed';
+
+  return { code: normalizedCode, message };
+};
 
 export const errorHandler = (
   error: Error,
@@ -45,47 +94,58 @@ export const errorHandler = (
   }
 
   let apiError: ApiError;
+  const brokerError = toWhatsAppBrokerError(error);
 
   // Tratar diferentes tipos de erro
-  if (error instanceof ValidationError) {
+  if (error instanceof ValidationError || hasErrorName(error, 'ValidationError')) {
     apiError = {
       status: 400,
       code: 'VALIDATION_ERROR',
       message: error.message,
       details: readErrorDetails(error),
     };
-  } else if (error instanceof NotFoundError) {
+  } else if (error instanceof NotFoundError || hasErrorName(error, 'NotFoundError')) {
     apiError = {
       status: 404,
       code: 'NOT_FOUND',
       message: error.message,
       details: readErrorDetails(error),
     };
-  } else if (error instanceof ConflictError) {
+  } else if (error instanceof ConflictError || hasErrorName(error, 'ConflictError')) {
     apiError = {
       status: 409,
       code: 'CONFLICT',
       message: error.message,
       details: readErrorDetails(error),
     };
-  } else if (error instanceof UnauthorizedError) {
+  } else if (error instanceof UnauthorizedError || hasErrorName(error, 'UnauthorizedError')) {
     apiError = {
       status: 401,
       code: 'UNAUTHORIZED',
       message: error.message,
     };
-  } else if (error instanceof ForbiddenError) {
+  } else if (error instanceof ForbiddenError || hasErrorName(error, 'ForbiddenError')) {
     apiError = {
       status: 403,
       code: 'FORBIDDEN',
       message: error.message,
     };
-  } else if (error instanceof DomainError) {
+  } else if (error instanceof DomainError || hasErrorName(error, 'DomainError')) {
     apiError = {
       status: 400,
       code: readErrorCode(error) ?? 'DOMAIN_ERROR',
       message: error.message,
       details: readErrorDetails(error),
+    };
+  } else if (brokerError) {
+    const { code, message } = getWhatsAppBrokerMessage(brokerError.code);
+    const status = Number.isInteger(brokerError.status) ? (brokerError.status as number) : 502;
+
+    apiError = {
+      status: status >= 400 && status < 600 ? status : 502,
+      code,
+      message,
+      details: brokerError.requestId ? { requestId: brokerError.requestId } : undefined,
     };
   } else if (error instanceof ZodError) {
     apiError = {
@@ -134,25 +194,39 @@ export const errorHandler = (
 
   // Log do erro
   const logLevel = apiError.status >= 500 ? 'error' : 'warn';
-  logger[logLevel]('API Error', {
-    error: {
-      status: apiError.status,
-      code: apiError.code,
-      message: apiError.message,
-      details: apiError.details,
-      stack: error.stack,
-    },
-    request: {
-      method: req.method,
-      url: req.url,
-      headers: req.headers,
-      body: req.body,
-      params: req.params,
-      query: req.query,
-      ip: req.ip,
-      userAgent: req.get('User-Agent'),
-    },
-  });
+  const logPayload = (() => {
+    if (brokerError) {
+      return {
+        error: {
+          status: apiError.status,
+          code: apiError.code,
+          requestId: brokerError.requestId ?? null,
+        },
+      };
+    }
+
+    return {
+      error: {
+        status: apiError.status,
+        code: apiError.code,
+        message: apiError.message,
+        details: apiError.details,
+        stack: error.stack,
+      },
+      request: {
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        body: req.body,
+        params: req.params,
+        query: req.query,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+      },
+    };
+  })();
+
+  logger[logLevel]('API Error', logPayload);
 
   // Enviar resposta de erro
   res.status(apiError.status).json({

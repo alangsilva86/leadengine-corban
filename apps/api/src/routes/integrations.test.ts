@@ -5,6 +5,7 @@ import type { Server } from 'http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { errorHandler } from '../middleware/error-handler';
+import { WhatsAppBrokerError } from '../services/whatsapp-broker-client';
 
 vi.mock('../middleware/auth', () => ({
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -382,6 +383,92 @@ describe('WhatsApp integration routes with configured broker', () => {
           status: 'qr_required',
           connected: false,
         },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns timeout errors from the WhatsApp broker with sanitized payload', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const sendSpy = vi.spyOn(whatsappBrokerClient, 'sendText').mockRejectedValue(
+      new WhatsAppBrokerError('Original timeout message', 'REQUEST_TIMEOUT', 408, 'broker-timeout-1')
+    );
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ to: '5511987654321', message: 'Hello from test' }),
+      });
+
+      const body = await response.json();
+
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'tenant-123',
+          to: '5511987654321',
+          message: 'Hello from test',
+        })
+      );
+      expect(response.status).toBe(408);
+      expect(body).toMatchObject({
+        error: {
+          code: 'REQUEST_TIMEOUT',
+          message: 'WhatsApp broker request timed out',
+          details: { requestId: 'broker-timeout-1' },
+        },
+        method: 'POST',
+        path: '/api/integrations/whatsapp/messages',
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns broker 4xx errors with sanitized message and code', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const sendSpy = vi.spyOn(whatsappBrokerClient, 'sendText').mockRejectedValue(
+      new WhatsAppBrokerError('Rate limit reached', 'RATE_LIMIT_EXCEEDED', 429, 'broker-rate-2')
+    );
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ to: '5511987654322', message: 'Second test message' }),
+      });
+
+      const body = await response.json();
+
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'tenant-123',
+          to: '5511987654322',
+          message: 'Second test message',
+        })
+      );
+      expect(response.status).toBe(429);
+      expect(body).toMatchObject({
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'WhatsApp broker request rate limit exceeded',
+          details: { requestId: 'broker-rate-2' },
+        },
+        method: 'POST',
+        path: '/api/integrations/whatsapp/messages',
       });
     } finally {
       await stopTestServer(server);
