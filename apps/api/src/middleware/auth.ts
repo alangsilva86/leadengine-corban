@@ -29,6 +29,7 @@ export interface JWTPayload {
   permissions?: string[];
   iat?: number;
   exp?: number;
+  __verifiedWithDemoSecret?: boolean;
 }
 
 export interface LoginRequest {
@@ -118,6 +119,9 @@ export function verifyToken(token: string): JWTPayload {
       const payload = jwt.verify(token, secret) as JWTPayload;
       if (secret !== JWT_SECRET) {
         logger.debug('[Auth] JWT verificado usando segredo alternativo');
+      }
+      if (secret === DEMO_JWT_SECRET) {
+        payload.__verifiedWithDemoSecret = true;
       }
       return payload;
     } catch (error) {
@@ -400,9 +404,51 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     }
 
     // Buscar usuário completo no banco
-    const user = decoded.id ? await getUserById(decoded.id) : null;
+    const fallbackPermitted = allowJwtPayloadFallback || decoded.__verifiedWithDemoSecret === true;
+
+    let user: AuthenticatedUser | null = null;
+    if (decoded.id) {
+      try {
+        user = await getUserById(decoded.id);
+      } catch (lookupError) {
+        logger.error('[Auth] Falha ao buscar usuário no banco', {
+          userId: decoded.id,
+          error: lookupError,
+        });
+
+        if (!fallbackPermitted) {
+          return res.status(503).json({
+            success: false,
+            error: {
+              code: 'USER_LOOKUP_FAILED',
+              message: 'Serviço de autenticação temporariamente indisponível',
+            },
+          });
+        }
+
+        const fallbackUser = buildUserFromToken(req, decoded);
+        if (!fallbackUser) {
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: 'USER_NOT_FOUND',
+              message: 'Usuário não encontrado ou inativo',
+            },
+          });
+        }
+
+        logger.warn('[Auth] Falha ao buscar usuário, utilizando dados do token JWT', {
+          userId: decoded.id,
+          tenantId: fallbackUser.tenantId,
+        });
+
+        req.user = fallbackUser;
+        return next();
+      }
+    }
+
     if (!user) {
-      if (!allowJwtPayloadFallback) {
+      if (!fallbackPermitted) {
         return res.status(401).json({
           success: false,
           error: {
