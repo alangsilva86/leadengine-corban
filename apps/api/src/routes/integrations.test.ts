@@ -326,8 +326,96 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(disconnectSpy).toHaveBeenCalledWith('instance-4');
+      expect(disconnectSpy).toHaveBeenCalledWith('instance-4', undefined);
       expect(statusSpy).toHaveBeenCalledWith('instance-4');
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          status: 'disconnected',
+          connected: false,
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it.each([
+    { wipe: true },
+    { wipe: false },
+  ])('disconnects a WhatsApp instance with wipe %s', async ({ wipe }) => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const disconnectSpy = vi
+      .spyOn(whatsappBrokerClient, 'disconnectInstance')
+      .mockResolvedValue();
+    const statusSpy = vi
+      .spyOn(whatsappBrokerClient, 'getStatus')
+      .mockResolvedValue({ status: 'disconnected', connected: false });
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/instance-4/stop`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-tenant-id': 'tenant-123',
+          },
+          body: JSON.stringify({ wipe }),
+        }
+      );
+
+      const body = await response.json();
+
+      expect(disconnectSpy).toHaveBeenCalledWith('instance-4', { wipe });
+      expect(statusSpy).toHaveBeenCalledWith('instance-4');
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          status: 'disconnected',
+          connected: false,
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it.each([
+    { wipe: true },
+    { wipe: false },
+  ])('disconnects the default WhatsApp instance with wipe %s', async ({ wipe }) => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const disconnectSpy = vi
+      .spyOn(whatsappBrokerClient, 'disconnectInstance')
+      .mockResolvedValue();
+    const statusSpy = vi
+      .spyOn(whatsappBrokerClient, 'getStatus')
+      .mockResolvedValue({ status: 'disconnected', connected: false });
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/disconnect`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-tenant-id': 'tenant-123',
+          },
+          body: JSON.stringify({ wipe }),
+        }
+      );
+
+      const body = await response.json();
+
+      expect(disconnectSpy).toHaveBeenCalledWith('leadengine', { wipe });
+      expect(statusSpy).toHaveBeenCalledWith('leadengine');
       expect(response.status).toBe(200);
       expect(body).toMatchObject({
         success: true,

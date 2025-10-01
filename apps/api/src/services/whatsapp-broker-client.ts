@@ -264,10 +264,10 @@ class WhatsAppBrokerClient {
     );
   }
 
-  async logoutSession(sessionId: string): Promise<void> {
+  async logoutSession(sessionId: string, options: { wipe?: boolean } = {}): Promise<void> {
     await this.request<void>('/broker/session/logout', {
       method: 'POST',
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify(compactObject({ sessionId, wipe: options.wipe })),
     });
   }
 
@@ -600,12 +600,12 @@ class WhatsAppBrokerClient {
     await this.connectSession(instanceId);
   }
 
-  async disconnectInstance(instanceId: string): Promise<void> {
-    await this.logoutSession(instanceId);
+  async disconnectInstance(instanceId: string, options: { wipe?: boolean } = {}): Promise<void> {
+    await this.logoutSession(instanceId, options);
   }
 
-  async deleteInstance(instanceId: string): Promise<void> {
-    await this.logoutSession(instanceId);
+  async deleteInstance(instanceId: string, options: { wipe?: boolean } = {}): Promise<void> {
+    await this.logoutSession(instanceId, options);
   }
 
   async getQrCode(instanceId: string): Promise<WhatsAppQrCode> {

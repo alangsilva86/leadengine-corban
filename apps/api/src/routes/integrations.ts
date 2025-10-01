@@ -388,13 +388,16 @@ router.post(
 router.post(
   '/whatsapp/instances/:id/stop',
   param('id').isString().isLength({ min: 1 }),
+  body('wipe').optional().isBoolean(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
+    const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
+    const disconnectOptions = wipe === undefined ? undefined : { wipe };
 
     try {
-      await whatsappBrokerClient.disconnectInstance(instanceId);
+      await whatsappBrokerClient.disconnectInstance(instanceId, disconnectOptions);
       const status = await whatsappBrokerClient.getStatus(instanceId);
 
       res.json({
@@ -413,12 +416,16 @@ router.post(
 // POST /api/integrations/whatsapp/instances/disconnect - Disconnect the default WhatsApp instance
 router.post(
   '/whatsapp/instances/disconnect',
+  body('wipe').optional().isBoolean(),
+  validateRequest,
   requireTenant,
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const instanceId = resolveDefaultInstanceId();
+    const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
+    const disconnectOptions = wipe === undefined ? undefined : { wipe };
 
     try {
-      await whatsappBrokerClient.disconnectInstance(instanceId);
+      await whatsappBrokerClient.disconnectInstance(instanceId, disconnectOptions);
       const status = await whatsappBrokerClient.getStatus(instanceId);
 
       res.json({
