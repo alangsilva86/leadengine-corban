@@ -81,7 +81,11 @@ const handleResponse = async (response) => {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
     const errorMessage = payload?.error?.message || response.statusText;
-    throw new Error(errorMessage || 'Erro ao comunicar com a API');
+    const error = new Error(errorMessage || 'Erro ao comunicar com a API');
+    error.status = response.status;
+    error.statusText = response.statusText;
+    error.payload = payload;
+    throw error;
   }
   return payload;
 };
