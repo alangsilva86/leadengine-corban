@@ -165,24 +165,21 @@ describe('WhatsApp integration routes with configured broker', () => {
     const listSpy = vi.spyOn(whatsappBrokerClient, 'listInstances').mockResolvedValue([
       {
         id: 'instance-1',
-        status: 'CONNECTED',
+        tenantId: 'tenant-123',
+        name: 'Main Instance',
+        status: 'connected',
+        connected: true,
         createdAt: '2024-01-01T00:00:00.000Z',
-        metadata: {
-          tenant_id: 'tenant-123',
-          name: 'Main Instance',
-          last_activity: '2024-01-02T00:00:00.000Z',
-          phone_number: '+5511987654321',
-          user: 'Agent Smith',
-          stats: { sent: 10 },
-        },
+        lastActivity: '2024-01-02T00:00:00.000Z',
+        phoneNumber: '+5511987654321',
+        user: 'Agent Smith',
+        stats: { sent: 10 },
       },
       {
-        metadata: {
-          sessionId: 'instance-2',
-          tenantId: 'tenant-123',
-          status: 'DISCONNECTED',
-          connected: false,
-        },
+        id: 'instance-2',
+        tenantId: 'tenant-123',
+        status: 'disconnected',
+        connected: false,
       },
     ] as unknown as typeof whatsappBrokerClient.listInstances extends (...args: any[]) => infer R
       ? R extends Promise<infer I>

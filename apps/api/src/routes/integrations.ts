@@ -57,6 +57,10 @@ type BrokerInstance = {
   phoneNumber?: string | null;
   user?: string | null;
   stats?: unknown;
+  metadata?: Record<string, unknown> | null;
+  profile?: Record<string, unknown> | null;
+  details?: Record<string, unknown> | null;
+  info?: Record<string, unknown> | null;
 };
 
 type NormalizedInstance = {
@@ -112,10 +116,17 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
   }
 
   const source = instance as BrokerInstance & Record<string, unknown>;
-  const metadata =
-    source.metadata && typeof source.metadata === 'object'
-      ? (source.metadata as Record<string, unknown>)
-      : {};
+
+  const metadataSources = [
+    source.metadata,
+    source.profile,
+    source.details,
+    source.info,
+  ].filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'));
+
+  const metadata = metadataSources.reduce<Record<string, unknown>>((acc, entry) => {
+    return { ...acc, ...entry };
+  }, {});
 
   const idCandidate = [
     source.id,

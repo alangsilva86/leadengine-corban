@@ -68,6 +68,7 @@ const WHATSAPP_BROKER_ERROR_MESSAGES: Record<string, string> = {
   INVALID_SESSION: 'WhatsApp session is invalid or unavailable',
   SESSION_NOT_FOUND: 'WhatsApp session not found',
   MESSAGE_REJECTED: 'WhatsApp message was rejected by the broker',
+  BROKER_AUTH: 'WhatsApp broker authentication failed',
   BROKER_ERROR: 'WhatsApp broker request failed',
   INTERNAL_ERROR: 'WhatsApp broker encountered an internal error',
 };

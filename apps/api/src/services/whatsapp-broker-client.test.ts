@@ -65,36 +65,20 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     expect(headers.get('content-type')).toBe('application/json');
   });
 
-  it('listInstances fetches broker instances and normalizes metadata response', async () => {
+  it('listInstances fetches session status and normalizes metadata response', async () => {
     fetchMock.mockResolvedValueOnce(
       createJsonResponse(200, {
-        data: [
-          {
-            id: 'instance-1',
-            status: 'CONNECTED',
-            createdAt: '2024-01-01T00:00:00.000Z',
-            metadata: {
-              tenant_id: 'tenant-123',
-              name: 'Main Instance',
-              last_activity: '2024-01-02T00:00:00.000Z',
-              phone_number: '+5511987654321',
-              userName: 'Agent Smith',
-              stats: { sent: 10 },
-            },
-          },
-          {
-            metadata: {
-              sessionId: 'metadata-instance',
-              tenantId: 'tenant-123',
-              status: 'DISCONNECTED',
-              connected: false,
-            },
-          },
-          {
-            id: 'ignored-instance',
-            metadata: { tenantId: 'tenant-999' },
-          },
-        ],
+        sessionId: 'instance-1',
+        status: 'CONNECTED',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        lastActivity: '2024-01-02T00:00:00.000Z',
+        metadata: {
+          tenant_id: 'tenant-123',
+          name: 'Main Instance',
+          phone_number: '+5511987654321',
+          userName: 'Agent Smith',
+          stats: { sent: 10 },
+        },
       })
     );
 
@@ -103,11 +87,11 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://broker.example/broker/instances?tenantId=tenant-123');
+    expect(url).toBe('https://broker.example/broker/session/status');
     expect(init?.method).toBe('GET');
-    expect((init?.headers as Headers).get('x-api-key')).toBe('broker-key');
+    expect((init?.headers as Headers).get('x-api-key')).toBe('tenant-123');
 
-    expect(instances).toHaveLength(2);
+    expect(instances).toHaveLength(1);
     expect(instances[0]).toMatchObject({
       id: 'instance-1',
       tenantId: 'tenant-123',
@@ -119,12 +103,6 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
       phoneNumber: '+5511987654321',
       user: 'Agent Smith',
       stats: { sent: 10 },
-    });
-    expect(instances[1]).toMatchObject({
-      id: 'metadata-instance',
-      tenantId: 'tenant-123',
-      status: 'disconnected',
-      connected: false,
     });
   });
 
@@ -269,7 +247,7 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     });
   });
 
-  it('throws WhatsAppBrokerNotConfiguredError on unauthorized', async () => {
+  it('throws WhatsAppBrokerError with BROKER_AUTH on unauthorized', async () => {
     fetchMock.mockResolvedValueOnce(
       createJsonResponse(403, { error: { message: 'Forbidden' } })
     );
@@ -278,7 +256,9 @@ describe('WhatsAppBrokerClient (minimal broker)', () => {
     const promise = client.sendText({ sessionId: 'session-1', to: '5511987654321', message: 'Hello' });
 
     await expect(promise).rejects.toMatchObject({
-      name: 'WhatsAppBrokerNotConfiguredError',
+      name: 'WhatsAppBrokerError',
+      code: 'BROKER_AUTH',
+      status: 502,
       message: 'Forbidden',
     });
   });
