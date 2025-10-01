@@ -420,6 +420,7 @@ const WhatsAppConnect = ({
   onBack,
 }) => {
   const pollIdRef = useRef(0);
+  const loadingRef = useRef(false);
   const [instances, setInstances] = useState([]);
   const [instance, setInstance] = useState(null);
   const [qrData, setQrData] = useState(null);
@@ -518,7 +519,7 @@ const WhatsAppConnect = ({
     const poll = () => {
       if (cancelled) return;
       if (!isAuthenticated) return;
-      if (loadingInstances || loadingQr) return;
+      if (loadingRef.current) return;
       void loadInstancesRef.current?.();
     };
 
@@ -536,7 +537,7 @@ const WhatsAppConnect = ({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [selectedAgreement?.id, isAuthenticated, loadingInstances, loadingQr]);
+  }, [selectedAgreement?.id, isAuthenticated]);
 
   useEffect(() => {
     if (!selectedAgreement) {
@@ -675,6 +676,8 @@ const WhatsAppConnect = ({
 
   const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
     if (!selectedAgreement) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     const token = getAuthToken();
     setAuthTokenState(token);
     setLoadingInstances(true);
@@ -704,15 +707,11 @@ const WhatsAppConnect = ({
       let current = null;
       if (preferredInstanceId) {
         current =
-          list.find(
-            (item) => item.id === preferredInstanceId || item.name === preferredInstanceId
-          ) || null;
+          list.find((item) => item.id === preferredInstanceId || item.name === preferredInstanceId) || null;
       }
       if (!current && campaign?.instanceId) {
         current =
-          list.find(
-            (item) => item.id === campaign.instanceId || item.name === campaign.instanceId
-          ) || null;
+          list.find((item) => item.id === campaign.instanceId || item.name === campaign.instanceId) || null;
       }
 
       if (!current) {
@@ -770,6 +769,7 @@ const WhatsAppConnect = ({
         );
       }
     } finally {
+      loadingRef.current = false;
       setLoadingInstances(false);
     }
   };
