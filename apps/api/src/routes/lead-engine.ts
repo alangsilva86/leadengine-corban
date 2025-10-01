@@ -1,10 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
-import { CampaignStatus, createOrActivateCampaign, listCampaigns } from '@ticketz/storage';
+import {
+  CampaignStatus,
+  createOrActivateCampaign,
+  listCampaigns,
+  type LeadAllocationStatus,
+} from '@ticketz/storage';
 import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
 import { leadEngineClient } from '../services/lead-engine-client';
 import { logger } from '../config/logger';
+import {
+  addAllocations,
+  listAllocations as listTenantAllocations,
+  updateAllocation as updateTenantAllocation,
+} from '../data/lead-allocation-store';
 
 const router: Router = Router();
 
@@ -40,6 +50,63 @@ const ensureTenantContext = (req: Request, res: Response): string | null => {
   }
 
   return tenantId;
+};
+
+const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
+
+const parseStatusFilter = (
+  value: unknown
+): { statuses?: LeadAllocationStatus[]; error?: string } => {
+  if (value === undefined || value === null) {
+    return {};
+  }
+
+  const rawValues = Array.isArray(value) ? value : [value];
+  const normalized = rawValues
+    .flatMap((item) => (typeof item === 'string' ? item.split(',') : []))
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((item) => item !== 'all');
+
+  if (normalized.length === 0) {
+    return {};
+  }
+
+  const invalid = normalized.filter(
+    (status) => !ALLOCATION_STATUSES.includes(status as LeadAllocationStatus)
+  );
+
+  if (invalid.length > 0) {
+    return {
+      error: `Status de lead inválido: ${invalid.join(', ')}`,
+    };
+  }
+
+  return {
+    statuses: normalized as LeadAllocationStatus[],
+  };
+};
+
+const buildAllocationSummary = (
+  allocations: Awaited<ReturnType<typeof listTenantAllocations>>
+) => {
+  return allocations.reduce(
+    (
+      summary,
+      allocation
+    ) => {
+      summary.total += 1;
+      if (allocation.status === 'contacted') {
+        summary.contacted += 1;
+      } else if (allocation.status === 'won') {
+        summary.won += 1;
+      } else if (allocation.status === 'lost') {
+        summary.lost += 1;
+      }
+      return summary;
+    },
+    { total: 0, contacted: 0, won: 0, lost: 0 }
+  );
 };
 
 // ============================================================================
@@ -544,6 +611,301 @@ router.get(
         error: {
           code: 'DASHBOARD_FETCH_FAILED',
           message: 'Falha ao buscar dados do dashboard',
+        },
+      });
+    }
+  })
+);
+
+router.get(
+  '/allocations',
+  query('agreementId').optional().isString().trim(),
+  query('campaignId').optional().isString().trim(),
+  query('status').optional(),
+  query('statuses').optional(),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = ensureTenantContext(req, res);
+    if (!tenantId) return;
+
+    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
+    const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
+    const { statuses, error } = parseStatusFilter(req.query.status ?? req.query.statuses);
+
+    if (error) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_ALLOCATION_STATUS',
+          message: error,
+        },
+      });
+      return;
+    }
+
+    logger.info('[LeadEngine] GET /allocations', {
+      tenantId,
+      agreementId,
+      campaignId,
+      statuses,
+    });
+
+    try {
+      const allocations = await listTenantAllocations(tenantId, {
+        agreementId,
+        campaignId,
+        statuses,
+      });
+
+      const summary = buildAllocationSummary(allocations);
+
+      res.json({
+        success: true,
+        data: allocations,
+        meta: {
+          total: summary.total,
+          summary,
+        },
+      });
+    } catch (error) {
+      logger.error('[LeadEngine] ❌ Failed to list allocations', {
+        tenantId,
+        agreementId,
+        campaignId,
+        statuses,
+        error,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'ALLOCATIONS_LIST_FAILED',
+          message: 'Falha ao listar leads alocados',
+        },
+      });
+    }
+  })
+);
+
+router.post(
+  '/allocations',
+  body('campaignId').isString().trim().notEmpty(),
+  body('agreementId').isString().trim().notEmpty(),
+  body('take').optional().isInt({ min: 1, max: 100 }),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = ensureTenantContext(req, res);
+    if (!tenantId) return;
+
+    const { campaignId, agreementId } = req.body as {
+      campaignId: string;
+      agreementId: string;
+      take?: number;
+    };
+    const take = typeof req.body.take === 'number' ? req.body.take : Number(req.body.take) || 25;
+
+    logger.info('[LeadEngine] POST /allocations', {
+      tenantId,
+      campaignId,
+      agreementId,
+      take,
+    });
+
+    try {
+      const leads = await leadEngineClient.fetchLeadsByAgreement(agreementId, take);
+      const { newlyAllocated, summary } = await addAllocations(tenantId, campaignId, leads);
+
+      res.json({
+        success: true,
+        data: newlyAllocated,
+        meta: {
+          pulled: leads.length,
+          allocated: newlyAllocated.length,
+          summary,
+        },
+      });
+    } catch (error) {
+      logger.error('[LeadEngine] ❌ Failed to allocate leads', {
+        tenantId,
+        campaignId,
+        agreementId,
+        take,
+        error,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'ALLOCATIONS_PULL_FAILED',
+          message: 'Falha ao buscar novos leads',
+        },
+      });
+    }
+  })
+);
+
+router.patch(
+  '/allocations/:allocationId',
+  param('allocationId').isString().trim().notEmpty(),
+  body('status')
+    .optional()
+    .isString()
+    .custom((value) => ALLOCATION_STATUSES.includes(String(value).toLowerCase() as LeadAllocationStatus)),
+  body('notes').optional().isString(),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = ensureTenantContext(req, res);
+    if (!tenantId) return;
+
+    const allocationId = req.params.allocationId;
+    const status = typeof req.body.status === 'string' ? (req.body.status.toLowerCase() as LeadAllocationStatus) : undefined;
+    const notes = typeof req.body.notes === 'string' ? req.body.notes : undefined;
+
+    logger.info('[LeadEngine] PATCH /allocations/:allocationId', {
+      tenantId,
+      allocationId,
+      status,
+      notes: notes ? '<<provided>>' : null,
+    });
+
+    try {
+      const allocation = await updateTenantAllocation(tenantId, allocationId, {
+        status,
+        notes,
+      });
+
+      if (!allocation) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'ALLOCATION_NOT_FOUND',
+            message: 'Lead não encontrado para atualização',
+          },
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: allocation,
+      });
+    } catch (error) {
+      logger.error('[LeadEngine] ❌ Failed to update allocation', {
+        tenantId,
+        allocationId,
+        status,
+        error,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'ALLOCATION_UPDATE_FAILED',
+          message: 'Falha ao atualizar lead',
+        },
+      });
+    }
+  })
+);
+
+router.get(
+  '/allocations/export',
+  query('agreementId').optional().isString().trim(),
+  query('campaignId').optional().isString().trim(),
+  query('status').optional(),
+  query('statuses').optional(),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = ensureTenantContext(req, res);
+    if (!tenantId) return;
+
+    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
+    const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
+    const { statuses, error } = parseStatusFilter(req.query.status ?? req.query.statuses);
+
+    if (error) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_ALLOCATION_STATUS',
+          message: error,
+        },
+      });
+      return;
+    }
+
+    logger.info('[LeadEngine] GET /allocations/export', {
+      tenantId,
+      agreementId,
+      campaignId,
+      statuses,
+    });
+
+    try {
+      const allocations = await listTenantAllocations(tenantId, {
+        agreementId,
+        campaignId,
+        statuses,
+      });
+
+      const header = [
+        'allocationId',
+        'campaignId',
+        'campaignName',
+        'agreementId',
+        'leadId',
+        'fullName',
+        'document',
+        'phone',
+        'status',
+        'receivedAt',
+        'updatedAt',
+        'notes',
+        'tags',
+      ];
+
+      const escape = (value: unknown) => {
+        if (value === null || value === undefined) {
+          return '';
+        }
+        const text = String(value).replace(/"/g, '""');
+        return `"${text}"`;
+      };
+
+      const rows = allocations.map((allocation) =>
+        [
+          allocation.allocationId,
+          allocation.campaignId,
+          allocation.campaignName,
+          allocation.agreementId,
+          allocation.leadId,
+          allocation.fullName,
+          allocation.document,
+          allocation.phone ?? '',
+          allocation.status,
+          allocation.receivedAt,
+          allocation.updatedAt,
+          allocation.notes ?? '',
+          allocation.tags.join('|'),
+        ].map(escape).join(',')
+      );
+
+      const csvContent = [header.map(escape).join(','), ...rows].join('\n');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="lead-allocations-${timestamp}.csv"`);
+      res.send(`\ufeff${csvContent}`);
+    } catch (error) {
+      logger.error('[LeadEngine] ❌ Failed to export allocations', {
+        tenantId,
+        agreementId,
+        campaignId,
+        statuses,
+        error,
+      });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'ALLOCATIONS_EXPORT_FAILED',
+          message: 'Falha ao exportar leads',
         },
       });
     }
