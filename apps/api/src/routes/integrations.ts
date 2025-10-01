@@ -43,6 +43,115 @@ type BrokerSessionStatus = {
   rate?: unknown;
 };
 
+type BrokerInstance = {
+  id?: string;
+  tenantId?: string;
+  name?: string;
+  status?: string;
+  connected?: boolean;
+  createdAt?: string;
+  lastActivity?: string | null;
+  phoneNumber?: string | null;
+  user?: string | null;
+  stats?: unknown;
+};
+
+type NormalizedInstance = {
+  id: string;
+  tenantId: string | null;
+  name: string | null;
+  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
+  connected: boolean;
+  createdAt: string | null;
+  lastActivity: string | null;
+  phoneNumber: string | null;
+  user: string | null;
+  stats?: unknown;
+};
+
+const normalizeInstanceStatus = (
+  status: unknown,
+  connectedValue?: unknown
+): { status: NormalizedInstance['status']; connected: boolean } => {
+  const rawStatus = typeof status === 'string' ? status.toLowerCase() : undefined;
+  const connected = Boolean(connectedValue ?? (rawStatus === 'connected'));
+
+  const normalizedStatus: NormalizedInstance['status'] = (() => {
+    switch (rawStatus) {
+      case 'connected':
+      case 'connecting':
+      case 'qr_required':
+      case 'disconnected':
+        return rawStatus;
+      default:
+        return connected ? 'connected' : 'disconnected';
+    }
+  })();
+
+  return { status: normalizedStatus, connected };
+};
+
+const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
+  if (!instance || typeof instance !== 'object') {
+    return null;
+  }
+
+  const source = instance as BrokerInstance & Record<string, unknown>;
+
+  const idCandidate = [source.id, source.instanceId, source.sessionId]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .find((value) => value.length > 0);
+
+  if (!idCandidate) {
+    return null;
+  }
+
+  const { status, connected } = normalizeInstanceStatus(source.status, source.connected);
+
+  return {
+    id: idCandidate,
+    tenantId: typeof source.tenantId === 'string' ? source.tenantId : null,
+    name: typeof source.name === 'string' ? source.name : null,
+    status,
+    connected,
+    createdAt: typeof source.createdAt === 'string' ? source.createdAt : null,
+    lastActivity:
+      typeof source.lastActivity === 'string' || source.lastActivity === null
+        ? (source.lastActivity as string | null)
+        : null,
+    phoneNumber:
+      typeof source.phoneNumber === 'string' ? source.phoneNumber : null,
+    user: typeof source.user === 'string' ? source.user : null,
+    stats: typeof source.stats === 'object' && source.stats !== null ? source.stats : undefined,
+  };
+};
+
+const normalizeQrCode = (
+  value: unknown
+): { qrCode: string | null; expiresAt: string | null } => {
+  if (!value || typeof value !== 'object') {
+    return { qrCode: null, expiresAt: null };
+  }
+
+  const source = value as Record<string, unknown>;
+
+  return {
+    qrCode: typeof source.qrCode === 'string' ? source.qrCode : null,
+    expiresAt: typeof source.expiresAt === 'string' ? source.expiresAt : null,
+  };
+};
+
+const normalizeInstanceStatusResponse = (
+  status: unknown
+): { status: NormalizedInstance['status']; connected: boolean } => {
+  if (!status || typeof status !== 'object') {
+    return normalizeInstanceStatus(undefined, undefined);
+  }
+
+  const source = status as Record<string, unknown>;
+  return normalizeInstanceStatus(source.status, source.connected);
+};
+
 const parseNumber = (input: unknown): number | null => {
   if (typeof input === 'number' && Number.isFinite(input)) {
     return input;
@@ -106,6 +215,167 @@ const normalizeSessionStatus = (status: BrokerSessionStatus | null | undefined) 
 };
 
 const resolveTenantSessionId = (tenantId: string): string => tenantId;
+
+// GET /api/integrations/whatsapp/instances - List WhatsApp instances
+router.get(
+  '/whatsapp/instances',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+
+    try {
+      const instances = await whatsappBrokerClient.listInstances(tenantId);
+      const normalized = instances
+        .map((instance) => normalizeInstance(instance))
+        .filter((instance): instance is NormalizedInstance => instance !== null);
+
+      res.json({
+        success: true,
+        data: normalized,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// POST /api/integrations/whatsapp/instances - Create a WhatsApp instance
+router.post(
+  '/whatsapp/instances',
+  body('name').isString().isLength({ min: 1 }),
+  body('webhookUrl').optional().isURL(),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const { name, webhookUrl } = req.body as { name: string; webhookUrl?: string };
+
+    try {
+      const instance = await whatsappBrokerClient.createInstance({
+        tenantId,
+        name,
+        webhookUrl,
+      });
+
+      const normalized = normalizeInstance(instance);
+
+      res.status(201).json({
+        success: true,
+        data: normalized,
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// POST /api/integrations/whatsapp/instances/:id/start - Connect a WhatsApp instance
+router.post(
+  '/whatsapp/instances/:id/start',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.connectInstance(instanceId);
+      const status = await whatsappBrokerClient.getStatus(instanceId);
+
+      res.json({
+        success: true,
+        data: normalizeInstanceStatusResponse(status),
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// POST /api/integrations/whatsapp/instances/:id/stop - Disconnect a WhatsApp instance
+router.post(
+  '/whatsapp/instances/:id/stop',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      await whatsappBrokerClient.disconnectInstance(instanceId);
+      const status = await whatsappBrokerClient.getStatus(instanceId);
+
+      res.json({
+        success: true,
+        data: normalizeInstanceStatusResponse(status),
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// GET /api/integrations/whatsapp/instances/:id/qr - Fetch QR code for a WhatsApp instance
+router.get(
+  '/whatsapp/instances/:id/qr',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      const qrCode = await whatsappBrokerClient.getQrCode(instanceId);
+
+      res.json({
+        success: true,
+        data: normalizeQrCode(qrCode),
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// GET /api/integrations/whatsapp/instances/:id/status - Retrieve instance status
+router.get(
+  '/whatsapp/instances/:id/status',
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+
+    try {
+      const status = await whatsappBrokerClient.getStatus(instanceId);
+
+      res.json({
+        success: true,
+        data: normalizeInstanceStatusResponse(status),
+      });
+    } catch (error) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
 
 // POST /api/integrations/whatsapp/session/connect - Conectar sessão única
 router.post(
