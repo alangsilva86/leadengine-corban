@@ -108,10 +108,11 @@ class WhatsAppBrokerClient {
   }
 
   private ensureConfigured(): void {
-    if (this.mode && this.mode !== 'http') {
-      throw new WhatsAppBrokerNotConfiguredError(
-        'WhatsApp broker only available when WHATSAPP_MODE is set to "http"'
-      );
+    if (this.mode !== 'http') {
+      const message = this.mode
+        ? 'WhatsApp broker only available when WHATSAPP_MODE is set to "http"'
+        : 'WhatsApp broker requires WHATSAPP_MODE=http to be enabled';
+      throw new WhatsAppBrokerNotConfiguredError(message);
     }
 
     if (!this.baseUrl || !this.brokerApiKey) {

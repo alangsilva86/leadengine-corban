@@ -106,9 +106,12 @@ AUTH_MVP_USER_EMAIL=mvp-anonymous@leadengine.local
 DATABASE_URL="postgresql://user:password@localhost:5432/ticketz"
 
 # WhatsApp
+WHATSAPP_MODE=http
 WHATSAPP_SESSIONS_PATH=./sessions
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=troque-por-uma-chave-forte
+WHATSAPP_WEBHOOK_API_KEY=troque-se-diferente-da-chave-do-broker
+WHATSAPP_BROKER_TIMEOUT_MS=15000
 
 # URA
 URA_API_URL=https://api.ura-provider.com
@@ -118,7 +121,7 @@ URA_API_KEY=your-ura-api-key
 LOG_LEVEL=info
 ```
 
-> **Importante:** o valor de `WHATSAPP_BROKER_API_KEY` deve coincidir com a variável `API_KEY` configurada na Render para o serviço `baileys-acessuswpp`. Esse segredo precisa ser enviado em todas as chamadas para o broker através do cabeçalho `x-api-key`, inclusive por quaisquer serviços que consumam o `WEBHOOK_URL` configurado na instância.
+> **Importante:** defina `WHATSAPP_MODE=http` sempre que for consumir o broker HTTP externo. O valor de `WHATSAPP_BROKER_API_KEY` deve coincidir com a variável `API_KEY` configurada na Render para o serviço `baileys-acessuswpp`. Esse segredo precisa ser enviado em todas as chamadas para o broker através do cabeçalho `x-api-key`, inclusive por quaisquer serviços que consumam o `WEBHOOK_URL` configurado na instância. Caso o webhook utilize um segredo distinto, defina `WHATSAPP_WEBHOOK_API_KEY`.
 
 > **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.
@@ -259,6 +262,11 @@ POST   /api/integrations/whatsapp/polls
 GET    /api/integrations/whatsapp/events
 POST   /api/integrations/whatsapp/events/ack
 ```
+
+> Após apontar a API para o broker HTTP (via `WHATSAPP_MODE=http`, `WHATSAPP_BROKER_URL` e chaves válidas), valide a integração
+> chamando os endpoints `/api/integrations/whatsapp/instances`, `/api/integrations/whatsapp/instances/:id/qr` e
+> `/api/integrations/whatsapp/instances/:id/status`. As respostas devem refletir os dados reais do broker (sem QR de fallback) e
+> confirmar que a criação/conexão de instâncias funciona end-to-end.
 
 #### Webhooks
 ```

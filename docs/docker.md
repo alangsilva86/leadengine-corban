@@ -36,8 +36,11 @@ DATABASE_URL=postgresql://ticketz:ticketz123@postgres:5432/ticketz
 DATABASE_SSL=false
 REDIS_URL=redis://redis:6379
 JWT_SECRET=troque-por-uma-chave-forte
+WHATSAPP_MODE=http
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=<API_KEY>
+WHATSAPP_WEBHOOK_API_KEY=<API_KEY_WEBHOOK_SE_DIFERENTE>
+WHATSAPP_BROKER_TIMEOUT_MS=15000
 WHATSAPP_VERIFY_TOKEN=<token_gerado_no_Meta>
 LEAD_ENGINE_BROKER_BASE_URL=https://lead-engine-production.up.railway.app
 LEAD_ENGINE_BASIC_TOKEN=bGVhZC1...
@@ -47,7 +50,7 @@ RATE_LIMIT_MAX_REQUESTS=100 # opcional (padrão: 100 requisições)
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
 
-> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esse segredo no cabeçalho `x-api-key` ao chamar o broker.
+> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. Defina `WHATSAPP_MODE=http` para habilitar a integração com o broker HTTP e, se necessário, `WHATSAPP_WEBHOOK_API_KEY` para usar um segredo distinto em webhooks. Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esse segredo no cabeçalho `x-api-key` ao chamar o broker.
 
 As variáveis `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX_REQUESTS` permitem ajustar a janela e o número máximo de requisições por IP aplicados pelo middleware de rate limiting da API. Valores não numéricos ou inválidos são ignorados e os padrões (15 minutos / 100 requisições) são utilizados. Use `CORS_ALLOWED_ORIGINS` para informar uma lista (separada por vírgula) de domínios extras autorizados a consumir a API via navegador; quando ausente, a aplicação libera apenas os domínios padrão (`FRONTEND_URL`, ambientes locais e os domínios históricos do projeto).
 
