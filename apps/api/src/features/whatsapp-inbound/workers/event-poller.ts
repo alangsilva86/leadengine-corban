@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { logger } from '../../../config/logger';
 import {
@@ -72,7 +72,7 @@ const defaultMetrics: WhatsAppEventPollerMetrics = {
 
 const toJsonValue = (value: unknown): Prisma.InputJsonValue => {
   if (value === undefined || value === null) {
-    return Prisma.JsonNull;
+    return Prisma.JsonNull as unknown as Prisma.InputJsonValue;
   }
   return value as Prisma.InputJsonValue;
 };
@@ -223,6 +223,9 @@ class WhatsAppEventPoller {
   }
 
   private async pollOnce(): Promise<number> {
+    logger.debug('🛰️ [Poller] Fetching broker events', {
+      cursor: this.cursor,
+    });
     const response = await whatsappBrokerClient.fetchEvents<BrokerFetchResponse>({
       limit: FETCH_LIMIT,
       cursor: this.cursor ?? undefined,
@@ -238,6 +241,7 @@ class WhatsAppEventPoller {
     this.metrics.lastFetchCount = rawEvents.length;
 
     if (rawEvents.length === 0) {
+      logger.debug('🛰️ [Poller] Broker returned zero events');
       await this.persistCursorIfNeeded(response?.nextCursor ?? null);
       return 0;
     }
@@ -293,6 +297,10 @@ class WhatsAppEventPoller {
         skipDuplicates: true,
       });
 
+      logger.info('🛰️ [Poller] New events received', {
+        count: freshEvents.length,
+        eventIds: freshEvents.map((event) => event.id),
+      });
       enqueueWhatsAppBrokerEvents(freshEvents);
     }
 

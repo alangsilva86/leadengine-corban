@@ -1,4 +1,4 @@
-import { fetch, type RequestInit } from 'undici';
+import { fetch, type RequestInit, type Response as UndiciResponse } from 'undici';
 import { logger } from '../config/logger';
 
 export class WhatsAppBrokerNotConfiguredError extends Error {
@@ -160,7 +160,7 @@ class WhatsAppBrokerClient {
     return slug.length > 0 ? slug : fallback;
   }
 
-  private async handleError(response: Response): Promise<never> {
+  private async handleError(response: UndiciResponse): Promise<never> {
     let bodyText = '';
 
     try {
@@ -658,13 +658,14 @@ class WhatsAppBrokerClient {
     };
   }
 
-  private findSessionPayload(value: unknown): Record<string, unknown> | null {
+  private findSessionPayloads(value: unknown): Record<string, unknown>[] {
     if (!value || typeof value !== 'object') {
-      return null;
+      return [];
     }
 
     const queue: Record<string, unknown>[] = [value as Record<string, unknown>];
     const visited = new Set<unknown>();
+    const sessions: Record<string, unknown>[] = [];
 
     const looksLikeSession = (candidate: Record<string, unknown>): boolean => {
       return [
@@ -685,7 +686,8 @@ class WhatsAppBrokerClient {
       visited.add(current);
 
       if (looksLikeSession(current)) {
-        return current;
+        sessions.push(current);
+        // do not `continue`; other nested sessions may exist
       }
 
       Object.values(current).forEach((entry) => {
@@ -706,7 +708,7 @@ class WhatsAppBrokerClient {
       });
     }
 
-    return null;
+    return sessions;
   }
 
   async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
@@ -736,8 +738,8 @@ class WhatsAppBrokerClient {
           requestOptions
         );
 
-        const session = this.findSessionPayload(response);
-        if (!session) {
+        const sessions = this.findSessionPayloads(response);
+        if (!sessions.length) {
           logger.debug('WhatsApp broker session status payload missing session data', {
             tenantId,
             path,
@@ -751,16 +753,18 @@ class WhatsAppBrokerClient {
           continue;
         }
 
-        const normalized = this.normalizeBrokerInstance(tenantId, session);
+        const normalized = sessions
+          .map((session) => this.normalizeBrokerInstance(tenantId, session))
+          .filter((instance): instance is WhatsAppInstance => Boolean(instance));
 
-        if (!normalized) {
+        if (!normalized.length) {
           if (index === candidatePaths.length - 1) {
             return [];
           }
           continue;
         }
 
-        return [normalized];
+        return normalized;
       } catch (error) {
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
           throw error;
@@ -913,7 +917,7 @@ class WhatsAppBrokerClient {
               ? (result.limits as Record<string, unknown>)
               : undefined;
 
-      return {
+      const normalized: WhatsAppStatus = {
         status: normalizedStatus,
         connected,
         ...normalizedQr,
@@ -924,6 +928,18 @@ class WhatsAppBrokerClient {
         rateUsage: rateUsageCandidate ?? rateCandidate ?? null,
         raw: result ?? null,
       };
+
+      logger.debug('🛰️ [BrokerClient] Session status normalizado', {
+        brokerId,
+        instanceId: options.instanceId ?? brokerId,
+        status: normalized.status,
+        connected: normalized.connected,
+        hasStats: Boolean(normalized.stats),
+        hasMetrics: Boolean(normalized.metrics),
+        hasMessages: Boolean(normalized.messages),
+      });
+
+      return normalized;
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         throw error;

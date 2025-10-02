@@ -379,9 +379,7 @@ const resolvePhoneNumber = (
     metadata.msisdn,
     metadata.phone,
     metadata.number,
-    brokerStatus && typeof brokerStatus === 'object'
-      ? (brokerStatus as Record<string, unknown>).phoneNumber
-      : null
+    brokerStatus ? ((brokerStatus as unknown) as Record<string, unknown>).phoneNumber : null
   );
 
   return phone ?? null;
@@ -555,10 +553,17 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
   const brokerInstances = await whatsappBrokerClient.listInstances(tenantId);
 
   if (!brokerInstances.length) {
+    logger.info('🛰️ [WhatsApp] Broker returned zero instances', { tenantId });
     return existing;
   }
 
   const existingMap = new Map(existing.map((item) => [item.id, item]));
+
+  logger.info('🛰️ [WhatsApp] Broker instances snapshot', {
+    tenantId,
+    brokerCount: brokerInstances.length,
+    ids: brokerInstances.map((instance) => instance.id),
+  });
 
   for (const brokerInstance of brokerInstances) {
     const instanceId = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
@@ -601,6 +606,13 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
     });
 
     if (existingInstance) {
+      logger.info('🛰️ [WhatsApp] Sync updating stored instance from broker', {
+        tenantId,
+        instanceId,
+        status: derivedStatus,
+        connected: derivedConnected,
+        phoneNumber,
+      });
       await prisma.whatsAppInstance.update({
         where: { id: existingInstance.id },
         data: {
@@ -613,6 +625,13 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
         },
       });
     } else {
+      logger.info('🛰️ [WhatsApp] Sync creating instance missing from storage', {
+        tenantId,
+        instanceId,
+        status: derivedStatus,
+        connected: derivedConnected,
+        phoneNumber,
+      });
       const baseMetadata: InstanceMetadata = {
         origin: 'broker-sync',
       };
@@ -711,6 +730,11 @@ router.get(
     const refreshRequested =
       req.query.refresh === '1' || req.query.refresh === 'true' || req.query.refresh === 'yes';
 
+    logger.info('🛰️ [WhatsApp] List instances requested', {
+      tenantId,
+      refreshRequested,
+    });
+
     try {
       let storedInstances = await prisma.whatsAppInstance.findMany({
         where: { tenantId },
@@ -719,6 +743,10 @@ router.get(
 
       if (refreshRequested || storedInstances.length === 0) {
         storedInstances = await syncInstancesFromBroker(tenantId, storedInstances);
+        logger.info('🛰️ [WhatsApp] Broker sync completed', {
+          tenantId,
+          storedAfterSync: storedInstances.length,
+        });
       }
 
       const normalized = await Promise.all(
@@ -786,6 +814,11 @@ router.get(
           return responseInstance;
         })
       );
+
+      logger.info('🛰️ [WhatsApp] Returning instances to client', {
+        tenantId,
+        count: normalized.length,
+      });
 
       res.json({
         success: true,

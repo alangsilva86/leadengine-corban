@@ -187,6 +187,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
           instanceId,
           allocationId: newlyAllocated[0].allocationId,
           phone: maskPhone(normalizedPhone ?? null),
+          leadId: newlyAllocated[0].leadId,
         });
       }
     } catch (error) {

@@ -239,6 +239,21 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const queued = normalizedEvents.length;
 
   if (queued > 0) {
+    normalizedEvents.forEach((event) => {
+      logger.info('📬 [Webhook] Evento inbound normalizado', {
+        eventId: event.id,
+        instanceId: event.instanceId,
+        hasMessage: Boolean(event.payload.message),
+        hasContact: Boolean(event.payload.contact?.phone || event.payload.contact?.name),
+      });
+    });
+  } else {
+    logger.warn('📭 [Webhook] Nenhum evento elegível encontrado', {
+      received: rawEvents.length,
+    });
+  }
+
+  if (queued > 0) {
     enqueueWhatsAppBrokerEvents(
       normalizedEvents.map((event) => ({
         id: event.id,

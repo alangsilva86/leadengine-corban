@@ -106,6 +106,12 @@ export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): Whats
 
 export const enqueueWhatsAppBrokerEvents = (events: WhatsAppBrokerEvent[]): void => {
   events.forEach((event) => {
+    logger.info('📥 [Queue] Evento enfileirado', {
+      eventId: event.id,
+      type: event.type,
+      tenantId: event.tenantId ?? null,
+      instanceId: event.instanceId ?? null,
+    });
     pendingEvents += 1;
     tail = tail
       .then(async () => {

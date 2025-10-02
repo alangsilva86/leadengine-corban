@@ -958,6 +958,12 @@ const WhatsAppConnect = ({
       });
       const shouldForceBrokerSync =
         typeof forceRefresh === 'boolean' ? forceRefresh : !hasFetchedOnceRef.current;
+
+      log('🛰️ Solicitando lista de instâncias', {
+        agreementId,
+        forceRefresh: shouldForceBrokerSync,
+        hasFetchedOnce: hasFetchedOnceRef.current,
+      });
       const response = await apiGet(
         `/api/integrations/whatsapp/instances${shouldForceBrokerSync ? '?refresh=1' : ''}`
       );
@@ -1075,6 +1081,7 @@ const WhatsAppConnect = ({
         total: resolvedTotal,
         status: statusFromInstance,
         instanceId: current?.id ?? null,
+        forceRefresh: shouldForceBrokerSync,
       });
       return { success: true, status: statusFromInstance };
     } catch (err) {
@@ -1570,7 +1577,16 @@ const WhatsAppConnect = ({
                     {instance?.name || instance?.id || 'Escolha uma instância'}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {instance ? formatPhoneNumber(instance.phoneNumber || instance.number) : '—'}
+                    {instance
+                      ? formatPhoneNumber(
+                          instance.phoneNumber ||
+                            instance.number ||
+                            instance?.metadata?.phoneNumber ||
+                            instance?.metadata?.phone_number ||
+                            instance?.metadata?.msisdn ||
+                            ''
+                        )
+                      : '—'}
                   </p>
                 </div>
                 <div>
@@ -1599,7 +1615,7 @@ const WhatsAppConnect = ({
                 <span>{instances.length} ativa(s)</span>
               </div>
               {instances.length > 0 ? (
-                <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {instances.map((item, index) => {
                     const isCurrent = instance?.id === item.id;
                     const statusInfo = getStatusInfo(item);
@@ -1608,7 +1624,15 @@ const WhatsAppConnect = ({
                     const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
                     const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
                     const phoneLabel =
-                      item.phoneNumber || item.number || item.msisdn || item.jid || item.session || '';
+                      item.phoneNumber ||
+                      item.number ||
+                      item.msisdn ||
+                      item?.metadata?.phoneNumber ||
+                      item?.metadata?.phone_number ||
+                      item?.metadata?.msisdn ||
+                      item.jid ||
+                      item.session ||
+                      '';
                     const addressLabel = item.address || item.jid || item.session || '';
                     const lastUpdated = item.updatedAt || item.lastSeen || item.connectedAt;
                     const lastUpdatedLabel = lastUpdated
