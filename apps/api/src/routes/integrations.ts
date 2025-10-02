@@ -367,11 +367,115 @@ const mapBrokerStatusToDbStatus = (
   }
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  return isRecord(value) ? (value as Record<string, unknown>) : null;
+};
+
+const mergeRecords = (
+  ...sources: Array<Record<string, unknown> | null | undefined>
+): Record<string, unknown> | undefined => {
+  const merged: Record<string, unknown> = {};
+  let hasValue = false;
+
+  for (const source of sources) {
+    if (!isRecord(source)) {
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(source)) {
+      merged[key] = value;
+      hasValue = true;
+    }
+  }
+
+  return hasValue ? merged : undefined;
+};
+
+const normalizePhoneCandidate = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const digits = trimmed.replace(/\D+/g, '');
+  if (digits.length >= 8) {
+    return trimmed;
+  }
+
+  return null;
+};
+
+const findPhoneNumberInObject = (value: unknown): string | null => {
+  if (!isRecord(value) && !Array.isArray(value)) {
+    return null;
+  }
+
+  const queue: Array<Record<string, unknown>> = [];
+  const visited = new Set<unknown>();
+
+  const enqueue = (entry: unknown): void => {
+    if (visited.has(entry)) {
+      return;
+    }
+
+    if (Array.isArray(entry)) {
+      visited.add(entry);
+      entry.forEach(enqueue);
+      return;
+    }
+
+    if (isRecord(entry)) {
+      visited.add(entry);
+      queue.push(entry);
+    }
+  };
+
+  enqueue(value);
+
+  const preferredKeys = ['phoneNumber', 'phone_number', 'msisdn'];
+  const fallbackKeys = ['whatsappNumber', 'whatsapp_number', 'jid', 'number', 'address'];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+
+    for (const key of preferredKeys) {
+      const candidate = normalizePhoneCandidate(current[key]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    for (const key of fallbackKeys) {
+      const candidate = normalizePhoneCandidate(current[key]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    for (const entry of Object.values(current)) {
+      enqueue(entry);
+    }
+  }
+
+  return null;
+};
+
 const resolvePhoneNumber = (
   instance: StoredInstance,
   metadata: Record<string, unknown>,
   brokerStatus?: WhatsAppStatus | null
 ): string | null => {
+  const brokerRecord = brokerStatus ? ((brokerStatus as unknown) as Record<string, unknown>) : null;
+  const rawStatus = brokerStatus?.raw && isRecord(brokerStatus.raw) ? brokerStatus.raw : null;
+
   const phone = pickString(
     instance.phoneNumber,
     metadata.phoneNumber,
@@ -379,10 +483,24 @@ const resolvePhoneNumber = (
     metadata.msisdn,
     metadata.phone,
     metadata.number,
-    brokerStatus ? ((brokerStatus as unknown) as Record<string, unknown>).phoneNumber : null
+    brokerRecord?.phoneNumber,
+    brokerRecord?.phone_number,
+    brokerRecord?.msisdn,
+    rawStatus?.phoneNumber,
+    rawStatus?.phone_number,
+    rawStatus?.msisdn
   );
 
-  return phone ?? null;
+  if (phone) {
+    return phone;
+  }
+
+  return (
+    findPhoneNumberInObject(metadata) ??
+    findPhoneNumberInObject(rawStatus) ??
+    findPhoneNumberInObject(brokerRecord) ??
+    null
+  );
 };
 
 const mapBrokerInstanceStatusToDbStatus = (status: string | null | undefined): WhatsAppInstanceStatus => {
@@ -405,22 +523,46 @@ const serializeStoredInstance = (
 ): NormalizedInstance & { brokerId: string } => {
   const normalizedStatus = brokerStatus?.status ?? mapDbStatusToNormalized(instance.status);
   const connected = brokerStatus?.connected ?? instance.connected;
-  const stats =
-    brokerStatus?.stats ??
-    brokerStatus?.messages ??
-    ((instance.metadata as Record<string, unknown> | null)?.stats as unknown) ??
-    undefined;
-  const metrics =
-    brokerStatus?.metrics ??
-    (typeof stats === 'object' && stats !== null ? (stats as Record<string, unknown>) : null);
-  const messages = brokerStatus?.messages ?? null;
-  const rate = brokerStatus?.rate ?? brokerStatus?.rateUsage ?? null;
   const rawStatus =
     brokerStatus?.raw && typeof brokerStatus.raw === 'object' && brokerStatus.raw !== null
       ? (brokerStatus.raw as Record<string, unknown>)
       : brokerStatus
         ? (brokerStatus as unknown as Record<string, unknown>)
         : null;
+
+  const stats =
+    mergeRecords(
+      asRecord(brokerStatus?.stats),
+      asRecord(brokerStatus?.messages),
+      asRecord(rawStatus?.stats),
+      asRecord(rawStatus?.messages),
+      asRecord(rawStatus?.metrics),
+      asRecord(rawStatus?.counters),
+      asRecord(rawStatus?.status),
+      asRecord((instance.metadata as Record<string, unknown> | null)?.stats)
+    ) ?? undefined;
+
+  const metrics =
+    mergeRecords(
+      asRecord(brokerStatus?.metrics),
+      asRecord(brokerStatus?.rateUsage),
+      asRecord(rawStatus?.metrics),
+      asRecord(rawStatus?.messages),
+      asRecord(rawStatus?.stats)
+    ) ?? undefined;
+
+  const messages =
+    asRecord(brokerStatus?.messages) ??
+    asRecord(rawStatus?.messages) ??
+    null;
+
+  const rate =
+    mergeRecords(
+      asRecord(brokerStatus?.rate),
+      asRecord(brokerStatus?.rateUsage),
+      asRecord(rawStatus?.rate),
+      asRecord(rawStatus?.rateUsage)
+    ) ?? null;
 
   const baseMetadata = (instance.metadata as Record<string, unknown> | null) ?? {};
   const metadata: Record<string, unknown> = { ...baseMetadata };
@@ -587,15 +729,28 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
     const derivedConnected = brokerStatus?.connected ?? Boolean(brokerInstance.connected);
     const phoneNumber = ((): string | null => {
       const metadata = (existingInstance?.metadata as Record<string, unknown> | null) ?? {};
-      const brokerMetadata = brokerStatus?.raw && typeof brokerStatus.raw === 'object' ? (brokerStatus.raw as Record<string, unknown>) : {};
+      const brokerMetadata = brokerStatus?.raw && isRecord(brokerStatus.raw) ? brokerStatus.raw : {};
+      const primary = pickString(
+        brokerInstance.phoneNumber,
+        metadata.phoneNumber,
+        metadata.phone_number,
+        metadata.msisdn,
+        metadata.phone,
+        metadata.number,
+        brokerMetadata.phoneNumber,
+        brokerMetadata.phone_number,
+        brokerMetadata.msisdn
+      );
+
+      if (primary) {
+        return primary;
+      }
+
       return (
-        pickString(
-          brokerInstance.phoneNumber,
-          metadata.phoneNumber,
-          metadata.phone_number,
-          brokerMetadata.phoneNumber,
-          brokerMetadata.phone_number
-        ) ?? null
+        findPhoneNumberInObject(metadata) ??
+        findPhoneNumberInObject(brokerMetadata) ??
+        findPhoneNumberInObject(brokerStatus) ??
+        null
       );
     })();
 
