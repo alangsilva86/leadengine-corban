@@ -1039,6 +1039,9 @@ router.get(
   query('campaignId').optional().isString().trim(),
   query('status').optional(),
   query('statuses').optional(),
+  query('instanceId').optional().isString().trim(),
+  query('from').optional().isISO8601(),
+  query('to').optional().isISO8601(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req, res);
@@ -1046,6 +1049,9 @@ router.get(
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
+    const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId : undefined;
+    const fromDate = typeof req.query.from === 'string' ? new Date(req.query.from) : undefined;
+    const toDate = typeof req.query.to === 'string' ? new Date(req.query.to) : undefined;
     const { statuses, error } = parseStatusFilter(req.query.status ?? req.query.statuses);
 
     if (error) {
@@ -1064,6 +1070,9 @@ router.get(
       agreementId,
       campaignId,
       statuses,
+      instanceId,
+      from: fromDate?.toISOString() ?? null,
+      to: toDate?.toISOString() ?? null,
     });
 
     try {
@@ -1073,11 +1082,30 @@ router.get(
         statuses,
       });
 
+      const filtered = allocations.filter((allocation) => {
+        if (instanceId && allocation.instanceId !== instanceId) {
+          return false;
+        }
+
+        const receivedAtDate = new Date(allocation.receivedAt);
+
+        if (fromDate && Number.isFinite(fromDate.getTime()) && receivedAtDate < fromDate) {
+          return false;
+        }
+
+        if (toDate && Number.isFinite(toDate.getTime()) && receivedAtDate > toDate) {
+          return false;
+        }
+
+        return true;
+      });
+
       const header = [
         'allocationId',
         'campaignId',
         'campaignName',
         'agreementId',
+        'instanceId',
         'leadId',
         'fullName',
         'document',
@@ -1086,7 +1114,11 @@ router.get(
         'receivedAt',
         'updatedAt',
         'notes',
+        'registrations',
         'tags',
+        'margin',
+        'netMargin',
+        'score',
       ];
 
       const escape = (value: unknown) => {
@@ -1097,12 +1129,13 @@ router.get(
         return `"${text}"`;
       };
 
-      const rows = allocations.map((allocation) =>
+      const rows = filtered.map((allocation) =>
         [
           allocation.allocationId,
           allocation.campaignId,
           allocation.campaignName,
           allocation.agreementId,
+          allocation.instanceId,
           allocation.leadId,
           allocation.fullName,
           allocation.document,
@@ -1111,7 +1144,11 @@ router.get(
           allocation.receivedAt,
           allocation.updatedAt,
           allocation.notes ?? '',
+          allocation.registrations.join('|'),
           allocation.tags.join('|'),
+          allocation.margin ?? '',
+          allocation.netMargin ?? '',
+          allocation.score ?? '',
         ].map(escape).join(',')
       );
 
@@ -1127,6 +1164,9 @@ router.get(
         agreementId,
         campaignId,
         statuses,
+        instanceId,
+        from: fromDate?.toISOString() ?? null,
+        to: toDate?.toISOString() ?? null,
         error,
       });
       res.status(500).json({

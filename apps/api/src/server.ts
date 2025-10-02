@@ -148,6 +148,27 @@ const rateLimitMaxRequests =
     ? parsedRateLimitMaxRequests
     : DEFAULT_RATE_LIMIT_MAX_REQUESTS;
 
+type RateLimitState = {
+  limit?: number;
+  remaining?: number;
+  resetTime?: Date;
+};
+
+type RateLimitedRequest = express.Request & { rateLimit?: RateLimitState };
+
+const attachRateLimitHeaders = (req: express.Request, res: express.Response) => {
+  const rateLimit = (req as RateLimitedRequest).rateLimit;
+  const limit = typeof rateLimit?.limit === 'number' ? rateLimit.limit : rateLimitMaxRequests;
+  const remaining = typeof rateLimit?.remaining === 'number' ? Math.max(0, rateLimit.remaining) : limit;
+  const resetReference = rateLimit?.resetTime instanceof Date ? rateLimit.resetTime : null;
+  const resetTime = resetReference ?? new Date(Date.now() + rateLimitWindowMs);
+  const resetSeconds = Math.max(0, Math.ceil((resetTime.getTime() - Date.now()) / 1000));
+
+  res.setHeader('X-RateLimit-Limit', limit.toString());
+  res.setHeader('X-RateLimit-Remaining', Math.max(0, remaining).toString());
+  res.setHeader('X-RateLimit-Reset', resetSeconds.toString());
+};
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: rateLimitWindowMs, // 15 minutos por padrão
@@ -169,6 +190,8 @@ const limiter = rateLimit({
       res.setHeader('Retry-After', retryAfterSeconds.toString());
     }
 
+    attachRateLimitHeaders(req, res);
+
     res.status(429).json({
       success: false,
       error: {
@@ -185,6 +208,9 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
+    if (req.path.startsWith('/api')) {
+      attachRateLimitHeaders(req, res);
+    }
     res.status(204).end();
     return;
   }
@@ -206,6 +232,11 @@ app.use(requestLogger);
 if (NODE_ENV === 'production') {
   app.use('/api', limiter);
 }
+
+app.use('/api', (req, res, next) => {
+  attachRateLimitHeaders(req, res);
+  next();
+});
 
 // Health check simples para o MVP (sem dependência de banco)
 app.get('/health', (_req, res) => {

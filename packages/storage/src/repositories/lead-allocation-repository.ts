@@ -32,6 +32,15 @@ export interface AllocationSummary {
   lost: number;
 }
 
+export interface CampaignMetrics {
+  total: number;
+  allocated: number;
+  contacted: number;
+  won: number;
+  lost: number;
+  averageResponseSeconds: number | null;
+}
+
 export interface LeadAllocationDto {
   allocationId: string;
   leadId: string;
@@ -386,4 +395,60 @@ export const resetAllocationStore = () => {
   allocationsByTenant.clear();
   allocationKeyIndex.clear();
   recentAllocationKeys.clear();
+};
+
+export const getCampaignMetrics = (
+  tenantId: string,
+  campaignId: string
+): CampaignMetrics => {
+  const allocations = allocationsByTenant.get(tenantId);
+  const result: CampaignMetrics = {
+    total: 0,
+    allocated: 0,
+    contacted: 0,
+    won: 0,
+    lost: 0,
+    averageResponseSeconds: null,
+  };
+
+  if (!allocations) {
+    return result;
+  }
+
+  let totalResponseMs = 0;
+  let responseCount = 0;
+
+  allocations.forEach((allocation) => {
+    if (allocation.campaignId !== campaignId) {
+      return;
+    }
+
+    result.total += 1;
+    if (allocation.status === 'allocated') {
+      result.allocated += 1;
+    }
+    if (allocation.status === 'contacted') {
+      result.contacted += 1;
+    }
+    if (allocation.status === 'won') {
+      result.won += 1;
+    }
+    if (allocation.status === 'lost') {
+      result.lost += 1;
+    }
+
+    if (allocation.status !== 'allocated') {
+      const diff = allocation.updatedAt.getTime() - allocation.receivedAt.getTime();
+      if (diff >= 0) {
+        totalResponseMs += diff;
+        responseCount += 1;
+      }
+    }
+  });
+
+  if (responseCount > 0) {
+    result.averageResponseSeconds = Math.round(totalResponseMs / responseCount / 1000);
+  }
+
+  return result;
 };

@@ -11,6 +11,8 @@ export {
   type LeadAllocationDto,
   type LeadAllocationStatus,
   type AllocationSummary,
+  getCampaignMetrics,
+  type CampaignMetrics,
 } from './repositories/lead-allocation-repository';
 
 export {

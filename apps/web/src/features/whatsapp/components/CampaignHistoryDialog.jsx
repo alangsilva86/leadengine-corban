@@ -39,7 +39,7 @@ const CampaignHistoryDialog = ({ agreementId }) => {
       setErrorMessage(null);
       try {
         log('📚 Listando campanhas cadastradas', { agreementId });
-        const response = await apiGet(`/api/lead-engine/campaigns?agreementId=${agreementId}`);
+        const response = await apiGet(`/api/campaigns?agreementId=${agreementId}`);
         if (cancelled) return;
         const items = Array.isArray(response?.data) ? response.data : [];
         setCampaigns(items);

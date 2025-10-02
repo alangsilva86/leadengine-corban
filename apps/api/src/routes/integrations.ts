@@ -600,6 +600,12 @@ router.get(
             brokerStatus = await whatsappBrokerClient.getStatus(instance.brokerId, {
               instanceId: instance.id,
             });
+            if (brokerStatus?.status === 'disconnected') {
+              logger.warn('WhatsApp instance reported as disconnected', {
+                tenantId: instance.tenantId,
+                instanceId: instance.id,
+              });
+            }
           } catch (error) {
             if (error instanceof WhatsAppBrokerNotConfiguredError) {
               throw error;
@@ -808,6 +814,14 @@ router.post(
         connected: status.connected,
       });
 
+      if (!status.connected) {
+        logger.warn('WhatsApp instance did not report connected status after connect', {
+          tenantId,
+          instanceId: instance.id,
+          status: status.status,
+        });
+      }
+
       const updates: Prisma.WhatsAppInstanceUpdateInput = {
         status: mapBrokerStatusToDbStatus(status),
         connected: status.connected,
@@ -934,6 +948,14 @@ router.post(
         connected: status.connected,
         wipe: Boolean(wipe),
       });
+
+      if (status.connected) {
+        logger.warn('WhatsApp instance still connected after disconnect request', {
+          tenantId,
+          instanceId: instance.id,
+          status: status.status,
+        });
+      }
 
       const updates: Prisma.WhatsAppInstanceUpdateInput = {
         status: mapBrokerStatusToDbStatus(status),

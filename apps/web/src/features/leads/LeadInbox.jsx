@@ -8,6 +8,7 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api.js';
 import { computeBackoffDelay, parseRetryAfterMs } from '@/lib/rate-limit.js';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import EmptyInboxState from './components/EmptyInboxState.jsx';
+import useRateLimitBanner from '@/hooks/useRateLimitBanner.js';
 
 const statusVariant = {
   allocated: 'info',
@@ -23,6 +24,33 @@ const statusLabel = {
   lost: 'Sem interesse',
 };
 
+const formatSeconds = (seconds) => {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
+    return '—';
+  }
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+};
+
+const formatCurrency = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+  return value.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
+};
+
 const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement, onBackToWhatsApp }) => {
   const { log, warn, error: logError } = usePlayfulLogger('✨ LeadEngine • Inbox');
   const [allocations, setAllocations] = useState([]);
@@ -31,6 +59,8 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
   const [pulling, setPulling] = useState(false);
   const [error, setError] = useState(null);
   const [warningMessage, setWarningMessage] = useState(null);
+  const rateLimitInfo = useRateLimitBanner();
+  const campaignMetrics = campaign?.metrics;
 
   const loadingRef = useRef(false);
   const retryStateRef = useRef({ attempts: 0, timeoutId: null });
@@ -192,6 +222,12 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
     const params = new URLSearchParams();
     if (campaignId) params.set('campaignId', campaignId);
     if (agreementId) params.set('agreementId', agreementId);
+    if (statusFilter !== 'all') {
+      params.set('status', statusFilter);
+    }
+    if (campaign?.instanceId) {
+      params.set('instanceId', campaign.instanceId);
+    }
     window.open(`/api/lead-engine/allocations/export?${params.toString()}`, '_blank');
   };
 
@@ -216,12 +252,21 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
   };
 
   const summary = useMemo(() => {
+    if (campaignMetrics) {
+      return {
+        total: campaignMetrics.total,
+        contacted: campaignMetrics.contacted,
+        won: campaignMetrics.won,
+        lost: campaignMetrics.lost,
+      };
+    }
+
     const total = allocations.length;
     const contacted = allocations.filter((item) => item.status === 'contacted').length;
     const won = allocations.filter((item) => item.status === 'won').length;
     const lost = allocations.filter((item) => item.status === 'lost').length;
     return { total, contacted, won, lost };
-  }, [allocations]);
+  }, [allocations, campaignMetrics]);
 
   const filteredAllocations = useMemo(() => {
     if (statusFilter === 'all') return allocations;
@@ -312,6 +357,13 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
         </div>
       </div>
 
+      {rateLimitInfo.show ? (
+        <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-100">
+          <Sparkles className="mr-2 inline h-4 w-4" />
+          Muitas requisições! Aguarde {rateLimitInfo.retryAfter ?? rateLimitInfo.resetSeconds ?? 0}s para evitar bloqueios.
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader className="flex flex-wrap items-center gap-4">
           <div>
@@ -343,6 +395,39 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {campaignMetrics ? (
+            <div className="grid gap-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-muted-foreground md:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide">Tempo médio até contato</p>
+                <p className="mt-1 text-base font-semibold text-foreground">
+                  {formatSeconds(campaignMetrics.averageResponseSeconds)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide">CPL</p>
+                <p className="mt-1 text-base font-semibold text-foreground">
+                  {typeof campaignMetrics.cpl === 'number'
+                    ? campaignMetrics.cpl.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })
+                    : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide">Orçamento previsto</p>
+                <p className="mt-1 text-base font-semibold text-foreground">
+                  {typeof campaignMetrics.budget === 'number'
+                    ? campaignMetrics.budget.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })
+                    : '—'}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
           {error ? (
             <div className="flex flex-col gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
               <div className="flex items-start gap-2">
@@ -395,11 +480,15 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
                       CPF {allocation.document} • Registro {allocation.registrations?.join(', ') || '—'} • Score{' '}
                       {allocation.score ?? '—'}
                     </div>
-                    <div className="mt-2 text-sm text-muted-foreground">
-                      Margem disponível:{' '}
-                      <span className="font-medium text-foreground">
-                        {allocation.netMargin ? allocation.netMargin.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
-                      </span>
+                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                      <div>
+                        Margem bruta:{' '}
+                        <span className="font-medium text-foreground">{formatCurrency(allocation.margin)}</span>
+                      </div>
+                      <div>
+                        Margem disponível:{' '}
+                        <span className="font-medium text-foreground">{formatCurrency(allocation.netMargin)}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm">

@@ -8,12 +8,24 @@ import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { toSlug, assertValidSlug } from '../lib/slug';
 import { logger } from '../config/logger';
+import { getCampaignMetrics } from '@ticketz/storage';
 
 type CampaignMetadata = Record<string, unknown> | null | undefined;
 
 const CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'ended'] as const;
 
 type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+type CampaignWithInstance = Prisma.CampaignGetPayload<{
+  include: {
+    whatsappInstance: {
+      select: {
+        id: true;
+        name: true;
+      };
+    };
+  };
+}>;
 
 const buildCampaignHistoryEntry = (action: string, actorId: string, details?: Record<string, unknown>) => ({
   action,
@@ -28,6 +40,57 @@ const appendCampaignHistory = (metadata: CampaignMetadata, entry: ReturnType<typ
   history.push(entry);
   base.history = history.slice(-50);
   return base as Prisma.JsonObject;
+};
+
+const readMetadata = (metadata: CampaignMetadata): Record<string, unknown> => {
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    return metadata as Record<string, unknown>;
+  }
+  return {};
+};
+
+const readNumeric = (source: Record<string, unknown>, key: string): number | null => {
+  const value = source[key];
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const toFixedNumber = (input: number | null, fractionDigits = 2): number | null => {
+  if (input === null) {
+    return null;
+  }
+  return Number(input.toFixed(fractionDigits));
+};
+
+const buildCampaignResponse = (campaign: CampaignWithInstance) => {
+  const metadata = readMetadata(campaign.metadata as CampaignMetadata);
+  const metrics = getCampaignMetrics(campaign.tenantId, campaign.id);
+  const budget = readNumeric(metadata, 'budget');
+  const cplTarget = readNumeric(metadata, 'cplTarget');
+  const cpl = budget !== null && metrics.total > 0 ? toFixedNumber(budget / metrics.total) : null;
+
+  const { whatsappInstance, ...campaignData } = campaign;
+  const instanceId = campaign.whatsappInstanceId ?? whatsappInstance?.id ?? null;
+  const instanceName = whatsappInstance?.name ?? null;
+
+  return {
+    ...campaignData,
+    instanceId,
+    instanceName,
+    metadata,
+    metrics: {
+      ...metrics,
+      budget,
+      cplTarget,
+      cpl,
+    },
+  };
 };
 
 const router = Router();
@@ -80,6 +143,8 @@ router.post(
   body('agreementName').isString().trim().isLength({ min: 1 }),
   body('instanceId').isString().trim().isLength({ min: 1 }),
   body('name').optional().isString().trim().isLength({ min: 1 }),
+  body('budget').optional().isFloat({ min: 0 }),
+  body('cplTarget').optional().isFloat({ min: 0 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -91,6 +156,8 @@ router.post(
       name?: string;
     };
     const providedName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const budget = typeof req.body?.budget === 'number' ? req.body.budget : undefined;
+    const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
 
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
     if (!instance || instance.tenantId !== tenantId) {
@@ -160,6 +227,14 @@ router.post(
 
     const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
 
+    const metadataBase: Record<string, unknown> = { slug };
+    if (typeof budget === 'number') {
+      metadataBase.budget = budget;
+    }
+    if (typeof cplTarget === 'number') {
+      metadataBase.cplTarget = cplTarget;
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
@@ -169,9 +244,17 @@ router.post(
         whatsappInstanceId: instance.id,
         status: requestedStatus,
         metadata: appendCampaignHistory(
-          { slug },
+          metadataBase,
           buildCampaignHistoryEntry('created', req.user?.id ?? 'system', { status: requestedStatus, instanceId: instance.id })
         ),
+      },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -184,7 +267,7 @@ router.post(
 
     res.status(201).json({
       success: true,
-      data: campaign,
+      data: buildCampaignResponse(campaign),
     });
   })
 );
@@ -192,33 +275,48 @@ router.post(
 router.get(
   '/',
   query('status').optional(),
+  query('agreementId').optional().isString().trim(),
+  query('instanceId').optional().isString().trim(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const rawStatus = req.query.status;
 
+    const rawStatus = req.query.status;
     const statuses = Array.isArray(rawStatus)
       ? rawStatus
-      : rawStatus !== undefined
-        ? [rawStatus]
+      : typeof rawStatus === 'string'
+        ? rawStatus.split(',')
         : [];
 
     const normalizedStatuses = statuses
       .map((status) => normalizeStatus(status))
-      .filter((status): status is string => Boolean(status));
+      .filter((status): status is CampaignStatus => Boolean(status));
+
+    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId.trim() : undefined;
+    const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : undefined;
 
     const campaigns = await prisma.campaign.findMany({
       where: {
         tenantId,
+        ...(agreementId ? { agreementId } : {}),
+        ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
         ...(normalizedStatuses.length > 0 ? { status: { in: normalizedStatuses } } : {}),
       },
       orderBy: { createdAt: 'desc' },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
 
     res.json({
       success: true,
-      data: campaigns,
+      data: campaigns.map((campaign) => buildCampaignResponse(campaign)),
     });
   })
 );
@@ -238,6 +336,14 @@ router.patch(
 
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, tenantId },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
 
     if (!campaign) {
@@ -287,13 +393,21 @@ router.patch(
     }
 
     if (!updates.status && !updates.metadata) {
-      res.json({ success: true, data: campaign });
+      res.json({ success: true, data: buildCampaignResponse(campaign) });
       return;
     }
 
     const updated = await prisma.campaign.update({
       where: { id: campaign.id },
       data: updates,
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
 
     logger.info('Campaign updated', {
@@ -304,7 +418,7 @@ router.patch(
 
     res.json({
       success: true,
-      data: updated,
+      data: buildCampaignResponse(updated),
     });
   })
 );

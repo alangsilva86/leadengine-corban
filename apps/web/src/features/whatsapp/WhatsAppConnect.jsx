@@ -834,7 +834,7 @@ const WhatsAppConnect = ({
     const hydrateCampaign = async () => {
       try {
         const response = await apiGet(
-          `/api/lead-engine/campaigns?agreementId=${selectedAgreement.id}&status=active`
+          `/api/campaigns?agreementId=${selectedAgreement.id}&status=active`
         );
         if (cancelled) return;
         const existing = Array.isArray(response?.data) ? response.data[0] : null;
@@ -1430,8 +1430,9 @@ const WhatsAppConnect = ({
     setErrorMessage(null);
 
     try {
-      const payload = await apiPost('/api/lead-engine/campaigns', {
+      const payload = await apiPost('/api/campaigns', {
         agreementId: selectedAgreement.id,
+        agreementName: selectedAgreement.name,
         instanceId: instance.id,
         name: `${selectedAgreement.name} • ${instance.name || instance.id}`,
         status: 'active',

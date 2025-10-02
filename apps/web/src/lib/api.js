@@ -188,15 +188,30 @@ const safeFetch = async (path, init = {}) => {
   const key = resolveRateLimitKey(path, rateLimitKey);
 
   return runWithRateLimit(key, async () => {
+    let response;
+
     try {
-      const response = await fetch(buildUrl(path), fetchInit);
-      return await handleResponse(response);
+      response = await fetch(buildUrl(path), fetchInit);
     } catch (error) {
       if (error instanceof TypeError) {
         throw new Error('Falha de rede ao comunicar com a API');
       }
       throw error;
     }
+
+    const rateInfo = {
+      limit: response.headers.get('X-RateLimit-Limit'),
+      remaining: response.headers.get('X-RateLimit-Remaining'),
+      reset: response.headers.get('X-RateLimit-Reset'),
+      retryAfter: response.headers.get('Retry-After'),
+    };
+
+    if (typeof window !== 'undefined') {
+      const event = new CustomEvent('leadengine:rate-limit', { detail: rateInfo });
+      window.dispatchEvent(event);
+    }
+
+    return handleResponse(response);
   });
 };
 
