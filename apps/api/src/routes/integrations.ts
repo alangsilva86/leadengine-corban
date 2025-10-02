@@ -10,6 +10,7 @@ import {
   type WhatsAppStatus,
 } from '../services/whatsapp-broker-client';
 import { prisma } from '../lib/prisma';
+import { logger } from '../config/logger';
 
 const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {
   if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -916,6 +917,13 @@ router.delete(
       });
 
       await prisma.whatsAppInstance.delete({ where: { id: instance.id } });
+
+      logger.info('WhatsApp instance deleted', {
+        tenantId,
+        instanceId: instance.id,
+        actorId: req.user?.id ?? 'unknown',
+        wipe,
+      });
 
       res.status(204).send();
     } catch (error) {

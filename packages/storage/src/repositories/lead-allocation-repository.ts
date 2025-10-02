@@ -89,6 +89,9 @@ const leadsByTenant = new Map<string, Map<string, LeadRecord>>();
 const leadDocumentIndex = new Map<string, Map<string, string>>();
 const allocationsByTenant = new Map<string, Map<string, AllocationRecord>>();
 const allocationKeyIndex = new Map<string, string>();
+const recentAllocationKeys = new Map<string, number>();
+
+const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const getLeadBucket = (tenantId: string) => {
   let leads = leadsByTenant.get(tenantId);
@@ -252,15 +255,23 @@ export const allocateBrokerLeads = async (params: {
   const now = new Date();
 
   for (const leadInput of params.leads) {
-    const document = sanitizeDocument(leadInput.document);
+    const normalizedPhone = normalizePhone(leadInput.phone);
+    const document = sanitizeDocument(leadInput.document || normalizedPhone || '');
+
     if (!document) {
+      continue;
+    }
+
+    const dedupeKey = `${params.tenantId}:${params.campaignId}:${document}`;
+    const nowTimestamp = now.getTime();
+    const lastSeen = recentAllocationKeys.get(dedupeKey);
+    if (lastSeen && nowTimestamp - lastSeen < DEDUPE_WINDOW_MS) {
       continue;
     }
 
     const leadId = docIndex.get(document);
     const normalizedRegistrations = uniqueStrings(leadInput.registrations ?? []);
     const normalizedTags = uniqueStrings(leadInput.tags ?? []);
-    const normalizedPhone = normalizePhone(leadInput.phone);
 
     let lead: LeadRecord | undefined;
 
@@ -322,11 +333,21 @@ export const allocateBrokerLeads = async (params: {
 
     allocations.set(allocation.id, allocation);
     allocationKeyIndex.set(key, allocation.id);
+    recentAllocationKeys.set(dedupeKey, nowTimestamp);
     created.push(allocation);
   }
 
   const newlyAllocated = await Promise.all(created.map((allocation) => toDto(allocation)));
   const summary = getSummary(params.tenantId, params.campaignId);
+
+  if (recentAllocationKeys.size > 2000) {
+    const threshold = now.getTime() - DEDUPE_WINDOW_MS;
+    for (const [key, timestamp] of recentAllocationKeys.entries()) {
+      if (timestamp < threshold) {
+        recentAllocationKeys.delete(key);
+      }
+    }
+  }
 
   return { newlyAllocated, summary };
 };
@@ -364,4 +385,5 @@ export const resetAllocationStore = () => {
   leadDocumentIndex.clear();
   allocationsByTenant.clear();
   allocationKeyIndex.clear();
+  recentAllocationKeys.clear();
 };

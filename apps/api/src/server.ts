@@ -20,6 +20,7 @@ import { leadEngineRouter } from './routes/lead-engine';
 import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import { getWhatsAppEventPollerMetrics, whatsappEventPoller } from './workers/whatsapp-event-poller';
+import './workers/whatsapp-inbound-processor';
 import { campaignsRouter } from './routes/campaigns';
 
 if (process.env.NODE_ENV !== 'production') {

@@ -2,11 +2,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { asyncHandler } from '../middleware/error-handler';
 import { logger } from '../config/logger';
-import {
-  enqueueWhatsAppBrokerEvents,
-  normalizeWhatsAppBrokerEvent,
-  type WhatsAppBrokerEvent,
-} from '../workers/whatsapp-event-queue';
+import { randomUUID } from 'node:crypto';
+import { enqueueWhatsAppBrokerEvents } from '../workers/whatsapp-event-queue';
+import { maskDocument, maskPhone } from '../lib/pii';
 
 const router: Router = Router();
 const integrationWebhooksRouter: Router = Router();
@@ -116,55 +114,99 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const payload = req.body ?? {};
 
-  logger.info('WhatsApp webhook received', { payload });
-
-  const extractEvents = (input: unknown): unknown[] => {
-    if (!input) {
-      return [];
-    }
-
+  const asArray = (input: unknown): Record<string, unknown>[] => {
+    if (!input) return [];
     if (Array.isArray(input)) {
-      return input;
+      return input.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
     }
-
     if (typeof input === 'object') {
-      const maybeEvents = (input as { events?: unknown }).events;
-
-      if (Array.isArray(maybeEvents)) {
-        return maybeEvents;
+      const candidate = input as Record<string, unknown>;
+      if (Array.isArray(candidate.events)) {
+        return candidate.events.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
       }
-
-      if (maybeEvents && typeof maybeEvents === 'object') {
-        return [maybeEvents];
-      }
-
-      return [input];
+      return [candidate];
     }
-
     return [];
   };
 
-  const rawEvents = extractEvents(payload);
+  const rawEvents = asArray(payload);
 
-  if (rawEvents.length > 0) {
-    const normalizedEvents = rawEvents
-      .map((event) => normalizeWhatsAppBrokerEvent(event as Record<string, unknown>))
-      .filter((event): event is WhatsAppBrokerEvent => Boolean(event));
+  const normalizedEvents = rawEvents
+    .map((entry) => {
+      const direction = typeof entry.direction === 'string' ? entry.direction.toLowerCase() : '';
+      const eventType = typeof entry.event === 'string' ? entry.event.toLowerCase() : '';
 
-    if (normalizedEvents.length > 0) {
-      normalizedEvents.forEach((event) => enqueueWhatsAppBrokerEvents([event]));
-      logger.info('Queued WhatsApp webhook events', {
-        received: rawEvents.length,
-        queued: normalizedEvents.length,
-      });
-    } else {
-      logger.warn('WhatsApp webhook payload did not contain supported events', {
-        received: rawEvents.length,
-      });
-    }
+      if (eventType !== 'message' || direction !== 'inbound') {
+        return null;
+      }
+
+      const instanceId = typeof entry.instanceId === 'string' ? entry.instanceId.trim() : '';
+      if (!instanceId) {
+        return null;
+      }
+
+      const message = (entry.message as Record<string, unknown>) || {};
+      const from = (entry.from as Record<string, unknown>) || {};
+      const metadata = (entry.metadata as Record<string, unknown>) || {};
+
+      const messageId = typeof message.id === 'string' && message.id.trim().length > 0 ? message.id.trim() : randomUUID();
+      const timestamp = ((): string | null => {
+        if (typeof entry.timestamp === 'string') {
+          return entry.timestamp;
+        }
+        const numericTs = typeof entry.timestamp === 'number' ? entry.timestamp : typeof metadata.timestamp === 'number' ? metadata.timestamp : null;
+        if (numericTs && Number.isFinite(numericTs)) {
+          return new Date(numericTs).toISOString();
+        }
+        return null;
+      })();
+
+      const phone = typeof from.phone === 'string' ? from.phone : null;
+      const document = typeof from.document === 'string' ? from.document : null;
+
+      return {
+        id: messageId,
+        type: 'MESSAGE_INBOUND' as const,
+        instanceId,
+        timestamp: timestamp ?? null,
+        payload: {
+          instanceId,
+          timestamp,
+          contact: {
+            phone,
+            name: typeof from.name === 'string' ? from.name : null,
+            document,
+            registrations: Array.isArray(from.registrations) ? from.registrations : null,
+          },
+          message,
+          metadata,
+        },
+      };
+    })
+    .filter((event): event is { id: string; type: 'MESSAGE_INBOUND'; instanceId: string; timestamp: string | null; payload: Record<string, unknown> } => Boolean(event));
+
+  const queued = normalizedEvents.length;
+
+  if (queued > 0) {
+    enqueueWhatsAppBrokerEvents(
+      normalizedEvents.map((event) => ({
+        id: event.id,
+        type: event.type,
+        instanceId: event.instanceId,
+        timestamp: event.timestamp ?? undefined,
+        payload: event.payload,
+      }))
+    );
   }
 
-  res.json({ ok: true });
+  logger.info('WhatsApp webhook processed', {
+    received: rawEvents.length,
+    queued,
+    phones: normalizedEvents.map((event) => maskPhone((event.payload.contact as { phone?: string | null }).phone ?? null)),
+    documents: normalizedEvents.map((event) => maskDocument((event.payload.contact as { document?: string | null }).document ?? null)),
+  });
+
+  res.status(202).json({ accepted: true, queued });
 };
 
 // POST /api/webhooks/whatsapp - Webhook do WhatsApp
