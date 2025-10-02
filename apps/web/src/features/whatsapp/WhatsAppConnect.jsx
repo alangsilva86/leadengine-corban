@@ -12,6 +12,51 @@ import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import DemoAuthDialog from '@/components/DemoAuthDialog.jsx';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
+import sessionStorageAvailable from '@/lib/session-storage.js';
+
+const getInstancesCacheKey = (agreementId) =>
+  agreementId ? `leadengine:whatsapp:instances:${agreementId}` : null;
+
+const readInstancesCache = (agreementId) => {
+  const key = getInstancesCacheKey(agreementId);
+  if (!key || !sessionStorageAvailable()) {
+    return null;
+  }
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn('Não foi possível ler o cache de instâncias WhatsApp', error);
+    return null;
+  }
+};
+
+const persistInstancesCache = (agreementId, list, currentId) => {
+  const key = getInstancesCacheKey(agreementId);
+  if (!key || !sessionStorageAvailable()) {
+    return;
+  }
+  try {
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        list,
+        currentId,
+        updatedAt: Date.now(),
+      })
+    );
+  } catch (error) {
+    console.warn('Não foi possível armazenar o cache de instâncias WhatsApp', error);
+  }
+};
+
+const clearInstancesCache = (agreementId) => {
+  const key = getInstancesCacheKey(agreementId);
+  if (!key || !sessionStorageAvailable()) {
+    return;
+  }
+  sessionStorage.removeItem(key);
+};
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
 const statusCopy = {
@@ -565,6 +610,7 @@ const WhatsAppConnect = ({
     setErrorMessage(requireAuthMessage, { requiresAuth: true });
     setInstances([]);
     setInstance(null);
+    clearInstancesCache(selectedAgreement?.id);
     setLocalStatus('disconnected');
     setQrData(null);
     setSecondsLeft(null);
@@ -577,6 +623,32 @@ const WhatsAppConnect = ({
       setErrorState(null);
     }
   };
+
+  useEffect(() => {
+    const agreementId = selectedAgreement?.id;
+    if (!agreementId) {
+      setInstances([]);
+      setInstance(null);
+      return;
+    }
+
+    const cached = readInstancesCache(agreementId);
+    if (!cached) {
+      return;
+    }
+
+    const list = Array.isArray(cached.list) ? cached.list : [];
+    if (list.length > 0) {
+      const current = cached.currentId
+        ? list.find((item) => item.id === cached.currentId) || list[0]
+        : list[0];
+      setInstances(list);
+      setInstance(current ?? null);
+      if (current?.status) {
+        setLocalStatus(current.status);
+      }
+    }
+  }, [selectedAgreement?.id]);
 
   const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
 
@@ -826,6 +898,7 @@ const WhatsAppConnect = ({
   };
 
   const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
+    const agreementId = selectedAgreement?.id;
     const token = getAuthToken();
     setAuthTokenState(token);
     setLoadingInstances(true);
@@ -893,13 +966,20 @@ const WhatsAppConnect = ({
 
       const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
 
-      setInstances((previous) => {
-        if (hasServerList || (Array.isArray(list) && list.length > 0)) {
-          return list;
-        }
-        return previous;
-      });
-      setInstance(current);
+      if (Array.isArray(list) && list.length > 0) {
+        setInstances(list);
+        setInstance(current);
+        persistInstancesCache(agreementId, list, current?.id ?? null);
+      } else if (hasServerList) {
+        setInstances([]);
+        setInstance(null);
+        clearInstancesCache(agreementId);
+      } else {
+        warn('Servidor não retornou instâncias; reutilizando cache local', {
+          agreementId,
+          preferredInstanceId,
+        });
+      }
 
       const statusFromInstance =
         connectResult?.status ||

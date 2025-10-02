@@ -878,10 +878,6 @@ router.post(
       const status = statusCandidate && statusCandidate >= 400 && statusCandidate < 600 ? statusCandidate : 502;
       const retryAfter = extractRetryAfterHeader(error);
 
-      if (retryAfter) {
-        res.setHeader('Retry-After', retryAfter);
-      }
-
       const message = toErrorMessage(error, 'Falha ao buscar novos leads');
 
       logger.error('[LeadEngine] ❌ Failed to allocate leads', {
@@ -893,6 +889,40 @@ router.post(
         retryAfter,
         error,
       });
+
+      const fallbackLeads = leadEngineClient.getFallbackLeadsForAgreement(agreementId, take);
+      if (fallbackLeads.length > 0) {
+        logger.warn('[LeadEngine] ⚠️ Using fallback leads after allocation failure', {
+          tenantId,
+          campaignId,
+          agreementId,
+          requested: take,
+          fallback: fallbackLeads.length,
+        });
+
+        const { newlyAllocated, summary } = await addAllocations(tenantId, campaignId, fallbackLeads);
+
+        res.json({
+          success: true,
+          data: newlyAllocated,
+          meta: {
+            pulled: fallbackLeads.length,
+            allocated: newlyAllocated.length,
+            summary,
+            warnings: [
+              'Broker indisponível: entregando lote de demonstração. Tente novamente em instantes para dados reais.',
+            ],
+            error: message,
+            status,
+            retryAfter,
+          },
+        });
+        return;
+      }
+
+      if (retryAfter) {
+        res.setHeader('Retry-After', retryAfter);
+      }
 
       res.status(status).json({
         success: false,

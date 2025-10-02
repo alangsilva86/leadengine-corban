@@ -306,6 +306,10 @@ class LeadEngineClient {
     });
   }
 
+  public getFallbackLeadsForAgreement(agreementId: string, take = 25): BrokerLeadRecord[] {
+    return this.fallback(agreementId, take);
+  }
+
   private buildFallbackSummary(definition: AgreementDefinition): AgreementSummary {
     const fallbackLeads = FALLBACK_LEADS.filter((lead) => lead.agreementId === definition.id);
     return {

@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
@@ -77,6 +84,9 @@ const CampaignHistoryDialog = ({ agreementId }) => {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Campanhas do convênio</DialogTitle>
+          <DialogDescription>
+            Histórico das campanhas vinculadas ao convênio selecionado para garantir rastreabilidade.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           {loading ? (

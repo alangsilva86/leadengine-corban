@@ -30,6 +30,7 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
   const [loading, setLoading] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [error, setError] = useState(null);
+  const [warningMessage, setWarningMessage] = useState(null);
 
   const loadingRef = useRef(false);
   const retryStateRef = useRef({ attempts: 0, timeoutId: null });
@@ -111,6 +112,8 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
       }
       setAllocations(items);
       setError(null);
+      const warningFromApi = payload?.meta?.warnings;
+      setWarningMessage(Array.isArray(warningFromApi) && warningFromApi.length > 0 ? warningFromApi[0] : null);
       resetRateLimiter();
       log('✅ Leads sincronizados', {
         total: items.length,
@@ -177,6 +180,7 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível buscar novos leads');
+      setWarningMessage(null);
       logError('Falha ao solicitar novo lote de leads', err);
     } finally {
       setPulling(false);
@@ -348,6 +352,13 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
               <p className="text-xs text-destructive/80">
                 Dica rápida: revise se o WhatsApp conectado segue ativo e, se necessário, peça um novo lote após alguns segundos.
               </p>
+            </div>
+          ) : null}
+
+          {!error && warningMessage ? (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/15 p-4 text-sm text-amber-100">
+              <Sparkles className="mt-0.5 h-4 w-4" />
+              <span>{warningMessage}</span>
             </div>
           ) : null}
 
