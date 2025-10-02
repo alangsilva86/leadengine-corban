@@ -11,6 +11,7 @@ import {
 } from '../services/whatsapp-broker-client';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
+import { assertValidSlug, toSlug } from '../lib/slug';
 
 const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {
   if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -290,17 +291,8 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
   };
 };
 
-const slugify = (value: string, fallback = 'instance'): string => {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return normalized || fallback;
-};
-
 const ensureUniqueInstanceId = async (tenantId: string, base: string): Promise<string> => {
-  const normalizedBase = slugify(base, 'instance');
+  const normalizedBase = toSlug(base, 'instance');
 
   for (let attempt = 0; attempt < 1000; attempt += 1) {
     const candidate = attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
@@ -321,6 +313,23 @@ const ensureUniqueInstanceId = async (tenantId: string, base: string): Promise<s
 };
 
 type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>>;
+
+type InstanceMetadata = Record<string, unknown> | null | undefined;
+
+const buildHistoryEntry = (action: string, actorId: string, details?: Record<string, unknown>) => ({
+  action,
+  by: actorId,
+  at: new Date().toISOString(),
+  ...(details ?? {}),
+});
+
+const appendInstanceHistory = (metadata: InstanceMetadata, entry: ReturnType<typeof buildHistoryEntry>): Prisma.JsonObject => {
+  const base: Record<string, unknown> = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
+  const history = Array.isArray(base.history) ? [...(base.history as unknown[])] : [];
+  history.push(entry);
+  base.history = history.slice(-50);
+  return base as Prisma.JsonObject;
+};
 
 const mapDbStatusToNormalized = (
   status: WhatsAppInstanceStatus | null | undefined
@@ -603,12 +612,20 @@ router.get(
           const derivedLastSeenAt = brokerStatus?.connected ? new Date() : instance.lastSeenAt;
 
           if (brokerStatus) {
+            const metadataWithHistory = appendInstanceHistory(
+              instance.metadata as InstanceMetadata,
+              buildHistoryEntry('status-sync', 'system', {
+                status: derivedStatus,
+                connected: derivedConnected,
+              })
+            );
             await prisma.whatsAppInstance.update({
               where: { id: instance.id },
               data: {
                 status: derivedStatus,
                 connected: derivedConnected,
                 lastSeenAt: derivedLastSeenAt,
+                metadata: metadataWithHistory,
               },
             });
           }
@@ -653,9 +670,67 @@ router.post(
     const { id, name } = req.body as { id?: string; name: string };
 
     const normalizedName = name.trim();
-    const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : normalizedName;
+    const slugCandidate = toSlug(normalizedName, '');
+
+    if (!slugCandidate) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_NAME',
+          message: 'Informe um nome válido utilizando letras minúsculas, números ou hífens.',
+        },
+      });
+      return;
+    }
+
     try {
+      assertValidSlug(slugCandidate, 'nome');
+    } catch (validationError) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_NAME',
+          message: validationError instanceof Error ? validationError.message : 'Nome inválido para instância.',
+        },
+      });
+      return;
+    }
+
+    const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : slugCandidate;
+    try {
+      const existing = await prisma.whatsAppInstance.findFirst({
+        where: {
+          tenantId,
+          OR: [
+            { name: normalizedName },
+            {
+              metadata: {
+                path: ['slug'],
+                equals: slugCandidate,
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NAME_IN_USE',
+            message: 'Já existe uma instância com este nome para o tenant.',
+          },
+        });
+        return;
+      }
+
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
+      const actorId = req.user?.id ?? 'system';
+      const metadata = appendInstanceHistory(
+        { displayId: normalizedId, slug: slugCandidate },
+        buildHistoryEntry('created', actorId, { name: normalizedName })
+      );
       const instance = await prisma.whatsAppInstance.create({
         data: {
           id: normalizedId,
@@ -664,13 +739,17 @@ router.post(
           brokerId: normalizedId,
           status: 'disconnected',
           connected: false,
-          metadata: {
-            displayId: normalizedId,
-          },
+          metadata,
         },
       });
 
       const { brokerId: _brokerId, ...payload } = serializeStoredInstance(instance as StoredInstance, null);
+
+      logger.info('WhatsApp instance created', {
+        tenantId,
+        instanceId: normalizedId,
+        actorId,
+      });
 
       res.status(201).json({
         success: true,
@@ -724,9 +803,15 @@ router.post(
       await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
       const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
+      const historyEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
+        status: status.status,
+        connected: status.connected,
+      });
+
       const updates: Prisma.WhatsAppInstanceUpdateInput = {
         status: mapBrokerStatusToDbStatus(status),
         connected: status.connected,
+        metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, historyEntry),
       };
 
       if (status.connected) {
@@ -780,6 +865,21 @@ router.post(
       await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
       const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
+      const metadataEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
+        status: status.status,
+        connected: status.connected,
+      });
+
+      await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: {
+          status: mapBrokerStatusToDbStatus(status),
+          connected: status.connected,
+          metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, metadataEntry),
+          lastSeenAt: status.connected ? new Date() : instance.lastSeenAt,
+        },
+      });
+
       res.json({
         success: true,
         data: {
@@ -829,9 +929,16 @@ router.post(
       });
       const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
+      const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
+        status: status.status,
+        connected: status.connected,
+        wipe: Boolean(wipe),
+      });
+
       const updates: Prisma.WhatsAppInstanceUpdateInput = {
         status: mapBrokerStatusToDbStatus(status),
         connected: status.connected,
+        metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, historyEntry),
       };
 
       if (!status.connected) {
@@ -970,9 +1077,16 @@ router.post(
       });
       const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
+      const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
+        status: status.status,
+        connected: status.connected,
+        wipe: Boolean(wipe),
+      });
+
       const updates: Prisma.WhatsAppInstanceUpdateInput = {
         status: mapBrokerStatusToDbStatus(status),
         connected: status.connected,
+        metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, historyEntry),
       };
 
       if (!status.connected) {

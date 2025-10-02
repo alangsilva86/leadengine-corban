@@ -5,6 +5,16 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Separator } from '@/components/ui/separator.jsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog.jsx';
+import {
   QrCode,
   CheckCircle2,
   Link2,
@@ -621,6 +631,7 @@ const WhatsAppConnect = ({
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
   const [deletingInstanceId, setDeletingInstanceId] = useState(null);
+  const [instancePendingDelete, setInstancePendingDelete] = useState(null);
   const loadInstancesRef = useRef(() => {});
   const sessionActiveRef = useRef(sessionActive);
   const loadingInstancesRef = useRef(loadingInstances);
@@ -1189,11 +1200,6 @@ const WhatsAppConnect = ({
     }
 
     const agreementId = selectedAgreement?.id;
-    const confirmationMessage = `Remover a instância “${target.name || target.id}”? Esta ação é irreversível.`;
-    if (typeof window !== 'undefined' && !window.confirm(confirmationMessage)) {
-      return;
-    }
-
     setDeletingInstanceId(target.id);
     try {
       log('🗑️ Removendo instância WhatsApp', {
@@ -1603,23 +1609,23 @@ const WhatsAppConnect = ({
                           <p className="text-xs text-muted-foreground">{addressLabel}</p>
                         ) : null}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Remover instância"
-                          title={item.connected ? 'Desconecte antes de remover' : 'Remover instância'}
-                          disabled={item.connected || deletingInstanceId === item.id}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void handleDeleteInstance(item);
-                          }}
-                        >
-                          {deletingInstanceId === item.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
+                        <div className="flex items-center gap-2">
+                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Remover instância"
+                            title={item.connected ? 'Desconecte antes de remover' : 'Remover instância'}
+                            disabled={item.connected || deletingInstanceId === item.id}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setInstancePendingDelete(item);
+                            }}
+                          >
+                            {deletingInstanceId === item.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
                             <Trash2 className="h-4 w-4" />
                           )}
                         </Button>
@@ -1841,6 +1847,37 @@ const WhatsAppConnect = ({
           </CardFooter>
         </Card>
       </div>
+
+      <AlertDialog
+        open={Boolean(instancePendingDelete)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInstancePendingDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover instância</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação remove permanentemente a instância{' '}
+              <strong>{instancePendingDelete?.name || instancePendingDelete?.id || 'selecionada'}</strong>. Conferir se não há campanhas ativas utilizando este número.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!instancePendingDelete) return;
+                await handleDeleteInstance(instancePendingDelete);
+                setInstancePendingDelete(null);
+              }}
+            >
+              Remover instância
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={isQrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="max-w-lg">

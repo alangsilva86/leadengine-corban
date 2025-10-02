@@ -861,6 +861,41 @@ router.post(
     });
 
     try {
+      const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+
+      if (!campaign || campaign.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'CAMPAIGN_NOT_FOUND',
+            message: 'Campanha não encontrada para este tenant.',
+          },
+        });
+        return;
+      }
+
+      if (campaign.status !== 'active') {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'CAMPAIGN_NOT_ACTIVE',
+            message: 'A campanha precisa estar ativa para receber novos leads.',
+          },
+        });
+        return;
+      }
+
+      if (campaign.agreementId && campaign.agreementId !== agreementId) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'AGREEMENT_MISMATCH',
+            message: 'O convênio informado não corresponde ao da campanha.',
+          },
+        });
+        return;
+      }
+
       const leads = await leadEngineClient.fetchLeadsByAgreement(agreementId, take);
       const { newlyAllocated, summary } = await addAllocations(tenantId, campaignId, leads);
 

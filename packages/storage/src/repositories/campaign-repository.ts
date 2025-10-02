@@ -1,9 +1,10 @@
 import { randomUUID } from 'crypto';
 
 export enum CampaignStatus {
-  ACTIVE = 'ACTIVE',
-  PAUSED = 'PAUSED',
-  COMPLETED = 'COMPLETED',
+  DRAFT = 'draft',
+  ACTIVE = 'active',
+  PAUSED = 'paused',
+  ENDED = 'ended',
 }
 
 export interface Campaign {
@@ -65,7 +66,7 @@ const findByCompositeKey = (
 };
 
 export const createOrActivateCampaign = async (input: CreateCampaignInput): Promise<Campaign> => {
-  const status = input.status ?? CampaignStatus.ACTIVE;
+  const status = input.status ?? CampaignStatus.DRAFT;
   const bucket = getTenantBucket(input.tenantId);
   const existing = findByCompositeKey(input.tenantId, input.agreementId, input.instanceId);
   const now = new Date();
@@ -114,7 +115,11 @@ export const updateCampaignStatus = async (
   const now = new Date();
   campaign.status = status;
   campaign.updatedAt = now;
-  campaign.endDate = status === CampaignStatus.ACTIVE ? null : now;
+  if (status === CampaignStatus.ACTIVE) {
+    campaign.endDate = null;
+  } else if (status === CampaignStatus.ENDED) {
+    campaign.endDate = now;
+  }
   return campaign;
 };
 
@@ -176,9 +181,10 @@ export const listCampaigns = async (filters: CampaignFilters): Promise<Campaign[
   }
 
   const statusOrder: Record<CampaignStatus, number> = {
-    [CampaignStatus.ACTIVE]: 0,
-    [CampaignStatus.PAUSED]: 1,
-    [CampaignStatus.COMPLETED]: 2,
+    [CampaignStatus.DRAFT]: 0,
+    [CampaignStatus.ACTIVE]: 1,
+    [CampaignStatus.PAUSED]: 2,
+    [CampaignStatus.ENDED]: 3,
   };
 
   campaigns.sort((a, b) => {
