@@ -536,7 +536,7 @@ const Dashboard = ({ onboarding, onStart }) => {
   const leadsQuery = useQuery({
     queryKey: ['leads', 'dashboard'],
     queryFn: async () => {
-      const payload = await apiGet('/api/leads?limit=200');
+      const payload = await apiGet('/api/leads?size=200');
       return payload?.data ?? null;
     },
   });

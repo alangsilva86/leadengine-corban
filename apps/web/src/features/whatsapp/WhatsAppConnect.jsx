@@ -456,6 +456,17 @@ const formatPhoneNumber = (value) => {
   return `(${ddd}) ${nine}${prefix}-${suffix}`;
 };
 
+const resolveInstancePhone = (instance) =>
+  instance?.phoneNumber ||
+  instance?.number ||
+  instance?.msisdn ||
+  instance?.metadata?.phoneNumber ||
+  instance?.metadata?.phone_number ||
+  instance?.metadata?.msisdn ||
+  instance?.jid ||
+  instance?.session ||
+  '';
+
 const extractQrPayload = (payload) => {
   if (!payload) return null;
 
@@ -726,6 +737,17 @@ const WhatsAppConnect = ({
   const qrStatusMessage = localStatus === 'connected'
     ? 'Conexão ativa — QR oculto.'
     : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
+
+  useEffect(() => {
+    if (!selectedAgreement?.id) {
+      return;
+    }
+    if (!isAuthenticated) {
+      return;
+    }
+    void loadInstances({ forceRefresh: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, selectedAgreement?.id]);
 
   useEffect(() => {
     setLocalStatus(status);
@@ -1577,16 +1599,7 @@ const WhatsAppConnect = ({
                     {instance?.name || instance?.id || 'Escolha uma instância'}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {instance
-                      ? formatPhoneNumber(
-                          instance.phoneNumber ||
-                            instance.number ||
-                            instance?.metadata?.phoneNumber ||
-                            instance?.metadata?.phone_number ||
-                            instance?.metadata?.msisdn ||
-                            ''
-                        )
-                      : '—'}
+                    {instance ? formatPhoneNumber(resolveInstancePhone(instance)) : '—'}
                   </p>
                 </div>
                 <div>
@@ -1615,7 +1628,7 @@ const WhatsAppConnect = ({
                 <span>{instances.length} ativa(s)</span>
               </div>
               {instances.length > 0 ? (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                   {instances.map((item, index) => {
                     const isCurrent = instance?.id === item.id;
                     const statusInfo = getStatusInfo(item);
@@ -1623,16 +1636,7 @@ const WhatsAppConnect = ({
                     const statusValues = metrics.status || {};
                     const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
                     const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
-                    const phoneLabel =
-                      item.phoneNumber ||
-                      item.number ||
-                      item.msisdn ||
-                      item?.metadata?.phoneNumber ||
-                      item?.metadata?.phone_number ||
-                      item?.metadata?.msisdn ||
-                      item.jid ||
-                      item.session ||
-                      '';
+                    const phoneLabel = resolveInstancePhone(item);
                     const addressLabel = item.address || item.jid || item.session || '';
                     const lastUpdated = item.updatedAt || item.lastSeen || item.connectedAt;
                     const lastUpdatedLabel = lastUpdated
@@ -1643,7 +1647,7 @@ const WhatsAppConnect = ({
                       <div
                         key={item.id || item.name || index}
                         className={cn(
-                          'flex h-full flex-col rounded-2xl border p-4 transition-colors',
+                          'flex h-full min-w-[260px] flex-col rounded-2xl border p-4 transition-colors',
                           isCurrent
                             ? 'border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(99,102,241,0.45)]'
                             : 'border-white/10 bg-white/5 hover:border-primary/30'
