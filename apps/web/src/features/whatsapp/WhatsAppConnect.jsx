@@ -956,6 +956,16 @@ const WhatsAppConnect = ({
       let list = hasServerList ? response.data : [];
       let connectResult = providedConnect || null;
 
+      if (Array.isArray(list) && list.length === 0) {
+        const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
+          () => null
+        );
+        const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
+        if (refreshedList.length > 0) {
+          list = refreshedList;
+        }
+      }
+
       if (!Array.isArray(list) || list.length === 0) {
         const fallbackInstanceId = preferredInstanceId || campaign?.instanceId || null;
         connectResult = connectResult || (await connectInstance(fallbackInstanceId));

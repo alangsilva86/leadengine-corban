@@ -367,6 +367,40 @@ const mapBrokerStatusToDbStatus = (
   }
 };
 
+const resolvePhoneNumber = (
+  instance: StoredInstance,
+  metadata: Record<string, unknown>,
+  brokerStatus?: WhatsAppStatus | null
+): string | null => {
+  const phone = pickString(
+    instance.phoneNumber,
+    metadata.phoneNumber,
+    metadata.phone_number,
+    metadata.msisdn,
+    metadata.phone,
+    metadata.number,
+    brokerStatus && typeof brokerStatus === 'object'
+      ? (brokerStatus as Record<string, unknown>).phoneNumber
+      : null
+  );
+
+  return phone ?? null;
+};
+
+const mapBrokerInstanceStatusToDbStatus = (status: string | null | undefined): WhatsAppInstanceStatus => {
+  switch (status) {
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+    case 'qr_required':
+      return 'connecting';
+    case 'disconnected':
+      return 'disconnected';
+    default:
+      return 'error';
+  }
+};
+
 const serializeStoredInstance = (
   instance: StoredInstance,
   brokerStatus?: WhatsAppStatus | null
@@ -400,6 +434,8 @@ const serializeStoredInstance = (
     metadata.brokerRateUsage = brokerStatus.rateUsage;
   }
 
+  const phoneNumber = resolvePhoneNumber(instance, metadata, brokerStatus);
+
   return {
     id: instance.id,
     tenantId: instance.tenantId,
@@ -408,7 +444,7 @@ const serializeStoredInstance = (
     connected,
     createdAt: instance.createdAt.toISOString(),
     lastActivity: instance.lastSeenAt ? instance.lastSeenAt.toISOString() : null,
-    phoneNumber: instance.phoneNumber ?? null,
+    phoneNumber,
     user: null,
     stats,
     metrics,
@@ -515,6 +551,93 @@ const normalizeInstanceStatusResponse = (
   };
 };
 
+const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstance[]): Promise<StoredInstance[]> => {
+  const brokerInstances = await whatsappBrokerClient.listInstances(tenantId);
+
+  if (!brokerInstances.length) {
+    return existing;
+  }
+
+  const existingMap = new Map(existing.map((item) => [item.id, item]));
+
+  for (const brokerInstance of brokerInstances) {
+    const instanceId = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
+    if (!instanceId) {
+      continue;
+    }
+
+    let brokerStatus: WhatsAppStatus | null = null;
+    try {
+      brokerStatus = await whatsappBrokerClient.getStatus(instanceId, { instanceId });
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        throw error;
+      }
+    }
+
+    const existingInstance = existingMap.get(instanceId) ?? null;
+    const derivedStatus = brokerStatus
+      ? mapBrokerStatusToDbStatus(brokerStatus)
+      : mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
+    const derivedConnected = brokerStatus?.connected ?? Boolean(brokerInstance.connected);
+    const phoneNumber = ((): string | null => {
+      const metadata = (existingInstance?.metadata as Record<string, unknown> | null) ?? {};
+      const brokerMetadata = brokerStatus?.raw && typeof brokerStatus.raw === 'object' ? (brokerStatus.raw as Record<string, unknown>) : {};
+      return (
+        pickString(
+          brokerInstance.phoneNumber,
+          metadata.phoneNumber,
+          metadata.phone_number,
+          brokerMetadata.phoneNumber,
+          brokerMetadata.phone_number
+        ) ?? null
+      );
+    })();
+
+    const historyEntry = buildHistoryEntry('broker-sync', 'system', {
+      status: derivedStatus,
+      connected: derivedConnected,
+      phoneNumber,
+    });
+
+    if (existingInstance) {
+      await prisma.whatsAppInstance.update({
+        where: { id: existingInstance.id },
+        data: {
+          tenantId,
+          name: brokerInstance.name ?? existingInstance.name ?? instanceId,
+          status: derivedStatus,
+          connected: derivedConnected,
+          ...(phoneNumber ? { phoneNumber } : {}),
+          metadata: appendInstanceHistory(existingInstance.metadata as InstanceMetadata, historyEntry),
+        },
+      });
+    } else {
+      const baseMetadata: InstanceMetadata = {
+        origin: 'broker-sync',
+      };
+
+      await prisma.whatsAppInstance.create({
+        data: {
+          id: instanceId,
+          tenantId,
+          name: brokerInstance.name ?? instanceId,
+          brokerId: instanceId,
+          status: derivedStatus,
+          connected: derivedConnected,
+          phoneNumber,
+          metadata: appendInstanceHistory(baseMetadata, historyEntry),
+        },
+      });
+    }
+  }
+
+  return prisma.whatsAppInstance.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: 'asc' },
+  });
+};
+
 const parseNumber = (input: unknown): number | null => {
   if (typeof input === 'number' && Number.isFinite(input)) {
     return input;
@@ -585,12 +708,18 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
+    const refreshRequested =
+      req.query.refresh === '1' || req.query.refresh === 'true' || req.query.refresh === 'yes';
 
     try {
-      const storedInstances = await prisma.whatsAppInstance.findMany({
+      let storedInstances = await prisma.whatsAppInstance.findMany({
         where: { tenantId },
         orderBy: { createdAt: 'asc' },
       });
+
+      if (refreshRequested || storedInstances.length === 0) {
+        storedInstances = await syncInstancesFromBroker(tenantId, storedInstances);
+      }
 
       const normalized = await Promise.all(
         storedInstances.map(async (instance) => {
@@ -645,6 +774,13 @@ router.get(
             } as StoredInstance,
             brokerStatus
           );
+
+          if (serialized.phoneNumber && serialized.phoneNumber !== instance.phoneNumber) {
+            await prisma.whatsAppInstance.update({
+              where: { id: instance.id },
+              data: { phoneNumber: serialized.phoneNumber },
+            });
+          }
 
           const { brokerId: _brokerId, ...responseInstance } = serialized;
           return responseInstance;
