@@ -9,6 +9,7 @@ import {
   WhatsAppBrokerNotConfiguredError,
   type WhatsAppStatus,
 } from '../services/whatsapp-broker-client';
+import { emitToTenant } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { assertValidSlug, toSlug } from '../lib/slug';
@@ -395,6 +396,296 @@ const mergeRecords = (
   return hasValue ? merged : undefined;
 };
 
+const normalizeKeyName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const toNumeric = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
+const collectNumericFromSources = (sources: unknown[], keywords: string[]): number | null => {
+  const normalizedKeywords = keywords.map(normalizeKeyName).filter((entry) => entry.length > 0);
+
+  const inspect = (
+    root: unknown,
+    visited: Set<unknown>,
+    override?: string[]
+  ): number | null => {
+    if (!root || typeof root !== 'object') {
+      return null;
+    }
+
+    const targetKeywords = override ?? normalizedKeywords;
+    const queue: unknown[] = Array.isArray(root) ? [...root] : [root];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || typeof current !== 'object') {
+        continue;
+      }
+
+      if (visited.has(current)) {
+        continue;
+      }
+      visited.add(current);
+
+      if (Array.isArray(current)) {
+        for (const entry of current) {
+          queue.push(entry);
+        }
+        continue;
+      }
+
+      for (const [key, value] of Object.entries(current)) {
+        const normalizedKey = normalizeKeyName(key);
+        const hasMatch = targetKeywords.some((keyword) => normalizedKey.includes(keyword));
+
+        if (hasMatch) {
+          const numeric = toNumeric(value);
+          if (numeric !== null) {
+            return numeric;
+          }
+
+          if (value && typeof value === 'object') {
+            const nested = inspect(value, visited, ['total', 'value', 'count', 'quantity'].map(normalizeKeyName));
+            if (nested !== null) {
+              return nested;
+            }
+          }
+        }
+
+        if (value && typeof value === 'object') {
+          queue.push(value);
+        }
+      }
+    }
+
+    return null;
+  };
+
+  for (const source of sources) {
+    const result = inspect(source, new Set());
+    if (result !== null) {
+      return result;
+    }
+  }
+
+  return null;
+};
+
+const locateStatusCountsCandidate = (sources: unknown[]): unknown => {
+  const keywords = [
+    'statuscounts',
+    'statuscount',
+    'statusmap',
+    'statusmetrics',
+    'statuses',
+    'bystatus',
+    'messagestatuscounts',
+    'messagesstatuscounts',
+    'status',
+  ];
+  const normalizedKeywords = keywords.map(normalizeKeyName);
+  const statusKeys = new Set(['1', '2', '3', '4', '5']);
+
+  const visited = new Set<unknown>();
+  const queue: unknown[] = sources.filter((item) => item !== undefined && item !== null);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      if (current.length > 0 && current.every((entry) => typeof entry === 'number')) {
+        return current;
+      }
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    const numericKeys = Object.keys(record).filter((key) => statusKeys.has(key));
+    if (numericKeys.length >= 3) {
+      return record;
+    }
+
+    for (const [key, value] of Object.entries(record)) {
+      const normalizedKey = normalizeKeyName(key);
+      if (normalizedKeywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (value && typeof value === 'object') {
+          return value;
+        }
+      }
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeStatusCountsData = (rawCounts: unknown): Record<string, number> | null => {
+  if (!rawCounts) {
+    return null;
+  }
+
+  const defaultKeys = ['1', '2', '3', '4', '5'];
+  const normalizedEntries = new Map<string, number>();
+
+  if (Array.isArray(rawCounts)) {
+    rawCounts.forEach((value, index) => {
+      const numeric = toNumeric(value);
+      if (numeric === null) {
+        return;
+      }
+      normalizedEntries.set(normalizeKeyName(String(index + 1)), numeric);
+    });
+  } else if (typeof rawCounts === 'object') {
+    for (const [key, value] of Object.entries(rawCounts)) {
+      const numeric = toNumeric(value);
+      if (numeric === null) {
+        continue;
+      }
+      normalizedEntries.set(normalizeKeyName(key), numeric);
+    }
+  }
+
+  if (normalizedEntries.size === 0) {
+    return null;
+  }
+
+  const result: Record<string, number> = {};
+
+  defaultKeys.forEach((key) => {
+    const normalizedKey = normalizeKeyName(key);
+    const candidates = [
+      normalizedKey,
+      normalizeKeyName(`status_${key}`),
+      normalizeKeyName(`status${key}`),
+    ];
+
+    let resolved = 0;
+    for (const candidate of candidates) {
+      if (normalizedEntries.has(candidate)) {
+        resolved = normalizedEntries.get(candidate) ?? 0;
+        break;
+      }
+    }
+
+    result[key] = resolved;
+  });
+
+  return result;
+};
+
+const locateRateSourceCandidate = (sources: unknown[]): Record<string, unknown> | null => {
+  const keywords = ['rateusage', 'ratelimit', 'ratelimiter', 'rate', 'throttle', 'quota'];
+  const normalizedKeywords = keywords.map(normalizeKeyName);
+  const visited = new Set<unknown>();
+  const queue: unknown[] = sources.filter((item) => item !== undefined && item !== null);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    for (const [key, value] of Object.entries(record)) {
+      const normalizedKey = normalizeKeyName(key);
+      if (normalizedKeywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (value && typeof value === 'object') {
+          return value as Record<string, unknown>;
+        }
+      }
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return null;
+};
+
+const normalizeRateUsageData = (rawRate: unknown): {
+  used: number;
+  limit: number;
+  remaining: number;
+  percentage: number;
+} | null => {
+  if (!rawRate || typeof rawRate !== 'object') {
+    return null;
+  }
+
+  const source = rawRate as Record<string, unknown>;
+
+  const used =
+    collectNumericFromSources([source], ['usage', 'used', 'current', 'value', 'count', 'consumed']) ??
+    null;
+  const limit =
+    collectNumericFromSources([source], ['limit', 'max', 'maximum', 'quota', 'total', 'capacity']) ??
+    null;
+  const remaining =
+    collectNumericFromSources([source], ['remaining', 'left', 'available', 'saldo', 'restante']) ??
+    null;
+
+  const resolvedLimit = typeof limit === 'number' ? Math.max(0, limit) : null;
+  let resolvedUsed = typeof used === 'number' ? Math.max(0, used) : null;
+  let resolvedRemaining = typeof remaining === 'number' ? Math.max(0, remaining) : null;
+
+  if (resolvedUsed === null && resolvedRemaining !== null && resolvedLimit !== null) {
+    resolvedUsed = Math.max(0, resolvedLimit - resolvedRemaining);
+  }
+
+  if (resolvedRemaining === null && resolvedLimit !== null && resolvedUsed !== null) {
+    resolvedRemaining = Math.max(0, resolvedLimit - resolvedUsed);
+  }
+
+  const usedValue = resolvedUsed ?? 0;
+  const limitValue = resolvedLimit ?? 0;
+  const remainingValue = resolvedRemaining ?? (limitValue ? Math.max(0, limitValue - usedValue) : 0);
+  const percentageValue = limitValue > 0 ? Math.min(100, Math.round((usedValue / limitValue) * 100)) : usedValue > 0 ? 100 : 0;
+
+  if (!usedValue && !limitValue && !remainingValue) {
+    return null;
+  }
+
+  return {
+    used: usedValue,
+    limit: limitValue,
+    remaining: remainingValue,
+    percentage: percentageValue,
+  };
+};
+
 const normalizePhoneCandidate = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -542,7 +833,7 @@ const serializeStoredInstance = (
       asRecord((instance.metadata as Record<string, unknown> | null)?.stats)
     ) ?? undefined;
 
-  const metrics =
+  let metrics =
     mergeRecords(
       asRecord(brokerStatus?.metrics),
       asRecord(brokerStatus?.rateUsage),
@@ -575,6 +866,84 @@ const serializeStoredInstance = (
   }
 
   const phoneNumber = resolvePhoneNumber(instance, metadata, brokerStatus);
+
+  const brokerRecord = brokerStatus
+    ? ((brokerStatus as unknown) as Record<string, unknown>)
+    : null;
+
+  const dataSources: unknown[] = [
+    metrics,
+    stats,
+    messages,
+    rawStatus,
+    brokerRecord,
+  ].filter((value) => value !== undefined && value !== null);
+
+  const sentMetric = collectNumericFromSources(dataSources, [
+    'messagessent',
+    'messagesent',
+    'totalsent',
+    'senttotal',
+    'sent',
+    'enviadas',
+    'enviados',
+  ]);
+
+  const queuedMetric = collectNumericFromSources(dataSources, [
+    'queue',
+    'queued',
+    'pending',
+    'waiting',
+    'fila',
+    'aguardando',
+  ]);
+
+  const failedMetric = collectNumericFromSources(dataSources, [
+    'fail',
+    'failed',
+    'failure',
+    'falha',
+    'falhas',
+    'error',
+    'errors',
+    'erro',
+    'erros',
+  ]);
+
+  const statusCountsCandidate = locateStatusCountsCandidate(dataSources);
+  const normalizedStatusCounts = normalizeStatusCountsData(statusCountsCandidate);
+  const rateSourceCandidate = locateRateSourceCandidate(dataSources);
+  const normalizedRateUsage = normalizeRateUsageData(rateSourceCandidate);
+
+  const normalizedMetrics: Record<string, unknown> = metrics ? { ...metrics } : {};
+
+  if (sentMetric !== null) {
+    normalizedMetrics.messagesSent = sentMetric;
+    normalizedMetrics.sent = sentMetric;
+  }
+
+  if (queuedMetric !== null) {
+    normalizedMetrics.queued = queuedMetric;
+    normalizedMetrics.pending = queuedMetric;
+  }
+
+  if (failedMetric !== null) {
+    normalizedMetrics.failed = failedMetric;
+    normalizedMetrics.errors = failedMetric;
+  }
+
+  if (normalizedStatusCounts) {
+    normalizedMetrics.statusCounts = normalizedStatusCounts;
+  }
+
+  if (normalizedRateUsage) {
+    normalizedMetrics.rateUsage = normalizedRateUsage;
+  }
+
+  metrics = Object.keys(normalizedMetrics).length > 0 ? normalizedMetrics : undefined;
+  if (metrics) {
+    metadata.normalizedMetrics = normalizedMetrics;
+  }
 
   return {
     id: instance.id,
@@ -779,6 +1148,15 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
           metadata: appendInstanceHistory(existingInstance.metadata as InstanceMetadata, historyEntry),
         },
       });
+
+      emitToTenant(tenantId, 'whatsapp.instance.updated', {
+        id: instanceId,
+        status: derivedStatus,
+        connected: derivedConnected,
+        phoneNumber,
+        syncedAt: new Date().toISOString(),
+        history: historyEntry,
+      });
     } else {
       logger.info('🛰️ [WhatsApp] Sync creating instance missing from storage', {
         tenantId,
@@ -802,6 +1180,15 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
           phoneNumber,
           metadata: appendInstanceHistory(baseMetadata, historyEntry),
         },
+      });
+
+      emitToTenant(tenantId, 'whatsapp.instance.created', {
+        id: instanceId,
+        status: derivedStatus,
+        connected: derivedConnected,
+        phoneNumber,
+        syncedAt: new Date().toISOString(),
+        history: historyEntry,
       });
     }
   }
@@ -2146,5 +2533,14 @@ router.get(
     });
   })
 );
+
+export const __testing = {
+  collectNumericFromSources,
+  locateStatusCountsCandidate,
+  normalizeStatusCountsData,
+  locateRateSourceCandidate,
+  normalizeRateUsageData,
+  serializeStoredInstance,
+};
 
 export { router as integrationsRouter };

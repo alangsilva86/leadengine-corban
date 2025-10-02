@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -24,6 +24,8 @@ import {
   AlertCircle,
   Loader2,
   Trash2,
+  ChevronDown,
+  History,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
@@ -34,6 +36,12 @@ import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import sessionStorageAvailable from '@/lib/session-storage.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible.jsx';
+import useInstanceLiveUpdates from './hooks/useInstanceLiveUpdates.js';
 
 const getInstancesCacheKey = (agreementId) =>
   agreementId ? `leadengine:whatsapp:instances:${agreementId}` : null;
@@ -114,13 +122,71 @@ const statusCodeMeta = [
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
+const normalizeKeyName = (value) => `${value}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const pickMetric = (source, keys) => {
   if (!source) return undefined;
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== null && source[key] !== undefined) {
-      return source[key];
+
+  const normalizedTargets = keys.map(normalizeKeyName);
+  const visited = new Set();
+  const stack = Array.isArray(source) ? [...source] : [source];
+
+  const inspectNested = (value) => {
+    return pickMetric(value, ['total', 'value', 'count', 'quantity']);
+  };
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === null || current === undefined) {
+      continue;
+    }
+
+    if (typeof current !== 'object') {
+      const direct = toNumber(current);
+      if (direct !== null) {
+        return direct;
+      }
+      continue;
+    }
+
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        stack.push(entry);
+      }
+      continue;
+    }
+
+    for (const [propKey, propValue] of Object.entries(current)) {
+      const hasExactMatch = keys.includes(propKey);
+      const normalizedKey = normalizeKeyName(propKey);
+      const fuzzyMatch = normalizedTargets.some((target) =>
+        target.length > 0 && normalizedKey.includes(target)
+      );
+
+      if (hasExactMatch || fuzzyMatch) {
+        const numeric = toNumber(propValue);
+        if (numeric !== null) {
+          return numeric;
+        }
+        if (propValue && typeof propValue === 'object') {
+          const nested = inspectNested(propValue);
+          if (nested !== undefined) {
+            return nested;
+          }
+        }
+      }
+
+      if (propValue && typeof propValue === 'object') {
+        stack.push(propValue);
+      }
     }
   }
+
   return undefined;
 };
 
@@ -140,27 +206,62 @@ const toNumber = (value) => {
 };
 
 const findStatusCountsSource = (source) => {
-  if (!source || typeof source !== 'object') {
+  if (!source) {
     return undefined;
   }
 
-  const candidates = [
-    source.statusCounts,
-    source.status_counts,
-    source.messageStatusCounts,
-    source.message_status_counts,
-    source.messagesStatusCounts,
-    source.messages_status_counts,
-    source.statusMap,
-    source.statuses,
-    source.counts,
-    source.counters,
-    source.status,
+  const keywords = [
+    'statuscounts',
+    'statuscount',
+    'statusmap',
+    'statusmetrics',
+    'statuses',
+    'bystatus',
+    'messagestatuscounts',
+    'messagesstatuscounts',
+    'status',
   ];
+  const keySet = new Set(['1', '2', '3', '4', '5']);
 
-  for (const candidate of candidates) {
-    if (candidate && (typeof candidate === 'object' || Array.isArray(candidate))) {
-      return candidate;
+  const visited = new Set();
+  const queue = Array.isArray(source) ? [...source] : [source];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      if (current.length && current.every((value) => typeof value === 'number')) {
+        return current;
+      }
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    const record = current;
+    const numericKeys = Object.keys(record).filter((key) => keySet.has(key));
+    if (numericKeys.length >= 3) {
+      return record;
+    }
+
+    for (const [propKey, propValue] of Object.entries(record)) {
+      const normalizedKey = normalizeKeyName(propKey);
+      if (keywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (propValue && typeof propValue === 'object') {
+          return propValue;
+        }
+      }
+      if (propValue && typeof propValue === 'object') {
+        queue.push(propValue);
+      }
     }
   }
 
@@ -204,24 +305,41 @@ const normalizeStatusCounts = (rawCounts) => {
 };
 
 const findRateSource = (source) => {
-  if (!source || typeof source !== 'object') {
+  if (!source) {
     return undefined;
   }
 
-  const candidates = [
-    source.rateUsage,
-    source.rate,
-    source.rateLimiter,
-    source.rateLimit,
-    source.limits?.rate,
-    source.limits,
-    source.limit,
-    source.throttle,
-  ];
+  const keywords = ['rateusage', 'ratelimit', 'ratelimiter', 'rate', 'throttle', 'quota'];
+  const visited = new Set();
+  const queue = Array.isArray(source) ? [...source] : [source];
 
-  for (const candidate of candidates) {
-    if (candidate && typeof candidate === 'object') {
-      return candidate;
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    for (const [propKey, propValue] of Object.entries(current)) {
+      const normalizedKey = normalizeKeyName(propKey);
+      if (keywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (propValue && typeof propValue === 'object') {
+          return propValue;
+        }
+      }
+      if (propValue && typeof propValue === 'object') {
+        queue.push(propValue);
+      }
     }
   }
 
@@ -330,6 +448,38 @@ const formatMetricValue = (value) => {
     return value;
   }
   return '—';
+};
+
+const humanizeLabel = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 'Atualização';
+  }
+
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+};
+
+const formatTimestampLabel = (value) => {
+  if (!value) {
+    return '—';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  try {
+    return date.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  } catch (_error) {
+    return date.toISOString();
+  }
 };
 
 const isDataUrl = (value) => typeof value === 'string' && value.trim().toLowerCase().startsWith('data:');
@@ -638,13 +788,16 @@ const WhatsAppConnect = ({
   const [loadingQr, setLoadingQr] = useState(false);
   const [authToken, setAuthTokenState] = useState(() => getAuthToken());
   const [sessionActive, setSessionActive] = useState(() => Boolean(getAuthToken()));
+  const [authDeferred, setAuthDeferred] = useState(false);
   const [errorState, setErrorState] = useState(null);
   const [localStatus, setLocalStatus] = useState(status);
+  const [qrPanelOpen, setQrPanelOpen] = useState(status !== 'connected');
   const [campaign, setCampaign] = useState(activeCampaign || null);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
   const [deletingInstanceId, setDeletingInstanceId] = useState(null);
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
+  const [liveEvents, setLiveEvents] = useState([]);
   const loadInstancesRef = useRef(() => {});
   const hasFetchedOnceRef = useRef(false);
   const sessionActiveRef = useRef(sessionActive);
@@ -659,18 +812,26 @@ const WhatsAppConnect = ({
     return status === 401 || status === 403;
   };
 
-  const enforceAuthPrompt = () => {
+  const handleAuthFallback = ({ reset = false } = {}) => {
     setSessionActive(false);
+    setAuthDeferred(true);
+    setAuthTokenState(null);
     setLoadingInstances(false);
     setLoadingQr(false);
     setErrorMessage(requireAuthMessage, { requiresAuth: true });
-    setInstances([]);
-    setInstance(null);
-    clearInstancesCache(selectedAgreement?.id);
-    setLocalStatus('disconnected');
-    setQrData(null);
-    setSecondsLeft(null);
-    setInstancesReady(true);
+    if (reset) {
+      setInstances([]);
+      setInstance(null);
+      clearInstancesCache(selectedAgreement?.id);
+      setLocalStatus('disconnected');
+      setQrData(null);
+      setSecondsLeft(null);
+      setInstancesReady(true);
+    }
+  };
+
+  const enforceAuthPrompt = () => {
+    handleAuthFallback({ reset: true });
   };
 
   const setErrorMessage = (message, meta = {}) => {
@@ -730,7 +891,7 @@ const WhatsAppConnect = ({
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   const generatingQrRef = useRef(isGeneratingQrImage);
   const hasQr = Boolean(qrImageSrc);
-  const isAuthenticated = sessionActive || Boolean(authToken);
+  const isAuthenticated = (sessionActive || Boolean(authToken)) && !authDeferred;
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || 'border-white/10 bg-white/10 text-white';
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -749,6 +910,158 @@ const WhatsAppConnect = ({
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
   const instanceCount = instances.length;
   const instancesCountLabel = instancesReady ? `${instanceCount} ativa(s)` : 'Sincronizando…';
+
+  const handleRealtimeEvent = useCallback((event) => {
+    if (!event || typeof event !== 'object' || !event.payload) {
+      return;
+    }
+
+    const payload = event.payload;
+    const eventInstanceId =
+      payload.id || payload.instanceId || payload.brokerId || payload.sessionId || null;
+
+    if (!eventInstanceId) {
+      return;
+    }
+
+    const timestampCandidate =
+      (typeof payload.syncedAt === 'string' && payload.syncedAt) ||
+      (typeof payload.timestamp === 'string' && payload.timestamp) ||
+      new Date().toISOString();
+
+    const statusCandidate = (() => {
+      if (typeof payload.status === 'string') {
+        return payload.status;
+      }
+      if (payload.status && typeof payload.status === 'object') {
+        if (typeof payload.status.current === 'string') {
+          return payload.status.current;
+        }
+        if (typeof payload.status.status === 'string') {
+          return payload.status.status;
+        }
+      }
+      return null;
+    })();
+
+    const connectedCandidate = (() => {
+      if (typeof payload.connected === 'boolean') {
+        return payload.connected;
+      }
+      if (payload.status && typeof payload.status === 'object') {
+        if (typeof payload.status.connected === 'boolean') {
+          return payload.status.connected;
+        }
+      }
+      return null;
+    })();
+
+    const phoneCandidate = (() => {
+      if (typeof payload.phoneNumber === 'string') {
+        return payload.phoneNumber;
+      }
+      if (payload.metadata && typeof payload.metadata === 'object') {
+        const metadata = payload.metadata;
+        if (typeof metadata.phoneNumber === 'string') {
+          return metadata.phoneNumber;
+        }
+        if (typeof metadata.phone_number === 'string') {
+          return metadata.phone_number;
+        }
+        if (typeof metadata.msisdn === 'string') {
+          return metadata.msisdn;
+        }
+      }
+      return null;
+    })();
+
+    setLiveEvents((previous) => {
+      const next = [
+        {
+          id: `${event.type}-${eventInstanceId}-${timestampCandidate}`,
+          instanceId: eventInstanceId,
+          type: typeof event.type === 'string' && event.type ? event.type : 'updated',
+          status: statusCandidate,
+          connected: connectedCandidate,
+          phoneNumber: phoneCandidate,
+          timestamp: timestampCandidate,
+        },
+        ...previous,
+      ];
+
+      const seen = new Set();
+      const deduped = [];
+      for (const entry of next) {
+        const key = `${entry.instanceId}-${entry.timestamp}-${entry.type}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        deduped.push(entry);
+        if (deduped.length >= 30) {
+          break;
+        }
+      }
+
+      return deduped;
+    });
+  }, []);
+
+  const tenantRoomId = selectedAgreement?.tenantId ?? selectedAgreement?.id ?? null;
+
+  const { connected: realtimeConnected } = useInstanceLiveUpdates({
+    tenantId: tenantRoomId,
+    enabled: Boolean(tenantRoomId) && !authDeferred,
+    onEvent: handleRealtimeEvent,
+  });
+
+  useEffect(() => {
+    setLiveEvents([]);
+  }, [selectedAgreement?.id]);
+
+  const timelineItems = useMemo(() => {
+    if (!instance) {
+      return [];
+    }
+
+    const metadata =
+      instance.metadata && typeof instance.metadata === 'object' ? instance.metadata : {};
+    const historyEntries = Array.isArray(metadata.history) ? metadata.history : [];
+
+    const normalizedHistory = historyEntries
+      .map((entry, index) => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const timestamp =
+          (typeof entry.at === 'string' && entry.at) ||
+          (typeof entry.timestamp === 'string' && entry.timestamp) ||
+          null;
+
+        return {
+          id: `history-${instance.id}-${timestamp ?? index}`,
+          instanceId: instance.id,
+          type: typeof entry.action === 'string' ? entry.action : 'status-sync',
+          status: typeof entry.status === 'string' ? entry.status : entry.status ?? null,
+          connected: typeof entry.connected === 'boolean' ? entry.connected : null,
+          phoneNumber: typeof entry.phoneNumber === 'string' ? entry.phoneNumber : null,
+          timestamp: timestamp ?? new Date(Date.now() - index * 1000).toISOString(),
+        };
+      })
+      .filter(Boolean);
+
+    const liveForInstance = liveEvents.filter((event) => event.instanceId === instance.id);
+
+    const merged = [...liveForInstance, ...normalizedHistory];
+
+    return merged
+      .sort((a, b) => {
+        const aTime = new Date(a.timestamp ?? '').getTime();
+        const bTime = new Date(b.timestamp ?? '').getTime();
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      })
+      .slice(0, 12);
+  }, [instance, liveEvents]);
 
   useEffect(() => {
     if (!selectedAgreement?.id) {
@@ -770,6 +1083,10 @@ const WhatsAppConnect = ({
   useEffect(() => {
     setLocalStatus(status);
   }, [status]);
+
+  useEffect(() => {
+    setQrPanelOpen(localStatus !== 'connected');
+  }, [localStatus]);
 
   useEffect(() => {
     sessionActiveRef.current = sessionActive;
@@ -933,6 +1250,7 @@ const WhatsAppConnect = ({
   const connectInstance = async (instanceId = null) => {
     const response = await apiPost('/api/integrations/whatsapp/instances/connect', instanceId ? { instanceId } : {});
     setSessionActive(true);
+    setAuthDeferred(false);
     const payload = response?.data ?? {};
     const instanceFromPayload = extractInstanceFromPayload(payload) || null;
 
@@ -1012,6 +1330,7 @@ const WhatsAppConnect = ({
       );
       const hasServerList = Array.isArray(response?.data);
       setSessionActive(true);
+      setAuthDeferred(false);
       let list = hasServerList ? response.data : [];
       let connectResult = providedConnect || null;
 
@@ -1034,13 +1353,13 @@ const WhatsAppConnect = ({
         } else if (connectResult?.instance) {
           list = [connectResult.instance];
         } else {
-          const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
-            () => null
-          );
-          const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
-          if (refreshedList.length > 0) {
-            list = refreshedList;
-          }
+      const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
+        () => null
+      );
+      const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
+      if (refreshedList.length > 0) {
+        list = refreshedList;
+      }
         }
       }
 
@@ -1105,6 +1424,7 @@ const WhatsAppConnect = ({
           : null) ||
         current?.status ||
         'disconnected';
+      setAuthDeferred(false);
       setLocalStatus(statusFromInstance);
       onStatusChange?.(statusFromInstance);
 
@@ -1129,14 +1449,14 @@ const WhatsAppConnect = ({
       return { success: true, status: statusFromInstance };
     } catch (err) {
       if (isAuthError(err)) {
-        enforceAuthPrompt();
+        handleAuthFallback();
       } else {
         setErrorMessage(
           err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
         );
       }
       warn('Instâncias não puderam ser carregadas', err);
-      return { success: false, error: err };
+      return { success: false, error: err, skipped: isAuthError(err) };
     } finally {
       setLoadingInstances(false);
       setInstancesReady(true);
@@ -1149,8 +1469,9 @@ const WhatsAppConnect = ({
       setAuthTokenState(token);
       if (token) {
         setSessionActive(true);
+        setAuthDeferred(false);
         setErrorMessage(null);
-        void loadInstancesRef.current?.();
+        void loadInstancesRef.current?.({ forceRefresh: true });
       } else if (!sessionActiveRef.current) {
         enforceAuthPrompt();
       }
@@ -1253,7 +1574,7 @@ const WhatsAppConnect = ({
       });
     } catch (err) {
       if (isAuthError(err)) {
-        enforceAuthPrompt();
+        handleAuthFallback();
       } else {
         setErrorMessage(
           err instanceof Error ? err.message : 'Não foi possível criar uma nova instância'
@@ -1410,9 +1731,10 @@ const WhatsAppConnect = ({
             `/api/integrations/whatsapp/instances/qr?instanceId=${encodeURIComponent(id)}`
           );
           setSessionActive(true);
+          setAuthDeferred(false);
         } catch (error) {
           if (isAuthError(error)) {
-            enforceAuthPrompt();
+            handleAuthFallback();
             return;
           }
         }
@@ -1431,7 +1753,7 @@ const WhatsAppConnect = ({
       setQrData(received);
     } catch (err) {
       if (isAuthError(err)) {
-        enforceAuthPrompt();
+        handleAuthFallback();
       } else {
         setErrorMessage(err instanceof Error ? err.message : 'Não foi possível gerar o QR Code');
       }
@@ -1478,6 +1800,7 @@ const WhatsAppConnect = ({
       // Valida com o servidor, se rota existir
       const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`);
       setSessionActive(true);
+      setAuthDeferred(false);
       const connected = Boolean(status?.data?.connected);
       if (!connected) {
         setErrorMessage(
@@ -1487,7 +1810,7 @@ const WhatsAppConnect = ({
       }
     } catch (err) {
       if (isAuthError(err)) {
-        enforceAuthPrompt();
+        handleAuthFallback();
         return;
       }
       // Continua em modo otimista caso a rota não exista
@@ -1582,7 +1905,7 @@ const WhatsAppConnect = ({
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="space-y-6">
         <Card className="border border-[var(--border)]/60 bg-[rgba(15,23,42,0.5)]">
           <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -1881,71 +2204,134 @@ const WhatsAppConnect = ({
             </div>
           </CardFooter>
         </Card>
-
         <Card className="border border-[var(--border)]/60 bg-[rgba(15,23,42,0.35)]">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
-              QR Code e instruções
-            </CardTitle>
-            <CardDescription>Escaneie com o aplicativo oficial para ativar a sessão.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-white/10 bg-white/5 p-6">
-              <div className="flex h-44 w-44 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">
-                {hasQr ? (
-                  <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-36 w-36 rounded-lg shadow-inner" />
-                ) : isGeneratingQrImage ? (
-                  <Loader2 className="h-12 w-12 animate-spin" />
-                ) : (
-                  <QrCode className="h-24 w-24" />
-                )}
+          <Collapsible open={qrPanelOpen} onOpenChange={setQrPanelOpen}>
+            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <QrCode className="h-5 w-5" />
+                  QR Code e instruções
+                </CardTitle>
+                <CardDescription>Escaneie com o aplicativo oficial para ativar a sessão.</CardDescription>
               </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                <Clock className="h-3.5 w-3.5" />
-                {qrStatusMessage}
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
+              <CollapsibleTrigger asChild>
                 <Button
-                  size="sm"
                   variant="ghost"
-                  onClick={() => void handleGenerateQr()}
-                  disabled={isBusy || !instance || !isAuthenticated}
-                >
-                  <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR
-                </Button>
-                <Button
                   size="sm"
-                  variant="outline"
-                  onClick={() => setQrDialogOpen(true)}
-                  disabled={!hasQr}
+                  className={cn(
+                    'ml-auto inline-flex items-center gap-2 text-xs uppercase tracking-wide transition-transform',
+                    qrPanelOpen ? 'rotate-180' : ''
+                  )}
                 >
-                  Abrir em tela cheia
+                  <ChevronDown className="h-4 w-4" />
+                  {qrPanelOpen ? 'Recolher' : 'Expandir'}
                 </Button>
-              </div>
-            </div>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-6">
+                <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-white/10 bg-white/5 p-6">
+                  <div className="flex h-44 w-44 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">
+                    {hasQr ? (
+                      <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-36 w-36 rounded-lg shadow-inner" />
+                    ) : isGeneratingQrImage ? (
+                      <Loader2 className="h-12 w-12 animate-spin" />
+                    ) : (
+                      <QrCode className="h-24 w-24" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+                    <Clock className="h-3.5 w-3.5" />
+                    {qrStatusMessage}
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleGenerateQr()}
+                      disabled={isBusy || !instance || !isAuthenticated}
+                    >
+                      <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setQrDialogOpen(true)}
+                      disabled={!hasQr}
+                    >
+                      Abrir em tela cheia
+                    </Button>
+                  </div>
+                </div>
 
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                <p>Use o número que já interage com os clientes. Não é necessário chip ou aparelho adicional.</p>
-              </div>
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                <p>O Lead Engine garante distribuição automática. Você só recebe quando o servidor responde “quero falar”.</p>
-              </div>
-              <div className="flex items-start gap-3">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                <p>Se perder a conexão, repita o processo — seus leads permanecem reservados na sua inbox.</p>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="rounded-lg bg-muted/40 p-4 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">Dica para evitar bloqueios</p>
-            <p className="mt-1">
-              Mantenha o aplicativo oficial aberto e responda às mensagens em até 15 minutos. A inteligência do Lead Engine cuida do aquecimento automático do número.
-            </p>
-          </CardFooter>
+                <div className="space-y-3 text-sm text-muted-foreground">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                    <p>Use o número que já interage com os clientes. Não é necessário chip ou aparelho adicional.</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                    <p>O Lead Engine garante distribuição automática. Você só recebe quando o servidor responde “quero falar”.</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                    <p>Se perder a conexão, repita o processo — seus leads permanecem reservados na sua inbox.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
+                    <span className="flex items-center gap-2">
+                      <History className="h-4 w-4" /> Atividade recente
+                    </span>
+                    <span className={cn('text-[0.65rem]', realtimeConnected ? 'text-emerald-300' : 'text-muted-foreground')}>
+                      {realtimeConnected ? 'Tempo real ativo' : 'Tempo real offline'}
+                    </span>
+                  </div>
+                  {timelineItems.length > 0 ? (
+                    <ul className="space-y-2 text-sm">
+                      {timelineItems.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex flex-wrap justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2"
+                        >
+                          <div className="space-y-1">
+                            <p className="font-medium text-foreground">{humanizeLabel(item.type)}</p>
+                            {item.status ? (
+                              <p className="text-xs text-muted-foreground">
+                                Status: {humanizeLabel(item.status)}
+                                {typeof item.connected === 'boolean'
+                                  ? ` • ${item.connected ? 'Conectado' : 'Desconectado'}`
+                                  : ''}
+                              </p>
+                            ) : null}
+                            {item.phoneNumber ? (
+                              <p className="text-xs text-muted-foreground">
+                                Telefone: {formatPhoneNumber(item.phoneNumber)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {formatTimestampLabel(item.timestamp)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Aguardando atividades desta instância. As sincronizações e mudanças de status aparecem aqui em tempo real.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+              <CardFooter className="rounded-lg bg-muted/40 px-6 py-4 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Dica para evitar bloqueios</p>
+                <p className="mt-1">
+                  Mantenha o aplicativo oficial aberto e responda às mensagens em até 15 minutos. A inteligência do Lead Engine cuida do aquecimento automático do número.
+                </p>
+              </CardFooter>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
       </div>
 
