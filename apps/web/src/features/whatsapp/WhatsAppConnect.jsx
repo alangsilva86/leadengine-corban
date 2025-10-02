@@ -633,6 +633,7 @@ const WhatsAppConnect = ({
   const [deletingInstanceId, setDeletingInstanceId] = useState(null);
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
   const loadInstancesRef = useRef(() => {});
+  const hasFetchedOnceRef = useRef(false);
   const sessionActiveRef = useRef(sessionActive);
   const loadingInstancesRef = useRef(loadingInstances);
   const loadingQrRef = useRef(loadingQr);
@@ -690,6 +691,7 @@ const WhatsAppConnect = ({
         setLocalStatus(current.status);
       }
     }
+    hasFetchedOnceRef.current = false;
   }, [selectedAgreement?.id]);
 
   const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
@@ -939,7 +941,11 @@ const WhatsAppConnect = ({
     };
   };
 
-  const loadInstances = async ({ connectResult: providedConnect, preferredInstanceId } = {}) => {
+  const loadInstances = async ({
+    connectResult: providedConnect,
+    preferredInstanceId,
+    forceRefresh,
+  } = {}) => {
     const agreementId = selectedAgreement?.id;
     const token = getAuthToken();
     setAuthTokenState(token);
@@ -950,7 +956,11 @@ const WhatsAppConnect = ({
         tenantAgreement: selectedAgreement?.id ?? null,
         preferredInstanceId: preferredInstanceId ?? null,
       });
-      const response = await apiGet('/api/integrations/whatsapp/instances');
+      const shouldForceBrokerSync =
+        typeof forceRefresh === 'boolean' ? forceRefresh : !hasFetchedOnceRef.current;
+      const response = await apiGet(
+        `/api/integrations/whatsapp/instances${shouldForceBrokerSync ? '?refresh=1' : ''}`
+      );
       const hasServerList = Array.isArray(response?.data);
       setSessionActive(true);
       let list = hasServerList ? response.data : [];
@@ -975,7 +985,9 @@ const WhatsAppConnect = ({
         } else if (connectResult?.instance) {
           list = [connectResult.instance];
         } else {
-          const refreshed = await apiGet('/api/integrations/whatsapp/instances').catch(() => null);
+          const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
+            () => null
+          );
           const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
           if (refreshedList.length > 0) {
             list = refreshedList;
@@ -1017,6 +1029,8 @@ const WhatsAppConnect = ({
       }
 
       const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
+
+      hasFetchedOnceRef.current = true;
 
       if (Array.isArray(list) && list.length > 0) {
         setInstances(list);
@@ -1180,6 +1194,7 @@ const WhatsAppConnect = ({
       await loadInstances({
         connectResult: connectResult || undefined,
         preferredInstanceId: createdInstanceId || normalizedName,
+        forceRefresh: true,
       });
       log('🎉 Instância criada com sucesso', {
         instanceId: createdInstanceId,
@@ -1222,7 +1237,7 @@ const WhatsAppConnect = ({
         setInstance(null);
         setLocalStatus('disconnected');
       }
-      await loadInstances({ preferredInstanceId: null });
+      await loadInstances({ preferredInstanceId: null, forceRefresh: true });
       log('✅ Instância removida', {
         instanceId: target.id,
         agreementId,
@@ -1765,7 +1780,7 @@ const WhatsAppConnect = ({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void loadInstances()}
+                    onClick={() => void loadInstances({ forceRefresh: true })}
                     disabled={errorState.requiresAuth}
                   >
                     Tentar novamente
