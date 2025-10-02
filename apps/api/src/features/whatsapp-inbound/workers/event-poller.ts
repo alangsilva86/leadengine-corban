@@ -11,8 +11,8 @@ import {
 import {
   WhatsAppBrokerNotConfiguredError,
   whatsappBrokerClient,
-} from '../../services/whatsapp-broker-client';
-import { prisma } from '../../lib/prisma';
+} from '../../../services/whatsapp-broker-client';
+import { prisma } from '../../../lib/prisma';
 
 const SOURCE_KEY = 'whatsapp-broker';
 const CURSOR_STATE_KEY = 'whatsapp:event-cursor';
