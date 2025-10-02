@@ -126,7 +126,7 @@ const resolveRateLimitKey = (path, customKey) => {
       ? new URL(path)
       : new URL(path.startsWith('/') ? path : `/${path}`, API_BASE_URL || 'http://localhost');
     return url.pathname || path;
-  } catch (error) {
+  } catch {
     return path.startsWith('/') ? path : `/${path}`;
   }
 };

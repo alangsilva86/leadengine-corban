@@ -94,6 +94,56 @@ const verifyWebhookSignature = (signature: string | null, rawBody: Buffer | unde
   }
 };
 
+type NormalizedInboundEvent = {
+  id: string;
+  type: 'MESSAGE_INBOUND';
+  instanceId: string;
+  timestamp: string | null;
+  payload: {
+    instanceId: string;
+    timestamp: string | null;
+    contact: {
+      phone: string | null;
+      name: string | null;
+      document: string | null;
+      registrations: string[] | null;
+    };
+    message: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  };
+};
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+};
+
+const normalizeStringArray = (value: unknown): string[] | null => {
+  if (!value) {
+    return null;
+  }
+
+  const items = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  items.forEach((entry) => {
+    if (typeof entry !== 'string') {
+      return;
+    }
+    const trimmed = entry.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  });
+
+  return normalized.length > 0 ? normalized : null;
+};
+
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const providedApiKeyHeader = req.header('x-api-key');
   const providedApiKey = typeof providedApiKeyHeader === 'string' ? providedApiKeyHeader.trim() : '';
@@ -132,7 +182,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const rawEvents = asArray(payload);
 
   const normalizedEvents = rawEvents
-    .map((entry) => {
+    .map((entry): NormalizedInboundEvent | null => {
       const direction = typeof entry.direction === 'string' ? entry.direction.toLowerCase() : '';
       const eventType = typeof entry.event === 'string' ? entry.event.toLowerCase() : '';
 
@@ -145,9 +195,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         return null;
       }
 
-      const message = (entry.message as Record<string, unknown>) || {};
-      const from = (entry.from as Record<string, unknown>) || {};
-      const metadata = (entry.metadata as Record<string, unknown>) || {};
+      const message = asRecord(entry.message);
+      const from = asRecord(entry.from);
+      const metadata = asRecord(entry.metadata);
 
       const messageId = typeof message.id === 'string' && message.id.trim().length > 0 ? message.id.trim() : randomUUID();
       const timestamp = ((): string | null => {
@@ -163,6 +213,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
       const phone = typeof from.phone === 'string' ? from.phone : null;
       const document = typeof from.document === 'string' ? from.document : null;
+      const registrations = normalizeStringArray(from.registrations);
 
       return {
         id: messageId,
@@ -176,14 +227,14 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
             phone,
             name: typeof from.name === 'string' ? from.name : null,
             document,
-            registrations: Array.isArray(from.registrations) ? from.registrations : null,
+            registrations,
           },
           message,
           metadata,
         },
-      };
+      } satisfies NormalizedInboundEvent;
     })
-    .filter((event): event is { id: string; type: 'MESSAGE_INBOUND'; instanceId: string; timestamp: string | null; payload: Record<string, unknown> } => Boolean(event));
+    .filter((event): event is NormalizedInboundEvent => event !== null);
 
   const queued = normalizedEvents.length;
 
@@ -202,8 +253,8 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   logger.info('WhatsApp webhook processed', {
     received: rawEvents.length,
     queued,
-    phones: normalizedEvents.map((event) => maskPhone((event.payload.contact as { phone?: string | null }).phone ?? null)),
-    documents: normalizedEvents.map((event) => maskDocument((event.payload.contact as { document?: string | null }).document ?? null)),
+    phones: normalizedEvents.map((event) => maskPhone(event.payload.contact.phone)),
+    documents: normalizedEvents.map((event) => maskDocument(event.payload.contact.document)),
   });
 
   res.status(202).json({ accepted: true, queued });

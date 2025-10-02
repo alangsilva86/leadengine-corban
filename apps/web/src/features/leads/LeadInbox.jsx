@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
-import { apiGet, apiPatch, apiPost } from '@/lib/api.js';
+import { apiGet, apiPatch } from '@/lib/api.js';
 import { computeBackoffDelay, parseRetryAfterMs } from '@/lib/rate-limit.js';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import EmptyInboxState from './components/EmptyInboxState.jsx';
@@ -56,7 +56,6 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
   const [allocations, setAllocations] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
-  const [pulling, setPulling] = useState(false);
   const [error, setError] = useState(null);
   const [warningMessage, setWarningMessage] = useState(null);
   const rateLimitInfo = useRateLimitBanner();
@@ -79,16 +78,30 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
 
   const loadAllocationsRef = useRef(() => {});
 
-  const scheduleNextLoad = useCallback(
-    (retryAfterMs) => {
-      const attempts = retryStateRef.current.attempts + 1;
-      retryStateRef.current.attempts = attempts;
-      const waitMs =
-        typeof retryAfterMs === 'number' && Number.isFinite(retryAfterMs)
-          ? Math.max(0, retryAfterMs)
-          : computeBackoffDelay(attempts);
+  const AUTO_REFRESH_INTERVAL_MS = 15000;
 
+  const scheduleNextLoad = useCallback(
+    (delayMs, mode = 'retry') => {
       clearScheduledReload();
+
+      let attempts = retryStateRef.current.attempts;
+
+      if (mode === 'success') {
+        attempts = 0;
+        retryStateRef.current.attempts = 0;
+      } else {
+        attempts += 1;
+        retryStateRef.current.attempts = attempts;
+      }
+
+      let waitMs;
+      if (typeof delayMs === 'number' && Number.isFinite(delayMs) && delayMs >= 0) {
+        waitMs = delayMs;
+      } else if (mode === 'success') {
+        waitMs = AUTO_REFRESH_INTERVAL_MS;
+      } else {
+        waitMs = computeBackoffDelay(attempts);
+      }
 
       retryStateRef.current.timeoutId = setTimeout(() => {
         retryStateRef.current.timeoutId = null;
@@ -97,12 +110,11 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
 
       return waitMs;
     },
-    [clearScheduledReload]
+    [AUTO_REFRESH_INTERVAL_MS, clearScheduledReload]
   );
 
   const agreementId = selectedAgreement?.id;
   const campaignId = campaign?.id;
-  const batchSize = selectedAgreement?.suggestedBatch || 10;
   const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'inbox') ?? 3;
   const totalStages = onboarding?.stages?.length ?? 0;
   const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 4;
@@ -150,13 +162,14 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
         campaignId,
         agreementId,
       });
+      scheduleNextLoad(undefined, 'success');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao carregar leads';
       const status = err?.status ?? err?.statusCode;
       const retryAfterMs = parseRetryAfterMs(err?.retryAfter ?? err?.payload?.retryAfter ?? err?.rateLimitDelayMs);
 
       if (status === 429 || status === 503 || (typeof status === 'number' && status >= 500)) {
-        const waitMs = scheduleNextLoad(retryAfterMs);
+        const waitMs = scheduleNextLoad(retryAfterMs, 'retry');
         const seconds = Math.ceil(waitMs / 1000);
         setError(`Muitas requisições. Nova tentativa em ${seconds}s.`);
         warn('Broker sinalizou limite ao carregar leads', {
@@ -168,13 +181,14 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
       } else {
         resetRateLimiter();
         setError(message);
+        scheduleNextLoad(undefined, 'success');
       }
       logError('Falha ao sincronizar leads', err);
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [agreementId, campaignId, clearScheduledReload, resetRateLimiter, scheduleNextLoad]);
+  }, [agreementId, campaignId, clearScheduledReload, log, logError, resetRateLimiter, scheduleNextLoad, warn]);
 
   useEffect(() => {
     loadAllocationsRef.current = loadAllocations;
@@ -186,36 +200,6 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
       clearScheduledReload();
     };
   }, [loadAllocations, clearScheduledReload]);
-
-  const handlePull = async () => {
-    if (!agreementId || !campaignId) return;
-    try {
-      setPulling(true);
-      setError(null);
-      log('🚚 Solicitando novo lote de leads', {
-        campaignId,
-        agreementId,
-        take: batchSize,
-      });
-      await apiPost('/api/lead-engine/allocations', {
-        campaignId,
-        agreementId,
-        take: batchSize,
-      });
-      resetRateLimiter();
-      await loadAllocations();
-      log('🎉 Lote de leads solicitado com sucesso', {
-        campaignId,
-        agreementId,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível buscar novos leads');
-      setWarningMessage(null);
-      logError('Falha ao solicitar novo lote de leads', err);
-    } finally {
-      setPulling(false);
-    }
-  };
 
   const handleExport = () => {
     if (!campaignId && !agreementId) return;
@@ -319,7 +303,8 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
           </div>
           <h1 className="text-2xl font-semibold text-foreground">Inbox de leads</h1>
           <p className="max-w-xl text-sm text-muted-foreground">
-            Leads do convênio {selectedAgreement.name}. Dispare novos lotes de {batchSize} contatos sempre que precisar reforçar a fila de atendimento.
+            Leads do convênio {selectedAgreement.name}. Assim que o cliente fala com você no WhatsApp conectado,
+            o contato aparece aqui automaticamente.
           </p>
           {campaign?.name ? (
             <p className="text-xs text-muted-foreground">
@@ -341,10 +326,10 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
             ))}
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button size="sm" onClick={handlePull} disabled={pulling}>
-              <Sparkles className="mr-2 h-4 w-4" /> Buscar novos leads ({batchSize})
-            </Button>
-            <Button variant="outline" size="sm" onClick={loadAllocations} disabled={loading || pulling}>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-muted-foreground">
+              <Sparkles className="h-4 w-4" /> Leads chegam automaticamente quando o cliente envia mensagens.
+            </span>
+            <Button variant="outline" size="sm" onClick={loadAllocations} disabled={loading}>
               <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar
             </Button>
             <Button variant="outline" size="sm" onClick={handleExport}>
@@ -459,8 +444,6 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
               campaign={campaign}
               onBackToWhatsApp={onBackToWhatsApp}
               onSelectAgreement={onSelectAgreement}
-              onPull={handlePull}
-              pulling={pulling}
             />
           ) : null}
 

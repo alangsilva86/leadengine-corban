@@ -54,6 +54,29 @@ const sanitizeDocument = (value?: string | null, fallback?: string): string => {
   return fallback ?? `wa-${randomUUID()}`;
 };
 
+const uniqueStringList = (values?: string[] | null): string[] => {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  values.forEach((entry) => {
+    if (typeof entry !== 'string') {
+      return;
+    }
+    const trimmed = entry.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  });
+
+  return normalized;
+};
+
 const shouldSkipByDedupe = (key: string, now: number): boolean => {
   const last = dedupeCache.get(key);
   if (last && now - last < DEDUPE_WINDOW_MS) {
@@ -118,9 +141,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   }
 
   const leadName = contact.name?.trim() || 'Contato WhatsApp';
-  const registrations = Array.isArray(contact.registrations)
-    ? contact.registrations.filter((entry): entry is string => typeof entry === 'string')
-    : [];
+  const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 
   for (const campaign of campaigns) {
