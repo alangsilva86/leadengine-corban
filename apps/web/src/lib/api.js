@@ -237,3 +237,12 @@ export const apiPatch = async (path, body, options = {}) => {
     credentials: prepared.credentials ?? 'include',
   });
 };
+
+export const apiDelete = async (path, options = {}) => {
+  const prepared = prepareOptions(options);
+  return safeFetch(path, {
+    ...prepared,
+    method: 'DELETE',
+    credentials: prepared.credentials ?? 'include',
+  });
+};

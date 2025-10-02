@@ -48,6 +48,12 @@ export interface WhatsAppQrCode {
 export interface WhatsAppStatus extends WhatsAppQrCode {
   status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
   connected: boolean;
+  stats?: Record<string, unknown> | null;
+  metrics?: Record<string, unknown> | null;
+  rate?: Record<string, unknown> | null;
+  rateUsage?: Record<string, unknown> | null;
+  messages?: Record<string, unknown> | null;
+  raw?: Record<string, unknown> | null;
 }
 
 export interface WhatsAppMessageResult {
@@ -884,10 +890,39 @@ class WhatsAppBrokerClient {
         }
       })();
 
+      const statsCandidate =
+        typeof result?.stats === 'object' && result.stats !== null ? (result.stats as Record<string, unknown>) : undefined;
+      const metricsCandidate =
+        typeof result?.metrics === 'object' && result.metrics !== null
+          ? (result.metrics as Record<string, unknown>)
+          : undefined;
+      const messagesCandidate =
+        typeof result?.messages === 'object' && result.messages !== null
+          ? (result.messages as Record<string, unknown>)
+          : undefined;
+      const rateUsageCandidate =
+        typeof result?.rateUsage === 'object' && result.rateUsage !== null
+          ? (result.rateUsage as Record<string, unknown>)
+          : undefined;
+      const rateCandidate =
+        typeof result?.rate === 'object' && result.rate !== null
+          ? (result.rate as Record<string, unknown>)
+          : typeof result?.rateLimiter === 'object' && result.rateLimiter !== null
+            ? (result.rateLimiter as Record<string, unknown>)
+            : typeof result?.limits === 'object' && result.limits !== null
+              ? (result.limits as Record<string, unknown>)
+              : undefined;
+
       return {
         status: normalizedStatus,
         connected,
         ...normalizedQr,
+        stats: statsCandidate ?? messagesCandidate ?? null,
+        metrics: metricsCandidate ?? statsCandidate ?? null,
+        messages: messagesCandidate ?? null,
+        rate: rateCandidate ?? null,
+        rateUsage: rateUsageCandidate ?? rateCandidate ?? null,
+        raw: result ?? null,
       };
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -902,6 +937,12 @@ class WhatsAppBrokerClient {
         qrCode: null,
         qrExpiresAt: null,
         expiresAt: null,
+        stats: null,
+        metrics: null,
+        messages: null,
+        rate: null,
+        rateUsage: null,
+        raw: null,
       };
     }
   }

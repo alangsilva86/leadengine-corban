@@ -160,6 +160,10 @@ type NormalizedInstance = {
   phoneNumber: string | null;
   user: string | null;
   stats?: unknown;
+  metrics?: Record<string, unknown> | null;
+  messages?: Record<string, unknown> | null;
+  rate?: Record<string, unknown> | null;
+  rawStatus?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -359,6 +363,32 @@ const serializeStoredInstance = (
 ): NormalizedInstance & { brokerId: string } => {
   const normalizedStatus = brokerStatus?.status ?? mapDbStatusToNormalized(instance.status);
   const connected = brokerStatus?.connected ?? instance.connected;
+  const stats =
+    brokerStatus?.stats ??
+    brokerStatus?.messages ??
+    ((instance.metadata as Record<string, unknown> | null)?.stats as unknown) ??
+    undefined;
+  const metrics =
+    brokerStatus?.metrics ??
+    (typeof stats === 'object' && stats !== null ? (stats as Record<string, unknown>) : null);
+  const messages = brokerStatus?.messages ?? null;
+  const rate = brokerStatus?.rate ?? brokerStatus?.rateUsage ?? null;
+  const rawStatus =
+    brokerStatus?.raw && typeof brokerStatus.raw === 'object' && brokerStatus.raw !== null
+      ? (brokerStatus.raw as Record<string, unknown>)
+      : brokerStatus
+        ? (brokerStatus as unknown as Record<string, unknown>)
+        : null;
+
+  const baseMetadata = (instance.metadata as Record<string, unknown> | null) ?? {};
+  const metadata: Record<string, unknown> = { ...baseMetadata };
+
+  if (brokerStatus?.metrics && typeof brokerStatus.metrics === 'object') {
+    metadata.brokerMetrics = brokerStatus.metrics;
+  }
+  if (brokerStatus?.rateUsage && typeof brokerStatus.rateUsage === 'object') {
+    metadata.brokerRateUsage = brokerStatus.rateUsage;
+  }
 
   return {
     id: instance.id,
@@ -370,8 +400,12 @@ const serializeStoredInstance = (
     lastActivity: instance.lastSeenAt ? instance.lastSeenAt.toISOString() : null,
     phoneNumber: instance.phoneNumber ?? null,
     user: null,
-    stats: undefined,
-    metadata: (instance.metadata as Record<string, unknown> | null) ?? null,
+    stats,
+    metrics,
+    messages,
+    rate,
+    rawStatus,
+    metadata,
     brokerId: instance.brokerId,
   };
 };

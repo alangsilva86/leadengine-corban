@@ -4,9 +4,19 @@ import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
-import { QrCode, CheckCircle2, Link2, ArrowLeft, RefreshCcw, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  QrCode,
+  CheckCircle2,
+  Link2,
+  ArrowLeft,
+  RefreshCcw,
+  Clock,
+  AlertCircle,
+  Loader2,
+  Trash2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils.js';
-import { apiGet, apiPost } from '@/lib/api.js';
+import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken, onAuthTokenChange } from '@/lib/auth.js';
 import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import DemoAuthDialog from '@/components/DemoAuthDialog.jsx';
@@ -253,8 +263,23 @@ const normalizeRateUsage = (rawRate) => {
   };
 };
 
+const mergeMetricsSources = (...sources) => {
+  return sources.reduce((acc, source) => {
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
+      return { ...acc, ...source };
+    }
+    return acc;
+  }, {});
+};
+
 const getInstanceMetrics = (instance) => {
-  const metricsSource = instance?.metrics || instance?.stats || instance || {};
+  const metricsSource = mergeMetricsSources(
+    instance?.metrics,
+    instance?.stats,
+    instance?.messages,
+    instance?.rawStatus,
+    instance
+  );
   const sent = pickMetric(metricsSource, ['messagesSent', 'sent', 'totalSent', 'enviadas', 'messages']) ?? 0;
   const queued = pickMetric(metricsSource, ['queued', 'pending', 'fila', 'queueSize', 'waiting']) ?? 0;
   const failed = pickMetric(metricsSource, ['failed', 'errors', 'falhas', 'errorCount']) ?? 0;
@@ -264,7 +289,12 @@ const getInstanceMetrics = (instance) => {
     findStatusCountsSource(metricsSource?.messages) ||
     findStatusCountsSource(instance?.statusMetrics);
   const status = normalizeStatusCounts(statusCountsSource);
-  const rateUsage = normalizeRateUsage(findRateSource(metricsSource));
+  const rateUsage = normalizeRateUsage(
+    findRateSource(metricsSource) ||
+      findRateSource(instance?.rate) ||
+      findRateSource(instance?.rawStatus) ||
+      findRateSource(instance)
+  );
 
   return { sent, queued, failed, status, rateUsage };
 };
@@ -590,6 +620,7 @@ const WhatsAppConnect = ({
   const [campaign, setCampaign] = useState(activeCampaign || null);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
+  const [deletingInstanceId, setDeletingInstanceId] = useState(null);
   const loadInstancesRef = useRef(() => {});
   const sessionActiveRef = useRef(sessionActive);
   const loadingInstancesRef = useRef(loadingInstances);
@@ -1147,6 +1178,50 @@ const WhatsAppConnect = ({
     }
   };
 
+  const handleDeleteInstance = async (target) => {
+    if (!target?.id) {
+      return;
+    }
+
+    if (target.connected) {
+      setErrorMessage('Desconecte a instância antes de removê-la.');
+      return;
+    }
+
+    const agreementId = selectedAgreement?.id;
+    const confirmationMessage = `Remover a instância “${target.name || target.id}”? Esta ação é irreversível.`;
+    if (typeof window !== 'undefined' && !window.confirm(confirmationMessage)) {
+      return;
+    }
+
+    setDeletingInstanceId(target.id);
+    try {
+      log('🗑️ Removendo instância WhatsApp', {
+        instanceId: target.id,
+        agreementId,
+      });
+      await apiDelete(`/api/integrations/whatsapp/instances/${encodeURIComponent(target.id)}`);
+      clearInstancesCache(agreementId);
+      if (instance?.id === target.id) {
+        setInstance(null);
+        setLocalStatus('disconnected');
+      }
+      await loadInstances({ preferredInstanceId: null });
+      log('✅ Instância removida', {
+        instanceId: target.id,
+        agreementId,
+      });
+    } catch (err) {
+      const message =
+        err?.payload?.error?.message ||
+        (err instanceof Error ? err.message : 'Não foi possível remover a instância');
+      setErrorMessage(message);
+      logError('Falha ao remover instância WhatsApp', err);
+    } finally {
+      setDeletingInstanceId(null);
+    }
+  };
+
   useEffect(() => {
     if (!campaign?.instanceId || instances.length === 0) {
       return;
@@ -1519,19 +1594,39 @@ const WhatsAppConnect = ({
                         )}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold text-foreground">{item.name || item.id}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatPhoneNumber(phoneLabel) || '—'}
-                            </p>
-                            {addressLabel && addressLabel !== phoneLabel ? (
-                              <p className="text-xs text-muted-foreground">{addressLabel}</p>
-                            ) : null}
-                          </div>
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                        </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground">{item.name || item.id}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatPhoneNumber(phoneLabel) || '—'}
+                        </p>
+                        {addressLabel && addressLabel !== phoneLabel ? (
+                          <p className="text-xs text-muted-foreground">{addressLabel}</p>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remover instância"
+                          title={item.connected ? 'Desconecte antes de remover' : 'Remover instância'}
+                          disabled={item.connected || deletingInstanceId === item.id}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void handleDeleteInstance(item);
+                          }}
+                        >
+                          {deletingInstanceId === item.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
 
-                        <div className="mt-4 space-y-3">
+                    <div className="mt-4 space-y-3">
                           <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
                             <div className="rounded-lg border border-white/10 bg-white/5 p-3">
                               <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
