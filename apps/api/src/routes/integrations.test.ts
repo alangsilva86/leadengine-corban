@@ -552,6 +552,41 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('returns service unavailable when persistence lookups fail while creating an instance', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+
+    const prismaError = Object.assign(new Error('whatsapp_instances table does not exist'), {
+      code: 'P2021',
+      clientVersion: '5.0.0',
+    });
+
+    (prisma.whatsAppInstance.findFirst as ReturnType<typeof vi.fn>).mockRejectedValueOnce(prismaError);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ name: 'New Instance' }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(body).toMatchObject({
+        success: false,
+        error: {
+          code: 'WHATSAPP_STORAGE_UNAVAILABLE',
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('connects a WhatsApp instance', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');

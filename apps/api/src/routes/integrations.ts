@@ -26,6 +26,89 @@ const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean =>
   return false;
 };
 
+const PRISMA_STORAGE_ERROR_CODES = new Set([
+  'P1000',
+  'P1001',
+  'P1002',
+  'P1003',
+  'P1008',
+  'P1010',
+  'P2010',
+  'P2021',
+  'P2022',
+  'P2023',
+  'P2024',
+  'P2025',
+]);
+
+const hasErrorName = (error: unknown, expected: string): boolean => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === expected
+  );
+};
+
+const readPrismaErrorCode = (error: unknown): string | null => {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string'
+  ) {
+    return (error as { code: string }).code;
+  }
+
+  return null;
+};
+
+const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boolean => {
+  const prismaCode = readPrismaErrorCode(error);
+
+  if (prismaCode && PRISMA_STORAGE_ERROR_CODES.has(prismaCode)) {
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'WHATSAPP_STORAGE_UNAVAILABLE',
+        message:
+          'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
+        details: { prismaCode },
+      },
+    });
+    return true;
+  }
+
+  if (
+    hasErrorName(error, 'PrismaClientInitializationError') ||
+    hasErrorName(error, 'PrismaClientRustPanicError')
+  ) {
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'WHATSAPP_STORAGE_UNAVAILABLE',
+        message:
+          'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
+      },
+    });
+    return true;
+  }
+
+  return false;
+};
+
+const handleWhatsAppIntegrationError = (res: Response, error: unknown): boolean => {
+  if (respondWhatsAppNotConfigured(res, error)) {
+    return true;
+  }
+
+  if (respondWhatsAppStorageUnavailable(res, error)) {
+    return true;
+  }
+
+  return false;
+};
+
 const resolveDefaultInstanceId = (): string =>
   (process.env.LEADENGINE_INSTANCE_ID || '').trim() || 'leadengine';
 
@@ -515,7 +598,7 @@ router.get(
         data: normalized,
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -536,9 +619,8 @@ router.post(
 
     const normalizedName = name.trim();
     const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : normalizedName;
-    const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
-
     try {
+      const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
       const instance = await prisma.whatsAppInstance.create({
         data: {
           id: normalizedId,
@@ -560,6 +642,10 @@ router.post(
         data: payload,
       });
     } catch (error) {
+      if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      }
+
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         res.status(409).json({
           success: false,
@@ -622,7 +708,7 @@ router.post(
         data: normalizeInstanceStatusResponse(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -667,7 +753,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -727,7 +813,7 @@ router.post(
         data: normalizeInstanceStatusResponse(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -799,7 +885,7 @@ router.delete(
 
       res.status(204).send();
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -864,7 +950,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -903,7 +989,7 @@ router.get(
         data: normalizeQr(qrCode),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -942,7 +1028,7 @@ router.get(
       res.setHeader('Cache-Control', 'private, max-age=5');
       res.send(buffer);
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -986,7 +1072,7 @@ router.get(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1027,7 +1113,7 @@ router.get(
       res.setHeader('Cache-Control', 'private, max-age=5');
       res.send(buffer);
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1075,7 +1161,7 @@ router.get(
         data: normalizeInstanceStatusResponse(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1110,7 +1196,7 @@ router.post(
         data: normalizeSessionStatus(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1135,7 +1221,7 @@ router.post(
         data: normalizeSessionStatus(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1159,7 +1245,7 @@ router.get(
         data: normalizeSessionStatus(status),
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1208,7 +1294,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1253,7 +1339,7 @@ router.post(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1305,7 +1391,7 @@ router.get(
         },
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
@@ -1330,7 +1416,7 @@ router.post(
         success: true,
       });
     } catch (error) {
-      if (respondWhatsAppNotConfigured(res, error)) {
+      if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
       throw error;
