@@ -103,6 +103,7 @@ AUTH_MVP_USER_NAME="MVP Anonymous"
 AUTH_MVP_USER_EMAIL=mvp-anonymous@leadengine.local
 
 # Database (quando configurar)
+# ⚠️ Obrigatório para executar migrações Prisma (pnpm exec prisma migrate ...)
 DATABASE_URL="postgresql://user:password@localhost:5432/ticketz"
 
 # WhatsApp
