@@ -1,5 +1,7 @@
 import { MessageSquarePlus, NotebookPen } from 'lucide-react';
+
 import { Button } from '@/components/ui/button.jsx';
+import { ButtonGroup } from '@/components/ui/button-group.jsx';
 
 const EmptyInboxState = ({ onSelectAgreement, onBackToWhatsApp, campaign, agreement }) => {
   const agreementName = agreement?.name ?? 'seu convênio favorito';
@@ -13,10 +15,9 @@ const EmptyInboxState = ({ onSelectAgreement, onBackToWhatsApp, campaign, agreem
       <div className="space-y-3">
         <h2 className="text-xl font-semibold text-foreground">Sem leads por aqui (ainda!)</h2>
         <p className="max-w-lg text-sm text-muted-foreground">
-          A campanha <span className="font-medium text-foreground">{campaignName}</span> está pronta para
-          o convênio <span className="font-medium text-foreground">{agreementName}</span>. Assim que o
-          cliente enviar uma mensagem para o seu WhatsApp conectado, o lead aparecerá automaticamente
-          nesta caixa de entrada.
+          A campanha <span className="font-medium text-foreground">{campaignName}</span> está pronta para o convênio
+          <span className="font-medium text-foreground"> {agreementName}</span>. Assim que o cliente enviar uma mensagem
+          para o seu WhatsApp conectado, o lead aparecerá automaticamente nesta caixa de entrada.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -25,14 +26,12 @@ const EmptyInboxState = ({ onSelectAgreement, onBackToWhatsApp, campaign, agreem
           Cada nova conversa no WhatsApp vira um lead aqui automaticamente.
         </span>
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button variant="secondary" onClick={onBackToWhatsApp}>
-          Revisar WhatsApp conectado
-        </Button>
+      <ButtonGroup className="justify-center">
+        <Button onClick={onBackToWhatsApp}>Revisar WhatsApp conectado</Button>
         <Button variant="outline" onClick={onSelectAgreement}>
           Trocar convênio
         </Button>
-      </div>
+      </ButtonGroup>
     </div>
   );
 };

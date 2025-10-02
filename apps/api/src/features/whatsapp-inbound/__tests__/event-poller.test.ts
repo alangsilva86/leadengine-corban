@@ -10,7 +10,7 @@ const processedIntegrationEventFindMany = vi.fn();
 const processedIntegrationEventCreateMany = vi.fn();
 const processedIntegrationEventDeleteMany = vi.fn();
 
-vi.mock('../config/logger', () => ({
+vi.mock('../../config/logger', () => ({
   logger: {
     error: vi.fn(),
     warn: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock('../config/logger', () => ({
   },
 }));
 
-vi.mock('../services/whatsapp-broker-client', () => ({
+vi.mock('../../services/whatsapp-broker-client', () => ({
   whatsappBrokerClient: {
     fetchEvents,
     ackEvents,
@@ -27,7 +27,7 @@ vi.mock('../services/whatsapp-broker-client', () => ({
   WhatsAppBrokerNotConfiguredError: class extends Error {},
 }));
 
-vi.mock('../lib/prisma', () => ({
+vi.mock('../../lib/prisma', () => ({
   prisma: {
     $transaction: vi.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations)),
     integrationState: {
@@ -42,8 +42,8 @@ vi.mock('../lib/prisma', () => ({
   },
 }));
 
-vi.mock('./whatsapp-event-queue', async () => {
-  const actual = await vi.importActual<typeof import('./whatsapp-event-queue')>('./whatsapp-event-queue');
+vi.mock('../queue/event-queue', async () => {
+  const actual = await vi.importActual<typeof import('../queue/event-queue')>('../queue/event-queue');
   return {
     ...actual,
     enqueueWhatsAppBrokerEvents,
@@ -79,7 +79,7 @@ describe('WhatsApp event poller', () => {
     processedIntegrationEventCreateMany.mockResolvedValueOnce({ count: 2 });
     integrationStateUpsert.mockResolvedValue(undefined);
 
-    const module = await import('./whatsapp-event-poller');
+    const module = await import('../workers/event-poller');
     const poller = new (module.whatsappEventPoller as unknown as { constructor: new () => unknown }).constructor() as Record<string, unknown>;
 
     const processedCount = await (poller as { pollOnce: () => Promise<number> }).pollOnce();

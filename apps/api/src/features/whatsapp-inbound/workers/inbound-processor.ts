@@ -1,6 +1,6 @@
-import { onWhatsAppBrokerEvent } from './whatsapp-event-queue';
-import { ingestInboundWhatsAppMessage } from '../services/whatsapp-inbound-lead';
-import { logger } from '../config/logger';
+import { onWhatsAppBrokerEvent } from '../queue/event-queue';
+import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
+import { logger } from '../../../config/logger';
 
 onWhatsAppBrokerEvent('MESSAGE_INBOUND', async (event) => {
   try {

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { logger } from '../config/logger';
+
+import { logger } from '../../../config/logger';
 
 export type WhatsAppBrokerEventType = 'MESSAGE_INBOUND' | 'MESSAGE_OUTBOUND' | 'POLL_CHOICE';
 

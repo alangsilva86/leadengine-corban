@@ -1,0 +1,10 @@
+:root {
+  --inbox-glass-bg: rgba(148, 163, 184, 0.08);
+  --inbox-glass-border: rgba(148, 163, 184, 0.25);
+}
+
+.inbox-glass-surface {
+  background-color: var(--inbox-glass-bg);
+  border: 1px solid var(--inbox-glass-border);
+  backdrop-filter: blur(6px);
+}

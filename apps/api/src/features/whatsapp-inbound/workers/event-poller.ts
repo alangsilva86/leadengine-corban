@@ -1,18 +1,18 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Prisma } from '@prisma/client';
 
-import { logger } from '../config/logger';
+import { logger } from '../../../config/logger';
 import {
   enqueueWhatsAppBrokerEvents,
   getWhatsAppEventQueueStats,
   normalizeWhatsAppBrokerEvent,
   type WhatsAppBrokerEvent,
-} from './whatsapp-event-queue';
+} from '../queue/event-queue';
 import {
   WhatsAppBrokerNotConfiguredError,
   whatsappBrokerClient,
-} from '../services/whatsapp-broker-client';
-import { prisma } from '../lib/prisma';
+} from '../../services/whatsapp-broker-client';
+import { prisma } from '../../lib/prisma';
 
 const SOURCE_KEY = 'whatsapp-broker';
 const CURSOR_STATE_KEY = 'whatsapp:event-cursor';

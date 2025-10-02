@@ -6,7 +6,7 @@ import {
 } from './auth.js';
 import { computeBackoffDelay, parseRetryAfterMs } from './rate-limit.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+export const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
 
 let persistedToken = getAuthToken();
 let persistedTenantId = getTenantId();

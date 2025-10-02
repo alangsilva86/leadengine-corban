@@ -27,7 +27,7 @@ vi.mock('../data/lead-allocation-store', () => ({
 }));
 
 // Ensure inbound processor is registered
-await import('../workers/whatsapp-inbound-processor');
+await import('../features/whatsapp-inbound/workers/inbound-processor');
 
 const { prisma } = await import('../lib/prisma');
 const { addAllocations } = await import('../data/lead-allocation-store');
