@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MessageSquare, RefreshCcw, Sparkles, Trophy, XCircle, AlertCircle } from 'lucide-react';
+import { Loader2, MessageSquare, RefreshCcw, Trophy, XCircle, AlertCircle, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { apiGet, apiPatch, apiPost } from '@/lib/api.js';
 import { computeBackoffDelay, parseRetryAfterMs } from '@/lib/rate-limit.js';
+import usePlayfulLogger from '../shared/usePlayfulLogger.js';
+import EmptyInboxState from './components/EmptyInboxState.jsx';
 
 const statusVariant = {
   allocated: 'info',
@@ -22,6 +24,7 @@ const statusLabel = {
 };
 
 const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement, onBackToWhatsApp }) => {
+  const { log, warn, error: logError } = usePlayfulLogger('✨ LeadEngine • Inbox');
   const [allocations, setAllocations] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
@@ -89,14 +92,31 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
       setLoading(true);
       clearScheduledReload();
 
+      log('📮 Sincronizando leads', {
+        campaignId,
+        agreementId,
+      });
+
       const params = new URLSearchParams();
       if (campaignId) params.set('campaignId', campaignId);
       else if (agreementId) params.set('agreementId', agreementId);
 
       const payload = await apiGet(`/api/lead-engine/allocations?${params.toString()}`);
-      setAllocations(payload.data || []);
+      const items = Array.isArray(payload?.data) ? payload.data : [];
+      if (items.length === 0) {
+        warn('Nenhum lead disponível no momento', {
+          campaignId,
+          agreementId,
+        });
+      }
+      setAllocations(items);
       setError(null);
       resetRateLimiter();
+      log('✅ Leads sincronizados', {
+        total: items.length,
+        campaignId,
+        agreementId,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao carregar leads';
       const status = err?.status ?? err?.statusCode;
@@ -106,10 +126,17 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
         const waitMs = scheduleNextLoad(retryAfterMs);
         const seconds = Math.ceil(waitMs / 1000);
         setError(`Muitas requisições. Nova tentativa em ${seconds}s.`);
+        warn('Broker sinalizou limite ao carregar leads', {
+          campaignId,
+          agreementId,
+          status,
+          retryAfterMs,
+        });
       } else {
         resetRateLimiter();
         setError(message);
       }
+      logError('Falha ao sincronizar leads', err);
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -132,6 +159,11 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
     try {
       setPulling(true);
       setError(null);
+      log('🚚 Solicitando novo lote de leads', {
+        campaignId,
+        agreementId,
+        take: batchSize,
+      });
       await apiPost('/api/lead-engine/allocations', {
         campaignId,
         agreementId,
@@ -139,8 +171,13 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
       });
       resetRateLimiter();
       await loadAllocations();
+      log('🎉 Lote de leads solicitado com sucesso', {
+        campaignId,
+        agreementId,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível buscar novos leads');
+      logError('Falha ao solicitar novo lote de leads', err);
     } finally {
       setPulling(false);
     }
@@ -156,12 +193,21 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
 
   const handleUpdateStatus = async (allocationId, status) => {
     try {
+      log('✏️ Atualizando status do lead', {
+        allocationId,
+        status,
+      });
       const payload = await apiPatch(`/api/lead-engine/allocations/${allocationId}`, { status });
       setAllocations((current) =>
         current.map((item) => (item.allocationId === allocationId ? payload.data : item))
       );
+      log('📌 Lead atualizado com sucesso', {
+        allocationId,
+        status,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível atualizar o lead');
+      logError('Falha ao atualizar lead', err);
     }
   };
 
@@ -294,9 +340,14 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4" />
-              <span>{error}</span>
+            <div className="flex flex-col gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4" />
+                <span>{error}</span>
+              </div>
+              <p className="text-xs text-destructive/80">
+                Dica rápida: revise se o WhatsApp conectado segue ativo e, se necessário, peça um novo lote após alguns segundos.
+              </p>
             </div>
           ) : null}
 
@@ -307,14 +358,14 @@ const LeadInbox = ({ selectedAgreement, campaign, onboarding, onSelectAgreement,
           ) : null}
 
           {!loading && filteredAllocations.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[var(--border)]/70 p-6 text-center text-sm text-muted-foreground">
-              <p>
-                Nenhum lead disponível ainda. Clique em <strong>Buscar novos leads ({batchSize})</strong> para solicitar um novo lote ao Lead Engine.
-              </p>
-              <Button size="sm" className="mt-4" onClick={handlePull} disabled={pulling}>
-                <Sparkles className="mr-2 h-4 w-4" /> Buscar agora
-              </Button>
-            </div>
+            <EmptyInboxState
+              agreement={selectedAgreement}
+              campaign={campaign}
+              onBackToWhatsApp={onBackToWhatsApp}
+              onSelectAgreement={onSelectAgreement}
+              onPull={handlePull}
+              pulling={pulling}
+            />
           ) : null}
 
           {!loading && filteredAllocations.length > 0 ? (

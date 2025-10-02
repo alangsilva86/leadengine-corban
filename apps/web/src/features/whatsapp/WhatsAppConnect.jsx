@@ -9,8 +9,10 @@ import { cn } from '@/lib/utils.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken, onAuthTokenChange } from '@/lib/auth.js';
 import { parseRetryAfterMs } from '@/lib/rate-limit.js';
-import DemoAuthDialog from './DemoAuthDialog.jsx';
+import DemoAuthDialog from '@/components/DemoAuthDialog.jsx';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
+import usePlayfulLogger from '../shared/usePlayfulLogger.js';
+import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
 const statusCopy = {
   disconnected: {
@@ -528,6 +530,7 @@ const WhatsAppConnect = ({
   onContinue,
   onBack,
 }) => {
+  const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const pollIdRef = useRef(0);
   const [instances, setInstances] = useState([]);
   const [instance, setInstance] = useState(null);
@@ -828,9 +831,14 @@ const WhatsAppConnect = ({
     setLoadingInstances(true);
     setErrorMessage(null);
     try {
+      log('🚀 Iniciando sincronização de instâncias WhatsApp', {
+        tenantAgreement: selectedAgreement?.id ?? null,
+        preferredInstanceId: preferredInstanceId ?? null,
+      });
       const response = await apiGet('/api/integrations/whatsapp/instances');
+      const hasServerList = Array.isArray(response?.data);
       setSessionActive(true);
-      let list = Array.isArray(response?.data) ? response.data : [];
+      let list = hasServerList ? response.data : [];
       let connectResult = providedConnect || null;
 
       if (!Array.isArray(list) || list.length === 0) {
@@ -883,7 +891,14 @@ const WhatsAppConnect = ({
         list = list.map((item) => (item.id === merged.id ? { ...item, ...merged } : item));
       }
 
-      setInstances(list);
+      const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
+
+      setInstances((previous) => {
+        if (hasServerList || (Array.isArray(list) && list.length > 0)) {
+          return list;
+        }
+        return previous;
+      });
       setInstance(current);
 
       const statusFromInstance =
@@ -910,6 +925,11 @@ const WhatsAppConnect = ({
         setQrData(null);
         setSecondsLeft(null);
       }
+      log('✅ Instâncias sincronizadas', {
+        total: resolvedTotal,
+        status: statusFromInstance,
+        instanceId: current?.id ?? null,
+      });
       return { success: true, status: statusFromInstance };
     } catch (err) {
       if (isAuthError(err)) {
@@ -919,6 +939,7 @@ const WhatsAppConnect = ({
           err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
         );
       }
+      warn('Instâncias não puderam ser carregadas', err);
       return { success: false, error: err };
     } finally {
       setLoadingInstances(false);
@@ -968,6 +989,10 @@ const WhatsAppConnect = ({
     setLoadingInstances(true);
     setErrorMessage(null);
     try {
+      log('🧪 Criando nova instância WhatsApp', {
+        agreementId: selectedAgreement.id,
+        name: normalizedName,
+      });
       const response = await apiPost('/api/integrations/whatsapp/instances', {
         name: normalizedName,
       });
@@ -1024,6 +1049,10 @@ const WhatsAppConnect = ({
         connectResult: connectResult || undefined,
         preferredInstanceId: createdInstanceId || normalizedName,
       });
+      log('🎉 Instância criada com sucesso', {
+        instanceId: createdInstanceId,
+        name: normalizedName,
+      });
     } catch (err) {
       if (isAuthError(err)) {
         enforceAuthPrompt();
@@ -1032,6 +1061,7 @@ const WhatsAppConnect = ({
           err instanceof Error ? err.message : 'Não foi possível criar uma nova instância'
         );
       }
+      logError('Falha ao criar instância WhatsApp', err);
     } finally {
       setLoadingInstances(false);
     }
@@ -1323,14 +1353,17 @@ const WhatsAppConnect = ({
                 Vincule o número certo ao convênio e confirme para avançar para {nextStage}.
               </CardDescription>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => void handleCreateInstance()}
-              disabled={isBusy || !hasAgreement}
-            >
-              + Nova instância
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <CampaignHistoryDialog agreementId={selectedAgreement?.id} />
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleCreateInstance()}
+                disabled={isBusy || !hasAgreement}
+              >
+                + Nova instância
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid gap-4 rounded-[var(--radius)] border border-white/10 bg-white/5 p-4 text-sm">

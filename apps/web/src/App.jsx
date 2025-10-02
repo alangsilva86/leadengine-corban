@@ -5,8 +5,8 @@ import './App.css';
 
 const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('./components/AgreementGrid.jsx'));
-const WhatsAppConnect = lazy(() => import('./components/WhatsAppConnect.jsx'));
-const LeadInbox = lazy(() => import('./components/LeadInbox.jsx'));
+const WhatsAppConnect = lazy(() => import('./features/whatsapp/WhatsAppConnect.jsx'));
+const LeadInbox = lazy(() => import('./features/leads/LeadInbox.jsx'));
 const Reports = lazy(() => import('./components/Reports.jsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
 
