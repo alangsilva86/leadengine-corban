@@ -148,7 +148,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const requestedTenantId = req.user?.tenantId;
     const { agreementId, agreementName, instanceId } = req.body as {
       agreementId: string;
       agreementName: string;
@@ -160,6 +160,7 @@ router.post(
     const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
 
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+    const tenantId = instance?.tenantId ?? requestedTenantId ?? 'demo-tenant';
     if (!instance) {
       res.status(404).json({
         success: false,
@@ -169,6 +170,14 @@ router.post(
         },
       });
       return;
+    }
+
+    if (requestedTenantId && requestedTenantId !== tenantId) {
+      logger.warn('Campaign creation using tenant fallback', {
+        requestedTenantId,
+        effectiveTenantId: tenantId,
+        instanceTenantId: instance.tenantId,
+      });
     }
 
     const normalizedName = providedName || `${agreementName.trim()} • ${instanceId}`;
