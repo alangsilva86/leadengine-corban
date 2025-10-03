@@ -1063,6 +1063,10 @@ const WhatsAppConnect = ({
       .slice(0, 12);
   }, [instance, liveEvents]);
 
+  const handleRefreshInstances = useCallback(() => {
+    void loadInstancesRef.current?.({ forceRefresh: true });
+  }, []);
+
   useEffect(() => {
     if (!selectedAgreement?.id) {
       return;
@@ -1591,11 +1595,6 @@ const WhatsAppConnect = ({
       return;
     }
 
-    if (target.connected) {
-      setErrorMessage('Desconecte a instância antes de removê-la.');
-      return;
-    }
-
     const agreementId = selectedAgreement?.id;
     setDeletingInstanceId(target.id);
     try {
@@ -1918,6 +1917,14 @@ const WhatsAppConnect = ({
               <CampaignHistoryDialog agreementId={selectedAgreement?.id} />
               <Button
                 size="sm"
+                variant="outline"
+                onClick={() => void handleRefreshInstances()}
+                disabled={loadingInstances || !isAuthenticated}
+              >
+                <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar lista
+              </Button>
+              <Button
+                size="sm"
                 variant="secondary"
                 onClick={() => void handleCreateInstance()}
                 disabled={isBusy || !hasAgreement}
@@ -2039,8 +2046,8 @@ const WhatsAppConnect = ({
                             variant="ghost"
                             size="icon"
                             aria-label="Remover instância"
-                            title={item.connected ? 'Desconecte antes de remover' : 'Remover instância'}
-                            disabled={item.connected || deletingInstanceId === item.id}
+                            title="Remover instância"
+                            disabled={deletingInstanceId === item.id}
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();

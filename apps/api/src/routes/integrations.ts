@@ -704,6 +704,91 @@ const normalizePhoneCandidate = (value: unknown): string | null => {
   return null;
 };
 
+const extractPhoneFromJidString = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || !trimmed.includes('@')) {
+    return null;
+  }
+
+  const local = trimmed.split('@')[0] ?? '';
+  const digits = local.replace(/\D+/g, '');
+  if (digits.length < 8) {
+    return null;
+  }
+
+  return `+${digits}`;
+};
+
+const readRecordString = (
+  source: Record<string, unknown> | null | undefined,
+  key: string
+): string | null => {
+  if (!source) {
+    return null;
+  }
+  const value = source[key];
+  return typeof value === 'string' ? value : null;
+};
+
+const findPhoneFromJid = (value: unknown): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return extractPhoneFromJidString(value);
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const result = findPhoneFromJid(entry);
+      if (result) {
+        return result;
+      }
+    }
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const queue: Array<Record<string, unknown>> = [value];
+  const visited = new Set<Record<string, unknown>>();
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    for (const entry of Object.values(current)) {
+      if (typeof entry === 'string') {
+        const phone = extractPhoneFromJidString(entry);
+        if (phone) {
+          return phone;
+        }
+      } else if (Array.isArray(entry)) {
+        for (const nested of entry) {
+          const phone = findPhoneFromJid(nested);
+          if (phone) {
+            return phone;
+          }
+        }
+      } else if (isRecord(entry)) {
+        queue.push(entry);
+      }
+    }
+  }
+
+  return null;
+};
+
 const findPhoneNumberInObject = (value: unknown): string | null => {
   if (!isRecord(value) && !Array.isArray(value)) {
     return null;
@@ -784,6 +869,27 @@ const resolvePhoneNumber = (
 
   if (phone) {
     return phone;
+  }
+
+  const brokerRecordObject = isRecord(brokerRecord) ? (brokerRecord as Record<string, unknown>) : null;
+  const rawStatusObject = isRecord(rawStatus) ? (rawStatus as Record<string, unknown>) : null;
+  const metadataObject = isRecord(metadata) ? (metadata as Record<string, unknown>) : null;
+
+  const phoneFromJid =
+    extractPhoneFromJidString(readRecordString(brokerRecordObject, 'jid')) ??
+    extractPhoneFromJidString(
+      isRecord(brokerRecordObject?.user)
+        ? readRecordString(brokerRecordObject!.user as Record<string, unknown>, 'id')
+        : null
+    ) ??
+    extractPhoneFromJidString(readRecordString(rawStatusObject, 'jid')) ??
+    extractPhoneFromJidString(readRecordString(metadataObject, 'jid')) ??
+    findPhoneFromJid(metadata) ??
+    findPhoneFromJid(rawStatus) ??
+    findPhoneFromJid(brokerRecord);
+
+  if (phoneFromJid) {
+    return phoneFromJid;
   }
 
   return (
@@ -1716,17 +1822,6 @@ router.delete(
           error: {
             code: 'INSTANCE_NOT_FOUND',
             message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      if (instance.connected) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_CONNECTED',
-            message: 'Desconecte a instância antes de removê-la.',
           },
         });
         return;
