@@ -1844,7 +1844,33 @@ const WhatsAppConnect = ({
 
       onContinue?.();
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Não foi possível salvar a campanha');
+      const errorCode = err?.payload?.error?.code;
+      const messageFallback =
+        err?.payload?.error?.message ||
+        err?.message ||
+        (err instanceof Error ? err.message : 'Não foi possível salvar a campanha');
+
+      if (errorCode === 'CAMPAIGN_NAME_IN_USE') {
+        try {
+          const response = await apiGet(
+            `/api/campaigns?agreementId=${encodeURIComponent(selectedAgreement.id)}&instanceId=${encodeURIComponent(instance.id)}&status=active`
+          );
+          const existingCampaign = Array.isArray(response?.data) ? response.data[0] : null;
+
+          if (existingCampaign) {
+            setCampaign(existingCampaign);
+            onCampaignReady?.(existingCampaign);
+            onContinue?.();
+            setErrorMessage(null);
+            return;
+          }
+        } catch (fetchError) {
+          logError('Falha ao recuperar campanha existente', fetchError);
+        }
+      }
+
+      setErrorMessage(messageFallback);
+      logError('Falha ao criar campanha WhatsApp', err);
     } finally {
       setCreatingCampaign(false);
     }
