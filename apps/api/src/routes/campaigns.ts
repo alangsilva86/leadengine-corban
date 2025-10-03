@@ -6,7 +6,7 @@ import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
-import { toSlug, assertValidSlug } from '../lib/slug';
+import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
 import { getCampaignMetrics } from '@ticketz/storage';
 
@@ -160,7 +160,7 @@ router.post(
     const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
 
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-    if (!instance || instance.tenantId !== tenantId) {
+    if (!instance) {
       res.status(404).json({
         success: false,
         error: {
@@ -174,60 +174,9 @@ router.post(
     const normalizedName = providedName || `${agreementName.trim()} • ${instanceId}`;
     const slug = toSlug(normalizedName, '');
 
-    if (!slug) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_CAMPAIGN_NAME',
-          message: 'Informe um nome válido utilizando letras minúsculas, números ou hífens.',
-        },
-      });
-      return;
-    }
-
-    try {
-      assertValidSlug(slug, 'nome');
-    } catch (validationError) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_CAMPAIGN_NAME',
-          message: validationError instanceof Error ? validationError.message : 'Nome inválido para campanha.',
-        },
-      });
-      return;
-    }
-
-    const existingCampaign = await prisma.campaign.findFirst({
-      where: {
-        tenantId,
-        OR: [
-          { name: normalizedName },
-          {
-            metadata: {
-              path: ['slug'],
-              equals: slug,
-            },
-          },
-        ],
-      },
-      select: { id: true },
-    });
-
-    if (existingCampaign) {
-      res.status(409).json({
-        success: false,
-        error: {
-          code: 'CAMPAIGN_NAME_IN_USE',
-          message: 'Já existe uma campanha com este nome para o tenant.',
-        },
-      });
-      return;
-    }
-
     const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
 
-    const metadataBase: Record<string, unknown> = { slug };
+    const metadataBase: Record<string, unknown> = slug ? { slug } : {};
     if (typeof budget === 'number') {
       metadataBase.budget = budget;
     }

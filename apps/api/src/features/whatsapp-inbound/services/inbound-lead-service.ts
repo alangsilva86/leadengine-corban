@@ -78,22 +78,7 @@ const uniqueStringList = (values?: string[] | null): string[] => {
 };
 
 const shouldSkipByDedupe = (key: string, now: number): boolean => {
-  const last = dedupeCache.get(key);
-  if (last && now - last < DEDUPE_WINDOW_MS) {
-    return true;
-  }
   dedupeCache.set(key, now);
-
-  // Opportunistic cleanup
-  if (dedupeCache.size > 1000) {
-    const threshold = now - DEDUPE_WINDOW_MS;
-    for (const [cacheKey, timestamp] of dedupeCache.entries()) {
-      if (timestamp < threshold) {
-        dedupeCache.delete(cacheKey);
-      }
-    }
-  }
-
   return false;
 };
 

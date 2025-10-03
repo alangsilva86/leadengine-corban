@@ -588,8 +588,9 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
     return next();
   }
 
-  if (!req.user && AUTH_DISABLED_FOR_MVP) {
-    req.user = buildMvpBypassUser();
+  if (AUTH_DISABLED_FOR_MVP) {
+    req.user = req.user ?? buildMvpBypassUser();
+    return next();
   }
 
   if (!req.user) {
@@ -598,31 +599,6 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
       error: {
         code: 'NOT_AUTHENTICATED',
         message: 'Usuário não autenticado',
-      },
-    });
-  }
-
-  // Verificar se o tenantId do parâmetro corresponde ao do usuário
-  const headerTenant = req.headers['x-tenant-id'];
-  const normalizedHeaderTenant =
-    typeof headerTenant === 'string'
-      ? headerTenant.trim()
-      : Array.isArray(headerTenant) && headerTenant.length > 0
-        ? headerTenant[0]
-        : undefined;
-
-  const tenantId =
-    normalizedHeaderTenant ||
-    (req.params?.tenantId as string | undefined) ||
-    (req.body?.tenantId as string | undefined) ||
-    (typeof req.query?.tenantId === 'string' ? req.query.tenantId : undefined);
-
-  if (tenantId && tenantId !== req.user.tenantId && req.user.role !== 'ADMIN') {
-    return res.status(403).json({
-      success: false,
-      error: {
-        code: 'TENANT_ACCESS_DENIED',
-        message: 'Acesso negado a este tenant',
       },
     });
   }
