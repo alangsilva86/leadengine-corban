@@ -33,3 +33,6 @@ export const emitToUser = (userId: string, event: string, payload: unknown) => {
   emitToRoom(`user:${userId}`, event, payload);
 };
 
+export const emitToTicket = (ticketId: string, event: string, payload: unknown) => {
+  emitToRoom(`ticket:${ticketId}`, event, payload);
+};
