@@ -21,7 +21,7 @@ import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import { getWhatsAppEventPollerMetrics, whatsappEventPoller } from './features/whatsapp-inbound/workers/event-poller';
 import './features/whatsapp-inbound/workers/inbound-processor';
-import { getMetricsRegistry } from './lib/metrics';
+import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
 
 if (process.env.NODE_ENV !== 'production') {
@@ -239,15 +239,14 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-app.get('/metrics', async (_req, res) => {
-  try {
-    const metrics = await getMetricsRegistry().metrics();
-    res.setHeader('Content-Type', getMetricsRegistry().contentType);
-    res.status(200).send(metrics);
-  } catch (error) {
-    logger.error('Failed to collect metrics', { error });
-    res.status(503).json({ success: false, error: { message: 'Failed to collect metrics' } });
-  }
+app.get('/metrics', (_req, res) => {
+  const payload = renderMetrics();
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  res.status(200).send(payload);
+  logger.info('📈 Métricas Prometheus servidas', {
+    endpoint: '/metrics',
+    sizeInBytes: payload.length,
+  });
 });
 
 // Health check simples para o MVP (sem dependência de banco)
@@ -293,7 +292,7 @@ io.use((socket, next) => {
 });
 
 io.engine.on('connection_error', (err) => {
-  logger.warn('Socket.IO handshake failed', {
+  logger.warn('Socket.IO handshake falhou — mantendo fallback em polling. Confirme se o proxy/front permite WebSocket.', {
     transport: err.context, // engine.io usa context para transporte
     code: (err as { code?: unknown }).code ?? null,
     message: err.message,
@@ -358,6 +357,7 @@ app.use('*', (req, res) => {
 server.listen(PORT, () => {
   logger.info(`🚀 Server running on port ${PORT} in ${NODE_ENV} mode`);
   logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
+  logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
 
   const pollerDisabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';

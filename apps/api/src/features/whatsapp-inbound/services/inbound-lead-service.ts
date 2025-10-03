@@ -346,7 +346,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const queueId = await getDefaultQueueId(tenantId);
   if (!queueId) {
-    logger.warn('Inbound message ignored: no queue configured for tenant', {
+    logger.warn('Inbound message ignorado ❤️‍🩹 Nenhuma fila padrão definida para o tenant. Cadastre uma fila em Configurações → Filas para destravar o atendimento.', {
       tenantId,
       instanceId,
     });

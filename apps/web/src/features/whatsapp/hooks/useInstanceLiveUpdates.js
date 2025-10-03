@@ -40,10 +40,7 @@ const useInstanceLiveUpdates = ({ tenantId, enabled = true, onEvent }) => {
         }
 
         const token = getAuthToken();
-        const transports =
-          typeof import.meta.env.VITE_SOCKET_TRANSPORTS === 'string'
-            ? import.meta.env.VITE_SOCKET_TRANSPORTS.split(',').map((entry) => entry.trim()).filter(Boolean)
-            : ['polling'];
+        const transports = ['polling'];
 
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import InboxPanel from './components/SidebarInbox/InboxPanel.jsx';
@@ -77,16 +77,48 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const filters = controller.filters;
 
   const quality = useMemo(() => controller.whatsAppLimits.data?.quality, [controller.whatsAppLimits.data]);
+  const lastQueueAlertRef = useRef(null);
 
   useEffect(() => {
     if (!controller.queueAlerts?.length) {
       return;
     }
     const [latest] = controller.queueAlerts;
-    toast.warning('Configure a fila padrão para receber mensagens', {
-      description: 'Nenhuma fila ativa foi encontrada. Acesse Configurações > Filas para habilitar.',
+    if (lastQueueAlertRef.current === latest.timestamp) {
+      return;
+    }
+    lastQueueAlertRef.current = latest.timestamp;
+    toast.warning('🚨 Fila padrão ausente', {
+      description: 'Nenhuma fila ativa foi encontrada para o tenant. Configure em Configurações → Filas para destravar o atendimento inbound.',
     });
   }, [controller.queueAlerts]);
+
+  const handleManualSync = () => {
+    const toastId = 'chat-sync-tickets';
+    toast.loading('🔄 Sincronizando tickets diretamente da API...', { id: toastId });
+    controller.ticketsQuery
+      .refetch({ cancelRefetch: false, throwOnError: false })
+      .then((result) => {
+        if (result.error) {
+          toast.error('Falha ao sincronizar tickets', {
+            id: toastId,
+            description: result.error?.message ?? 'Erro não identificado. Tente novamente em instantes.',
+          });
+          return;
+        }
+        const total = Array.isArray(result.data?.items) ? result.data.items.length : '—';
+        toast.success('Tickets sincronizados com sucesso', {
+          id: toastId,
+          description: `Total retornado agora: ${total}. Atualização forçada sem cache executada.`,
+        });
+      })
+      .catch((error) => {
+        toast.error('Falha ao sincronizar tickets', {
+          id: toastId,
+          description: error?.message ?? 'Erro não identificado. Tente novamente em instantes.',
+        });
+      });
+  };
 
   return (
     <div className="chat-command-center">
@@ -96,7 +128,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
           onFiltersChange={controller.setFilters}
           search={filters.search ?? ''}
           onSearchChange={controller.setSearch}
-          onRefresh={() => controller.ticketsQuery.refetch()}
+          onRefresh={handleManualSync}
           loading={controller.ticketsQuery.isFetching}
           tickets={controller.tickets}
           selectedTicketId={controller.selectedTicketId}

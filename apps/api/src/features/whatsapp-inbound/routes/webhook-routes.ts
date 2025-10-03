@@ -5,6 +5,7 @@ import { asyncHandler } from '../../../middleware/error-handler';
 import { logger } from '../../../config/logger';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { enqueueWhatsAppBrokerEvents } from '../queue/event-queue';
+import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();

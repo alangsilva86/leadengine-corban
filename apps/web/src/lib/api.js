@@ -230,6 +230,7 @@ export const apiGet = async (path, options = {}) => {
   return safeFetch(path, {
     ...prepared,
     credentials: prepared.credentials ?? 'include',
+    cache: prepared.cache ?? 'no-store',
   });
 };
 
