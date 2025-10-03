@@ -6,7 +6,7 @@ import './App.css';
 const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('./components/AgreementGrid.jsx'));
 const WhatsAppConnect = lazy(() => import('./features/whatsapp/WhatsAppConnect.jsx'));
-const LeadInbox = lazy(() => import('./features/leads/inbox/index.jsx'));
+const ChatCommandCenter = lazy(() => import('./features/chat/ChatCommandCenter.jsx'));
 const Reports = lazy(() => import('./components/Reports.jsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
 
@@ -77,6 +77,14 @@ function App() {
     return 'inbox';
   };
 
+  const activeUser = useMemo(
+    () => ({
+      id: 'agent-mvp',
+      name: 'Agente MVP',
+    }),
+    []
+  );
+
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -127,18 +135,7 @@ function App() {
           />
         );
       case 'inbox':
-        return (
-          <LeadInbox
-            selectedAgreement={selectedAgreement}
-            campaign={activeCampaign}
-            onboarding={{
-              stages: journeyStages,
-              activeStep,
-            }}
-            onSelectAgreement={() => setCurrentPage('agreements')}
-            onBackToWhatsApp={() => setCurrentPage('whatsapp')}
-          />
-        );
+        return <ChatCommandCenter currentUser={activeUser} />;
       case 'reports':
         return <Reports />;
       case 'settings':

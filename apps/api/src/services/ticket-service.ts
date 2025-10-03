@@ -25,12 +25,17 @@ import {
 } from '@ticketz/storage';
 import { emitToTenant, emitToTicket, emitToUser } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
-import { createTicketNote, listTicketNotes, type TicketNote } from '../data/ticket-note-store';
+import {
+  createTicketNote,
+  listTicketNotes,
+  type TicketNote,
+  type TicketNoteVisibility,
+} from '../data/ticket-note-store';
 import { logger } from '../config/logger';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
-type TicketIncludeOption = 'contact' | 'lead' | 'notes';
+export type TicketIncludeOption = 'contact' | 'lead' | 'notes';
 
 export type TicketContactSummary = Pick<Contact, 'id' | 'name' | 'phone' | 'email' | 'document' | 'avatar'> & {
   consent?: {
@@ -94,6 +99,19 @@ export type InboxHealthMetrics = {
 
 export type TicketListResult = PaginatedResult<TicketHydrated> & {
   metrics?: InboxHealthMetrics;
+};
+
+export type CreateTicketNoteInput = {
+  body: string;
+  visibility?: TicketNoteVisibility;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+type TicketNoteAuthor = {
+  id: string;
+  name?: string | null;
+  avatar?: string | null;
 };
 
 const emitTicketEvent = (
@@ -802,4 +820,29 @@ export const sendMessage = async (
   }
 
   return message;
+};
+
+export const addTicketNote = async (
+  tenantId: string,
+  ticketId: string,
+  author: TicketNoteAuthor,
+  input: CreateTicketNoteInput
+): Promise<TicketNote> => {
+  await getTicketById(tenantId, ticketId);
+
+  const note = await createTicketNote({
+    tenantId,
+    ticketId,
+    authorId: author.id,
+    authorName: author.name ?? null,
+    authorAvatar: author.avatar ?? null,
+    body: input.body,
+    visibility: input.visibility,
+    tags: input.tags,
+    metadata: input.metadata,
+  });
+
+  emitTicketEvent(tenantId, ticketId, 'ticket.note.created', note, author.id);
+
+  return note;
 };

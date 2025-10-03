@@ -1,0 +1,194 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+
+import useTicketsQuery from '../api/useTicketsQuery.js';
+import useMessagesQuery from '../api/useMessagesQuery.js';
+import useSendMessage from '../api/useSendMessage.js';
+import useNotesMutation from '../api/useNotesMutation.js';
+import useTicketStatusMutation from '../api/useTicketStatusMutation.js';
+import useTicketAssignMutation from '../api/useTicketAssignMutation.js';
+import useWhatsAppLimits from '../api/useWhatsAppLimits.js';
+import useRealtimeTickets from './useRealtimeTickets.js';
+import useConversationState from './useConversationState.js';
+import useTypingIndicator from './useTypingIndicator.js';
+
+const DEFAULT_FILTERS = {
+  scope: 'team',
+  state: 'open',
+  window: 'in_window',
+  search: '',
+  outcome: null,
+};
+
+const scopeSupportsUser = (scope) => scope === 'mine';
+
+const buildApiFilters = ({ filters, currentUser }) => {
+  const queryFilters = {
+    state: filters?.state,
+    search: filters?.search,
+  };
+
+  if (filters?.scope === 'mine' && currentUser?.id) {
+    queryFilters.scope = 'mine';
+  } else if (filters?.scope && filters.scope !== 'team') {
+    queryFilters.scope = filters.scope;
+  }
+
+  if (filters?.window === 'expired') {
+    queryFilters.window = 'expired';
+  } else if (filters?.window === 'in_window') {
+    queryFilters.window = 'open';
+  }
+
+  if (filters?.outcome === 'won') {
+    queryFilters.outcome = 'won';
+  } else if (filters?.outcome === 'lost') {
+    queryFilters.outcome = 'lost';
+  }
+
+  return queryFilters;
+};
+
+const findTicketById = (items, ticketId) => {
+  if (!ticketId || !Array.isArray(items)) {
+    return null;
+  }
+  return items.find((ticket) => ticket.id === ticketId) ?? null;
+};
+
+export const useChatController = ({ tenantId, currentUser } = {}) => {
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
+
+  const queryClient = useQueryClient();
+
+  const apiFilters = useMemo(
+    () => buildApiFilters({ filters, currentUser }),
+    [filters, currentUser]
+  );
+
+  const ticketsQuery = useTicketsQuery({
+    filters: apiFilters,
+    includeMetrics: true,
+    enabled: Boolean(tenantId),
+  });
+
+  const tickets = ticketsQuery.data?.items ?? [];
+  const metrics = ticketsQuery.data?.metrics ?? null;
+
+  useEffect(() => {
+    if (tickets.length === 0) {
+      setSelectedTicketId((previous) => (previous && findTicketById(tickets, previous) ? previous : null));
+      return;
+    }
+
+    setSelectedTicketId((previous) => {
+      if (previous && findTicketById(tickets, previous)) {
+        return previous;
+      }
+      return tickets[0]?.id ?? null;
+    });
+  }, [tickets]);
+
+  const selectedTicket = useMemo(
+    () => findTicketById(tickets, selectedTicketId),
+    [selectedTicketId, tickets]
+  );
+
+  const messagesQuery = useMessagesQuery({
+    ticketId: selectedTicketId,
+    enabled: Boolean(selectedTicketId),
+  });
+
+  const conversation = useConversationState({
+    ticket: selectedTicket,
+    messagesPages: messagesQuery.data?.pages,
+    notes: selectedTicket?.notes ?? [],
+  });
+
+  const sendMessageMutation = useSendMessage({ fallbackTicketId: selectedTicketId });
+  const notesMutation = useNotesMutation({ fallbackTicketId: selectedTicketId });
+  const statusMutation = useTicketStatusMutation({ fallbackTicketId: selectedTicketId });
+  const assignMutation = useTicketAssignMutation({ fallbackTicketId: selectedTicketId });
+
+  const realtime = useRealtimeTickets({
+    tenantId,
+    userId: currentUser?.id,
+    ticketId: selectedTicketId,
+    enabled: Boolean(tenantId),
+    onTicketUpdated: () => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
+    },
+    onTicketAssigned: () => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
+    },
+    onTicketStatusChanged: () => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
+    },
+    onMessageCreated: (payload) => {
+      if (!payload?.ticketId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', payload.ticketId] });
+    },
+    onNoteCreated: (payload) => {
+      if (!payload?.ticketId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
+    },
+  });
+
+  const typingIndicator = useTypingIndicator({ socket: realtime.socket });
+
+  const whatsAppLimits = useWhatsAppLimits({ enabled: Boolean(tenantId) });
+
+  const selectTicket = useCallback((ticketId) => {
+    setSelectedTicketId(ticketId);
+  }, []);
+
+  const updateFilters = useCallback((updater) => {
+    setFilters((current) => {
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      return {
+        ...current,
+        ...next,
+      };
+    });
+  }, []);
+
+  const updateSearch = useCallback((value) => {
+    setFilters((current) => ({ ...current, search: value }));
+  }, []);
+
+  const canUseScopeMine = currentUser?.id ? true : false;
+  const effectiveScope = scopeSupportsUser(filters.scope) && !canUseScopeMine ? 'team' : filters.scope;
+
+  return {
+    tenantId,
+    currentUser,
+    filters: {
+      ...filters,
+      scope: effectiveScope,
+    },
+    setFilters: updateFilters,
+    setSearch: updateSearch,
+    ticketsQuery,
+    tickets,
+    metrics,
+    whatsAppLimits,
+    selectedTicketId,
+    selectedTicket,
+    selectTicket,
+    messagesQuery,
+    conversation,
+    sendMessageMutation,
+    notesMutation,
+    statusMutation,
+    assignMutation,
+    realtime,
+    typingIndicator,
+  };
+};
+
+export default useChatController;
