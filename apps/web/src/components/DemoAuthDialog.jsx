@@ -3,6 +3,7 @@ import { LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
+import { getEnvVar } from '@/lib/runtime-env.js';
 import {
   Dialog,
   DialogContent,
@@ -20,10 +21,10 @@ import {
   onTenantIdChange,
 } from '@/lib/auth.js';
 
-const defaultEmail = import.meta.env.VITE_DEMO_OPERATOR_EMAIL || '';
-const defaultPassword = import.meta.env.VITE_DEMO_OPERATOR_PASSWORD || '';
+const defaultEmail = getEnvVar('VITE_DEMO_OPERATOR_EMAIL', '');
+const defaultPassword = getEnvVar('VITE_DEMO_OPERATOR_PASSWORD', '');
 const fallbackTenant =
-  import.meta.env.VITE_DEMO_TENANT_ID || import.meta.env.VITE_API_TENANT_ID || import.meta.env.VITE_TENANT_ID || '';
+  getEnvVar('VITE_DEMO_TENANT_ID') || getEnvVar('VITE_API_TENANT_ID') || getEnvVar('VITE_TENANT_ID') || '';
 
 const initialTenant = () => getTenantId() || fallbackTenant;
 

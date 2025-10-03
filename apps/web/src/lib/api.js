@@ -5,8 +5,12 @@ import {
   onTenantIdChange,
 } from './auth.js';
 import { computeBackoffDelay, parseRetryAfterMs } from './rate-limit.js';
+import { getEnvVar } from './runtime-env.js';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+export const API_BASE_URL = (() => {
+  const rawUrl = getEnvVar('VITE_API_URL', '');
+  return typeof rawUrl === 'string' ? rawUrl.replace(/\/$/, '') : '';
+})();
 
 let persistedToken = getAuthToken();
 let persistedTenantId = getTenantId();
@@ -42,7 +46,7 @@ const baseHeaders = () => {
 
   if (!tenantId) {
     const envTenant =
-      import.meta.env.VITE_API_TENANT_ID ?? import.meta.env.VITE_TENANT_ID ?? undefined;
+      getEnvVar('VITE_API_TENANT_ID') ?? getEnvVar('VITE_TENANT_ID') ?? undefined;
     if (typeof envTenant === 'string') {
       const normalized = envTenant.trim();
       tenantId = normalized.length > 0 ? normalized : undefined;
@@ -57,7 +61,7 @@ const baseHeaders = () => {
   }
 
   const tokenCandidate =
-    persistedToken || import.meta.env.VITE_API_AUTH_TOKEN || import.meta.env.VITE_API_TOKEN;
+    persistedToken || getEnvVar('VITE_API_AUTH_TOKEN') || getEnvVar('VITE_API_TOKEN');
   const authHeader = prepareAuthorization(tokenCandidate);
   if (authHeader) {
     headers.Authorization = authHeader;
