@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
+import { ConflictError } from '@ticketz/core';
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
+import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const dedupeCache = new Map<string, number>();
+const queueCacheByTenant = new Map<string, string>();
 
 interface InboundContactDetails {
   phone?: string | null;
@@ -82,6 +87,215 @@ const shouldSkipByDedupe = (key: string, now: number): boolean => {
   return false;
 };
 
+const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
+  if (queueCacheByTenant.has(tenantId)) {
+    return queueCacheByTenant.get(tenantId) as string;
+  }
+
+  const queue = await prisma.queue.findFirst({
+    where: { tenantId },
+    orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  if (!queue) {
+    return null;
+  }
+
+  queueCacheByTenant.set(tenantId, queue.id);
+  return queue.id;
+};
+
+const ensureContact = async (
+  tenantId: string,
+  {
+    phone,
+    name,
+    document,
+    registrations,
+    timestamp,
+  }: {
+    phone?: string;
+    name?: string | null;
+    document?: string;
+    registrations?: string[];
+    timestamp?: string | null;
+  }
+) => {
+  const interactionDate = timestamp ? new Date(timestamp) : new Date();
+
+  let contact = null;
+
+  if (phone) {
+    contact = await prisma.contact.findUnique({
+      where: {
+        tenantId_phone: {
+          tenantId,
+          phone,
+        },
+      },
+    });
+  }
+
+  if (!contact && document) {
+    contact = await prisma.contact.findFirst({
+      where: {
+        tenantId,
+        document,
+      },
+    });
+  }
+
+  const tags = Array.from(
+    new Set([...(contact?.tags ?? []), 'whatsapp', 'inbound'])
+  );
+
+  const customFieldsSource =
+    typeof contact?.customFields === 'object' && contact?.customFields !== null
+      ? (contact.customFields as Record<string, unknown>)
+      : {};
+
+  const customFieldsRecord: Record<string, unknown> = {
+    ...customFieldsSource,
+    source: 'whatsapp',
+    lastInboundChannel: 'whatsapp',
+  };
+
+  if (registrations && registrations.length > 0) {
+    customFieldsRecord.registrations = registrations;
+  } else if (!('registrations' in customFieldsRecord)) {
+    customFieldsRecord.registrations = [];
+  }
+
+  if (!('consent' in customFieldsRecord)) {
+    customFieldsRecord.consent = {
+      granted: true,
+      base: 'legitimate_interest',
+      grantedAt: interactionDate.toISOString(),
+    };
+  }
+
+  const contactData = {
+    name: name && name.trim().length > 0 ? name.trim() : contact?.name ?? 'Contato WhatsApp',
+    phone: phone ?? contact?.phone ?? null,
+    document: document ?? contact?.document ?? null,
+    tags,
+    customFields: customFieldsRecord as Prisma.InputJsonValue,
+    lastInteractionAt: interactionDate,
+  };
+
+  if (contact) {
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: contactData,
+    });
+  } else {
+    contact = await prisma.contact.create({
+      data: {
+        tenantId,
+        ...contactData,
+      },
+    });
+  }
+
+  return contact;
+};
+
+const ensureTicketForContact = async (
+  tenantId: string,
+  contactId: string,
+  queueId: string,
+  subject: string,
+  metadata: Record<string, unknown>
+): Promise<string | null> => {
+  try {
+    const ticket = await createTicketService({
+      tenantId,
+      contactId,
+      queueId,
+      channel: 'WHATSAPP',
+      priority: 'NORMAL',
+      subject,
+      tags: ['whatsapp', 'inbound'],
+      metadata,
+    });
+    return ticket.id;
+  } catch (error) {
+    if (error instanceof ConflictError) {
+      const details = (error.details ?? {}) as Record<string, unknown>;
+      const existingTicketId =
+        typeof details.existingTicketId === 'string'
+          ? details.existingTicketId
+          : undefined;
+      if (existingTicketId) {
+        return existingTicketId;
+      }
+    }
+
+    logger.error('Failed to ensure WhatsApp ticket for contact', {
+      error,
+      tenantId,
+      contactId,
+    });
+    return null;
+  }
+};
+
+type NormalizedMessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'DOCUMENT' | 'LOCATION' | 'CONTACT' | 'TEMPLATE';
+
+const resolveMessageContent = (message: InboundMessageDetails): {
+  content: string;
+  type: NormalizedMessageType;
+  mediaUrl?: string;
+} => {
+  const rawType = typeof message.type === 'string' ? message.type.trim().toUpperCase() : 'TEXT';
+  const allowedTypes = new Set([
+    'TEXT',
+    'IMAGE',
+    'AUDIO',
+    'VIDEO',
+    'DOCUMENT',
+    'LOCATION',
+    'CONTACT',
+    'TEMPLATE',
+  ]);
+  const type: NormalizedMessageType = allowedTypes.has(rawType) ? (rawType as NormalizedMessageType) : 'TEXT';
+
+  const extractText = (value: unknown): string | null => {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      return (
+        extractText(record.text) ||
+        extractText(record.body) ||
+        extractText(record.caption) ||
+        extractText(record.message)
+      );
+    }
+    return null;
+  };
+
+  const content =
+    extractText(message.text) ||
+    extractText(message) ||
+    '[Mensagem recebida via WhatsApp]';
+
+  const metadataRecord = (message.metadata && typeof message.metadata === 'object'
+    ? (message.metadata as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+  const mediaCandidate = metadataRecord.url ?? metadataRecord.mediaUrl ?? (message as Record<string, unknown>).mediaUrl;
+  const mediaUrl = typeof mediaCandidate === 'string' ? mediaCandidate : undefined;
+
+  return {
+    content,
+    type,
+    mediaUrl,
+  };
+};
+
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
   const { instanceId, contact, message, timestamp } = event;
   const normalizedPhone = sanitizePhone(contact.phone);
@@ -128,6 +342,78 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const leadName = contact.name?.trim() || 'Contato WhatsApp';
   const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
+
+  const queueId = await getDefaultQueueId(tenantId);
+  if (!queueId) {
+    logger.warn('Inbound message ignored: no queue configured for tenant', {
+      tenantId,
+      instanceId,
+    });
+    return;
+  }
+
+  const contactRecord = await ensureContact(tenantId, {
+    phone: normalizedPhone,
+    name: leadName,
+    document,
+    registrations,
+    timestamp,
+  });
+
+  const ticketMetadata: Record<string, unknown> = {
+    source: 'WHATSAPP',
+    instanceId,
+    campaignIds: campaigns.map((campaign) => campaign.id),
+    pipelineStep: 'follow-up',
+  };
+
+  const ticketSubject = contactRecord.name || contactRecord.phone || 'Contato WhatsApp';
+  const ticketId = await ensureTicketForContact(
+    tenantId,
+    contactRecord.id,
+    queueId,
+    ticketSubject,
+    ticketMetadata
+  );
+
+  if (!ticketId) {
+    logger.error('Inbound message ignored: failed to ensure ticket', {
+      tenantId,
+      instanceId,
+      messageId: message.id ?? null,
+    });
+    return;
+  }
+
+  const normalizedMessage = resolveMessageContent(message);
+
+  try {
+    await sendMessageService(tenantId, undefined, {
+      ticketId,
+      content: normalizedMessage.content,
+      type: normalizedMessage.type,
+      mediaUrl: normalizedMessage.mediaUrl,
+      metadata: {
+        brokerMessageId: message.id ?? null,
+        instanceId,
+        campaignIds: campaigns.map((campaign) => campaign.id),
+        contact: {
+          phone: contactRecord.phone,
+          document: contactRecord.document,
+          name: contactRecord.name,
+        },
+        raw: message,
+        eventMetadata: event.metadata ?? {},
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to persist inbound WhatsApp message in ticket timeline', {
+      error,
+      tenantId,
+      ticketId,
+      messageId: message.id ?? null,
+    });
+  }
 
   for (const campaign of campaigns) {
     const agreementId = campaign.agreementId || 'unknown';
