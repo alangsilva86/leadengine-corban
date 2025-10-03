@@ -66,13 +66,13 @@ export const InboxFilters = ({
         />
         <Button
           variant="outline"
-          size="icon"
-          className="h-9 w-9 border-slate-700/60 bg-slate-900/70 text-slate-200"
+          size="sm"
+          className="border-slate-700/60 bg-slate-900/70 text-slate-200"
           onClick={onRefresh}
           disabled={loading}
         >
-          <RefreshCcw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-          <span className="sr-only">Atualizar</span>
+          <RefreshCcw className={loading ? 'mr-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4'} />
+          {loading ? 'Sincronizando…' : 'Sincronizar' }
         </Button>
       </div>
 

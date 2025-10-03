@@ -21,6 +21,7 @@ import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import { getWhatsAppEventPollerMetrics, whatsappEventPoller } from './features/whatsapp-inbound/workers/event-poller';
 import './features/whatsapp-inbound/workers/inbound-processor';
+import { getMetricsRegistry } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
 
 if (process.env.NODE_ENV !== 'production') {
@@ -238,6 +239,17 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+app.get('/metrics', async (_req, res) => {
+  try {
+    const metrics = await getMetricsRegistry().metrics();
+    res.setHeader('Content-Type', getMetricsRegistry().contentType);
+    res.status(200).send(metrics);
+  } catch (error) {
+    logger.error('Failed to collect metrics', { error });
+    res.status(503).json({ success: false, error: { message: 'Failed to collect metrics' } });
+  }
+});
+
 // Health check simples para o MVP (sem dependência de banco)
 app.get('/health', (_req, res) => {
   const details: Record<string, unknown> = {
@@ -278,6 +290,15 @@ io.use((socket, next) => {
 
   // TODO: Validar token JWT
   next();
+});
+
+io.engine.on('connection_error', (err) => {
+  logger.warn('Socket.IO handshake failed', {
+    transport: err.context, // engine.io usa context para transporte
+    code: (err as { code?: unknown }).code ?? null,
+    message: err.message,
+    data: err.data ?? null,
+  });
 });
 
 io.on('connection', (socket) => {

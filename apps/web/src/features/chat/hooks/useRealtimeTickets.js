@@ -40,6 +40,7 @@ export const useRealtimeTickets = ({
   onMessageStatusChanged,
   onNoteCreated,
   onTyping,
+  onQueueMissing,
 } = {}) => {
   const socketRef = useRef(null);
   const ticketRoomRef = useRef(null);
@@ -61,9 +62,14 @@ export const useRealtimeTickets = ({
         }
 
         const token = getAuthToken();
+        const transports =
+          typeof import.meta.env.VITE_SOCKET_TRANSPORTS === 'string'
+            ? import.meta.env.VITE_SOCKET_TRANSPORTS.split(',').map((entry) => entry.trim()).filter(Boolean)
+            : ['polling'];
+
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
-          transports: ['websocket', 'polling'],
+          transports,
           auth: token ? { token } : undefined,
           reconnectionAttempts: 3,
           timeout: 8000,
@@ -162,6 +168,11 @@ export const useRealtimeTickets = ({
             onTyping(payload);
           }
         });
+        registerHandler(socket, 'whatsapp.queue.missing', (payload) => {
+          if (typeof onQueueMissing === 'function') {
+            onQueueMissing(payload);
+          }
+        });
       } catch (error) {
         if (!isMounted) {
           return;
@@ -181,7 +192,7 @@ export const useRealtimeTickets = ({
       socketRef.current = null;
       ticketRoomRef.current = null;
     };
-  }, [enabled, onMessageCreated, onMessageStatusChanged, onNoteCreated, onTicketAssigned, onTicketClosed, onTicketEvent, onTicketStatusChanged, onTicketUpdated, onTyping, tenantId, userId]);
+  }, [enabled, onMessageCreated, onMessageStatusChanged, onNoteCreated, onQueueMissing, onTicketAssigned, onTicketClosed, onTicketEvent, onTicketStatusChanged, onTicketUpdated, onTyping, tenantId, userId]);
 
   useEffect(() => {
     const socket = socketRef.current;

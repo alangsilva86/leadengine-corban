@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import InboxPanel from './components/SidebarInbox/InboxPanel.jsx';
@@ -77,6 +77,16 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const filters = controller.filters;
 
   const quality = useMemo(() => controller.whatsAppLimits.data?.quality, [controller.whatsAppLimits.data]);
+
+  useEffect(() => {
+    if (!controller.queueAlerts?.length) {
+      return;
+    }
+    const [latest] = controller.queueAlerts;
+    toast.warning('Configure a fila padrão para receber mensagens', {
+      description: 'Nenhuma fila ativa foi encontrada. Acesse Configurações > Filas para habilitar.',
+    });
+  }, [controller.queueAlerts]);
 
   return (
     <div className="chat-command-center">

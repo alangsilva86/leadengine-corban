@@ -151,6 +151,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   if (!expectedApiKey || !safeCompare(providedApiKey, expectedApiKey)) {
     logger.warn('WhatsApp webhook rejected due to invalid API key');
+    whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_api_key' });
     res.status(401).json({ ok: false });
     return;
   }
@@ -158,6 +159,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const signatureHeader = req.header('x-signature-sha256');
   if (!verifyWebhookSignature(signatureHeader ?? null, req.rawBody)) {
     logger.warn('WhatsApp webhook rejected due to invalid signature');
+    whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
     res.status(401).json({ ok: false });
     return;
   }
@@ -238,32 +240,41 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const queued = normalizedEvents.length;
 
-  if (queued > 0) {
-    normalizedEvents.forEach((event) => {
-      logger.info('📬 [Webhook] Evento inbound normalizado', {
-        eventId: event.id,
-        instanceId: event.instanceId,
-        hasMessage: Boolean(event.payload.message),
-        hasContact: Boolean(event.payload.contact?.phone || event.payload.contact?.name),
-      });
-    });
-  } else {
+  if (queued === 0) {
     logger.warn('📭 [Webhook] Nenhum evento elegível encontrado', {
       received: rawEvents.length,
     });
+    whatsappWebhookEventsCounter.inc({ result: 'ignored', reason: 'no_inbound_event' });
+    res.status(422).json({
+      ok: false,
+      error: {
+        code: 'NO_INBOUND_EVENTS',
+        message: 'Nenhum evento de mensagem inbound foi encontrado no payload informado.',
+      },
+    });
+    return;
   }
 
-  if (queued > 0) {
-    enqueueWhatsAppBrokerEvents(
-      normalizedEvents.map((event) => ({
-        id: event.id,
-        type: event.type,
-        instanceId: event.instanceId,
-        timestamp: event.timestamp ?? undefined,
-        payload: event.payload,
-      }))
-    );
-  }
+  normalizedEvents.forEach((event) => {
+    logger.info('📬 [Webhook] Evento inbound normalizado', {
+      eventId: event.id,
+      instanceId: event.instanceId,
+      hasMessage: Boolean(event.payload.message),
+      hasContact: Boolean(event.payload.contact?.phone || event.payload.contact?.name),
+    });
+  });
+
+  enqueueWhatsAppBrokerEvents(
+    normalizedEvents.map((event) => ({
+      id: event.id,
+      type: event.type,
+      instanceId: event.instanceId,
+      timestamp: event.timestamp ?? undefined,
+      payload: event.payload,
+    }))
+  );
+
+  whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'ok' }, queued);
 
   logger.info('WhatsApp webhook processed', {
     received: rawEvents.length,

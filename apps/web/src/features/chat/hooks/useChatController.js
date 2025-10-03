@@ -59,6 +59,7 @@ const findTicketById = (items, ticketId) => {
 export const useChatController = ({ tenantId, currentUser } = {}) => {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [queueAlerts, setQueueAlerts] = useState([]);
 
   const queryClient = useQueryClient();
 
@@ -137,6 +138,9 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       }
       queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
     },
+    onQueueMissing: (payload) => {
+      setQueueAlerts((current) => [{ payload, timestamp: Date.now() }, ...current].slice(0, 5));
+    },
   });
 
   const typingIndicator = useTypingIndicator({ socket: realtime.socket });
@@ -188,6 +192,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     assignMutation,
     realtime,
     typingIndicator,
+    queueAlerts,
   };
 };
 

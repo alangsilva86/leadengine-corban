@@ -7,6 +7,7 @@ import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
+import { emitToTenant } from '../../../lib/socket-registry';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -348,6 +349,11 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     logger.warn('Inbound message ignored: no queue configured for tenant', {
       tenantId,
       instanceId,
+    });
+    emitToTenant(tenantId, 'whatsapp.queue.missing', {
+      tenantId,
+      instanceId,
+      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
     });
     return;
   }
