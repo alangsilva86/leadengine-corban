@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -2403,6 +2403,9 @@ const WhatsAppConnect = ({
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Escaneie o QR Code</DialogTitle>
+            <DialogDescription>
+              Use o aplicativo do WhatsApp para escanear o código abaixo e vincular esta instância com o LeadEngine.
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4">
             <div className="flex h-64 w-64 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">

@@ -63,8 +63,10 @@ export const useRealtimeTickets = ({
         const token = getAuthToken();
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
-          transports: ['websocket'],
+          transports: ['websocket', 'polling'],
           auth: token ? { token } : undefined,
+          reconnectionAttempts: 3,
+          timeout: 8000,
         });
 
         socketRef.current = socket;
@@ -91,6 +93,11 @@ export const useRealtimeTickets = ({
         socket.on('connect_error', (error) => {
           if (!isMounted) return;
           setConnectionError(error instanceof Error ? error.message : 'Falha ao conectar no tempo real');
+        });
+
+        socket.on('reconnect_failed', () => {
+          if (!isMounted) return;
+          setConnectionError('Não foi possível estabelecer conexão em tempo real. Continuaremos no modo offline.');
         });
 
         // Eventos do ticket bus
