@@ -1,4 +1,9 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '';
+import { getEnvVar } from './runtime-env.js';
+
+const API_BASE_URL = (() => {
+  const rawUrl = getEnvVar('VITE_API_URL', '');
+  return typeof rawUrl === 'string' ? rawUrl.replace(/\/$/, '') : '';
+})();
 
 const TOKEN_STORAGE_KEY = 'leadengine_auth_token';
 const TENANT_STORAGE_KEY = 'tenantId';
