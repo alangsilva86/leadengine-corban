@@ -58,7 +58,8 @@ export default defineConfig({
           }
 
           if (id.includes('@radix-ui')) {
-            return 'vendor-radix';
+            // Agrupar Radix junto com React evita ciclos entre chunks
+            return 'vendor-react-core';
           }
 
           if (id.includes('framer-motion')) {
