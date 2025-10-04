@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup && rm -f tsconfig.build.tsbuildinfo && tsc --project tsconfig.build.json --emitDeclarationOnly",
+    "build": "tsup && tsc --project tsconfig.build.json",
     "dev": "tsup --watch",
     "test": "vitest --passWithNoTests",
     "test:watch": "vitest --watch --passWithNoTests",
@@ -38,21 +39,6 @@
       "types": "./dist/leads/index.d.ts",
       "import": "./dist/leads/index.mjs",
       "require": "./dist/leads/index.js"
-    },
-    "./contacts": {
-      "types": "./dist/contacts/index.d.ts",
-      "import": "./dist/contacts/index.mjs",
-      "require": "./dist/contacts/index.js"
-    },
-    "./campaigns": {
-      "types": "./dist/campaigns/index.d.ts",
-      "import": "./dist/campaigns/index.mjs",
-      "require": "./dist/campaigns/index.js"
-    },
-    "./analytics": {
-      "types": "./dist/analytics/index.d.ts",
-      "import": "./dist/analytics/index.mjs",
-      "require": "./dist/analytics/index.js"
     }
   },
   "files": [
