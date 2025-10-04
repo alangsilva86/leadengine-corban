@@ -75,9 +75,10 @@ Antes de iniciar qualquer estratégia de deploy, valide a geração dos artefato
 
 ```bash
 pnpm --filter @ticketz/core build
+pnpm --filter @ticketz/core type-check
 ```
 
-Esse comando executa o bundle e recompila apenas as declarações TypeScript necessárias para o pacote, garantindo que os módulos `common`, `tickets` e `leads` estejam listados corretamente e prevenindo o erro `TS6307` durante o pipeline.
+O primeiro comando executa o bundle e recompila apenas as declarações TypeScript necessárias para o pacote, garantindo que os módulos `common`, `tickets` e `leads` estejam listados corretamente. Na sequência, o `type-check` roda o `tsc --noEmit` e confirma que os tipos usados pelos serviços (`common/types.ts`, `tickets/types.ts`, `tickets/services.ts` e `leads/types.ts`) não geram o erro `TS6307` durante o pipeline.
 
 ### 1. Deploy Automatizado
 

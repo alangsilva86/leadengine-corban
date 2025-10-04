@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Node",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "rootDir": "./src",
     "outDir": "./dist",
     "composite": true,
@@ -15,15 +15,6 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "files": [
-    "src/index.ts",
-    "src/common/types.ts",
-    "src/tickets/index.ts",
-    "src/tickets/types.ts",
-    "src/tickets/services.ts",
-    "src/leads/index.ts",
-    "src/leads/types.ts"
-  ],
   "include": [
     "src/index.ts",
     "src/common/**/*.ts",
