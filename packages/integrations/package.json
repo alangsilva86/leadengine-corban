@@ -12,16 +12,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@ticketz/core": "workspace:*",
-    "baileys": "6.7.8",
     "@hapi/boom": "^10.0.1",
+    "@ticketz/core": "workspace:*",
     "axios": "^1.6.2",
+    "baileys": "6.7.8",
     "qrcode": "^1.5.3",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.5",
-    "tsup": "^8.0.1",
+    "tsup": "^8.5.0",
     "typescript": "^5.3.3",
     "vitest": "^1.1.0"
   },

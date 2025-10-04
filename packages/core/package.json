@@ -13,13 +13,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "zod": "^3.22.4",
+    "date-fns": "^3.0.6",
     "lodash": "^4.17.21",
-    "date-fns": "^3.0.6"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/lodash": "^4.14.202",
-    "tsup": "^8.0.1",
+    "tsup": "^8.5.0",
     "typescript": "^5.3.3",
     "vitest": "^1.1.0"
   },
@@ -55,5 +55,7 @@
       "require": "./dist/analytics/index.js"
     }
   },
-  "files": ["dist"]
+  "files": [
+    "dist"
+  ]
 }
