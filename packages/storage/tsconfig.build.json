@@ -2,10 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "composite": false,
-    "paths": {
-      "@ticketz/core": ["../core/src/index.ts"],
-      "@ticketz/core/*": ["../core/src/*"]
-    }
+    "rootDir": "../../"
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules"]
