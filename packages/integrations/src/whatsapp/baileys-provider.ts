@@ -2,6 +2,7 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   type WAMessage,
+  type WAMessageUpdate,
   type WASocket,
   type ConnectionState,
 } from '@whiskeysockets/baileys';
@@ -90,7 +91,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     });
 
     // Message status updates
-    this.socket.ev.on('messages.update', (messageUpdates: Array<{ key: { id?: string | null }; update?: { status?: string } }>) => {
+    this.socket.ev.on('messages.update', (messageUpdates: WAMessageUpdate[]) => {
       this.handleMessageUpdates(messageUpdates);
     });
 
@@ -158,11 +159,11 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
   }
 
-  private handleMessageUpdates(messageUpdates: Array<{ key: { id?: string | null }; update?: { status?: string } }>): void {
+  private handleMessageUpdates(messageUpdates: WAMessageUpdate[]): void {
     for (const update of messageUpdates) {
       this.emit('message.update', {
         id: update.key.id,
-        status: update.update?.status,
+        status: update.update?.status ?? undefined,
         timestamp: new Date()
       });
     }
