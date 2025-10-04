@@ -39,10 +39,10 @@
     "vitest": "^1.1.0"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=8.0.0"
+    "node": "20.x",
+    "pnpm": "9.12.3"
   },
-  "packageManager": "pnpm@8.15.0",
+  "packageManager": "pnpm@9.12.3",
   "pnpm": {
     "overrides": {
       "libsignal": "npm:libsignal@1.0.7"
