@@ -69,6 +69,16 @@ A    www         IP_DO_SERVIDOR
 
 ## 🚀 Deploy
 
+### ✅ Validação obrigatória dos pacotes
+
+Antes de iniciar qualquer estratégia de deploy, valide a geração dos artefatos do pacote core para evitar falhas de tipagem em produção:
+
+```bash
+pnpm --filter @ticketz/core build
+```
+
+Esse comando executa o bundle e recompila apenas as declarações TypeScript necessárias para o pacote, garantindo que os módulos `common`, `tickets` e `leads` estejam listados corretamente e prevenindo o erro `TS6307` durante o pipeline.
+
 ### 1. Deploy Automatizado
 
 Use o script de deploy incluído:
