@@ -8,6 +8,6 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   minify: false,
-  external: ['@ticketz/core'],
+  external: ['@ticketz/core', '@whiskeysockets/baileys', '@hapi/boom'],
   tsconfig: 'tsconfig.build.json',
 });
