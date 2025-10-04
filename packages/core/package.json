@@ -5,8 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsup && rm -f tsconfig.build.tsbuildinfo && tsc --project tsconfig.build.json --emitDeclarationOnly",
-    "build": "tsup && tsc --project tsconfig.build.json",
+    "build": "tsup && rm -f tsconfig.build.tsbuildinfo && tsc --project tsconfig.build.json",
     "dev": "tsup --watch",
     "test": "vitest --passWithNoTests",
     "test:watch": "vitest --watch --passWithNoTests",

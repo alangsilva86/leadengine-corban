@@ -26,7 +26,9 @@
       "@ticketz/storage": ["./packages/storage/src/index.ts"],
       "@ticketz/storage/*": ["./packages/storage/src/*"],
       "@ticketz/integrations": ["./packages/integrations/src/index.ts"],
-      "@ticketz/integrations/*": ["./packages/integrations/src/*"]
+      "@ticketz/integrations/*": ["./packages/integrations/src/*"],
+      "@whiskeysockets/baileys": ["./node_modules/@whiskeysockets/baileys/lib/index.d.ts"],
+      "@hapi/boom": ["./node_modules/@hapi/boom/lib/index.d.ts"]
     }
   }
 }
