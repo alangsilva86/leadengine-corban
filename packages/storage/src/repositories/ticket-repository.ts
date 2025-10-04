@@ -81,7 +81,7 @@ const matchesTicketFilters = (ticket: TicketRecord, filters: TicketFilters): boo
   }
 
   if (filters.tags && filters.tags.length > 0) {
-    const hasTag = ticket.tags.some((tag) => filters.tags?.includes(tag));
+    const hasTag = ticket.tags.some((tag: string) => filters.tags!.includes(tag));
     if (!hasTag) {
       return false;
     }
@@ -445,4 +445,3 @@ export const listMessages = async (
     hasPrev: normalizedPagination.page > 1 && total > 0,
   };
 };
-

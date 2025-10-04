@@ -4,7 +4,7 @@ import makeWASocket, {
   type WAMessage,
   type WASocket,
   type ConnectionState,
-} from 'baileys';
+} from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import type { MessageProvider } from '../types/message-provider';
 import { EventEmitter } from 'events';
@@ -77,7 +77,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     if (!this.socket) return;
 
     // Connection updates
-    this.socket.ev.on('connection.update', (update) => {
+    this.socket.ev.on('connection.update', (update: Partial<ConnectionState>) => {
       this.handleConnectionUpdate(update);
     });
 
@@ -85,17 +85,17 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     this.socket.ev.on('creds.update', saveCreds);
 
     // Messages
-    this.socket.ev.on('messages.upsert', (messageUpdate) => {
+    this.socket.ev.on('messages.upsert', (messageUpdate: { messages: WAMessage[]; type: 'notify' | 'append' | 'notify-link' }) => {
       this.handleIncomingMessages(messageUpdate);
     });
 
     // Message status updates
-    this.socket.ev.on('messages.update', (messageUpdates) => {
+    this.socket.ev.on('messages.update', (messageUpdates: Array<{ key: { id?: string | null }; update?: { status?: string } }>) => {
       this.handleMessageUpdates(messageUpdates);
     });
 
     // Presence updates
-    this.socket.ev.on('presence.update', (presenceUpdate) => {
+    this.socket.ev.on('presence.update', (presenceUpdate: unknown) => {
       this.emit('presence.update', presenceUpdate);
     });
   }
@@ -137,7 +137,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
   }
 
-  private handleIncomingMessages(messageUpdate: { messages: WAMessage[], type: 'notify' | 'append' }): void {
+  private handleIncomingMessages(messageUpdate: { messages: WAMessage[]; type: 'notify' | 'append' | 'notify-link' }): void {
     const { messages, type } = messageUpdate;
 
     if (type !== 'notify') return;
@@ -158,7 +158,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
   }
 
-  private handleMessageUpdates(messageUpdates: any[]): void {
+  private handleMessageUpdates(messageUpdates: Array<{ key: { id?: string | null }; update?: { status?: string } }>): void {
     for (const update of messageUpdates) {
       this.emit('message.update', {
         id: update.key.id,

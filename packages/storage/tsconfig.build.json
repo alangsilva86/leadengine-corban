@@ -3,8 +3,8 @@
   "compilerOptions": {
     "composite": false,
     "paths": {
-      "@ticketz/core": ["../core/dist/index.d.ts"],
-      "@ticketz/core/*": ["../core/dist/*"]
+      "@ticketz/core": ["../core/src/index.ts"],
+      "@ticketz/core/*": ["../core/src/*"]
     }
   },
   "include": ["src/**/*"],
