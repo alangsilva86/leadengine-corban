@@ -1,12 +1,14 @@
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
   type WAMessage,
   type WAMessageUpdate,
   type WASocket,
   type ConnectionState,
 } from '@whiskeysockets/baileys';
-import { Boom } from '@hapi/boom';
+import Boom from '@hapi/boom';
+import type { Boom as BoomError } from '@hapi/boom';
 import type { MessageProvider } from '../types/message-provider';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
@@ -55,9 +57,12 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
       logger.info(`Initializing WhatsApp instance: ${this.config.instanceId}`);
       
       const { state, saveCreds } = await useMultiFileAuthState(this.config.sessionPath);
-      
+
       this.socket = makeWASocket({
-        auth: state,
+        auth: {
+          creds: state.creds,
+          keys: makeCacheableSignalKeyStore(state.keys, logger as any)
+        },
         printQRInTerminal: false,
         logger: logger as any,
         browser: ['Ticketz LeadEngine', 'Chrome', '1.0.0'],
@@ -112,11 +117,12 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
 
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+      const shouldReconnect =
+        (lastDisconnect?.error as BoomError)?.output?.statusCode !== DisconnectReason.loggedOut;
       
       logger.info('WhatsApp connection closed:', {
         shouldReconnect,
-        statusCode: (lastDisconnect?.error as Boom)?.output?.statusCode,
+        statusCode: (lastDisconnect?.error as BoomError)?.output?.statusCode,
         reason: lastDisconnect?.error?.message
       });
 
