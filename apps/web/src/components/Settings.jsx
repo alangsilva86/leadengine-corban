@@ -22,6 +22,7 @@ import {
   Trash2,
   Edit
 } from 'lucide-react';
+import QueuesTab from './settings/QueuesTab.jsx';
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -79,12 +80,13 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="general">Geral</TabsTrigger>
           <TabsTrigger value="users">Usuários</TabsTrigger>
           <TabsTrigger value="notifications">Notificações</TabsTrigger>
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
           <TabsTrigger value="security">Segurança</TabsTrigger>
+          <TabsTrigger value="queues">Filas</TabsTrigger>
         </TabsList>
 
         {/* Configurações Gerais */}
@@ -389,6 +391,10 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="queues" className="space-y-6">
+          <QueuesTab />
         </TabsContent>
       </Tabs>
     </div>

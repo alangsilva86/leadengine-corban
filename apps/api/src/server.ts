@@ -23,6 +23,7 @@ import { getWhatsAppEventPollerMetrics, whatsappEventPoller } from './features/w
 import './features/whatsapp-inbound/workers/inbound-processor';
 import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
+import { queuesRouter } from './routes/queues';
 
 if (process.env.NODE_ENV !== 'production') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -275,6 +276,7 @@ app.use('/api/leads', authMiddleware, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
+app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {
