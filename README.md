@@ -375,7 +375,7 @@ pnpm run lint         # ESLint
 pnpm run lint:fix     # ESLint com correção automática
 
 # Type checking
-pnpm run type-check   # Verificação de tipos TypeScript
+pnpm run typecheck   # Verificação de tipos TypeScript
 ```
 
 ## 🐳 Docker
