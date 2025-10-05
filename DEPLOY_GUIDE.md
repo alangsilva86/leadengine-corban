@@ -131,7 +131,7 @@ Caso utilize o Render.com para hospedar a API como serviço web, configure os co
 | Start Command | `./node_modules/.bin/prisma migrate deploy --schema=prisma/schema.prisma && node apps/api/dist/server.js` |
 | Node version | Defina `NODE_VERSION=20` (ou use a configuração padrão do Render baseada no `package.json`) |
 
-> ℹ️ O script `build` da API executa `build:dependencies`, que por sua vez roda `build:clean` e `typecheck` nos pacotes `@ticketz/{core,storage,integrations}` **antes** do bundler (`tsup`). Dessa forma, os diretórios `dist` são gerados com declarações atualizadas e qualquer regressão de tipos falha cedo, antes do `node apps/api/dist/server.js`.
+> ℹ️ O script `build` da API executa `build:dependencies`, que por sua vez roda `typecheck` e `build:clean` (nessa ordem) nos pacotes `@ticketz/{core,storage,integrations}` **antes** do bundler (`tsup`). Dessa forma, os diretórios `dist` são gerados com declarações atualizadas e qualquer regressão de tipos falha cedo, antes do `node apps/api/dist/server.js`.
 
 > ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/start` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
 

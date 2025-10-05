@@ -81,7 +81,20 @@ corepack prepare pnpm@9.12.3 --activate
 pnpm -w install --frozen-lockfile
 ```
 
-### 3. Configure as Variáveis de Ambiente
+### 3. Valide as bibliotecas antes do build da API
+Sempre que for buildar ou subir a API, execute a sequência abaixo para garantir que os pacotes compartilhados estejam consistentes:
+
+```bash
+corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm -w install --frozen-lockfile
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+pnpm -F @ticketz/api run db:generate
+pnpm -F @ticketz/api build
+```
+
+> 💡 A API já chama `build:dependencies` antes de `tsup`, mas manter a mesma ordem de comandos no seu ambiente garante que regressões de tipos ou builds quebrados sejam detectados antes de chegar à pipeline.
+
+### 4. Configure as Variáveis de Ambiente
 
 #### Backend (apps/api/.env)
 ```env
@@ -362,9 +375,12 @@ pnpm run dev          # Inicia todos os serviços
 pnpm run dev:api      # Apenas API
 pnpm run dev:web      # Apenas frontend
 
-# Build
-pnpm run build        # Build completo
-pnpm run build:api    # Build apenas API
+# Build (ordem recomendada)
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+pnpm -F @ticketz/api run db:generate
+pnpm -F @ticketz/api build
+pnpm run build        # Build completo (segue as dependências internas)
 pnpm run build:web    # Build apenas frontend
 
 # Testes

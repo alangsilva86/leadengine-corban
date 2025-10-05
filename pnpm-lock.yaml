@@ -345,7 +345,7 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       zod:
-        specifier: ^3.25.76
+        specifier: ^3
         version: 3.25.76
     devDependencies:
       '@types/lodash':
@@ -401,7 +401,7 @@ importers:
         specifier: ^3.11.0
         version: 3.17.0
       zod:
-        specifier: ^3.25.76
+        specifier: ^3
         version: 3.25.76
     devDependencies:
       tsup:
