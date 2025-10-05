@@ -372,9 +372,6 @@ importers:
       '@whiskeysockets/baileys':
         specifier: ^6.7.8
         version: 6.7.20(audio-decode@2.2.3)(sharp@0.34.4)
-      axios:
-        specifier: ^1.6.2
-        version: 1.12.2
       qrcode:
         specifier: ^1.5.3
         version: 1.5.4
