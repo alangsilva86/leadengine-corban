@@ -3,11 +3,15 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 
-const getCampaignMetricsMock = vi.fn(() => ({
-  total: 5,
-  success: 4,
-  failed: 1,
-  lastActivityAt: null,
+const { getCampaignMetricsMock } = vi.hoisted(() => ({
+  getCampaignMetricsMock: vi.fn(() => ({
+    total: 5,
+    allocated: 5,
+    contacted: 3,
+    won: 2,
+    lost: 1,
+    averageResponseSeconds: 120,
+  })),
 }));
 
 vi.mock('../../middleware/auth', () => ({
@@ -49,9 +53,11 @@ describe('GET /campaigns', () => {
     getCampaignMetricsMock.mockReset();
     getCampaignMetricsMock.mockReturnValue({
       total: 5,
-      success: 4,
-      failed: 1,
-      lastActivityAt: null,
+      allocated: 5,
+      contacted: 3,
+      won: 2,
+      lost: 1,
+      averageResponseSeconds: 120,
     });
   });
 
@@ -95,16 +101,23 @@ describe('GET /campaigns', () => {
           },
         },
       },
+      take: 100,
     });
     expect(response.body).toMatchObject({
       success: true,
-      data: [
+      requestId: expect.any(String),
+      items: [
         expect.objectContaining({
           id: 'campaign-1',
           instanceId: 'instance-1',
           instanceName: 'Instance One',
+          metadata: { budget: 100, cplTarget: 25 },
           metrics: expect.objectContaining({
             total: 5,
+            allocated: 5,
+            contacted: 3,
+            won: 2,
+            lost: 1,
             budget: 100,
             cplTarget: 25,
             cpl: 20,
@@ -129,17 +142,24 @@ describe('GET /campaigns', () => {
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({
       success: false,
+      requestId: expect.any(String),
       error: {
         code: 'CAMPAIGNS_STORE_UNAVAILABLE',
       },
     });
     expect(findManySpy).toHaveBeenCalledTimes(1);
-    expect(loggerSpy).toHaveBeenCalledWith('Failed to list campaigns', {
+    expect(loggerSpy).toHaveBeenCalledWith('[/api/campaigns] prisma error', {
+      agreementId: null,
+      error: expect.objectContaining({ message: 'database unavailable' }),
+      instanceId: null,
+      mappedError: expect.objectContaining({
+        code: 'CAMPAIGNS_STORE_UNAVAILABLE',
+        status: 503,
+        type: 'connectivity',
+      }),
+      requestId: expect.any(String),
+      status: ['active'],
       tenantId: 'tenant-1',
-      agreementId: undefined,
-      instanceId: undefined,
-      status: [],
-      error: 'database unavailable',
     });
   });
 });

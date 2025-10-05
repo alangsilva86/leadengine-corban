@@ -6,6 +6,7 @@ import {
   type AgreementSummary as ConfigAgreementSummary,
   type BrokerLeadRecord as ConfigBrokerLeadRecord,
 } from '../config/lead-engine';
+import { getUseRealDataFlag } from '../config/feature-flags';
 import { logger } from '../config/logger';
 
 const LOG_PREFIX = '[LeadEngine]';
@@ -147,7 +148,7 @@ class LeadEngineClient {
     this.creditBaseUrl = leadEngineConfig.creditBaseUrl?.replace(/\/$/, '');
     this.timeoutMs = leadEngineConfig.timeoutMs;
     this.token = leadEngineConfig.basicToken;
-    this.useRealData = process.env.USE_REAL_DATA === 'true';
+    this.useRealData = getUseRealDataFlag();
 
     logger.info(`${LOG_PREFIX} ✨ Cliente inicializado`, {
       baseUrl: this.baseUrl,

@@ -9,7 +9,7 @@ import { Server as SocketIOServer } from 'socket.io';
 
 import { errorHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
-import { authMiddleware } from './middleware/auth';
+import { authMiddleware, requireTenant } from './middleware/auth';
 import { ticketsRouter } from './routes/tickets';
 import { leadsRouter } from './routes/leads';
 import { contactsRouter } from './routes/contacts';
@@ -274,7 +274,7 @@ app.use('/api/tickets', authMiddleware, ticketsRouter);
 app.use('/api/leads', authMiddleware, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
-app.use('/api/campaigns', authMiddleware, campaignsRouter);
+app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {

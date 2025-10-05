@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
+import { isMvpAuthBypassEnabled } from '../config/feature-flags';
 
 type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
 
@@ -67,7 +68,7 @@ declare global {
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
 const DEMO_JWT_SECRET = process.env.DEMO_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
-const AUTH_DISABLED_FOR_MVP = process.env.AUTH_DISABLE_FOR_MVP !== 'false';
+const MVP_AUTH_BYPASS_ENABLED = isMvpAuthBypassEnabled();
 const AUTH_MVP_USER_ID = process.env.AUTH_MVP_USER_ID || 'mvp-anonymous';
 const AUTH_MVP_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
 const AUTH_MVP_USER_NAME = process.env.AUTH_MVP_USER_NAME || 'MVP Anonymous';
@@ -389,7 +390,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   }
 
   try {
-    if (AUTH_DISABLED_FOR_MVP) {
+    if (MVP_AUTH_BYPASS_ENABLED) {
       req.user = buildMvpBypassUser();
       return next();
     }
@@ -588,7 +589,7 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
     return next();
   }
 
-  if (AUTH_DISABLED_FOR_MVP) {
+  if (MVP_AUTH_BYPASS_ENABLED) {
     req.user = req.user ?? buildMvpBypassUser();
     return next();
   }
@@ -610,7 +611,7 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
  * Middleware opcional de autenticação (não falha se não houver token)
  */
 export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
-  if (AUTH_DISABLED_FOR_MVP) {
+  if (MVP_AUTH_BYPASS_ENABLED) {
     req.user = buildMvpBypassUser();
     return next();
   }
