@@ -41,7 +41,11 @@ const CampaignHistoryDialog = ({ agreementId }) => {
         log('📚 Listando campanhas cadastradas', { agreementId });
         const response = await apiGet(`/api/campaigns?agreementId=${agreementId}`);
         if (cancelled) return;
-        const items = Array.isArray(response?.data) ? response.data : [];
+        const items = Array.isArray(response?.items)
+          ? response.items
+          : Array.isArray(response?.data)
+          ? response.data
+          : [];
         setCampaigns(items);
         if (items.length === 0) {
           warn('Convênio ainda não possui campanhas registradas', { agreementId });

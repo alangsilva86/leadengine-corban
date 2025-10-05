@@ -1200,7 +1200,12 @@ const WhatsAppConnect = ({
           `/api/campaigns?agreementId=${selectedAgreement.id}&status=active`
         );
         if (cancelled) return;
-        const existing = Array.isArray(response?.data) ? response.data[0] : null;
+        const campaigns = Array.isArray(response?.items)
+          ? response.items
+          : Array.isArray(response?.data)
+          ? response.data
+          : [];
+        const existing = campaigns.length > 0 ? campaigns[0] : null;
         if (existing) {
           setCampaign(existing);
           onCampaignReady?.(existing);
@@ -1855,7 +1860,12 @@ const WhatsAppConnect = ({
           const response = await apiGet(
             `/api/campaigns?agreementId=${encodeURIComponent(selectedAgreement.id)}&instanceId=${encodeURIComponent(instance.id)}&status=active`
           );
-          const existingCampaign = Array.isArray(response?.data) ? response.data[0] : null;
+          const campaigns = Array.isArray(response?.items)
+            ? response.items
+            : Array.isArray(response?.data)
+            ? response.data
+            : [];
+          const existingCampaign = campaigns.length > 0 ? campaigns[0] : null;
 
           if (existingCampaign) {
             setCampaign(existingCampaign);

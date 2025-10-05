@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
 import { Prisma } from '@prisma/client';
@@ -9,12 +10,44 @@ import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
 import { getCampaignMetrics } from '@ticketz/storage';
+import { getMvpBypassTenantId, getUseRealDataFlag } from '../config/feature-flags';
+import type { CampaignDTO, CampaignWarning } from './campaigns.types';
+import { fetchLeadEngineCampaigns } from '../services/campaigns-upstream';
+import { mapPrismaError } from '../utils/prisma-error';
 
 type CampaignMetadata = Record<string, unknown> | null | undefined;
 
 const CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'ended'] as const;
 
 type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+const DEFAULT_STATUS: CampaignStatus = 'active';
+const LOG_CONTEXT = '[/api/campaigns]';
+
+type RawCampaignMetrics = ReturnType<typeof getCampaignMetrics>;
+
+const createEmptyRawMetrics = (): RawCampaignMetrics =>
+  ({
+    total: 0,
+    allocated: 0,
+    contacted: 0,
+    won: 0,
+    lost: 0,
+    averageResponseSeconds: 0,
+  } as RawCampaignMetrics);
+
+const toSafeError = (error: unknown): Record<string, unknown> => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return {
+    message: String(error),
+  };
+};
 
 type CampaignWithInstance = Prisma.CampaignGetPayload<{
   include: {
@@ -68,29 +101,50 @@ const toFixedNumber = (input: number | null, fractionDigits = 2): number | null 
   return Number(input.toFixed(fractionDigits));
 };
 
-const buildCampaignResponse = (campaign: CampaignWithInstance) => {
+const buildCampaignBase = (campaign: CampaignWithInstance): Omit<CampaignDTO, 'metrics'> => {
   const metadata = readMetadata(campaign.metadata as CampaignMetadata);
-  const metrics = getCampaignMetrics(campaign.tenantId, campaign.id);
-  const budget = readNumeric(metadata, 'budget');
-  const cplTarget = readNumeric(metadata, 'cplTarget');
-  const cpl = budget !== null && metrics.total > 0 ? toFixedNumber(budget / metrics.total) : null;
-
   const { whatsappInstance, ...campaignData } = campaign;
   const instanceId = campaign.whatsappInstanceId ?? whatsappInstance?.id ?? null;
   const instanceName = whatsappInstance?.name ?? null;
 
   return {
     ...campaignData,
+    agreementId: campaignData.agreementId ?? null,
     instanceId,
     instanceName,
     metadata,
-    metrics: {
-      ...metrics,
-      budget,
-      cplTarget,
-      cpl,
-    },
-  };
+  } as Omit<CampaignDTO, 'metrics'>;
+};
+
+const computeCampaignMetrics = (
+  campaign: CampaignWithInstance,
+  metadata: Record<string, unknown>,
+  rawMetrics: RawCampaignMetrics
+): CampaignDTO['metrics'] => {
+  const budget = readNumeric(metadata, 'budget');
+  const cplTarget = readNumeric(metadata, 'cplTarget');
+  const cpl = budget !== null && rawMetrics.total > 0 ? toFixedNumber(budget / rawMetrics.total) : null;
+
+  return {
+    ...rawMetrics,
+    budget,
+    cplTarget,
+    cpl,
+  } as CampaignDTO['metrics'];
+};
+
+const buildCampaignResponse = (
+  campaign: CampaignWithInstance,
+  rawMetrics?: RawCampaignMetrics
+): CampaignDTO => {
+  const base = buildCampaignBase(campaign);
+  const metricsSource = rawMetrics ?? getCampaignMetrics(campaign.tenantId, campaign.id);
+  const metrics = computeCampaignMetrics(campaign, base.metadata, metricsSource);
+
+  return {
+    ...base,
+    metrics,
+  } satisfies CampaignDTO;
 };
 
 const router = Router();
@@ -110,6 +164,86 @@ const normalizeStatus = (value: unknown): CampaignStatus | null => {
   }
 
   return null;
+};
+
+const normalizeQueryValue = (value: unknown): string | undefined => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const candidate of value) {
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const extractStatuses = (value: unknown): CampaignStatus[] => {
+  if (value === undefined) {
+    return [];
+  }
+
+  const rawValues: string[] = [];
+
+  if (typeof value === 'string') {
+    rawValues.push(...value.split(','));
+  } else if (Array.isArray(value)) {
+    value.forEach((entry) => {
+      if (typeof entry === 'string') {
+        rawValues.push(...entry.split(','));
+      }
+    });
+  }
+
+  const normalized = rawValues
+    .map((status) => normalizeStatus(status))
+    .filter((status): status is CampaignStatus => Boolean(status));
+
+  return Array.from(new Set(normalized));
+};
+
+export interface CampaignQueryFilters {
+  agreementId?: string;
+  instanceId?: string;
+  statuses: CampaignStatus[];
+}
+
+export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
+  const agreementId = normalizeQueryValue(query.agreementId);
+  const instanceId = normalizeQueryValue(query.instanceId);
+  const statuses = extractStatuses(query.status);
+  return {
+    agreementId,
+    instanceId,
+    statuses: statuses.length > 0 ? statuses : [DEFAULT_STATUS],
+  } satisfies CampaignQueryFilters;
+};
+
+export const resolveTenantId = (req: Request): string | undefined => {
+  const queryTenant = normalizeQueryValue(req.query.tenantId);
+  if (queryTenant) {
+    return queryTenant;
+  }
+
+  const headerTenant = req.header('x-tenant-id');
+  if (headerTenant && headerTenant.trim().length > 0) {
+    return headerTenant.trim();
+  }
+
+  const userTenant = req.user?.tenantId?.trim();
+  if (userTenant) {
+    return userTenant;
+  }
+
+  return getMvpBypassTenantId();
 };
 
 const respondNotFound = (res: Response): void => {
@@ -319,41 +453,91 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const user = req.user;
+    const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
+    const tenantId = resolveTenantId(req);
 
-    if (!user?.tenantId) {
-      res.status(401).json({
+    if (!tenantId) {
+      res.status(400).json({
         success: false,
         error: {
           code: 'TENANT_REQUIRED',
-          message: 'Tenant não autenticado.',
+          message: 'tenantId é obrigatório.',
         },
+        requestId,
       });
       return;
     }
 
-    const tenantId = user.tenantId;
+    const useRealData = getUseRealDataFlag();
+    const { agreementId, instanceId, statuses } = buildFilters(req.query);
+    const logContext = {
+      requestId,
+      tenantId,
+      agreementId: agreementId ?? null,
+      instanceId: instanceId ?? null,
+      status: statuses,
+    };
 
-    const rawStatus = req.query.status;
-    const statuses = Array.isArray(rawStatus)
-      ? rawStatus
-      : typeof rawStatus === 'string'
-        ? rawStatus.split(',')
-        : [];
-
-    const normalizedStatuses = statuses
-      .map((status) => normalizeStatus(status))
-      .filter((status): status is CampaignStatus => Boolean(status));
-
-    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId.trim() : undefined;
-    const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : undefined;
     try {
+      if (useRealData) {
+        try {
+          const items = await fetchLeadEngineCampaigns({
+            tenantId,
+            agreementId,
+            status: statuses[0],
+            requestId,
+          });
+
+          res.json({ success: true, items, requestId });
+          return;
+        } catch (upstreamError) {
+          const upstreamStatus = (upstreamError as { status?: number }).status;
+
+          if (upstreamStatus === 404) {
+            logger.info(`${LOG_CONTEXT} upstream retornou 404 (sem campanhas)`, logContext);
+            res.json({ success: true, items: [], requestId });
+            return;
+          }
+
+          if (typeof upstreamStatus === 'number' && upstreamStatus >= 500) {
+            logger.error(`${LOG_CONTEXT} upstream failure`, {
+              ...logContext,
+              upstreamStatus,
+              error: toSafeError(upstreamError),
+            });
+            res.status(502).json({
+              success: false,
+              error: {
+                code: 'UPSTREAM_FAILURE',
+                message: 'Lead Engine indisponível ao listar campanhas.',
+              },
+              requestId,
+            });
+            return;
+          }
+
+          logger.error(`${LOG_CONTEXT} erro inesperado ao consultar upstream`, {
+            ...logContext,
+            error: toSafeError(upstreamError),
+          });
+          res.status(500).json({
+            success: false,
+            error: {
+              code: 'UNEXPECTED_CAMPAIGNS_ERROR',
+              message: 'Falha inesperada ao listar campanhas.',
+            },
+            requestId,
+          });
+          return;
+        }
+      }
+
       const campaigns = await prisma.campaign.findMany({
         where: {
           tenantId,
           ...(agreementId ? { agreementId } : {}),
           ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
-          ...(normalizedStatuses.length > 0 ? { status: { in: normalizedStatuses } } : {}),
+          status: { in: statuses },
         },
         orderBy: { createdAt: 'desc' },
         include: {
@@ -364,35 +548,85 @@ router.get(
             },
           },
         },
+        take: 100,
       });
 
-      res.json({
+      let items: CampaignDTO[];
+      let warnings: CampaignWarning[] | undefined;
+
+      try {
+        items = campaigns.map((campaign) => buildCampaignResponse(campaign));
+      } catch (metricsError) {
+        logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
+          ...logContext,
+          error: toSafeError(metricsError),
+        });
+        warnings = [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }];
+        items = campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()));
+      }
+
+      const payload: {
+        success: true;
+        items: CampaignDTO[];
+        requestId: string;
+        warnings?: CampaignWarning[];
+      } = {
         success: true,
-        data: campaigns.map((campaign) => buildCampaignResponse(campaign)),
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientRustPanicError) {
-        const message = error.message ?? 'Erro desconhecido ao acessar o armazenamento de campanhas.';
+        items,
+        requestId,
+      };
 
-        logger.error('Failed to list campaigns', {
-          tenantId,
-          agreementId,
-          instanceId,
-          status: normalizedStatuses,
-          error: message,
+      if (warnings) {
+        payload.warnings = warnings;
+      }
+
+      res.json(payload);
+    } catch (error) {
+      const mapped = mapPrismaError(error, {
+        connectivity: {
+          code: 'CAMPAIGNS_STORE_UNAVAILABLE',
+          message: 'Storage de campanhas indisponível no momento.',
+          status: 503,
+        },
+        validation: {
+          code: 'INVALID_CAMPAIGN_FILTER',
+          message: 'Parâmetros de filtro inválidos.',
+          status: 400,
+        },
+      });
+
+      if (mapped) {
+        const log = mapped.type === 'validation' ? logger.warn.bind(logger) : logger.error.bind(logger);
+        log(`${LOG_CONTEXT} prisma error`, {
+          ...logContext,
+          error: toSafeError(error),
+          mappedError: mapped,
         });
 
-        res.status(503).json({
+        res.status(mapped.status).json({
           success: false,
           error: {
-            code: 'CAMPAIGNS_STORE_UNAVAILABLE',
-            message: 'Não foi possível acessar o armazenamento de campanhas no momento.',
+            code: mapped.code,
+            message: mapped.message,
           },
+          requestId,
         });
         return;
       }
 
-      throw error;
+      logger.error(`${LOG_CONTEXT} unexpected failure`, {
+        ...logContext,
+        error: toSafeError(error),
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'UNEXPECTED_CAMPAIGNS_ERROR',
+          message: 'Falha inesperada ao listar campanhas.',
+        },
+        requestId,
+      });
     }
   })
 );
