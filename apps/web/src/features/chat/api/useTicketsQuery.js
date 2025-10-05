@@ -6,7 +6,7 @@ const DEFAULT_INCLUDE = ['contact', 'lead', 'notes'];
 
 const normalizeFilters = (filters = {}) => {
   const entries = Object.entries(filters)
-    .filter(([_, value]) =>
+    .filter(([, value]) =>
       Array.isArray(value)
         ? value.length > 0
         : value !== undefined && value !== null && value !== ''

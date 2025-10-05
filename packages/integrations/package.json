@@ -15,10 +15,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "build": "tsup",
-    "build:clean": "tsup --clean",
-    "dev": "tsup --watch",
-    "test": "vitest --passWithNoTests",
-    "clean": "rm -rf dist"
+    "build:clean": "tsup --clean"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
@@ -30,8 +27,7 @@
   "devDependencies": {
     "@types/qrcode": "^1.5.5",
     "tsup": "^8.5.0",
-    "typescript": "^5.3.3",
-    "vitest": "^1.1.0"
+    "typescript": "^5.3.3"
   },
   "typesVersions": {
     "*": {

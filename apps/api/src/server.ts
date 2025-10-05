@@ -157,8 +157,8 @@ type RateLimitState = {
 
 type RateLimitedRequest = express.Request & { rateLimit?: RateLimitState };
 
-const attachRateLimitHeaders = (req: express.Request, res: express.Response) => {
-  const rateLimit = (req as RateLimitedRequest).rateLimit;
+const attachRateLimitHeaders = (req: RateLimitedRequest, res: express.Response) => {
+  const rateLimit = req.rateLimit;
   const limit = typeof rateLimit?.limit === 'number' ? rateLimit.limit : rateLimitMaxRequests;
   const remaining = typeof rateLimit?.remaining === 'number' ? Math.max(0, rateLimit.remaining) : limit;
   const resetReference = rateLimit?.resetTime instanceof Date ? rateLimit.resetTime : null;
@@ -177,7 +177,8 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res, next, options) => {
-    const resetTime = req.rateLimit?.resetTime;
+    const rateLimitedReq = req as RateLimitedRequest;
+    const resetTime = rateLimitedReq.rateLimit?.resetTime;
     let retryAfterSeconds: number | null = null;
 
     if (resetTime instanceof Date) {
@@ -191,7 +192,7 @@ const limiter = rateLimit({
       res.setHeader('Retry-After', retryAfterSeconds.toString());
     }
 
-    attachRateLimitHeaders(req, res);
+    attachRateLimitHeaders(rateLimitedReq, res);
 
     res.status(429).json({
       success: false,
@@ -210,7 +211,7 @@ app.options('*', cors(corsOptions));
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     if (req.path.startsWith('/api')) {
-      attachRateLimitHeaders(req, res);
+      attachRateLimitHeaders(req as RateLimitedRequest, res);
     }
     res.status(204).end();
     return;

@@ -25,11 +25,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "build": "tsup",
-    "build:clean": "tsup --clean",
-    "dev": "tsup --watch",
-    "test": "vitest --passWithNoTests",
-    "test:watch": "vitest --watch --passWithNoTests",
-    "clean": "rm -rf dist tsconfig.build.tsbuildinfo"
+    "build:clean": "tsup --clean"
   },
   "dependencies": {
     "date-fns": "^3.0.6",
@@ -39,8 +35,7 @@
   "devDependencies": {
     "@types/lodash": "^4.14.202",
     "tsup": "^8.5.0",
-    "typescript": "^5.3.3",
-    "vitest": "^1.1.0"
+    "typescript": "^5.3.3"
   },
   "typesVersions": {
     "*": {

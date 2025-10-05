@@ -220,9 +220,10 @@ const ensureTicketForContact = async (
       metadata,
     });
     return ticket.id;
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof ConflictError) {
-      const details = (error.details ?? {}) as Record<string, unknown>;
+      const conflict = error as ConflictError;
+      const details = (conflict.details ?? {}) as Record<string, unknown>;
       const existingTicketId =
         typeof details.existingTicketId === 'string'
           ? details.existingTicketId
@@ -233,7 +234,7 @@ const ensureTicketForContact = async (
     }
 
     logger.error('Failed to ensure WhatsApp ticket for contact', {
-      error,
+      error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
       tenantId,
       contactId,
     });

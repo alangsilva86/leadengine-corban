@@ -12,9 +12,7 @@
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
-    "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "clean": "pnpm -r clean && rm -rf node_modules",
     "api:dev": "pnpm --filter @ticketz/api dev",
     "web:dev": "pnpm --filter @ticketz/web dev",
     "admin:dev": "pnpm --filter @ticketz/admin dev",
@@ -34,11 +32,11 @@
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
     "prettier": "^3.1.1",
     "prisma": "^5.7.1",
     "tsup": "8.5.0",
-    "typescript": "^5.3.3",
-    "vitest": "^1.1.0"
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": "20.x"

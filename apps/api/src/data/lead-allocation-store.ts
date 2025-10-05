@@ -18,17 +18,22 @@ export interface AllocationResult {
   summary: AllocationSummary;
 }
 
-type ErrorWithOptionalCode = { code?: unknown; message?: unknown } | Error;
+type ErrorWithOptionalCode = {
+  code?: unknown;
+  message?: unknown;
+};
 
 const getErrorCode = (error: unknown): string | undefined => {
-  if (error && typeof error === 'object' && 'code' in error) {
-    const code = (error as ErrorWithOptionalCode).code;
-    if (typeof code === 'string') {
-      return code;
+  if (error && typeof error === 'object') {
+    const candidate = error as ErrorWithOptionalCode;
+    if (typeof candidate.code === 'string') {
+      return candidate.code;
     }
   }
 
-  return undefined;
+  return error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+    ? String((error as { code?: unknown }).code)
+    : undefined;
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -36,10 +41,10 @@ const getErrorMessage = (error: unknown): string => {
     return error.message;
   }
 
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as ErrorWithOptionalCode).message;
-    if (typeof message === 'string') {
-      return message;
+  if (error && typeof error === 'object') {
+    const candidate = error as ErrorWithOptionalCode;
+    if (typeof candidate.message === 'string') {
+      return candidate.message;
     }
   }
 
