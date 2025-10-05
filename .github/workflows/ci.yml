@@ -13,8 +13,7 @@ jobs:
           path: ~/.pnpm-store
           key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
-      - run: pnpm -w install --frozen-lockfile
-      - run: pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
-      - run: pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
-      - run: pnpm -w prisma generate --schema=prisma/schema.prisma
-      - run: pnpm -F @ticketz/api build
+      - run: pnpm -v
+      - run: pnpm fetch
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
