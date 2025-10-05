@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "description": "Integrações externas do sistema Ticketz-LeadEngine",
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup",
-    "build:clean": "pnpm run clean && pnpm run build",
+    "build:clean": "tsup --clean",
     "dev": "tsup --watch",
     "test": "vitest --passWithNoTests",
-    "type-check": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
