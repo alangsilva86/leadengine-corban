@@ -319,7 +319,20 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const user = req.user;
+
+    if (!user?.tenantId) {
+      res.status(401).json({
+        success: false,
+        error: {
+          code: 'TENANT_REQUIRED',
+          message: 'Tenant não autenticado.',
+        },
+      });
+      return;
+    }
+
+    const tenantId = user.tenantId;
 
     const rawStatus = req.query.status;
     const statuses = Array.isArray(rawStatus)
@@ -334,29 +347,53 @@ router.get(
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId.trim() : undefined;
     const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : undefined;
-
-    const campaigns = await prisma.campaign.findMany({
-      where: {
-        tenantId,
-        ...(agreementId ? { agreementId } : {}),
-        ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
-        ...(normalizedStatuses.length > 0 ? { status: { in: normalizedStatuses } } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        whatsappInstance: {
-          select: {
-            id: true,
-            name: true,
+    try {
+      const campaigns = await prisma.campaign.findMany({
+        where: {
+          tenantId,
+          ...(agreementId ? { agreementId } : {}),
+          ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
+          ...(normalizedStatuses.length > 0 ? { status: { in: normalizedStatuses } } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          whatsappInstance: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    res.json({
-      success: true,
-      data: campaigns.map((campaign) => buildCampaignResponse(campaign)),
-    });
+      res.json({
+        success: true,
+        data: campaigns.map((campaign) => buildCampaignResponse(campaign)),
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientRustPanicError) {
+        const message = error.message ?? 'Erro desconhecido ao acessar o armazenamento de campanhas.';
+
+        logger.error('Failed to list campaigns', {
+          tenantId,
+          agreementId,
+          instanceId,
+          status: normalizedStatuses,
+          error: message,
+        });
+
+        res.status(503).json({
+          success: false,
+          error: {
+            code: 'CAMPAIGNS_STORE_UNAVAILABLE',
+            message: 'Não foi possível acessar o armazenamento de campanhas no momento.',
+          },
+        });
+        return;
+      }
+
+      throw error;
+    }
   })
 );
 
