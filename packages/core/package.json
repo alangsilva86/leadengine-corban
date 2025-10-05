@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup && rm -f tsconfig.build.tsbuildinfo && tsc --project tsconfig.build.json",
+    "build:clean": "pnpm run clean && pnpm run build",
     "dev": "tsup --watch",
     "test": "vitest --passWithNoTests",
     "test:watch": "vitest --watch --passWithNoTests",

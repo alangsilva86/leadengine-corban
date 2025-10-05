@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup",
+    "build:clean": "pnpm run clean && pnpm run build",
     "dev": "tsup --watch",
     "test": "vitest --passWithNoTests",
     "type-check": "tsc --noEmit",
