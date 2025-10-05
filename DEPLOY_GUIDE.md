@@ -127,7 +127,14 @@ Caso utilize o Render.com para hospedar a API como serviço web, configure os co
 
 | Etapa | Comando |
 | --- | --- |
-| Build Command | `corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm -w install --frozen-lockfile --prod=false && pnpm -w prisma generate --schema=prisma/schema.prisma && pnpm -F @ticketz/api build` |
+| Build Command | <pre><code>corepack enable \
+&& corepack prepare pnpm@9.12.3 --activate \
+&& pnpm fetch \
+&& pnpm -r install --frozen-lockfile --prod=false \
+&& pnpm run doctor \
+&& pnpm -F @ticketz/integrations exec node -e "const {createRequire}=require('node:module');const r=createRequire(require('node:path').resolve('packages/integrations/package.json'));console.log(r.resolve('@whiskeysockets/baileys/package.json'));console.log(r.resolve('@hapi/boom/package.json'))" \
+&& pnpm -w prisma generate --schema=prisma/schema.prisma \
+&& pnpm -F @ticketz/api build</code></pre> |
 | Start Command | `./node_modules/.bin/prisma migrate deploy --schema=prisma/schema.prisma && node apps/api/dist/server.js` |
 | Node version | Defina `NODE_VERSION=20` (ou use a configuração padrão do Render baseada no `package.json`) |
 

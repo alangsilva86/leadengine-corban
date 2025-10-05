@@ -13,7 +13,9 @@
     }
   },
   "scripts": {
+    "pretypecheck": "node -e \"require.resolve('@whiskeysockets/baileys'); require.resolve('@hapi/boom')\"",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "typecheck:trace": "tsc -p tsconfig.build.json --noEmit --traceResolution",
     "build": "tsup",
     "build:clean": "tsup --clean"
   },
