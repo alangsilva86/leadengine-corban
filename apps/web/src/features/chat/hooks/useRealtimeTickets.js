@@ -19,13 +19,6 @@ const registerHandler = (socket, event, handler) => {
   socket.on(event, handler);
 };
 
-const unregisterHandler = (socket, event, handler) => {
-  if (!socket || typeof handler !== 'function') {
-    return;
-  }
-  socket.off(event, handler);
-};
-
 export const useRealtimeTickets = ({
   tenantId,
   userId,

@@ -13,4 +13,4 @@ Fluxo consumido pelos agentes após a conexão do WhatsApp.
 - **GET** `/api/lead-engine/allocations/export` — exporta CSV (mesmos filtros da listagem).
 - **Socket Event (planejado)** `leadengine:inbox:new` — payload com `allocationId` / `campaignId` para disparar refresh otimista.
 
-> Qualquer evolução no backend deve atualizar esta documentação e os testes em `__tests__/LeadInbox.test.jsx` para garantir a coesão front/back.
+> Qualquer evolução no backend deve atualizar esta documentação para garantir a coesão front/back.

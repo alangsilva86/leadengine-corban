@@ -564,20 +564,21 @@ export const listTickets = async (
   options: ListTicketsOptions = {}
 ): Promise<TicketListResult> => {
   const includeSet = new Set(options.include ?? []);
-  const baseResult = await storageListTickets(tenantId, filters, pagination);
+  const baseResult = (await storageListTickets(tenantId, filters, pagination)) as PaginatedResult<Ticket>;
+  const rawItems = baseResult.items;
 
-  const conversations = await fetchConversationStatsForTickets(tenantId, baseResult.items);
-  const contactIds = Array.from(new Set(baseResult.items.map((ticket) => ticket.contactId)));
+  const conversations = await fetchConversationStatsForTickets(tenantId, rawItems);
+  const contactIds: string[] = Array.from(new Set(rawItems.map((ticket: Ticket) => ticket.contactId)));
 
   const [contacts, leads, notes] = await Promise.all([
     includeSet.has('contact') ? safeResolveContacts(tenantId, contactIds) : Promise.resolve(new Map()),
     includeSet.has('lead') || options.includeMetrics
       ? safeResolveLeads(tenantId, contactIds)
       : Promise.resolve(new Map()),
-    includeSet.has('notes') ? resolveTicketNotes(tenantId, baseResult.items) : Promise.resolve(new Map()),
+    includeSet.has('notes') ? resolveTicketNotes(tenantId, rawItems) : Promise.resolve(new Map()),
   ]);
 
-  const hydratedItems: TicketHydrated[] = baseResult.items.map((ticket) => {
+  const hydratedItems: TicketHydrated[] = rawItems.map((ticket: Ticket) => {
     const stats = conversations.get(ticket.id);
     const pipelineStep = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : null;
     const qualityScore = stats && stats.totalMessages > 0 ? Math.round(((stats.totalMessages - stats.failedCount) / stats.totalMessages) * 100) : null;
@@ -605,7 +606,7 @@ export const listTickets = async (
     return hydrated;
   });
 
-  const metrics = options.includeMetrics ? calculateInboxMetrics(baseResult.items, conversations, leads) : undefined;
+  const metrics = options.includeMetrics ? calculateInboxMetrics(rawItems, conversations, leads) : undefined;
 
   return {
     ...baseResult,

@@ -10,9 +10,18 @@ const getImportMetaEnv = () => {
 };
 
 const getProcessEnv = () => {
-  if (typeof process !== 'undefined' && process && typeof process === 'object') {
-    return process.env ?? {};
+  const candidate =
+    typeof globalThis !== 'undefined' &&
+    globalThis &&
+    typeof globalThis === 'object' &&
+    'process' in globalThis
+      ? globalThis.process
+      : undefined;
+
+  if (candidate && typeof candidate === 'object') {
+    return candidate.env ?? {};
   }
+
   return {};
 };
 

@@ -260,7 +260,10 @@ const buildRecentTickets = (tickets) =>
     .filter(Boolean)
     .sort((a, b) => b._timestamp - a._timestamp)
     .slice(0, 4)
-    .map(({ _timestamp, ...ticket }) => ticket);
+    .map((ticketWithSortKey) => {
+      const { _timestamp: _unusedTimestamp, ...ticket } = ticketWithSortKey;
+      return ticket;
+    });
 
 const processTickets = (ticketsData) => {
   const items = Array.isArray(ticketsData?.items) ? ticketsData.items : [];

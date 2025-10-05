@@ -17,6 +17,7 @@ import {
   isStorageInitializationError,
   isStorageUnavailableError,
 } from '../data/lead-allocation-store';
+import { prisma } from '../lib/prisma';
 
 const router: Router = Router();
 

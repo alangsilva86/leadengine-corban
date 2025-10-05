@@ -424,10 +424,13 @@ router.patch(
           to: rawStatus,
         })
       );
-      if (rawStatus === 'active') {
-        updates.endDate = null;
-      } else if (rawStatus === 'ended') {
-        updates.endDate = new Date();
+      if (rawStatus === 'ended') {
+        updates.metadata = appendCampaignHistory(
+          (updates.metadata as CampaignMetadata | undefined) ?? (campaign.metadata as CampaignMetadata),
+          buildCampaignHistoryEntry('status-ended', req.user?.id ?? 'system', {
+            endedAt: new Date().toISOString(),
+          })
+        );
       }
     }
 
@@ -462,4 +465,6 @@ router.patch(
   })
 );
 
-export const campaignsRouter = router;
+const campaignsRouter: Router = router;
+
+export { campaignsRouter };
