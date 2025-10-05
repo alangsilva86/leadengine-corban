@@ -10,6 +10,7 @@
   "scripts": {
     "preinstall": "npx -y only-allow pnpm",
     "doctor": "node scripts/doctor.mjs",
+    "prebuild": "pnpm exec prisma generate --schema=prisma/schema.prisma",
     "start": "pnpm --filter @ticketz/api start",
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",

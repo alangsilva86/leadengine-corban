@@ -14,5 +14,8 @@ export default defineConfig({
     '@ticketz/shared',
     '@ticketz/storage',
     '@ticketz/integrations',
+    '@prisma/client',
+    'prisma',
   ],
+  skipNodeModulesBundle: true,
 });
