@@ -4,7 +4,7 @@
   "description": "API REST para o sistema Ticketz-LeadEngine",
   "main": "dist/server.js",
   "scripts": {
-    "build:dependencies": "pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck",
+    "build:dependencies": "pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean",
     "build": "pnpm run build:dependencies && pnpm run db:generate && tsup",
     "dev": "tsx watch src/server.ts",
     "prestart": "pnpm run build:dependencies && pnpm run db:generate",

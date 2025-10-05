@@ -6,38 +6,11 @@
     "moduleResolution": "NodeNext",
     "declaration": true,
     "declarationMap": false,
-    "emitDeclarationOnly": true,
-    "skipLibCheck": true,
-    "rootDir": "src",
-    "outDir": "dist"
-  },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts"
-    "rootDir": "src",
-    "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true,
     "emitDeclarationOnly": false,
     "skipLibCheck": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": false,
-    "target": "ES2022",
-    "types": [
-      "node"
-    ],
-    "baseUrl": ".",
-    "paths": {}
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"]
   },
-  "include": [
-    "src/**/*.ts"
-  ],
-  "exclude": [
-    "dist",
-    "node_modules",
-    "**/*.test.ts",
-    "**/*.spec.ts"
-  ]
+  "include": ["src/**/*"]
 }
