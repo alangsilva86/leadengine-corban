@@ -57,7 +57,5 @@
     "typescript",
     "nodejs",
     "monorepo"
-  ],
-  "author": "Manus AI",
-  "license": "MIT"
+  ]
 }
