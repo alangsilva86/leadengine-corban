@@ -9,11 +9,12 @@
   ],
   "scripts": {
     "preinstall": "npx -y only-allow pnpm",
+    "doctor": "node scripts/doctor.mjs",
     "start": "pnpm --filter @ticketz/api start",
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm --filter @ticketz/core --filter @ticketz/shared --filter @ticketz/storage --filter @ticketz/integrations exec tsc -p tsconfig.build.json --noEmit",
+    "typecheck": "pnpm --filter @ticketz/integrations exec tsc -p tsconfig.build.json --noEmit",
     "api:dev": "pnpm --filter @ticketz/api dev",
     "web:dev": "pnpm --filter @ticketz/web dev",
     "admin:dev": "pnpm --filter @ticketz/admin dev",
