@@ -17,18 +17,6 @@
     "skipLibCheck": true,
     "declaration": true,
     "outDir": "./dist",
-    "baseUrl": ".",
-    "paths": {
-      "@ticketz/core": ["./packages/core/src/index.ts"],
-      "@ticketz/core/*": ["./packages/core/src/*"],
-      "@ticketz/shared": ["./packages/shared/src/index.ts"],
-      "@ticketz/shared/*": ["./packages/shared/src/*"],
-      "@ticketz/storage": ["./packages/storage/src/index.ts"],
-      "@ticketz/storage/*": ["./packages/storage/src/*"],
-      "@ticketz/integrations": ["./packages/integrations/src/index.ts"],
-      "@ticketz/integrations/*": ["./packages/integrations/src/*"],
-      "@whiskeysockets/baileys": ["./node_modules/@whiskeysockets/baileys/lib/index.d.ts"],
-      "@hapi/boom": ["./node_modules/@hapi/boom/lib/index.d.ts"]
-    }
+    "baseUrl": "."
   }
 }

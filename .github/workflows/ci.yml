@@ -1,6 +1,44 @@
 name: ci
 
 on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Enable corepack & pnpm
+        run: corepack enable && corepack prepare pnpm@9.12.3 --activate
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+
+      - name: Build libraries (clean)
+        run: pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+
+      - name: Typecheck libraries
+        run: pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
+
+      - name: Prisma generate
+        run: pnpm -w prisma generate --schema=prisma/schema.prisma
+
+      - name: Build API
+        run: pnpm -F @ticketz/api build
   pull_request:
   push:
     branches: [main]

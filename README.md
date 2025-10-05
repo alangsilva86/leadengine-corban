@@ -61,8 +61,8 @@ ticketz-leadengine/
 ## 🚀 Instalação e Configuração
 
 ### Pré-requisitos
-- Node.js 20+
-- pnpm (recomendado) ou npm
+- Node.js **20.19.5** (use `.node-version` com [Volta](https://docs.volta.sh/), `nvm` ou `asdf` para alinhar com produção)
+- pnpm via Corepack (habilite com `corepack enable`)
 - Git
 
 ### 1. Clone o Repositório
@@ -73,11 +73,12 @@ cd ticketz-leadengine
 
 ### 2. Instale as Dependências
 ```bash
-# Usando pnpm (recomendado)
-pnpm install
+# Habilite o Corepack e fixe a versão do pnpm usada na pipeline
+corepack enable
+corepack prepare pnpm@9.12.3 --activate
 
-# Ou usando npm
-npm install
+# Instale as dependências do monorepo respeitando o lockfile
+pnpm -w install --frozen-lockfile
 ```
 
 ### 3. Configure as Variáveis de Ambiente
@@ -455,7 +456,9 @@ git clone <repo>
 cd ticketz-leadengine
 
 # Build
-pnpm install
+corepack enable
+corepack prepare pnpm@9.12.3 --activate
+pnpm -w install --frozen-lockfile
 pnpm run build
 
 # Configure PM2

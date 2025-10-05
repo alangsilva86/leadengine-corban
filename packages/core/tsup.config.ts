@@ -8,10 +8,11 @@ export default defineConfig({
   },
   format: ['cjs', 'esm'],
   target: 'es2022',
+  dts: false,
   dts: true,
   sourcemap: true,
   splitting: false,
   clean: true,
   external: ['zod', 'lodash', 'date-fns'],
-  tsconfig: 'tsconfig.build.json',
+  tsconfig: './tsconfig.build.json',
 });

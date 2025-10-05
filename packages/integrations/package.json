@@ -6,6 +6,9 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "scripts": {
+    "build": "tsup && pnpm run build:types",
+    "build:clean": "tsup --clean && pnpm run build:types",
+    "build:types": "tsc -p tsconfig.build.json",
     "build": "tsup",
     "build:clean": "tsup --clean",
     "dev": "tsup --watch",
@@ -26,6 +29,13 @@
     "tsup": "^8.5.0",
     "typescript": "^5.3.3",
     "vitest": "^1.1.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
   },
   "files": [
     "dist"

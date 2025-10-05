@@ -41,8 +41,7 @@
     "vitest": "^1.1.0"
   },
   "engines": {
-    "node": "20.x",
-    "pnpm": "9.12.3"
+    "node": "20.x"
   },
   "packageManager": "pnpm@9.12.3",
   "pnpm": {
