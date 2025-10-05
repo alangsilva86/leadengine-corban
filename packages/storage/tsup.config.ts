@@ -1,13 +1,15 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
-  format: ['cjs', 'esm'],
-  dts: true,
+  entry: {
+    index: 'src/index.ts',
+  },
   splitting: false,
   sourcemap: true,
   clean: true,
-  minify: false,
+  dts: false,
+  format: ['cjs', 'esm'],
+  target: 'es2022',
   external: ['@ticketz/core'],
-  tsconfig: 'tsconfig.build.json',
+  tsconfig: './tsconfig.build.json',
 });

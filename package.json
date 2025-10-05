@@ -13,7 +13,7 @@
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "type-check": "pnpm -r type-check",
+    "typecheck": "pnpm -r typecheck",
     "clean": "pnpm -r clean && rm -rf node_modules",
     "api:dev": "pnpm --filter @ticketz/api dev",
     "web:dev": "pnpm --filter @ticketz/web dev",
@@ -41,8 +41,7 @@
     "vitest": "^1.1.0"
   },
   "engines": {
-    "node": "20.x",
-    "pnpm": "9.12.3"
+    "node": "20.x"
   },
   "packageManager": "pnpm@9.12.3",
   "pnpm": {

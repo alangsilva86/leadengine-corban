@@ -74,11 +74,14 @@ A    www         IP_DO_SERVIDOR
 Antes de iniciar qualquer estratégia de deploy, valide a geração dos artefatos do pacote core para evitar falhas de tipagem em produção:
 
 ```bash
-pnpm --filter @ticketz/core build
-pnpm --filter @ticketz/core type-check
+corepack enable
+corepack prepare pnpm@9.12.3 --activate
+pnpm -w install --frozen-lockfile
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
 ```
 
-O primeiro comando executa o bundle e recompila apenas as declarações TypeScript necessárias para o pacote, garantindo que os módulos `common`, `tickets` e `leads` estejam listados corretamente. Na sequência, o `type-check` roda o `tsc --noEmit` e confirma que os tipos usados pelos serviços (`common/types.ts`, `tickets/types.ts`, `tickets/services.ts` e `leads/types.ts`) não geram o erro `TS6307` durante o pipeline.
+Os dois últimos comandos garantem que os pacotes de domínio (`@ticketz/core`), persistência (`@ticketz/storage`) e integrações (`@ticketz/integrations`) gerem artefatos consistentes **antes** de qualquer build da API. A geração limpa vem primeiro para produzir as declarações e, em seguida, o `typecheck` valida os tipos (`TS6307`, `TS2307`, etc.) já com o contexto completo, evitando surpresas em produção.
 
 ### 1. Deploy Automatizado
 
@@ -119,11 +122,11 @@ Caso utilize o Render.com para hospedar a API como serviço web, configure os co
 
 | Etapa | Comando |
 | --- | --- |
-| Build Command | `pnpm --filter @ticketz/api run build` |
-| Start Command | `pnpm --filter @ticketz/api start` |
-| Node version | Defina `NODE_VERSION=20` nas variáveis de ambiente ou no blueprint |
+| Build Command | `corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm -w install --frozen-lockfile --prod=false && pnpm -w prisma generate --schema=prisma/schema.prisma && pnpm -F @ticketz/api build` |
+| Start Command | `./node_modules/.bin/prisma migrate deploy --schema=prisma/schema.prisma && node apps/api/dist/server.js` |
+| Node version | Defina `NODE_VERSION=20` (ou use a configuração padrão do Render baseada no `package.json`) |
 
-> ℹ️ O script `build` da API dispara `build:dependencies` (com `pnpm --dir ../.. -r --filter ... run build`) antes do `tsup`. Assim, os diretórios `dist` dos pacotes `@ticketz/{core,shared,storage,integrations}` são gerados antes do `node dist/server.js`, evitando erros de resolução de módulos nas etapas de deploy e runtime.
+> ℹ️ O script `build` da API executa `build:dependencies`, que por sua vez roda `build:clean` e `typecheck` nos pacotes `@ticketz/{core,storage,integrations}` **antes** do bundler (`tsup`). Dessa forma, os diretórios `dist` são gerados com declarações atualizadas e qualquer regressão de tipos falha cedo, antes do `node apps/api/dist/server.js`.
 
 > ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/start` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
 
