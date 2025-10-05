@@ -345,7 +345,7 @@ importers:
         specifier: ^4.17.21
         version: 4.17.21
       zod:
-        specifier: ^3
+        specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@types/lodash':
@@ -370,7 +370,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@whiskeysockets/baileys':
-        specifier: ^6.7.8
+        specifier: ^6.7.20
         version: 6.7.20(audio-decode@2.2.3)(sharp@0.34.4)
       qrcode:
         specifier: ^1.5.3

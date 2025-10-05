@@ -17,7 +17,7 @@
       "extends": ["plugin:@typescript-eslint/recommended"]
     },
     {
-      "files": ["packages/*/src/**/*.ts"],
+      "files": ["packages/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.{js,jsx}"],
       "rules": {
         "no-restricted-imports": [
           "error",
