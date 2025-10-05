@@ -4,17 +4,11 @@
   "description": "Camada de persistência do sistema Ticketz-LeadEngine",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
+  "types": "index.d.ts",
   "scripts": {
-    "build": "tsup && pnpm run build:types",
-    "build:clean": "tsup --clean && pnpm run build:types",
-    "build:types": "tsc -p tsconfig.build.json",
     "build": "tsup",
     "build:clean": "tsup --clean",
-    "dev": "tsup --watch",
-    "test": "vitest --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "clean": "rm -rf dist"
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
     "@ticketz/core": "workspace:*"
@@ -24,14 +18,20 @@
     "typescript": "^5.3.3",
     "vitest": "^1.1.0"
   },
+  "typesVersions": {
+    "*": {
+      "*": ["dist/*", "src/*"]
+    }
+  },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "index.d.ts"
   ]
 }

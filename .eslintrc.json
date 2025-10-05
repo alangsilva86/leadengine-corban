@@ -19,7 +19,7 @@
     {
       "files": ["packages/*/src/**/*.ts"],
       "rules": {
-        "@typescript-eslint/no-restricted-imports": [
+        "no-restricted-imports": [
           "error",
           {
             "patterns": ["**/packages/*/src/**"]
@@ -28,14 +28,4 @@
       }
     }
   ]
-    }
-  ],
-  "rules": {
-    "no-restricted-imports": [
-      "error",
-      {
-        "patterns": ["@ticketz/*/src/*"]
-      }
-    ]
-  }
 }

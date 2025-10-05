@@ -44,7 +44,6 @@ Implementações concretas para serviços externos, como gateways de comunicaç�
 ```
 integrations/
 ├── whatsapp/         # WhatsApp (Baileys)
-├── telephony/        # URA e telefonia
 ├── email/            # Email marketing
 └── crm/              # CRMs externos
 ```

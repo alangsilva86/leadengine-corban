@@ -46,7 +46,6 @@ const channelLabels = {
   whatsapp: 'WhatsApp',
   email: 'Email',
   phone: 'Telefone',
-  voice: 'URA/Voice',
   chat: 'Chat',
   sms: 'SMS',
   social: 'Redes sociais',
@@ -57,7 +56,6 @@ const channelColors = {
   whatsapp: '#25D366',
   email: '#EA4335',
   phone: '#4285F4',
-  voice: '#22c55e',
   chat: '#9333EA',
   sms: '#f97316',
   social: '#f472b6',
@@ -180,9 +178,6 @@ const normalizeChannel = (channel) => {
       return 'email';
     case 'PHONE':
       return 'phone';
-    case 'VOICE':
-    case 'URA':
-      return 'voice';
     case 'CHAT':
     case 'WEBCHAT':
       return 'chat';
@@ -481,7 +476,6 @@ const getChannelIcon = (channel) => {
     whatsapp: MessageSquare,
     email: Mail,
     phone: Phone,
-    voice: Phone,
     chat: MessageSquare,
     sms: MessageSquare,
     social: Sparkles,

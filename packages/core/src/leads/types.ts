@@ -37,7 +37,7 @@ export const LeadSourceSchema = z.enum([
   'REFERRAL',     // Indicação
   'WHATSAPP',     // WhatsApp
   'WEBSITE',      // Site/Landing page
-  'PHONE',        // Telefone/URA
+  'PHONE',        // Telefone
   'EVENT',        // Evento/Feira
   'PARTNER',      // Parceiro
   'IMPORT',       // Importação

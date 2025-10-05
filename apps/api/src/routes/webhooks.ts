@@ -14,23 +14,6 @@ const integrationWebhooksRouter: Router = Router();
 router.use('/', whatsappWebhookRouter);
 integrationWebhooksRouter.use('/', whatsappIntegrationWebhookRouter);
 
-// POST /api/webhooks/telephony - Webhook da URA/Telefonia
-router.post(
-  '/telephony',
-  asyncHandler(async (req: Request, res: Response) => {
-    const payload = req.body;
-
-    logger.info('Telephony webhook received', { payload });
-
-    // TODO: Processar webhook da URA
-
-    res.json({
-      success: true,
-      message: 'Webhook processed',
-    });
-  })
-);
-
 // POST /api/webhooks/email - Webhook de email
 router.post(
   '/email',

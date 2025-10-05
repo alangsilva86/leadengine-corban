@@ -1,6 +1,6 @@
 # 🎯 Ticketz LeadEngine - Sistema Híbrido de Gestão
 
-> **Sistema moderno de gestão de tickets e leads com integrações WhatsApp e URA**
+> **Sistema moderno de gestão de tickets e leads com integração WhatsApp**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -14,7 +14,6 @@ O **Ticketz LeadEngine** é uma solução completa que combina o melhor dos proj
 - 🎫 **Sistema de Tickets** completo e moderno
 - 👥 **Gestão de Leads** com automação
 - 📱 **Integração WhatsApp** via Baileys
-- ☎️ **Sistema URA** para telefonia
 - 🏢 **Multi-tenant** com isolamento completo
 - ⚡ **Tempo Real** com WebSockets
 - 🎨 **Interface Moderna** com React e Tailwind
@@ -32,7 +31,7 @@ ticketz-leadengine/
 │   ├── core/         # Domínios e regras de negócio
 │   ├── shared/       # Utilitários compartilhados
 │   ├── storage/      # Camada de persistência
-│   └── integrations/ # WhatsApp, URA e outras integrações
+│   └── integrations/ # WhatsApp e outras integrações
 └── docs/             # Documentação
 ```
 
@@ -55,7 +54,6 @@ ticketz-leadengine/
 
 #### Integrações
 - **Baileys** para WhatsApp
-- **Axios** para APIs externas
 - **QR Code** para pareamento
 
 ## 🚀 Instalação e Configuração
@@ -81,7 +79,20 @@ corepack prepare pnpm@9.12.3 --activate
 pnpm -w install --frozen-lockfile
 ```
 
-### 3. Configure as Variáveis de Ambiente
+### 3. Valide as bibliotecas antes do build da API
+Sempre que for buildar ou subir a API, execute a sequência abaixo para garantir que os pacotes compartilhados estejam consistentes:
+
+```bash
+corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm -w install --frozen-lockfile
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+pnpm -F @ticketz/api run db:generate
+pnpm -F @ticketz/api build
+```
+
+> 💡 A API já chama `build:dependencies` antes de `tsup`, mas manter a mesma ordem de comandos no seu ambiente garante que regressões de tipos ou builds quebrados sejam detectados antes de chegar à pipeline.
+
+### 4. Configure as Variáveis de Ambiente
 
 #### Backend (apps/api/.env)
 ```env
@@ -114,10 +125,6 @@ WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=troque-por-uma-chave-forte
 WHATSAPP_WEBHOOK_API_KEY=troque-se-diferente-da-chave-do-broker
 WHATSAPP_BROKER_TIMEOUT_MS=15000
-
-# URA
-URA_API_URL=https://api.ura-provider.com
-URA_API_KEY=your-ura-api-key
 
 # Logs
 LOG_LEVEL=info
@@ -196,13 +203,6 @@ cd apps/web && npm run build
 
 > **Segurança:** defina `WHATSAPP_BROKER_API_KEY` no backend e configure o serviço `baileys-acessuswpp` na Render com a variável `API_KEY` correspondente. Toda chamada ao broker (incluindo webhooks e testes manuais) deve enviar o cabeçalho `x-api-key` com esse valor.
 
-### ☎️ Sistema URA
-- ✅ Fluxos de atendimento
-- ✅ Menu interativo (DTMF)
-- ✅ Reconhecimento de voz
-- ✅ Transferência de chamadas
-- ✅ Gravação de chamadas
-
 ### 🏢 Multi-tenant
 - ✅ Isolamento completo de dados
 - ✅ Configurações por tenant
@@ -279,15 +279,6 @@ POST   /api/integrations/whatsapp/webhook
 > Quando disponível, também envie `x-signature-sha256` calculado com o corpo bruto da requisição para validar a integridade do payload.
 > Para HMAC dedicado, defina `WHATSAPP_WEBHOOK_SIGNATURE_SECRET` (fallback automático para o mesmo valor do `x-api-key`).
 
-#### URA
-```
-GET    /api/integrations/ura/flows
-POST   /api/integrations/ura/flows
-POST   /api/integrations/ura/calls
-GET    /api/integrations/ura/calls/:id
-POST   /api/integrations/ura/calls/:id/hangup
-```
-
 ### WebSocket Events
 ```javascript
 // Cliente se conecta
@@ -345,7 +336,6 @@ Contém os domínios principais e regras de negócio:
 #### @ticketz/integrations
 Integrações com serviços externos:
 - `whatsapp/` - Provider Baileys
-- `telephony/` - Provider URA
 - `utils/` - Utilitários compartilhados
 
 #### @ticketz/shared
@@ -362,9 +352,12 @@ pnpm run dev          # Inicia todos os serviços
 pnpm run dev:api      # Apenas API
 pnpm run dev:web      # Apenas frontend
 
-# Build
-pnpm run build        # Build completo
-pnpm run build:api    # Build apenas API
+# Build (ordem recomendada)
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
+pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+pnpm -F @ticketz/api run db:generate
+pnpm -F @ticketz/api build
+pnpm run build        # Build completo (segue as dependências internas)
 pnpm run build:web    # Build apenas frontend
 
 # Testes
@@ -420,9 +413,6 @@ tail -f apps/api/logs/app.log
 
 # WhatsApp logs
 tail -f apps/api/logs/whatsapp.log
-
-# URA logs
-tail -f apps/api/logs/ura.log
 ```
 
 ## 🔒 Segurança

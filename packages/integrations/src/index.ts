@@ -15,18 +15,6 @@ export type {
   CreateInstanceRequest,
 } from './whatsapp/instance-manager';
 
-// URA/Telephony Integration
-export { URAProvider } from './telephony/ura-provider';
-export type {
-  URAConfig,
-  URACall,
-  URAFlow,
-  URAStep,
-  URAMenuOption,
-  URACondition,
-  CallRequest
-} from './telephony/ura-provider';
-
 // Utilities
 export { logger } from './utils/logger';
 

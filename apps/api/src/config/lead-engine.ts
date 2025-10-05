@@ -41,7 +41,7 @@ export const agreementDefinitions: AgreementDefinition[] = [
     id: 'saec-caldas-novas',
     name: 'SAEC Caldas Novas',
     slug: 'SaecCaldasNovas',
-    description: 'Convênio municipal com alta taxa de resposta à URA.',
+    description: 'Convênio municipal com alta taxa de resposta aos canais de voz.',
     region: 'GO',
     basePrice: 12,
     unit: 'lead',
