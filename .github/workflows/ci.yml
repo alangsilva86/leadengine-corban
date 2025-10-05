@@ -39,3 +39,20 @@ jobs:
 
       - name: Build API
         run: pnpm -F @ticketz/api build
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  types_and_libs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable corepack
+        run: corepack enable && corepack prepare pnpm@9.12.3 --activate
+      - name: Install dependencies
+        run: pnpm -w install --frozen-lockfile
+      - name: Build libraries
+        run: pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
+      - name: Type check libraries
+        run: pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck

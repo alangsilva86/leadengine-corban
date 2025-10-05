@@ -28,4 +28,14 @@
       }
     }
   ]
+    }
+  ],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": ["@ticketz/*/src/*"]
+      }
+    ]
+  }
 }
