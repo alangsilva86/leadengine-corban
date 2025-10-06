@@ -2081,6 +2081,41 @@ router.post(
         return;
       }
 
+      if (error instanceof Prisma.PrismaClientValidationError) {
+        logger.error('WhatsApp instance creation rejected: invalid payload', {
+          tenantId,
+          error,
+        });
+
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_INSTANCE_PAYLOAD',
+            message:
+              'Não foi possível criar a instância WhatsApp. Verifique os dados enviados e tente novamente.',
+          },
+        });
+        return;
+      }
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        logger.error('WhatsApp instance creation failed due to storage error', {
+          tenantId,
+          code: error.code,
+          meta: error.meta,
+        });
+
+        res.status(503).json({
+          success: false,
+          error: {
+            code: 'WHATSAPP_STORAGE_UNAVAILABLE',
+            message:
+              'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
+          },
+        });
+        return;
+      }
+
       throw error;
     }
   })
