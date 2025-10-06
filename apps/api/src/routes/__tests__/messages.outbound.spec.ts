@@ -44,7 +44,7 @@ import { registerSocketServer, type SocketServerAdapter } from '../../lib/socket
 import { resetMetrics, renderMetrics } from '../../lib/metrics';
 import { resetTicketStore, createTicket } from '@ticketz/storage';
 import { resetRateLimit } from '../../utils/rate-limit';
-import { whatsappBrokerClient } from '../../services/whatsapp-broker-client';
+import { whatsappBrokerClient, WhatsAppBrokerError } from '../../services/whatsapp-broker-client';
 
 class MockSocketServer {
   public events: Array<{ room: string; event: string; payload: unknown }> = [];
@@ -225,6 +225,46 @@ describe('Outbound message routes', () => {
 
     const metricsSnapshot = renderMetrics();
     expect(metricsSnapshot).toContain('whatsapp_outbound_total{instanceId="instance-001",status="SENT"} 1');
+  });
+
+  it('surfaces detailed broker error information when dispatch fails', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+
+    sendMessageSpy.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Request timed out', 'REQUEST_TIMEOUT', 408, 'req-123')
+    );
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'broker-fail-1')
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem que falhará',
+        },
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      queued: true,
+      status: 'FAILED',
+      error: {
+        message: 'Request timed out',
+        code: 'REQUEST_TIMEOUT',
+        status: 408,
+        requestId: 'req-123',
+      },
+    });
   });
 
   it('returns cached response when idempotency key is reused', async () => {

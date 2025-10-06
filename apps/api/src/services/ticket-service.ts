@@ -35,7 +35,7 @@ import {
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
 import { whatsappOutboundMetrics } from '../lib/metrics';
-import { whatsappBrokerClient } from './whatsapp-broker-client';
+import { whatsappBrokerClient, WhatsAppBrokerError } from './whatsapp-broker-client';
 import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import {
@@ -123,13 +123,20 @@ const ensureWhatsAppInstanceAccessible = async (tenantId: string, instanceId: st
   }
 };
 
+export type OutboundMessageError = {
+  message: string;
+  code?: string;
+  status?: number;
+  requestId?: string;
+};
+
 export type OutboundMessageResponse = {
   queued: true;
   ticketId: string;
   messageId: string;
   status: Message['status'];
   externalId: string | null;
-  error: unknown | null;
+  error: OutboundMessageError | null;
 };
 
 const buildOutboundResponse = (message: Message): OutboundMessageResponse => {
@@ -138,13 +145,38 @@ const buildOutboundResponse = (message: Message): OutboundMessageResponse => {
       ? ((message.metadata as Record<string, unknown>).broker as Record<string, unknown> | undefined)
       : undefined;
 
+  let error: OutboundMessageError | null = null;
+
+  if (brokerMeta?.error && typeof brokerMeta.error === 'object') {
+    const rawError = brokerMeta.error as Record<string, unknown>;
+    const normalizedError: OutboundMessageError = {
+      message: typeof rawError.message === 'string' ? rawError.message : 'unknown_error',
+    };
+
+    if (typeof rawError.code === 'string') {
+      normalizedError.code = rawError.code;
+    }
+
+    if (typeof rawError.status === 'number') {
+      normalizedError.status = rawError.status;
+    }
+
+    if (typeof rawError.requestId === 'string') {
+      normalizedError.requestId = rawError.requestId;
+    }
+
+    error = normalizedError;
+  } else if (typeof brokerMeta?.error === 'string' && brokerMeta.error.length > 0) {
+    error = { message: brokerMeta.error };
+  }
+
   return {
     queued: true,
     ticketId: message.ticketId,
     messageId: message.id,
     status: message.status,
     externalId: message.externalId ?? null,
-    error: brokerMeta?.error ?? null,
+    error,
   } satisfies OutboundMessageResponse;
 };
 
@@ -1009,12 +1041,33 @@ export const sendMessage = async (
 
   emitMessageCreatedEvents(tenantId, input.ticketId, message, userId ?? null);
 
-  const markAsFailed = async (reason: string) => {
+  const markAsFailed = async (errorDetails: {
+    message: string;
+    code?: string;
+    status?: number;
+    requestId?: string;
+  }) => {
     const currentMetadata = (message.metadata ?? {}) as Record<string, unknown>;
     const previousBroker =
       currentMetadata?.broker && typeof currentMetadata.broker === 'object'
         ? (currentMetadata.broker as Record<string, unknown>)
         : {};
+
+    const errorMetadata: Record<string, unknown> = {
+      message: errorDetails.message,
+    };
+
+    if (errorDetails.code !== undefined) {
+      errorMetadata.code = errorDetails.code;
+    }
+
+    if (errorDetails.status !== undefined) {
+      errorMetadata.status = errorDetails.status;
+    }
+
+    if (errorDetails.requestId !== undefined) {
+      errorMetadata.requestId = errorDetails.requestId;
+    }
 
     const metadata = {
       ...currentMetadata,
@@ -1022,9 +1075,7 @@ export const sendMessage = async (
         ...previousBroker,
         provider: 'whatsapp',
         instanceId: effectiveInstanceId,
-        error: {
-          message: reason,
-        },
+        error: errorMetadata,
         failedAt: new Date().toISOString(),
       },
     } as Record<string, unknown>;
@@ -1051,7 +1102,7 @@ export const sendMessage = async (
         tenantId,
         ticketId: ticket.id,
       });
-      await markAsFailed('whatsapp_instance_missing');
+      await markAsFailed({ message: 'whatsapp_instance_missing' });
     } else {
       const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
       const phone = (contact?.phone ?? '').trim();
@@ -1062,7 +1113,7 @@ export const sendMessage = async (
           ticketId: ticket.id,
           contactId: ticket.contactId,
         });
-        await markAsFailed('contact_phone_missing');
+        await markAsFailed({ message: 'contact_phone_missing' });
       } else {
         try {
           const brokerResult = await whatsappBrokerClient.sendMessage(instanceId, {
@@ -1101,14 +1152,23 @@ export const sendMessage = async (
             statusChanged = true;
           }
         } catch (error) {
+          const brokerError = error instanceof WhatsAppBrokerError ? error : null;
           const reason = error instanceof Error ? error.message : 'unknown_error';
           logger.error('Failed to dispatch WhatsApp message via broker', {
             tenantId,
             ticketId: ticket.id,
             messageId: message.id,
             error: reason,
+            brokerErrorCode: brokerError?.code,
+            brokerErrorStatus: brokerError?.status,
+            brokerRequestId: brokerError?.requestId,
           });
-          await markAsFailed(reason);
+          await markAsFailed({
+            message: reason,
+            code: brokerError?.code,
+            status: brokerError?.status,
+            requestId: brokerError?.requestId,
+          });
         }
       }
     }
