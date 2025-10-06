@@ -151,7 +151,7 @@ export interface WhatsAppQrCode {
 }
 
 export interface WhatsAppStatus extends WhatsAppQrCode {
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
+  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'pending' | 'failed';
   connected: boolean;
   stats?: Record<string, unknown> | null;
   metrics?: Record<string, unknown> | null;
@@ -231,11 +231,13 @@ class WhatsAppBrokerClient {
   }
 
   private get baseUrl(): string {
-    return process.env.WHATSAPP_BROKER_URL?.replace(/\/$/, '') || '';
+    const configured = (process.env.BROKER_BASE_URL || process.env.WHATSAPP_BROKER_URL || '').trim();
+    return configured ? configured.replace(/\/$/, '') : '';
   }
 
   private get brokerApiKey(): string {
-    return process.env.WHATSAPP_BROKER_API_KEY || '';
+    const configured = (process.env.BROKER_API_KEY || process.env.WHATSAPP_BROKER_API_KEY || '').trim();
+    return configured;
   }
 
   private get shouldStripLegacyPlus(): boolean {
@@ -265,8 +267,16 @@ class WhatsAppBrokerClient {
       throw new WhatsAppBrokerNotConfiguredError(message);
     }
 
-    if (!this.baseUrl || !this.brokerApiKey) {
-      throw new WhatsAppBrokerNotConfiguredError();
+    if (!this.baseUrl) {
+      throw new WhatsAppBrokerNotConfiguredError(
+        'WhatsApp broker base URL is not configured. Set BROKER_BASE_URL or WHATSAPP_BROKER_URL.'
+      );
+    }
+
+    if (!this.brokerApiKey) {
+      throw new WhatsAppBrokerNotConfiguredError(
+        'WhatsApp broker API key is not configured. Set BROKER_API_KEY or WHATSAPP_BROKER_API_KEY.'
+      );
     }
   }
 
