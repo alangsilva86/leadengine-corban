@@ -3,7 +3,7 @@ import { Loader2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import { cn } from '@/lib/utils.js';
+import { cn, formatPhoneNumber } from '@/lib/utils.js';
 
 const minutesToLabel = (minutes) => {
   if (minutes === null || minutes === undefined) {
@@ -51,6 +51,17 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
   const lastInbound = formatTime(ticket?.timeline?.lastInboundAt);
   const lastOutbound = formatTime(ticket?.timeline?.lastOutboundAt);
   const agentTyping = ticket?.timeline?.typing;
+  const contact = ticket?.contact ?? {};
+  const displayName = contact.name || ticket.subject || 'Contato sem nome';
+  const phoneFromMetadata =
+    ticket?.metadata?.contactPhone ||
+    ticket?.metadata?.whatsapp?.phone ||
+    ticket?.metadata?.remoteJid;
+  const displayPhone = formatPhoneNumber(contact.phone || phoneFromMetadata);
+  const remoteJid =
+    ticket?.metadata?.whatsapp?.remoteJid ||
+    ticket?.metadata?.remoteJid ||
+    null;
 
   return (
     <button
@@ -63,10 +74,14 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col">
-          <p className="truncate text-sm font-semibold text-slate-100" title={ticket.contact?.name ?? ticket.subject ?? 'Contato sem nome'}>
-            {ticket.contact?.name ?? ticket.subject ?? 'Contato sem nome'}
+          <p className="truncate text-sm font-semibold text-slate-100" title={displayName}>
+            {displayName}
           </p>
-          <p className="text-xs text-slate-400">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+            <span>{displayPhone}</span>
+            {remoteJid ? <span className="text-slate-600">{remoteJid}</span> : null}
+          </div>
+          <p className="text-xs text-slate-500">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
         </div>
         <Badge className={cn('text-xs font-medium', slaBadgeClass)}>{slaLabel}</Badge>
       </div>

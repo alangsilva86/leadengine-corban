@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { formatPhoneNumber } from '@/lib/utils.js';
 
 export const ContactDetailsCard = ({ contact }) => {
   if (!contact) {
@@ -13,7 +14,7 @@ export const ContactDetailsCard = ({ contact }) => {
       <CardContent className="flex flex-col gap-2 text-xs">
         <div className="flex justify-between">
           <span>Telefone</span>
-          <span>{contact.phone ?? '—'}</span>
+          <span>{formatPhoneNumber(contact.phone)}</span>
         </div>
         <div className="flex justify-between">
           <span>Email</span>

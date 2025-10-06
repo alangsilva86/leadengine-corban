@@ -119,6 +119,7 @@ export const Composer = ({
       name: file.name,
       size: file.size,
       type: file.type,
+      file,
     }));
     setAttachments((current) => [...current, ...mapped]);
     event.target.value = '';
