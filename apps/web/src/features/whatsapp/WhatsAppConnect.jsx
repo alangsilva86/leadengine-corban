@@ -2059,6 +2059,9 @@ const WhatsAppConnect = ({
     }
 
     const payloadBody = {
+      agreementId: selectedAgreement.id,
+      agreementName: selectedAgreement.name ?? undefined,
+      tenantId: selectedAgreement.tenantId ?? undefined,
       name: normalizedName,
       ...(id ? { id: `${id}`.trim() } : {}),
     };
