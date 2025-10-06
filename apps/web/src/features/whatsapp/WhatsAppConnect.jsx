@@ -1675,7 +1675,12 @@ const WhatsAppConnect = ({
         forceRefresh: shouldForceBrokerSync,
         hasFetchedOnce: hasFetchedOnceRef.current,
       });
-      const response = await apiGet('/api/integrations/whatsapp/instances?refresh=1');
+      const instancesUrl = agreementId
+        ? `/api/integrations/whatsapp/instances?agreementId=${encodeURIComponent(
+            agreementId
+          )}&refresh=1`
+        : '/api/integrations/whatsapp/instances?refresh=1';
+      const response = await apiGet(instancesUrl);
       const parsedResponse = parseInstancesPayload(response);
       setSessionActive(true);
       setAuthDeferred(false);
@@ -1684,7 +1689,7 @@ const WhatsAppConnect = ({
       let connectResult = providedConnect || null;
 
       if (list.length === 0 && !shouldForceBrokerSync) {
-        const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
+        const refreshed = await apiGet(instancesUrl).catch(
           () => null
         );
         if (refreshed) {
