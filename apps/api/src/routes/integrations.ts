@@ -1554,9 +1554,10 @@ router.post(
 
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
       const actorId = req.user?.id ?? 'system';
+      const historyEntry = buildHistoryEntry('created', actorId, { name: normalizedName });
       const metadata = appendInstanceHistory(
         { displayId: normalizedId, slug: slugCandidate },
-        buildHistoryEntry('created', actorId, { name: normalizedName })
+        historyEntry
       );
       const instance = await prisma.whatsAppInstance.create({
         data: {
@@ -1576,6 +1577,15 @@ router.post(
         tenantId,
         instanceId: normalizedId,
         actorId,
+      });
+
+      emitToTenant(tenantId, 'whatsapp.instance.created', {
+        id: instance.id,
+        status: instance.status,
+        connected: instance.connected,
+        ...(instance.phoneNumber ? { phoneNumber: instance.phoneNumber } : {}),
+        syncedAt: new Date().toISOString(),
+        history: historyEntry,
       });
 
       res.status(201).json({
