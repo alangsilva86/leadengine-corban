@@ -9,6 +9,7 @@ import { validateRequest } from '../middleware/validation';
 import {
   whatsappBrokerClient,
   WhatsAppBrokerNotConfiguredError,
+  WhatsAppBrokerError,
   type WhatsAppStatus,
   type WhatsAppBrokerInstanceSnapshot,
 } from '../services/whatsapp-broker-client';
@@ -201,18 +202,41 @@ type NormalizedInstance = {
   id: string;
   tenantId: string | null;
   name: string | null;
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'error';
+  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'error' | 'pending' | 'failed';
   connected: boolean;
   createdAt: string | null;
   lastActivity: string | null;
   phoneNumber: string | null;
   user: string | null;
+  agreementId: string | null;
   stats?: unknown;
   metrics?: Record<string, unknown> | null;
   messages?: Record<string, unknown> | null;
   rate?: Record<string, unknown> | null;
   rawStatus?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
+  lastError?: InstanceLastError | null;
+};
+
+type InstanceLastError = {
+  code?: string | null;
+  message?: string | null;
+  requestId?: string | null;
+  at?: string | null;
+};
+
+const compactRecord = (input: Record<string, unknown>): Record<string, unknown> => {
+  const entries = Object.entries(input).filter(([, value]) => {
+    if (value === undefined || value === null) {
+      return false;
+    }
+    if (typeof value === 'string') {
+      return value.trim().length > 0;
+    }
+    return true;
+  });
+
+  return Object.fromEntries(entries);
 };
 
 const normalizeInstanceStatus = (
@@ -228,6 +252,8 @@ const normalizeInstanceStatus = (
       case 'connecting':
       case 'qr_required':
       case 'disconnected':
+      case 'pending':
+      case 'failed':
         return rawStatus;
       case 'error':
         return 'error';
@@ -328,12 +354,15 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
         metadata.phone
       ) ?? null,
     user: pickString(source.user, metadata.user, metadata.userName, metadata.username, metadata.operator) ?? null,
+    agreementId: extractAgreementIdFromMetadata(metadata) ?? null,
     stats:
       (typeof source.stats === 'object' && source.stats !== null
         ? source.stats
         : typeof metadata.stats === 'object' && metadata.stats !== null
           ? metadata.stats
           : undefined),
+    metadata,
+    lastError: readLastErrorFromMetadata(metadata),
   };
 };
 
@@ -371,6 +400,102 @@ const buildHistoryEntry = (action: string, actorId: string, details?: Record<str
   ...(details ?? {}),
 });
 
+const extractAgreementIdFromMetadata = (metadata: InstanceMetadata): string | null => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  const source = metadata as Record<string, unknown>;
+  const direct = pickString(
+    source.agreementId,
+    source.agreement_id,
+    source.agreementCode,
+    source.agreementSlug,
+    source.tenantAgreement,
+    source.agreement
+  );
+
+  if (direct) {
+    return direct;
+  }
+
+  const agreementObject = source.agreement && typeof source.agreement === 'object'
+    ? (source.agreement as Record<string, unknown>)
+    : null;
+
+  if (agreementObject) {
+    const nested = pickString(
+      agreementObject.id,
+      agreementObject.agreementId,
+      agreementObject.slug,
+      agreementObject.code
+    );
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+};
+
+const readLastErrorFromMetadata = (metadata: InstanceMetadata): InstanceLastError | null => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  const source = metadata as Record<string, unknown>;
+  const payload = source.lastError && typeof source.lastError === 'object'
+    ? (source.lastError as Record<string, unknown>)
+    : null;
+
+  if (!payload) {
+    return null;
+  }
+
+  const message = pickString(payload.message, payload.error, payload.description);
+  const code = pickString(payload.code, payload.errorCode, payload.error_code);
+  const requestId = pickString(
+    payload.requestId,
+    payload.request_id,
+    payload.traceId,
+    payload.trace_id
+  );
+  const at = pickString(payload.at, payload.timestamp, payload.attemptedAt, payload.attempted_at);
+
+  if (!message && !code && !requestId && !at) {
+    return null;
+  }
+
+  return {
+    ...(code ? { code } : {}),
+    ...(message ? { message } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(at ? { at } : {}),
+  };
+};
+
+const withInstanceLastError = (
+  metadata: InstanceMetadata,
+  error: InstanceLastError | null
+): Prisma.JsonObject => {
+  const base: Record<string, unknown> =
+    metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
+
+  if (error && (error.code || error.message || error.requestId)) {
+    const normalized = compactRecord({
+      code: error.code ?? undefined,
+      message: error.message ?? undefined,
+      requestId: error.requestId ?? undefined,
+      at: error.at ?? new Date().toISOString(),
+    });
+    base.lastError = normalized;
+  } else {
+    delete base.lastError;
+  }
+
+  return base as Prisma.JsonObject;
+};
+
 const appendInstanceHistory = (metadata: InstanceMetadata, entry: ReturnType<typeof buildHistoryEntry>): Prisma.JsonObject => {
   const base: Record<string, unknown> = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
   const history = Array.isArray(base.history) ? [...(base.history as unknown[])] : [];
@@ -387,6 +512,10 @@ const mapDbStatusToNormalized = (
       return 'connected';
     case 'connecting':
       return 'connecting';
+    case 'pending':
+      return 'pending';
+    case 'failed':
+      return 'failed';
     case 'error':
       return 'error';
     default:
@@ -410,6 +539,10 @@ const mapBrokerStatusToDbStatus = (
       return 'connecting';
     case 'disconnected':
       return 'disconnected';
+    case 'pending':
+      return 'pending';
+    case 'failed':
+      return 'failed';
     default:
       return 'error';
   }
@@ -956,6 +1089,10 @@ const mapBrokerInstanceStatusToDbStatus = (status: string | null | undefined): W
       return 'connecting';
     case 'disconnected':
       return 'disconnected';
+    case 'pending':
+      return 'pending';
+    case 'failed':
+      return 'failed';
     default:
       return 'error';
   }
@@ -1098,6 +1235,24 @@ const serializeStoredInstance = (
     metadata.normalizedMetrics = normalizedMetrics;
   }
 
+  const agreementId = extractAgreementIdFromMetadata(metadata) ?? null;
+  if (agreementId && typeof metadata.agreementId !== 'string') {
+    metadata.agreementId = agreementId;
+  }
+
+  if (agreementId) {
+    const agreementMetadata =
+      metadata.agreement && typeof metadata.agreement === 'object'
+        ? { ...(metadata.agreement as Record<string, unknown>) }
+        : {};
+    if (!agreementMetadata.id) {
+      agreementMetadata.id = agreementId;
+    }
+    metadata.agreement = agreementMetadata;
+  }
+
+  const lastError = readLastErrorFromMetadata(metadata);
+
   return {
     id: instance.id,
     tenantId: instance.tenantId,
@@ -1108,12 +1263,14 @@ const serializeStoredInstance = (
     lastActivity: instance.lastSeenAt ? instance.lastSeenAt.toISOString() : null,
     phoneNumber,
     user: null,
+    agreementId,
     stats,
     metrics,
     messages,
     rate,
     rawStatus,
     metadata,
+    lastError,
     brokerId: instance.brokerId,
   };
 };
@@ -1362,6 +1519,7 @@ const syncInstancesFromBroker = async (
         historyEntry
       ) as Record<string, unknown>;
       metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       await prisma.whatsAppInstance.update({
         where: { id: existingInstance.id },
@@ -1373,7 +1531,7 @@ const syncInstancesFromBroker = async (
           brokerId: instanceId,
           ...(phoneNumber ? { phoneNumber } : {}),
           ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
-          metadata: metadataWithHistory as Prisma.JsonObject,
+          metadata: metadataWithoutError,
         },
       });
 
@@ -1402,6 +1560,7 @@ const syncInstancesFromBroker = async (
         unknown
       >;
       metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       await prisma.whatsAppInstance.create({
         data: {
@@ -1413,7 +1572,7 @@ const syncInstancesFromBroker = async (
           connected: derivedConnected,
           phoneNumber,
           ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
-          metadata: metadataWithHistory as Prisma.JsonObject,
+          metadata: metadataWithoutError,
         },
       });
 
@@ -1646,6 +1805,7 @@ const disconnectStoredInstance = async (
     context.stored.metadata as InstanceMetadata,
     historyEntry
   );
+  const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
   const derivedStatus = context.brokerStatus
     ? mapBrokerStatusToDbStatus(context.brokerStatus)
@@ -1658,7 +1818,7 @@ const disconnectStoredInstance = async (
     data: {
       status: derivedStatus,
       connected: context.status.connected,
-      metadata: metadataWithHistory,
+      metadata: metadataWithoutError,
       lastSeenAt,
     },
   });
@@ -1744,10 +1904,17 @@ router.get(
     const refreshRequested = hasRefreshParam
       ? normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes'
       : undefined;
+    const agreementQuery = req.query.agreementId;
+    const agreementIdCandidate = Array.isArray(agreementQuery) ? agreementQuery[0] : agreementQuery;
+    const agreementId =
+      typeof agreementIdCandidate === 'string' && agreementIdCandidate.trim().length > 0
+        ? agreementIdCandidate.trim()
+        : null;
 
     logger.info('🛰️ [WhatsApp] List instances requested', {
       tenantId,
       refreshRequested,
+      agreementId,
     });
 
     try {
@@ -1756,18 +1923,42 @@ router.get(
 
       const { instances } = await collectInstancesForTenant(tenantId, collectionOptions);
 
+      const filteredInstances =
+        agreementId === null
+          ? instances
+          : instances.filter((instance) => instance.agreementId === agreementId);
+
+      const warnings: Array<{ code: string; message: string }> = [];
+      if (agreementId && filteredInstances.length === 0) {
+        warnings.push({
+          code: 'NO_INSTANCES_FOR_AGREEMENT',
+          message: `Nenhuma instância WhatsApp encontrada para o convênio ${agreementId}.`,
+        });
+      }
+
       logger.info('🛰️ [WhatsApp] Returning instances to client', {
         tenantId,
-        count: instances.length,
+        count: filteredInstances.length,
         refreshRequested,
+        agreementId,
       });
 
-      res.json({
+      const responsePayload: {
+        success: true;
+        data: { instances: NormalizedInstance[] };
+        meta?: { warnings: Array<{ code: string; message: string }> };
+      } = {
         success: true,
         data: {
-          instances,
+          instances: filteredInstances,
         },
-      });
+      };
+
+      if (warnings.length > 0) {
+        responsePayload.meta = { warnings };
+      }
+
+      res.json(responsePayload);
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
@@ -1782,11 +1973,16 @@ router.post(
   '/whatsapp/instances',
   body('id').optional().isString().isLength({ min: 1 }),
   body('name').isString().isLength({ min: 1 }),
+  body('agreementId').optional().isString().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const { id, name } = req.body as { id?: string; name: string };
+    const { id, name, agreementId } = req.body as {
+      id?: string;
+      name: string;
+      agreementId?: string;
+    };
 
     const normalizedName = name.trim();
     const slugCandidate = toSlug(normalizedName, '');
@@ -1816,23 +2012,34 @@ router.post(
     }
 
     const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : slugCandidate;
+    const normalizedAgreementId =
+      typeof agreementId === 'string' && agreementId.trim().length > 0
+        ? agreementId.trim()
+        : null;
     try {
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
       const actorId = req.user?.id ?? 'system';
       const historyEntry = buildHistoryEntry('created', actorId, { name: normalizedName });
       const metadata = appendInstanceHistory(
-        { displayId: normalizedId, slug: slugCandidate },
+        compactRecord({
+          displayId: normalizedId,
+          slug: slugCandidate,
+          ...(normalizedAgreementId
+            ? { agreementId: normalizedAgreementId, agreement: { id: normalizedAgreementId } }
+            : {}),
+        }),
         historyEntry
       );
+      const metadataWithoutError = withInstanceLastError(metadata, null);
       const instance = await prisma.whatsAppInstance.create({
         data: {
           id: normalizedId,
           tenantId,
           name: normalizedName,
           brokerId: normalizedId,
-          status: 'disconnected',
+          status: 'pending',
           connected: false,
-          metadata,
+          metadata: metadataWithoutError,
         },
       });
 
@@ -1848,6 +2055,7 @@ router.post(
         id: instance.id,
         status: instance.status,
         connected: instance.connected,
+        ...(normalizedAgreementId ? { agreementId: normalizedAgreementId } : {}),
         ...(instance.phoneNumber ? { phoneNumber: instance.phoneNumber } : {}),
         syncedAt: new Date().toISOString(),
         history: historyEntry,
@@ -1878,86 +2086,165 @@ router.post(
   })
 );
 
-// POST /api/integrations/whatsapp/instances/:id/start - Connect a WhatsApp instance
-router.post(
-  '/whatsapp/instances/:id/start',
-  param('id').isString().isLength({ min: 1 }),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+const connectInstanceHandler = async (req: Request, res: Response) => {
+  const instanceId = req.params.id;
+  const tenantId = req.user!.tenantId;
+  const actorId = req.user?.id ?? 'system';
+
+  try {
+    const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+    if (!instance || instance.tenantId !== tenantId) {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_NOT_FOUND',
+          message: 'Instância WhatsApp não encontrada.',
+        },
+      });
+      return;
+    }
 
     try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+      await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerError) {
+        logger.warn('WhatsApp broker rejected connect request', {
+          tenantId,
+          instanceId: instance.id,
+          status: error.status,
+          code: error.code,
+          requestId: error.requestId,
+        });
 
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
+        const failureHistory = buildHistoryEntry('connect-instance-failed', actorId, {
+          code: error.code,
+          message: error.message,
+          requestId: error.requestId ?? null,
+        });
+
+        const metadataWithHistory = appendInstanceHistory(
+          instance.metadata as InstanceMetadata,
+          failureHistory
+        );
+        const metadataWithError = withInstanceLastError(metadataWithHistory, {
+          code: error.code,
+          message: error.message,
+          requestId: error.requestId ?? null,
+        });
+
+        await prisma.whatsAppInstance.update({
+          where: { id: instance.id },
+          data: {
+            status: 'failed',
+            connected: false,
+            metadata: metadataWithError,
+          },
+        });
+
+        if (isBrokerMissingInstanceError(error)) {
+          res.status(422).json({
+            success: false,
+            error: {
+              code: 'BROKER_NOT_FOUND',
+              message: 'Instance not found in broker',
+              details: compactRecord({
+                instanceId: instance.id,
+                requestId: error.requestId ?? undefined,
+              }),
+            },
+          });
+          return;
+        }
+
+        res.status(502).json({
           success: false,
           error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
+            code: error.code || 'BROKER_ERROR',
+            message: error.message || 'WhatsApp broker request failed',
+            details: compactRecord({
+              status: error.status,
+              requestId: error.requestId ?? undefined,
+            }),
           },
         });
         return;
       }
 
-      await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
-
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        refresh: true,
-      });
-
-      if (!context.status.connected) {
-        logger.warn('WhatsApp instance did not report connected status after connect', {
-          tenantId,
-          instanceId: instance.id,
-          status: context.status.status,
-        });
-      }
-
-      const historyEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
-        status: context.status.status,
-        connected: context.status.connected,
-      });
-
-      const metadataWithHistory = appendInstanceHistory(
-        context.stored.metadata as InstanceMetadata,
-        historyEntry
-      );
-
-      const derivedStatus = context.brokerStatus
-        ? mapBrokerStatusToDbStatus(context.brokerStatus)
-        : mapBrokerInstanceStatusToDbStatus(context.status.status);
-
-      await prisma.whatsAppInstance.update({
-        where: { id: context.stored.id },
-        data: {
-          status: derivedStatus,
-          connected: context.status.connected,
-          metadata: metadataWithHistory,
-          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
-        },
-      });
-
-      res.json({
-        success: true,
-        data: {
-          instance: context.instance,
-          status: context.status,
-          connected: context.status.connected,
-          qr: context.qr,
-          instances: context.instances,
-        },
-      });
-    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
+
       throw error;
     }
-  })
-);
+
+    const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+      refresh: true,
+    });
+
+    if (!context.status.connected) {
+      logger.warn('WhatsApp instance did not report connected status after connect', {
+        tenantId,
+        instanceId: instance.id,
+        status: context.status.status,
+      });
+    }
+
+    const historyEntry = buildHistoryEntry('connect-instance', actorId, {
+      status: context.status.status,
+      connected: context.status.connected,
+    });
+
+    const metadataWithHistory = appendInstanceHistory(
+      context.stored.metadata as InstanceMetadata,
+      historyEntry
+    );
+    const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+    const derivedStatus = context.brokerStatus
+      ? mapBrokerStatusToDbStatus(context.brokerStatus)
+      : mapBrokerInstanceStatusToDbStatus(context.status.status);
+
+    await prisma.whatsAppInstance.update({
+      where: { id: context.stored.id },
+      data: {
+        status: derivedStatus,
+        connected: context.status.connected,
+        metadata: metadataWithoutError,
+        lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        instance: context.instance,
+        status: context.status,
+        connected: context.status.connected,
+        qr: context.qr,
+        instances: context.instances,
+      },
+    });
+  } catch (error: unknown) {
+    if (handleWhatsAppIntegrationError(res, error)) {
+      return;
+    }
+    throw error;
+  }
+};
+
+const connectInstanceMiddleware = [
+  param('id').isString().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(connectInstanceHandler),
+];
+
+// POST /api/integrations/whatsapp/instances/:id/connect - Connect a WhatsApp instance
+router.post('/whatsapp/instances/:id/connect', ...connectInstanceMiddleware);
+
+// Legacy alias kept for backwards compatibility
+router.post('/whatsapp/instances/:id/start', ...connectInstanceMiddleware);
 
 // POST /api/integrations/whatsapp/instances/connect - Connect the default WhatsApp instance
 router.post(
@@ -1985,7 +2272,78 @@ router.post(
         return;
       }
 
-      await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+      try {
+        await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError) {
+          logger.warn('WhatsApp broker rejected default connect request', {
+            tenantId,
+            instanceId: instance.id,
+            status: error.status,
+            code: error.code,
+            requestId: error.requestId,
+          });
+
+          const failureHistory = buildHistoryEntry('connect-instance-failed', req.user?.id ?? 'system', {
+            code: error.code,
+            message: error.message,
+            requestId: error.requestId ?? null,
+          });
+
+          const metadataWithHistory = appendInstanceHistory(
+            instance.metadata as InstanceMetadata,
+            failureHistory
+          );
+          const metadataWithError = withInstanceLastError(metadataWithHistory, {
+            code: error.code,
+            message: error.message,
+            requestId: error.requestId ?? null,
+          });
+
+          await prisma.whatsAppInstance.update({
+            where: { id: instance.id },
+            data: {
+              status: 'failed',
+              connected: false,
+              metadata: metadataWithError,
+            },
+          });
+
+          if (isBrokerMissingInstanceError(error)) {
+            res.status(422).json({
+              success: false,
+              error: {
+                code: 'BROKER_NOT_FOUND',
+                message: 'Instance not found in broker',
+                details: compactRecord({
+                  instanceId: instance.id,
+                  requestId: error.requestId ?? undefined,
+                }),
+              },
+            });
+            return;
+          }
+
+          res.status(502).json({
+            success: false,
+            error: {
+              code: error.code || 'BROKER_ERROR',
+              message: error.message || 'WhatsApp broker request failed',
+              details: compactRecord({
+                status: error.status,
+                requestId: error.requestId ?? undefined,
+              }),
+            },
+          });
+          return;
+        }
+
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+
+        throw error;
+      }
 
       const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
         refresh: true,
@@ -2000,6 +2358,7 @@ router.post(
         context.stored.metadata as InstanceMetadata,
         metadataEntry
       );
+      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       const derivedStatus = context.brokerStatus
         ? mapBrokerStatusToDbStatus(context.brokerStatus)
@@ -2010,7 +2369,7 @@ router.post(
         data: {
           status: derivedStatus,
           connected: context.status.connected,
-          metadata: metadataWithHistory,
+          metadata: metadataWithoutError,
           lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
         },
       });
@@ -2089,6 +2448,7 @@ router.post(
         context.stored.metadata as InstanceMetadata,
         historyEntry
       );
+      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       const derivedStatus = context.brokerStatus
         ? mapBrokerStatusToDbStatus(context.brokerStatus)
@@ -2101,7 +2461,7 @@ router.post(
         data: {
           status: derivedStatus,
           connected: context.status.connected,
-          metadata: metadataWithHistory,
+          metadata: metadataWithoutError,
           lastSeenAt,
         },
       });
