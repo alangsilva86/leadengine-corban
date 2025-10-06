@@ -6,6 +6,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import dotenv from 'dotenv';
 
 import { errorHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
@@ -30,8 +31,7 @@ import { whatsappMessagesRouter } from './routes/integrations/whatsapp.messages'
 import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 
 if (process.env.NODE_ENV !== 'production') {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  require('dotenv').config();
+  dotenv.config();
 }
 
 const app: Application = express();

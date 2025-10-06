@@ -1,7 +1,9 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-const resolvePackageRoot = (pkg: string) => path.resolve(__dirname, `../../packages/${pkg}/src`);
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const resolvePackageRoot = (pkg: string) => path.resolve(currentDir, `../../packages/${pkg}/src`);
 
 export default defineConfig({
   test: {
