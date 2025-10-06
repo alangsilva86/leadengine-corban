@@ -163,3 +163,224 @@ describe('GET /campaigns', () => {
     });
   });
 });
+
+describe('POST /campaigns', () => {
+  const defaultMetrics = {
+    total: 5,
+    allocated: 5,
+    contacted: 3,
+    won: 2,
+    lost: 1,
+    averageResponseSeconds: 120,
+  };
+
+  const defaultTenant = {
+    id: 'tenant-1',
+    name: 'Tenant 1',
+    slug: 'tenant-1',
+    settings: {} as Record<string, unknown>,
+  };
+
+  const defaultInstance = {
+    id: 'instance-1',
+    tenantId: 'tenant-1',
+    name: 'Instance One',
+    brokerId: 'broker-1',
+    status: 'connected',
+    connected: true,
+    metadata: {} as Record<string, unknown>,
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    getCampaignMetricsMock.mockReset();
+    getCampaignMetricsMock.mockReturnValue({ ...defaultMetrics });
+  });
+
+  const mockTenantAndInstance = () => {
+    vi.spyOn(prisma.tenant, 'upsert').mockResolvedValue(defaultTenant as never);
+    vi.spyOn(prisma.whatsAppInstance, 'findUnique').mockResolvedValue(defaultInstance as never);
+    vi.spyOn(prisma.whatsAppInstance, 'create').mockImplementation(async () => {
+      throw new Error('unexpected instance creation');
+    });
+  };
+
+  it('reactivates a paused campaign when allowed', async () => {
+    mockTenantAndInstance();
+
+    const existingCampaign = {
+      id: 'campaign-1',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      name: 'Agreement 1 • instance-1',
+      status: 'paused',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      whatsappInstanceId: 'instance-1',
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    } satisfies Record<string, unknown>;
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(
+      existingCampaign as unknown as Prisma.CampaignGetPayload<{ include: { whatsappInstance: true } }>
+    );
+
+    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockImplementation(async (args) => ({
+      ...existingCampaign,
+      status: args.data.status as string,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      updatedAt: new Date('2024-02-01T00:00:00.000Z'),
+    }));
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockRejectedValue(
+      new Error('should not create campaign when updating existing')
+    );
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      instanceId: 'instance-1',
+      status: 'active',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({ status: 'active' }),
+    });
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const updateArgs = updateSpy.mock.calls[0]?.[0];
+    expect(updateArgs?.data?.status).toBe('active');
+    const metadata = updateArgs?.data?.metadata as Prisma.JsonObject;
+    const history = Array.isArray(metadata?.history)
+      ? (metadata?.history as Array<Record<string, unknown>>)
+      : [];
+    expect(history.map((entry) => entry?.action)).toEqual(
+      expect.arrayContaining(['status-changed', 'reactivated'])
+    );
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('creates a new campaign when the latest one has ended', async () => {
+    mockTenantAndInstance();
+
+    const endedCampaign = {
+      id: 'campaign-1',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      name: 'Agreement 1 • instance-1',
+      status: 'ended',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+      whatsappInstanceId: 'instance-1',
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    } satisfies Record<string, unknown>;
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(
+      endedCampaign as unknown as Prisma.CampaignGetPayload<{ include: { whatsappInstance: true } }>
+    );
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockImplementation(async (args) => ({
+      id: 'campaign-2',
+      tenantId: 'tenant-1',
+      agreementId: args.data.agreementId as string,
+      agreementName: args.data.agreementName as string,
+      name: args.data.name as string,
+      status: args.data.status as string,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      createdAt: new Date('2024-03-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-03-01T00:00:00.000Z'),
+      whatsappInstanceId: args.data.whatsappInstanceId as string,
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    }));
+
+    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockRejectedValue(
+      new Error('should not update ended campaign')
+    );
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      instanceId: 'instance-1',
+      status: 'active',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({ status: 'active' }),
+    });
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const createArgs = createSpy.mock.calls[0]?.[0];
+    expect(createArgs?.data?.status).toBe('active');
+    const metadata = createArgs?.data?.metadata as Prisma.JsonObject;
+    const history = Array.isArray(metadata?.history)
+      ? (metadata?.history as Array<Record<string, unknown>>)
+      : [];
+    expect(history.map((entry) => entry?.action)).toEqual(
+      expect.arrayContaining(['created', 'reactivated'])
+    );
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns the requested status when creating a new campaign', async () => {
+    mockTenantAndInstance();
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(null);
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockImplementation(async (args) => ({
+      id: 'campaign-3',
+      tenantId: 'tenant-1',
+      agreementId: args.data.agreementId as string,
+      agreementName: args.data.agreementName as string,
+      name: args.data.name as string,
+      status: args.data.status as string,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      createdAt: new Date('2024-03-05T00:00:00.000Z'),
+      updatedAt: new Date('2024-03-05T00:00:00.000Z'),
+      whatsappInstanceId: args.data.whatsappInstanceId as string,
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    }));
+
+    vi.spyOn(prisma.campaign, 'update').mockRejectedValue(new Error('should not update when creating new'));
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-2',
+      agreementName: 'Agreement 2',
+      instanceId: 'instance-1',
+      status: 'paused',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({ status: 'paused' }),
+    });
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'paused' }),
+      })
+    );
+  });
+});
