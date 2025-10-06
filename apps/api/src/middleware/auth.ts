@@ -69,7 +69,29 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
 const DEMO_JWT_SECRET = process.env.DEMO_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const MVP_AUTH_BYPASS_ENABLED = isMvpAuthBypassEnabled();
-const AUTH_MVP_USER_ID = process.env.AUTH_MVP_USER_ID || 'mvp-anonymous';
+
+const DEFAULT_AUTH_MVP_USER_ID = '00000000-0000-4000-8000-000000000001';
+
+const isUuid = (value: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const resolveBypassUserId = (): string => {
+  const raw = process.env.AUTH_MVP_USER_ID?.trim();
+  if (!raw) {
+    return DEFAULT_AUTH_MVP_USER_ID;
+  }
+
+  if (isUuid(raw)) {
+    return raw;
+  }
+
+  logger.warn('[Auth] AUTH_MVP_USER_ID não é um UUID válido; usando fallback default', {
+    provided: raw,
+  });
+  return DEFAULT_AUTH_MVP_USER_ID;
+};
+
+const AUTH_MVP_USER_ID = resolveBypassUserId();
 const AUTH_MVP_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
 const AUTH_MVP_USER_NAME = process.env.AUTH_MVP_USER_NAME || 'MVP Anonymous';
 const AUTH_MVP_USER_EMAIL =
@@ -224,6 +246,11 @@ const buildMvpBypassUser = (): AuthenticatedUser => {
     permissions: getPermissionsByRole(resolvedRole),
   };
 };
+
+export const AUTH_MVP_BYPASS_USER_ID = AUTH_MVP_USER_ID;
+export const AUTH_MVP_BYPASS_TENANT_ID = AUTH_MVP_TENANT_ID;
+export const AUTH_MVP_BYPASS_USER_EMAIL = AUTH_MVP_USER_EMAIL;
+export const AUTH_MVP_BYPASS_USER_NAME = AUTH_MVP_USER_NAME;
 
 const resolveTenantIdFromRequest = (req: Request, decoded: JWTPayload): string | undefined => {
   const headerTenant = req.headers['x-tenant-id'];

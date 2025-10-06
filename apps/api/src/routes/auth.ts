@@ -1,9 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { asyncHandler } from '../middleware/error-handler';
-import { authenticateUser, authMiddleware, hashPassword } from '../middleware/auth';
+import {
+  authenticateUser,
+  authMiddleware,
+  hashPassword,
+  AUTH_MVP_BYPASS_TENANT_ID,
+  AUTH_MVP_BYPASS_USER_ID,
+} from '../middleware/auth';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
+import { isMvpAuthBypassEnabled } from '../config/feature-flags';
+
+const MVP_BYPASS_TENANT_NAME = process.env.AUTH_MVP_TENANT_NAME?.trim() || 'Demo Tenant';
+const MVP_BYPASS_TENANT_SLUG =
+  process.env.AUTH_MVP_TENANT_SLUG?.trim() || AUTH_MVP_BYPASS_TENANT_ID;
 
 const router: Router = Router();
 
@@ -192,6 +203,37 @@ router.get(
     const user = req.user!;
 
     logger.info('[Auth] GET /me', { userId: user.id });
+
+    const isBypassUser =
+      isMvpAuthBypassEnabled() && user.id === AUTH_MVP_BYPASS_USER_ID;
+
+    if (isBypassUser) {
+      const nowIso = new Date().toISOString();
+
+      res.json({
+        success: true,
+        data: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: null,
+          avatar: null,
+          role: user.role,
+          isActive: true,
+          settings: {},
+          lastLoginAt: nowIso,
+          createdAt: nowIso,
+          tenant: {
+            id: user.tenantId || AUTH_MVP_BYPASS_TENANT_ID,
+            name: MVP_BYPASS_TENANT_NAME,
+            slug: MVP_BYPASS_TENANT_SLUG,
+            settings: {},
+          },
+          permissions: user.permissions,
+        },
+      });
+      return;
+    }
 
     // Buscar dados completos do usuário
     const userData = await prisma.user.findUnique({
