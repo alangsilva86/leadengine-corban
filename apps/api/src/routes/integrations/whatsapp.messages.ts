@@ -23,6 +23,24 @@ router.post(
       throw new NotFoundError('WhatsAppInstance', instanceId);
     }
 
+    const isConnected =
+      instance.connected ?? (typeof instance.status === 'string' && instance.status === 'connected');
+
+    if (!isConnected) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_DISCONNECTED',
+          message: 'A instância de WhatsApp está desconectada.',
+          details: {
+            status: instance.status ?? null,
+            connected: instance.connected ?? null,
+          },
+        },
+      });
+      return;
+    }
+
     let parsed;
 
     try {

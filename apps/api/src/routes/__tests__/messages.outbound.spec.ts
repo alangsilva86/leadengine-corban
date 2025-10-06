@@ -273,6 +273,40 @@ describe('Outbound message routes', () => {
     expect(sendMessageSpy).not.toHaveBeenCalled();
   });
 
+  it('rejects ad-hoc sends when the WhatsApp instance is disconnected', async () => {
+    whatsAppInstanceFindUniqueMock.mockResolvedValueOnce({
+      id: 'instance-001',
+      tenantId: 'tenant-123',
+      name: 'Test instance',
+      brokerId: 'broker-1',
+      status: 'disconnected',
+      connected: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const app = buildApp();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/instances/instance-001/messages')
+      .send({
+        to: '+55 44 9999-9999',
+        payload: {
+          type: 'text',
+          text: 'Mensagem com instância offline',
+        },
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'INSTANCE_DISCONNECTED',
+      },
+    });
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
   it('enforces basic rate limiting per instance', async () => {
     const ticket = await createTicket({
       tenantId: 'tenant-123',
