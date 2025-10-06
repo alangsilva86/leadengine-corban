@@ -6,6 +6,7 @@
 - Required fields: `id`, `type='MESSAGE_INBOUND'`, `instanceId`, and payload with `contact`, `message`, `metadata`.
 - Timestamp handling: accepts ISO string or epoch (seconds/ms) and normalises to ISO before ingestion; cursor optional.
 - Contact attributes downstream: `phone`, `name`, `document`, `registrations`, `avatarUrl`, `pushName` (all nullable); additional keys preserved via metadata if broker expands payload.
+- When `name` is absent we fallback to `pushName` before persisting/updating the contact record, ensuring UI cards display the expected WhatsApp display name.
 - Message object stays free-form but must be a JSON object; raw Baileys payload forwarded intact for normaliser/tests.
 
 ### Sample

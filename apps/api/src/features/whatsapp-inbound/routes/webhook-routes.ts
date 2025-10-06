@@ -189,13 +189,17 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           ? rawMessage.id.trim()
           : null) ?? randomUUID();
 
+      const rawName = typeof from.name === 'string' ? from.name.trim() : null;
+      const rawPushName = typeof from.pushName === 'string' ? from.pushName.trim() : null;
+      const displayName = rawName && rawName.length > 0 ? rawName : rawPushName && rawPushName.length > 0 ? rawPushName : null;
+
       const contact = {
         phone: typeof from.phone === 'string' ? from.phone : null,
-        name: typeof from.name === 'string' ? from.name : null,
+        name: displayName,
         document: typeof from.document === 'string' ? from.document : null,
         registrations: normalizeStringArray(from.registrations),
         avatarUrl: typeof from.avatarUrl === 'string' ? from.avatarUrl : null,
-        pushName: typeof from.pushName === 'string' ? from.pushName : null,
+        pushName: rawPushName,
       };
 
       const normalizedTimestamp = (() => {

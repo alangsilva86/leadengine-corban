@@ -102,6 +102,19 @@ const uniqueStringList = (values?: string[] | null): string[] => {
   return normalized;
 };
 
+const pickPreferredName = (...values: Array<unknown>): string | null => {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+};
+
 const shouldSkipByDedupe = (key: string, now: number): boolean => {
   const lastSeen = dedupeCache.get(key);
   if (typeof lastSeen === 'number' && now - lastSeen < DEDUPE_WINDOW_MS) {
@@ -302,13 +315,34 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const metadataContact = (metadataRecord.contact && typeof metadataRecord.contact === 'object'
     ? (metadataRecord.contact as Record<string, unknown>)
     : {}) as Record<string, unknown>;
+  const metadataPushName = (() => {
+    const direct = metadataContact['pushName'];
+    if (typeof direct === 'string') {
+      const trimmed = direct.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    const fallback = metadataRecord['pushName'];
+    if (typeof fallback === 'string') {
+      const trimmed = fallback.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    return null;
+  })();
   const resolvedAvatar = [
     contact.avatarUrl,
     metadataContact.avatarUrl,
     metadataContact.profilePicUrl,
     metadataContact.profilePicture,
   ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-  const resolvedName = contact.name ?? (typeof metadataContact.pushName === 'string' ? metadataContact.pushName : null);
+  const resolvedName = pickPreferredName(
+    contact.name,
+    contact.pushName,
+    metadataPushName
+  );
 
   logger.info('Processing inbound WhatsApp message', {
     instanceId,
@@ -347,7 +381,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     return;
   }
 
-  const leadName = contact.name?.trim() || 'Contato WhatsApp';
+  const leadName = resolvedName ?? 'Contato WhatsApp';
   const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 
@@ -367,7 +401,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const contactRecord = await ensureContact(tenantId, {
     phone: normalizedPhone,
-    name: resolvedName ?? leadName,
+    name: leadName,
     document,
     registrations,
     timestamp,

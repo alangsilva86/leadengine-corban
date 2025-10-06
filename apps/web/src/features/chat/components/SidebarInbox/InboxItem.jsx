@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { cn } from '@/lib/utils.js';
+import { cn, buildInitials, formatPhoneNumber } from '@/lib/utils.js';
 import { MessageCircle, Mail, PhoneCall, Bot } from 'lucide-react';
 import StatusBadge from '../Shared/StatusBadge.jsx';
 import PipelineStepTag from '../Shared/PipelineStepTag.jsx';
@@ -13,13 +13,6 @@ const CHANNEL_ICONS = {
   SMS: PhoneCall,
   VOICE: PhoneCall,
   CHAT: Bot,
-};
-
-const getInitials = (name) => {
-  if (!name) return '??';
-  const parts = name.split(' ');
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
 const formatPreview = (ticket) => {
@@ -48,6 +41,8 @@ export const InboxItem = ({
 
   const ChannelIcon = CHANNEL_ICONS[ticket.channel] ?? MessageCircle;
   const name = ticket.contact?.name ?? ticket.subject ?? 'Contato sem nome';
+  const initials = buildInitials(name);
+  const phoneLabel = ticket.contact?.phone ? formatPhoneNumber(ticket.contact.phone) : null;
   const typingLabel = typingAgents.length > 0 ? `${typingAgents[0].userName ?? 'Agente'} digitando…` : null;
 
   return (
@@ -127,10 +122,11 @@ export const InboxItem = ({
         <div className="flex items-center gap-1">
           <Avatar className="h-6 w-6 border border-slate-700/70">
             <AvatarImage src={ticket.contact?.avatar} alt={name} />
-            <AvatarFallback>{getInitials(name)}</AvatarFallback>
+            <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
           {ticket.userId ? <span>Atribuído</span> : <span>Não atribuído</span>}
         </div>
+        {phoneLabel ? <span className="text-slate-500">{phoneLabel}</span> : null}
         {ticket.timeline?.lastInboundAt ? (
           <span>
             Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
