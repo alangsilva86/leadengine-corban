@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
+import process from 'node:process';
+import { Buffer } from 'node:buffer';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -316,6 +318,8 @@ const ensureUniqueInstanceId = async (tenantId: string, base: string): Promise<s
 type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>>;
 
 type InstanceMetadata = Record<string, unknown> | null | undefined;
+
+type PrismaTransactionClient = Prisma.TransactionClient;
 
 const buildHistoryEntry = (action: string, actorId: string, details?: Record<string, unknown>) => ({
   action,
@@ -1191,7 +1195,7 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
     let brokerStatus: WhatsAppStatus | null = null;
     try {
       brokerStatus = await whatsappBrokerClient.getStatus(instanceId, { instanceId });
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         throw error;
       }
@@ -1411,7 +1415,7 @@ router.get(
                 instanceId: instance.id,
               });
             }
-          } catch (error) {
+          } catch (error: unknown) {
             if (error instanceof WhatsAppBrokerNotConfiguredError) {
               throw error;
             }
@@ -1472,7 +1476,7 @@ router.get(
         success: true,
         data: normalized,
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1578,7 +1582,7 @@ router.post(
         success: true,
         data: payload,
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1658,7 +1662,7 @@ router.post(
         success: true,
         data: normalizeInstanceStatusResponse(status),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1718,7 +1722,7 @@ router.post(
           ...normalizeInstanceStatusResponse(status),
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1793,7 +1797,7 @@ router.post(
         success: true,
         data: normalizeInstanceStatusResponse(status),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1827,41 +1831,42 @@ router.delete(
         return;
       }
 
-      const activeCampaigns = await prisma.campaign.count({
+      const campaignsToRemove: Array<{ id: string; name: string | null }> = await prisma.campaign.findMany({
         where: {
           tenantId,
           whatsappInstanceId: instance.id,
-          status: 'active',
+        },
+        select: {
+          id: true,
+          name: true,
         },
       });
-
-      if (activeCampaigns > 0) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_IN_USE',
-            message: 'Existem campanhas ativas associadas a esta instância.',
-          },
-        });
-        return;
-      }
 
       await whatsappBrokerClient.deleteInstance(instance.brokerId, {
         instanceId: instance.id,
         wipe,
       });
 
-      await prisma.whatsAppInstance.delete({ where: { id: instance.id } });
+      await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+        if (campaignsToRemove.length > 0) {
+          const campaignIds = campaignsToRemove.map((campaign) => campaign.id);
+          await tx.campaign.deleteMany({ where: { id: { in: campaignIds } } });
+        }
+
+        await tx.whatsAppInstance.delete({ where: { id: instance.id } });
+      });
 
       logger.info('WhatsApp instance deleted', {
         tenantId,
         instanceId: instance.id,
         actorId: req.user?.id ?? 'unknown',
+        removedCampaigns: campaignsToRemove.length,
+        campaignIds: campaignsToRemove.map((campaign) => campaign.id),
         wipe,
       });
 
       res.status(204).send();
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1933,7 +1938,7 @@ router.post(
           ...normalizeInstanceStatusResponse(status),
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -1972,7 +1977,7 @@ router.get(
         success: true,
         data: normalizeQr(qrCode),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2011,7 +2016,7 @@ router.get(
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Cache-Control', 'private, max-age=5');
       res.send(buffer);
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2055,7 +2060,7 @@ router.get(
           ...normalizeQr(qrCode),
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2096,7 +2101,7 @@ router.get(
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Cache-Control', 'private, max-age=5');
       res.send(buffer);
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2144,7 +2149,7 @@ router.get(
         success: true,
         data: normalizeInstanceStatusResponse(status),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2179,7 +2184,7 @@ router.post(
         success: true,
         data: normalizeSessionStatus(status),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2204,7 +2209,7 @@ router.post(
         success: true,
         data: normalizeSessionStatus(status),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2228,7 +2233,7 @@ router.get(
         success: true,
         data: normalizeSessionStatus(status),
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2277,7 +2282,7 @@ router.post(
           rate: parseRateLimit(result?.rate ?? null),
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2322,7 +2327,7 @@ router.post(
           rate: parseRateLimit(poll?.rate ?? null),
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2374,7 +2379,7 @@ router.get(
           rate: parseRateLimit(events?.rate ?? null),
         },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
