@@ -2,6 +2,8 @@ import ConversationHeader from './ConversationHeader.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import QuickActionsBar from './QuickActionsBar.jsx';
 import Composer from './Composer.jsx';
+import useAiSuggestions from '../../hooks/useAiSuggestions.js';
+import { useEffect } from 'react';
 
 export const ConversationArea = ({
   ticket,
@@ -15,8 +17,24 @@ export const ConversationArea = ({
   onGenerateProposal,
   typingIndicator,
   quality,
+  isSending,
+  sendError,
 }) => {
   const disabled = ticket?.window?.isOpen === false;
+  const ai = useAiSuggestions();
+
+  const handleRequestSuggestion = async () => {
+    if (!ticket) return;
+    try {
+      await ai.requestSuggestions({ ticket, timeline: conversation?.timeline ?? [] });
+    } catch (error) {
+      console.warn('AI suggestion request failed', error);
+    }
+  };
+
+  useEffect(() => {
+    ai.reset();
+  }, [ticket?.id]);
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -26,6 +44,7 @@ export const ConversationArea = ({
         onMarkLost={onMarkLost}
         onAssign={onAssign}
         onGenerateProposal={onGenerateProposal}
+        typingAgents={typingIndicator?.agentsTyping ?? []}
       />
 
       <QuickActionsBar
@@ -45,14 +64,27 @@ export const ConversationArea = ({
       <Composer
         disabled={disabled && !ticket?.window?.isOpen}
         windowInfo={ticket?.window}
-        onSend={(content) => onSendMessage?.(content)}
+        onSend={(payload) => onSendMessage?.(payload)}
         onTemplate={(template) => {
           if (!template) return;
           const text = template.body ?? template.content ?? template;
-          onSendMessage?.(text);
+          onSendMessage?.({
+            content: text,
+            template,
+          });
         }}
         onCreateNote={(note) => onCreateNote?.(note)}
         onTyping={() => typingIndicator?.broadcastTyping?.({ ticketId: ticket?.id })}
+        isSending={isSending}
+        sendError={sendError}
+        onRequestSuggestion={handleRequestSuggestion}
+        aiLoading={ai.isLoading}
+        aiSuggestions={ai.suggestions}
+        onApplySuggestion={(suggestion) => {
+          onSendMessage?.({ content: suggestion });
+          ai.reset();
+        }}
+        onDiscardSuggestion={() => ai.reset()}
       />
     </div>
   );

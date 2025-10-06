@@ -1,20 +1,47 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
-import InboxPanel from './components/SidebarInbox/InboxPanel.jsx';
 import ConversationArea from './components/ConversationArea/ConversationArea.jsx';
 import DetailsPanel from './components/DetailsPanel/DetailsPanel.jsx';
+import InboxAppShell from './components/layout/InboxAppShell.jsx';
+import QueueList from './components/QueueList/QueueList.jsx';
+import FilterToolbar from './components/FilterToolbar/FilterToolbar.jsx';
 import useChatController from './hooks/useChatController.js';
-import './styles/index.css';
 
 export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
 
   const controller = useChatController({ tenantId, currentUser });
 
-  const sendMessage = (content) => {
+  const sendMessage = ({ content, attachments = [], template }) => {
+    const trimmed = (content ?? '').trim();
+    if (!trimmed && attachments.length === 0) {
+      return;
+    }
+
+    const metadata = {};
+
+    if (attachments.length > 0) {
+      metadata.attachments = attachments.map((file) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      }));
+    }
+
+    if (template) {
+      metadata.template = {
+        id: template.id ?? template.name ?? 'template',
+        label: template.label ?? template.name ?? template.id ?? 'template',
+      };
+    }
+
     controller.sendMessageMutation.mutate(
-      { ticketId: controller.selectedTicketId, content },
+      {
+        ticketId: controller.selectedTicketId,
+        content: trimmed,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      },
       {
         onError: (error) => {
           toast.error('Falha ao enviar mensagem', {
@@ -123,29 +150,45 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   };
 
   return (
-    <div className="chat-command-center">
-      <div className="h-full">
-        <InboxPanel
-          filters={filters}
-          onFiltersChange={controller.setFilters}
-          search={filters.search ?? ''}
-          onSearchChange={controller.setSearch}
-          onRefresh={handleManualSync}
-          loading={controller.ticketsQuery.isFetching}
+    <InboxAppShell
+      sidebar={
+        <QueueList
           tickets={controller.tickets}
           selectedTicketId={controller.selectedTicketId}
           onSelectTicket={controller.selectTicket}
-          metrics={metrics}
+          loading={controller.ticketsQuery.isFetching}
+          onRefresh={handleManualSync}
           typingAgents={controller.typingIndicator?.agentsTyping ?? []}
-          onAssign={assignToMe}
-          onTransfer={() => toast.info('Transferência', { description: 'Selecione o destino na futura implementação.' })}
-          onMute={() => toast.info('Silenciar contato', { description: 'Funcionalidade disponível em breve.' })}
-          onFollowUp={() => toast.info('Follow-up agendado', { description: 'Abrindo modal de follow-up em breve.' })}
-          onMacro={() => toast.success('Macro aplicada')}
+          metrics={metrics}
         />
-      </div>
-
-      <div className="flex h-full flex-col">
+      }
+      context={
+        <DetailsPanel
+          ticket={controller.selectedTicket}
+          onCreateNote={createNote}
+          notesLoading={controller.notesMutation.isPending}
+          onGenerateProposal={() =>
+            toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
+          }
+          onReopenWindow={() =>
+            toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
+          }
+          onOpenAudit={() =>
+            toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
+          }
+        />
+      }
+      defaultContextOpen={false}
+    >
+      <div className="flex h-full flex-col gap-4 bg-gradient-to-br from-slate-950/60 via-slate-950 to-slate-950/80 px-4 py-6">
+        <FilterToolbar
+          search={filters.search ?? ''}
+          onSearchChange={controller.setSearch}
+          filters={filters}
+          onFiltersChange={controller.setFilters}
+          loading={controller.ticketsQuery.isFetching}
+          onRefresh={handleManualSync}
+        />
         <ConversationArea
           ticket={controller.selectedTicket}
           conversation={controller.conversation}
@@ -155,23 +198,16 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
           onMarkWon={markWon}
           onMarkLost={markLost}
           onAssign={() => assignToMe(controller.selectedTicket)}
-          onGenerateProposal={() => toast.info('Gerador de proposta', { description: 'Integração com mini simulador em breve.' })}
+          onGenerateProposal={() =>
+            toast.info('Gerador de proposta', { description: 'Integração com mini simulador em breve.' })
+          }
           typingIndicator={controller.typingIndicator}
           quality={quality}
+          isSending={controller.sendMessageMutation.isPending}
+          sendError={controller.sendMessageMutation.error}
         />
       </div>
-
-      <div className="h-full">
-        <DetailsPanel
-          ticket={controller.selectedTicket}
-          onCreateNote={createNote}
-          notesLoading={controller.notesMutation.isPending}
-          onGenerateProposal={() => toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })}
-          onReopenWindow={() => toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })}
-          onOpenAudit={() => toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })}
-        />
-      </div>
-    </div>
+    </InboxAppShell>
   );
 };
 

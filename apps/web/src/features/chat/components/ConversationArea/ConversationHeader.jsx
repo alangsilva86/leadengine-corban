@@ -2,6 +2,14 @@ import { Button } from '@/components/ui/button.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
 import PipelineStepTag from '../Shared/PipelineStepTag.jsx';
 import SlaBadge from '../SidebarInbox/SlaBadge.jsx';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
+
+const agentInitials = (name) => {
+  if (!name) return 'AG';
+  const parts = name.split(' ');
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase();
+};
 
 export const ConversationHeader = ({
   ticket,
@@ -9,6 +17,7 @@ export const ConversationHeader = ({
   onMarkLost,
   onAssign,
   onGenerateProposal,
+  typingAgents = [],
 }) => {
   if (!ticket) {
     return (
@@ -35,6 +44,18 @@ export const ConversationHeader = ({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {typingAgents.length > 0 ? (
+          <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/70 px-3 py-1 text-xs text-slate-200">
+            <div className="flex -space-x-2">
+              {typingAgents.slice(0, 3).map((agent) => (
+                <Avatar key={agent.userId} className="h-6 w-6 border border-slate-900">
+                  <AvatarFallback>{agentInitials(agent.userName)}</AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+            <span>{typingAgents[0].userName ?? 'Agente'} digitando…</span>
+          </div>
+        ) : null}
         <Button size="sm" variant="secondary" onClick={() => onAssign?.(ticket)}>
           Atribuir
         </Button>

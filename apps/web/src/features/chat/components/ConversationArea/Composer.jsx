@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Paperclip, Smile, Send, FileText } from 'lucide-react';
+import { Brain, Paperclip, Smile, Send, FileText, Loader2, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge.jsx';
 import QuickReplyList from '../Shared/QuickReplyList.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
 
@@ -34,9 +35,18 @@ export const Composer = ({
   onTemplate,
   onCreateNote,
   onTyping,
+  isSending,
+  sendError,
+  onRequestSuggestion,
+  aiLoading,
+  aiSuggestions,
+  onApplySuggestion,
+  onDiscardSuggestion,
 }) => {
   const [value, setValue] = useState('');
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const fileInputRef = useRef(null);
 
   const placeholder = useMemo(() => {
     if (disabled) {
@@ -57,9 +67,15 @@ export const Composer = ({
     }
   }, [value]);
 
+  const resetComposer = () => {
+    setValue('');
+    setAttachments([]);
+    setTemplatePickerOpen(false);
+  };
+
   const handleSend = () => {
     const trimmed = value.trim();
-    if (!trimmed || disabled) {
+    if ((!trimmed && attachments.length === 0) || disabled || isSending) {
       return;
     }
 
@@ -82,8 +98,34 @@ export const Composer = ({
       return;
     }
 
-    onSend?.(trimmed);
-    setValue('');
+    const payloadContent = trimmed || '[Anexo enviado]';
+
+    onSend?.({
+      content: payloadContent,
+      attachments,
+    });
+    resetComposer();
+  };
+
+  const handleAttachmentClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = (event) => {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+    const mapped = files.slice(0, 3).map((file) => ({
+      id: `${file.name}-${file.size}-${Date.now()}`,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    }));
+    setAttachments((current) => [...current, ...mapped]);
+    event.target.value = '';
+  };
+
+  const removeAttachment = (id) => {
+    setAttachments((current) => current.filter((item) => item.id !== id));
   };
 
   return (
@@ -96,6 +138,29 @@ export const Composer = ({
         className="mb-2 flex flex-wrap gap-2"
       />
 
+      {attachments.length > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {attachments.map((file) => (
+            <Badge
+              key={file.id}
+              variant="secondary"
+              className="flex items-center gap-2 border border-slate-700/70 bg-slate-900/80 text-[11px] text-slate-200"
+            >
+              <span>{file.name}</span>
+              <span className="text-slate-400">{Math.round(file.size / 1024)} KB</span>
+              <button
+                type="button"
+                className="text-slate-400 transition hover:text-slate-100"
+                onClick={() => removeAttachment(file.id)}
+              >
+                <X className="h-3 w-3" />
+                <span className="sr-only">Remover anexo</span>
+              </button>
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+
       <div className="flex items-end gap-2">
         <Textarea
           value={value}
@@ -104,7 +169,10 @@ export const Composer = ({
             onTyping?.();
           }}
           onKeyDown={(event) => {
-            if ((event.key === 'Enter' && (event.metaKey || event.ctrlKey)) || (event.key === 'Enter' && event.shiftKey === false && !templatePickerOpen)) {
+            if (
+              (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
+              (event.key === 'Enter' && event.shiftKey === false && !templatePickerOpen)
+            ) {
               event.preventDefault();
               handleSend();
             }
@@ -112,27 +180,54 @@ export const Composer = ({
               setTemplatePickerOpen(false);
             }
           }}
-          disabled={disabled && windowInfo?.isOpen !== false}
+          disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
           placeholder={placeholder}
           className="min-h-[88px] flex-1 resize-none border-slate-800 bg-slate-900/70 text-slate-100 placeholder:text-slate-600"
         />
         <div className="flex flex-col gap-2">
-          <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-300 hover:text-white">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-slate-300 hover:text-white"
+            onClick={handleAttachmentClick}
+          >
             <Paperclip className="h-4 w-4" />
             <span className="sr-only">Anexar arquivo</span>
           </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-300 hover:text-white">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            onChange={handleFilesSelected}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-slate-300 hover:text-white"
+            onClick={() => setTemplatePickerOpen((open) => !open)}
+          >
             <Smile className="h-4 w-4" />
-            <span className="sr-only">Inserir emoji</span>
+            <span className="sr-only">Abrir sugestões</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-slate-300 hover:text-white"
+            onClick={() => onRequestSuggestion?.()}
+            disabled={aiLoading}
+          >
+            {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+            <span className="sr-only">Sugestões com IA</span>
           </Button>
           <Button
             variant="default"
             size="icon"
             className="h-10 w-10 bg-sky-600 hover:bg-sky-500"
-            disabled={disabled && windowInfo?.isOpen !== false}
+            disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
             onClick={handleSend}
           >
-            <Send className="h-4 w-4" />
+            {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             <span className="sr-only">Enviar mensagem</span>
           </Button>
         </div>
@@ -145,13 +240,39 @@ export const Composer = ({
         </div>
       ) : null}
 
+      {sendError ? (
+        <div className="mt-2 text-xs text-rose-300">{sendError.message ?? 'Falha ao enviar mensagem.'}</div>
+      ) : null}
+
+      {aiSuggestions.length > 0 ? (
+        <div className="mt-3 space-y-2 rounded-lg border border-slate-800/70 bg-slate-900/70 p-3 text-sm text-slate-200">
+          <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+            <span>Sugestões da IA</span>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-slate-400 hover:text-slate-100" onClick={onDiscardSuggestion}>
+              Limpar
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {aiSuggestions.map((suggestion, index) => (
+              <button
+                key={`${index}-${suggestion.slice(0, 20)}`}
+                type="button"
+                className="w-full rounded-lg border border-slate-800/70 bg-slate-950/70 px-3 py-2 text-left text-xs transition hover:border-sky-500/50 hover:bg-slate-900"
+                onClick={() => onApplySuggestion?.(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <TemplatePicker
         open={templatePickerOpen}
         onClose={() => setTemplatePickerOpen(false)}
         onSelect={(template) => {
           onTemplate?.(template);
-          setTemplatePickerOpen(false);
-          setValue('');
+          resetComposer();
         }}
       />
     </div>
