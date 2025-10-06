@@ -775,6 +775,104 @@ const extractInstanceFromPayload = (payload) => {
   return null;
 };
 
+const ensureArrayOfObjects = (value) =>
+  Array.isArray(value)
+    ? value.filter((item) => item && typeof item === 'object')
+    : [];
+
+const unwrapWhatsAppResponse = (payload) => {
+  if (!payload) {
+    return {};
+  }
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && typeof payload === 'object') {
+    if (payload.data && typeof payload.data === 'object') {
+      return payload.data;
+    }
+    if (payload.result && typeof payload.result === 'object') {
+      return payload.result;
+    }
+  }
+
+  return payload;
+};
+
+const parseInstancesPayload = (payload) => {
+  const data = unwrapWhatsAppResponse(payload);
+
+  const rootIsObject = data && typeof data === 'object' && !Array.isArray(data);
+
+  let instances = [];
+  if (rootIsObject && Array.isArray(data.instances)) {
+    instances = ensureArrayOfObjects(data.instances);
+  } else if (rootIsObject && Array.isArray(data.items)) {
+    instances = ensureArrayOfObjects(data.items);
+  } else if (rootIsObject && Array.isArray(data.data)) {
+    instances = ensureArrayOfObjects(data.data);
+  } else if (Array.isArray(data)) {
+    instances = ensureArrayOfObjects(data);
+  }
+
+  const instance = extractInstanceFromPayload(rootIsObject ? data : null) || null;
+
+  if (instance && !instances.some((item) => item && item.id === instance.id)) {
+    instances = [...instances, instance];
+  }
+
+  const statusPayload = rootIsObject
+    ? typeof data.status === 'object' && data.status !== null
+      ? data.status
+      : typeof data.instanceStatus === 'object' && data.instanceStatus !== null
+        ? data.instanceStatus
+        : null
+    : null;
+
+  const status =
+    typeof statusPayload?.status === 'string'
+      ? statusPayload.status
+      : typeof data?.status === 'string'
+        ? data.status
+        : typeof instance?.status === 'string'
+          ? instance.status
+          : null;
+
+  const connected =
+    typeof data?.connected === 'boolean'
+      ? data.connected
+      : typeof statusPayload?.connected === 'boolean'
+        ? statusPayload.connected
+        : typeof instance?.connected === 'boolean'
+          ? instance.connected
+          : null;
+
+  const instanceId =
+    typeof data?.instanceId === 'string' && data.instanceId.trim().length > 0
+      ? data.instanceId.trim()
+      : typeof instance?.id === 'string'
+        ? instance.id
+        : null;
+
+  const qr = extractQrPayload(
+    (rootIsObject && data.qr !== undefined ? data.qr : null) ?? statusPayload ?? data
+  );
+
+  return {
+    raw: payload,
+    data,
+    instances,
+    instance,
+    status,
+    statusPayload,
+    connected,
+    instanceId,
+    qr,
+  };
+};
+
 const WhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -1300,53 +1398,54 @@ const WhatsAppConnect = ({
   };
 
   const connectInstance = async (instanceId = null) => {
-    const response = await apiPost('/api/integrations/whatsapp/instances/connect', instanceId ? { instanceId } : {});
+    const response = await apiPost(
+      '/api/integrations/whatsapp/instances/connect',
+      instanceId ? { instanceId } : {}
+    );
     setSessionActive(true);
     setAuthDeferred(false);
-    const payload = response?.data ?? {};
-    const instanceFromPayload = extractInstanceFromPayload(payload) || null;
 
-    let status = typeof payload.status === 'string' ? payload.status : null;
-    if (!status && typeof instanceFromPayload?.status === 'string') {
-      status = instanceFromPayload.status;
-    }
+    const parsed = parseInstancesPayload(response);
 
-    const hasConnectedFlag = typeof payload.connected === 'boolean';
-    let connected = hasConnectedFlag
-      ? payload.connected
-      : typeof instanceFromPayload?.connected === 'boolean'
-      ? instanceFromPayload.connected
-      : null;
-    if (connected === null && status) {
-      connected = status === 'connected';
-    }
+    const resolvedInstanceId = parsed.instanceId || instanceId || null;
+    const resolvedStatus = parsed.status || (parsed.connected === false ? 'disconnected' : null);
+    const resolvedConnected =
+      typeof parsed.connected === 'boolean'
+        ? parsed.connected
+        : resolvedStatus
+        ? resolvedStatus === 'connected'
+        : null;
 
-    const resolvedInstanceId =
-      typeof payload.instanceId === 'string' && payload.instanceId
-        ? payload.instanceId
-        : instanceId || instanceFromPayload?.id || instanceFromPayload?.instanceId || null;
-
-    let instance = instanceFromPayload;
-    if (!instance && resolvedInstanceId) {
+    let instance = parsed.instance;
+    if (instance && resolvedInstanceId && instance.id !== resolvedInstanceId) {
+      instance = { ...instance, id: resolvedInstanceId };
+    } else if (!instance && resolvedInstanceId) {
       instance = {
         id: resolvedInstanceId,
-        status,
-        connected,
+        status: resolvedStatus ?? undefined,
+        connected: resolvedConnected ?? undefined,
       };
-    } else if (instance && resolvedInstanceId && !instance.id) {
-      instance = { ...instance, id: resolvedInstanceId };
     }
 
-    const instances = Array.isArray(payload.instances)
-      ? payload.instances.filter((item) => item && typeof item === 'object')
-      : [];
+    const instances = ensureArrayOfObjects(parsed.instances);
 
     return {
       instanceId: resolvedInstanceId,
-      status,
-      connected,
-      qr: extractQrPayload(payload),
-      instance,
+      status: resolvedStatus,
+      connected: resolvedConnected,
+      qr: parsed.qr,
+      instance: instance
+        ? {
+            ...instance,
+            status: resolvedStatus ?? instance.status,
+            connected:
+              typeof resolvedConnected === 'boolean'
+                ? resolvedConnected
+                : typeof instance.connected === 'boolean'
+                ? instance.connected
+                : undefined,
+          }
+        : null,
       instances,
     };
   };
@@ -1380,23 +1479,27 @@ const WhatsAppConnect = ({
       const response = await apiGet(
         `/api/integrations/whatsapp/instances${shouldForceBrokerSync ? '?refresh=1' : ''}`
       );
-      const hasServerList = Array.isArray(response?.data);
+      const parsedResponse = parseInstancesPayload(response);
       setSessionActive(true);
       setAuthDeferred(false);
-      let list = hasServerList ? response.data : [];
+      let list = ensureArrayOfObjects(parsedResponse.instances);
+      let hasServerList = true;
       let connectResult = providedConnect || null;
 
-      if (Array.isArray(list) && list.length === 0) {
+      if (list.length === 0) {
         const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
           () => null
         );
-        const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
-        if (refreshedList.length > 0) {
-          list = refreshedList;
+        if (refreshed) {
+          const parsedRefreshed = parseInstancesPayload(refreshed);
+          const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
+          if (refreshedList.length > 0) {
+            list = refreshedList;
+          }
         }
       }
 
-      if (!Array.isArray(list) || list.length === 0) {
+      if (list.length === 0) {
         const fallbackInstanceId = preferredInstanceId || campaign?.instanceId || null;
         if (fallbackInstanceId) {
           connectResult = connectResult || (await connectInstance(fallbackInstanceId));
@@ -1409,17 +1512,9 @@ const WhatsAppConnect = ({
         }
 
         if (connectResult?.instances?.length) {
-          list = connectResult.instances;
+          list = ensureArrayOfObjects(connectResult.instances);
         } else if (connectResult?.instance) {
-          list = [connectResult.instance];
-        } else {
-      const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
-        () => null
-      );
-      const refreshedList = Array.isArray(refreshed?.data) ? refreshed.data : [];
-      if (refreshedList.length > 0) {
-        list = refreshedList;
-      }
+          list = ensureArrayOfObjects([connectResult.instance]);
         }
       }
 
@@ -1445,15 +1540,23 @@ const WhatsAppConnect = ({
         current = connectResult.instance;
       }
 
-      if (current && connectResult?.status) {
+      if (current && (connectResult?.status || connectResult?.instance)) {
         const merged = {
           ...current,
-          status: connectResult.status,
+          ...(connectResult?.instance ? connectResult.instance : {}),
+          status: connectResult.status ?? current.status,
           connected:
-            connectResult.connected ?? (typeof current.connected === 'boolean' ? current.connected : false),
+            typeof connectResult?.connected === 'boolean'
+              ? connectResult.connected
+              : typeof current.connected === 'boolean'
+              ? current.connected
+              : false,
         };
         current = merged;
         list = list.map((item) => (item.id === merged.id ? { ...item, ...merged } : item));
+      } else if (connectResult?.instance) {
+        const candidate = connectResult.instance;
+        list = list.map((item) => (item.id === candidate.id ? { ...item, ...candidate } : item));
       }
 
       const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
@@ -1488,7 +1591,7 @@ const WhatsAppConnect = ({
       setLocalStatus(statusFromInstance);
       onStatusChange?.(statusFromInstance);
 
-      const connectQr = extractQrPayload(connectResult);
+      const connectQr = connectResult?.qr;
       const shouldShowQrFromConnect =
         connectResult && connectResult.connected === false && Boolean(connectQr?.qrCode);
 
@@ -2117,11 +2220,11 @@ const WhatsAppConnect = ({
           );
         }
 
-       const connectQr = extractQrPayload(connectResult);
-       if (connectResult?.connected === false && connectQr?.qrCode) {
-         setQrData(connectQr);
-         return;
-       }
+      const connectQr = connectResult?.qr;
+      if (connectResult?.connected === false && connectQr?.qrCode) {
+        setQrData(connectQr);
+        return;
+      }
 
         if (connectResult?.connected) {
           setQrData(null);
@@ -2154,9 +2257,10 @@ const WhatsAppConnect = ({
             return;
           }
         }
-        const parsed = extractQrPayload(qrResponse?.data);
-        if (parsed?.qrCode) {
-          received = parsed;
+        const parsed = parseInstancesPayload(qrResponse);
+        const qrPayload = parsed.qr;
+        if (qrPayload?.qrCode) {
+          received = qrPayload;
           break;
         }
         await sleep(1000);
@@ -2217,7 +2321,23 @@ const WhatsAppConnect = ({
       const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`);
       setSessionActive(true);
       setAuthDeferred(false);
-      const connected = Boolean(status?.data?.connected);
+      const parsed = parseInstancesPayload(status);
+      const connected =
+        typeof parsed.connected === 'boolean'
+          ? parsed.connected
+          : parsed.status === 'connected';
+
+      if (parsed.instance) {
+        setInstance((current) =>
+          current && current.id === parsed.instance.id ? { ...current, ...parsed.instance } : current
+        );
+        setInstances((prev) =>
+          prev.map((item) =>
+            item.id === parsed.instance.id ? { ...item, ...parsed.instance } : item
+          )
+        );
+      }
+
       if (!connected) {
         setErrorMessage(
           'A instância ainda não está conectada. Escaneie o QR e tente novamente.'

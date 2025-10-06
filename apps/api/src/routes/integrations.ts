@@ -10,6 +10,7 @@ import {
   whatsappBrokerClient,
   WhatsAppBrokerNotConfiguredError,
   type WhatsAppStatus,
+  type WhatsAppBrokerInstanceSnapshot,
 } from '../services/whatsapp-broker-client';
 import { emitToTenant } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
@@ -1170,12 +1171,23 @@ const normalizeInstanceStatusResponse = (
   };
 };
 
+type SyncInstancesResult = {
+  instances: StoredInstance[];
+  snapshots: WhatsAppBrokerInstanceSnapshot[];
+};
+
+const syncInstancesFromBroker = async (
+  tenantId: string,
+  existing: StoredInstance[],
+  prefetchedSnapshots?: WhatsAppBrokerInstanceSnapshot[]
+): Promise<SyncInstancesResult> => {
+  const brokerSnapshots = prefetchedSnapshots ?? (await whatsappBrokerClient.listInstances(tenantId));
 const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstance[]): Promise<StoredInstance[]> => {
   const brokerSnapshots = await whatsappBrokerClient.listInstances(tenantId);
 
   if (!brokerSnapshots.length) {
     logger.info('🛰️ [WhatsApp] Broker returned zero instances', { tenantId });
-    return existing;
+    return { instances: existing, snapshots: brokerSnapshots };
   }
 
   const existingById = new Map(existing.map((item) => [item.id, item]));
@@ -1377,10 +1389,179 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
     }
   }
 
-  return prisma.whatsAppInstance.findMany({
+  const refreshed = (await prisma.whatsAppInstance.findMany({
     where: { tenantId },
     orderBy: { createdAt: 'asc' },
+  })) as StoredInstance[];
+
+  return { instances: refreshed, snapshots: brokerSnapshots };
+};
+
+type InstanceCollectionOptions = {
+  refresh?: boolean;
+  existing?: StoredInstance[];
+  snapshots?: WhatsAppBrokerInstanceSnapshot[] | null;
+  fetchSnapshots?: boolean;
+};
+
+type InstanceCollectionEntry = {
+  stored: StoredInstance;
+  serialized: ReturnType<typeof serializeStoredInstance>;
+  status: WhatsAppStatus | null;
+};
+
+type InstanceCollectionResult = {
+  entries: InstanceCollectionEntry[];
+  instances: NormalizedInstance[];
+  rawInstances: Array<ReturnType<typeof serializeStoredInstance>>;
+  map: Map<string, InstanceCollectionEntry>;
+  snapshots: WhatsAppBrokerInstanceSnapshot[];
+};
+
+const toPublicInstance = (
+  value: ReturnType<typeof serializeStoredInstance>
+): NormalizedInstance => {
+  const { brokerId: _brokerId, ...publicInstance } = value;
+  return publicInstance;
+};
+
+const collectInstancesForTenant = async (
+  tenantId: string,
+  options: InstanceCollectionOptions = {}
+): Promise<InstanceCollectionResult> => {
+  const fetchSnapshots = options.fetchSnapshots ?? true;
+
+  let storedInstances =
+    options.existing ??
+    ((await prisma.whatsAppInstance.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'asc' },
+    })) as StoredInstance[]);
+
+  let snapshots = options.snapshots ?? null;
+
+  const shouldRefresh = Boolean(options.refresh) || storedInstances.length === 0;
+
+  if (shouldRefresh) {
+    const syncResult = await syncInstancesFromBroker(
+      tenantId,
+      storedInstances,
+      snapshots ?? undefined
+    );
+    storedInstances = syncResult.instances;
+    snapshots = syncResult.snapshots;
+  } else if (fetchSnapshots) {
+    if (!snapshots) {
+      snapshots = await whatsappBrokerClient.listInstances(tenantId);
+    }
+  } else if (!snapshots) {
+    snapshots = [];
+  }
+
+  const snapshotMap = new Map<string, WhatsAppBrokerInstanceSnapshot>();
+
+  if (snapshots) {
+    for (const snapshot of snapshots) {
+      const rawId = snapshot.instance?.id;
+      const normalizedId = typeof rawId === 'string' ? rawId.trim() : '';
+      if (normalizedId && !snapshotMap.has(normalizedId)) {
+        snapshotMap.set(normalizedId, snapshot);
+      }
+    }
+  }
+
+  const entries: InstanceCollectionEntry[] = [];
+
+  for (const stored of storedInstances) {
+    const snapshot = snapshotMap.get(stored.id) ??
+      (stored.brokerId ? snapshotMap.get(stored.brokerId) : undefined);
+    const brokerStatus = snapshot?.status ?? null;
+    const serialized = serializeStoredInstance(stored, brokerStatus);
+
+    if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
+      await prisma.whatsAppInstance.update({
+        where: { id: stored.id },
+        data: { phoneNumber: serialized.phoneNumber },
+      });
+      stored.phoneNumber = serialized.phoneNumber;
+    }
+
+    entries.push({ stored, serialized, status: brokerStatus });
+  }
+
+  const map = new Map<string, InstanceCollectionEntry>();
+  for (const entry of entries) {
+    map.set(entry.stored.id, entry);
+    if (entry.stored.brokerId && entry.stored.brokerId !== entry.stored.id) {
+      map.set(entry.stored.brokerId, entry);
+    }
+  }
+
+  const instances = entries.map(({ serialized }) => toPublicInstance(serialized));
+
+  return {
+    entries,
+    instances,
+    rawInstances: entries.map(({ serialized }) => serialized),
+    map,
+    snapshots: snapshots ?? [],
+  };
+};
+
+type InstanceOperationContext = {
+  stored: StoredInstance;
+  entry: InstanceCollectionEntry | null;
+  brokerStatus: WhatsAppStatus | null;
+  serialized: ReturnType<typeof serializeStoredInstance>;
+  instance: NormalizedInstance;
+  status: ReturnType<typeof normalizeInstanceStatusResponse>;
+  qr: ReturnType<typeof normalizeQr>;
+  instances: NormalizedInstance[];
+};
+
+const resolveInstanceOperationContext = async (
+  tenantId: string,
+  instance: StoredInstance,
+  options: { refresh?: boolean; fetchSnapshots?: boolean } = {}
+): Promise<InstanceOperationContext> => {
+  const collection = await collectInstancesForTenant(tenantId, {
+    refresh: options.refresh,
+    fetchSnapshots: options.fetchSnapshots,
   });
+
+  const entry =
+    collection.map.get(instance.id) ??
+    (instance.brokerId ? collection.map.get(instance.brokerId) : undefined) ??
+    null;
+
+  const stored = entry?.stored ?? instance;
+  const brokerStatus = entry?.status ?? null;
+  const serialized = entry?.serialized ?? serializeStoredInstance(stored, brokerStatus);
+  const publicInstance = toPublicInstance(serialized);
+  const status = normalizeInstanceStatusResponse(brokerStatus);
+  const qr = normalizeQr({
+    qr: status.qr,
+    qrCode: status.qrCode,
+    qrExpiresAt: status.qrExpiresAt,
+    expiresAt: status.expiresAt,
+  });
+
+  const existingIndex = collection.instances.findIndex((item) => item.id === publicInstance.id);
+  const instances =
+    existingIndex >= 0
+      ? collection.instances.map((item, index) => (index === existingIndex ? publicInstance : item))
+      : [...collection.instances, publicInstance];
+
+  return {
+    stored,
+    entry,
+    brokerStatus,
+    serialized,
+    instance: publicInstance,
+    status,
+    qr,
+    instances,
+  };
 };
 
 const parseNumber = (input: unknown): number | null => {
@@ -1462,93 +1643,21 @@ router.get(
     });
 
     try {
-      let storedInstances = await prisma.whatsAppInstance.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: 'asc' },
+      const { instances } = await collectInstancesForTenant(tenantId, {
+        refresh: refreshRequested,
       });
-
-      if (refreshRequested || storedInstances.length === 0) {
-        storedInstances = await syncInstancesFromBroker(tenantId, storedInstances);
-        logger.info('🛰️ [WhatsApp] Broker sync completed', {
-          tenantId,
-          storedAfterSync: storedInstances.length,
-        });
-      }
-
-      const normalized = await Promise.all(
-        storedInstances.map(async (instance) => {
-          let brokerStatus: WhatsAppStatus | null = null;
-
-          try {
-            brokerStatus = await whatsappBrokerClient.getStatus(instance.brokerId, {
-              instanceId: instance.id,
-            });
-            if (brokerStatus?.status === 'disconnected') {
-              logger.warn('WhatsApp instance reported as disconnected', {
-                tenantId: instance.tenantId,
-                instanceId: instance.id,
-              });
-            }
-          } catch (error: unknown) {
-            if (error instanceof WhatsAppBrokerNotConfiguredError) {
-              throw error;
-            }
-            brokerStatus = null;
-          }
-
-          const derivedStatus = brokerStatus ? mapBrokerStatusToDbStatus(brokerStatus) : instance.status;
-          const derivedConnected = brokerStatus?.connected ?? instance.connected;
-          const derivedLastSeenAt = brokerStatus?.connected ? new Date() : instance.lastSeenAt;
-
-          if (brokerStatus) {
-            const metadataWithHistory = appendInstanceHistory(
-              instance.metadata as InstanceMetadata,
-              buildHistoryEntry('status-sync', 'system', {
-                status: derivedStatus,
-                connected: derivedConnected,
-              })
-            );
-            await prisma.whatsAppInstance.update({
-              where: { id: instance.id },
-              data: {
-                status: derivedStatus,
-                connected: derivedConnected,
-                lastSeenAt: derivedLastSeenAt,
-                metadata: metadataWithHistory,
-              },
-            });
-          }
-
-          const serialized = serializeStoredInstance(
-            {
-              ...instance,
-              status: derivedStatus,
-              connected: derivedConnected,
-              lastSeenAt: derivedLastSeenAt,
-            } as StoredInstance,
-            brokerStatus
-          );
-
-          if (serialized.phoneNumber && serialized.phoneNumber !== instance.phoneNumber) {
-            await prisma.whatsAppInstance.update({
-              where: { id: instance.id },
-              data: { phoneNumber: serialized.phoneNumber },
-            });
-          }
-
-          const { brokerId: _brokerId, ...responseInstance } = serialized;
-          return responseInstance;
-        })
-      );
 
       logger.info('🛰️ [WhatsApp] Returning instances to client', {
         tenantId,
-        count: normalized.length,
+        count: instances.length,
+        refreshRequested,
       });
 
       res.json({
         success: true,
-        data: normalized,
+        data: {
+          instances,
+        },
       });
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
@@ -1712,39 +1821,52 @@ router.post(
       }
 
       await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
-      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
-      const historyEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
-        status: status.status,
-        connected: status.connected,
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
       });
 
-      if (!status.connected) {
+      if (!context.status.connected) {
         logger.warn('WhatsApp instance did not report connected status after connect', {
           tenantId,
           instanceId: instance.id,
-          status: status.status,
+          status: context.status.status,
         });
       }
 
-      const updates: Prisma.WhatsAppInstanceUpdateInput = {
-        status: mapBrokerStatusToDbStatus(status),
-        connected: status.connected,
-        metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, historyEntry),
-      };
+      const historyEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
+        status: context.status.status,
+        connected: context.status.connected,
+      });
 
-      if (status.connected) {
-        updates.lastSeenAt = new Date();
-      }
+      const metadataWithHistory = appendInstanceHistory(
+        context.stored.metadata as InstanceMetadata,
+        historyEntry
+      );
+
+      const derivedStatus = context.brokerStatus
+        ? mapBrokerStatusToDbStatus(context.brokerStatus)
+        : mapBrokerInstanceStatusToDbStatus(context.status.status);
 
       await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
-        data: updates,
+        where: { id: context.stored.id },
+        data: {
+          status: derivedStatus,
+          connected: context.status.connected,
+          metadata: metadataWithHistory,
+          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
+        },
       });
 
       res.json({
         success: true,
-        data: normalizeInstanceStatusResponse(status),
+        data: {
+          instance: context.instance,
+          status: context.status,
+          connected: context.status.connected,
+          qr: context.qr,
+          instances: context.instances,
+        },
       });
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
@@ -1782,28 +1904,44 @@ router.post(
       }
 
       await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
-      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
-      const metadataEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
-        status: status.status,
-        connected: status.connected,
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
       });
 
+      const metadataEntry = buildHistoryEntry('connect-instance', req.user?.id ?? 'system', {
+        status: context.status.status,
+        connected: context.status.connected,
+      });
+
+      const metadataWithHistory = appendInstanceHistory(
+        context.stored.metadata as InstanceMetadata,
+        metadataEntry
+      );
+
+      const derivedStatus = context.brokerStatus
+        ? mapBrokerStatusToDbStatus(context.brokerStatus)
+        : mapBrokerInstanceStatusToDbStatus(context.status.status);
+
       await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
+        where: { id: context.stored.id },
         data: {
-          status: mapBrokerStatusToDbStatus(status),
-          connected: status.connected,
-          metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, metadataEntry),
-          lastSeenAt: status.connected ? new Date() : instance.lastSeenAt,
+          status: derivedStatus,
+          connected: context.status.connected,
+          metadata: metadataWithHistory,
+          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
         },
       });
 
       res.json({
         success: true,
         data: {
-          instanceId: instance.id,
-          ...normalizeInstanceStatusResponse(status),
+          instanceId: context.instance.id,
+          instance: context.instance,
+          status: context.status,
+          connected: context.status.connected,
+          qr: context.qr,
+          instances: context.instances,
         },
       });
     } catch (error: unknown) {
@@ -1846,40 +1984,55 @@ router.post(
         ...(disconnectOptions ?? {}),
         instanceId: instance.id,
       });
-      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
 
-      const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
-        status: status.status,
-        connected: status.connected,
-        wipe: Boolean(wipe),
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
       });
 
-      if (status.connected) {
+      if (context.status.connected) {
         logger.warn('WhatsApp instance still connected after disconnect request', {
           tenantId,
           instanceId: instance.id,
-          status: status.status,
+          status: context.status.status,
         });
       }
 
-      const updates: Prisma.WhatsAppInstanceUpdateInput = {
-        status: mapBrokerStatusToDbStatus(status),
-        connected: status.connected,
-        metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, historyEntry),
-      };
+      const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
+        status: context.status.status,
+        connected: context.status.connected,
+        wipe: Boolean(wipe),
+      });
 
-      if (!status.connected) {
-        updates.lastSeenAt = new Date();
-      }
+      const metadataWithHistory = appendInstanceHistory(
+        context.stored.metadata as InstanceMetadata,
+        historyEntry
+      );
+
+      const derivedStatus = context.brokerStatus
+        ? mapBrokerStatusToDbStatus(context.brokerStatus)
+        : mapBrokerInstanceStatusToDbStatus(context.status.status);
+
+      const lastSeenAt = context.status.connected ? context.stored.lastSeenAt : new Date();
 
       await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
-        data: updates,
+        where: { id: context.stored.id },
+        data: {
+          status: derivedStatus,
+          connected: context.status.connected,
+          metadata: metadataWithHistory,
+          lastSeenAt,
+        },
       });
 
       res.json({
         success: true,
-        data: normalizeInstanceStatusResponse(status),
+        data: {
+          instance: context.instance,
+          status: context.status,
+          connected: context.status.connected,
+          qr: context.qr,
+          instances: context.instances,
+        },
       });
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
@@ -1992,34 +2145,47 @@ router.post(
         ...(disconnectOptions ?? {}),
         instanceId: instance.id,
       });
-      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
+
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
+      });
 
       const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
-        status: status.status,
-        connected: status.connected,
+        status: context.status.status,
+        connected: context.status.connected,
         wipe: Boolean(wipe),
       });
 
-      const updates: Prisma.WhatsAppInstanceUpdateInput = {
-        status: mapBrokerStatusToDbStatus(status),
-        connected: status.connected,
-        metadata: appendInstanceHistory(instance.metadata as InstanceMetadata, historyEntry),
-      };
+      const metadataWithHistory = appendInstanceHistory(
+        context.stored.metadata as InstanceMetadata,
+        historyEntry
+      );
 
-      if (!status.connected) {
-        updates.lastSeenAt = new Date();
-      }
+      const derivedStatus = context.brokerStatus
+        ? mapBrokerStatusToDbStatus(context.brokerStatus)
+        : mapBrokerInstanceStatusToDbStatus(context.status.status);
+
+      const lastSeenAt = context.status.connected ? context.stored.lastSeenAt : new Date();
 
       await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
-        data: updates,
+        where: { id: context.stored.id },
+        data: {
+          status: derivedStatus,
+          connected: context.status.connected,
+          metadata: metadataWithHistory,
+          lastSeenAt,
+        },
       });
 
       res.json({
         success: true,
         data: {
-          instanceId: instance.id,
-          ...normalizeInstanceStatusResponse(status),
+          instanceId: context.instance.id,
+          instance: context.instance,
+          status: context.status,
+          connected: context.status.connected,
+          qr: context.qr,
+          instances: context.instances,
         },
       });
     } catch (error: unknown) {
@@ -2056,10 +2222,20 @@ router.get(
       }
 
       const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        fetchSnapshots: false,
+      });
+
+      const qr = normalizeQr({ ...context.qr, ...qrCode });
 
       res.json({
         success: true,
-        data: normalizeQr(qrCode),
+        data: {
+          instance: context.instance,
+          status: context.status,
+          qr,
+          instances: context.instances,
+        },
       });
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
@@ -2136,12 +2312,21 @@ router.get(
       }
 
       const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        fetchSnapshots: false,
+      });
+
+      const qr = normalizeQr({ ...context.qr, ...qrCode });
 
       res.json({
         success: true,
         data: {
-          instanceId: instance.id,
-          ...normalizeQr(qrCode),
+          instanceId: context.instance.id,
+          instance: context.instance,
+          status: context.status,
+          qr,
+          connected: context.status.connected,
+          instances: context.instances,
         },
       });
     } catch (error: unknown) {
@@ -2218,20 +2403,32 @@ router.get(
         return;
       }
 
-      const status = await whatsappBrokerClient.getStatus(instance.brokerId, { instanceId: instance.id });
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
+      });
+
+      const derivedStatus = context.brokerStatus
+        ? mapBrokerStatusToDbStatus(context.brokerStatus)
+        : mapBrokerInstanceStatusToDbStatus(context.status.status);
 
       await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
+        where: { id: context.stored.id },
         data: {
-          status: mapBrokerStatusToDbStatus(status),
-          connected: status.connected,
-          lastSeenAt: status.connected ? new Date() : instance.lastSeenAt,
+          status: derivedStatus,
+          connected: context.status.connected,
+          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
         },
       });
 
       res.json({
         success: true,
-        data: normalizeInstanceStatusResponse(status),
+        data: {
+          instance: context.instance,
+          status: context.status,
+          connected: context.status.connected,
+          qr: context.qr,
+          instances: context.instances,
+        },
       });
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
