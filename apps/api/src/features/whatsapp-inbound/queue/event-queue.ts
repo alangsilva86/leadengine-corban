@@ -16,7 +16,7 @@ export interface WhatsAppBrokerEvent {
   cursor?: string | null;
 }
 
-interface NormalizedEventInput {
+export interface NormalizedEventInput {
   id?: unknown;
   type?: unknown;
   payload?: unknown;

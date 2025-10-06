@@ -9,6 +9,11 @@ import {
   type WhatsAppBrokerEvent,
 } from '../queue/event-queue';
 import {
+  normalizeBrokerEventEnvelope,
+  normalizeCursorState,
+  type BrokerEventEnvelope,
+} from './event-normalizer';
+import {
   WhatsAppBrokerNotConfiguredError,
   whatsappBrokerClient,
 } from '../../../services/whatsapp-broker-client';
@@ -30,8 +35,15 @@ const CLEANUP_INTERVAL_MS = 60 * 60 * 1_000; // 1 hour
 interface BrokerFetchResponse {
   events?: unknown[];
   items?: unknown[];
-  nextCursor?: string | null;
-  nextId?: string | null;
+  data?: unknown[];
+  nextCursor?: unknown;
+  nextId?: unknown;
+  cursor?: unknown;
+  meta?: {
+    nextCursor?: unknown;
+    cursor?: unknown;
+    instanceId?: unknown;
+  } | null;
 }
 
 interface AckState {
@@ -77,22 +89,30 @@ const toJsonValue = (value: unknown): Prisma.InputJsonValue => {
   return value as Prisma.InputJsonValue;
 };
 
-const parseCursorState = (value: Prisma.JsonValue | null | undefined): string | null => {
-  if (!value) {
-    return null;
+const parseCursorStateValue = (
+  value: Prisma.JsonValue | null | undefined
+): { cursor: string | null; instanceId: string | null } => {
+  if (value === undefined || value === null) {
+    return { cursor: null, instanceId: null };
   }
+
+  return normalizeCursorState(value as unknown);
+};
+
+const readStringValue = (value: unknown): string | null => {
   if (typeof value === 'string') {
-    return value.trim().length > 0 ? value.trim() : null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
-  if (typeof value === 'object' && value !== null && 'cursor' in value) {
-    const rawCursor = (value as Record<string, unknown>).cursor;
-    if (typeof rawCursor === 'string' && rawCursor.trim().length > 0) {
-      return rawCursor.trim();
-    }
-    if (rawCursor === null) {
-      return null;
-    }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
   }
+
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
   return null;
 };
 
@@ -111,6 +131,7 @@ class WhatsAppEventPoller {
   private running = false;
   private shouldStop = false;
   private cursor: string | null = null;
+  private cursorInstanceId: string | null = null;
   private metrics: WhatsAppEventPollerMetrics = { ...defaultMetrics };
   private loopPromise: Promise<void> | null = null;
   private stateLoaded = false;
@@ -210,7 +231,9 @@ class WhatsAppEventPoller {
         prisma.integrationState.findUnique({ where: { key: LAST_ACK_STATE_KEY } }),
       ]);
 
-      this.cursor = parseCursorState(cursorState?.value);
+      const parsedCursor = parseCursorStateValue(cursorState?.value);
+      this.cursor = parsedCursor.cursor;
+      this.cursorInstanceId = parsedCursor.instanceId;
       const parsedAck = parseAckState(ackState?.value);
 
       this.metrics.cursor = this.cursor;
@@ -225,63 +248,127 @@ class WhatsAppEventPoller {
   private async pollOnce(): Promise<number> {
     logger.debug('🛰️ [Poller] Fetching broker events', {
       cursor: this.cursor,
+      instanceId: this.cursorInstanceId,
     });
     const response = await whatsappBrokerClient.fetchEvents<BrokerFetchResponse>({
       limit: FETCH_LIMIT,
       cursor: this.cursor ?? undefined,
+      instanceId: this.cursorInstanceId ?? undefined,
     });
 
     const rawEvents = Array.isArray(response?.items)
       ? response.items
       : Array.isArray(response?.events)
         ? response.events
-        : [];
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
 
     this.metrics.lastFetchAt = new Date().toISOString();
     this.metrics.lastFetchCount = rawEvents.length;
 
     if (rawEvents.length === 0) {
       logger.debug('🛰️ [Poller] Broker returned zero events');
-      await this.persistCursorIfNeeded(response?.nextCursor ?? null);
+      const cursorSources: unknown[] = [
+        response?.nextCursor,
+        response?.cursor,
+        response?.nextId,
+        response?.meta?.nextCursor,
+        response?.meta?.cursor,
+      ];
+
+      let nextCursorCandidate = { cursor: null as string | null, instanceId: null as string | null };
+
+      for (const source of cursorSources) {
+        if (source === undefined || source === null) {
+          continue;
+        }
+
+        const candidate = normalizeCursorState(source);
+        if (candidate.cursor) {
+          nextCursorCandidate = candidate;
+          break;
+        }
+      }
+
+      if (!nextCursorCandidate.instanceId && response?.meta?.instanceId !== undefined) {
+        const metaInstance = readStringValue(response.meta?.instanceId);
+        if (metaInstance) {
+          nextCursorCandidate.instanceId = metaInstance;
+        }
+      }
+
+      if (!nextCursorCandidate.cursor && response && typeof response === 'object') {
+        const page = (response as Record<string, unknown>).page;
+        if (page && typeof page === 'object') {
+          const pageCandidate = normalizeCursorState(
+            (page as Record<string, unknown>).nextCursor ??
+              (page as Record<string, unknown>).cursor ??
+              null
+          );
+          if (pageCandidate.cursor) {
+            nextCursorCandidate = {
+              cursor: pageCandidate.cursor,
+              instanceId: pageCandidate.instanceId ?? nextCursorCandidate.instanceId,
+            };
+          }
+        }
+      }
+
+      await this.persistCursorIfNeeded(nextCursorCandidate.cursor, nextCursorCandidate.instanceId);
       return 0;
     }
 
-    const ackIds: string[] = [];
     const candidateEvents: WhatsAppBrokerEvent[] = [];
+    const ackGroups = new Map<string | null, string[]>();
+    const envelopes: BrokerEventEnvelope[] = [];
 
     for (const raw of rawEvents) {
-      if (!raw || typeof raw !== 'object') {
+      const normalizedEnvelope = normalizeBrokerEventEnvelope(raw);
+      if (!normalizedEnvelope) {
+        logger.warn('Discarding WhatsApp broker event without ack identifier', { record: raw });
         continue;
       }
 
-      const record = raw as Record<string, unknown>;
-      const id = typeof record.id === 'string' && record.id.trim().length > 0 ? record.id.trim() : null;
-      if (!id) {
-        logger.warn('Discarding WhatsApp broker event without id', { record });
-        continue;
+      envelopes.push(normalizedEnvelope);
+
+      const groupKey = normalizedEnvelope.instanceId ?? null;
+      const bucket = ackGroups.get(groupKey);
+      if (bucket) {
+        bucket.push(normalizedEnvelope.ackId);
+      } else {
+        ackGroups.set(groupKey, [normalizedEnvelope.ackId]);
       }
 
-      ackIds.push(id);
-
-      const normalized = normalizeWhatsAppBrokerEvent(record);
+      const normalized = normalizeWhatsAppBrokerEvent(normalizedEnvelope.event);
       if (normalized) {
+        if (!normalized.cursor && normalizedEnvelope.cursor) {
+          normalized.cursor = normalizedEnvelope.cursor;
+        }
+        if (normalizedEnvelope.instanceId && !normalized.instanceId) {
+          normalized.instanceId = normalizedEnvelope.instanceId;
+        }
         candidateEvents.push(normalized);
       } else {
-        logger.warn('Ignoring unsupported WhatsApp broker event type', { record });
+        logger.warn('Ignoring unsupported WhatsApp broker event type', { record: normalizedEnvelope.event });
       }
     }
 
-    if (!ackIds.length) {
+    const totalAckCount = Array.from(ackGroups.values()).reduce((acc, ids) => acc + ids.length, 0);
+    if (totalAckCount === 0) {
       return 0;
     }
 
-    const existing = await prisma.processedIntegrationEvent.findMany({
-      where: {
-        id: { in: ackIds },
-        source: SOURCE_KEY,
-      },
-      select: { id: true },
-    });
+    const eventIds = candidateEvents.map((event) => event.id);
+    const existing = eventIds.length
+      ? await prisma.processedIntegrationEvent.findMany({
+          where: {
+            id: { in: eventIds },
+            source: SOURCE_KEY,
+          },
+          select: { id: true },
+        })
+      : [];
 
     const existingIds = new Set(existing.map((item) => item.id));
     const freshEvents = candidateEvents.filter((event) => !existingIds.has(event.id));
@@ -304,45 +391,112 @@ class WhatsAppEventPoller {
       enqueueWhatsAppBrokerEvents(freshEvents);
     }
 
-    await whatsappBrokerClient.ackEvents({ ids: ackIds });
+    for (const [instanceId, ids] of ackGroups) {
+      if (!ids.length) {
+        continue;
+      }
+
+      await whatsappBrokerClient.ackEvents({ ids, instanceId: instanceId ?? undefined });
+    }
 
     const timestamp = new Date().toISOString();
-    const nextCursorCandidate =
-      typeof response?.nextCursor === 'string' && response.nextCursor.trim().length > 0
-        ? response.nextCursor.trim()
-        : typeof response?.nextId === 'string' && response.nextId.trim().length > 0
-          ? response.nextId.trim()
-          : null;
+    const nextCursorSources: unknown[] = [
+      response?.nextCursor,
+      response?.cursor,
+      response?.nextId,
+      response?.meta?.nextCursor,
+      response?.meta?.cursor,
+    ];
+
+    let nextCursorCandidate = { cursor: null as string | null, instanceId: null as string | null };
+
+    for (const source of nextCursorSources) {
+      if (source === undefined || source === null) {
+        continue;
+      }
+
+      const candidate = normalizeCursorState(source);
+      if (candidate.cursor) {
+        nextCursorCandidate = candidate;
+        break;
+      }
+    }
+
+    if (!nextCursorCandidate.instanceId && response?.meta?.instanceId !== undefined) {
+      const metaInstance = readStringValue(response.meta?.instanceId);
+      if (metaInstance) {
+        nextCursorCandidate.instanceId = metaInstance;
+      }
+    }
+
+    if (!nextCursorCandidate.cursor && response && typeof response === 'object') {
+      const page = (response as Record<string, unknown>).page;
+      if (page && typeof page === 'object') {
+        const pageCandidate = normalizeCursorState(
+          (page as Record<string, unknown>).nextCursor ??
+            (page as Record<string, unknown>).cursor ??
+            null
+        );
+        if (pageCandidate.cursor) {
+          nextCursorCandidate = {
+            cursor: pageCandidate.cursor,
+            instanceId: pageCandidate.instanceId ?? nextCursorCandidate.instanceId,
+          };
+        }
+      }
+    }
+
+    if (!nextCursorCandidate.cursor) {
+      for (let index = envelopes.length - 1; index >= 0; index -= 1) {
+        const envelope = envelopes[index];
+        if (envelope?.cursor) {
+          nextCursorCandidate = {
+            cursor: envelope.cursor,
+            instanceId: envelope.instanceId ?? null,
+          };
+          break;
+        }
+      }
+    }
 
     await this.persistAckState({
       timestamp,
-      cursor: nextCursorCandidate,
-      count: ackIds.length,
+      cursor: nextCursorCandidate.cursor,
+      count: totalAckCount,
     });
 
-    await this.persistCursorIfNeeded(nextCursorCandidate);
+    await this.persistCursorIfNeeded(nextCursorCandidate.cursor, nextCursorCandidate.instanceId);
 
     this.metrics.lastAckAt = timestamp;
-    this.metrics.lastAckCursor = nextCursorCandidate;
-    this.metrics.lastAckCount = ackIds.length;
+    this.metrics.lastAckCursor = nextCursorCandidate.cursor;
+    this.metrics.lastAckCount = totalAckCount;
 
-    return ackIds.length;
+    return totalAckCount;
   }
 
-  private async persistCursorIfNeeded(cursor: string | null): Promise<void> {
-    const normalized = cursor && cursor.trim().length > 0 ? cursor.trim() : null;
-    if (normalized === this.cursor) {
+  private async persistCursorIfNeeded(
+    cursor: string | null,
+    instanceId: string | null
+  ): Promise<void> {
+    const normalizedCursor = cursor && cursor.trim().length > 0 ? cursor.trim() : null;
+    const normalizedInstance = instanceId && instanceId.trim().length > 0 ? instanceId.trim() : null;
+
+    if (normalizedCursor === this.cursor && normalizedInstance === this.cursorInstanceId) {
       return;
     }
 
     await prisma.integrationState.upsert({
       where: { key: CURSOR_STATE_KEY },
-      create: { key: CURSOR_STATE_KEY, value: { cursor: normalized } },
-      update: { value: { cursor: normalized } },
+      create: {
+        key: CURSOR_STATE_KEY,
+        value: { cursor: normalizedCursor, instanceId: normalizedInstance },
+      },
+      update: { value: { cursor: normalizedCursor, instanceId: normalizedInstance } },
     });
 
-    this.cursor = normalized;
-    this.metrics.cursor = normalized;
+    this.cursor = normalizedCursor;
+    this.cursorInstanceId = normalizedInstance;
+    this.metrics.cursor = normalizedCursor;
   }
 
   private async persistAckState(state: AckState): Promise<void> {
