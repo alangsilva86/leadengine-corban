@@ -3,6 +3,7 @@ import { logger } from '../config/logger';
 import {
   BrokerOutboundMessageSchema,
   BrokerOutboundResponseSchema,
+  type BrokerOutboundMessage,
 } from '../features/whatsapp-inbound/schemas/broker-contracts';
 
 export class WhatsAppBrokerNotConfiguredError extends Error {
@@ -95,12 +96,31 @@ class WhatsAppBrokerClient {
     return (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
   }
 
+  private get deliveryMode(): 'broker' | 'instances' | 'auto' {
+    const normalized = (process.env.WHATSAPP_BROKER_DELIVERY_MODE || '')
+      .trim()
+      .toLowerCase();
+
+    if (normalized === 'broker' || normalized === 'instances') {
+      return normalized;
+    }
+
+    return 'auto';
+  }
+
   private get baseUrl(): string {
     return process.env.WHATSAPP_BROKER_URL?.replace(/\/$/, '') || '';
   }
 
   private get brokerApiKey(): string {
     return process.env.WHATSAPP_BROKER_API_KEY || '';
+  }
+
+  private get shouldStripLegacyPlus(): boolean {
+    return (process.env.WHATSAPP_BROKER_LEGACY_STRIP_PLUS || '')
+      .trim()
+      .toLowerCase()
+      .startsWith('t');
   }
 
   private get webhookApiKey(): string {
@@ -237,6 +257,133 @@ class WhatsAppBrokerClient {
       response.status,
       normalizedError.requestId || headerRequestId
     );
+  }
+
+  private formatLegacyRecipient(to: string): string {
+    const trimmed = to.trim();
+    if (!this.shouldStripLegacyPlus) {
+      return trimmed;
+    }
+
+    return trimmed.replace(/^\+/, '');
+  }
+
+  private normalizeLegacyTimestamp(candidate: unknown, fallback: string): string {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      return trimmed.length > 0 ? trimmed : fallback;
+    }
+
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      const ms = candidate > 1_000_000_000_000 ? candidate : candidate * 1000;
+      try {
+        return new Date(ms).toISOString();
+      } catch (error) {
+        logger.debug('Failed to normalise legacy broker timestamp', { error, candidate });
+        return fallback;
+      }
+    }
+
+    return fallback;
+  }
+
+  private normalizeLegacyResponse(
+    payload: BrokerOutboundMessage,
+    response: Record<string, unknown> | undefined
+  ): WhatsAppMessageResult & { raw?: Record<string, unknown> | null } {
+    const rawResponse = response ?? {};
+    const fallbackId = payload.externalId ?? `msg-${Date.now()}`;
+    const externalIdCandidate = (() => {
+      const candidates = [rawResponse.externalId, rawResponse.messageId, rawResponse.id, fallbackId];
+      for (const candidate of candidates) {
+        if (typeof candidate === 'string') {
+          const trimmed = candidate.trim();
+          if (trimmed.length > 0) {
+            return trimmed;
+          }
+        }
+      }
+      return fallbackId;
+    })();
+
+    const statusCandidate = (() => {
+      const candidates = [rawResponse.status, rawResponse.state, 'sent'];
+      for (const candidate of candidates) {
+        if (typeof candidate === 'string') {
+          const trimmed = candidate.trim();
+          if (trimmed.length > 0) {
+            return trimmed;
+          }
+        }
+      }
+      return 'sent';
+    })();
+
+    const fallbackTimestamp = new Date().toISOString();
+    const timestampCandidate =
+      rawResponse.timestamp ?? rawResponse.sentAt ?? rawResponse.createdAt ?? rawResponse.dispatchedAt;
+    const timestamp = this.normalizeLegacyTimestamp(timestampCandidate, fallbackTimestamp);
+
+    return {
+      externalId: externalIdCandidate,
+      status: statusCandidate,
+      timestamp,
+      raw: rawResponse ?? null,
+    };
+  }
+
+  private async sendViaBrokerRoutes(
+    instanceId: string,
+    normalizedPayload: BrokerOutboundMessage
+  ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
+    const response = await this.request<Record<string, unknown>>('/broker/messages', {
+      method: 'POST',
+      body: JSON.stringify(normalizedPayload),
+    });
+
+    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+
+    const externalId =
+      normalizedResponse.externalId ?? normalizedPayload.externalId ?? normalizedResponse.id ?? `msg-${Date.now()}`;
+
+    const status = normalizedResponse.status || 'sent';
+
+    return {
+      externalId,
+      status,
+      timestamp: normalizedResponse.timestamp ?? new Date().toISOString(),
+      raw: normalizedResponse.raw ?? null,
+    };
+  }
+
+  private async sendViaInstanceRoutes(
+    instanceId: string,
+    normalizedPayload: BrokerOutboundMessage
+  ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
+    if (normalizedPayload.type !== 'text') {
+      logger.warn('Legacy instance routes only support text payloads; falling back to broker dispatch', {
+        instanceId,
+        type: normalizedPayload.type,
+      });
+      return this.sendViaBrokerRoutes(instanceId, normalizedPayload);
+    }
+
+    const response = await this.request<Record<string, unknown>>(
+      `/instances/${encodeURIComponent(instanceId)}/send-text`,
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          compactObject({
+            to: this.formatLegacyRecipient(normalizedPayload.to),
+            text: normalizedPayload.content,
+            previewUrl: normalizedPayload.previewUrl,
+            externalId: normalizedPayload.externalId,
+          })
+        ),
+      }
+    );
+
+    return this.normalizeLegacyResponse(normalizedPayload, response);
   }
 
   private async request<T>(
@@ -1011,26 +1158,43 @@ class WhatsAppBrokerClient {
       metadata: payload.metadata,
     });
 
-    const response = await this.request<Record<string, unknown>>('/broker/messages', {
-      method: 'POST',
-      body: JSON.stringify(normalizedPayload),
-    });
+    const mode = this.deliveryMode;
 
-    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+    if (mode === 'broker') {
+      return this.sendViaBrokerRoutes(instanceId, normalizedPayload);
+    }
 
-    const externalId =
-      normalizedResponse.externalId ??
-      normalizedPayload.externalId ??
-      `msg-${Date.now()}`;
+    if (mode === 'instances') {
+      return this.sendViaInstanceRoutes(instanceId, normalizedPayload);
+    }
 
-    const status = normalizedResponse.status || 'sent';
+    try {
+      return await this.sendViaBrokerRoutes(instanceId, normalizedPayload);
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerError && this.shouldRetryWithInstanceRoutes(error)) {
+        logger.warn('Broker route rejected payload; retrying via legacy instance endpoint', {
+          instanceId,
+          status: error.status,
+          code: error.code,
+        });
+        return this.sendViaInstanceRoutes(instanceId, normalizedPayload);
+      }
 
-    return {
-      externalId,
-      status,
-      timestamp: normalizedResponse.timestamp ?? new Date().toISOString(),
-      raw: normalizedResponse.raw ?? null,
-    };
+      throw error;
+    }
+  }
+
+  private shouldRetryWithInstanceRoutes(error: WhatsAppBrokerError): boolean {
+    if (error.status === 404 || error.status === 405) {
+      return true;
+    }
+
+    if (error.status === 400) {
+      const message = error.message.toLowerCase();
+      return message.includes('route') || message.includes('path');
+    }
+
+    return false;
   }
 }
 

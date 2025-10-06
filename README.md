@@ -123,6 +123,8 @@ WHATSAPP_MODE=http
 WHATSAPP_SESSIONS_PATH=./sessions
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=troque-por-uma-chave-forte
+WHATSAPP_BROKER_DELIVERY_MODE=auto
+WHATSAPP_BROKER_LEGACY_STRIP_PLUS=false
 WHATSAPP_WEBHOOK_API_KEY=troque-se-diferente-da-chave-do-broker
 WHATSAPP_BROKER_TIMEOUT_MS=15000
 
@@ -131,6 +133,8 @@ LOG_LEVEL=info
 ```
 
 > **Importante:** defina `WHATSAPP_MODE=http` sempre que for consumir o broker HTTP externo. O valor de `WHATSAPP_BROKER_API_KEY` deve coincidir com a variável `API_KEY` configurada na Render para o serviço `baileys-acessuswpp`. Esse segredo precisa ser enviado em todas as chamadas para o broker através do cabeçalho `x-api-key`, inclusive por quaisquer serviços que consumam o `WEBHOOK_URL` configurado na instância. Caso o webhook utilize um segredo distinto, defina `WHATSAPP_WEBHOOK_API_KEY`.
+
+> **Compatibilidade com rotas legadas:** Ajuste `WHATSAPP_BROKER_DELIVERY_MODE` para `instances` quando o broker expuser apenas as rotas `/instances/:id/send-text`. Nesse modo, a API envia o corpo `{ to, text }` exigido pelas versões anteriores. Use o valor padrão `auto` (ou `broker`) para brokers no modo minimalista (`/broker/messages`). Se o endpoint legado rejeitar números iniciados com `+`, habilite `WHATSAPP_BROKER_LEGACY_STRIP_PLUS=true` para remover o prefixo automaticamente.
 
 > **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.
