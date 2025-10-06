@@ -1398,7 +1398,15 @@ const WhatsAppConnect = ({
 
       if (!Array.isArray(list) || list.length === 0) {
         const fallbackInstanceId = preferredInstanceId || campaign?.instanceId || null;
-        connectResult = connectResult || (await connectInstance(fallbackInstanceId));
+        if (fallbackInstanceId) {
+          connectResult = connectResult || (await connectInstance(fallbackInstanceId));
+        } else {
+          warn('Nenhuma instância padrão disponível para conexão automática', {
+            agreementId,
+            preferredInstanceId: preferredInstanceId ?? null,
+            campaignInstanceId: campaign?.instanceId ?? null,
+          });
+        }
 
         if (connectResult?.instances?.length) {
           list = connectResult.instances;
@@ -1500,13 +1508,22 @@ const WhatsAppConnect = ({
       });
       return { success: true, status: statusFromInstance };
     } catch (err) {
+      const status = err?.response?.status;
+      const errorCode = err?.response?.data?.code ?? err?.code;
+      const isMissingInstanceError = status === 404 || errorCode === 'INSTANCE_NOT_FOUND';
+
       if (isAuthError(err)) {
         handleAuthFallback();
       } else {
         applyErrorMessageFromError(
           err,
           'Não foi possível carregar status do WhatsApp'
+      } else if (!isMissingInstanceError) {
+        setErrorMessage(
+          err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
         );
+      } else {
+        setErrorMessage(null);
       }
       warn('Instâncias não puderam ser carregadas', err);
       return { success: false, error: err, skipped: isAuthError(err) };

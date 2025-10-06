@@ -4,6 +4,7 @@ import {
   BrokerOutboundMessageSchema,
   BrokerOutboundResponseSchema,
   type BrokerOutboundMessage,
+  type BrokerOutboundResponse,
 } from '../features/whatsapp-inbound/schemas/broker-contracts';
 
 export class WhatsAppBrokerNotConfiguredError extends Error {
@@ -182,12 +183,29 @@ type BrokerRequestOptions = {
   apiKey?: string;
   timeoutMs?: number;
   searchParams?: Record<string, string | number | undefined>;
+  idempotencyKey?: string;
 };
 
 const compactObject = <T extends Record<string, unknown>>(value: T): T => {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
   ) as T;
+};
+
+type SendMessagePayload = {
+  to: string;
+  content?: string;
+  caption?: string;
+  type?: string;
+  previewUrl?: boolean;
+  externalId?: string;
+  mediaUrl?: string;
+  mediaMimeType?: string;
+  mediaFileName?: string;
+  media?: Record<string, unknown>;
+  location?: Record<string, unknown>;
+  template?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 };
 
 class WhatsAppBrokerClient {
@@ -431,17 +449,100 @@ class WhatsAppBrokerClient {
     };
   }
 
-  private async sendViaBrokerRoutes(
+  private buildDirectMessagePayload(
     instanceId: string,
-    normalizedPayload: BrokerOutboundMessage
-  ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
-    const response = await this.request<Record<string, unknown>>('/broker/messages', {
-      method: 'POST',
-      body: JSON.stringify(normalizedPayload),
+    normalizedPayload: BrokerOutboundMessage,
+    rawPayload: SendMessagePayload
+  ): Record<string, unknown> {
+    const media = rawPayload.media ?? normalizedPayload.media ?? undefined;
+
+    const mediaUrl = (() => {
+      if (typeof rawPayload.mediaUrl === 'string' && rawPayload.mediaUrl.length > 0) {
+        return rawPayload.mediaUrl;
+      }
+      if (media && typeof (media as Record<string, unknown>).url === 'string') {
+        return ((media as Record<string, unknown>).url as string) || undefined;
+      }
+      return undefined;
+    })();
+
+    const mediaMimeType = (() => {
+      if (typeof rawPayload.mediaMimeType === 'string') {
+        const trimmed = rawPayload.mediaMimeType.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+      if (media && typeof (media as Record<string, unknown>).mimetype === 'string') {
+        const trimmed = ((media as Record<string, unknown>).mimetype as string).trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+      return undefined;
+    })();
+
+    const mediaFileName = (() => {
+      if (typeof rawPayload.mediaFileName === 'string') {
+        const trimmed = rawPayload.mediaFileName.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+      if (media && typeof (media as Record<string, unknown>).filename === 'string') {
+        const trimmed = ((media as Record<string, unknown>).filename as string).trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+      return undefined;
+    })();
+
+    const mediaSize = (() => {
+      if (media && typeof media === 'object' && 'size' in media) {
+        const candidate = (media as { size?: unknown }).size;
+        return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : undefined;
+      }
+      return undefined;
+    })();
+
+    const captionCandidate = (() => {
+      if (typeof rawPayload.caption === 'string') {
+        const trimmed = rawPayload.caption.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+
+      if (normalizedPayload.type !== 'text') {
+        const trimmed = normalizedPayload.content.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+
+      return undefined;
+    })();
+
+    return compactObject({
+      sessionId: normalizedPayload.sessionId ?? instanceId,
+      instanceId: normalizedPayload.instanceId ?? instanceId,
+      to: normalizedPayload.to,
+      type: normalizedPayload.type,
+      text: normalizedPayload.content,
+      caption: captionCandidate,
+      mediaUrl,
+      mimeType: mediaMimeType,
+      fileName: mediaFileName,
+      mediaSize,
+      previewUrl: normalizedPayload.previewUrl,
+      externalId: normalizedPayload.externalId,
+      template: normalizedPayload.template,
+      location: normalizedPayload.location,
+      metadata: normalizedPayload.metadata,
     });
+  }
 
-    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
-
+  private buildMessageResult(
+    normalizedPayload: BrokerOutboundMessage,
+    normalizedResponse: BrokerOutboundResponse
+  ): WhatsAppMessageResult & { raw?: Record<string, unknown> | null } {
     const externalId =
       normalizedResponse.externalId ?? normalizedPayload.externalId ?? normalizedResponse.id ?? `msg-${Date.now()}`;
 
@@ -455,16 +556,59 @@ class WhatsAppBrokerClient {
     };
   }
 
+  private async sendViaBrokerRoutes(
+    instanceId: string,
+    normalizedPayload: BrokerOutboundMessage,
+    options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
+  ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
+    try {
+      const response = await this.request<Record<string, unknown>>(
+        `/instances/${encodeURIComponent(instanceId)}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            this.buildDirectMessagePayload(instanceId, normalizedPayload, options.rawPayload)
+          ),
+        },
+        { idempotencyKey: options.idempotencyKey }
+      );
+
+      const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+      return this.buildMessageResult(normalizedPayload, normalizedResponse);
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerError && error.status === 404) {
+        logger.debug('Direct message route unavailable; falling back to broker endpoint', {
+          instanceId,
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    const fallbackResponse = await this.request<Record<string, unknown>>(
+      '/broker/messages',
+      {
+        method: 'POST',
+        body: JSON.stringify(normalizedPayload),
+      },
+      { idempotencyKey: options.idempotencyKey }
+    );
+
+    const normalizedFallback = BrokerOutboundResponseSchema.parse(fallbackResponse);
+    return this.buildMessageResult(normalizedPayload, normalizedFallback);
+  }
+
   private async sendViaInstanceRoutes(
     instanceId: string,
-    normalizedPayload: BrokerOutboundMessage
+    normalizedPayload: BrokerOutboundMessage,
+    options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
     if (normalizedPayload.type !== 'text') {
       logger.warn('Legacy instance routes only support text payloads; falling back to broker dispatch', {
         instanceId,
         type: normalizedPayload.type,
       });
-      return this.sendViaBrokerRoutes(instanceId, normalizedPayload);
+      return this.sendViaBrokerRoutes(instanceId, normalizedPayload, options);
     }
 
     const response = await this.request<Record<string, unknown>>(
@@ -479,7 +623,8 @@ class WhatsAppBrokerClient {
             externalId: normalizedPayload.externalId,
           })
         ),
-      }
+      },
+      { idempotencyKey: options.idempotencyKey }
     );
 
     return this.normalizeLegacyResponse(normalizedPayload, response);
@@ -500,6 +645,9 @@ class WhatsAppBrokerClient {
     }
 
     headers.set('x-api-key', options.apiKey || this.brokerApiKey);
+    if (options.idempotencyKey && !headers.has('Idempotency-Key')) {
+      headers.set('Idempotency-Key', options.idempotencyKey);
+    }
 
     const { signal, cancel } = this.createTimeoutSignal(options.timeoutMs ?? this.timeoutMs);
 
@@ -653,20 +801,57 @@ class WhatsAppBrokerClient {
   async fetchEvents<T = { events: unknown[] }>(
     params: { limit?: number; cursor?: string; instanceId?: string } = {}
   ): Promise<T> {
-    return this.request<T>(
-      '/broker/events',
-      {
-        method: 'GET',
-      },
-      {
-        apiKey: this.webhookApiKey,
-        searchParams: {
-          limit: params.limit,
-          cursor: params.cursor,
-          instanceId: params.instanceId,
-        },
+    const encodedInstanceId = params.instanceId
+      ? encodeURIComponent(params.instanceId)
+      : null;
+
+    const attempts: Array<{ path: string; includeInstanceInQuery: boolean }> = [];
+
+    if (encodedInstanceId) {
+      attempts.push({ path: `/instances/${encodedInstanceId}/events`, includeInstanceInQuery: false });
+    }
+
+    attempts.push({ path: '/instances/events', includeInstanceInQuery: true });
+    attempts.push({ path: '/broker/events', includeInstanceInQuery: true });
+
+    let lastError: unknown;
+
+    for (const attempt of attempts) {
+      const searchParams: Record<string, string | number | undefined> = {
+        limit: params.limit,
+        cursor: params.cursor,
+      };
+
+      if (attempt.includeInstanceInQuery && params.instanceId) {
+        searchParams.instanceId = params.instanceId;
       }
-    );
+
+      try {
+        return await this.request<T>(
+          attempt.path,
+          {
+            method: 'GET',
+          },
+          {
+            apiKey: this.webhookApiKey,
+            searchParams,
+          }
+        );
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError && (error.status === 404 || error.status === 405)) {
+          lastError = error;
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new WhatsAppBrokerError('WhatsApp broker events endpoint unavailable', 'NOT_FOUND', 404);
   }
 
   async ackEvents(payload: { ids: string[]; instanceId?: string }): Promise<void> {
@@ -680,21 +865,60 @@ class WhatsAppBrokerClient {
       return;
     }
 
-    await this.request<void>(
-      '/broker/events/ack',
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            ids,
-            instanceId: payload.instanceId,
-          })
-        ),
-      },
-      {
-        apiKey: this.webhookApiKey,
-      }
+    const encodedInstanceId = payload.instanceId
+      ? encodeURIComponent(payload.instanceId)
+      : null;
+
+    const attempts: Array<{ path: string; bodyType: 'withInstance' | 'withoutInstance' }> = [];
+
+    if (encodedInstanceId) {
+      attempts.push({ path: `/instances/${encodedInstanceId}/events/ack`, bodyType: 'withoutInstance' });
+    }
+
+    attempts.push({ path: '/instances/events/ack', bodyType: 'withInstance' });
+    attempts.push({ path: '/broker/events/ack', bodyType: 'withoutInstance' });
+
+    const bodyWithInstance = JSON.stringify(
+      compactObject({
+        ids,
+        instanceId: payload.instanceId,
+      })
     );
+
+    const bodyWithoutInstance = JSON.stringify({ ids });
+
+    let lastError: unknown;
+
+    for (const attempt of attempts) {
+      const body = attempt.bodyType === 'withInstance' ? bodyWithInstance : bodyWithoutInstance;
+
+      try {
+        await this.request<void>(
+          attempt.path,
+          {
+            method: 'POST',
+            body,
+          },
+          {
+            apiKey: this.webhookApiKey,
+          }
+        );
+        return;
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError && (error.status === 404 || error.status === 405)) {
+          lastError = error;
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new WhatsAppBrokerError('WhatsApp broker ack endpoint unavailable', 'NOT_FOUND', 404);
   }
 
   private pickString(...values: unknown[]): string | null {
@@ -1215,21 +1439,8 @@ class WhatsAppBrokerClient {
 
   async sendMessage(
     instanceId: string,
-    payload: {
-      to: string;
-      content?: string;
-      caption?: string;
-      type?: string;
-      previewUrl?: boolean;
-      externalId?: string;
-      mediaUrl?: string;
-      mediaMimeType?: string;
-      mediaFileName?: string;
-      media?: Record<string, unknown>;
-      location?: Record<string, unknown>;
-      template?: Record<string, unknown>;
-      metadata?: Record<string, unknown>;
-    }
+    payload: SendMessagePayload,
+    idempotencyKey?: string
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
     const contentValue = payload.content ?? payload.caption ?? '';
 
@@ -1257,18 +1468,42 @@ class WhatsAppBrokerClient {
       metadata: payload.metadata,
     });
 
+    const metadataKey = (() => {
+      const candidate = payload.metadata?.['idempotencyKey'];
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      }
+      return undefined;
+    })();
+
+    const normalizedIdempotencyKey = (() => {
+      if (typeof idempotencyKey === 'string') {
+        const trimmed = idempotencyKey.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+      return metadataKey;
+    })();
+
+    const dispatchOptions = {
+      rawPayload: payload,
+      idempotencyKey: normalizedIdempotencyKey,
+    } as const;
+
     const mode = this.deliveryMode;
 
     if (mode === 'broker') {
-      return this.sendViaBrokerRoutes(instanceId, normalizedPayload);
+      return this.sendViaBrokerRoutes(instanceId, normalizedPayload, dispatchOptions);
     }
 
     if (mode === 'instances') {
-      return this.sendViaInstanceRoutes(instanceId, normalizedPayload);
+      return this.sendViaInstanceRoutes(instanceId, normalizedPayload, dispatchOptions);
     }
 
     try {
-      return await this.sendViaBrokerRoutes(instanceId, normalizedPayload);
+      return await this.sendViaBrokerRoutes(instanceId, normalizedPayload, dispatchOptions);
     } catch (error) {
       if (error instanceof WhatsAppBrokerError && this.shouldRetryWithInstanceRoutes(error)) {
         logger.warn('Broker route rejected payload; retrying via legacy instance endpoint', {
@@ -1276,7 +1511,7 @@ class WhatsAppBrokerClient {
           status: error.status,
           code: error.code,
         });
-        return this.sendViaInstanceRoutes(instanceId, normalizedPayload);
+        return this.sendViaInstanceRoutes(instanceId, normalizedPayload, dispatchOptions);
       }
 
       throw error;
