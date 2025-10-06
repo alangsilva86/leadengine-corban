@@ -8,6 +8,7 @@ import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
 import { emitToTenant } from '../../../lib/socket-registry';
+import { normalizeInboundMessage } from '../utils/normalize';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -19,13 +20,31 @@ interface InboundContactDetails {
   name?: string | null;
   document?: string | null;
   registrations?: string[] | null;
+  avatarUrl?: string | null;
+  pushName?: string | null;
 }
 
 interface InboundMessageDetails {
   id?: string | null;
   type?: string | null;
-  text?: string | null;
+  text?: unknown;
   metadata?: Record<string, unknown> | null;
+  conversation?: unknown;
+  extendedTextMessage?: unknown;
+  imageMessage?: unknown;
+  videoMessage?: unknown;
+  audioMessage?: unknown;
+  documentMessage?: unknown;
+  contactsArrayMessage?: unknown;
+  locationMessage?: unknown;
+  templateButtonReplyMessage?: unknown;
+  buttonsResponseMessage?: unknown;
+  stickerMessage?: unknown;
+  key?: {
+    id?: string | null;
+    remoteJid?: string | null;
+  } | null;
+  messageTimestamp?: number | null;
 }
 
 export interface InboundWhatsAppEvent {
@@ -84,6 +103,10 @@ const uniqueStringList = (values?: string[] | null): string[] => {
 };
 
 const shouldSkipByDedupe = (key: string, now: number): boolean => {
+  const lastSeen = dedupeCache.get(key);
+  if (typeof lastSeen === 'number' && now - lastSeen < DEDUPE_WINDOW_MS) {
+    return true;
+  }
   dedupeCache.set(key, now);
   return false;
 };
@@ -114,15 +137,19 @@ const ensureContact = async (
     document,
     registrations,
     timestamp,
+    avatar,
   }: {
     phone?: string;
     name?: string | null;
     document?: string;
     registrations?: string[];
     timestamp?: string | null;
+    avatar?: string | null;
   }
 ) => {
   const interactionDate = timestamp ? new Date(timestamp) : new Date();
+  const interactionTimestamp = interactionDate.getTime();
+  const interactionIso = interactionDate.toISOString();
 
   let contact = null;
 
@@ -175,10 +202,32 @@ const ensureContact = async (
     };
   }
 
+  const parseTimestamp = (value: unknown): number | null => {
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    return null;
+  };
+
+  const currentFirstInbound = parseTimestamp(customFieldsRecord['firstInboundAt']);
+  if (currentFirstInbound === null || interactionTimestamp < currentFirstInbound) {
+    customFieldsRecord['firstInboundAt'] = interactionIso;
+  }
+
+  const currentLastInbound = parseTimestamp(customFieldsRecord['lastInboundAt']);
+  if (currentLastInbound === null || interactionTimestamp >= currentLastInbound) {
+    customFieldsRecord['lastInboundAt'] = interactionIso;
+  }
+
   const contactData = {
     name: name && name.trim().length > 0 ? name.trim() : contact?.name ?? 'Contato WhatsApp',
     phone: phone ?? contact?.phone ?? null,
     document: document ?? contact?.document ?? null,
+    avatar: avatar ?? contact?.avatar ?? null,
     tags,
     customFields: customFieldsRecord as Prisma.InputJsonValue,
     lastInteractionAt: interactionDate,
@@ -242,168 +291,24 @@ const ensureTicketForContact = async (
   }
 };
 
-type NormalizedMessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'DOCUMENT' | 'LOCATION' | 'CONTACT' | 'TEMPLATE';
-
-const resolveMessageContent = (message: InboundMessageDetails): {
-  content: string;
-  type: NormalizedMessageType;
-  mediaUrl?: string;
-} => {
-  const rawType = typeof message.type === 'string' ? message.type.trim().toUpperCase() : 'TEXT';
-  const allowedTypes = new Set([
-    'TEXT',
-    'IMAGE',
-    'AUDIO',
-    'VIDEO',
-    'DOCUMENT',
-    'LOCATION',
-    'CONTACT',
-    'TEMPLATE',
-  ]);
-  const type: NormalizedMessageType = allowedTypes.has(rawType) ? (rawType as NormalizedMessageType) : 'TEXT';
-
-  const extractText = (value: unknown, depth = 0): string | null => {
-    if (value === null || value === undefined) {
-      return null;
-    }
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }
-
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        const extracted = extractText(entry, depth + 1);
-        if (extracted) {
-          return extracted;
-        }
-      }
-      return null;
-    }
-
-    if (typeof value === 'object' && value !== null) {
-      const record = value as Record<string, unknown>;
-      const candidateKeys = [
-        'text',
-        'body',
-        'caption',
-        'message',
-        'conversation',
-        'content',
-        'value',
-        'description',
-        'title',
-      ];
-
-      for (const key of candidateKeys) {
-        if (key in record) {
-          const extracted = extractText(record[key], depth + 1);
-          if (extracted) {
-            return extracted;
-          }
-        }
-      }
-
-      const nestedCandidates = ['data', 'payload', 'context', 'message', 'preview'];
-      for (const key of nestedCandidates) {
-        if (key in record) {
-          const extracted = extractText(record[key], depth + 1);
-          if (extracted) {
-            return extracted;
-          }
-        }
-      }
-    }
-
-    return null;
-  };
-
-  const extractMediaUrl = (value: unknown, depth = 0): string | null => {
-    if (!value) {
-      return null;
-    }
-
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }
-
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        const extracted = extractMediaUrl(entry, depth + 1);
-        if (extracted) {
-          return extracted;
-        }
-      }
-      return null;
-    }
-
-    if (typeof value === 'object') {
-      const record = value as Record<string, unknown>;
-      const candidateKeys = [
-        'mediaUrl',
-        'url',
-        'link',
-        'href',
-        'downloadUrl',
-      ];
-
-      for (const key of candidateKeys) {
-        if (typeof record[key] === 'string') {
-          const extracted = extractMediaUrl(record[key], depth + 1);
-          if (extracted) {
-            return extracted;
-          }
-        }
-      }
-
-      const nestedCandidates = ['image', 'video', 'audio', 'document', 'sticker', 'media'];
-      for (const key of nestedCandidates) {
-        if (key in record) {
-          const extracted = extractMediaUrl(record[key], depth + 1);
-          if (extracted) {
-            return extracted;
-          }
-        }
-      }
-    }
-
-    return null;
-  };
-
-  const content =
-    extractText(message.text) ||
-    extractText(message) ||
-    '[Mensagem recebida via WhatsApp]';
-
-  const metadataRecord = (message.metadata && typeof message.metadata === 'object'
-    ? (message.metadata as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
-
-  const mediaCandidate =
-    extractMediaUrl(metadataRecord) ||
-    extractMediaUrl((message as Record<string, unknown>).mediaUrl) ||
-    extractMediaUrl(message);
-
-  const mediaUrl = typeof mediaCandidate === 'string' ? mediaCandidate : undefined;
-
-  return {
-    content,
-    type,
-    mediaUrl,
-  };
-};
-
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
   const { instanceId, contact, message, timestamp } = event;
   const normalizedPhone = sanitizePhone(contact.phone);
   const document = sanitizeDocument(contact.document, normalizedPhone);
   const now = Date.now();
+  const metadataRecord = (event.metadata && typeof event.metadata === 'object'
+    ? (event.metadata as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+  const metadataContact = (metadataRecord.contact && typeof metadataRecord.contact === 'object'
+    ? (metadataRecord.contact as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+  const resolvedAvatar = [
+    contact.avatarUrl,
+    metadataContact.avatarUrl,
+    metadataContact.profilePicUrl,
+    metadataContact.profilePicture,
+  ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  const resolvedName = contact.name ?? (typeof metadataContact.pushName === 'string' ? metadataContact.pushName : null);
 
   logger.info('Processing inbound WhatsApp message', {
     instanceId,
@@ -462,10 +367,11 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const contactRecord = await ensureContact(tenantId, {
     phone: normalizedPhone,
-    name: leadName,
+    name: resolvedName ?? leadName,
     document,
     registrations,
     timestamp,
+    avatar: resolvedAvatar ?? null,
   });
 
   const ticketMetadata: Record<string, unknown> = {
@@ -493,25 +399,65 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     return;
   }
 
-  const normalizedMessage = resolveMessageContent(message);
+  const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
+
+  const dedupeKey = `${tenantId}:${normalizedMessage.id}`;
+  if (shouldSkipByDedupe(dedupeKey, now)) {
+    logger.info('Inbound message skipped due to dedupe window', {
+      tenantId,
+      ticketId,
+      brokerMessageId: normalizedMessage.id,
+    });
+    return;
+  }
+
+  const brokerTimestamp = normalizedMessage.brokerMessageTimestamp;
+  const normalizedTimestamp = (() => {
+    if (typeof brokerTimestamp === 'number') {
+      return brokerTimestamp > 1_000_000_000_000 ? brokerTimestamp : brokerTimestamp * 1000;
+    }
+    if (timestamp) {
+      const parsed = Date.parse(timestamp);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  })();
 
   try {
     await sendMessageService(tenantId, undefined, {
       ticketId,
-      content: normalizedMessage.content,
+      content: normalizedMessage.text,
       type: normalizedMessage.type,
-      mediaUrl: normalizedMessage.mediaUrl,
+      mediaUrl: normalizedMessage.mediaUrl ?? undefined,
       metadata: {
-        brokerMessageId: message.id ?? null,
-        instanceId,
-        campaignIds: campaigns.map((campaign) => campaign.id),
-        contact: {
-          phone: contactRecord.phone,
-          document: contactRecord.document,
-          name: contactRecord.name,
+        broker: {
+          messageId: normalizedMessage.id,
+          clientMessageId: normalizedMessage.clientMessageId,
+          conversationId: normalizedMessage.conversationId,
+          instanceId,
+          campaignIds: campaigns.map((campaign) => campaign.id),
         },
-        raw: message,
+        media: normalizedMessage.mediaUrl
+          ? {
+              url: normalizedMessage.mediaUrl,
+              mimetype: normalizedMessage.mimetype,
+              caption: normalizedMessage.caption,
+              size: normalizedMessage.fileSize,
+            }
+          : undefined,
+        location: normalizedMessage.latitude || normalizedMessage.longitude
+          ? {
+              latitude: normalizedMessage.latitude,
+              longitude: normalizedMessage.longitude,
+              name: normalizedMessage.locationName,
+            }
+          : undefined,
+        contacts: normalizedMessage.contacts ?? undefined,
+        raw: normalizedMessage.raw,
         eventMetadata: event.metadata ?? {},
+        receivedAt: normalizedMessage.receivedAt,
+        brokerMessageTimestamp: normalizedMessage.brokerMessageTimestamp,
+        normalizedTimestamp,
       },
     });
   } catch (error) {

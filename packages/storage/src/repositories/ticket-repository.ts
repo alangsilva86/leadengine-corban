@@ -388,6 +388,34 @@ export const createMessage = async (
 
   const bucket = getMessageBucket(tenantId);
   const now = new Date();
+  const metadataRecord = (input.metadata ?? {}) as Record<string, unknown>;
+  const resolveTimestamp = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 1_000_000_000_000 ? value : value * 1000;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric)) {
+        return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+      }
+      const parsed = Date.parse(trimmed);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  };
+
+  const normalizedTs = resolveTimestamp(metadataRecord['normalizedTimestamp']);
+  const brokerTs = resolveTimestamp(metadataRecord['brokerMessageTimestamp']);
+  const receivedTs = resolveTimestamp(metadataRecord['receivedAt']);
+  const createdAtCandidate = normalizedTs ?? brokerTs ?? receivedTs;
+  const createdAt = createdAtCandidate ? new Date(createdAtCandidate) : now;
+  const createdAtTime = createdAt.getTime();
+  const metadataCopy = { ...metadataRecord } as Record<string, unknown>;
+
   const record: MessageRecord = {
     id: randomUUID(),
     tenantId,
@@ -403,18 +431,64 @@ export const createMessage = async (
     status: input.status ?? 'SENT',
     externalId: undefined,
     quotedMessageId: input.quotedMessageId,
-    metadata: { ...(input.metadata ?? {}) },
+    metadata: metadataCopy,
     deliveredAt: undefined,
     readAt: undefined,
-    createdAt: now,
-    updatedAt: now,
+    createdAt,
+    updatedAt: createdAt,
   };
 
   bucket.set(record.id, record);
 
-  ticket.lastMessageAt = now;
-  ticket.lastMessagePreview = record.content.slice(0, 280);
-  ticket.updatedAt = now;
+  const ticketMetadata =
+    typeof ticket.metadata === 'object' && ticket.metadata !== null
+      ? ({ ...(ticket.metadata as Record<string, unknown>) } as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  const timelineSource =
+    typeof ticketMetadata['timeline'] === 'object' && ticketMetadata['timeline'] !== null
+      ? ({ ...(ticketMetadata['timeline'] as Record<string, unknown>) } as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  const timestampIso = createdAt.toISOString();
+  const ensureMin = (key: 'firstInboundAt' | 'firstOutboundAt') => {
+    const currentValue = resolveTimestamp(timelineSource[key]);
+    if (currentValue === null || createdAtTime < currentValue) {
+      timelineSource[key] = timestampIso;
+    }
+  };
+
+  const ensureMax = (key: 'lastInboundAt' | 'lastOutboundAt') => {
+    const currentValue = resolveTimestamp(timelineSource[key]);
+    if (currentValue === null || createdAtTime >= currentValue) {
+      timelineSource[key] = timestampIso;
+    }
+  };
+
+  if (record.direction === 'INBOUND') {
+    ensureMin('firstInboundAt');
+    ensureMax('lastInboundAt');
+  } else {
+    ensureMin('firstOutboundAt');
+    ensureMax('lastOutboundAt');
+  }
+
+  if (Object.keys(timelineSource).length > 0) {
+    ticketMetadata['timeline'] = timelineSource;
+  }
+
+  ticket.metadata = ticketMetadata as Ticket['metadata'];
+
+  if (!ticket.lastMessageAt || createdAt > ticket.lastMessageAt) {
+    ticket.lastMessageAt = createdAt;
+    ticket.lastMessagePreview = record.content.slice(0, 280);
+  }
+
+  if (!ticket.updatedAt || createdAt > ticket.updatedAt) {
+    ticket.updatedAt = createdAt;
+  }
+
+  ticketsBucket.set(ticketId, ticket);
 
   return toMessage(record);
 };
