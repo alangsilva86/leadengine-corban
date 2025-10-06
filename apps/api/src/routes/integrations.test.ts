@@ -2,6 +2,7 @@ import express from 'express';
 import type { Request } from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
+import { Prisma } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { errorHandler } from '../middleware/error-handler';
@@ -46,6 +47,12 @@ const prismaMock = {
 
 vi.mock('../lib/prisma', () => ({
   prisma: prismaMock,
+}));
+
+const emitToTenantMock = vi.fn();
+
+vi.mock('../lib/socket-registry', () => ({
+  emitToTenant: emitToTenantMock,
 }));
 
 const prismaModelKeys = [
@@ -116,6 +123,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   restoreWhatsAppEnv();
   resetPrismaMocks();
+  emitToTenantMock.mockReset();
 });
 
 const startTestServer = async ({
@@ -242,6 +250,41 @@ describe('WhatsApp integration routes when broker is not configured', () => {
         success: true,
         data: expect.objectContaining({ id: 'created-instance', status: 'disconnected' }),
       });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('responds with 400 when Prisma rejects WhatsApp instance payload', async () => {
+    const { server, url } = await startTestServer();
+    const { prisma } = await import('../lib/prisma');
+
+    const validationError = Object.create(Prisma.PrismaClientValidationError.prototype);
+    validationError.message = 'Invalid data';
+
+    prisma.whatsAppInstance.create.mockRejectedValue(validationError);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ name: 'Invalid Instance' }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body).toMatchObject({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_PAYLOAD',
+          message: expect.stringContaining('Não foi possível criar a instância WhatsApp'),
+        },
+      });
+      expect(emitToTenantMock).not.toHaveBeenCalled();
     } finally {
       await stopTestServer(server);
     }
@@ -573,7 +616,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           tenantId: 'tenant-123',
           name: 'Created Instance',
           brokerId: 'created-instance',
-          status: 'disconnected',
+          status: 'pending',
           connected: false,
           metadata: expect.objectContaining({
             displayId: 'created-instance',
@@ -657,7 +700,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           tenantId: 'tenant-123',
           name: 'Created Instance',
           brokerId: 'created-instance-2',
-          status: 'disconnected',
+          status: 'pending',
           connected: false,
           metadata: expect.objectContaining({
             displayId: 'created-instance-2',
