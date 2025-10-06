@@ -702,20 +702,57 @@ class WhatsAppBrokerClient {
   async fetchEvents<T = { events: unknown[] }>(
     params: { limit?: number; cursor?: string; instanceId?: string } = {}
   ): Promise<T> {
-    return this.request<T>(
-      '/broker/events',
-      {
-        method: 'GET',
-      },
-      {
-        apiKey: this.webhookApiKey,
-        searchParams: {
-          limit: params.limit,
-          cursor: params.cursor,
-          instanceId: params.instanceId,
-        },
+    const encodedInstanceId = params.instanceId
+      ? encodeURIComponent(params.instanceId)
+      : null;
+
+    const attempts: Array<{ path: string; includeInstanceInQuery: boolean }> = [];
+
+    if (encodedInstanceId) {
+      attempts.push({ path: `/instances/${encodedInstanceId}/events`, includeInstanceInQuery: false });
+    }
+
+    attempts.push({ path: '/instances/events', includeInstanceInQuery: true });
+    attempts.push({ path: '/broker/events', includeInstanceInQuery: true });
+
+    let lastError: unknown;
+
+    for (const attempt of attempts) {
+      const searchParams: Record<string, string | number | undefined> = {
+        limit: params.limit,
+        cursor: params.cursor,
+      };
+
+      if (attempt.includeInstanceInQuery && params.instanceId) {
+        searchParams.instanceId = params.instanceId;
       }
-    );
+
+      try {
+        return await this.request<T>(
+          attempt.path,
+          {
+            method: 'GET',
+          },
+          {
+            apiKey: this.webhookApiKey,
+            searchParams,
+          }
+        );
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError && (error.status === 404 || error.status === 405)) {
+          lastError = error;
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new WhatsAppBrokerError('WhatsApp broker events endpoint unavailable', 'NOT_FOUND', 404);
   }
 
   async ackEvents(payload: { ids: string[]; instanceId?: string }): Promise<void> {
@@ -729,21 +766,60 @@ class WhatsAppBrokerClient {
       return;
     }
 
-    await this.request<void>(
-      '/broker/events/ack',
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            ids,
-            instanceId: payload.instanceId,
-          })
-        ),
-      },
-      {
-        apiKey: this.webhookApiKey,
-      }
+    const encodedInstanceId = payload.instanceId
+      ? encodeURIComponent(payload.instanceId)
+      : null;
+
+    const attempts: Array<{ path: string; bodyType: 'withInstance' | 'withoutInstance' }> = [];
+
+    if (encodedInstanceId) {
+      attempts.push({ path: `/instances/${encodedInstanceId}/events/ack`, bodyType: 'withoutInstance' });
+    }
+
+    attempts.push({ path: '/instances/events/ack', bodyType: 'withInstance' });
+    attempts.push({ path: '/broker/events/ack', bodyType: 'withoutInstance' });
+
+    const bodyWithInstance = JSON.stringify(
+      compactObject({
+        ids,
+        instanceId: payload.instanceId,
+      })
     );
+
+    const bodyWithoutInstance = JSON.stringify({ ids });
+
+    let lastError: unknown;
+
+    for (const attempt of attempts) {
+      const body = attempt.bodyType === 'withInstance' ? bodyWithInstance : bodyWithoutInstance;
+
+      try {
+        await this.request<void>(
+          attempt.path,
+          {
+            method: 'POST',
+            body,
+          },
+          {
+            apiKey: this.webhookApiKey,
+          }
+        );
+        return;
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError && (error.status === 404 || error.status === 405)) {
+          lastError = error;
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    throw new WhatsAppBrokerError('WhatsApp broker ack endpoint unavailable', 'NOT_FOUND', 404);
   }
 
   private pickString(...values: unknown[]): string | null {

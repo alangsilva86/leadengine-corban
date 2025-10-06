@@ -209,5 +209,74 @@ describe('WhatsAppBrokerClient', () => {
     expect(result.externalId).toBe('wamid-654');
     expect(result.status).toBe('QUEUED');
   });
+
+  it('prefers direct instance event routes and falls back gracefully', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'NOT_FOUND' } }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ events: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+    await whatsappBrokerClient.fetchEvents({ instanceId: 'instance-71', limit: 25, cursor: 'cur-01' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const firstUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(firstUrl.pathname).toBe('/instances/instance-71/events');
+
+    const secondUrl = new URL(fetchMock.mock.calls[1][0] as string);
+    expect(secondUrl.pathname).toBe('/instances/events');
+    expect(secondUrl.searchParams.get('instanceId')).toBe('instance-71');
+    expect(secondUrl.searchParams.get('limit')).toBe('25');
+    expect(secondUrl.searchParams.get('cursor')).toBe('cur-01');
+  });
+
+  it('acknowledges events using direct routes with instance fallback to broker', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'NOT_FOUND' } }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'NOT_FOUND' } }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.ackEvents({ ids: ['evt-1', 'evt-2'], instanceId: 'instance-91' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const firstAckUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(firstAckUrl.pathname).toBe('/instances/instance-91/events/ack');
+
+    const secondAckUrl = new URL(fetchMock.mock.calls[1][0] as string);
+    expect(secondAckUrl.pathname).toBe('/instances/events/ack');
+    const secondBody = fetchMock.mock.calls[1][1]?.body as string;
+    expect(JSON.parse(secondBody)).toEqual({ ids: ['evt-1', 'evt-2'], instanceId: 'instance-91' });
+
+    const thirdAckUrl = new URL(fetchMock.mock.calls[2][0] as string);
+    expect(thirdAckUrl.pathname).toBe('/broker/events/ack');
+    const thirdBody = fetchMock.mock.calls[2][1]?.body as string;
+    expect(JSON.parse(thirdBody)).toEqual({ ids: ['evt-1', 'evt-2'] });
+  });
 });
 
