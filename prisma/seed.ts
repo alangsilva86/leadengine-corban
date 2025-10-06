@@ -185,8 +185,50 @@ async function main() {
       brokerId: 'demo-whatsapp',
       status: 'connected',
       connected: true,
+      phoneNumber: '+5511987654321',
       metadata: {
         note: 'Instância demo criada pelo seed',
+        displayId: 'demo-whatsapp',
+        slug: 'demo-whatsapp',
+        history: [
+          {
+            action: 'seed-sync',
+            by: 'seed-script',
+            at: new Date().toISOString(),
+            status: 'connected',
+            connected: true,
+            metrics: {
+              messagesSent: 128,
+              queued: 2,
+              failed: 0,
+            },
+          },
+        ],
+        lastBrokerSnapshot: {
+          status: 'connected',
+          connected: true,
+          phoneNumber: '+5511987654321',
+          metrics: {
+            messagesSent: 128,
+            queued: 2,
+            failed: 0,
+          },
+          stats: {
+            totalSent: 128,
+            queued: 2,
+            failed: 0,
+          },
+          rate: {
+            limit: 100,
+            remaining: 95,
+            resetAt: new Date().toISOString(),
+          },
+          rateUsage: {
+            limit: 100,
+            used: 5,
+          },
+          qr: null,
+        },
       },
     },
     create: {
@@ -196,8 +238,50 @@ async function main() {
       brokerId: 'demo-whatsapp',
       status: 'connected',
       connected: true,
+      phoneNumber: '+5511987654321',
       metadata: {
         note: 'Instância demo criada pelo seed',
+        displayId: 'demo-whatsapp',
+        slug: 'demo-whatsapp',
+        history: [
+          {
+            action: 'seed-create',
+            by: 'seed-script',
+            at: new Date().toISOString(),
+            status: 'connected',
+            connected: true,
+            metrics: {
+              messagesSent: 128,
+              queued: 2,
+              failed: 0,
+            },
+          },
+        ],
+        lastBrokerSnapshot: {
+          status: 'connected',
+          connected: true,
+          phoneNumber: '+5511987654321',
+          metrics: {
+            messagesSent: 128,
+            queued: 2,
+            failed: 0,
+          },
+          stats: {
+            totalSent: 128,
+            queued: 2,
+            failed: 0,
+          },
+          rate: {
+            limit: 100,
+            remaining: 95,
+            resetAt: new Date().toISOString(),
+          },
+          rateUsage: {
+            limit: 100,
+            used: 5,
+          },
+          qr: null,
+        },
       },
     },
   });
