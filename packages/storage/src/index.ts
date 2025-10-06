@@ -34,5 +34,6 @@ export {
   closeTicket,
   listTickets,
   createMessage,
+  updateMessage,
   listMessages,
 } from './repositories/ticket-repository';

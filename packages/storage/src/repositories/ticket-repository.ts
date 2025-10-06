@@ -445,3 +445,53 @@ export const listMessages = async (
     hasPrev: normalizedPagination.page > 1 && total > 0,
   };
 };
+
+export const updateMessage = async (
+  tenantId: string,
+  messageId: string,
+  updates: {
+    status?: Message['status'];
+    externalId?: string | null;
+    metadata?: Record<string, unknown> | null;
+    deliveredAt?: Date | null;
+    readAt?: Date | null;
+  }
+): Promise<Message | null> => {
+  const bucket = getMessageBucket(tenantId);
+  const record = bucket.get(messageId);
+
+  if (!record) {
+    return null;
+  }
+
+  if (typeof updates.status === 'string') {
+    record.status = updates.status;
+  }
+
+  if (updates.externalId !== undefined) {
+    record.externalId = updates.externalId ?? undefined;
+  }
+
+  if (updates.metadata !== undefined) {
+    const currentMetadata = typeof record.metadata === 'object' && record.metadata !== null ? record.metadata : {};
+    const nextMetadata = updates.metadata ?? {};
+    record.metadata = {
+      ...currentMetadata,
+      ...nextMetadata,
+    } as Record<string, unknown>;
+  }
+
+  if (updates.deliveredAt !== undefined) {
+    record.deliveredAt = updates.deliveredAt ?? undefined;
+  }
+
+  if (updates.readAt !== undefined) {
+    record.readAt = updates.readAt ?? undefined;
+  }
+
+  record.updatedAt = new Date();
+
+  bucket.set(record.id, record);
+
+  return toMessage(record);
+};

@@ -21,6 +21,7 @@ import {
   findTicketsByContact,
   listMessages as storageListMessages,
   listTickets as storageListTickets,
+  updateMessage as storageUpdateMessage,
   updateTicket as storageUpdateTicket,
 } from '@ticketz/storage';
 import { emitToTenant, emitToTicket, emitToUser } from '../lib/socket-registry';
@@ -32,6 +33,7 @@ import {
   type TicketNoteVisibility,
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
+import { whatsappBrokerClient } from './whatsapp-broker-client';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
@@ -125,6 +127,52 @@ const emitTicketEvent = (
   emitToTicket(ticketId, event, payload);
   if (userId) {
     emitToUser(userId, event, payload);
+  }
+};
+
+const resolveWhatsAppInstanceId = (ticket: Ticket | null | undefined): string | null => {
+  if (!ticket || !ticket.metadata || typeof ticket.metadata !== 'object') {
+    return null;
+  }
+
+  const metadata = ticket.metadata as Record<string, unknown>;
+  const directCandidates = [
+    metadata['whatsappInstanceId'],
+    metadata['instanceId'],
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  const whatsappRecord = metadata['whatsapp'];
+  if (whatsappRecord && typeof whatsappRecord === 'object') {
+    const instanceId = (whatsappRecord as Record<string, unknown>)['instanceId'];
+    if (typeof instanceId === 'string' && instanceId.trim().length > 0) {
+      return instanceId.trim();
+    }
+  }
+
+  return null;
+};
+
+const normalizeBrokerStatus = (status: string | undefined): Message['status'] => {
+  const normalized = (status || '').trim().toUpperCase();
+  switch (normalized) {
+    case 'DELIVERED':
+      return 'DELIVERED';
+    case 'READ':
+    case 'SEEN':
+      return 'READ';
+    case 'FAILED':
+    case 'ERROR':
+      return 'FAILED';
+    case 'PENDING':
+      return 'PENDING';
+    default:
+      return 'SENT';
   }
 };
 
@@ -790,15 +838,107 @@ export const sendMessage = async (
   userId: string | undefined,
   input: SendMessageDTO
 ): Promise<Message> => {
-  const message = await storageCreateMessage(tenantId, input.ticketId, {
+  const ticket = await storageFindTicketById(tenantId, input.ticketId);
+
+  if (!ticket) {
+    throw new NotFoundError('Ticket', input.ticketId);
+  }
+
+  const messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
     ...input,
     direction: userId ? 'OUTBOUND' : 'INBOUND',
     userId,
     status: 'SENT',
   });
 
-  if (!message) {
+  if (!messageRecord) {
     throw new NotFoundError('Ticket', input.ticketId);
+  }
+
+  let message = messageRecord;
+
+  const markAsFailed = async (reason: string) => {
+    const metadata = {
+      ...(message.metadata ?? {}),
+      broker: {
+        provider: 'whatsapp',
+        instanceId: resolveWhatsAppInstanceId(ticket),
+        error: reason,
+        failedAt: new Date().toISOString(),
+      },
+    } as Record<string, unknown>;
+
+    const failed = await storageUpdateMessage(tenantId, message.id, {
+      status: 'FAILED',
+      metadata,
+    });
+
+    if (failed) {
+      message = failed;
+    }
+  };
+
+  if (userId && ticket.channel === 'WHATSAPP') {
+    const instanceId = resolveWhatsAppInstanceId(ticket);
+
+    if (!instanceId) {
+      logger.warn('Unable to send WhatsApp message: instanceId missing from ticket metadata', {
+        tenantId,
+        ticketId: ticket.id,
+      });
+      await markAsFailed('whatsapp_instance_missing');
+    } else {
+      const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
+      const phone = (contact?.phone ?? '').trim();
+
+      if (!phone) {
+        logger.warn('Unable to send WhatsApp message: contact phone missing', {
+          tenantId,
+          ticketId: ticket.id,
+          contactId: ticket.contactId,
+        });
+        await markAsFailed('contact_phone_missing');
+      } else {
+        try {
+          const brokerResult = await whatsappBrokerClient.sendMessage(instanceId, {
+            to: phone,
+            content: input.content,
+            type: input.type,
+            externalId: message.id,
+          });
+
+          const metadata = {
+            ...(message.metadata ?? {}),
+            broker: {
+              provider: 'whatsapp',
+              instanceId,
+              externalId: brokerResult.externalId,
+              status: brokerResult.status,
+              dispatchedAt: brokerResult.timestamp,
+            },
+          } as Record<string, unknown>;
+
+          const updated = await storageUpdateMessage(tenantId, message.id, {
+            status: normalizeBrokerStatus(brokerResult.status),
+            externalId: brokerResult.externalId,
+            metadata,
+          });
+
+          if (updated) {
+            message = updated;
+          }
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : 'unknown_error';
+          logger.error('Failed to dispatch WhatsApp message via broker', {
+            tenantId,
+            ticketId: ticket.id,
+            messageId: message.id,
+            error: reason,
+          });
+          await markAsFailed(reason);
+        }
+      }
+    }
   }
 
   emitTicketEvent(tenantId, input.ticketId, 'ticket.message', message, userId ?? null);
@@ -815,9 +955,9 @@ export const sendMessage = async (
     userId ?? null
   );
 
-  const ticket = await storageFindTicketById(tenantId, input.ticketId);
-  if (ticket) {
-    emitTicketEvent(tenantId, ticket.id, 'ticket.updated', ticket, ticket.userId ?? null);
+  const refreshedTicket = await storageFindTicketById(tenantId, input.ticketId);
+  if (refreshedTicket) {
+    emitTicketEvent(tenantId, refreshedTicket.id, 'ticket.updated', refreshedTicket, refreshedTicket.userId ?? null);
   }
 
   return message;

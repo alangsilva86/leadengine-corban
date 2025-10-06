@@ -262,21 +262,117 @@ const resolveMessageContent = (message: InboundMessageDetails): {
   ]);
   const type: NormalizedMessageType = allowedTypes.has(rawType) ? (rawType as NormalizedMessageType) : 'TEXT';
 
-  const extractText = (value: unknown): string | null => {
-    if (!value) return null;
+  const extractText = (value: unknown, depth = 0): string | null => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
     if (typeof value === 'string') {
       const trimmed = value.trim();
       return trimmed.length > 0 ? trimmed : null;
     }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const extracted = extractText(entry, depth + 1);
+        if (extracted) {
+          return extracted;
+        }
+      }
+      return null;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      const record = value as Record<string, unknown>;
+      const candidateKeys = [
+        'text',
+        'body',
+        'caption',
+        'message',
+        'conversation',
+        'content',
+        'value',
+        'description',
+        'title',
+      ];
+
+      for (const key of candidateKeys) {
+        if (key in record) {
+          const extracted = extractText(record[key], depth + 1);
+          if (extracted) {
+            return extracted;
+          }
+        }
+      }
+
+      const nestedCandidates = ['data', 'payload', 'context', 'message', 'preview'];
+      for (const key of nestedCandidates) {
+        if (key in record) {
+          const extracted = extractText(record[key], depth + 1);
+          if (extracted) {
+            return extracted;
+          }
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const extractMediaUrl = (value: unknown, depth = 0): string | null => {
+    if (!value) {
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const extracted = extractMediaUrl(entry, depth + 1);
+        if (extracted) {
+          return extracted;
+        }
+      }
+      return null;
+    }
+
     if (typeof value === 'object') {
       const record = value as Record<string, unknown>;
-      return (
-        extractText(record.text) ||
-        extractText(record.body) ||
-        extractText(record.caption) ||
-        extractText(record.message)
-      );
+      const candidateKeys = [
+        'mediaUrl',
+        'url',
+        'link',
+        'href',
+        'downloadUrl',
+      ];
+
+      for (const key of candidateKeys) {
+        if (typeof record[key] === 'string') {
+          const extracted = extractMediaUrl(record[key], depth + 1);
+          if (extracted) {
+            return extracted;
+          }
+        }
+      }
+
+      const nestedCandidates = ['image', 'video', 'audio', 'document', 'sticker', 'media'];
+      for (const key of nestedCandidates) {
+        if (key in record) {
+          const extracted = extractMediaUrl(record[key], depth + 1);
+          if (extracted) {
+            return extracted;
+          }
+        }
+      }
     }
+
     return null;
   };
 
@@ -288,7 +384,12 @@ const resolveMessageContent = (message: InboundMessageDetails): {
   const metadataRecord = (message.metadata && typeof message.metadata === 'object'
     ? (message.metadata as Record<string, unknown>)
     : {}) as Record<string, unknown>;
-  const mediaCandidate = metadataRecord.url ?? metadataRecord.mediaUrl ?? (message as Record<string, unknown>).mediaUrl;
+
+  const mediaCandidate =
+    extractMediaUrl(metadataRecord) ||
+    extractMediaUrl((message as Record<string, unknown>).mediaUrl) ||
+    extractMediaUrl(message);
+
   const mediaUrl = typeof mediaCandidate === 'string' ? mediaCandidate : undefined;
 
   return {
