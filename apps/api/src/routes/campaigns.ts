@@ -339,6 +339,38 @@ router.post(
       });
     }
 
+    const actorId = req.user?.id ?? 'system';
+    const normalizedName = providedName || `${agreementName.trim()} • ${instanceId}`;
+    const slug = toSlug(normalizedName, '');
+    const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
+
+    const metadataBase: Record<string, unknown> = slug ? { slug } : {};
+    if (typeof budget === 'number') {
+      metadataBase.budget = budget;
+    }
+    if (typeof cplTarget === 'number') {
+      metadataBase.cplTarget = cplTarget;
+    }
+
+    const buildCreationMetadata = (
+      extraEntries: ReturnType<typeof buildCampaignHistoryEntry>[] = []
+    ): Prisma.JsonObject => {
+      const entries = [
+        buildCampaignHistoryEntry('created', actorId, {
+          status: requestedStatus,
+          instanceId: instance.id,
+        }),
+        ...extraEntries,
+      ];
+
+      let metadata: CampaignMetadata = metadataBase;
+      for (const entry of entries) {
+        metadata = appendCampaignHistory(metadata, entry);
+      }
+
+      return metadata as Prisma.JsonObject;
+    };
+
     const existingCampaign = await prisma.campaign.findFirst({
       where: {
         tenantId,
@@ -353,30 +385,102 @@ router.post(
       },
     });
 
+    let creationExtras: ReturnType<typeof buildCampaignHistoryEntry>[] | null = null;
+
     if (existingCampaign) {
-      logger.info('Campaign reused for instance', {
-        tenantId,
-        agreementId,
-        instanceId: instance.id,
-        campaignId: existingCampaign.id,
-      });
+      const currentStatus = normalizeStatus(existingCampaign.status) ?? 'draft';
 
-      res.json({ success: true, data: buildCampaignResponse(existingCampaign) });
-      return;
+      if (currentStatus === 'ended') {
+        creationExtras = [
+          buildCampaignHistoryEntry('reactivated', actorId, {
+            previousCampaignId: existingCampaign.id,
+            from: currentStatus,
+            to: requestedStatus,
+          }),
+        ];
+      } else if (currentStatus !== requestedStatus) {
+        if (!canTransition(currentStatus, requestedStatus)) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: 'INVALID_CAMPAIGN_TRANSITION',
+              message: `Transição de ${currentStatus} para ${requestedStatus} não permitida.`,
+            },
+          });
+          return;
+        }
+
+        let metadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
+        metadata = appendCampaignHistory(
+          metadata,
+          buildCampaignHistoryEntry('status-changed', actorId, {
+            from: currentStatus,
+            to: requestedStatus,
+          })
+        );
+
+        if (requestedStatus === 'ended') {
+          metadata = appendCampaignHistory(
+            metadata,
+            buildCampaignHistoryEntry('status-ended', actorId, {
+              from: currentStatus,
+            })
+          );
+        }
+
+        if (requestedStatus === 'active' && currentStatus !== 'active') {
+          metadata = appendCampaignHistory(
+            metadata,
+            buildCampaignHistoryEntry('reactivated', actorId, {
+              from: currentStatus,
+              to: requestedStatus,
+            })
+          );
+        }
+
+        const updatedCampaign = await prisma.campaign.update({
+          where: { id: existingCampaign.id },
+          data: {
+            status: requestedStatus,
+            metadata,
+          },
+          include: {
+            whatsappInstance: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        });
+
+        logger.info('Campaign status updated via POST /campaigns', {
+          tenantId,
+          agreementId,
+          instanceId: instance.id,
+          campaignId: existingCampaign.id,
+          fromStatus: currentStatus,
+          toStatus: requestedStatus,
+        });
+
+        res.json({ success: true, data: buildCampaignResponse(updatedCampaign) });
+        return;
+      } else {
+        logger.info('Campaign reused for instance', {
+          tenantId,
+          agreementId,
+          instanceId: instance.id,
+          campaignId: existingCampaign.id,
+          status: existingCampaign.status,
+          requestedStatus,
+        });
+
+        res.json({ success: true, data: buildCampaignResponse(existingCampaign) });
+        return;
+      }
     }
 
-    const normalizedName = providedName || `${agreementName.trim()} • ${instanceId}`;
-    const slug = toSlug(normalizedName, '');
-
-    const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
-
-    const metadataBase: Record<string, unknown> = slug ? { slug } : {};
-    if (typeof budget === 'number') {
-      metadataBase.budget = budget;
-    }
-    if (typeof cplTarget === 'number') {
-      metadataBase.cplTarget = cplTarget;
-    }
+    const creationMetadata = buildCreationMetadata(creationExtras ?? []);
 
     let campaign;
     try {
@@ -388,13 +492,7 @@ router.post(
           agreementName: agreementName.trim(),
           whatsappInstanceId: instance.id,
           status: requestedStatus,
-          metadata: appendCampaignHistory(
-            metadataBase,
-            buildCampaignHistoryEntry('created', req.user?.id ?? 'system', {
-              status: requestedStatus,
-              instanceId: instance.id,
-            })
-          ),
+          metadata: creationMetadata,
         },
         include: {
           whatsappInstance: {
@@ -431,11 +529,12 @@ router.post(
       throw error;
     }
 
-    logger.info('Campaign created', {
+    logger.info(creationExtras ? 'Campaign recreated after ended' : 'Campaign created', {
       tenantId,
       campaignId: campaign.id,
       instanceId,
       status: campaign.status,
+      previousCampaignId: creationExtras ? existingCampaign?.id ?? null : null,
     });
 
     res.status(201).json({
