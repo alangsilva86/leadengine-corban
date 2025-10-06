@@ -17,6 +17,7 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
+  const fallbackAttemptedRef = useRef(false);
 
   useEffect(() => {
     if (!enabled || !tenantId) {
@@ -24,6 +25,7 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
     }
 
     let isMounted = true;
+    fallbackAttemptedRef.current = false;
 
     const connect = async () => {
       try {
@@ -33,36 +35,60 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
         }
 
         const token = getAuthToken();
-        const socket = io(resolveSocketUrl(), {
-          path: '/socket.io',
-          transports: ['websocket'],
-          auth: token ? { token } : undefined,
-        });
-
-        socketRef.current = socket;
-
-        socket.on('connect', () => {
-          if (!isMounted) return;
-          setConnected(true);
-          setConnectionError(null);
-          socket.emit('join-tenant', tenantId);
-        });
-
-        socket.on('disconnect', () => {
-          if (!isMounted) return;
-          setConnected(false);
-        });
-
-        socket.on('connect_error', (error) => {
-          if (!isMounted) return;
-          setConnectionError(error instanceof Error ? error.message : 'Falha ao conectar no tempo real');
-        });
-
-        socket.on('leadengine:inbox:new', (payload) => {
-          if (typeof onLead === 'function') {
-            onLead(payload);
+        const initializeSocket = (transports) => {
+          if (!isMounted) {
+            return;
           }
-        });
+
+          if (socketRef.current) {
+            socketRef.current.removeAllListeners();
+            socketRef.current.disconnect();
+          }
+
+          const socket = io(resolveSocketUrl(), {
+            path: '/socket.io',
+            transports,
+            auth: token ? { token } : undefined,
+          });
+
+          socketRef.current = socket;
+
+          socket.on('connect', () => {
+            if (!isMounted) return;
+            setConnected(true);
+            setConnectionError(null);
+            socket.emit('join-tenant', tenantId);
+          });
+
+          socket.on('disconnect', () => {
+            if (!isMounted) return;
+            setConnected(false);
+          });
+
+          socket.on('connect_error', (error) => {
+            if (!isMounted) return;
+            const message =
+              error instanceof Error
+                ? error.message
+                : 'Falha ao conectar no tempo real';
+            setConnectionError(message);
+
+            if (transports.includes('websocket') && !fallbackAttemptedRef.current) {
+              fallbackAttemptedRef.current = true;
+              setConnected(false);
+              setConnectionError('Falha ao conectar via WebSocket. Tentando reconectar via polling.');
+              initializeSocket(['polling']);
+            }
+          });
+
+          socket.on('leadengine:inbox:new', (payload) => {
+            if (typeof onLead === 'function') {
+              onLead(payload);
+            }
+          });
+        };
+
+        initializeSocket(['websocket', 'polling']);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -75,7 +101,9 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
 
     return () => {
       isMounted = false;
+      fallbackAttemptedRef.current = false;
       if (socketRef.current) {
+        socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
         socketRef.current = null;
       }
