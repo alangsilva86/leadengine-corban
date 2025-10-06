@@ -1182,6 +1182,8 @@ const syncInstancesFromBroker = async (
   prefetchedSnapshots?: WhatsAppBrokerInstanceSnapshot[]
 ): Promise<SyncInstancesResult> => {
   const brokerSnapshots = prefetchedSnapshots ?? (await whatsappBrokerClient.listInstances(tenantId));
+const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstance[]): Promise<StoredInstance[]> => {
+  const brokerSnapshots = await whatsappBrokerClient.listInstances(tenantId);
 
   if (!brokerSnapshots.length) {
     logger.info('🛰️ [WhatsApp] Broker returned zero instances', { tenantId });
