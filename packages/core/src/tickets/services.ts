@@ -303,6 +303,9 @@ export class SendMessageUseCase implements UseCase<SendMessageDTO & { tenantId: 
         return failure(new NotFoundError('Contact', ticket.contactId));
       }
 
+      const content = input.content ?? '';
+      const mediaUrl = input.mediaUrl ?? undefined;
+
       // Criar mensagem
       const message = await this.messageRepository.create({
         tenantId: input.tenantId,
@@ -311,11 +314,15 @@ export class SendMessageUseCase implements UseCase<SendMessageDTO & { tenantId: 
         userId: input.userId,
         direction: 'OUTBOUND',
         type: input.type,
-        content: input.content,
-        mediaUrl: input.mediaUrl,
+        content,
+        caption: input.caption,
+        mediaUrl,
+        mediaFileName: input.mediaFileName,
+        mediaType: input.mediaMimeType,
         quotedMessageId: input.quotedMessageId,
         status: 'PENDING',
         metadata: input.metadata,
+        idempotencyKey: input.idempotencyKey,
       });
 
       // Enviar via provedor externo
@@ -325,18 +332,18 @@ export class SendMessageUseCase implements UseCase<SendMessageDTO & { tenantId: 
           throw new ValidationError('Contact has no phone or email');
         }
 
-        const result = input.mediaUrl
+        const result = mediaUrl
           ? await this.messageProvider.sendMedia(
               ticket.channel,
               destination,
-              input.mediaUrl,
-              input.content,
+              mediaUrl,
+              input.caption ?? content,
               input.metadata
             )
           : await this.messageProvider.sendMessage(
               ticket.channel,
               destination,
-              input.content,
+              content,
               input.metadata
             );
 
@@ -360,7 +367,7 @@ export class SendMessageUseCase implements UseCase<SendMessageDTO & { tenantId: 
         messageId: message.id,
         ticketId: input.ticketId,
         userId: input.userId!,
-        content: input.content,
+        content,
         messageType: input.type,
       };
 
