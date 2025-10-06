@@ -6,6 +6,10 @@ import { logger } from '../../../config/logger';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { enqueueWhatsAppBrokerEvents } from '../queue/event-queue';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
+import {
+  BrokerInboundEvent,
+  BrokerWebhookInboundSchema,
+} from '../schemas/broker-contracts';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -95,25 +99,6 @@ const verifyWebhookSignature = (signature: string | null, rawBody: Buffer | unde
   }
 };
 
-type NormalizedInboundEvent = {
-  id: string;
-  type: 'MESSAGE_INBOUND';
-  instanceId: string;
-  timestamp: string | null;
-  payload: {
-    instanceId: string;
-    timestamp: string | null;
-    contact: {
-      phone: string | null;
-      name: string | null;
-      document: string | null;
-      registrations: string[] | null;
-    };
-    message: Record<string, unknown>;
-    metadata: Record<string, unknown>;
-  };
-};
-
 const asRecord = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -184,60 +169,67 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const rawEvents = asArray(payload);
 
-  const normalizedEvents = rawEvents
-    .map((entry): NormalizedInboundEvent | null => {
-      const direction = typeof entry.direction === 'string' ? entry.direction.toLowerCase() : '';
-      const eventType = typeof entry.event === 'string' ? entry.event.toLowerCase() : '';
-
-      if (eventType !== 'message' || direction !== 'inbound') {
+  const normalizedEvents: BrokerInboundEvent[] = rawEvents
+    .map((entry, index) => {
+      const parsed = BrokerWebhookInboundSchema.safeParse(entry);
+      if (!parsed.success) {
+        logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
+          index,
+          issues: parsed.error.issues,
+        });
         return null;
       }
 
-      const instanceId = typeof entry.instanceId === 'string' ? entry.instanceId.trim() : '';
-      if (!instanceId) {
-        return null;
-      }
+      const { instanceId, timestamp, message, from, metadata } = parsed.data;
+      const rawMessage = asRecord(message);
+      const rawMetadata = asRecord(metadata);
 
-      const message = asRecord(entry.message);
-      const from = asRecord(entry.from);
-      const metadata = asRecord(entry.metadata);
+      const messageId =
+        (typeof rawMessage.id === 'string' && rawMessage.id.trim().length > 0
+          ? rawMessage.id.trim()
+          : null) ?? randomUUID();
 
-      const messageId = typeof message.id === 'string' && message.id.trim().length > 0 ? message.id.trim() : randomUUID();
-      const timestamp = ((): string | null => {
-        if (typeof entry.timestamp === 'string') {
-          return entry.timestamp;
+      const contact = {
+        phone: typeof from.phone === 'string' ? from.phone : null,
+        name: typeof from.name === 'string' ? from.name : null,
+        document: typeof from.document === 'string' ? from.document : null,
+        registrations: normalizeStringArray(from.registrations),
+        avatarUrl: typeof from.avatarUrl === 'string' ? from.avatarUrl : null,
+        pushName: typeof from.pushName === 'string' ? from.pushName : null,
+      };
+
+      const normalizedTimestamp = (() => {
+        if (timestamp) {
+          return timestamp;
         }
-        const numericTs = typeof entry.timestamp === 'number' ? entry.timestamp : typeof metadata.timestamp === 'number' ? metadata.timestamp : null;
+        const numericTs = typeof rawMetadata.timestamp === 'number' ? rawMetadata.timestamp : null;
         if (numericTs && Number.isFinite(numericTs)) {
-          return new Date(numericTs).toISOString();
+          const ms = numericTs > 1_000_000_000_000 ? numericTs : numericTs * 1000;
+          try {
+            return new Date(ms).toISOString();
+          } catch (error) {
+            logger.debug('⚠️ [Webhook] Falha ao normalizar timestamp numérico', { error, numericTs });
+          }
         }
         return null;
       })();
 
-      const phone = typeof from.phone === 'string' ? from.phone : null;
-      const document = typeof from.document === 'string' ? from.document : null;
-      const registrations = normalizeStringArray(from.registrations);
-
       return {
         id: messageId,
-        type: 'MESSAGE_INBOUND' as const,
+        type: 'MESSAGE_INBOUND',
         instanceId,
-        timestamp: timestamp ?? null,
+        timestamp: normalizedTimestamp,
+        cursor: null,
         payload: {
           instanceId,
-          timestamp,
-          contact: {
-            phone,
-            name: typeof from.name === 'string' ? from.name : null,
-            document,
-            registrations,
-          },
-          message,
-          metadata,
+          timestamp: normalizedTimestamp,
+          contact,
+          message: rawMessage,
+          metadata: rawMetadata,
         },
-      } satisfies NormalizedInboundEvent;
+      };
     })
-    .filter((event): event is NormalizedInboundEvent => event !== null);
+    .filter((event): event is BrokerInboundEvent => event !== null);
 
   const queued = normalizedEvents.length;
 
@@ -281,7 +273,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     received: rawEvents.length,
     queued,
     phones: normalizedEvents.map((event) => maskPhone(event.payload.contact.phone)),
-    documents: normalizedEvents.map((event) => maskDocument(event.payload.contact.document)),
+    documents: normalizedEvents.map((event) => maskDocument(event.payload.contact.document ?? null)),
   });
 
   res.status(202).json({ accepted: true, queued });

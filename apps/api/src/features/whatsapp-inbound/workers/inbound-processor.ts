@@ -1,27 +1,32 @@
 import { onWhatsAppBrokerEvent } from '../queue/event-queue';
 import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 import { logger } from '../../../config/logger';
+import { BrokerInboundEventSchema } from '../schemas/broker-contracts';
 
 onWhatsAppBrokerEvent('MESSAGE_INBOUND', async (event) => {
   try {
-    if (!event.payload || typeof event.payload !== 'object') {
-      logger.warn('Skipping inbound event without payload', { eventId: event.id });
+    const parsed = BrokerInboundEventSchema.safeParse({
+      ...event,
+      instanceId: event.instanceId ?? '',
+      payload: event.payload ?? {},
+    });
+
+    if (!parsed.success) {
+      logger.warn('Skipping inbound event due to invalid schema', {
+        eventId: event.id,
+        issues: parsed.error.issues,
+      });
       return;
     }
 
-    const payload = event.payload as Record<string, unknown>;
-    const instanceId = event.instanceId || (typeof payload.instanceId === 'string' ? payload.instanceId : undefined);
-
-    if (!instanceId) {
-      logger.warn('Skipping inbound event without instanceId', { eventId: event.id });
-      return;
-    }
+    const normalized = parsed.data;
+    const payload = normalized.payload;
 
     await ingestInboundWhatsAppMessage({
-      id: event.id,
-      instanceId,
-      timestamp: event.timestamp ?? (typeof payload.timestamp === 'string' ? payload.timestamp : null),
-      contact: (payload.contact as Record<string, unknown>) || {},
+      id: normalized.id,
+      instanceId: normalized.instanceId,
+      timestamp: payload.timestamp ?? null,
+      contact: payload.contact ? { ...(payload.contact as Record<string, unknown>) } : {},
       message: (payload.message as Record<string, unknown>) || {},
       metadata: (payload.metadata as Record<string, unknown>) || {},
     });

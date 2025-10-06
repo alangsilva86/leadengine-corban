@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 
 import { logger } from '../../../config/logger';
+import { BrokerInboundEventSchema } from '../schemas/broker-contracts';
 
 export type WhatsAppBrokerEventType = 'MESSAGE_INBOUND' | 'MESSAGE_OUTBOUND' | 'POLL_CHOICE';
 
@@ -91,6 +92,28 @@ export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): Whats
       : undefined;
   const timestamp = typeof input.timestamp === 'string' && input.timestamp.trim().length > 0 ? input.timestamp.trim() : undefined;
   const cursor = typeof input.cursor === 'string' && input.cursor.trim().length > 0 ? input.cursor.trim() : null;
+
+  if (rawType === 'MESSAGE_INBOUND') {
+    const parsed = BrokerInboundEventSchema.safeParse({
+      id,
+      type: 'MESSAGE_INBOUND',
+      tenantId,
+      sessionId,
+      instanceId: instanceId ?? '',
+      timestamp: timestamp ?? null,
+      cursor,
+      payload: payload ?? {},
+    });
+
+    if (parsed.success) {
+      return parsed.data;
+    }
+
+    logger.warn('Failed to normalize inbound broker event with schema; falling back to raw payload', {
+      eventId: id,
+      issues: parsed.error.issues,
+    });
+  }
 
   return {
     id,

@@ -1,5 +1,9 @@
 import { fetch, type RequestInit, type Response as UndiciResponse } from 'undici';
 import { logger } from '../config/logger';
+import {
+  BrokerOutboundMessageSchema,
+  BrokerOutboundResponseSchema,
+} from '../features/whatsapp-inbound/schemas/broker-contracts';
 
 export class WhatsAppBrokerNotConfiguredError extends Error {
   constructor(message = 'WhatsApp broker not configured') {
@@ -971,40 +975,60 @@ class WhatsAppBrokerClient {
       type?: string;
       previewUrl?: boolean;
       externalId?: string;
+      media?: Record<string, unknown>;
+      location?: Record<string, unknown>;
+      template?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
     }
   ): Promise<WhatsAppMessageResult> {
-    const normalizedType = (payload.type || 'text').toLowerCase();
-    if (normalizedType !== 'text') {
+    const normalizedPayload = BrokerOutboundMessageSchema.parse({
+      sessionId: instanceId,
+      instanceId,
+      to: payload.to,
+      type: payload.type ?? 'text',
+      content: payload.content,
+      externalId: payload.externalId,
+      previewUrl: payload.previewUrl,
+      media: payload.media as unknown,
+      location: payload.location as unknown,
+      template: payload.template as unknown,
+      metadata: payload.metadata,
+    });
+
+    if (normalizedPayload.type !== 'text') {
       throw new WhatsAppBrokerError(
-        `Message type "${payload.type}" is not supported by the HTTP WhatsApp broker`,
+        `Message type "${normalizedPayload.type}" is not supported by the HTTP WhatsApp broker`,
         'NOT_SUPPORTED',
         400
       );
     }
 
-    const response = await this.sendText<{ externalId?: string; id?: string; status?: string }>(
+    const response = await this.sendText<{ externalId?: string; id?: string; status?: string; timestamp?: string }>(
       {
-        sessionId: instanceId,
-        instanceId,
-        to: payload.to,
-        message: payload.content,
-        previewUrl: payload.previewUrl,
-        externalId: payload.externalId,
+        sessionId: normalizedPayload.sessionId,
+        instanceId: normalizedPayload.instanceId ?? normalizedPayload.sessionId,
+        to: normalizedPayload.to,
+        message: normalizedPayload.content,
+        previewUrl: normalizedPayload.previewUrl,
+        externalId: normalizedPayload.externalId ?? undefined,
       }
     );
 
+    const normalizedResponse = BrokerOutboundResponseSchema.parse({
+      ...response,
+    });
+
     const externalId =
-      (typeof response?.externalId === 'string' && response.externalId) ||
-      (typeof response?.id === 'string' && response.id) ||
-      payload.externalId ||
+      normalizedResponse.externalId ??
+      normalizedPayload.externalId ??
       `msg-${Date.now()}`;
 
-    const status = (typeof response?.status === 'string' && response.status) || 'sent';
+    const status = normalizedResponse.status || 'sent';
 
     return {
       externalId,
       status,
-      timestamp: new Date().toISOString(),
+      timestamp: normalizedResponse.timestamp ?? new Date().toISOString(),
     };
   }
 }
