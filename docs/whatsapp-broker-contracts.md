@@ -45,6 +45,7 @@
 - Minimal required fields: `sessionId`/`instanceId`, `to`, `content`; `type` defaults to `text`.
 - Media/template/location payloads optional but mandatory when `type != text`.
 - Responses normalised via `BrokerOutboundResponseSchema`; `externalId` fallback maintained for idempotency.
+- `WHATSAPP_BROKER_DELIVERY_MODE=instances` força o cliente a usar as rotas legadas `/instances/:id/send-text` (texto puro), com suporte opcional a remoção do prefixo `+` (`WHATSAPP_BROKER_LEGACY_STRIP_PLUS=true`). Use `broker` ou `auto` para o modo minimalista `/broker/messages`.
 
 ### Error responses
 
