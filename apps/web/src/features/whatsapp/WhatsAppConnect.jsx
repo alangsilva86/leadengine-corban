@@ -1617,13 +1617,10 @@ const WhatsAppConnect = ({
 
       if (isAuthError(err)) {
         handleAuthFallback();
-      } else {
+      } else if (!isMissingInstanceError) {
         applyErrorMessageFromError(
           err,
           'Não foi possível carregar status do WhatsApp'
-      } else if (!isMissingInstanceError) {
-        setErrorMessage(
-          err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
         );
       } else {
         setErrorMessage(null);
