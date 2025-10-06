@@ -161,6 +161,11 @@ export interface WhatsAppStatus extends WhatsAppQrCode {
   raw?: Record<string, unknown> | null;
 }
 
+export interface WhatsAppBrokerInstanceSnapshot {
+  instance: WhatsAppInstance;
+  status: WhatsAppStatus | null;
+}
+
 export interface WhatsAppMessageResult {
   externalId: string;
   status: string;
@@ -697,13 +702,14 @@ class WhatsAppBrokerClient {
     sessionId: string,
     payload: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
   ): Promise<void> {
+    const encodedSessionId = encodeURIComponent(sessionId);
+
     await this.request<void>(
-      '/broker/session/connect',
+      `/instances/${encodedSessionId}/connect`,
       {
         method: 'POST',
         body: JSON.stringify(
           compactObject({
-            sessionId,
             instanceId: payload.instanceId ?? sessionId,
             webhookUrl: payload.webhookUrl,
             forceReopen: payload.forceReopen,
@@ -717,33 +723,41 @@ class WhatsAppBrokerClient {
     sessionId: string,
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
-    await this.request<void>('/broker/session/logout', {
-      method: 'POST',
-      body: JSON.stringify(
-        compactObject({
-          sessionId,
-          instanceId: options.instanceId ?? sessionId,
-          wipe: options.wipe,
-        })
-      ),
-    });
+    const encodedSessionId = encodeURIComponent(sessionId);
+
+    await this.request<void>(
+      `/instances/${encodedSessionId}/disconnect`,
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          compactObject({
+            instanceId: options.instanceId ?? sessionId,
+            wipe: options.wipe,
+          })
+        ),
+      }
+    );
   }
 
   async getSessionStatus<T = Record<string, unknown>>(
     sessionId: string,
     options: { instanceId?: string } = {}
   ): Promise<T> {
+    const encodedSessionId = encodeURIComponent(sessionId);
+    const normalizedInstanceId =
+      typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
+
+    const requestOptions: BrokerRequestOptions =
+      normalizedInstanceId && normalizedInstanceId !== sessionId
+        ? { searchParams: { instanceId: normalizedInstanceId } }
+        : {};
+
     return this.request<T>(
-      '/broker/session/status',
+      `/instances/${encodedSessionId}/status`,
       {
         method: 'GET',
       },
-      {
-        searchParams: {
-          sessionId,
-          instanceId: options.instanceId ?? sessionId,
-        },
-      }
+      requestOptions
     );
   }
 
@@ -1044,6 +1058,14 @@ class WhatsAppBrokerClient {
         ? (source.metadata as Record<string, unknown>)
         : {};
 
+    const statusRecord = this.pickRecord(
+      source.status,
+      source.state,
+      source.sessionStatus,
+      metadata.status,
+      metadata.state
+    );
+
     const idCandidate = this.pickString(
       source.id,
       source._id,
@@ -1059,10 +1081,32 @@ class WhatsAppBrokerClient {
       return null;
     }
 
-    const { status, connected } = this.normalizeStatus(
-      source.status ?? metadata.status ?? metadata.state,
-      source.connected ?? metadata.connected ?? metadata.isConnected ?? metadata.connected_at
+    const statusValue = this.pickString(
+      statusRecord?.['status'],
+      statusRecord?.['state'],
+      statusRecord?.['value'],
+      source.status,
+      source.state,
+      metadata.status,
+      metadata.state
     );
+
+    const connectedCandidate = this.pickFirstDefined(
+      statusRecord?.['connected'],
+      statusRecord?.['isConnected'],
+      statusRecord?.['connected_at'],
+      statusRecord?.['connectedAt'],
+      source.connected,
+      source.isConnected,
+      source.connected_at,
+      source.connectedAt,
+      metadata.connected,
+      metadata.isConnected,
+      metadata.connected_at,
+      metadata.connectedAt
+    );
+
+    const { status, connected } = this.normalizeStatus(statusValue, connectedCandidate);
 
     const resolvedTenantId =
       this.pickString(source.tenantId, metadata.tenantId, metadata.tenant_id) ?? tenantId;
@@ -1085,6 +1129,10 @@ class WhatsAppBrokerClient {
     const phoneNumber =
       this.pickString(
         source.phoneNumber,
+        statusRecord?.['phoneNumber'],
+        statusRecord?.['phone_number'],
+        statusRecord?.['msisdn'],
+        statusRecord?.['phone'],
         metadata.phoneNumber,
         metadata.phone_number,
         metadata.msisdn,
@@ -1094,6 +1142,8 @@ class WhatsAppBrokerClient {
     const user =
       this.pickString(
         source.user,
+        statusRecord?.['user'],
+        statusRecord?.['operator'],
         metadata.user,
         metadata.userName,
         metadata.username,
@@ -1103,6 +1153,8 @@ class WhatsAppBrokerClient {
     const name =
       this.pickString(
         source.name,
+        statusRecord?.['name'],
+        statusRecord?.['displayName'],
         metadata.name,
         metadata.displayName,
         metadata.sessionName,
@@ -1111,12 +1163,11 @@ class WhatsAppBrokerClient {
       ) || undefined;
 
     const statsCandidate =
-      (typeof source.stats === 'object' && source.stats !== null
-        ? (source.stats as Record<string, unknown>)
-        : null) ||
-      (typeof metadata.stats === 'object' && metadata.stats !== null
-        ? (metadata.stats as Record<string, unknown>)
-        : null);
+      this.pickRecord(
+        statusRecord?.['stats'],
+        source.stats,
+        metadata.stats
+      );
 
     return {
       id: idCandidate,
@@ -1132,14 +1183,189 @@ class WhatsAppBrokerClient {
     };
   }
 
-  private findSessionPayloads(value: unknown): Record<string, unknown>[] {
-    if (!value || typeof value !== 'object') {
-      return [];
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
     }
 
-    const queue: Record<string, unknown>[] = [value as Record<string, unknown>];
-    const visited = new Set<unknown>();
+    return value as Record<string, unknown>;
+  }
+
+  private pickRecord(...values: unknown[]): Record<string, unknown> | null {
+    for (const value of values) {
+      const record = this.asRecord(value);
+      if (record) {
+        return record;
+      }
+    }
+
+    return null;
+  }
+
+  private pickFirstDefined(...values: unknown[]): unknown {
+    for (const value of values) {
+      if (value !== undefined) {
+        return value;
+      }
+    }
+
+    return undefined;
+  }
+
+  private buildStatusFromRecords(
+    primary: Record<string, unknown> | null,
+    additional: Record<string, unknown>[] = []
+  ): WhatsAppStatus | null {
+    const sources = [primary, ...additional].filter(
+      (entry): entry is Record<string, unknown> => Boolean(entry)
+    );
+
+    if (!sources.length) {
+      return null;
+    }
+
+    const nestedStatusRecords = sources
+      .map((source) => this.asRecord(source['status']))
+      .filter((record): record is Record<string, unknown> => Boolean(record));
+    const extendedSources = [...sources, ...nestedStatusRecords];
+
+    const statusValue = this.pickString(
+      ...extendedSources.map((source) => source['status']),
+      ...extendedSources.map((source) => source['state']),
+      ...extendedSources.map((source) => source['value'])
+    );
+
+    const connectedCandidate = this.pickFirstDefined(
+      ...extendedSources.map((source) => source['connected']),
+      ...extendedSources.map((source) => source['isConnected']),
+      ...extendedSources.map((source) => source['connected_at']),
+      ...extendedSources.map((source) => source['connectedAt']),
+      ...extendedSources.map((source) => source['online']),
+      ...extendedSources.map((source) => source['ready'])
+    );
+
+    const { status, connected } = this.normalizeStatus(statusValue, connectedCandidate);
+
+    const qrSource: Record<string, unknown> = {};
+    for (const source of extendedSources) {
+      Object.assign(qrSource, source);
+    }
+
+    const statsCandidate = this.pickRecord(
+      ...extendedSources.map((source) => source['stats']),
+      ...extendedSources.map((source) => source['messages']),
+      ...extendedSources.map((source) => source['counters'])
+    );
+
+    const metricsCandidate = this.pickRecord(
+      ...extendedSources.map((source) => source['metrics']),
+      ...extendedSources.map((source) => source['rateUsage']),
+      statsCandidate ?? undefined
+    );
+
+    const messagesCandidate = this.pickRecord(
+      ...extendedSources.map((source) => source['messages'])
+    );
+
+    const rateCandidate = this.pickRecord(
+      ...extendedSources.map((source) => source['rate']),
+      ...extendedSources.map((source) => source['rateLimiter']),
+      ...extendedSources.map((source) => source['limits'])
+    );
+
+    const rateUsageCandidate = this.pickRecord(
+      ...extendedSources.map((source) => source['rateUsage']),
+      rateCandidate ?? undefined
+    );
+
+    const normalizedQr = this.normalizeQrPayload(qrSource);
+
+    return {
+      status,
+      connected,
+      ...normalizedQr,
+      stats: statsCandidate ?? messagesCandidate ?? null,
+      metrics: metricsCandidate ?? statsCandidate ?? null,
+      messages: messagesCandidate ?? null,
+      rate: rateCandidate ?? null,
+      rateUsage: rateUsageCandidate ?? rateCandidate ?? null,
+      raw: primary ?? (extendedSources.length > 0 ? extendedSources[0] : null),
+    };
+  }
+
+  private normalizeStatusResponse(
+    value: unknown,
+    additional: Record<string, unknown>[] = []
+  ): WhatsAppStatus | null {
+    const record = this.asRecord(value);
+    const aggregate: Record<string, unknown>[] = [...additional];
+
+    if (record) {
+      aggregate.push(record);
+      const dataRecord = this.asRecord(record['data']);
+      if (dataRecord) {
+        aggregate.push(dataRecord);
+      }
+    }
+
+    if (aggregate.length === 0) {
+      return null;
+    }
+
+    const primary = this.pickRecord(
+      record?.['status'],
+      record?.['sessionStatus'],
+      this.asRecord(record?.['data'])?.['status'],
+      ...aggregate
+    );
+
+    return this.buildStatusFromRecords(primary, aggregate);
+  }
+
+  private normalizeInstanceSnapshot(
+    tenantId: string,
+    value: unknown
+  ): WhatsAppBrokerInstanceSnapshot | null {
+    const instance = this.normalizeBrokerInstance(tenantId, value);
+    if (!instance) {
+      return null;
+    }
+
+    const record = this.asRecord(value);
+    const metadataRecord = record ? this.asRecord(record['metadata']) : null;
+    const status = this.normalizeStatusResponse(value, [
+      ...(metadataRecord ? [metadataRecord] : []),
+    ]);
+
+    return {
+      instance,
+      status,
+    };
+  }
+
+  private findSessionPayloads(value: unknown): Record<string, unknown>[] {
     const sessions: Record<string, unknown>[] = [];
+    const visited = new Set<unknown>();
+    const queue: Record<string, unknown>[] = [];
+
+    const enqueue = (entry: unknown): void => {
+      if (!entry || visited.has(entry)) {
+        return;
+      }
+
+      if (Array.isArray(entry)) {
+        visited.add(entry);
+        entry.forEach(enqueue);
+        return;
+      }
+
+      if (typeof entry === 'object') {
+        visited.add(entry);
+        queue.push(entry as Record<string, unknown>);
+      }
+    };
+
+    enqueue(value);
 
     const looksLikeSession = (candidate: Record<string, unknown>): boolean => {
       return [
@@ -1154,116 +1380,70 @@ class WhatsAppBrokerClient {
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      if (visited.has(current)) {
-        continue;
-      }
-      visited.add(current);
 
       if (looksLikeSession(current)) {
         sessions.push(current);
-        // do not `continue`; other nested sessions may exist
       }
 
-      Object.values(current).forEach((entry) => {
-        if (!entry || typeof entry !== 'object') {
-          return;
-        }
-
-        if (Array.isArray(entry)) {
-          entry.forEach((item) => {
-            if (item && typeof item === 'object') {
-              queue.push(item as Record<string, unknown>);
-            }
-          });
-          return;
-        }
-
-        queue.push(entry as Record<string, unknown>);
-      });
+      Object.values(current).forEach(enqueue);
     }
 
     return sessions;
   }
 
-  async listInstances(tenantId: string): Promise<WhatsAppInstance[]> {
-    const candidatePaths = [
-      '/broker/session/status',
-      '/broker/sessions/status',
-      '/broker/sessionStatus',
-    ];
-
-    let lastError: unknown;
-
+  async listInstances(tenantId: string): Promise<WhatsAppBrokerInstanceSnapshot[]> {
     const normalizedTenantId =
       typeof tenantId === 'string' ? tenantId.trim() : '';
     const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
       ? { searchParams: { tenantId: normalizedTenantId } }
       : {};
 
-    for (let index = 0; index < candidatePaths.length; index += 1) {
-      const path = candidatePaths[index];
+    const response = await this.request<unknown>(
+      '/instances',
+      {
+        method: 'GET',
+      },
+      requestOptions
+    );
 
-      try {
-        const response = await this.request<unknown>(
-          path,
-          {
-            method: 'GET',
-          },
-          requestOptions
-        );
+    const sessions = this.findSessionPayloads(response);
+    if (!sessions.length) {
+      logger.debug('WhatsApp broker instances payload missing data', {
+        tenantId,
+        response,
+      });
+      return [];
+    }
 
-        const sessions = this.findSessionPayloads(response);
-        if (!sessions.length) {
-          logger.debug('WhatsApp broker session status payload missing session data', {
-            tenantId,
-            path,
-            response,
-          });
+    const normalized = sessions
+      .map((session) => this.normalizeInstanceSnapshot(tenantId, session))
+      .filter((snapshot): snapshot is WhatsAppBrokerInstanceSnapshot => Boolean(snapshot));
 
-          if (index === candidatePaths.length - 1) {
-            return [];
-          }
+    if (!normalized.length) {
+      logger.debug('WhatsApp broker instances could not be normalised', {
+        tenantId,
+        response,
+      });
+      return [];
+    }
 
-          continue;
+    const deduped = new Map<string, WhatsAppBrokerInstanceSnapshot>();
+    const fallbacks: WhatsAppBrokerInstanceSnapshot[] = [];
+
+    for (const snapshot of normalized) {
+      const normalizedId = snapshot.instance.id.trim();
+
+      if (normalizedId.length > 0) {
+        const existing = deduped.get(normalizedId);
+        if (!existing || (!existing.status && snapshot.status)) {
+          deduped.set(normalizedId, snapshot);
         }
-
-        const normalized = sessions
-          .map((session) => this.normalizeBrokerInstance(tenantId, session))
-          .filter((instance): instance is WhatsAppInstance => Boolean(instance));
-
-        if (!normalized.length) {
-          if (index === candidatePaths.length - 1) {
-            return [];
-          }
-          continue;
-        }
-
-        return normalized;
-      } catch (error) {
-        if (error instanceof WhatsAppBrokerNotConfiguredError) {
-          throw error;
-        }
-
-        if (
-          error instanceof WhatsAppBrokerError &&
-          (error.status === 404 || error.status === 405)
-        ) {
-          lastError = error;
-          continue;
-        }
-
-        throw error;
+      } else {
+        fallbacks.push(snapshot);
       }
     }
 
-    if (lastError) {
-      logger.debug('All WhatsApp broker session status endpoints unavailable', {
-        tenantId,
-        error: lastError,
-      });
-    }
-
-    return [];
+    return [...deduped.values(), ...fallbacks];
   }
 
   async createInstance(args: { tenantId: string; name: string; webhookUrl?: string }): Promise<WhatsAppInstance> {
@@ -1321,15 +1501,18 @@ class WhatsAppBrokerClient {
         return normalized;
       }
 
+      const encodedBrokerId = encodeURIComponent(brokerId);
+      const normalizedInstanceId =
+        typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
+      const requestOptions: BrokerRequestOptions =
+        normalizedInstanceId && normalizedInstanceId !== brokerId
+          ? { searchParams: { instanceId: normalizedInstanceId } }
+          : {};
+
       const payload = await this.request<Record<string, unknown>>(
-        '/broker/session/qr',
+        `/instances/${encodedBrokerId}/qr`,
         { method: 'GET' },
-        {
-          searchParams: {
-            sessionId: brokerId,
-            instanceId: options.instanceId ?? brokerId,
-          },
-        }
+        requestOptions
       );
 
       return this.normalizeQrPayload(payload);
@@ -1349,92 +1532,56 @@ class WhatsAppBrokerClient {
   async getStatus(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppStatus> {
     this.ensureConfigured();
 
+    const fallback: WhatsAppStatus = {
+      status: 'disconnected',
+      connected: false,
+      qr: null,
+      qrCode: null,
+      qrExpiresAt: null,
+      expiresAt: null,
+      stats: null,
+      metrics: null,
+      messages: null,
+      rate: null,
+      rateUsage: null,
+      raw: null,
+    };
+
     try {
-      const result = await this.getSessionStatus<Record<string, unknown>>(brokerId, {
+      const result = await this.getSessionStatus<unknown>(brokerId, {
         instanceId: options.instanceId ?? brokerId,
       });
-      const normalizedQr = this.normalizeQrPayload(result);
-      const connected = Boolean(result?.connected ?? (result?.status === 'connected'));
-      const normalizedStatus = ((): WhatsAppStatus['status'] => {
-        const raw = typeof result?.status === 'string' ? result.status.toLowerCase() : undefined;
-        switch (raw) {
-          case 'connected':
-          case 'connecting':
-          case 'qr_required':
-          case 'disconnected':
-            return raw;
-          default:
-            return connected ? 'connected' : 'disconnected';
-        }
-      })();
 
-      const statsCandidate =
-        typeof result?.stats === 'object' && result.stats !== null ? (result.stats as Record<string, unknown>) : undefined;
-      const metricsCandidate =
-        typeof result?.metrics === 'object' && result.metrics !== null
-          ? (result.metrics as Record<string, unknown>)
-          : undefined;
-      const messagesCandidate =
-        typeof result?.messages === 'object' && result.messages !== null
-          ? (result.messages as Record<string, unknown>)
-          : undefined;
-      const rateUsageCandidate =
-        typeof result?.rateUsage === 'object' && result.rateUsage !== null
-          ? (result.rateUsage as Record<string, unknown>)
-          : undefined;
-      const rateCandidate =
-        typeof result?.rate === 'object' && result.rate !== null
-          ? (result.rate as Record<string, unknown>)
-          : typeof result?.rateLimiter === 'object' && result.rateLimiter !== null
-            ? (result.rateLimiter as Record<string, unknown>)
-            : typeof result?.limits === 'object' && result.limits !== null
-              ? (result.limits as Record<string, unknown>)
-              : undefined;
+      const normalized = this.normalizeStatusResponse(result);
 
-      const normalized: WhatsAppStatus = {
-        status: normalizedStatus,
-        connected,
-        ...normalizedQr,
-        stats: statsCandidate ?? messagesCandidate ?? null,
-        metrics: metricsCandidate ?? statsCandidate ?? null,
-        messages: messagesCandidate ?? null,
-        rate: rateCandidate ?? null,
-        rateUsage: rateUsageCandidate ?? rateCandidate ?? null,
-        raw: result ?? null,
-      };
+      if (normalized) {
+        logger.debug('🛰️ [BrokerClient] Session status normalizado', {
+          brokerId,
+          instanceId: options.instanceId ?? brokerId,
+          status: normalized.status,
+          connected: normalized.connected,
+          hasStats: Boolean(normalized.stats),
+          hasMetrics: Boolean(normalized.metrics),
+          hasMessages: Boolean(normalized.messages),
+        });
 
-      logger.debug('🛰️ [BrokerClient] Session status normalizado', {
-        brokerId,
-        instanceId: options.instanceId ?? brokerId,
-        status: normalized.status,
-        connected: normalized.connected,
-        hasStats: Boolean(normalized.stats),
-        hasMetrics: Boolean(normalized.metrics),
-        hasMessages: Boolean(normalized.messages),
-      });
-
-      return normalized;
+        return normalized;
+      }
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         throw error;
       }
 
       logger.warn('Failed to resolve WhatsApp session status via minimal broker; assuming disconnected', { error });
-      return {
-        status: 'disconnected',
-        connected: false,
-        qr: null,
-        qrCode: null,
-        qrExpiresAt: null,
-        expiresAt: null,
-        stats: null,
-        metrics: null,
-        messages: null,
-        rate: null,
-        rateUsage: null,
-        raw: null,
-      };
+      return fallback;
     }
+
+    logger.warn('WhatsApp broker status payload missing data; assuming disconnected', {
+      brokerId,
+      instanceId: options.instanceId ?? brokerId,
+    });
+
+    return fallback;
   }
 
   async sendMessage(
