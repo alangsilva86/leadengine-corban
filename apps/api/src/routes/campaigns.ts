@@ -636,6 +636,7 @@ router.patch(
   param('id').isString().trim().isLength({ min: 1 }),
   body('name').optional().isString().trim().isLength({ min: 1 }),
   body('status').optional().isString().trim().isLength({ min: 1 }),
+  body('instanceId').optional().isString().trim().isLength({ min: 1 }),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -643,6 +644,9 @@ router.patch(
     const campaignId = req.params.id;
     const rawStatus = normalizeStatus(req.body?.status);
     const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
+    const requestedInstanceId =
+      typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : undefined;
+    const actorId = req.user?.id ?? 'system';
 
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, tenantId },
@@ -674,8 +678,25 @@ router.patch(
 
     const updates: Prisma.CampaignUpdateInput = {};
     const currentStatus = normalizeStatus(campaign.status) ?? 'draft';
+    let metadataAccumulator: CampaignMetadata = readMetadata(campaign.metadata as CampaignMetadata);
+    let metadataDirty = false;
 
-    if (rawStatus) {
+    const updateMetadata = (mutator: (current: Record<string, unknown>) => void) => {
+      const base =
+        metadataAccumulator && typeof metadataAccumulator === 'object' && !Array.isArray(metadataAccumulator)
+          ? { ...(metadataAccumulator as Record<string, unknown>) }
+          : {};
+      mutator(base);
+      metadataAccumulator = base;
+      metadataDirty = true;
+    };
+
+    const appendHistoryEntry = (entry: ReturnType<typeof buildCampaignHistoryEntry>) => {
+      metadataAccumulator = appendCampaignHistory(metadataAccumulator, entry);
+      metadataDirty = true;
+    };
+
+    if (rawStatus && rawStatus !== currentStatus) {
       if (!canTransition(currentStatus, rawStatus)) {
         res.status(409).json({
           success: false,
@@ -688,24 +709,63 @@ router.patch(
       }
 
       updates.status = rawStatus;
-      updates.metadata = appendCampaignHistory(
-        campaign.metadata as CampaignMetadata,
-        buildCampaignHistoryEntry('status-changed', req.user?.id ?? 'system', {
+      appendHistoryEntry(
+        buildCampaignHistoryEntry('status-changed', actorId, {
           from: currentStatus,
           to: rawStatus,
         })
       );
+
       if (rawStatus === 'ended') {
-        updates.metadata = appendCampaignHistory(
-          (updates.metadata as CampaignMetadata | undefined) ?? (campaign.metadata as CampaignMetadata),
-          buildCampaignHistoryEntry('status-ended', req.user?.id ?? 'system', {
+        appendHistoryEntry(
+          buildCampaignHistoryEntry('status-ended', actorId, {
             endedAt: new Date().toISOString(),
           })
         );
       }
     }
 
-    if (!updates.status && !updates.metadata) {
+    if (requestedInstanceId && requestedInstanceId !== campaign.whatsappInstanceId) {
+      const nextInstance = await prisma.whatsAppInstance.findFirst({
+        where: {
+          id: requestedInstanceId,
+          tenantId,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      if (!nextInstance) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada para este tenant.',
+          },
+        });
+        return;
+      }
+
+      updates.whatsappInstanceId = nextInstance.id;
+      updateMetadata((base) => {
+        base.reassignedAt = new Date().toISOString();
+        base.previousInstanceId = campaign.whatsappInstanceId ?? null;
+      });
+      appendHistoryEntry(
+        buildCampaignHistoryEntry('instance-reassigned', actorId, {
+          from: campaign.whatsappInstanceId ?? null,
+          to: nextInstance.id,
+        })
+      );
+    }
+
+    if (metadataDirty) {
+      updates.metadata = metadataAccumulator as Prisma.JsonObject;
+    }
+
+    if (!updates.status && !updates.metadata && !updates.whatsappInstanceId) {
       res.json({ success: true, data: buildCampaignResponse(campaign) });
       return;
     }
@@ -727,6 +787,107 @@ router.patch(
       tenantId,
       campaignId: campaign.id,
       status: updated.status,
+      instanceId: updated.whatsappInstanceId,
+      statusChanged: Boolean(updates.status && rawStatus !== currentStatus),
+      instanceReassigned: Boolean(updates.whatsappInstanceId),
+    });
+
+    res.json({
+      success: true,
+      data: buildCampaignResponse(updated),
+    });
+  })
+);
+
+router.delete(
+  '/:id',
+  param('id').isString().trim().isLength({ min: 1 }),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const campaignId = req.params.id;
+    const actorId = req.user?.id ?? 'system';
+
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: campaignId, tenantId },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!campaign) {
+      respondNotFound(res);
+      return;
+    }
+
+    const currentStatus = normalizeStatus(campaign.status) ?? 'draft';
+    const timestamp = new Date().toISOString();
+    let metadataAccumulator: CampaignMetadata = readMetadata(campaign.metadata as CampaignMetadata);
+
+    const updateMetadata = (mutator: (current: Record<string, unknown>) => void) => {
+      const base =
+        metadataAccumulator && typeof metadataAccumulator === 'object' && !Array.isArray(metadataAccumulator)
+          ? { ...(metadataAccumulator as Record<string, unknown>) }
+          : {};
+      mutator(base);
+      metadataAccumulator = base;
+    };
+
+    const appendHistoryEntry = (entry: ReturnType<typeof buildCampaignHistoryEntry>) => {
+      metadataAccumulator = appendCampaignHistory(metadataAccumulator, entry);
+    };
+
+    updateMetadata((base) => {
+      base.deletedAt = timestamp;
+      base.deletedBy = actorId;
+    });
+
+    if (currentStatus !== 'ended') {
+      appendHistoryEntry(
+        buildCampaignHistoryEntry('status-changed', actorId, {
+          from: currentStatus,
+          to: 'ended',
+        })
+      );
+      appendHistoryEntry(
+        buildCampaignHistoryEntry('status-ended', actorId, {
+          endedAt: timestamp,
+        })
+      );
+    }
+
+    appendHistoryEntry(
+      buildCampaignHistoryEntry('deleted', actorId, {
+        previousStatus: currentStatus,
+      })
+    );
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: 'ended',
+        metadata: metadataAccumulator as Prisma.JsonObject,
+      },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    logger.info('Campaign soft-deleted', {
+      tenantId,
+      campaignId: campaign.id,
+      previousStatus: currentStatus,
     });
 
     res.json({
