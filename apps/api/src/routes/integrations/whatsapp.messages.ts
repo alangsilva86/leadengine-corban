@@ -6,6 +6,10 @@ import { requireTenant } from '../../middleware/auth';
 import { prisma } from '../../lib/prisma';
 import { SendByInstanceSchema, normalizePayload } from '../../dtos/message-schemas';
 import { sendAdHoc } from '../../services/ticket-service';
+import {
+  WhatsAppBrokerError,
+  translateWhatsAppBrokerError,
+} from '../../services/whatsapp-broker-client';
 import { NotFoundError } from '@ticketz/core';
 
 const router = Router();
@@ -63,16 +67,54 @@ router.post(
     const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
     const payload = normalizePayload(parsed.payload);
 
-    const response = await sendAdHoc({
-      tenantId,
-      operatorId: req.user!.id,
-      instanceId: instance.id,
-      to: parsed.to,
-      payload,
-      idempotencyKey,
-    });
+    try {
+      const response = await sendAdHoc({
+        tenantId,
+        operatorId: req.user!.id,
+        instanceId: instance.id,
+        to: parsed.to,
+        payload,
+        idempotencyKey,
+      });
 
-    res.status(202).json(response);
+      res.status(202).json(response);
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerError) {
+        const normalized = translateWhatsAppBrokerError(error);
+        const resolvedCode = normalized?.code ?? error.code ?? 'BROKER_ERROR';
+        const resolvedMessage = normalized?.message ?? error.message ?? 'Falha ao enviar mensagem.';
+        const status = (() => {
+          if (normalized?.code === 'RATE_LIMITED') {
+            return 429;
+          }
+          if (normalized?.code === 'BROKER_TIMEOUT') {
+            return error.status === 504 ? 504 : 408;
+          }
+          if (normalized?.code === 'INVALID_TO') {
+            return 422;
+          }
+          if (normalized?.code === 'INSTANCE_NOT_CONNECTED') {
+            return 409;
+          }
+          if (typeof error.status === 'number' && error.status >= 400 && error.status < 600) {
+            return error.status;
+          }
+          return 502;
+        })();
+
+        res.status(status).json({
+          success: false,
+          error: {
+            code: resolvedCode,
+            message: resolvedMessage,
+            details: error.requestId ? { requestId: error.requestId } : undefined,
+          },
+        });
+        return;
+      }
+
+      throw error;
+    }
   })
 );
 

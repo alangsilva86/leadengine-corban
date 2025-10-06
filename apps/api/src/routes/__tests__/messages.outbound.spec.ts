@@ -259,10 +259,124 @@ describe('Outbound message routes', () => {
       queued: true,
       status: 'FAILED',
       error: {
-        message: 'Request timed out',
-        code: 'REQUEST_TIMEOUT',
+        message: expect.stringContaining('Tempo limite'),
+        code: 'BROKER_TIMEOUT',
         status: 408,
         requestId: 'req-123',
+      },
+    });
+  });
+
+  it('normalizes broker disconnection errors into INSTANCE_NOT_CONNECTED', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+
+    sendMessageSpy.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Session disconnected', 'SESSION_NOT_CONNECTED', 409, 'req-409')
+    );
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem que falhará',
+        },
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      status: 'FAILED',
+      error: {
+        code: 'INSTANCE_NOT_CONNECTED',
+        message: expect.stringContaining('Instância de WhatsApp desconectada'),
+        status: 409,
+        requestId: 'req-409',
+      },
+    });
+  });
+
+  it('normalizes invalid recipient responses into INVALID_TO', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+
+    sendMessageSpy.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Invalid recipient number', 'INVALID_RECIPIENT', 400, 'req-400')
+    );
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem inválida',
+        },
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      status: 'FAILED',
+      error: {
+        code: 'INVALID_TO',
+        message: expect.stringContaining('Número de destino inválido'),
+        status: 400,
+        requestId: 'req-400',
+      },
+    });
+  });
+
+  it('normalizes rate limit responses into RATE_LIMITED', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+
+    sendMessageSpy.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Rate limit reached', 'RATE_LIMIT_EXCEEDED', 429, 'req-429')
+    );
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem bloqueada por rate limit',
+        },
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      status: 'FAILED',
+      error: {
+        code: 'RATE_LIMITED',
+        message: expect.stringContaining('Limite de envio'),
+        status: 429,
+        requestId: 'req-429',
       },
     });
   });
@@ -340,6 +454,35 @@ describe('Outbound message routes', () => {
         content: 'Mensagem com formato legado',
       })
     );
+  });
+
+  it('surfaces normalized broker errors for ad-hoc sends', async () => {
+    sendMessageSpy.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Invalid destination number', 'INVALID_DESTINATION', 400, 'adhoc-400')
+    );
+
+    const app = buildApp();
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/instances/instance-001/messages')
+      .send({
+        to: '+55 44 9999-9999',
+        payload: {
+          type: 'text',
+          text: 'Falha controlada',
+        },
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      queued: true,
+      status: 'FAILED',
+      error: {
+        code: 'INVALID_TO',
+        message: expect.stringContaining('Número de destino inválido'),
+        status: 400,
+        requestId: 'adhoc-400',
+      },
+    });
   });
 
   it('rejects ad-hoc sends when the WhatsApp instance is disconnected', async () => {

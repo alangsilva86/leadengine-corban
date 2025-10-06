@@ -35,7 +35,12 @@ import {
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
 import { whatsappOutboundMetrics } from '../lib/metrics';
-import { whatsappBrokerClient, WhatsAppBrokerError } from './whatsapp-broker-client';
+import {
+  whatsappBrokerClient,
+  WhatsAppBrokerError,
+  translateWhatsAppBrokerError,
+  type NormalizedWhatsAppBrokerError,
+} from './whatsapp-broker-client';
 import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import {
@@ -1046,6 +1051,8 @@ export const sendMessage = async (
     code?: string;
     status?: number;
     requestId?: string;
+    normalized?: NormalizedWhatsAppBrokerError | null;
+    raw?: { code?: string | null; message?: string | null };
   }) => {
     const currentMetadata = (message.metadata ?? {}) as Record<string, unknown>;
     const previousBroker =
@@ -1079,6 +1086,14 @@ export const sendMessage = async (
         failedAt: new Date().toISOString(),
       },
     } as Record<string, unknown>;
+
+    if (errorDetails.normalized) {
+      (metadata.broker as Record<string, unknown>).normalizedError = errorDetails.normalized;
+    }
+
+    if (errorDetails.raw) {
+      (metadata.broker as Record<string, unknown>).rawError = errorDetails.raw;
+    }
 
     const failed = await storageUpdateMessage(tenantId, message.id, {
       status: 'FAILED',
@@ -1153,7 +1168,11 @@ export const sendMessage = async (
           }
         } catch (error) {
           const brokerError = error instanceof WhatsAppBrokerError ? error : null;
-          const reason = error instanceof Error ? error.message : 'unknown_error';
+          const normalizedBrokerError = brokerError
+            ? translateWhatsAppBrokerError(brokerError)
+            : null;
+          const reason = normalizedBrokerError?.message
+            ?? (error instanceof Error ? error.message : 'unknown_error');
           logger.error('Failed to dispatch WhatsApp message via broker', {
             tenantId,
             ticketId: ticket.id,
@@ -1165,9 +1184,13 @@ export const sendMessage = async (
           });
           await markAsFailed({
             message: reason,
-            code: brokerError?.code,
+            code: normalizedBrokerError?.code ?? brokerError?.code,
             status: brokerError?.status,
             requestId: brokerError?.requestId,
+            normalized: normalizedBrokerError,
+            raw: brokerError
+              ? { code: brokerError.code, message: error instanceof Error ? error.message : null }
+              : undefined,
           });
         }
       }

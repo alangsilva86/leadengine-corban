@@ -27,6 +27,105 @@ export class WhatsAppBrokerError extends Error {
   }
 }
 
+export type NormalizedWhatsAppBrokerErrorCode =
+  | 'INSTANCE_NOT_CONNECTED'
+  | 'INVALID_TO'
+  | 'RATE_LIMITED'
+  | 'BROKER_TIMEOUT';
+
+export type NormalizedWhatsAppBrokerError = {
+  code: NormalizedWhatsAppBrokerErrorCode;
+  message: string;
+};
+
+const NORMALIZED_ERROR_COPY: Record<NormalizedWhatsAppBrokerErrorCode, NormalizedWhatsAppBrokerError> = {
+  INSTANCE_NOT_CONNECTED: {
+    code: 'INSTANCE_NOT_CONNECTED',
+    message: 'Instância de WhatsApp desconectada. Reabra a sessão para continuar.',
+  },
+  INVALID_TO: {
+    code: 'INVALID_TO',
+    message: 'Número de destino inválido ou indisponível para receber mensagens.',
+  },
+  RATE_LIMITED: {
+    code: 'RATE_LIMITED',
+    message: 'Limite de envio do WhatsApp atingido. Aguarde alguns instantes e tente novamente.',
+  },
+  BROKER_TIMEOUT: {
+    code: 'BROKER_TIMEOUT',
+    message: 'Tempo limite ao contatar o broker do WhatsApp. Tente reenviar em instantes.',
+  },
+};
+
+const normalizeErrorCode = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().toUpperCase() : '';
+
+const includesKeyword = (message: string, keywords: string[]): boolean => {
+  const normalized = message.toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+};
+
+const BROKER_TIMEOUT_CODES = new Set(['REQUEST_TIMEOUT', 'BROKER_TIMEOUT', 'GATEWAY_TIMEOUT']);
+const RATE_LIMIT_CODES = new Set(['RATE_LIMITED', 'RATE_LIMIT', 'RATE_LIMIT_EXCEEDED', 'TOO_MANY_REQUESTS']);
+const INSTANCE_DISCONNECTED_CODES = new Set([
+  'INSTANCE_NOT_CONNECTED',
+  'SESSION_NOT_FOUND',
+  'SESSION_NOT_CONNECTED',
+  'SESSION_DISCONNECTED',
+  'BROKER_SESSION_NOT_FOUND',
+  'BROKER_SESSION_DISCONNECTED',
+]);
+const INVALID_TO_CODES = new Set([
+  'INVALID_TO',
+  'INVALID_TO_NUMBER',
+  'INVALID_RECIPIENT',
+  'INVALID_DESTINATION',
+  'INVALID_PHONE',
+  'INVALID_CONTACT',
+  'INVALID_ADDRESS',
+  'INVALID_JID',
+]);
+
+export const translateWhatsAppBrokerError = (
+  error: WhatsAppBrokerError | null | undefined
+): NormalizedWhatsAppBrokerError | null => {
+  if (!error) {
+    return null;
+  }
+
+  const code = normalizeErrorCode(error.code);
+  const status = Number.isFinite(error.status) ? (error.status as number) : null;
+  const message = typeof error.message === 'string' ? error.message : '';
+
+  if (status === 429 || RATE_LIMIT_CODES.has(code)) {
+    return NORMALIZED_ERROR_COPY.RATE_LIMITED;
+  }
+
+  if (status === 408 || status === 504 || BROKER_TIMEOUT_CODES.has(code) || includesKeyword(message, ['timeout', 'timed out'])) {
+    return NORMALIZED_ERROR_COPY.BROKER_TIMEOUT;
+  }
+
+  if (
+    status === 409 ||
+    status === 410 ||
+    INSTANCE_DISCONNECTED_CODES.has(code) ||
+    includesKeyword(message, ['not connected', 'disconnected', 'desconect'])
+  ) {
+    return NORMALIZED_ERROR_COPY.INSTANCE_NOT_CONNECTED;
+  }
+
+  if (
+    status === 422 ||
+    status === 400 ||
+    INVALID_TO_CODES.has(code) ||
+    includesKeyword(message, ['invalid recipient', 'invalid to', 'destinat', 'recipient'])
+  ) {
+    return NORMALIZED_ERROR_COPY.INVALID_TO;
+  }
+
+  return null;
+};
+
 export interface WhatsAppInstance {
   id: string;
   tenantId: string;
