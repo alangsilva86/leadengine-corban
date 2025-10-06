@@ -378,7 +378,6 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       instanceId,
       messageId: message.id ?? null,
     });
-    return;
   }
 
   const leadName = resolvedName ?? 'Contato WhatsApp';
@@ -503,60 +502,62 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     });
   }
 
-  for (const campaign of campaigns) {
-    const agreementId = campaign.agreementId || 'unknown';
-    const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;
+  if (campaigns.length > 0) {
+    for (const campaign of campaigns) {
+      const agreementId = campaign.agreementId || 'unknown';
+      const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;
 
-    if (shouldSkipByDedupe(dedupeKey, now)) {
-      logger.info('Skipping inbound message due to 24h dedupe window', {
-        tenantId,
-        campaignId: campaign.id,
-        instanceId,
-        messageId: message.id ?? null,
-        phone: maskPhone(normalizedPhone ?? null),
-      });
-      continue;
-    }
-
-    const brokerLead = {
-      id: `${leadIdBase}:${campaign.id}`,
-      fullName: leadName,
-      document,
-      registrations,
-      agreementId,
-      phone: normalizedPhone,
-      margin: undefined,
-      netMargin: undefined,
-      score: undefined,
-      tags: ['inbound-whatsapp'],
-      raw: {
-        from: contact,
-        message,
-        metadata: event.metadata ?? {},
-        receivedAt: timestamp ?? new Date(now).toISOString(),
-      },
-    };
-
-    try {
-      const { newlyAllocated } = await addAllocations(tenantId, campaign.id, [brokerLead]);
-      if (newlyAllocated.length > 0) {
-        logger.info('Inbound WhatsApp lead allocated', {
+      if (shouldSkipByDedupe(dedupeKey, now)) {
+        logger.info('Skipping inbound message due to 24h dedupe window', {
           tenantId,
           campaignId: campaign.id,
           instanceId,
-          allocationId: newlyAllocated[0].allocationId,
+          messageId: message.id ?? null,
           phone: maskPhone(normalizedPhone ?? null),
-          leadId: newlyAllocated[0].leadId,
+        });
+        continue;
+      }
+
+      const brokerLead = {
+        id: `${leadIdBase}:${campaign.id}`,
+        fullName: leadName,
+        document,
+        registrations,
+        agreementId,
+        phone: normalizedPhone,
+        margin: undefined,
+        netMargin: undefined,
+        score: undefined,
+        tags: ['inbound-whatsapp'],
+        raw: {
+          from: contact,
+          message,
+          metadata: event.metadata ?? {},
+          receivedAt: timestamp ?? new Date(now).toISOString(),
+        },
+      };
+
+      try {
+        const { newlyAllocated } = await addAllocations(tenantId, campaign.id, [brokerLead]);
+        if (newlyAllocated.length > 0) {
+          logger.info('Inbound WhatsApp lead allocated', {
+            tenantId,
+            campaignId: campaign.id,
+            instanceId,
+            allocationId: newlyAllocated[0].allocationId,
+            phone: maskPhone(normalizedPhone ?? null),
+            leadId: newlyAllocated[0].leadId,
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to allocate inbound WhatsApp lead', {
+          error,
+          tenantId,
+          campaignId: campaign.id,
+          instanceId,
+          phone: maskPhone(normalizedPhone ?? null),
         });
       }
-    } catch (error) {
-      logger.error('Failed to allocate inbound WhatsApp lead', {
-        error,
-        tenantId,
-        campaignId: campaign.id,
-        instanceId,
-        phone: maskPhone(normalizedPhone ?? null),
-      });
     }
   }
 };
