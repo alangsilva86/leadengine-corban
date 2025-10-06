@@ -1171,37 +1171,55 @@ const normalizeInstanceStatusResponse = (
 };
 
 const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstance[]): Promise<StoredInstance[]> => {
-  const brokerInstances = await whatsappBrokerClient.listInstances(tenantId);
+  const brokerSnapshots = await whatsappBrokerClient.listInstances(tenantId);
 
-  if (!brokerInstances.length) {
+  if (!brokerSnapshots.length) {
     logger.info('🛰️ [WhatsApp] Broker returned zero instances', { tenantId });
     return existing;
   }
 
-  const existingMap = new Map(existing.map((item) => [item.id, item]));
+  const existingById = new Map(existing.map((item) => [item.id, item]));
+  const existingByBrokerId = new Map(existing.map((item) => [item.brokerId, item]));
 
   logger.info('🛰️ [WhatsApp] Broker instances snapshot', {
     tenantId,
-    brokerCount: brokerInstances.length,
-    ids: brokerInstances.map((instance) => instance.id),
+    brokerCount: brokerSnapshots.length,
+    ids: brokerSnapshots.map((snapshot) => snapshot.instance.id),
   });
 
-  for (const brokerInstance of brokerInstances) {
+  const parseDateValue = (value: unknown): Date | null => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      const parsed = Date.parse(trimmed);
+      if (!Number.isNaN(parsed)) {
+        return new Date(parsed);
+      }
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) {
+        return date;
+      }
+    }
+
+    return null;
+  };
+
+  for (const snapshot of brokerSnapshots) {
+    const brokerInstance = snapshot.instance;
+    const brokerStatus = snapshot.status ?? null;
     const instanceId = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
     if (!instanceId) {
       continue;
     }
 
-    let brokerStatus: WhatsAppStatus | null = null;
-    try {
-      brokerStatus = await whatsappBrokerClient.getStatus(instanceId, { instanceId });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerNotConfiguredError) {
-        throw error;
-      }
-    }
-
-    const existingInstance = existingMap.get(instanceId) ?? null;
+    const existingInstance =
+      existingByBrokerId.get(instanceId) ?? existingById.get(instanceId) ?? null;
     const derivedStatus = brokerStatus
       ? mapBrokerStatusToDbStatus(brokerStatus)
       : mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
@@ -1218,7 +1236,9 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
         metadata.number,
         brokerMetadata.phoneNumber,
         brokerMetadata.phone_number,
-        brokerMetadata.msisdn
+        brokerMetadata.msisdn,
+        brokerMetadata.number,
+        brokerMetadata.address
       );
 
       if (primary) {
@@ -1236,8 +1256,47 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
     const historyEntry = buildHistoryEntry('broker-sync', 'system', {
       status: derivedStatus,
       connected: derivedConnected,
-      phoneNumber,
+      ...(phoneNumber ? { phoneNumber } : {}),
+      ...(brokerStatus?.metrics ? { metrics: brokerStatus.metrics } : {}),
+      ...(brokerStatus?.stats ? { stats: brokerStatus.stats } : {}),
     });
+
+    const brokerRaw = brokerStatus?.raw && isRecord(brokerStatus.raw) ? brokerStatus.raw : null;
+    const lastActivityCandidate =
+      parseDateValue(brokerInstance.lastActivity) ??
+      parseDateValue(brokerRaw?.['lastActivity']) ??
+      parseDateValue(brokerRaw?.['lastSeen']) ??
+      parseDateValue(brokerRaw?.['last_active_at']) ??
+      parseDateValue(brokerRaw?.['lastSeenAt']) ??
+      null;
+
+    const derivedLastSeenAt = derivedConnected
+      ? new Date()
+      : lastActivityCandidate ?? existingInstance?.lastSeenAt ?? null;
+
+    const brokerSnapshotMetadata: Record<string, unknown> = {
+      syncedAt: new Date().toISOString(),
+      status: brokerStatus?.status ?? derivedStatus,
+      connected: derivedConnected,
+      phoneNumber: phoneNumber ?? null,
+      metrics: brokerStatus?.metrics ?? null,
+      stats: brokerStatus?.stats ?? brokerInstance.stats ?? null,
+      rate: brokerStatus?.rate ?? null,
+      rateUsage: brokerStatus?.rateUsage ?? null,
+      messages: brokerStatus?.messages ?? null,
+      qr: brokerStatus
+        ? {
+            qr: brokerStatus.qr,
+            qrCode: brokerStatus.qrCode,
+            qrExpiresAt: brokerStatus.qrExpiresAt,
+            expiresAt: brokerStatus.expiresAt,
+          }
+        : null,
+    };
+
+    if (brokerStatus?.raw && isRecord(brokerStatus.raw)) {
+      brokerSnapshotMetadata.raw = brokerStatus.raw;
+    }
 
     if (existingInstance) {
       logger.info('🛰️ [WhatsApp] Sync updating stored instance from broker', {
@@ -1247,6 +1306,12 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
         connected: derivedConnected,
         phoneNumber,
       });
+      const metadataWithHistory = appendInstanceHistory(
+        existingInstance.metadata as InstanceMetadata,
+        historyEntry
+      ) as Record<string, unknown>;
+      metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+
       await prisma.whatsAppInstance.update({
         where: { id: existingInstance.id },
         data: {
@@ -1254,8 +1319,10 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
           name: brokerInstance.name ?? existingInstance.name ?? instanceId,
           status: derivedStatus,
           connected: derivedConnected,
+          brokerId: instanceId,
           ...(phoneNumber ? { phoneNumber } : {}),
-          metadata: appendInstanceHistory(existingInstance.metadata as InstanceMetadata, historyEntry),
+          ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
+          metadata: metadataWithHistory as Prisma.JsonObject,
         },
       });
 
@@ -1279,6 +1346,12 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
         origin: 'broker-sync',
       };
 
+      const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry) as Record<
+        string,
+        unknown
+      >;
+      metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+
       await prisma.whatsAppInstance.create({
         data: {
           id: instanceId,
@@ -1288,7 +1361,8 @@ const syncInstancesFromBroker = async (tenantId: string, existing: StoredInstanc
           status: derivedStatus,
           connected: derivedConnected,
           phoneNumber,
-          metadata: appendInstanceHistory(baseMetadata, historyEntry),
+          ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
+          metadata: metadataWithHistory as Prisma.JsonObject,
         },
       });
 
