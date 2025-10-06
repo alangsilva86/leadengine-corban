@@ -313,6 +313,35 @@ describe('Outbound message routes', () => {
     expect(sendMessageSpy).not.toHaveBeenCalled();
   });
 
+  it('supports legacy payload shape when sending ad-hoc WhatsApp messages', async () => {
+    const app = buildApp();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/instances/instance-001/messages')
+      .set('Idempotency-Key', 'legacy-shape-1')
+      .send({
+        to: '+55 44 9999-9999',
+        type: 'text',
+        text: 'Mensagem com formato legado',
+      });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      queued: true,
+      status: 'SENT',
+      error: null,
+    });
+
+    expect(sendMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendMessageSpy).toHaveBeenCalledWith(
+      'instance-001',
+      expect.objectContaining({
+        type: 'TEXT',
+        content: 'Mensagem com formato legado',
+      })
+    );
+  });
+
   it('rejects ad-hoc sends when the WhatsApp instance is disconnected', async () => {
     whatsAppInstanceFindUniqueMock.mockResolvedValueOnce({
       id: 'instance-001',
