@@ -1129,6 +1129,68 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('returns a descriptive error when deleting a broker session via DELETE', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+
+    try {
+      const jid = '5541999888777:12@s.whatsapp.net';
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${encodeURIComponent(jid)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body).toMatchObject({
+        success: false,
+        error: { code: 'USE_DISCONNECT_FOR_JID' },
+      });
+      expect(prisma.whatsAppInstance.findUnique).not.toHaveBeenCalled();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('disconnects broker-only sessions via the dedicated route and tolerates missing instances', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const jid = '5511987654321:55@s.whatsapp.net';
+    const disconnectSpy = vi
+      .spyOn(whatsappBrokerClient, 'disconnectInstance')
+      .mockRejectedValue(new WhatsAppBrokerError('not found', 'SESSION_NOT_FOUND', 404));
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${encodeURIComponent(jid)}/disconnect`,
+        {
+          method: 'POST',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(disconnectSpy).toHaveBeenCalledWith(jid, { instanceId: jid });
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: { instanceId: jid, disconnected: true, existed: false },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('fetches a WhatsApp instance QR code', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');

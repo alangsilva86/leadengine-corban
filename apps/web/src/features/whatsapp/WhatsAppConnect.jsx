@@ -780,6 +780,205 @@ const ensureArrayOfObjects = (value) =>
     ? value.filter((item) => item && typeof item === 'object')
     : [];
 
+const looksLikeWhatsAppJid = (value) =>
+  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
+
+const formatInstanceDisplayId = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  if (looksLikeWhatsAppJid(value)) {
+    return value.replace(/@s\.whatsapp\.net$/i, '@wa');
+  }
+
+  return value;
+};
+
+const pickStringValue = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+
+  return null;
+};
+
+const isPlainRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const mergeInstanceEntries = (previous, next) => {
+  if (!previous) {
+    return next;
+  }
+
+  const previousMetadata = isPlainRecord(previous.metadata) ? previous.metadata : {};
+  const nextMetadata = isPlainRecord(next.metadata) ? next.metadata : {};
+
+  const mergedMetadata = { ...previousMetadata, ...nextMetadata };
+
+  return {
+    ...previous,
+    ...next,
+    metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,
+    connected: Boolean(previous.connected || next.connected),
+    status:
+      next.status ||
+      previous.status ||
+      (previous.connected || next.connected ? 'connected' : 'disconnected'),
+    tenantId: next.tenantId ?? previous.tenantId ?? null,
+    name: next.name ?? previous.name ?? null,
+    phoneNumber: next.phoneNumber ?? previous.phoneNumber ?? null,
+    displayId: next.displayId || previous.displayId || next.id || previous.id,
+    source: next.source || previous.source || null,
+  };
+};
+
+const normalizeInstanceRecord = (entry) => {
+  if (!isPlainRecord(entry)) {
+    return null;
+  }
+
+  const base = entry;
+  const metadata = isPlainRecord(base.metadata) ? base.metadata : {};
+  const profile = isPlainRecord(base.profile) ? base.profile : {};
+  const details = isPlainRecord(base.details) ? base.details : {};
+  const info = isPlainRecord(base.info) ? base.info : {};
+  const mergedMetadata = { ...metadata, ...profile, ...details, ...info };
+
+  const id =
+    pickStringValue(
+      base.id,
+      base.instanceId,
+      base.instance_id,
+      base.sessionId,
+      base.session_id,
+      mergedMetadata.id,
+      mergedMetadata.instanceId,
+      mergedMetadata.instance_id,
+      mergedMetadata.sessionId,
+      mergedMetadata.session_id
+    ) ?? null;
+
+  if (!id) {
+    return null;
+  }
+
+  const rawStatus =
+    pickStringValue(base.status, base.connectionStatus, base.state, mergedMetadata.status, mergedMetadata.state) ??
+    null;
+  const normalizedStatus = rawStatus ? rawStatus.toLowerCase() : null;
+
+  const connectedValue =
+    typeof base.connected === 'boolean'
+      ? base.connected
+      : typeof mergedMetadata.connected === 'boolean'
+        ? mergedMetadata.connected
+        : normalizedStatus === 'connected';
+
+  const tenantId =
+    pickStringValue(
+      base.tenantId,
+      base.tenant_id,
+      mergedMetadata.tenantId,
+      mergedMetadata.tenant_id,
+      base.agreementId,
+      mergedMetadata.agreementId,
+      base.accountId,
+      mergedMetadata.accountId
+    ) ?? null;
+
+  const name =
+    pickStringValue(
+      base.name,
+      mergedMetadata.name,
+      mergedMetadata.displayName,
+      mergedMetadata.instanceName,
+      mergedMetadata.sessionName,
+      mergedMetadata.profileName
+    ) ?? null;
+
+  const phoneNumber =
+    pickStringValue(
+      base.phoneNumber,
+      base.phone,
+      base.number,
+      mergedMetadata.phoneNumber,
+      mergedMetadata.phone,
+      mergedMetadata.number
+    ) ?? null;
+
+  const source =
+    pickStringValue(base.source, mergedMetadata.source, mergedMetadata.origin, base.origin) ??
+    (looksLikeWhatsAppJid(id) ? 'broker' : 'db');
+
+  const normalizedStatusValue = normalizedStatus || (connectedValue ? 'connected' : 'disconnected');
+
+  const normalized = {
+    ...base,
+    metadata: mergedMetadata,
+    id,
+    tenantId,
+    name,
+    phoneNumber,
+    status: normalizedStatusValue,
+    connected: Boolean(connectedValue),
+    displayId: formatInstanceDisplayId(id),
+    source,
+  };
+
+  return normalized;
+};
+
+const normalizeInstancesCollection = (rawList, options = {}) => {
+  const allowedTenants = Array.isArray(options.allowedTenants)
+    ? options.allowedTenants
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : [];
+
+  const order = [];
+  const map = new Map();
+
+  if (!Array.isArray(rawList)) {
+    return [];
+  }
+
+  for (const entry of rawList) {
+    const normalized = normalizeInstanceRecord(entry);
+    if (!normalized) {
+      continue;
+    }
+
+    if (
+      allowedTenants.length > 0 &&
+      normalized.tenantId &&
+      !allowedTenants.includes(normalized.tenantId)
+    ) {
+      continue;
+    }
+
+    if (looksLikeWhatsAppJid(normalized.id) && normalized.source === 'broker' && normalized.connected !== true) {
+      continue;
+    }
+
+    const existing = map.get(normalized.id);
+    const merged = mergeInstanceEntries(existing, normalized);
+
+    if (!existing) {
+      order.push(normalized.id);
+    }
+
+    map.set(normalized.id, merged);
+  }
+
+  return order.map((id) => map.get(id)).filter(Boolean);
+};
+
 const unwrapWhatsAppResponse = (payload) => {
   if (!payload) {
     return {};
@@ -1469,16 +1668,14 @@ const WhatsAppConnect = ({
         preferredInstanceId: preferredInstanceId ?? null,
       });
       const shouldForceBrokerSync =
-        typeof forceRefresh === 'boolean' ? forceRefresh : !hasFetchedOnceRef.current;
+        typeof forceRefresh === 'boolean' ? forceRefresh : true;
 
       log('🛰️ Solicitando lista de instâncias', {
         agreementId,
         forceRefresh: shouldForceBrokerSync,
         hasFetchedOnce: hasFetchedOnceRef.current,
       });
-      const response = await apiGet(
-        `/api/integrations/whatsapp/instances${shouldForceBrokerSync ? '?refresh=1' : ''}`
-      );
+      const response = await apiGet('/api/integrations/whatsapp/instances?refresh=1');
       const parsedResponse = parseInstancesPayload(response);
       setSessionActive(true);
       setAuthDeferred(false);
@@ -1486,7 +1683,7 @@ const WhatsAppConnect = ({
       let hasServerList = true;
       let connectResult = providedConnect || null;
 
-      if (list.length === 0) {
+      if (list.length === 0 && !shouldForceBrokerSync) {
         const refreshed = await apiGet('/api/integrations/whatsapp/instances?refresh=1').catch(
           () => null
         );
@@ -1557,6 +1754,28 @@ const WhatsAppConnect = ({
       } else if (connectResult?.instance) {
         const candidate = connectResult.instance;
         list = list.map((item) => (item.id === candidate.id ? { ...item, ...candidate } : item));
+      }
+
+      const allowedTenants = [selectedAgreement?.tenantId, selectedAgreement?.id]
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+
+      const normalizedList = normalizeInstancesCollection(list, { allowedTenants });
+      list = normalizedList;
+
+      if (current) {
+        const normalizedCurrent = normalizedList.find((item) => item.id === current.id);
+        if (normalizedCurrent) {
+          current = { ...normalizedCurrent, ...current };
+          list = normalizedList.map((item) => (item.id === current.id ? { ...item, ...current } : item));
+        } else if (normalizedList.length > 0) {
+          current = pickCurrentInstance(normalizedList);
+        } else {
+          current = null;
+        }
+      } else if (normalizedList.length > 0) {
+        current = pickCurrentInstance(normalizedList);
       }
 
       const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
@@ -2117,30 +2336,98 @@ const WhatsAppConnect = ({
     const agreementId = selectedAgreement?.id;
     setDeletingInstanceId(target.id);
     try {
-      log('🗑️ Removendo instância WhatsApp', {
+      const encodedId = encodeURIComponent(target.id);
+      const isJid = looksLikeWhatsAppJid(target.id);
+      const url = isJid
+        ? `/api/integrations/whatsapp/instances/${encodedId}/disconnect`
+        : `/api/integrations/whatsapp/instances/${encodedId}`;
+      const method = isJid ? 'POST' : 'DELETE';
+
+      log(isJid ? '🔌 Desconectando instância WhatsApp' : '🗑️ Removendo instância WhatsApp', {
         instanceId: target.id,
         agreementId,
+        method,
+        url,
       });
-      await apiDelete(`/api/integrations/whatsapp/instances/${encodeURIComponent(target.id)}`);
+
+      if (isJid) {
+        await apiPost(url, {});
+      } else {
+        await apiDelete(url);
+      }
       clearInstancesCache(agreementId);
       if (instance?.id === target.id) {
         setInstance(null);
         setLocalStatus('disconnected');
       }
       await loadInstances({ preferredInstanceId: null, forceRefresh: true });
-      log('✅ Instância removida', {
+      log(isJid ? '✅ Sessão desconectada' : '✅ Instância removida', {
         instanceId: target.id,
         agreementId,
+        method,
+        url,
       });
+      toast.success(isJid ? 'Sessão desconectada com sucesso' : 'Instância removida com sucesso');
     } catch (err) {
       const friendly = applyErrorMessageFromError(
         err,
         'Não foi possível remover a instância'
       );
-      logError('Falha ao remover instância WhatsApp', err);
-      if (!friendly.code) {
-        toast.error('Falha ao remover instância', { description: friendly.message });
+      const encodedId = encodeURIComponent(target.id);
+      const isJid = looksLikeWhatsAppJid(target.id);
+      const url = isJid
+        ? `/api/integrations/whatsapp/instances/${encodedId}/disconnect`
+        : `/api/integrations/whatsapp/instances/${encodedId}`;
+      const method = isJid ? 'POST' : 'DELETE';
+
+      logError('Falha ao remover instância WhatsApp', {
+        error: err,
+        method,
+        url,
+        instanceId: target.id,
+      });
+
+      const statusCode =
+        typeof err?.response?.status === 'number'
+          ? err.response.status
+          : typeof err?.status === 'number'
+            ? err.status
+            : null;
+      const responseData = err?.response?.data ?? err?.payload ?? null;
+      const errorCode =
+        (responseData && typeof responseData === 'object' && responseData !== null
+          ? responseData.error?.code || responseData.code
+          : null) || err?.code || null;
+      let bodyPreview = null;
+      if (responseData && typeof responseData === 'object') {
+        try {
+          const serialized = JSON.stringify(responseData);
+          bodyPreview = serialized.length > 200 ? `${serialized.slice(0, 197)}…` : serialized;
+        } catch (serializationError) {
+          console.warn('Não foi possível serializar payload de erro da instância WhatsApp', serializationError);
+        }
       }
+
+      const detailParts = [
+        `method=${method}`,
+        `url=${url}`,
+        `id=${target.id}`,
+      ];
+
+      if (statusCode !== null) {
+        detailParts.push(`status=${statusCode}`);
+      }
+      if (errorCode) {
+        detailParts.push(`code=${errorCode}`);
+      }
+      if (bodyPreview) {
+        detailParts.push(`body=${bodyPreview}`);
+      }
+
+      const description = detailParts.join(' • ');
+      toast.error('Falha ao remover instância', {
+        description: friendly.message ? `${friendly.message} • ${description}` : description,
+      });
     } finally {
       setDeletingInstanceId(null);
     }
@@ -2367,6 +2654,20 @@ const WhatsAppConnect = ({
     }
     setCreateCampaignOpen(true);
   };
+
+  const removalTargetLabel =
+    instancePendingDelete?.name ||
+    instancePendingDelete?.displayId ||
+    instancePendingDelete?.id ||
+    'selecionada';
+  const removalTargetIsJid = instancePendingDelete?.id
+    ? looksLikeWhatsAppJid(instancePendingDelete.id)
+    : false;
+  const removalDialogTitle = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
+  const removalDialogDescription = removalTargetIsJid
+    ? `Esta ação desconecta a sessão ${removalTargetLabel}. Utilize quando precisar encerrar um dispositivo sincronizado com o broker.`
+    : `Esta ação remove permanentemente a instância ${removalTargetLabel}. Verifique se não há campanhas ativas utilizando este número.`;
+  const removalDialogAction = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -2922,28 +3223,37 @@ const WhatsAppConnect = ({
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remover instância</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação remove permanentemente a instância{' '}
-              <strong>{instancePendingDelete?.name || instancePendingDelete?.id || 'selecionada'}</strong>. Conferir se não há campanhas ativas utilizando este número.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!instancePendingDelete) return;
-                await handleDeleteInstance(instancePendingDelete);
-                setInstancePendingDelete(null);
-              }}
-            >
-              Remover instância
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{removalDialogTitle}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {removalTargetIsJid ? (
+              <>
+                Esta ação desconecta a sessão <strong>{removalTargetLabel}</strong>. Utilize quando precisar encerrar um
+                dispositivo sincronizado com o broker.
+              </>
+            ) : (
+              <>
+                Esta ação remove permanentemente a instância <strong>{removalTargetLabel}</strong>. Verifique se não há
+                campanhas ativas utilizando este número.
+              </>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={async () => {
+              if (!instancePendingDelete) return;
+              await handleDeleteInstance(instancePendingDelete);
+              setInstancePendingDelete(null);
+            }}
+          >
+            {removalDialogAction}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
       <Dialog open={isQrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="max-w-lg">

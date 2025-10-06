@@ -118,6 +118,48 @@ const handleWhatsAppIntegrationError = (res: Response, error: unknown): boolean 
 const resolveDefaultInstanceId = (): string =>
   (process.env.LEADENGINE_INSTANCE_ID || '').trim() || 'leadengine';
 
+const looksLikeWhatsAppJid = (value: string): boolean =>
+  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
+
+const BROKER_NOT_FOUND_CODES = new Set([
+  'SESSION_NOT_FOUND',
+  'BROKER_SESSION_NOT_FOUND',
+  'INSTANCE_NOT_FOUND',
+]);
+
+const readBrokerErrorStatus = (error: unknown): number | null => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    typeof (error as { status?: unknown }).status === 'number'
+  ) {
+    return (error as { status: number }).status;
+  }
+
+  return null;
+};
+
+const readBrokerErrorCode = (error: unknown): string | null => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string'
+  ) {
+    const normalized = ((error as { code: string }).code || '').trim();
+    return normalized ? normalized.toUpperCase() : null;
+  }
+
+  return null;
+};
+
+const isBrokerMissingInstanceError = (error: unknown): boolean => {
+  const status = readBrokerErrorStatus(error);
+  const code = readBrokerErrorCode(error);
+  return status === 404 || (code ? BROKER_NOT_FOUND_CODES.has(code) : false);
+};
+
 const router: Router = Router();
 
 // ============================================================================
@@ -1437,16 +1479,34 @@ const collectInstancesForTenant = async (
 
   let snapshots = options.snapshots ?? null;
 
-  const shouldRefresh = Boolean(options.refresh) || storedInstances.length === 0;
+  const refreshFlag = options.refresh;
+  const shouldRefresh =
+    refreshFlag === undefined
+      ? fetchSnapshots
+      : Boolean(refreshFlag) || storedInstances.length === 0;
 
   if (shouldRefresh) {
-    const syncResult = await syncInstancesFromBroker(
-      tenantId,
-      storedInstances,
-      snapshots ?? undefined
-    );
-    storedInstances = syncResult.instances;
-    snapshots = syncResult.snapshots;
+    try {
+      const syncResult = await syncInstancesFromBroker(
+        tenantId,
+        storedInstances,
+        snapshots ?? undefined
+      );
+      storedInstances = syncResult.instances;
+      snapshots = syncResult.snapshots;
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        if (options.refresh) {
+          throw error;
+        }
+        logger.info('🛰️ [WhatsApp] Broker not configured during sync; returning cached instances', {
+          tenantId,
+        });
+        snapshots = [];
+      } else {
+        throw error;
+      }
+    }
   } else if (fetchSnapshots) {
     if (!snapshots) {
       snapshots = await whatsappBrokerClient.listInstances(tenantId);
@@ -1561,6 +1621,51 @@ const resolveInstanceOperationContext = async (
   };
 };
 
+const disconnectStoredInstance = async (
+  tenantId: string,
+  stored: StoredInstance,
+  actorId: string,
+  options: { wipe?: boolean } = {}
+): Promise<InstanceOperationContext> => {
+  const disconnectOptions = options.wipe === undefined ? undefined : { wipe: options.wipe };
+
+  await whatsappBrokerClient.disconnectInstance(stored.brokerId, {
+    ...(disconnectOptions ?? {}),
+    instanceId: stored.id,
+  });
+
+  const context = await resolveInstanceOperationContext(tenantId, stored, { refresh: true });
+
+  const historyEntry = buildHistoryEntry('disconnect-instance', actorId, {
+    status: context.status.status,
+    connected: context.status.connected,
+    wipe: Boolean(options.wipe),
+  });
+
+  const metadataWithHistory = appendInstanceHistory(
+    context.stored.metadata as InstanceMetadata,
+    historyEntry
+  );
+
+  const derivedStatus = context.brokerStatus
+    ? mapBrokerStatusToDbStatus(context.brokerStatus)
+    : mapBrokerInstanceStatusToDbStatus(context.status.status);
+
+  const lastSeenAt = context.status.connected ? context.stored.lastSeenAt : new Date();
+
+  await prisma.whatsAppInstance.update({
+    where: { id: context.stored.id },
+    data: {
+      status: derivedStatus,
+      connected: context.status.connected,
+      metadata: metadataWithHistory,
+      lastSeenAt,
+    },
+  });
+
+  return context;
+};
+
 const parseNumber = (input: unknown): number | null => {
   if (typeof input === 'number' && Number.isFinite(input)) {
     return input;
@@ -1631,8 +1736,14 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const refreshRequested =
-      req.query.refresh === '1' || req.query.refresh === 'true' || req.query.refresh === 'yes';
+    const refreshQuery = req.query.refresh;
+    const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
+    const normalizedRefresh =
+      typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
+    const hasRefreshParam = normalizedRefresh !== null;
+    const refreshRequested = hasRefreshParam
+      ? normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes'
+      : undefined;
 
     logger.info('🛰️ [WhatsApp] List instances requested', {
       tenantId,
@@ -1640,9 +1751,10 @@ router.get(
     });
 
     try {
-      const { instances } = await collectInstancesForTenant(tenantId, {
-        refresh: refreshRequested,
-      });
+      const collectionOptions =
+        refreshRequested === undefined ? {} : { refresh: refreshRequested };
+
+      const { instances } = await collectInstancesForTenant(tenantId, collectionOptions);
 
       logger.info('🛰️ [WhatsApp] Returning instances to client', {
         tenantId,
@@ -1705,33 +1817,6 @@ router.post(
 
     const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : slugCandidate;
     try {
-      const existing = await prisma.whatsAppInstance.findFirst({
-        where: {
-          tenantId,
-          OR: [
-            { name: normalizedName },
-            {
-              metadata: {
-                path: ['slug'],
-                equals: slugCandidate,
-              },
-            },
-          ],
-        },
-        select: { id: true },
-      });
-
-      if (existing) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NAME_IN_USE',
-            message: 'Já existe uma instância com este nome para o tenant.',
-          },
-        });
-        return;
-      }
-
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
       const actorId = req.user?.id ?? 'system';
       const historyEntry = buildHistoryEntry('created', actorId, { name: normalizedName });
@@ -2047,11 +2132,24 @@ router.delete(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = req.params.id.trim();
     const tenantId = req.user!.tenantId;
     const wipe = typeof req.query?.wipe === 'boolean' ? (req.query.wipe as boolean) : false;
 
     try {
+      if (looksLikeWhatsAppJid(instanceId)) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'USE_DISCONNECT_FOR_JID',
+            message:
+              'Instâncias sincronizadas diretamente com o WhatsApp devem ser desconectadas via POST /api/integrations/whatsapp/instances/:id/disconnect.',
+            details: { instanceId },
+          },
+        });
+        return;
+      }
+
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
       if (!instance || instance.tenantId !== tenantId) {
@@ -2121,7 +2219,6 @@ router.post(
       typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
-    const disconnectOptions = wipe === undefined ? undefined : { wipe };
     const tenantId = req.user!.tenantId;
 
     try {
@@ -2138,41 +2235,12 @@ router.post(
         return;
       }
 
-      await whatsappBrokerClient.disconnectInstance(instance.brokerId, {
-        ...(disconnectOptions ?? {}),
-        instanceId: instance.id,
-      });
-
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        refresh: true,
-      });
-
-      const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
-        status: context.status.status,
-        connected: context.status.connected,
-        wipe: Boolean(wipe),
-      });
-
-      const metadataWithHistory = appendInstanceHistory(
-        context.stored.metadata as InstanceMetadata,
-        historyEntry
+      const context = await disconnectStoredInstance(
+        tenantId,
+        instance as StoredInstance,
+        req.user?.id ?? 'system',
+        wipe === undefined ? {} : { wipe }
       );
-
-      const derivedStatus = context.brokerStatus
-        ? mapBrokerStatusToDbStatus(context.brokerStatus)
-        : mapBrokerInstanceStatusToDbStatus(context.status.status);
-
-      const lastSeenAt = context.status.connected ? context.stored.lastSeenAt : new Date();
-
-      await prisma.whatsAppInstance.update({
-        where: { id: context.stored.id },
-        data: {
-          status: derivedStatus,
-          connected: context.status.connected,
-          metadata: metadataWithHistory,
-          lastSeenAt,
-        },
-      });
 
       res.json({
         success: true,
@@ -2186,6 +2254,110 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+router.post(
+  '/whatsapp/instances/:id/disconnect',
+  param('id').isString().isLength({ min: 1 }),
+  body('wipe').optional().isBoolean(),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const actorId = req.user?.id ?? 'system';
+    const instanceId = req.params.id.trim();
+    const wipe = typeof req.body?.wipe === 'boolean' ? (req.body.wipe as boolean) : undefined;
+
+    try {
+      const storedInstance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (storedInstance && storedInstance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      if (storedInstance) {
+        const context = await disconnectStoredInstance(
+          tenantId,
+          storedInstance as StoredInstance,
+          actorId,
+          wipe === undefined ? {} : { wipe }
+        );
+
+        res.json({
+          success: true,
+          data: {
+            instanceId: context.instance.id,
+            instance: context.instance,
+            status: context.status,
+            connected: context.status.connected,
+            qr: context.qr,
+            instances: context.instances,
+            existed: true,
+          },
+        });
+        return;
+      }
+
+      if (!looksLikeWhatsAppJid(instanceId)) {
+        res.json({
+          success: true,
+          data: {
+            instanceId,
+            disconnected: true,
+            existed: false,
+          },
+        });
+        return;
+      }
+
+      try {
+        await whatsappBrokerClient.disconnectInstance(instanceId, {
+          instanceId,
+          ...(wipe === undefined ? {} : { wipe }),
+        });
+
+        res.json({
+          success: true,
+          data: {
+            instanceId,
+            disconnected: true,
+            existed: true,
+            connected: false,
+          },
+        });
+      } catch (error) {
+        if (isBrokerMissingInstanceError(error)) {
+          res.json({
+            success: true,
+            data: {
+              instanceId,
+              disconnected: true,
+              existed: false,
+            },
+          });
+          return;
+        }
+
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+
+        throw error;
+      }
+    } catch (error) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
