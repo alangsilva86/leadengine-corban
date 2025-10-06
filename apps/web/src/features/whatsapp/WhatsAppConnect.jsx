@@ -49,6 +49,7 @@ import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
 import CreateInstanceDialog from './components/CreateInstanceDialog.jsx';
 import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import { toast } from 'sonner';
+import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
 
 const getInstancesCacheKey = (agreementId) =>
   agreementId ? `leadengine:whatsapp:instances:${agreementId}` : null;
@@ -833,7 +834,10 @@ const WhatsAppConnect = ({
     setAuthTokenState(null);
     setLoadingInstances(false);
     setLoadingQr(false);
-    setErrorMessage(requireAuthMessage, { requiresAuth: true });
+    setErrorMessage(requireAuthMessage, {
+      requiresAuth: true,
+      title: 'Autenticação necessária',
+    });
     if (reset) {
       setInstances([]);
       setInstance(null);
@@ -851,10 +855,39 @@ const WhatsAppConnect = ({
 
   const setErrorMessage = (message, meta = {}) => {
     if (message) {
-      setErrorState({ message, ...meta });
+      const copy = resolveWhatsAppErrorCopy(meta.code, message);
+      const resolvedState = {
+        ...meta,
+        code: copy.code ?? meta.code ?? null,
+        title: meta.title ?? copy.title ?? 'Algo deu errado',
+        message: copy.description ?? message,
+      };
+      setErrorState(resolvedState);
     } else {
       setErrorState(null);
     }
+  };
+
+  const resolveFriendlyError = (error, fallbackMessage) => {
+    const codeCandidate = error?.payload?.error?.code ?? error?.code ?? null;
+    const rawMessage =
+      error?.payload?.error?.message ?? (error instanceof Error ? error.message : fallbackMessage);
+    const copy = resolveWhatsAppErrorCopy(codeCandidate, rawMessage ?? fallbackMessage);
+    return {
+      code: copy.code,
+      title: copy.title,
+      message: copy.description ?? rawMessage ?? fallbackMessage,
+    };
+  };
+
+  const applyErrorMessageFromError = (error, fallbackMessage, meta = {}) => {
+    const friendly = resolveFriendlyError(error, fallbackMessage);
+    setErrorMessage(friendly.message, {
+      ...meta,
+      code: friendly.code ?? meta.code,
+      title: friendly.title ?? meta.title,
+    });
+    return friendly;
   };
 
   useEffect(() => {
@@ -1481,6 +1514,10 @@ const WhatsAppConnect = ({
 
       if (isAuthError(err)) {
         handleAuthFallback();
+      } else {
+        applyErrorMessageFromError(
+          err,
+          'Não foi possível carregar status do WhatsApp'
       } else if (!isMissingInstanceError) {
         setErrorMessage(
           err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
@@ -1779,12 +1816,13 @@ const WhatsAppConnect = ({
         throw err;
       }
 
-      const message =
-        err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível criar uma nova instância');
-      setErrorMessage(message);
+      const friendly = applyErrorMessageFromError(
+        err,
+        'Não foi possível criar uma nova instância'
+      );
       logError('Falha ao criar instância WhatsApp', err);
-      throw err instanceof Error ? err : new Error(message);
+      const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
+      throw errorToThrow;
     } finally {
       setLoadingInstances(false);
     }
@@ -1990,11 +2028,14 @@ const WhatsAppConnect = ({
         agreementId,
       });
     } catch (err) {
-      const message =
-        err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível remover a instância');
-      setErrorMessage(message);
+      const friendly = applyErrorMessageFromError(
+        err,
+        'Não foi possível remover a instância'
+      );
       logError('Falha ao remover instância WhatsApp', err);
+      if (!friendly.code) {
+        toast.error('Falha ao remover instância', { description: friendly.message });
+      }
     } finally {
       setDeletingInstanceId(null);
     }
@@ -2130,7 +2171,7 @@ const WhatsAppConnect = ({
       if (isAuthError(err)) {
         handleAuthFallback();
       } else {
-        setErrorMessage(err instanceof Error ? err.message : 'Não foi possível gerar o QR Code');
+        applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
       }
     } finally {
       setLoadingQr(false);
@@ -2526,7 +2567,7 @@ const WhatsAppConnect = ({
               <div className="flex flex-wrap items-start gap-3 rounded-[var(--radius)] border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
                 <AlertCircle className="mt-0.5 h-4 w-4" />
                 <div className="flex-1 space-y-1">
-                  <p className="font-medium">Algo deu errado</p>
+                  <p className="font-medium">{errorState.title ?? 'Algo deu errado'}</p>
                   <p>{errorState.message}</p>
                   {errorState.requiresAuth ? (
                     <p className="text-[0.7rem] text-muted-foreground">

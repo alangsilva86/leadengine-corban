@@ -7,6 +7,7 @@ import InboxAppShell from './components/layout/InboxAppShell.jsx';
 import QueueList from './components/QueueList/QueueList.jsx';
 import FilterToolbar from './components/FilterToolbar/FilterToolbar.jsx';
 import useChatController from './hooks/useChatController.js';
+import { resolveWhatsAppErrorCopy } from '../whatsapp/utils/whatsapp-error-codes.js';
 
 export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
@@ -43,6 +44,15 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       },
       {
+        onSuccess: (result) => {
+          const error = result?.error;
+          if (error) {
+            const copy = resolveWhatsAppErrorCopy(error.code, error.message);
+            toast.error(copy.title ?? 'Falha ao enviar mensagem', {
+              description: copy.description ?? error.message ?? 'Não foi possível enviar a mensagem.',
+            });
+          }
+        },
         onError: (error) => {
           toast.error('Falha ao enviar mensagem', {
             description: error?.message ?? 'Erro inesperado ao enviar',
