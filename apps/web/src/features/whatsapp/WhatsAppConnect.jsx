@@ -1622,8 +1622,13 @@ const WhatsAppConnect = ({
           err,
           'Não foi possível carregar status do WhatsApp'
         );
-      } else {
-        setErrorMessage(null);
+        if (!isMissingInstanceError) {
+          setErrorMessage(
+            err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
+          );
+        } else {
+          setErrorMessage(null);
+        }
       }
       warn('Instâncias não puderam ser carregadas', err);
       return { success: false, error: err, skipped: isAuthError(err) };
