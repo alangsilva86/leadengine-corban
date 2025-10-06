@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z, type ZodTypeAny } from 'zod';
 
 const PHONE_MIN_DIGITS = 8;
 
@@ -14,6 +14,50 @@ const OptionalTrimmed = z
   .transform((value) => (value && value.length > 0 ? value : undefined));
 
 const PayloadTypeSchema = z.enum(['text', 'image', 'document', 'audio', 'video']);
+
+const LEGACY_PAYLOAD_KEYS = new Set([
+  'type',
+  'text',
+  'mediaUrl',
+  'caption',
+  'mimeType',
+  'fileName',
+  'previewUrl',
+]);
+
+const adaptLegacyPayloadShape = (input: unknown): unknown => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return input;
+  }
+
+  const record = input as Record<string, unknown>;
+
+  const existingPayload = record.payload;
+  if (existingPayload && typeof existingPayload === 'object' && !Array.isArray(existingPayload)) {
+    return input;
+  }
+
+  const payload: Record<string, unknown> = {};
+
+  LEGACY_PAYLOAD_KEYS.forEach((key) => {
+    if (record[key] !== undefined) {
+      payload[key] = record[key];
+    }
+  });
+
+  if (Object.keys(payload).length === 0) {
+    return input;
+  }
+
+  return {
+    ...record,
+    payload,
+  };
+};
+
+const withLegacyPayload = <Schema extends ZodTypeAny>(schema: Schema): Schema => {
+  return z.preprocess(adaptLegacyPayloadShape, schema) as Schema;
+};
 
 export const MessagePayloadSchema = z
   .object({
@@ -62,28 +106,34 @@ const PhoneSchema = z
     }
   });
 
-export const SendByTicketSchema = z.object({
-  instanceId: OptionalTrimmed,
-  payload: MessagePayloadSchema,
-  idempotencyKey: OptionalTrimmed,
-});
+export const SendByTicketSchema = withLegacyPayload(
+  z.object({
+    instanceId: OptionalTrimmed,
+    payload: MessagePayloadSchema,
+    idempotencyKey: OptionalTrimmed,
+  })
+);
 
 export type SendByTicketInput = z.infer<typeof SendByTicketSchema>;
 
-export const SendByContactSchema = z.object({
-  to: PhoneSchema,
-  instanceId: OptionalTrimmed,
-  payload: MessagePayloadSchema,
-  idempotencyKey: OptionalTrimmed,
-});
+export const SendByContactSchema = withLegacyPayload(
+  z.object({
+    to: PhoneSchema,
+    instanceId: OptionalTrimmed,
+    payload: MessagePayloadSchema,
+    idempotencyKey: OptionalTrimmed,
+  })
+);
 
 export type SendByContactInput = z.infer<typeof SendByContactSchema>;
 
-export const SendByInstanceSchema = z.object({
-  to: PhoneSchema,
-  payload: MessagePayloadSchema,
-  idempotencyKey: OptionalTrimmed,
-});
+export const SendByInstanceSchema = withLegacyPayload(
+  z.object({
+    to: PhoneSchema,
+    payload: MessagePayloadSchema,
+    idempotencyKey: OptionalTrimmed,
+  })
+);
 
 export type SendByInstanceInput = z.infer<typeof SendByInstanceSchema>;
 
