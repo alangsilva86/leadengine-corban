@@ -477,7 +477,7 @@ const formatTimestampLabel = (value) => {
       dateStyle: 'short',
       timeStyle: 'short',
     });
-  } catch (_error) {
+  } catch {
     return date.toISOString();
   }
 };

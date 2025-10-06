@@ -61,7 +61,9 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
   const assignToMe = (ticket) => {
     if (!currentUser?.id) {
-      toast.error('Não foi possível atribuir', { description: 'Usuário atual não identificado.' });
+      toast.error('Faça login para atribuir tickets', {
+        description: 'Entre novamente para assumir atendimentos na inbox.',
+      });
       return;
     }
     controller.assignMutation.mutate(
