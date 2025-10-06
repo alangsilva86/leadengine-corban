@@ -151,7 +151,7 @@ export interface WhatsAppQrCode {
 }
 
 export interface WhatsAppStatus extends WhatsAppQrCode {
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required';
+  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'pending' | 'failed';
   connected: boolean;
   stats?: Record<string, unknown> | null;
   metrics?: Record<string, unknown> | null;
@@ -231,11 +231,13 @@ class WhatsAppBrokerClient {
   }
 
   private get baseUrl(): string {
-    return process.env.WHATSAPP_BROKER_URL?.replace(/\/$/, '') || '';
+    const configured = (process.env.BROKER_BASE_URL || process.env.WHATSAPP_BROKER_URL || '').trim();
+    return configured ? configured.replace(/\/$/, '') : '';
   }
 
   private get brokerApiKey(): string {
-    return process.env.WHATSAPP_BROKER_API_KEY || '';
+    const configured = (process.env.BROKER_API_KEY || process.env.WHATSAPP_BROKER_API_KEY || '').trim();
+    return configured;
   }
 
   private get shouldStripLegacyPlus(): boolean {
@@ -265,8 +267,16 @@ class WhatsAppBrokerClient {
       throw new WhatsAppBrokerNotConfiguredError(message);
     }
 
-    if (!this.baseUrl || !this.brokerApiKey) {
-      throw new WhatsAppBrokerNotConfiguredError();
+    if (!this.baseUrl) {
+      throw new WhatsAppBrokerNotConfiguredError(
+        'WhatsApp broker base URL is not configured. Set BROKER_BASE_URL or WHATSAPP_BROKER_URL.'
+      );
+    }
+
+    if (!this.brokerApiKey) {
+      throw new WhatsAppBrokerNotConfiguredError(
+        'WhatsApp broker API key is not configured. Set BROKER_API_KEY or WHATSAPP_BROKER_API_KEY.'
+      );
     }
   }
 
@@ -561,46 +571,24 @@ class WhatsAppBrokerClient {
     };
   }
 
-  private async sendViaBrokerRoutes(
+  private async sendViaDirectRoutes(
     instanceId: string,
     normalizedPayload: BrokerOutboundMessage,
     options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
-    try {
-      const response = await this.request<Record<string, unknown>>(
-        `/instances/${encodeURIComponent(instanceId)}/messages`,
-        {
-          method: 'POST',
-          body: JSON.stringify(
-            this.buildDirectMessagePayload(instanceId, normalizedPayload, options.rawPayload)
-          ),
-        },
-        { idempotencyKey: options.idempotencyKey }
-      );
-
-      const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
-      return this.buildMessageResult(normalizedPayload, normalizedResponse);
-    } catch (error) {
-      if (error instanceof WhatsAppBrokerError && error.status === 404) {
-        logger.debug('Direct message route unavailable; falling back to broker endpoint', {
-          instanceId,
-        });
-      } else {
-        throw error;
-      }
-    }
-
-    const fallbackResponse = await this.request<Record<string, unknown>>(
-      '/broker/messages',
+    const response = await this.request<Record<string, unknown>>(
+      `/instances/${encodeURIComponent(instanceId)}/messages`,
       {
         method: 'POST',
-        body: JSON.stringify(normalizedPayload),
+        body: JSON.stringify(
+          this.buildDirectMessagePayload(instanceId, normalizedPayload, options.rawPayload)
+        ),
       },
       { idempotencyKey: options.idempotencyKey }
     );
 
-    const normalizedFallback = BrokerOutboundResponseSchema.parse(fallbackResponse);
-    return this.buildMessageResult(normalizedPayload, normalizedFallback);
+    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+    return this.buildMessageResult(normalizedPayload, normalizedResponse);
   }
 
   private async sendViaInstanceRoutes(
@@ -609,11 +597,11 @@ class WhatsAppBrokerClient {
     options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
     if (normalizedPayload.type !== 'text') {
-      logger.warn('Legacy instance routes only support text payloads; falling back to broker dispatch', {
-        instanceId,
-        type: normalizedPayload.type,
-      });
-      return this.sendViaBrokerRoutes(instanceId, normalizedPayload, options);
+      throw new WhatsAppBrokerError(
+        'Legacy instance routes only support text payloads',
+        'UNSUPPORTED_MESSAGE_TYPE',
+        415
+      );
     }
 
     const response = await this.request<Record<string, unknown>>(
@@ -771,20 +759,26 @@ class WhatsAppBrokerClient {
       externalId?: string;
     }
   ): Promise<T> {
-    return this.request<T>('/broker/messages', {
-      method: 'POST',
-      body: JSON.stringify(
-        compactObject({
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId ?? payload.sessionId,
-          to: payload.to,
-          type: 'text',
-          content: payload.message,
-          previewUrl: payload.previewUrl,
-          externalId: payload.externalId,
-        })
-      ),
-    });
+    const sessionId = payload.sessionId;
+    const requestBody = JSON.stringify(
+      compactObject({
+        sessionId,
+        instanceId: payload.instanceId ?? sessionId,
+        to: payload.to,
+        type: 'text',
+        text: payload.message,
+        previewUrl: payload.previewUrl,
+        externalId: payload.externalId,
+      })
+    );
+
+    return this.request<T>(
+      `/instances/${encodeURIComponent(sessionId)}/messages`,
+      {
+        method: 'POST',
+        body: requestBody,
+      }
+    );
   }
 
   async createPoll<T = Record<string, unknown>>(
@@ -797,19 +791,26 @@ class WhatsAppBrokerClient {
       allowMultipleAnswers?: boolean;
     }
   ): Promise<T> {
-    return this.request<T>('/broker/polls', {
-      method: 'POST',
-      body: JSON.stringify(
-        compactObject({
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId ?? payload.sessionId,
-          to: payload.to,
-          question: payload.question,
-          options: payload.options,
-          allowMultipleAnswers: payload.allowMultipleAnswers,
-        })
-      ),
-    });
+    const sessionId = payload.sessionId;
+    const requestBody = JSON.stringify(
+      compactObject({
+        sessionId,
+        instanceId: payload.instanceId ?? sessionId,
+        to: payload.to,
+        type: 'poll',
+        question: payload.question,
+        options: payload.options,
+        allowMultipleAnswers: payload.allowMultipleAnswers,
+      })
+    );
+
+    return this.request<T>(
+      `/instances/${encodeURIComponent(sessionId)}/messages`,
+      {
+        method: 'POST',
+        body: requestBody,
+      }
+    );
   }
 
   async fetchEvents<T = { events: unknown[] }>(
@@ -826,7 +827,6 @@ class WhatsAppBrokerClient {
     }
 
     attempts.push({ path: '/instances/events', includeInstanceInQuery: true });
-    attempts.push({ path: '/broker/events', includeInstanceInQuery: true });
 
     let lastError: unknown;
 
@@ -890,7 +890,6 @@ class WhatsAppBrokerClient {
     }
 
     attempts.push({ path: '/instances/events/ack', bodyType: 'withInstance' });
-    attempts.push({ path: '/broker/events/ack', bodyType: 'withoutInstance' });
 
     const bodyWithInstance = JSON.stringify(
       compactObject({
@@ -1642,7 +1641,7 @@ class WhatsAppBrokerClient {
     const mode = this.deliveryMode;
 
     if (mode === 'broker') {
-      return this.sendViaBrokerRoutes(instanceId, normalizedPayload, dispatchOptions);
+      return this.sendViaDirectRoutes(instanceId, normalizedPayload, dispatchOptions);
     }
 
     if (mode === 'instances') {
@@ -1650,10 +1649,10 @@ class WhatsAppBrokerClient {
     }
 
     try {
-      return await this.sendViaBrokerRoutes(instanceId, normalizedPayload, dispatchOptions);
+      return await this.sendViaDirectRoutes(instanceId, normalizedPayload, dispatchOptions);
     } catch (error) {
       if (error instanceof WhatsAppBrokerError && this.shouldRetryWithInstanceRoutes(error)) {
-        logger.warn('Broker route rejected payload; retrying via legacy instance endpoint', {
+        logger.warn('Direct route rejected payload; retrying via legacy instance endpoint', {
           instanceId,
           status: error.status,
           code: error.code,

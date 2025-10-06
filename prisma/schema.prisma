@@ -289,6 +289,8 @@ enum WhatsAppInstanceStatus {
   connecting
   connected
   error
+  pending
+  failed
 }
 
 model WhatsAppInstance {
@@ -297,7 +299,7 @@ model WhatsAppInstance {
   name        String
   brokerId    String
   phoneNumber String?
-  status      WhatsAppInstanceStatus   @default(disconnected)
+  status      WhatsAppInstanceStatus   @default(pending)
   connected   Boolean                  @default(false)
   lastSeenAt  DateTime?
   createdAt   DateTime                 @default(now())

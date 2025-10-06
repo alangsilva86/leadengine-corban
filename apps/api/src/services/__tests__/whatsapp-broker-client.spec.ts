@@ -175,7 +175,7 @@ describe('WhatsAppBrokerClient', () => {
     expect(result.status).toBe('SENT');
   });
 
-  it('falls back to broker routes when direct endpoint is unavailable', async () => {
+  it('falls back to legacy routes when direct endpoint is unavailable', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
 
@@ -202,7 +202,7 @@ describe('WhatsAppBrokerClient', () => {
     const [firstUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/messages');
     const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(secondUrl).toBe('https://broker.test/broker/messages');
+    expect(secondUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
     const headers = secondInit?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('fallback-001');
 
@@ -242,7 +242,7 @@ describe('WhatsAppBrokerClient', () => {
     expect(secondUrl.searchParams.get('cursor')).toBe('cur-01');
   });
 
-  it('acknowledges events using direct routes with instance fallback to broker', async () => {
+  it('acknowledges events using direct routes with tenant fallback', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
 
@@ -253,17 +253,11 @@ describe('WhatsAppBrokerClient', () => {
           headers: { 'content-type': 'application/json' },
         })
       )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { code: 'NOT_FOUND' } }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        })
-      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await whatsappBrokerClient.ackEvents({ ids: ['evt-1', 'evt-2'], instanceId: 'instance-91' });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const firstAckUrl = new URL(fetchMock.mock.calls[0][0] as string);
     expect(firstAckUrl.pathname).toBe('/instances/instance-91/events/ack');
@@ -272,11 +266,6 @@ describe('WhatsAppBrokerClient', () => {
     expect(secondAckUrl.pathname).toBe('/instances/events/ack');
     const secondBody = fetchMock.mock.calls[1][1]?.body as string;
     expect(JSON.parse(secondBody)).toEqual({ ids: ['evt-1', 'evt-2'], instanceId: 'instance-91' });
-
-    const thirdAckUrl = new URL(fetchMock.mock.calls[2][0] as string);
-    expect(thirdAckUrl.pathname).toBe('/broker/events/ack');
-    const thirdBody = fetchMock.mock.calls[2][1]?.body as string;
-    expect(JSON.parse(thirdBody)).toEqual({ ids: ['evt-1', 'evt-2'] });
   });
 });
 
