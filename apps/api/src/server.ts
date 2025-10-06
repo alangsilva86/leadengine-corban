@@ -27,6 +27,7 @@ import { queuesRouter } from './routes/queues';
 import { ticketMessagesRouter } from './routes/messages.ticket';
 import { contactMessagesRouter } from './routes/messages.contact';
 import { whatsappMessagesRouter } from './routes/integrations/whatsapp.messages';
+import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 
 if (process.env.NODE_ENV !== 'production') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -309,25 +310,7 @@ io.engine.on('connection_error', (err) => {
   });
 });
 
-io.on('connection', (socket) => {
-  logger.info(`Client connected: ${socket.id}`);
-  
-  // Juntar-se a sala do tenant
-  socket.on('join-tenant', (tenantId: string) => {
-    socket.join(`tenant:${tenantId}`);
-    logger.info(`Client ${socket.id} joined tenant ${tenantId}`);
-  });
-  
-  // Juntar-se a sala de usuário
-  socket.on('join-user', (userId: string) => {
-    socket.join(`user:${userId}`);
-    logger.info(`Client ${socket.id} joined user ${userId}`);
-  });
-  
-  socket.on('disconnect', () => {
-    logger.info(`Client disconnected: ${socket.id}`);
-  });
-});
+io.on('connection', registerSocketConnectionHandlers);
 
 // Root availability check
 const rootAvailabilityPayload = {
