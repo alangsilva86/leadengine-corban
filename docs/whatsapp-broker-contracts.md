@@ -43,9 +43,11 @@
 
 - Requests validated with `BrokerOutboundMessageSchema` inside `whatsappBrokerClient.sendMessage`.
 - Minimal required fields: `sessionId`/`instanceId`, `to`, `content`; `type` defaults to `text`.
-- Media/template/location payloads optional but mandatory when `type != text`.
+- Direct delivery posts to `/instances/:id/messages` com corpo plano `{ sessionId, instanceId, to, type, text, caption?, mediaUrl?, mimeType?, fileName?, previewUrl?, template?, location?, metadata? }`. Campos de mídia/template/location são encaminhados automaticamente quando presentes.
+- Payloads de mídia/template/location continuam opcionais, mas obrigatórios quando `type != text` (validação garantida pelo schema).
+- O cabeçalho `Idempotency-Key` é propagado a partir de `metadata.idempotencyKey` (ou argumento explícito) para evitar reenvios duplicados.
+- Se o broker retornar `404`, o cliente cai para `/broker/messages`; defina `WHATSAPP_BROKER_DELIVERY_MODE=broker` para forçar esse modo. `WHATSAPP_BROKER_DELIVERY_MODE=instances` continua direcionando para as rotas legadas `/instances/:id/send-text` (apenas texto, opcionalmente removendo o `+` inicial com `WHATSAPP_BROKER_LEGACY_STRIP_PLUS=true`).
 - Responses normalised via `BrokerOutboundResponseSchema`; `externalId` fallback maintained for idempotency.
-- `WHATSAPP_BROKER_DELIVERY_MODE=instances` força o cliente a usar as rotas legadas `/instances/:id/send-text` (texto puro), com suporte opcional a remoção do prefixo `+` (`WHATSAPP_BROKER_LEGACY_STRIP_PLUS=true`). Use `broker` ou `auto` para o modo minimalista `/broker/messages`.
 
 ### Error responses
 
