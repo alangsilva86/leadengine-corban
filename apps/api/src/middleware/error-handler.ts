@@ -10,6 +10,8 @@ import {
 } from '@ticketz/core';
 import { logger } from '../config/logger';
 import { WhatsAppBrokerError } from '../services/whatsapp-broker-client';
+import { RateLimitError } from '../utils/rate-limit';
+import { PhoneNormalizationError } from '../utils/phone';
 
 const readErrorDetails = (err: unknown): unknown => {
   if (typeof err === 'object' && err !== null && 'details' in err) {
@@ -137,6 +139,19 @@ export const errorHandler = (
       code: readErrorCode(error) ?? 'DOMAIN_ERROR',
       message: error.message,
       details: readErrorDetails(error),
+    };
+  } else if (error instanceof RateLimitError) {
+    apiError = {
+      status: 429,
+      code: 'RATE_LIMITED',
+      message: error.message,
+      details: { retryAfterMs: error.retryAfterMs },
+    };
+  } else if (error instanceof PhoneNormalizationError) {
+    apiError = {
+      status: 400,
+      code: 'INVALID_PHONE',
+      message: error.message,
     };
   } else if (brokerError) {
     const { code, message } = getWhatsAppBrokerMessage(brokerError.code);

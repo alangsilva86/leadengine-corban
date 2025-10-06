@@ -2,6 +2,7 @@ import {
   ConflictError,
   Contact,
   CreateTicketDTO,
+  ForbiddenError,
   Lead,
   Message,
   Pagination,
@@ -33,9 +34,119 @@ import {
   type TicketNoteVisibility,
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
+import { whatsappOutboundMetrics } from '../lib/metrics';
 import { whatsappBrokerClient } from './whatsapp-broker-client';
+import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
+import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
+import {
+  getIdempotentValue,
+  hashIdempotentPayload,
+  rememberIdempotency,
+} from '../utils/idempotency';
+import type { NormalizedMessagePayload } from '../dtos/message-schemas';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
+
+const OUTBOUND_TPS_DEFAULT = (() => {
+  const raw = process.env.OUTBOUND_TPS_DEFAULT;
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+})();
+
+const OUTBOUND_TPS_OVERRIDES = (() => {
+  const map = new Map<string, number>();
+  const raw = process.env.OUTBOUND_TPS_BY_INSTANCE;
+  if (!raw) {
+    return map;
+  }
+
+  raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .forEach((entry) => {
+      const [id, limitRaw] = entry.split(':').map((value) => value.trim());
+      const parsed = Number.parseInt(limitRaw ?? '', 10);
+      if (id && Number.isFinite(parsed) && parsed > 0) {
+        map.set(id, parsed);
+      }
+    });
+
+  return map;
+})();
+
+const IDEMPOTENCY_TTL_MS = (() => {
+  const raw = process.env.OUTBOUND_IDEMPOTENCY_TTL_MS;
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 24 * 60 * 60 * 1000;
+})();
+
+const resolveInstanceRateLimit = (instanceId: string | null | undefined): number => {
+  if (!instanceId) {
+    return OUTBOUND_TPS_DEFAULT;
+  }
+
+  return OUTBOUND_TPS_OVERRIDES.get(instanceId) ?? OUTBOUND_TPS_DEFAULT;
+};
+
+const rateKeyForInstance = (tenantId: string, instanceId: string): string => `outbound:${tenantId}:${instanceId}`;
+
+const defaultQueueCache = new Map<string, string>();
+
+const resolveDefaultQueueId = async (tenantId: string): Promise<string> => {
+  if (defaultQueueCache.has(tenantId)) {
+    return defaultQueueCache.get(tenantId) as string;
+  }
+
+  const queue = await prisma.queue.findFirst({
+    where: { tenantId },
+    orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  if (!queue) {
+    throw new Error('DEFAULT_QUEUE_NOT_FOUND');
+  }
+
+  defaultQueueCache.set(tenantId, queue.id);
+  return queue.id;
+};
+
+const ensureWhatsAppInstanceAccessible = async (tenantId: string, instanceId: string): Promise<void> => {
+  const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+  if (!instance) {
+    throw new NotFoundError('WhatsAppInstance', instanceId);
+  }
+
+  if (instance.tenantId !== tenantId) {
+    throw new ForbiddenError('Você não tem acesso a esta instância de WhatsApp.');
+  }
+};
+
+export type OutboundMessageResponse = {
+  queued: true;
+  ticketId: string;
+  messageId: string;
+  status: Message['status'];
+  externalId: string | null;
+  error: unknown | null;
+};
+
+const buildOutboundResponse = (message: Message): OutboundMessageResponse => {
+  const brokerMeta =
+    message.metadata && typeof message.metadata === 'object'
+      ? ((message.metadata as Record<string, unknown>).broker as Record<string, unknown> | undefined)
+      : undefined;
+
+  return {
+    queued: true,
+    ticketId: message.ticketId,
+    messageId: message.id,
+    status: message.status,
+    externalId: message.externalId ?? null,
+    error: brokerMeta?.error ?? null,
+  } satisfies OutboundMessageResponse;
+};
 
 export type TicketIncludeOption = 'contact' | 'lead' | 'notes';
 
@@ -128,6 +239,38 @@ const emitTicketEvent = (
   if (userId) {
     emitToUser(userId, event, payload);
   }
+};
+
+const emitMessageCreatedEvents = (
+  tenantId: string,
+  ticketId: string,
+  message: Message,
+  userId?: string | null
+) => {
+  emitTicketEvent(tenantId, ticketId, 'message:created', message, userId);
+  emitTicketEvent(tenantId, ticketId, 'ticket.message.created', message, userId);
+  emitTicketEvent(tenantId, ticketId, 'ticket.message', message, userId);
+};
+
+const emitMessageUpdatedEvents = (
+  tenantId: string,
+  ticketId: string,
+  message: Message,
+  userId?: string | null
+) => {
+  emitTicketEvent(tenantId, ticketId, 'message:updated', message, userId);
+  emitTicketEvent(
+    tenantId,
+    ticketId,
+    'message.status.changed',
+    {
+      ticketId,
+      messageId: message.id,
+      status: message.status,
+    },
+    userId
+  );
+  emitTicketEvent(tenantId, ticketId, 'ticket.message', message, userId);
 };
 
 const resolveWhatsAppInstanceId = (ticket: Ticket | null | undefined): string | null => {
@@ -844,11 +987,17 @@ export const sendMessage = async (
     throw new NotFoundError('Ticket', input.ticketId);
   }
 
+  const inferredInstanceId = resolveWhatsAppInstanceId(ticket);
+  const effectiveInstanceId = input.instanceId ?? inferredInstanceId;
+
   const messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
     ...input,
+    content: input.content ?? input.caption ?? '',
     direction: userId ? 'OUTBOUND' : 'INBOUND',
     userId,
-    status: 'SENT',
+    status: userId ? 'PENDING' : 'SENT',
+    instanceId: effectiveInstanceId ?? undefined,
+    idempotencyKey: input.idempotencyKey ?? undefined,
   });
 
   if (!messageRecord) {
@@ -856,14 +1005,26 @@ export const sendMessage = async (
   }
 
   let message = messageRecord;
+  let statusChanged = false;
+
+  emitMessageCreatedEvents(tenantId, input.ticketId, message, userId ?? null);
 
   const markAsFailed = async (reason: string) => {
+    const currentMetadata = (message.metadata ?? {}) as Record<string, unknown>;
+    const previousBroker =
+      currentMetadata?.broker && typeof currentMetadata.broker === 'object'
+        ? (currentMetadata.broker as Record<string, unknown>)
+        : {};
+
     const metadata = {
-      ...(message.metadata ?? {}),
+      ...currentMetadata,
       broker: {
+        ...previousBroker,
         provider: 'whatsapp',
-        instanceId: resolveWhatsAppInstanceId(ticket),
-        error: reason,
+        instanceId: effectiveInstanceId,
+        error: {
+          message: reason,
+        },
         failedAt: new Date().toISOString(),
       },
     } as Record<string, unknown>;
@@ -871,15 +1032,19 @@ export const sendMessage = async (
     const failed = await storageUpdateMessage(tenantId, message.id, {
       status: 'FAILED',
       metadata,
+      instanceId: effectiveInstanceId ?? undefined,
     });
 
     if (failed) {
       message = failed;
+      statusChanged = true;
     }
+
+    return failed;
   };
 
   if (userId && ticket.channel === 'WHATSAPP') {
-    const instanceId = resolveWhatsAppInstanceId(ticket);
+    const instanceId = effectiveInstanceId;
 
     if (!instanceId) {
       logger.warn('Unable to send WhatsApp message: instanceId missing from ticket metadata', {
@@ -902,9 +1067,14 @@ export const sendMessage = async (
         try {
           const brokerResult = await whatsappBrokerClient.sendMessage(instanceId, {
             to: phone,
-            content: input.content,
+            content: input.content ?? input.caption ?? '',
+            caption: input.caption,
             type: input.type,
             externalId: message.id,
+            mediaUrl: input.mediaUrl,
+            mediaMimeType: input.mediaMimeType,
+            mediaFileName: input.mediaFileName,
+            previewUrl: Boolean(input.metadata?.previewUrl),
           });
 
           const metadata = {
@@ -915,6 +1085,7 @@ export const sendMessage = async (
               externalId: brokerResult.externalId,
               status: brokerResult.status,
               dispatchedAt: brokerResult.timestamp,
+              raw: brokerResult.raw ?? undefined,
             },
           } as Record<string, unknown>;
 
@@ -922,10 +1093,12 @@ export const sendMessage = async (
             status: normalizeBrokerStatus(brokerResult.status),
             externalId: brokerResult.externalId,
             metadata,
+            instanceId,
           });
 
           if (updated) {
             message = updated;
+            statusChanged = true;
           }
         } catch (error) {
           const reason = error instanceof Error ? error.message : 'unknown_error';
@@ -941,19 +1114,9 @@ export const sendMessage = async (
     }
   }
 
-  emitTicketEvent(tenantId, input.ticketId, 'ticket.message', message, userId ?? null);
-  emitTicketEvent(tenantId, input.ticketId, 'ticket.message.created', message, userId ?? null);
-  emitTicketEvent(
-    tenantId,
-    input.ticketId,
-    'message.status.changed',
-    {
-      ticketId: input.ticketId,
-      messageId: message.id,
-      status: message.status,
-    },
-    userId ?? null
-  );
+  if (statusChanged) {
+    emitMessageUpdatedEvents(tenantId, input.ticketId, message, userId ?? null);
+  }
 
   const refreshedTicket = await storageFindTicketById(tenantId, input.ticketId);
   if (refreshedTicket) {
@@ -961,6 +1124,268 @@ export const sendMessage = async (
   }
 
   return message;
+};
+
+type SendOnTicketParams = {
+  tenantId: string;
+  operatorId: string;
+  ticketId: string;
+  payload: NormalizedMessagePayload;
+  instanceId?: string;
+  idempotencyKey?: string;
+};
+
+const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] => {
+  switch (type) {
+    case 'image':
+      return 'IMAGE';
+    case 'audio':
+      return 'AUDIO';
+    case 'video':
+      return 'VIDEO';
+    case 'document':
+      return 'DOCUMENT';
+    default:
+      return 'TEXT';
+  }
+};
+
+export const sendOnTicket = async ({
+  tenantId,
+  operatorId,
+  ticketId,
+  payload,
+  instanceId,
+  idempotencyKey,
+}: SendOnTicketParams): Promise<OutboundMessageResponse> => {
+  const ticket = await storageFindTicketById(tenantId, ticketId);
+
+  if (!ticket) {
+    throw new NotFoundError('Ticket', ticketId);
+  }
+
+  if (ticket.tenantId !== tenantId) {
+    throw new ConflictError('Ticket belongs to another tenant');
+  }
+
+  const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
+
+  if (!contact || contact.tenantId !== tenantId) {
+    throw new NotFoundError('Contact', ticket.contactId);
+  }
+
+  const phone = contact.phone?.trim();
+
+  if (!phone) {
+    throw new PhoneNormalizationError('Contato não possui telefone cadastrado.');
+  }
+
+  const targetInstanceId = instanceId ?? resolveWhatsAppInstanceId(ticket);
+
+  if (!targetInstanceId) {
+    throw new Error('WHATSAPP_INSTANCE_REQUIRED');
+  }
+
+  await ensureWhatsAppInstanceAccessible(tenantId, targetInstanceId);
+
+  let payloadHash: string | null = null;
+  if (idempotencyKey) {
+    payloadHash = hashIdempotentPayload({
+      tenantId,
+      ticketId,
+      instanceId: targetInstanceId,
+      payload,
+    });
+
+    const cached = getIdempotentValue<OutboundMessageResponse>(tenantId, idempotencyKey);
+    if (cached && cached.payloadHash === payloadHash) {
+      return cached.value;
+    }
+  }
+
+  const rateLimit = resolveInstanceRateLimit(targetInstanceId);
+  assertWithinRateLimit(rateKeyForInstance(tenantId, targetInstanceId), rateLimit);
+
+  const metadata: Record<string, unknown> = {};
+  if (typeof payload.previewUrl === 'boolean') {
+    metadata.previewUrl = payload.previewUrl;
+  }
+  if (idempotencyKey) {
+    metadata.idempotencyKey = idempotencyKey;
+  }
+
+  const messageInput: SendMessageDTO = {
+    ticketId,
+    type: toMessageType(payload.type),
+    instanceId: targetInstanceId,
+    content: payload.content,
+    caption: payload.caption,
+    mediaUrl: payload.mediaUrl,
+    mediaFileName: payload.mediaFileName,
+    mediaMimeType: payload.mediaMimeType,
+    metadata,
+    idempotencyKey,
+  };
+
+  const startedAt = Date.now();
+  const message = await sendMessage(tenantId, operatorId, messageInput);
+  const latencyMs = Date.now() - startedAt;
+  const metricsInstanceId = message.instanceId ?? targetInstanceId;
+
+  whatsappOutboundMetrics.incTotal(
+    {
+      instanceId: metricsInstanceId,
+      status: message.status,
+    },
+    1
+  );
+  whatsappOutboundMetrics.observeLatency({ instanceId: metricsInstanceId }, latencyMs);
+
+  const response = buildOutboundResponse(message);
+
+  if (idempotencyKey && payloadHash) {
+    rememberIdempotency(tenantId, idempotencyKey, payloadHash, response, IDEMPOTENCY_TTL_MS);
+  }
+
+  return response;
+};
+
+type SendToContactParams = {
+  tenantId: string;
+  operatorId: string;
+  contactId: string;
+  payload: NormalizedMessagePayload;
+  instanceId?: string;
+  to?: string;
+  idempotencyKey?: string;
+};
+
+export const sendToContact = async ({
+  tenantId,
+  operatorId,
+  contactId,
+  payload,
+  instanceId,
+  to,
+  idempotencyKey,
+}: SendToContactParams): Promise<OutboundMessageResponse> => {
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+
+  if (!contact || contact.tenantId !== tenantId) {
+    throw new NotFoundError('Contact', contactId);
+  }
+
+  if (instanceId) {
+    await ensureWhatsAppInstanceAccessible(tenantId, instanceId);
+  }
+
+  let normalizedPhone = contact.phone?.trim() ?? undefined;
+
+  if (to) {
+    const normalized = normalizePhoneNumber(to);
+    normalizedPhone = normalized.e164;
+
+    if (contact.phone !== normalizedPhone) {
+      await prisma.contact.update({
+        where: { id: contactId },
+        data: {
+          phone: normalizedPhone,
+          lastInteractionAt: new Date(),
+        },
+      });
+    }
+  }
+
+  if (!normalizedPhone) {
+    throw new PhoneNormalizationError('Contato sem telefone válido para envio.');
+  }
+
+  const existingTickets = await findTicketsByContact(tenantId, contactId);
+  let activeTicket = existingTickets.find((ticket) => OPEN_STATUSES.has(ticket.status));
+
+  if (!activeTicket) {
+    const queueId = await resolveDefaultQueueId(tenantId);
+    activeTicket = await createTicket({
+      tenantId,
+      contactId,
+      queueId,
+      channel: 'WHATSAPP',
+      metadata: {
+        whatsappInstanceId: instanceId ?? null,
+        phone: normalizedPhone,
+      },
+    });
+  }
+
+  return sendOnTicket({
+    tenantId,
+    operatorId,
+    ticketId: activeTicket.id,
+    payload,
+    instanceId,
+    idempotencyKey,
+  });
+};
+
+type SendAdHocParams = {
+  tenantId: string;
+  operatorId: string;
+  instanceId: string;
+  to: string;
+  payload: NormalizedMessagePayload;
+  idempotencyKey?: string;
+};
+
+export const sendAdHoc = async ({
+  tenantId,
+  operatorId,
+  instanceId,
+  to,
+  payload,
+  idempotencyKey,
+}: SendAdHocParams): Promise<OutboundMessageResponse> => {
+  await ensureWhatsAppInstanceAccessible(tenantId, instanceId);
+
+  const normalized = normalizePhoneNumber(to);
+
+  let contact = await prisma.contact.findUnique({
+    where: {
+      tenantId_phone: {
+        tenantId,
+        phone: normalized.e164,
+      },
+    },
+  });
+
+  if (!contact) {
+    contact = await prisma.contact.create({
+      data: {
+        tenantId,
+        name: normalized.e164,
+        phone: normalized.e164,
+        tags: ['whatsapp', 'outbound'],
+        lastInteractionAt: new Date(),
+      },
+    });
+  } else {
+    contact = await prisma.contact.update({
+      where: { id: contact.id },
+      data: {
+        lastInteractionAt: new Date(),
+        phone: normalized.e164,
+      },
+    });
+  }
+
+  return sendToContact({
+    tenantId,
+    operatorId,
+    contactId: contact.id,
+    payload,
+    instanceId,
+    to: normalized.e164,
+    idempotencyKey,
+  });
 };
 
 export const addTicketNote = async (

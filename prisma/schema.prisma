@@ -159,16 +159,20 @@ model Message {
   ticketId         String
   contactId        String
   userId           String?
+  instanceId       String?
   direction        MessageDirection
   type             MessageType     @default(TEXT)
   content          String
+  caption          String?
   mediaUrl         String?
+  mediaFileName    String?
   mediaType        String?
   mediaSize        Int?
   status           MessageStatus   @default(PENDING)
   externalId       String?
   quotedMessageId  String?
   metadata         Json            @default("{}")
+  idempotencyKey   String?
   deliveredAt      DateTime?
   readAt           DateTime?
   createdAt        DateTime        @default(now())
@@ -181,6 +185,10 @@ model Message {
   quotedMessage Message? @relation("MessageQuote", fields: [quotedMessageId], references: [id])
   quotes        Message[] @relation("MessageQuote")
 
+  @@unique([tenantId, externalId], map: "messages_tenant_external_id_unique")
+  @@unique([tenantId, idempotencyKey], map: "messages_tenant_idempotency_key_unique")
+  @@index([instanceId, createdAt], map: "messages_instance_created_idx")
+  @@index([ticketId, createdAt], map: "messages_ticket_created_idx")
   @@map("messages")
 }
 

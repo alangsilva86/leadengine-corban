@@ -94,16 +94,20 @@ export const MessageSchema = BaseEntitySchema.extend({
   ticketId: EntityIdSchema,
   contactId: EntityIdSchema,
   userId: EntityIdSchema.optional(), // Agente que enviou (se outbound)
+  instanceId: z.string().optional(),
   direction: MessageDirectionSchema,
   type: MessageTypeSchema.default('TEXT'),
-  content: z.string(),
+  content: z.string().default(''),
+  caption: z.string().optional(),
   mediaUrl: z.string().url().optional(),
+  mediaFileName: z.string().optional(),
   mediaType: z.string().optional(),
   mediaSize: z.number().int().nonnegative().optional(),
   status: MessageStatusSchema.default('PENDING'),
   externalId: z.string().optional(), // ID do provedor externo
   quotedMessageId: EntityIdSchema.optional(), // Mensagem citada
   metadata: z.record(z.unknown()).default({}),
+  idempotencyKey: z.string().optional(),
   deliveredAt: TimestampSchema.optional(),
   readAt: TimestampSchema.optional(),
 });
@@ -185,14 +189,40 @@ export const UpdateTicketDTOSchema = z.object({
 
 export type UpdateTicketDTO = z.infer<typeof UpdateTicketDTOSchema>;
 
-export const SendMessageDTOSchema = z.object({
-  ticketId: EntityIdSchema,
-  content: z.string().min(1),
-  type: MessageTypeSchema.default('TEXT'),
-  mediaUrl: z.string().url().optional(),
-  quotedMessageId: EntityIdSchema.optional(),
-  metadata: z.record(z.unknown()).default({}),
-});
+export const SendMessageDTOSchema = z
+  .object({
+    ticketId: EntityIdSchema,
+    type: MessageTypeSchema.default('TEXT'),
+    instanceId: z.string().optional(),
+    content: z.string().optional(),
+    caption: z.string().optional(),
+    mediaUrl: z.string().url().optional(),
+    mediaFileName: z.string().optional(),
+    mediaMimeType: z.string().optional(),
+    quotedMessageId: EntityIdSchema.optional(),
+    metadata: z.record(z.unknown()).default({}),
+    idempotencyKey: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasText = typeof value.content === 'string' && value.content.trim().length > 0;
+    const hasMedia = typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0;
+
+    if (value.type === 'TEXT' && !hasText) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Informe o conteúdo da mensagem de texto.',
+        path: ['content'],
+      });
+    }
+
+    if (value.type !== 'TEXT' && !hasMedia) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Mensagens de mídia exigem mediaUrl válido.',
+        path: ['mediaUrl'],
+      });
+    }
+  });
 
 export type SendMessageDTO = z.infer<typeof SendMessageDTOSchema>;
 

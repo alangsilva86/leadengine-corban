@@ -24,6 +24,9 @@ import './features/whatsapp-inbound/workers/inbound-processor';
 import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
 import { queuesRouter } from './routes/queues';
+import { ticketMessagesRouter } from './routes/messages.ticket';
+import { contactMessagesRouter } from './routes/messages.contact';
+import { whatsappMessagesRouter } from './routes/integrations/whatsapp.messages';
 
 if (process.env.NODE_ENV !== 'production') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -274,6 +277,9 @@ app.use('/api/lead-engine', leadEngineRouter);
 app.use('/api/tickets', authMiddleware, ticketsRouter);
 app.use('/api/leads', authMiddleware, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
+app.use('/api', authMiddleware, ticketMessagesRouter);
+app.use('/api', authMiddleware, contactMessagesRouter);
+app.use('/api', authMiddleware, whatsappMessagesRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);

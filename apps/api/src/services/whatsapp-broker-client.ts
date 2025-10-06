@@ -370,10 +370,10 @@ class WhatsAppBrokerClient {
           sessionId: payload.sessionId,
           instanceId: payload.instanceId ?? payload.sessionId,
           to: payload.to,
-          message: payload.message,
+          type: 'text',
+          content: payload.message,
           previewUrl: payload.previewUrl,
           externalId: payload.externalId,
-          type: 'text',
         })
       ),
     });
@@ -971,52 +971,52 @@ class WhatsAppBrokerClient {
     instanceId: string,
     payload: {
       to: string;
-      content: string;
+      content?: string;
+      caption?: string;
       type?: string;
       previewUrl?: boolean;
       externalId?: string;
+      mediaUrl?: string;
+      mediaMimeType?: string;
+      mediaFileName?: string;
       media?: Record<string, unknown>;
       location?: Record<string, unknown>;
       template?: Record<string, unknown>;
       metadata?: Record<string, unknown>;
     }
-  ): Promise<WhatsAppMessageResult> {
+  ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
+    const contentValue = payload.content ?? payload.caption ?? '';
+
+    const mediaPayload = payload.media
+      ? (payload.media as Record<string, unknown>)
+      : payload.mediaUrl
+      ? {
+          url: payload.mediaUrl,
+          mimetype: payload.mediaMimeType,
+          filename: payload.mediaFileName,
+        }
+      : undefined;
+
     const normalizedPayload = BrokerOutboundMessageSchema.parse({
       sessionId: instanceId,
       instanceId,
       to: payload.to,
-      type: payload.type ?? 'text',
-      content: payload.content,
+      type: payload.type ?? (mediaPayload ? 'image' : 'text'),
+      content: contentValue,
       externalId: payload.externalId,
       previewUrl: payload.previewUrl,
-      media: payload.media as unknown,
+      media: mediaPayload as unknown,
       location: payload.location as unknown,
       template: payload.template as unknown,
       metadata: payload.metadata,
     });
 
-    if (normalizedPayload.type !== 'text') {
-      throw new WhatsAppBrokerError(
-        `Message type "${normalizedPayload.type}" is not supported by the HTTP WhatsApp broker`,
-        'NOT_SUPPORTED',
-        400
-      );
-    }
-
-    const response = await this.sendText<{ externalId?: string; id?: string; status?: string; timestamp?: string }>(
-      {
-        sessionId: normalizedPayload.sessionId,
-        instanceId: normalizedPayload.instanceId ?? normalizedPayload.sessionId,
-        to: normalizedPayload.to,
-        message: normalizedPayload.content,
-        previewUrl: normalizedPayload.previewUrl,
-        externalId: normalizedPayload.externalId ?? undefined,
-      }
-    );
-
-    const normalizedResponse = BrokerOutboundResponseSchema.parse({
-      ...response,
+    const response = await this.request<Record<string, unknown>>('/broker/messages', {
+      method: 'POST',
+      body: JSON.stringify(normalizedPayload),
     });
+
+    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
 
     const externalId =
       normalizedResponse.externalId ??
@@ -1029,6 +1029,7 @@ class WhatsAppBrokerClient {
       externalId,
       status,
       timestamp: normalizedResponse.timestamp ?? new Date().toISOString(),
+      raw: normalizedResponse.raw ?? null,
     };
   }
 }

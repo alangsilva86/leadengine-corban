@@ -139,7 +139,7 @@ export const BrokerOutboundMessageSchema = z
       .transform((value) => value.trim().toLowerCase())
       .pipe(z.enum(outboundMessageTypes))
       .default('text'),
-    content: z.string().min(1),
+    content: z.string().default(''),
     externalId: nullableTrimmedString.optional(),
     previewUrl: z.boolean().optional(),
     media: z
@@ -169,6 +169,16 @@ export const BrokerOutboundMessageSchema = z
     metadata: safeRecord.optional(),
   })
   .superRefine((value, ctx) => {
+    const normalizedContent = typeof value.content === 'string' ? value.content.trim() : '';
+
+    if (value.type === 'text' && normalizedContent.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Texto é obrigatório para mensagens do tipo text.',
+        path: ['content'],
+      });
+    }
+
     if (value.type !== 'text' && !value.media && !value.template && !value.location) {
       ctx.addIssue({
         code: 'custom',
@@ -176,7 +186,11 @@ export const BrokerOutboundMessageSchema = z
         path: ['type'],
       });
     }
-  });
+  })
+  .transform((value) => ({
+    ...value,
+    content: typeof value.content === 'string' ? value.content.trim() : '',
+  }));
 
 export type BrokerOutboundMessage = z.infer<typeof BrokerOutboundMessageSchema>;
 

@@ -377,6 +377,8 @@ export const createMessage = async (
     userId?: string;
     direction: Message['direction'];
     status?: Message['status'];
+    instanceId?: string | null;
+    idempotencyKey?: string | null;
   }
 ): Promise<Message | null> => {
   const ticketsBucket = getTicketBucket(tenantId);
@@ -422,16 +424,20 @@ export const createMessage = async (
     ticketId,
     contactId: ticket.contactId,
     userId: input.userId,
+    instanceId: input.instanceId ?? undefined,
     direction: input.direction,
     type: input.type ?? 'TEXT',
-    content: input.content,
+    content: (input.content ?? '').trim(),
+    caption: input.caption ?? undefined,
     mediaUrl: input.mediaUrl,
-    mediaType: undefined,
+    mediaFileName: input.mediaFileName ?? undefined,
+    mediaType: input.mediaMimeType ?? undefined,
     mediaSize: undefined,
     status: input.status ?? 'SENT',
     externalId: undefined,
     quotedMessageId: input.quotedMessageId,
     metadata: metadataCopy,
+    idempotencyKey: input.idempotencyKey ?? undefined,
     deliveredAt: undefined,
     readAt: undefined,
     createdAt,
@@ -481,7 +487,8 @@ export const createMessage = async (
 
   if (!ticket.lastMessageAt || createdAt > ticket.lastMessageAt) {
     ticket.lastMessageAt = createdAt;
-    ticket.lastMessagePreview = record.content.slice(0, 280);
+    const previewSource = record.content && record.content.length > 0 ? record.content : record.caption ?? '';
+    ticket.lastMessagePreview = previewSource.slice(0, 280);
   }
 
   if (!ticket.updatedAt || createdAt > ticket.updatedAt) {
@@ -529,6 +536,7 @@ export const updateMessage = async (
     metadata?: Record<string, unknown> | null;
     deliveredAt?: Date | null;
     readAt?: Date | null;
+    instanceId?: string | null;
   }
 ): Promise<Message | null> => {
   const bucket = getMessageBucket(tenantId);
@@ -563,9 +571,55 @@ export const updateMessage = async (
     record.readAt = updates.readAt ?? undefined;
   }
 
+  if (updates.instanceId !== undefined) {
+    record.instanceId = updates.instanceId ?? undefined;
+  }
+
   record.updatedAt = new Date();
 
   bucket.set(record.id, record);
 
   return toMessage(record);
+};
+
+export const createOutboundMessage = async (
+  tenantId: string,
+  ticketId: string,
+  input: SendMessageDTO & {
+    userId?: string;
+    instanceId?: string | null;
+    idempotencyKey?: string | null;
+    status?: Message['status'];
+  }
+): Promise<Message | null> => {
+  return createMessage(tenantId, ticketId, {
+    ...input,
+    userId: input.userId,
+    direction: 'OUTBOUND',
+    status: input.status ?? 'PENDING',
+    instanceId: input.instanceId ?? undefined,
+    idempotencyKey: input.idempotencyKey ?? undefined,
+  });
+};
+
+export const applyBrokerAck = async (
+  tenantId: string,
+  messageId: string,
+  ack: {
+    status?: Message['status'];
+    externalId?: string;
+    metadata?: Record<string, unknown>;
+    deliveredAt?: Date | null;
+    readAt?: Date | null;
+    instanceId?: string | null;
+  }
+): Promise<Message | null> => {
+  return updateMessage(tenantId, messageId, {
+    status: ack.status,
+    externalId: ack.externalId,
+    metadata: ack.metadata ?? undefined,
+    deliveredAt: ack.deliveredAt ?? undefined,
+    readAt: ack.readAt ?? undefined,
+    instanceId: ack.instanceId ?? undefined,
+  });
 };

@@ -34,6 +34,8 @@ export {
   closeTicket,
   listTickets,
   createMessage,
+  createOutboundMessage,
   updateMessage,
   listMessages,
+  applyBrokerAck,
 } from './repositories/ticket-repository';
