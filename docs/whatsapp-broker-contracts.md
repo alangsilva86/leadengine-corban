@@ -46,6 +46,10 @@
 - Media/template/location payloads optional but mandatory when `type != text`.
 - Responses normalised via `BrokerOutboundResponseSchema`; `externalId` fallback maintained for idempotency.
 
+### Error responses
+
+- `409 INSTANCE_DISCONNECTED`: returned by `/integrations/whatsapp/instances/:instanceId/messages` when the target instance is offline. The payload contains `status` and `connected` flags so clients can prompt operators to reconnect before retrying.
+
 ### Allowed Types (prepped for future broker support)
 
 - `text`
