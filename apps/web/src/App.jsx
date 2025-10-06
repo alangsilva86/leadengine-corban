@@ -1,7 +1,8 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import Layout from './components/Layout.jsx';
-import UnderConstruction from './components/UnderConstruction.jsx';
 import './App.css';
+import { apiGet } from './lib/api.js';
+import { onAuthTokenChange, onTenantIdChange } from './lib/auth.js';
 
 const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('./components/AgreementGrid.jsx'));
@@ -30,6 +31,41 @@ function App() {
   const [selectedAgreement, setSelectedAgreement] = useState(null);
   const [whatsappStatus, setWhatsappStatus] = useState('disconnected');
   const [activeCampaign, setActiveCampaign] = useState(null);
+  const [me, setMe] = useState(null);
+  const [loadingCurrentUser, setLoadingCurrentUser] = useState(true);
+
+  const loadCurrentUser = useCallback(
+    async (signal) => {
+      setLoadingCurrentUser(true);
+
+      try {
+        const payload = await apiGet('/api/auth/me', { signal });
+
+        if (signal?.aborted) {
+          return;
+        }
+
+        setMe(payload?.data ?? null);
+      } catch (error) {
+        if (error?.name === 'AbortError' || signal?.aborted) {
+          return;
+        }
+
+        if (error?.status === 401) {
+          setMe(null);
+          return;
+        }
+
+        console.warn('Failed to load current user from API', error);
+        setMe(null);
+      } finally {
+        if (!signal?.aborted) {
+          setLoadingCurrentUser(false);
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     try {
@@ -65,6 +101,47 @@ function App() {
     return stageIndex === -1 ? 0 : stageIndex;
   }, [currentPage]);
 
+  useEffect(() => {
+    let abortController = new AbortController();
+
+    const run = () => {
+      loadCurrentUser(abortController.signal);
+    };
+
+    run();
+
+    const unsubscribeToken = onAuthTokenChange(() => {
+      abortController.abort();
+      abortController = new AbortController();
+      run();
+    });
+
+    const unsubscribeTenant = onTenantIdChange(() => {
+      abortController.abort();
+      abortController = new AbortController();
+      run();
+    });
+
+    return () => {
+      abortController.abort();
+      unsubscribeToken();
+      unsubscribeTenant();
+    };
+  }, [loadCurrentUser]);
+
+  const currentUser = useMemo(() => {
+    if (!me?.id) {
+      return null;
+    }
+
+    const tenantId = me.tenantId ?? me.tenant?.id ?? null;
+
+    return {
+      ...me,
+      tenantId,
+    };
+  }, [me]);
+
   const computeNextSetupPage = () => {
     if (!selectedAgreement) {
       return 'agreements';
@@ -76,14 +153,6 @@ function App() {
 
     return 'inbox';
   };
-
-  const activeUser = useMemo(
-    () => ({
-      id: 'agent-mvp',
-      name: 'Agente MVP',
-    }),
-    []
-  );
 
   const renderPage = () => {
     switch (currentPage) {
@@ -135,7 +204,26 @@ function App() {
           />
         );
       case 'inbox':
-        return <ChatCommandCenter currentUser={activeUser} />;
+        if (loadingCurrentUser) {
+          return (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Carregando operador autenticado…
+            </div>
+          );
+        }
+
+        if (!currentUser) {
+          return (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <p>Para acessar a Inbox, entre com sua conta novamente.</p>
+              <p className="text-xs text-muted-foreground/80">
+                A sessão atual expirou ou não foi possível identificar o operador.
+              </p>
+            </div>
+          );
+        }
+
+        return <ChatCommandCenter currentUser={currentUser} />;
       case 'reports':
         return <Reports />;
       case 'settings':
