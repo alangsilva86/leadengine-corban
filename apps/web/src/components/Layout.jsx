@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Menu,
   X,
@@ -13,6 +13,8 @@ import {
   Search,
   User,
   LogOut,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
@@ -24,6 +26,7 @@ import DemoAuthDialog from './DemoAuthDialog.jsx';
 
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const navigation = [
     { id: 'dashboard', name: 'Visão Geral', icon: Home },
@@ -42,9 +45,21 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
 
   const stageList = onboarding?.stages ?? [];
 
+  useEffect(() => {
+    if (!sidebarOpen) {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setSidebarCollapsed(false);
+    }
+  }, [sidebarOpen]);
+
   return (
     <div className="layout-container">
-      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      <aside
+        className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}
+      >
         <div className="sidebar-header">
           <div className="sidebar-logo">
             <div className="logo-icon">
@@ -73,6 +88,7 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
                   type="button"
                   onClick={handleNavigate(item.id)}
                   className={`nav-item ${currentPage === item.id ? 'nav-item-active' : ''}`}
+                  aria-label={item.name}
                 >
                   <item.icon className="nav-icon" />
                   <span className="nav-text">{item.name}</span>
@@ -115,6 +131,21 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
               onClick={() => setSidebarOpen(true)}
             >
               <Menu className="h-5 w-5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="sidebar-collapse-toggle"
+              onClick={() => setSidebarCollapsed((previous) => !previous)}
+              aria-label={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+              title={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+            >
+              {sidebarCollapsed ? (
+                <ChevronsRight className="h-5 w-5" />
+              ) : (
+                <ChevronsLeft className="h-5 w-5" />
+              )}
             </Button>
 
             <div className="search-container">
