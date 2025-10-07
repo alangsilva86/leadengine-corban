@@ -111,7 +111,12 @@ export const translateWhatsAppBrokerError = (
     status === 409 ||
     status === 410 ||
     INSTANCE_DISCONNECTED_CODES.has(code) ||
-    includesKeyword(message, ['not connected', 'disconnected', 'desconect'])
+    includesKeyword(message, [
+      'not connected',
+      'disconnected',
+      'desconect',
+      'socket indispon',
+    ])
   ) {
     return NORMALIZED_ERROR_COPY.INSTANCE_NOT_CONNECTED;
   }

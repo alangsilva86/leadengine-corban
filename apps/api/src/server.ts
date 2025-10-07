@@ -1,10 +1,10 @@
-import express, { type Application } from 'express';
+import express, { type Application, type RequestHandler } from 'express';
 import cors from 'cors';
 import type { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import { createServer, type IncomingMessage } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
 
@@ -37,12 +37,50 @@ if (process.env.NODE_ENV !== 'production') {
 const app: Application = express();
 const server = createServer(app);
 
-type RawBodyIncomingMessage = IncomingMessage & { originalUrl?: string; rawBody?: Buffer };
+type RawBodyIncomingMessage = IncomingMessage & {
+  originalUrl?: string;
+  rawBody?: Buffer;
+  rawBodyParseError?: SyntaxError | null;
+};
 
-const captureRawBody = (req: RawBodyIncomingMessage, _res: ServerResponse, buf: Buffer): void => {
-  if (req.originalUrl?.startsWith('/api/integrations/whatsapp/webhook')) {
-    req.rawBody = Buffer.from(buf);
+const webhookRawBodyMiddleware: RequestHandler = (req, _res, next) => {
+  const rawReq = req as RawBodyIncomingMessage;
+
+  const buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.alloc(0);
+  rawReq.rawBody = buffer.length > 0 ? buffer : undefined;
+  rawReq.rawBodyParseError = null;
+
+  if (buffer.length === 0) {
+    req.body = {};
+    next();
+    return;
   }
+
+  const contentType = (req.headers['content-type'] ?? '').toString().toLowerCase();
+  const shouldAttemptJsonParse = contentType.includes('application/json') || contentType.includes('text/');
+
+  if (!shouldAttemptJsonParse) {
+    req.body = {};
+    next();
+    return;
+  }
+
+  const text = buffer.toString('utf8').trim();
+
+  if (!text) {
+    req.body = {};
+    next();
+    return;
+  }
+
+  try {
+    req.body = JSON.parse(text);
+  } catch (error) {
+    rawReq.rawBodyParseError = error instanceof SyntaxError ? error : new SyntaxError('Invalid JSON');
+    req.body = {};
+  }
+
+  next();
 };
 
 const normalizeOrigin = (origin: string): string => {
@@ -231,7 +269,11 @@ app.use(
   })
 );
 app.use(compression());
-app.use(express.json({ limit: '10mb', verify: captureRawBody }));
+const createWebhookRawParser = () => express.raw({ type: '*/*', limit: '1mb' });
+
+app.use('/api/integrations/whatsapp/webhook', createWebhookRawParser(), webhookRawBodyMiddleware);
+app.use('/api/webhooks/whatsapp', createWebhookRawParser(), webhookRawBodyMiddleware);
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 

@@ -10,11 +10,16 @@ const OUTBOUND_LATENCY_METRIC = 'whatsapp_outbound_latency_ms';
 const OUTBOUND_LATENCY_HELP = '# HELP whatsapp_outbound_latency_ms Latência de envio outbound em milissegundos';
 const OUTBOUND_LATENCY_TYPE = '# TYPE whatsapp_outbound_latency_ms summary';
 
+const HTTP_REQUEST_METRIC = 'whatsapp_http_requests_total';
+const HTTP_REQUEST_HELP = '# HELP whatsapp_http_requests_total Contador de requisições HTTP para APIs de WhatsApp';
+const HTTP_REQUEST_TYPE = '# TYPE whatsapp_http_requests_total counter';
+
 type CounterLabels = Record<string, string | number | boolean | null | undefined>;
 
 const webhookCounterStore = new Map<string, number>();
 const outboundTotalStore = new Map<string, number>();
 const outboundLatencyStore = new Map<string, { sum: number; count: number }>();
+const httpRequestCounterStore = new Map<string, number>();
 
 const serializeLabels = (labels: CounterLabels = {}): string => {
   const entries = Object.entries(labels)
@@ -48,6 +53,14 @@ export const whatsappOutboundMetrics = {
       sum: current.sum + latencyMs,
       count: current.count + 1,
     });
+  },
+};
+
+export const whatsappHttpRequestsCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = serializeLabels(labels);
+    const current = httpRequestCounterStore.get(key) ?? 0;
+    httpRequestCounterStore.set(key, current + value);
   },
 };
 
@@ -86,6 +99,16 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(HTTP_REQUEST_HELP, HTTP_REQUEST_TYPE);
+  if (httpRequestCounterStore.size === 0) {
+    lines.push(`${HTTP_REQUEST_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of httpRequestCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${HTTP_REQUEST_METRIC}${suffix} ${value}`);
+    }
+  }
+
   return `${lines.join('\n')}\n`;
 };
 
@@ -93,4 +116,5 @@ export const resetMetrics = (): void => {
   webhookCounterStore.clear();
   outboundTotalStore.clear();
   outboundLatencyStore.clear();
+  httpRequestCounterStore.clear();
 };

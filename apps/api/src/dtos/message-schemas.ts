@@ -1,6 +1,7 @@
 import { z, type ZodTypeAny } from 'zod';
 
 const PHONE_MIN_DIGITS = 8;
+const PHONE_MAX_DIGITS = 15;
 
 const trimmedString = z
   .string()
@@ -104,6 +105,13 @@ const PhoneSchema = z
         message: 'Informe um telefone válido (mínimo 8 dígitos).',
       });
     }
+
+    if (digits.length > PHONE_MAX_DIGITS) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Informe um telefone válido (máximo 15 dígitos).',
+      });
+    }
   });
 
 export const SendByTicketSchema = withLegacyPayload(
@@ -136,6 +144,15 @@ export const SendByInstanceSchema = withLegacyPayload(
 );
 
 export type SendByInstanceInput = z.infer<typeof SendByInstanceSchema>;
+
+export const SendGenericMessageSchema = z.object({
+  to: PhoneSchema,
+  message: trimmedString,
+  previewUrl: z.boolean().optional(),
+  externalId: OptionalTrimmed,
+});
+
+export type SendGenericMessageInput = z.infer<typeof SendGenericMessageSchema>;
 
 export interface NormalizedMessagePayload {
   type: MessagePayloadInput['type'];
