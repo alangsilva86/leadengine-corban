@@ -190,8 +190,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         />
       }
       defaultContextOpen={false}
-    >
-      <div className="flex h-full flex-col gap-4 bg-gradient-to-br from-slate-950/60 via-slate-950 to-slate-950/80 px-4 py-6">
+      toolbar={
         <FilterToolbar
           search={filters.search ?? ''}
           onSearchChange={controller.setSearch}
@@ -200,12 +199,16 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
           loading={controller.ticketsQuery.isFetching}
           onRefresh={handleManualSync}
         />
-        <ConversationArea
-          ticket={controller.selectedTicket}
-          conversation={controller.conversation}
-          messagesQuery={controller.messagesQuery}
-          onSendMessage={sendMessage}
-          onCreateNote={createNote}
+      }
+    >
+      <div className="flex h-full flex-1 justify-center bg-gradient-to-br from-slate-950/60 via-slate-950 to-slate-950/80">
+        <div className="flex h-full w-full max-w-6xl flex-col gap-4 px-4 pb-6 pt-4">
+          <ConversationArea
+            ticket={controller.selectedTicket}
+            conversation={controller.conversation}
+            messagesQuery={controller.messagesQuery}
+            onSendMessage={sendMessage}
+            onCreateNote={createNote}
           onMarkWon={markWon}
           onMarkLost={markLost}
           onAssign={() => assignToMe(controller.selectedTicket)}
@@ -217,6 +220,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
           isSending={controller.sendMessageMutation.isPending}
           sendError={controller.sendMessageMutation.error}
         />
+        </div>
       </div>
     </InboxAppShell>
   );

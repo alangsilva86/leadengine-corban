@@ -49,6 +49,7 @@ const InboxAppShell = ({
   defaultContextOpen = false,
   title = 'Inbox de Leads',
   currentUser,
+  toolbar,
 }) => {
   const [contextOpen, setContextOpen] = useState(() => readPreference(CONTEXT_PREFERENCE_KEY, defaultContextOpen));
   const [desktopListVisible, setDesktopListVisible] = useState(true);
@@ -245,6 +246,13 @@ const InboxAppShell = ({
           </Button>
         </div>
       </header>
+      {toolbar ? (
+        <div className="border-b border-slate-900/60 bg-slate-950/95 px-4 py-5">
+          <div className="mx-auto w-full max-w-6xl">
+            {toolbar}
+          </div>
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {isDesktop ? (
           <SplitLayout
