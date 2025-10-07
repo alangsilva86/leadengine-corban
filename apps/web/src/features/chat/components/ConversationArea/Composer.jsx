@@ -3,7 +3,7 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Brain, Paperclip, Smile, Send, FileText, Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
-import QuickReplyList from '../Shared/QuickReplyList.jsx';
+import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
 
 const DEFAULT_REPLIES = [
@@ -47,6 +47,7 @@ export const Composer = ({
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
+  const [quickReplies, setQuickReplies] = useState(() => [...DEFAULT_REPLIES]);
 
   const placeholder = useMemo(() => {
     if (disabled) {
@@ -131,14 +132,6 @@ export const Composer = ({
 
   return (
     <div className="rounded-xl border border-slate-800/60 bg-slate-950/85 p-3">
-      <QuickReplyList
-        replies={DEFAULT_REPLIES}
-        onSelect={(text) => {
-          setValue((current) => `${current ? `${current}\n` : ''}${text}`);
-        }}
-        className="mb-2 flex flex-wrap gap-2"
-      />
-
       {attachments.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((file) => (
@@ -186,6 +179,21 @@ export const Composer = ({
           className="min-h-[88px] flex-1 resize-none border-slate-800 bg-slate-900/70 text-slate-100 placeholder:text-slate-600"
         />
         <div className="flex flex-col gap-2">
+          <QuickReplyMenu
+            replies={quickReplies}
+            onSelect={(text) => {
+              setValue((current) => `${current ? `${current}\n` : ''}${text}`);
+            }}
+            onCreate={(reply) => {
+              setQuickReplies((current) => {
+                const exists = current.some((item) => item.label === reply.label && item.text === reply.text);
+                if (exists) {
+                  return current;
+                }
+                return [...current, reply];
+              });
+            }}
+          />
           <Button
             variant="ghost"
             size="icon"
