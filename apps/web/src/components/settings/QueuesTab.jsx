@@ -204,7 +204,7 @@ const QueueFormDialog = ({
                 control={form.control}
                 name="isActive"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-md border p-3">
+                  <FormItem className="flex flex-row items-center justify-between rounded-md border border-[color:color-mix(in_srgb,var(--border)_85%,transparent)] bg-[color-mix(in_srgb,var(--surface)_80%,transparent)] p-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--border)_35%,transparent)]">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Fila ativa</FormLabel>
                       <DialogDescription className="text-xs">
