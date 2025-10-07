@@ -464,6 +464,12 @@ class WhatsAppBrokerClient {
     normalizedPayload: BrokerOutboundMessage,
     rawPayload: SendMessagePayload
   ): Record<string, unknown> {
+    const supportedMediaTypes = new Set(['image', 'video', 'document', 'audio']);
+
+    if (!supportedMediaTypes.has(normalizedPayload.type)) {
+      return {};
+    }
+
     const rawMedia =
       rawPayload.media && typeof rawPayload.media === 'object' ? rawPayload.media : undefined;
 
@@ -476,27 +482,15 @@ class WhatsAppBrokerClient {
       return trimmed.length > 0 ? trimmed : undefined;
     };
 
-    const toPositiveInteger = (value: unknown): number | undefined => {
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return undefined;
-      }
-
-      const parsed = Number(value);
-      const normalized = Number.isInteger(parsed) ? parsed : Math.trunc(parsed);
-      return normalized > 0 ? normalized : undefined;
-    };
-
     const captionCandidate = (() => {
       const directCaption = toTrimmedString(rawPayload.caption);
       if (directCaption) {
         return directCaption;
       }
 
-      if (normalizedPayload.type !== 'text') {
-        const normalized = toTrimmedString(normalizedPayload.content);
-        if (normalized) {
-          return normalized;
-        }
+      const normalized = toTrimmedString(normalizedPayload.content);
+      if (normalized && normalizedPayload.type !== 'text') {
+        return normalized;
       }
 
       return undefined;
@@ -519,9 +513,6 @@ class WhatsAppBrokerClient {
         (rawMedia
           ? toTrimmedString(rawMedia['fileName'] ?? rawMedia['filename'])
           : undefined),
-      mediaSize:
-        toPositiveInteger(normalizedPayload.media?.size) ??
-        (rawMedia ? toPositiveInteger(rawMedia['size']) : undefined),
       caption: captionCandidate,
     });
   }
@@ -548,17 +539,66 @@ class WhatsAppBrokerClient {
     normalizedPayload: BrokerOutboundMessage,
     options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
+    const supportedTypes = new Set([
+      'text',
+      'image',
+      'video',
+      'document',
+      'audio',
+      'template',
+      'location',
+    ]);
+
+    if (!supportedTypes.has(normalizedPayload.type)) {
+      const unsupportedMessage = `Direct route for ${normalizedPayload.type} messages is not supported yet`;
+      throw new WhatsAppBrokerError(unsupportedMessage, 'DIRECT_ROUTE_UNAVAILABLE', 415);
+    }
+
     const encodedInstanceId = encodeURIComponent(instanceId);
 
+    const mediaPayload = this.buildDirectMediaRequestPayload(
+      normalizedPayload,
+      options.rawPayload
+    );
+
+    const requiresMedia = ['image', 'video', 'document', 'audio'].includes(
+      normalizedPayload.type
+    );
+
+    if (requiresMedia) {
+      const mediaUrl = mediaPayload['mediaUrl'];
+      if (typeof mediaUrl !== 'string' || mediaUrl.length === 0) {
+        throw new WhatsAppBrokerError(
+          `Direct route for ${normalizedPayload.type} messages requires mediaUrl`,
+          'INVALID_MEDIA_PAYLOAD',
+          422
+        );
+      }
+    }
+
+    const directRequestBody = compactObject({
+      sessionId: instanceId,
+      instanceId,
+      to: normalizedPayload.to,
+      type: normalizedPayload.type,
+      text: normalizedPayload.type === 'text' ? normalizedPayload.content : undefined,
+      previewUrl: normalizedPayload.previewUrl,
+      template:
+        normalizedPayload.type === 'template' ? (normalizedPayload.template as unknown) : undefined,
+      location:
+        normalizedPayload.type === 'location' ? (normalizedPayload.location as unknown) : undefined,
+      metadata: normalizedPayload.metadata,
+      ...mediaPayload,
+    });
+
     const sendRequest = async (
-      path: string,
-      body: Record<string, unknown>
+      path: string
     ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> => {
       const response = await this.request<Record<string, unknown>>(
         path,
         {
           method: 'POST',
-          body: JSON.stringify(compactObject(body)),
+          body: JSON.stringify(directRequestBody),
         },
         { idempotencyKey: options.idempotencyKey }
       );
@@ -567,59 +607,23 @@ class WhatsAppBrokerClient {
       return this.buildMessageResult(normalizedPayload, normalizedResponse);
     };
 
-    if (normalizedPayload.type === 'text') {
-      return sendRequest(`/instances/${encodedInstanceId}/send-text`, {
-        to: normalizedPayload.to,
-        text: normalizedPayload.content,
-        previewUrl: normalizedPayload.previewUrl,
-        externalId: normalizedPayload.externalId,
-        metadata: normalizedPayload.metadata,
-      });
-    }
-
-    if (
-      normalizedPayload.type === 'image' ||
-      normalizedPayload.type === 'video' ||
-      normalizedPayload.type === 'document' ||
-      normalizedPayload.type === 'audio'
-    ) {
-      const mediaPayload = this.buildDirectMediaRequestPayload(
-        normalizedPayload,
-        options.rawPayload
-      );
-
-      const mediaUrl = mediaPayload['mediaUrl'];
-      if (!mediaUrl || typeof mediaUrl !== 'string') {
-        throw new WhatsAppBrokerError(
-          `Direct route for ${normalizedPayload.type} messages requires mediaUrl`,
-          'INVALID_MEDIA_PAYLOAD',
-          422
-        );
+    try {
+      return await sendRequest(`/instances/${encodedInstanceId}/messages`);
+    } catch (error) {
+      if (
+        error instanceof WhatsAppBrokerError &&
+        (error.status === 404 || error.status === 405)
+      ) {
+        logger.warn('Direct route unavailable, retrying via broker endpoint', {
+          instanceId,
+          status: error.status,
+          code: error.code,
+        });
+        return sendRequest('/broker/messages');
       }
 
-      const endpointMap: Record<typeof normalizedPayload.type, string> = {
-        image: 'send-image',
-        video: 'send-video',
-        document: 'send-document',
-        audio: 'send-audio',
-      };
-
-      const endpoint = endpointMap[normalizedPayload.type];
-
-      return sendRequest(`/instances/${encodedInstanceId}/${endpoint}`, {
-        to: normalizedPayload.to,
-        ...mediaPayload,
-        externalId: normalizedPayload.externalId,
-        metadata: normalizedPayload.metadata,
-      });
+      throw error;
     }
-
-    const unsupportedMessage = `Direct route for ${normalizedPayload.type} messages is not supported yet`;
-    throw new WhatsAppBrokerError(
-      unsupportedMessage,
-      'DIRECT_ROUTE_UNAVAILABLE',
-      415
-    );
   }
 
   private async sendViaInstanceRoutes(

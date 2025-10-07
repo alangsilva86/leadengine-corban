@@ -111,7 +111,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-900/send-text');
+    expect(url).toBe('https://broker.test/instances/instance-900/messages');
     expect(init?.method).toBe('POST');
 
     const headers = init?.headers as Headers;
@@ -120,7 +120,10 @@ describe('WhatsAppBrokerClient', () => {
 
     const parsed = JSON.parse(init?.body as string);
     expect(parsed).toEqual({
+      sessionId: 'instance-900',
+      instanceId: 'instance-900',
       to: '+5511999999999',
+      type: 'text',
       text: 'Olá via broker',
       metadata: { idempotencyKey: 'idem-900', custom: true },
     });
@@ -155,13 +158,16 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-media/send-document');
+    expect(url).toBe('https://broker.test/instances/instance-media/messages');
     const headers = init?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('media-123');
 
     const parsed = JSON.parse(init?.body as string);
     expect(parsed).toEqual({
+      sessionId: 'instance-media',
+      instanceId: 'instance-media',
       to: '+5511977777777',
+      type: 'document',
       mediaUrl: 'https://cdn.test/doc.pdf',
       mimeType: 'application/pdf',
       fileName: 'doc.pdf',
@@ -173,7 +179,7 @@ describe('WhatsAppBrokerClient', () => {
     expect(result.status).toBe('SENT');
   });
 
-  it('falls back to legacy routes when direct endpoint is unavailable', async () => {
+  it('falls back to broker routes when direct endpoint is unavailable', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
 
@@ -198,12 +204,18 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [firstUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
+    expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/messages');
     const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(secondUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
+    expect(secondUrl).toBe('https://broker.test/broker/messages');
     const headers = secondInit?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('fallback-001');
 
+    const parsedBody = JSON.parse(secondInit?.body as string);
+    expect(parsedBody).toEqual({
+      sessionId: 'instance-fallback',
+      instanceId: 'instance-fallback',
+      to: '+5511888888888',
+      type: 'text',
     const fallbackBody = JSON.parse(secondInit?.body as string);
     expect(fallbackBody).toMatchObject({
       to: '+5511888888888',
@@ -215,21 +227,38 @@ describe('WhatsAppBrokerClient', () => {
     expect(result.status).toBe('QUEUED');
   });
 
-  it('rejects unsupported template payloads on direct routes', async () => {
+  it('dispatches template payloads via direct routes', async () => {
+    const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
 
-    await expect(
-      whatsappBrokerClient.sendMessage('instance-template', {
-        to: '+5511999988888',
-        type: 'template',
-        template: { name: 'greeting_template', language: 'pt_BR' },
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ externalId: 'wamid-template', status: 'SENT' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       })
-    ).rejects.toMatchObject({
-      status: 415,
-      code: 'DIRECT_ROUTE_UNAVAILABLE',
+    );
+
+    const result = await whatsappBrokerClient.sendMessage('instance-template', {
+      to: '+5511999988888',
+      type: 'template',
+      template: { name: 'greeting_template', language: 'pt_BR' },
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/instance-template/messages');
+
+    const parsed = JSON.parse(init?.body as string);
+    expect(parsed).toEqual({
+      sessionId: 'instance-template',
+      instanceId: 'instance-template',
+      to: '+5511999988888',
+      type: 'template',
+      template: { name: 'greeting_template', language: 'pt_BR' },
+    });
+
+    expect(result.externalId).toBe('wamid-template');
+    expect(result.status).toBe('SENT');
   });
 
   it('prefers direct instance event routes and falls back gracefully', async () => {
