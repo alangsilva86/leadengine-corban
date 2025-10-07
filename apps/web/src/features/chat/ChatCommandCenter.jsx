@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import ConversationArea from './components/ConversationArea/ConversationArea.jsx';
@@ -125,7 +125,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const metrics = controller.metrics;
   const filters = controller.filters;
 
-  const quality = useMemo(() => controller.whatsAppLimits.data?.quality, [controller.whatsAppLimits.data]);
   const lastQueueAlertRef = useRef(null);
 
   useEffect(() => {
@@ -223,7 +222,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         onScheduleFollowUp={handleScheduleFollowUp}
         isRegisteringResult={controller.statusMutation.isPending}
         typingIndicator={controller.typingIndicator}
-        quality={quality}
         isSending={controller.sendMessageMutation.isPending}
         sendError={controller.sendMessageMutation.error}
       />
