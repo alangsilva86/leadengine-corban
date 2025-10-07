@@ -50,26 +50,26 @@ export const InboxItem = ({
       type="button"
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'flex w-full flex-col gap-2 rounded-xl border border-slate-800/70 bg-slate-950/75 p-3 text-left transition hover:border-slate-600/70 hover:bg-slate-900',
+        'flex w-full flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4 text-left text-slate-200 transition hover:border-slate-600 hover:bg-slate-900',
         selected && 'border-sky-500/60 bg-slate-900'
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-slate-800/80 p-2 text-sky-300">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-slate-300">
             <ChannelIcon className="h-4 w-4" />
           </span>
-          <div>
+          <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-              <span className="truncate max-w-[160px]" title={name}>
+              <span className="max-w-[160px] truncate" title={name}>
                 {name}
               </span>
               <StatusBadge status={ticket.status} />
             </div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
               <PipelineStepTag step={ticket.pipelineStep ?? ticket.metadata?.pipelineStep} />
               {ticket.timeline?.unreadInboundCount ? (
-                <Badge variant="secondary" className="bg-emerald-500/20 text-emerald-200">
+                <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
                   {ticket.timeline.unreadInboundCount} novas
                 </Badge>
               ) : null}
@@ -100,27 +100,27 @@ export const InboxItem = ({
         />
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-slate-300">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
         <SlaBadge window={ticket.window} />
         {ticket.qualityScore !== null && ticket.qualityScore !== undefined ? (
-          <Badge variant="outline" className="border border-emerald-500/50 bg-emerald-500/10 text-emerald-200">
+          <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
             Qualidade {ticket.qualityScore}%
           </Badge>
         ) : null}
         {ticket.lead?.probability ? (
-          <Badge variant="outline" className="border border-sky-500/50 bg-sky-500/10 text-sky-200">
+          <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
             {ticket.lead.probability}% chance
           </Badge>
         ) : null}
       </div>
 
-      <div className="text-xs text-slate-400">
-        {typingLabel ? <span className="text-emerald-200">{typingLabel}</span> : formatPreview(ticket)}
+      <div className="text-sm text-slate-300">
+        {typingLabel ? <span className="text-slate-100">{typingLabel}</span> : formatPreview(ticket)}
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-slate-400">
-        <div className="flex items-center gap-1">
-          <Avatar className="h-6 w-6 border border-slate-700/70">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+        <div className="flex items-center gap-2">
+          <Avatar className="h-8 w-8 border border-slate-800/70">
             <AvatarImage src={ticket.contact?.avatar} alt={name} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
@@ -129,7 +129,10 @@ export const InboxItem = ({
         {phoneLabel ? <span className="text-slate-500">{phoneLabel}</span> : null}
         {ticket.timeline?.lastInboundAt ? (
           <span>
-            Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </span>
         ) : null}
       </div>
