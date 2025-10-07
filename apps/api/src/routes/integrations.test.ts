@@ -1016,6 +1016,101 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('connects a WhatsApp instance when identifier is URL-encoded', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const decodedId = '554199999999:18@s.whatsapp.net';
+    const encodedId = encodeURIComponent(decodedId);
+
+    let storedInstance = {
+      id: decodedId,
+      tenantId: 'tenant-123',
+      name: 'JID Instance',
+      brokerId: decodedId,
+      phoneNumber: '+554199999999',
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-07T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-07T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockImplementation(async () => [storedInstance]);
+    prisma.whatsAppInstance.update.mockImplementation(async ({ data, where }) => {
+      if (where.id === storedInstance.id) {
+        storedInstance = {
+          ...storedInstance,
+          ...data,
+          metadata: data.metadata ?? storedInstance.metadata,
+        } as typeof storedInstance;
+      }
+
+      return storedInstance as Awaited<ReturnType<typeof prisma.whatsAppInstance.update>>;
+    });
+
+    const connectSpy = vi.spyOn(whatsappBrokerClient, 'connectInstance').mockResolvedValue();
+    const listSpy = vi.spyOn(whatsappBrokerClient, 'listInstances').mockResolvedValue([
+      {
+        instance: {
+          id: decodedId,
+          tenantId: 'tenant-123',
+          name: 'JID Instance',
+          status: 'connected',
+          connected: true,
+          phoneNumber: '+554199999999',
+          stats: { totalSent: 1 },
+        },
+        status: {
+          status: 'connected',
+          connected: true,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
+          stats: { totalSent: 1 },
+          metrics: null,
+          messages: null,
+          rate: null,
+          rateUsage: null,
+          raw: null,
+        },
+      },
+    ]);
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${encodedId}/connect`,
+        {
+          method: 'POST',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({
+        where: { id: decodedId },
+      });
+      expect(connectSpy).toHaveBeenCalledWith(decodedId, { instanceId: decodedId });
+      expect(listSpy).toHaveBeenCalledWith('tenant-123');
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: expect.objectContaining({
+          instance: expect.objectContaining({ id: decodedId }),
+        }),
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('disconnects a WhatsApp instance', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');

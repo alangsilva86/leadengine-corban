@@ -123,6 +123,29 @@ const resolveDefaultInstanceId = (): string =>
 const looksLikeWhatsAppJid = (value: string): boolean =>
   typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
+const INVALID_INSTANCE_ID_MESSAGE = 'Identificador de instância inválido.';
+
+const instanceIdParamValidator = () =>
+  param('id')
+    .custom((value, { req }) => {
+      if (typeof value !== 'string') {
+        throw new Error(INVALID_INSTANCE_ID_MESSAGE);
+      }
+
+      try {
+        const decoded = decodeURIComponent(value);
+        req.params.id = decoded;
+        return true;
+      } catch {
+        throw new Error(INVALID_INSTANCE_ID_MESSAGE);
+      }
+    })
+    .withMessage(INVALID_INSTANCE_ID_MESSAGE)
+    .bail()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage(INVALID_INSTANCE_ID_MESSAGE);
+
 const BROKER_NOT_FOUND_CODES = new Set([
   'SESSION_NOT_FOUND',
   'BROKER_SESSION_NOT_FOUND',
@@ -2335,7 +2358,7 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
 };
 
 const connectInstanceMiddleware = [
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   validateRequest,
   requireTenant,
   asyncHandler(connectInstanceHandler),
@@ -2498,7 +2521,7 @@ router.post(
 // POST /api/integrations/whatsapp/instances/:id/stop - Disconnect a WhatsApp instance
 router.post(
   '/whatsapp/instances/:id/stop',
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   body('wipe').optional().isBoolean(),
   validateRequest,
   requireTenant,
@@ -2588,7 +2611,7 @@ router.post(
 
 router.delete(
   '/whatsapp/instances/:id',
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   query('wipe').optional().isBoolean().toBoolean(),
   validateRequest,
   requireTenant,
@@ -2725,7 +2748,7 @@ router.post(
 
 router.post(
   '/whatsapp/instances/:id/disconnect',
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   body('wipe').optional().isBoolean(),
   validateRequest,
   requireTenant,
@@ -2830,7 +2853,7 @@ router.post(
 // GET /api/integrations/whatsapp/instances/:id/qr - Fetch QR code for a WhatsApp instance
 router.get(
   '/whatsapp/instances/:id/qr',
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -2879,7 +2902,7 @@ router.get(
 // GET /api/integrations/whatsapp/instances/:id/qr.png - Fetch QR code image for a WhatsApp instance
 router.get(
   '/whatsapp/instances/:id/qr.png',
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -3012,7 +3035,7 @@ router.get(
 // GET /api/integrations/whatsapp/instances/:id/status - Retrieve instance status
 router.get(
   '/whatsapp/instances/:id/status',
-  param('id').isString().isLength({ min: 1 }),
+  instanceIdParamValidator(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
