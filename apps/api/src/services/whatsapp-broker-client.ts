@@ -210,6 +210,8 @@ type SendMessagePayload = {
 };
 
 class WhatsAppBrokerClient {
+  private sessionRoutesPreference: 'unknown' | 'broker' | 'legacy' = 'unknown';
+
   private get mode(): string {
     return (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
   }
@@ -726,63 +728,239 @@ class WhatsAppBrokerClient {
     sessionId: string,
     payload: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
   ): Promise<void> {
-    const encodedSessionId = encodeURIComponent(sessionId);
+    const normalizedInstanceId =
+      typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
+        ? payload.instanceId.trim()
+        : sessionId;
 
-    await this.request<void>(
-      `/instances/${encodedSessionId}/connect`,
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            instanceId: payload.instanceId ?? sessionId,
-            webhookUrl: payload.webhookUrl,
-            forceReopen: payload.forceReopen,
-          })
-        ),
+    const encodedSessionId = encodeURIComponent(sessionId);
+    const preferBroker = this.shouldAttemptBrokerSessionRoutes();
+
+    const connectViaLegacyRoute = async (): Promise<void> => {
+      await this.request<void>(
+        `/instances/${encodedSessionId}/connect`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            compactObject({
+              instanceId: normalizedInstanceId,
+              webhookUrl: payload.webhookUrl,
+              forceReopen: payload.forceReopen,
+            })
+          ),
+        }
+      );
+      this.sessionRoutesPreference = 'legacy';
+    };
+
+    const connectViaBrokerRoute = async (): Promise<void> => {
+      await this.request<void>(
+        '/broker/session/connect',
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            compactObject({
+              sessionId,
+              instanceId: normalizedInstanceId,
+              webhookUrl: payload.webhookUrl,
+              forceReopen: payload.forceReopen,
+            })
+          ),
+        }
+      );
+      this.sessionRoutesPreference = 'broker';
+    };
+
+    if (preferBroker) {
+      try {
+        await connectViaBrokerRoute();
+        return;
+      } catch (error) {
+        if (!this.isRecoverableSessionRouteError(error)) {
+          throw error;
+        }
+
+        try {
+          await connectViaLegacyRoute();
+          return;
+        } catch (legacyError) {
+          if (this.isRecoverableSessionRouteError(legacyError)) {
+            await connectViaBrokerRoute();
+            return;
+          }
+
+          throw legacyError;
+        }
       }
-    );
+    }
+
+    try {
+      await connectViaLegacyRoute();
+    } catch (error) {
+      if (!this.isRecoverableSessionRouteError(error)) {
+        throw error;
+      }
+
+      await connectViaBrokerRoute();
+    }
   }
 
   async logoutSession(
     sessionId: string,
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
-    const encodedSessionId = encodeURIComponent(sessionId);
+    const normalizedInstanceId =
+      typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
+        ? options.instanceId.trim()
+        : sessionId;
 
-    await this.request<void>(
-      `/instances/${encodedSessionId}/disconnect`,
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            instanceId: options.instanceId ?? sessionId,
-            wipe: options.wipe,
-          })
-        ),
+    const encodedSessionId = encodeURIComponent(sessionId);
+    const preferBroker = this.shouldAttemptBrokerSessionRoutes();
+
+    const logoutViaLegacyRoute = async (): Promise<void> => {
+      await this.request<void>(
+        `/instances/${encodedSessionId}/disconnect`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            compactObject({
+              instanceId: normalizedInstanceId,
+              wipe: options.wipe,
+            })
+          ),
+        }
+      );
+      this.sessionRoutesPreference = 'legacy';
+    };
+
+    const logoutViaBrokerRoute = async (): Promise<void> => {
+      await this.request<void>(
+        '/broker/session/logout',
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            compactObject({
+              sessionId,
+              instanceId: normalizedInstanceId,
+              wipe: options.wipe,
+            })
+          ),
+        }
+      );
+      this.sessionRoutesPreference = 'broker';
+    };
+
+    if (preferBroker) {
+      try {
+        await logoutViaBrokerRoute();
+        return;
+      } catch (error) {
+        if (!this.isRecoverableSessionRouteError(error)) {
+          throw error;
+        }
+
+        try {
+          await logoutViaLegacyRoute();
+          return;
+        } catch (legacyError) {
+          if (this.isRecoverableSessionRouteError(legacyError)) {
+            await logoutViaBrokerRoute();
+            return;
+          }
+
+          throw legacyError;
+        }
       }
-    );
+    }
+
+    try {
+      await logoutViaLegacyRoute();
+    } catch (error) {
+      if (!this.isRecoverableSessionRouteError(error)) {
+        throw error;
+      }
+
+      await logoutViaBrokerRoute();
+    }
   }
 
   async getSessionStatus<T = Record<string, unknown>>(
     sessionId: string,
     options: { instanceId?: string } = {}
   ): Promise<T> {
-    const encodedSessionId = encodeURIComponent(sessionId);
     const normalizedInstanceId =
-      typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
+      typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
+        ? options.instanceId.trim()
+        : sessionId;
 
-    const requestOptions: BrokerRequestOptions =
-      normalizedInstanceId && normalizedInstanceId !== sessionId
-        ? { searchParams: { instanceId: normalizedInstanceId } }
-        : {};
+    const encodedSessionId = encodeURIComponent(sessionId);
+    const preferBroker = this.shouldAttemptBrokerSessionRoutes();
 
-    return this.request<T>(
-      `/instances/${encodedSessionId}/status`,
-      {
-        method: 'GET',
-      },
-      requestOptions
-    );
+    const readViaLegacyRoute = async (): Promise<T> => {
+      const requestOptions: BrokerRequestOptions =
+        normalizedInstanceId && normalizedInstanceId !== sessionId
+          ? { searchParams: { instanceId: normalizedInstanceId } }
+          : {};
+
+      const response = await this.request<T>(
+        `/instances/${encodedSessionId}/status`,
+        {
+          method: 'GET',
+        },
+        requestOptions
+      );
+
+      this.sessionRoutesPreference = 'legacy';
+      return response;
+    };
+
+    const readViaBrokerRoute = async (): Promise<T> => {
+      const response = await this.request<T>(
+        '/broker/session/status',
+        {
+          method: 'GET',
+        },
+        {
+          searchParams: {
+            sessionId,
+            instanceId: normalizedInstanceId,
+          },
+        }
+      );
+
+      this.sessionRoutesPreference = 'broker';
+      return response;
+    };
+
+    if (preferBroker) {
+      try {
+        return await readViaBrokerRoute();
+      } catch (error) {
+        if (!this.isRecoverableSessionRouteError(error)) {
+          throw error;
+        }
+
+        try {
+          return await readViaLegacyRoute();
+        } catch (legacyError) {
+          if (this.isRecoverableSessionRouteError(legacyError)) {
+            return await readViaBrokerRoute();
+          }
+
+          throw legacyError;
+        }
+      }
+    }
+
+    try {
+      return await readViaLegacyRoute();
+    } catch (error) {
+      if (!this.isRecoverableSessionRouteError(error)) {
+        throw error;
+      }
+
+      return await readViaBrokerRoute();
+    }
   }
 
   async sendText<T = Record<string, unknown>>(
@@ -1033,48 +1211,55 @@ class WhatsAppBrokerClient {
   }
 
   private normalizeQrPayload(value: unknown): WhatsAppQrCode {
-    if (!value || typeof value !== 'object') {
+    const record = this.asRecord(value);
+    if (!record) {
       return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
     }
 
-    const source = value as Record<string, unknown>;
-    const qrSource =
-      typeof source.qr === 'object' && source.qr !== null
-        ? (source.qr as Record<string, unknown>)
-        : {};
+    const visited = new Set<Record<string, unknown>>();
+    const queue: Record<string, unknown>[] = [];
+    const sources: Record<string, unknown>[] = [];
 
-    const directQr = this.pickString(
-      typeof source.qr === 'string' ? source.qr : null,
-      qrSource.code,
-      qrSource.qr,
-      qrSource.qrCode,
-      qrSource.qr_code
-    );
+    const enqueue = (candidate: unknown): void => {
+      const normalized = this.asRecord(candidate);
+      if (!normalized || visited.has(normalized)) {
+        return;
+      }
 
-    const qrCodeCandidate = this.pickString(
-      typeof source.qrCode === 'string' ? source.qrCode : null,
-      source.qr_code,
-      qrSource.qrCode,
-      qrSource.qr_code,
-      qrSource.code
-    );
-    const resolvedQr = directQr ?? qrCodeCandidate;
+      visited.add(normalized);
+      queue.push(normalized);
+      sources.push(normalized);
+    };
 
-    const qrExpiresAt =
-      this.pickString(
-        source.qrExpiresAt,
-        source.qr_expires_at,
-        qrSource.expiresAt,
-        qrSource.expires_at
-      ) ?? null;
+    enqueue(record);
 
-    const expiresAt =
-      this.pickString(
-        source.expiresAt,
-        source.expires_at,
-        qrSource.expiresAt,
-        qrSource.expires_at
-      ) ?? qrExpiresAt;
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      enqueue(current['status']);
+      enqueue(current['sessionStatus']);
+      enqueue(current['session_status']);
+      enqueue(current['data']);
+      enqueue(current['metadata']);
+      enqueue(current['payload']);
+      enqueue(current['qr']);
+    }
+
+    const directCandidates: unknown[] = [];
+    const qrCodeCandidates: unknown[] = [];
+    const qrExpiresAtCandidates: unknown[] = [];
+    const expiresAtCandidates: unknown[] = [];
+
+    for (const source of sources) {
+      directCandidates.push(source['qr'], source['qrCode'], source['qr_code'], source['code']);
+      qrCodeCandidates.push(source['qrCode'], source['qr_code'], source['code']);
+      qrExpiresAtCandidates.push(source['qrExpiresAt'], source['qr_expires_at']);
+      expiresAtCandidates.push(source['expiresAt'], source['expires_at']);
+    }
+
+    const resolvedQr = this.pickString(...directCandidates, ...qrCodeCandidates);
+    const qrCodeCandidate = this.pickString(...qrCodeCandidates);
+    const qrExpiresAt = this.pickString(...qrExpiresAtCandidates);
+    const expiresAt = this.pickString(...expiresAtCandidates) ?? qrExpiresAt;
 
     return {
       qr: resolvedQr,
@@ -1807,6 +1992,44 @@ class WhatsAppBrokerClient {
     }
 
     return false;
+  }
+
+  private shouldAttemptBrokerSessionRoutes(): boolean {
+    if (this.sessionRoutesPreference === 'broker') {
+      return true;
+    }
+
+    if (this.sessionRoutesPreference === 'legacy') {
+      return false;
+    }
+
+    const mode = this.deliveryMode;
+    if (mode === 'broker') {
+      return true;
+    }
+
+    if (mode === 'instances') {
+      return false;
+    }
+
+    return true;
+  }
+
+  private isRecoverableSessionRouteError(error: unknown): error is WhatsAppBrokerError {
+    if (!(error instanceof WhatsAppBrokerError)) {
+      return false;
+    }
+
+    if (error.status !== 404) {
+      return false;
+    }
+
+    const normalizedCode = normalizeErrorCode(error.code);
+    if (!normalizedCode || normalizedCode === 'NOT_FOUND') {
+      return true;
+    }
+
+    return !INSTANCE_DISCONNECTED_CODES.has(normalizedCode);
   }
 }
 
