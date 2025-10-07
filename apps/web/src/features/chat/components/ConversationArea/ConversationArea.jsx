@@ -47,11 +47,7 @@ export const ConversationArea = ({
         typingAgents={typingIndicator?.agentsTyping ?? []}
       />
 
-      <QuickActionsBar
-        onReopenWindow={() => onGenerateProposal?.('reopen-window')}
-        onMacro={() => onSendMessage?.('Aplicando macro padrão...')}
-        quality={quality}
-      />
+      <QuickActionsBar onMacro={() => onSendMessage?.('Aplicando macro padrão...')} quality={quality} />
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[26px] bg-slate-950/20 shadow-inner shadow-slate-950/40 ring-1 ring-white/5 backdrop-blur-xl">
         <MessageTimeline
