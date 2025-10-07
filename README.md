@@ -276,6 +276,9 @@ POST   /api/integrations/whatsapp/events/ack
 > `/api/integrations/whatsapp/instances/:id/status`. As respostas devem refletir os dados reais do broker (sem QR de fallback) e
 > confirmar que a criação/conexão de instâncias funciona end-to-end.
 
+> ✅ Precisa validar o fluxo diretamente da Render shell? Consulte `docs/whatsapp-render-curl-recipes.md` para copiar os comandos
+> `curl` prontos para testar o webhook inbound e o disparo outbound.
+
 #### Webhooks
 ```
 POST   /api/integrations/whatsapp/webhook
