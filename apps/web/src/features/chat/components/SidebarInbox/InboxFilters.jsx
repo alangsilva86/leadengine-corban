@@ -62,12 +62,12 @@ export const InboxFilters = ({
           value={search}
           onChange={(event) => onSearchChange?.(event.target.value)}
           placeholder="Buscar por nome, telefone, CPF, matrícula, ID..."
-          className="flex-1 bg-slate-900/70 text-slate-100 placeholder:text-slate-500"
+          className="flex-1 bg-slate-900/70 text-[13px] text-foreground placeholder:text-muted-foreground/60"
         />
         <Button
           variant="outline"
           size="sm"
-          className="border-slate-700/60 bg-slate-900/70 text-slate-200"
+          className="border-slate-700/60 bg-slate-900/70 text-[13px] font-semibold text-sky-200"
           onClick={onRefresh}
           disabled={loading}
         >
@@ -76,9 +76,9 @@ export const InboxFilters = ({
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-3 text-xs text-slate-300">
+      <div className="flex flex-wrap gap-3 text-[13px] text-muted-foreground/80">
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Responsável</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Responsável</span>
           <ToggleGroup
             type="single"
             value={filters.scope}
@@ -96,7 +96,7 @@ export const InboxFilters = ({
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Janela</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Janela</span>
           <ToggleGroup
             type="single"
             value={filters.window}
@@ -114,7 +114,7 @@ export const InboxFilters = ({
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Resultado</span>
+          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Resultado</span>
           <ToggleGroup
             type="single"
             value={filters.outcome ?? undefined}
