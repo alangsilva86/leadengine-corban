@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Trophy, XCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
+import { cn } from '@/lib/utils.js';
 
 import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
 import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiveUpdates.js';
@@ -10,6 +12,8 @@ import InboxHeader from './InboxHeader.jsx';
 import InboxActions from './InboxActions.jsx';
 import InboxList from './InboxList.jsx';
 import GlobalFiltersBar from './GlobalFiltersBar.jsx';
+import LeadConversationPanel from './LeadConversationPanel.jsx';
+import LeadProfilePanel from './LeadProfilePanel.jsx';
 
 const SAVED_FILTERS_STORAGE_KEY = 'leadengine_inbox_filters_v1';
 const SAVED_VIEWS_STORAGE_KEY = 'leadengine_inbox_saved_views_v1';
@@ -289,11 +293,34 @@ const loadStoredViews = () => {
 const statusMetrics = [
   { key: 'total', label: 'Total recebido' },
   { key: 'contacted', label: 'Em conversa' },
-  { key: 'won', label: 'Ganhos', accent: 'text-emerald-600', icon: <Trophy className="h-4 w-4" /> },
-  { key: 'lost', label: 'Perdidos', accent: 'text-destructive', icon: <XCircle className="h-4 w-4" /> },
+  { key: 'won', label: 'Ganhos', accent: 'text-emerald-400', icon: <Trophy className="h-4 w-4" /> },
+  { key: 'lost', label: 'Perdidos', accent: 'text-rose-400', icon: <XCircle className="h-4 w-4" /> },
 ];
 
 const formatSummaryValue = (value) => value ?? 0;
+
+const statusToastCopy = {
+  contacted: {
+    loading: 'Atualizando status para "Em conversa"…',
+    success: 'Lead marcado como em conversa.',
+    error: 'Não foi possível marcar o lead como em conversa.',
+  },
+  won: {
+    loading: 'Registrando venda…',
+    success: 'Venda registrada com sucesso.',
+    error: 'Não foi possível registrar a venda.',
+  },
+  lost: {
+    loading: 'Encerrando atendimento…',
+    success: 'Lead marcado como sem interesse.',
+    error: 'Não foi possível atualizar o status do lead.',
+  },
+  default: {
+    loading: 'Atualizando lead…',
+    success: 'Lead atualizado com sucesso.',
+    error: 'Falha ao atualizar este lead.',
+  },
+};
 
 export const LeadInbox = ({
   selectedAgreement,
@@ -316,6 +343,8 @@ export const LeadInbox = ({
     return matchingView?.id ?? null;
   });
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(null);
+  const [activeAllocationId, setActiveAllocationId] = useState(null);
+  const [leadPanelSwitching, setLeadPanelSwitching] = useState(false);
 
   const {
     allocations,
@@ -375,6 +404,7 @@ export const LeadInbox = ({
     agreementId: agreementId ?? null,
     campaignId: campaignId ?? null,
   });
+  const firstActiveSelectionRef = useRef(true);
 
   useEffect(() => {
     const previous = previousContextRef.current;
@@ -441,6 +471,20 @@ export const LeadInbox = ({
     [allocations, filters]
   );
 
+  useEffect(() => {
+    if (!filteredAllocations.length) {
+      setActiveAllocationId(null);
+      return;
+    }
+
+    setActiveAllocationId((current) => {
+      if (current && filteredAllocations.some((item) => item.allocationId === current)) {
+        return current;
+      }
+      return filteredAllocations[0].allocationId;
+    });
+  }, [filteredAllocations]);
+
   const savedViewsWithCount = useMemo(
     () =>
       savedViews.map((view) => ({
@@ -467,6 +511,45 @@ export const LeadInbox = ({
   }, [activeViewId, matchingSavedView]);
 
   const canSaveCurrentView = savedViews.length < SAVED_VIEWS_LIMIT && !matchingSavedView;
+
+  const activeAllocation = useMemo(
+    () => filteredAllocations.find((item) => item.allocationId === activeAllocationId) ?? null,
+    [filteredAllocations, activeAllocationId]
+  );
+
+  const filteredCount = filteredAllocations.length;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('leadengine:inbox-count', { detail: filteredCount }));
+  }, [filteredCount]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    return () => {
+      window.dispatchEvent(new CustomEvent('leadengine:inbox-count', { detail: 0 }));
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeAllocationId) {
+      setLeadPanelSwitching(false);
+      return;
+    }
+
+    if (firstActiveSelectionRef.current) {
+      firstActiveSelectionRef.current = false;
+      return;
+    }
+
+    setLeadPanelSwitching(true);
+    const timeout = window.setTimeout(() => setLeadPanelSwitching(false), 180);
+    return () => window.clearTimeout(timeout);
+  }, [activeAllocationId]);
 
   const handleUpdateFilters = useCallback(
     (partial) => {
@@ -546,40 +629,72 @@ export const LeadInbox = ({
     [activeViewId]
   );
 
-  const openWhatsApp = (allocation) => {
-    const phone = allocation.phone?.replace(/\D/g, '');
-    if (!phone) return;
+  const handleSelectAllocation = useCallback((allocation) => {
+    if (!allocation?.allocationId) {
+      return;
+    }
+    setActiveAllocationId((current) => (current === allocation.allocationId ? current : allocation.allocationId));
+  }, []);
+
+  const handleOpenWhatsApp = useCallback((allocation) => {
+    const phone = allocation?.phone?.replace(/\D/g, '');
+    if (!phone) {
+      toast.info('Nenhum telefone disponível para este lead.', {
+        description: 'Cadastre um telefone válido para abrir o WhatsApp automaticamente.',
+      });
+      return;
+    }
     window.open(`https://wa.me/${phone}`, '_blank');
-  };
+  }, []);
+
+  const handleUpdateAllocationStatus = useCallback(
+    async (allocationId, status) => {
+      if (!allocationId || !status) {
+        return;
+      }
+
+      const copy = statusToastCopy[status] ?? statusToastCopy.default;
+      const toastId = `lead-status-${allocationId}`;
+
+      toast.loading(copy.loading, { id: toastId });
+      try {
+        await updateAllocationStatus(allocationId, status);
+        toast.success(copy.success, { id: toastId });
+      } catch (error) {
+        toast.error(copy.error, {
+          id: toastId,
+          description: error?.message ?? 'Tente novamente em instantes.',
+        });
+      }
+    },
+    [updateAllocationStatus]
+  );
+
+  const handleExport = useCallback(() => {
+    const params = new URLSearchParams();
+    if (campaignId) params.set('campaignId', campaignId);
+    if (agreementId) params.set('agreementId', agreementId);
+    if (filters.status !== 'all') {
+      params.set('status', filters.status);
+    }
+    if (campaign?.instanceId) {
+      params.set('instanceId', campaign.instanceId);
+    }
+    window.open(`/api/lead-engine/allocations/export?${params.toString()}`, '_blank');
+  }, [agreementId, campaign?.instanceId, campaignId, filters.status]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <InboxHeader
         stepLabel={stepLabel}
         selectedAgreement={selectedAgreement}
         campaign={campaign}
         onboarding={onboarding}
+        leadCount={filteredCount}
       />
 
-      <Card>
-        <CardHeader className="flex flex-wrap items-center gap-4">
-          <div>
-            <CardTitle>Resumo</CardTitle>
-            <CardDescription>Distribuição dos leads que já chegaram ao seu WhatsApp.</CardDescription>
-          </div>
-          <div className="ml-auto flex items-center gap-6 text-sm">
-            {statusMetrics.map(({ key, label, accent, icon }) => (
-              <div key={key} className="flex flex-col items-start gap-1">
-                <p className="flex items-center gap-1 text-muted-foreground">
-                  {icon ? icon : null}
-                  {label}
-                </p>
-                <p className={`text-lg font-semibold ${accent ?? ''}`}>{formatSummaryValue(summary[key])}</p>
-              </div>
-            ))}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <section className="flex min-h-[520px] flex-col gap-5 rounded-3xl border border-white/5 bg-slate-950/60 p-5 shadow-[0_12px_38px_rgba(15,23,42,0.32)]">
           <GlobalFiltersBar
             filters={filters}
             onUpdateFilters={handleUpdateFilters}
@@ -595,63 +710,115 @@ export const LeadInbox = ({
             viewLimit={SAVED_VIEWS_LIMIT}
           />
 
+          <div className="h-px bg-white/5" />
+
+          <div className="flex-1 overflow-y-auto pr-1">
+            <InboxList
+              allocations={allocations}
+              filteredAllocations={filteredAllocations}
+              loading={loading}
+              selectedAgreement={selectedAgreement}
+              campaign={campaign}
+              onBackToWhatsApp={onBackToWhatsApp}
+              onSelectAgreement={onSelectAgreement}
+              onSelectAllocation={handleSelectAllocation}
+              activeAllocationId={activeAllocationId}
+              onOpenWhatsApp={handleOpenWhatsApp}
+            />
+          </div>
+
+          <div className="space-y-3 text-sm">
+            {!realtimeConnected && !connectionError ? (
+              <NoticeBanner
+                variant="info"
+                className="rounded-2xl border-white/10 bg-white/5 text-foreground/90"
+              >
+                Conectando ao tempo real para receber novos leads automaticamente…
+              </NoticeBanner>
+            ) : null}
+
+            {connectionError ? (
+              <NoticeBanner
+                variant="warning"
+                icon={<AlertCircle className="h-4 w-4" />}
+                className="rounded-2xl border-white/10 bg-white/5 text-foreground/90"
+              >
+                Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
+              </NoticeBanner>
+            ) : null}
+
+            {error ? (
+              <NoticeBanner
+                variant="danger"
+                icon={<AlertCircle className="h-4 w-4" />}
+                className="rounded-2xl border-white/10 bg-rose-500/10 text-rose-100"
+              >
+                {error}
+              </NoticeBanner>
+            ) : null}
+
+            {!error && warningMessage ? (
+              <NoticeBanner
+                variant="warning"
+                icon={<AlertCircle className="h-4 w-4" />}
+                className="rounded-2xl border-white/10 bg-white/5 text-foreground/90"
+              >
+                {warningMessage}
+              </NoticeBanner>
+            ) : null}
+          </div>
+        </section>
+
+        <LeadConversationPanel
+          allocation={activeAllocation}
+          onOpenWhatsApp={handleOpenWhatsApp}
+          isLoading={loading}
+          isSwitching={leadPanelSwitching}
+        />
+
+        <aside className="flex flex-col gap-5">
+          <Card className="rounded-3xl border-white/5 bg-slate-950/60 shadow-[0_12px_36px_rgba(15,23,42,0.32)]">
+            <CardHeader className="space-y-2 pb-2">
+              <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground/70">
+                Resumo
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground/80">
+                Distribuição dos leads recebidos via WhatsApp conectado.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-2 gap-4">
+                {statusMetrics.map(({ key, label, accent, icon }) => (
+                  <div key={key} className="space-y-1 rounded-2xl border border-white/5 bg-white/5 px-3 py-3">
+                    <dt className="flex items-center gap-2 text-xs font-medium text-muted-foreground/70">
+                      {icon ? icon : null}
+                      <span>{label}</span>
+                    </dt>
+                    <dd className={cn('text-xl font-semibold text-foreground/90', accent ?? '')}>
+                      {formatSummaryValue(summary[key])}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
+
+          <LeadProfilePanel
+            allocation={activeAllocation}
+            onUpdateStatus={handleUpdateAllocationStatus}
+            onOpenWhatsApp={handleOpenWhatsApp}
+          />
+
           <InboxActions
             loading={loading}
             onRefresh={refresh}
-            onExport={() => {
-              const params = new URLSearchParams();
-              if (campaignId) params.set('campaignId', campaignId);
-              if (agreementId) params.set('agreementId', agreementId);
-              if (filters.status !== 'all') {
-                params.set('status', filters.status);
-              }
-              if (campaign?.instanceId) {
-                params.set('instanceId', campaign.instanceId);
-              }
-              window.open(`/api/lead-engine/allocations/export?${params.toString()}`, '_blank');
-            }}
+            onExport={handleExport}
             rateLimitInfo={rateLimitInfo}
             autoRefreshSeconds={autoRefreshSeconds}
             lastUpdatedAt={lastUpdatedAt}
           />
-
-          {!realtimeConnected && !connectionError ? (
-            <NoticeBanner variant="info">
-              Conectando ao tempo real para receber novos leads automaticamente…
-            </NoticeBanner>
-          ) : null}
-
-          {connectionError ? (
-            <NoticeBanner variant="warning" icon={<AlertCircle className="h-4 w-4" />}>
-              Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
-            </NoticeBanner>
-          ) : null}
-
-          {error ? (
-            <NoticeBanner variant="danger" icon={<AlertCircle className="h-4 w-4" />}>
-              {error}
-            </NoticeBanner>
-          ) : null}
-
-          {!error && warningMessage ? (
-            <NoticeBanner variant="warning" icon={<AlertCircle className="h-4 w-4" />}>
-              {warningMessage}
-            </NoticeBanner>
-          ) : null}
-
-          <InboxList
-            allocations={allocations}
-            filteredAllocations={filteredAllocations}
-            loading={loading}
-            selectedAgreement={selectedAgreement}
-            campaign={campaign}
-            onOpenWhatsApp={openWhatsApp}
-            onUpdateStatus={updateAllocationStatus}
-            onBackToWhatsApp={onBackToWhatsApp}
-            onSelectAgreement={onSelectAgreement}
-          />
-        </CardContent>
-      </Card>
+        </aside>
+      </div>
     </div>
   );
 };

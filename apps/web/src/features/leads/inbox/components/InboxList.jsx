@@ -9,15 +9,18 @@ export const InboxList = ({
   loading,
   selectedAgreement,
   campaign,
-  onOpenWhatsApp,
-  onUpdateStatus,
   onBackToWhatsApp,
   onSelectAgreement,
+  onSelectAllocation,
+  activeAllocationId,
+  onOpenWhatsApp,
 }) => {
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-10 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando leads...
+      <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-white/5 bg-white/5 p-6 text-center text-sm text-muted-foreground/80">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/70" />
+        <p className="text-sm font-medium text-foreground/80">Carregando leads…</p>
+        <p className="text-xs text-muted-foreground/70">Estamos sincronizando com o WhatsApp conectado.</p>
       </div>
     );
   }
@@ -47,8 +50,9 @@ export const InboxList = ({
         <LeadAllocationCard
           key={allocation.allocationId}
           allocation={allocation}
-          onOpenWhatsApp={onOpenWhatsApp}
-          onUpdateStatus={onUpdateStatus}
+          isActive={allocation.allocationId === activeAllocationId}
+          onSelect={onSelectAllocation}
+          onDoubleOpen={onOpenWhatsApp}
         />
       ))}
     </div>

@@ -27,12 +27,39 @@ import DemoAuthDialog from './DemoAuthDialog.jsx';
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [inboxCount, setInboxCount] = useState(
+    typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
+  );
+
+  useEffect(() => {
+    if (typeof onboarding?.metrics?.inboxCount === 'number') {
+      setInboxCount(onboarding.metrics.inboxCount);
+    }
+  }, [onboarding?.metrics?.inboxCount]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handler = (event) => {
+      if (typeof event?.detail === 'number') {
+        setInboxCount(event.detail);
+      }
+    };
+    window.addEventListener('leadengine:inbox-count', handler);
+    return () => window.removeEventListener('leadengine:inbox-count', handler);
+  }, []);
 
   const navigation = [
     { id: 'dashboard', name: 'Visão Geral', icon: Home },
     { id: 'agreements', name: 'Convênios', icon: Briefcase },
     { id: 'whatsapp', name: 'WhatsApp', icon: QrCode },
-    { id: 'inbox', name: 'Inbox de Leads', icon: MessageSquare },
+    {
+      id: 'inbox',
+      name: 'Inbox de Leads',
+      icon: MessageSquare,
+      badge: typeof inboxCount === 'number' ? inboxCount : null,
+    },
     { id: 'reports', name: 'Relatórios', icon: BarChart3 },
     { id: 'settings', name: 'Configurações', icon: Settings },
   ];
