@@ -23,6 +23,11 @@ type QueueCacheEntry = {
 };
 
 const queueCacheByTenant = new Map<string, QueueCacheEntry>();
+
+export const resetInboundLeadServiceTestState = (): void => {
+  dedupeCache.clear();
+  queueCacheByTenant.clear();
+};
 const pruneDedupeCache = (now: number): void => {
   if (dedupeCache.size === 0) {
     return;

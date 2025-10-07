@@ -3,6 +3,7 @@ import { body, param, query } from 'express-validator';
 import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
 import process from 'node:process';
 import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -18,9 +19,14 @@ import { emitToTenant } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { assertValidSlug, toSlug } from '../lib/slug';
+import { SendGenericMessageSchema } from '../dtos/message-schemas';
+import { respondWithValidationError } from '../utils/http-validation';
+import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
+import { whatsappHttpRequestsCounter } from '../lib/metrics';
 
 const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {
   if (error instanceof WhatsAppBrokerNotConfiguredError) {
+    res.locals.errorCode = 'WHATSAPP_NOT_CONFIGURED';
     res.status(503).json({
       success: false,
       error: {
@@ -75,6 +81,7 @@ const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boole
   const prismaCode = readPrismaErrorCode(error);
 
   if (prismaCode && PRISMA_STORAGE_ERROR_CODES.has(prismaCode)) {
+    res.locals.errorCode = 'WHATSAPP_STORAGE_UNAVAILABLE';
     res.status(503).json({
       success: false,
       error: {
@@ -91,6 +98,7 @@ const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boole
     hasErrorName(error, 'PrismaClientInitializationError') ||
     hasErrorName(error, 'PrismaClientRustPanicError')
   ) {
+    res.locals.errorCode = 'WHATSAPP_STORAGE_UNAVAILABLE';
     res.status(503).json({
       success: false,
       error: {
@@ -3539,26 +3547,91 @@ router.get(
 // POST /api/integrations/whatsapp/messages - Enviar mensagem de texto
 router.post(
   '/whatsapp/messages',
-  body('to').isString().isLength({ min: 1 }),
-  body('message').isString().isLength({ min: 1 }),
-  body('previewUrl').optional().isBoolean().toBoolean(),
-  body('externalId').optional().isString().isLength({ min: 1 }),
-  validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
     const sessionId = resolveTenantSessionId(tenantId);
-    const { to, message, previewUrl, externalId } = req.body as {
-      to: string;
-      message: string;
-      previewUrl?: boolean;
-      externalId?: string;
-    };
+    const providedRequestId = (req.header('x-request-id') || '').trim();
+    const requestId = providedRequestId.length > 0 ? providedRequestId : randomUUID();
+    const bodyKeys =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? Object.keys(req.body)
+        : [];
+
+    if (!res.getHeader('x-request-id')) {
+      res.setHeader('x-request-id', requestId);
+    }
+
+    const startedAt = Date.now();
+
+    logger.info('📨 [WhatsApp API] Request received', {
+      route: req.route?.path ?? req.path,
+      method: req.method,
+      tenantId,
+      requestId,
+      contentType: req.headers['content-type'] ?? null,
+      bodyKeys,
+    });
+
+    res.once('finish', () => {
+      const elapsedMs = Date.now() - startedAt;
+      const status = res.statusCode;
+      const errorCode = (res.locals?.errorCode ?? null) as string | null;
+      const result = status >= 500 ? 'error' : status >= 400 ? 'client_error' : 'success';
+
+      whatsappHttpRequestsCounter.inc({
+        route: req.route?.path ?? req.path,
+        method: req.method,
+        status,
+        code: errorCode ?? 'OK',
+        result,
+      });
+
+      logger.info('📬 [WhatsApp API] Request completed', {
+        route: req.route?.path ?? req.path,
+        method: req.method,
+        tenantId,
+        requestId,
+        status,
+        durationMs: elapsedMs,
+        result,
+        errorCode: errorCode ?? undefined,
+      });
+    });
+
+    const parsedResult = SendGenericMessageSchema.safeParse(req.body ?? {});
+    if (!parsedResult.success) {
+      respondWithValidationError(res, parsedResult.error.issues);
+      return;
+    }
+
+    const parsed = parsedResult.data;
+
+    let normalizedTo: string;
+    try {
+      normalizedTo = normalizePhoneNumber(parsed.to).e164;
+    } catch (error) {
+      if (error instanceof PhoneNormalizationError) {
+        res.locals.errorCode = 'INVALID_PHONE';
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PHONE',
+            message: error.message,
+            details: { errors: [{ field: 'to', message: error.message }] },
+          },
+        });
+        return;
+      }
+      throw error;
+    }
+
+    const { message, previewUrl, externalId } = parsed;
 
     try {
       const result = await whatsappBrokerClient.sendText<Record<string, unknown>>({
         sessionId,
-        to,
+        to: normalizedTo,
         message,
         previewUrl,
         externalId,
@@ -3575,6 +3648,7 @@ router.post(
       const messageId = readMessageIdFromBrokerPayload(record);
 
       if (isBaileysAckFailure(ack, statusValue)) {
+        res.locals.errorCode = 'WHATSAPP_MESSAGE_FAILED';
         res.status(502).json({
           success: false,
           error: {

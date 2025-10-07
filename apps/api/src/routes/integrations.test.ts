@@ -55,6 +55,19 @@ vi.mock('../lib/socket-registry', () => ({
   emitToTenant: emitToTenantMock,
 }));
 
+const sendAdHocMock = vi.fn();
+
+vi.mock('../services/ticket-service', async () => {
+  const actual = await vi.importActual<typeof import('../services/ticket-service')>(
+    '../services/ticket-service'
+  );
+
+  return {
+    ...actual,
+    sendAdHoc: sendAdHocMock,
+  };
+});
+
 const prismaModelKeys = [
   'whatsAppInstance',
   'campaign',
@@ -124,6 +137,7 @@ afterEach(() => {
   restoreWhatsAppEnv();
   resetPrismaMocks();
   emitToTenantMock.mockReset();
+  sendAdHocMock.mockReset();
 });
 
 const startTestServer = async ({
@@ -141,6 +155,7 @@ const startTestServer = async ({
   }
 
   const { integrationsRouter } = await import('./integrations');
+  const { whatsappMessagesRouter } = await import('./integrations/whatsapp.messages');
 
   const app = express();
   app.use(express.json());
@@ -156,6 +171,7 @@ const startTestServer = async ({
     };
     next();
   });
+  app.use('/api', whatsappMessagesRouter);
   app.use('/api/integrations', integrationsRouter);
   app.use(errorHandler);
 
@@ -2054,7 +2070,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(sendSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: 'tenant-123',
-          to: '5511987654321',
+          to: '+5511987654321',
           message: 'Hello from test',
         })
       );
@@ -2098,7 +2114,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       const body = await response.json();
 
       expect(sendSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'tenant-123', to: '5511988888888' })
+        expect.objectContaining({ sessionId: 'tenant-123', to: '+5511988888888' })
       );
       expect(response.status).toBe(202);
       expect(body).toMatchObject({
@@ -2114,6 +2130,150 @@ describe('WhatsApp integration routes with configured broker', () => {
           },
         },
       });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('sends messages through a specific WhatsApp instance when payload is valid', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+
+    const { prisma } = await import('../lib/prisma');
+
+    (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'inst-1',
+      tenantId: 'tenant-123',
+      status: 'connected',
+      connected: true,
+    });
+
+    sendAdHocMock.mockResolvedValue({ success: true, data: { id: 'wamid-321' } });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/inst-1/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({
+          to: '5511999999999',
+          payload: { type: 'text', text: 'Olá instancia' },
+        }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(202);
+      expect(sendAdHocMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'tenant-123',
+          instanceId: 'inst-1',
+          to: '5511999999999',
+          payload: expect.objectContaining({ type: 'text', content: 'Olá instancia' }),
+        })
+      );
+      expect(body).toEqual({ success: true, data: { id: 'wamid-321' } });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects invalid payloads on the instance message endpoint with validation details', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+
+    (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'inst-1',
+      tenantId: 'tenant-123',
+      status: 'connected',
+      connected: true,
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/inst-1/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({}),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error?.code).toBe('VALIDATION_ERROR');
+      expect(body.error?.details?.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ field: 'to' }),
+          expect.objectContaining({ field: 'payload' }),
+        ])
+      );
+      expect(sendAdHocMock).not.toHaveBeenCalled();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns validation errors when WhatsApp message payload is empty', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const sendSpy = vi.spyOn(whatsappBrokerClient, 'sendText');
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({}),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error?.code).toBe('VALIDATION_ERROR');
+      expect(body.error?.details?.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ field: 'to' }),
+          expect.objectContaining({ field: 'message' }),
+        ])
+      );
+      expect(sendSpy).not.toHaveBeenCalled();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects WhatsApp messages with invalid phone numbers', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const sendSpy = vi.spyOn(whatsappBrokerClient, 'sendText');
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ to: '123', message: 'Mensagem' }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error?.code).toBe('VALIDATION_ERROR');
+      expect(body.error?.details?.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'to' })])
+      );
+      expect(sendSpy).not.toHaveBeenCalled();
     } finally {
       await stopTestServer(server);
     }
@@ -2275,7 +2435,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(sendSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: 'tenant-123',
-          to: '5511987654322',
+          to: '+5511987654322',
           message: 'Second test message',
         })
       );

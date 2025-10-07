@@ -32,6 +32,15 @@ describe('translateWhatsAppBrokerError', () => {
     });
   });
 
+  it('maps Portuguese socket indisponível errors to INSTANCE_NOT_CONNECTED', () => {
+    const error = new WhatsAppBrokerError('Socket indisponível no momento', 'BROKER_ERROR', 500);
+    const normalized = translateWhatsAppBrokerError(error);
+    expect(normalized).toEqual({
+      code: 'INSTANCE_NOT_CONNECTED',
+      message: expect.stringContaining('Instância de WhatsApp desconectada'),
+    });
+  });
+
   it('maps invalid recipient errors to INVALID_TO', () => {
     const error = new WhatsAppBrokerError('Invalid recipient number', 'INVALID_RECIPIENT', 400);
     const normalized = translateWhatsAppBrokerError(error);

@@ -1,18 +1,83 @@
-import { Router, type Request, type Response } from 'express';
-import { ZodError } from 'zod';
+import express, { Router, type Request, type Response } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import { asyncHandler } from '../../middleware/error-handler';
 import { requireTenant } from '../../middleware/auth';
 import { prisma } from '../../lib/prisma';
-import { SendByInstanceSchema, normalizePayload } from '../../dtos/message-schemas';
+import {
+  SendByInstanceSchema,
+  SendGenericMessageSchema,
+  normalizePayload,
+} from '../../dtos/message-schemas';
 import { sendAdHoc } from '../../services/ticket-service';
 import {
   WhatsAppBrokerError,
   translateWhatsAppBrokerError,
 } from '../../services/whatsapp-broker-client';
 import { NotFoundError } from '@ticketz/core';
+import { whatsappHttpRequestsCounter } from '../../lib/metrics';
+import { logger } from '../../config/logger';
+import { respondWithValidationError } from '../../utils/http-validation';
+
+const instrumentationMiddleware: express.RequestHandler = (req, res, next) => {
+  const startedAt = Date.now();
+  const providedRequestId = (req.header('x-request-id') || '').trim();
+  const requestId = providedRequestId.length > 0 ? providedRequestId : randomUUID();
+  const contentType = req.headers['content-type'] ?? null;
+  const bodyKeys =
+    req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? Object.keys(req.body)
+      : [];
+  const tenantId = req.user?.tenantId ?? null;
+
+  if (!res.getHeader('x-request-id')) {
+    res.setHeader('x-request-id', requestId);
+  }
+
+  res.locals.requestId = requestId;
+
+  logger.info('📨 [WhatsApp API] Request received', {
+    route: `${req.baseUrl}${req.path}`,
+    method: req.method,
+    tenantId,
+    requestId,
+    contentType,
+    bodyKeys,
+  });
+
+  res.once('finish', () => {
+    const elapsedMs = Date.now() - startedAt;
+    const status = res.statusCode;
+    const errorCode = (res.locals?.errorCode ?? null) as string | null;
+    const result = status >= 500 ? 'error' : status >= 400 ? 'client_error' : 'success';
+
+    whatsappHttpRequestsCounter.inc({
+      route: req.route?.path ?? req.path,
+      method: req.method,
+      status,
+      code: errorCode ?? 'OK',
+      result,
+    });
+
+    logger.info('📬 [WhatsApp API] Request completed', {
+      route: `${req.baseUrl}${req.path}`,
+      method: req.method,
+      tenantId,
+      requestId,
+      status,
+      durationMs: elapsedMs,
+      result,
+      errorCode: errorCode ?? undefined,
+    });
+  });
+
+  next();
+};
 
 const router = Router();
+
+router.use(express.json({ limit: '1mb' }));
+router.use(instrumentationMiddleware);
 
 router.post(
   '/integrations/whatsapp/instances/:instanceId/messages',
@@ -31,6 +96,7 @@ router.post(
       instance.connected ?? (typeof instance.status === 'string' && instance.status === 'connected');
 
     if (!isConnected) {
+      res.locals.errorCode = 'INSTANCE_DISCONNECTED';
       res.status(409).json({
         success: false,
         error: {
@@ -45,24 +111,13 @@ router.post(
       return;
     }
 
-    let parsed;
-
-    try {
-      parsed = SendByInstanceSchema.parse(req.body ?? {});
-    } catch (error) {
-      if (error instanceof ZodError) {
-        res.status(422).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Corpo da requisição inválido.',
-            details: error.issues,
-          },
-        });
-        return;
-      }
-      throw error;
+    const parsedResult = SendByInstanceSchema.safeParse(req.body ?? {});
+    if (!parsedResult.success) {
+      respondWithValidationError(res, parsedResult.error.issues);
+      return;
     }
+
+    const parsed = parsedResult.data;
 
     const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
     const payload = normalizePayload(parsed.payload);
@@ -102,6 +157,7 @@ router.post(
           return 502;
         })();
 
+        res.locals.errorCode = resolvedCode;
         res.status(status).json({
           success: false,
           error: {
