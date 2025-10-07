@@ -856,7 +856,9 @@ class WhatsAppBrokerClient {
       ? encodeURIComponent(params.instanceId)
       : null;
 
-    const attempts: Array<{ path: string; includeInstanceInQuery: boolean }> = [];
+    const attempts: Array<{ path: string; includeInstanceInQuery: boolean }> = [
+      { path: '/broker/events', includeInstanceInQuery: true },
+    ];
 
     if (encodedInstanceId) {
       attempts.push({ path: `/instances/${encodedInstanceId}/events`, includeInstanceInQuery: false });
@@ -919,7 +921,10 @@ class WhatsAppBrokerClient {
       ? encodeURIComponent(payload.instanceId)
       : null;
 
-    const attempts: Array<{ path: string; bodyType: 'withInstance' | 'withoutInstance' }> = [];
+    const attempts: Array<{
+      path: string;
+      bodyType: 'withInstance' | 'withoutInstance';
+    }> = [{ path: '/broker/events/ack', bodyType: 'withInstance' }];
 
     if (encodedInstanceId) {
       attempts.push({ path: `/instances/${encodedInstanceId}/events/ack`, bodyType: 'withoutInstance' });
