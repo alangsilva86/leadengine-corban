@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/select.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { cn } from '@/lib/utils.js';
-import { Filter, RefreshCw, Search } from 'lucide-react';
+import { Filter, RefreshCw, Search, X } from 'lucide-react';
 
 const DEFAULT_FILTERS = {
   scope: 'team',
@@ -41,27 +41,6 @@ const OUTCOME_OPTIONS = [
   { value: 'all', label: 'Todos' },
   { value: 'won', label: 'Ganhos' },
   { value: 'lost', label: 'Perdidos' },
-];
-
-const SAVED_PRESETS = [
-  {
-    id: 'sla-critical',
-    label: 'SLA crítico',
-    description: 'Janela expirada ou em até 10 min',
-    filters: { window: 'expired' },
-  },
-  {
-    id: 'meus-abertos',
-    label: 'Meus tickets',
-    description: 'Abertos e atribuídos a mim',
-    filters: { scope: 'mine', state: 'open' },
-  },
-  {
-    id: 'ganhos',
-    label: 'Ganhos',
-    description: 'Marcados como ganho nas últimas 24h',
-    filters: { outcome: 'won' },
-  },
 ];
 
 const FilterToolbar = ({
@@ -113,9 +92,20 @@ const FilterToolbar = ({
     [effectiveFilters]
   );
 
+  const activeFilterSummaries = useMemo(
+    () =>
+      filterSummaries.filter((summary) => effectiveFilters[summary.id] !== DEFAULT_FILTERS[summary.id]),
+    [effectiveFilters, filterSummaries]
+  );
+
   const handleResetFilters = () => {
     applyFilters(DEFAULT_FILTERS);
     setFiltersOpen(false);
+  };
+
+  const handleRemoveFilter = (filterId) => {
+    if (!(filterId in DEFAULT_FILTERS)) return;
+    applyFilters({ [filterId]: DEFAULT_FILTERS[filterId] });
   };
 
   return (
@@ -155,20 +145,7 @@ const FilterToolbar = ({
 
       <div className="h-px w-full bg-slate-900/60" />
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          {filterSummaries.map((summary) => (
-            <Badge
-              key={summary.id}
-              variant="outline"
-              className="rounded-full border-slate-800/70 bg-slate-950/50 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-300"
-            >
-              <span className="text-slate-500">{summary.label}</span>
-              <span className="ml-2 text-slate-100">{summary.value}</span>
-            </Badge>
-          ))}
-        </div>
-
+      <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
             <PopoverTrigger asChild>
@@ -281,22 +258,30 @@ const FilterToolbar = ({
               </div>
             </PopoverContent>
           </Popover>
+        </div>
 
+        {activeFilterSummaries.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
-            {SAVED_PRESETS.map((preset) => (
-              <Button
-                key={preset.id}
-                variant="secondary"
-                size="sm"
-                title={preset.description}
-                className="h-9 rounded-full border-0 bg-slate-900/70 px-3 text-[11px] font-medium uppercase tracking-wide text-slate-300 hover:bg-slate-900"
-                onClick={() => applyFilters(preset.filters)}
+            {activeFilterSummaries.map((summary) => (
+              <Badge
+                key={summary.id}
+                variant="outline"
+                className="inline-flex items-center gap-2 rounded-full border-slate-800/80 bg-slate-950/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-300"
               >
-                {preset.label}
-              </Button>
+                <span className="text-slate-500">{summary.label}</span>
+                <span className="text-slate-100">{summary.value}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveFilter(summary.id)}
+                  className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/70 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                >
+                  <span className="sr-only">Remover filtro {summary.label}</span>
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </Badge>
             ))}
           </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );
