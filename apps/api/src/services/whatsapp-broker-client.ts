@@ -174,16 +174,6 @@ export interface WhatsAppMessageResult {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-const fallbackInstance = (tenantId: string): WhatsAppInstance => ({
-  id: 'whatsapp-demo',
-  tenantId,
-  name: 'WhatsApp Demo',
-  status: 'connected',
-  createdAt: new Date().toISOString(),
-  lastActivity: new Date().toISOString(),
-  connected: true,
-});
-
 type BrokerRequestOptions = {
   apiKey?: string;
   timeoutMs?: number;
@@ -1453,24 +1443,59 @@ class WhatsAppBrokerClient {
   }): Promise<WhatsAppInstance> {
     this.ensureConfigured();
 
-    const sessionSlugSource = args.instanceId ?? args.name;
-    const sessionId = `${this.slugify(args.tenantId, 'tenant')}--${this.slugify(sessionSlugSource, 'instance')}`;
+    const requestedInstanceId =
+      typeof args.instanceId === 'string' && args.instanceId.trim().length > 0
+        ? args.instanceId.trim()
+        : this.slugify(args.name, 'instance');
+
+    let response: unknown;
 
     try {
-      await this.connectSession(sessionId, {
-        webhookUrl: args.webhookUrl,
-        instanceId: args.instanceId ?? sessionId,
+      response = await this.request<unknown>('/instances', {
+        method: 'POST',
+        body: JSON.stringify(
+          compactObject({
+            tenantId: args.tenantId,
+            instanceId: requestedInstanceId,
+            name: args.name,
+            webhookUrl: args.webhookUrl,
+          })
+        ),
       });
     } catch (error) {
-      logger.warn('Unable to pre-connect WhatsApp session via minimal broker', { error });
+      logger.warn('Unable to create WhatsApp instance via broker', {
+        tenantId: args.tenantId,
+        instanceId: requestedInstanceId,
+        error,
+      });
+      throw error;
     }
 
+    const sessions = this.findSessionPayloads(response);
+    for (const session of sessions) {
+      const snapshot = this.normalizeInstanceSnapshot(args.tenantId, session);
+      if (snapshot?.instance) {
+        return snapshot.instance;
+      }
+    }
+
+    const normalizedInstance = this.normalizeBrokerInstance(args.tenantId, response);
+    if (normalizedInstance) {
+      return normalizedInstance;
+    }
+
+    logger.warn('WhatsApp broker create response missing instance data, falling back to request payload', {
+      tenantId: args.tenantId,
+      instanceId: requestedInstanceId,
+      response,
+    });
+
     return {
-      ...fallbackInstance(args.tenantId),
-      id: sessionId,
+      id: requestedInstanceId,
+      tenantId: args.tenantId,
       name: args.name,
-      connected: false,
       status: 'connecting',
+      connected: false,
     };
   }
 

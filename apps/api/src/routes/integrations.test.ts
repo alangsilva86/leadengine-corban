@@ -643,7 +643,7 @@ describe('WhatsApp integration routes with configured broker', () => {
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
     const brokerInstance = {
-      id: 'tenant-123--created-instance',
+      id: 'created-instance',
       tenantId: 'tenant-123',
       name: 'Created Instance',
       status: 'connecting' as const,
@@ -660,14 +660,14 @@ describe('WhatsApp integration routes with configured broker', () => {
         id: 'created-instance',
         tenantId: 'tenant-123',
         name: 'Created Instance',
-        brokerId: 'tenant-123--created-instance',
+        brokerId: 'created-instance',
         status: 'connecting',
         connected: false,
         phoneNumber: '+5511987654321',
         metadata: expect.objectContaining({
           displayId: 'created-instance',
           slug: 'created-instance',
-          brokerId: 'tenant-123--created-instance',
+          brokerId: 'created-instance',
         }),
       });
 
@@ -712,14 +712,14 @@ describe('WhatsApp integration routes with configured broker', () => {
           id: 'created-instance',
           tenantId: 'tenant-123',
           name: 'Created Instance',
-          brokerId: 'tenant-123--created-instance',
+          brokerId: 'created-instance',
           status: 'connecting',
           connected: false,
           phoneNumber: '+5511987654321',
           metadata: expect.objectContaining({
             displayId: 'created-instance',
             slug: 'created-instance',
-            brokerId: 'tenant-123--created-instance',
+            brokerId: 'created-instance',
             history: expect.arrayContaining([
               expect.objectContaining({ action: 'created', by: 'user-1' }),
             ]),
