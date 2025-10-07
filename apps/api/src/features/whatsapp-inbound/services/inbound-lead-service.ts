@@ -365,17 +365,6 @@ const ensureContact = async (
   return contact;
 };
 
-export const __testing = {
-  DEDUPE_WINDOW_MS,
-  MAX_DEDUPE_CACHE_SIZE,
-  DEFAULT_QUEUE_CACHE_TTL_MS,
-  dedupeCache,
-  queueCacheByTenant,
-  pruneDedupeCache,
-  getDefaultQueueId,
-  ensureTicketForContact,
-};
-
 const ensureTicketForContact = async (
   tenantId: string,
   contactId: string,
@@ -449,6 +438,17 @@ const ensureTicketForContact = async (
     });
     return null;
   }
+};
+
+export const __testing = {
+  DEDUPE_WINDOW_MS,
+  MAX_DEDUPE_CACHE_SIZE,
+  DEFAULT_QUEUE_CACHE_TTL_MS,
+  dedupeCache,
+  queueCacheByTenant,
+  pruneDedupeCache,
+  getDefaultQueueId,
+  ensureTicketForContact,
 };
 
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
