@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils.js';
+
 const STATUS_ORDER = ['all', 'contacted', 'won', 'lost'];
 
 const STATUS_LABEL = {
@@ -8,13 +10,17 @@ const STATUS_LABEL = {
 };
 
 export const StatusFilter = ({ value, onChange }) => (
-  <div className="inline-flex rounded-full bg-[rgba(148,163,184,0.12)] p-1 text-xs text-muted-foreground">
+  <div className="inline-flex items-center gap-1 rounded-full bg-[rgba(148,163,184,0.12)] p-1 text-xs text-muted-foreground">
     {STATUS_ORDER.map((status) => (
       <button
         key={status}
         type="button"
         onClick={() => onChange(status)}
-        className={`filter-pill ${value === status ? 'filter-pill--active' : ''}`}
+        className={cn(
+          'filter-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          value === status && 'filter-pill--active focus-visible:ring-primary'
+        )}
+        aria-pressed={value === status}
       >
         {STATUS_LABEL[status]}
       </button>
