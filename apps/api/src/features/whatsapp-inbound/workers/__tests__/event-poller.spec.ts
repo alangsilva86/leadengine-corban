@@ -89,7 +89,7 @@ describe('whatsapp event poller', () => {
   it('requests broker events with cursor and instance identifiers', async () => {
     fetchEventsMock.mockResolvedValueOnce({
       events: [],
-      meta: { nextCursor: 'cursor-101', instanceId: 'instance-abc' },
+      nextCursor: { cursor: 'cursor-101', instanceId: 'instance-abc' },
     });
 
     const poller = await createPoller();
@@ -105,12 +105,23 @@ describe('whatsapp event poller', () => {
       cursor: 'cursor-100',
       instanceId: 'instance-abc',
     });
+
+    expect(integrationStateUpsertMock).toHaveBeenCalledTimes(1);
+    const [cursorArgs] = integrationStateUpsertMock.mock.calls[0] as [Record<string, unknown>];
+    expect(cursorArgs).toMatchObject({
+      where: { key: 'whatsapp:event-cursor' },
+      create: {
+        key: 'whatsapp:event-cursor',
+        value: { cursor: 'cursor-101', instanceId: 'instance-abc' },
+      },
+      update: { value: { cursor: 'cursor-101', instanceId: 'instance-abc' } },
+    });
   });
 
   it('acknowledges events with the corresponding instance identifier', async () => {
     fetchEventsMock.mockResolvedValueOnce({
       events: [{ ack: 'raw-ack' }],
-      meta: { nextCursor: 'cursor-201', instanceId: 'instance-201' },
+      nextCursor: { cursor: 'cursor-201', instanceId: 'instance-201' },
     });
 
     normalizeEnvelopeMock.mockReturnValue({
@@ -133,6 +144,29 @@ describe('whatsapp event poller', () => {
     expect(ackEventsMock).toHaveBeenCalledWith({
       ids: ['ack-201'],
       instanceId: 'instance-201',
+    });
+
+    expect(integrationStateUpsertMock).toHaveBeenCalledTimes(2);
+    const cursorCall = integrationStateUpsertMock.mock.calls.find(
+      ([args]) => (args as { where?: { key?: string } } | undefined)?.where?.key === 'whatsapp:event-cursor'
+    );
+    const ackCall = integrationStateUpsertMock.mock.calls.find(
+      ([args]) => (args as { where?: { key?: string } } | undefined)?.where?.key === 'whatsapp:last-ack'
+    );
+
+    expect(cursorCall).toBeDefined();
+    expect(cursorCall?.[0]).toMatchObject({
+      update: { value: { cursor: 'cursor-201', instanceId: 'instance-201' } },
+      create: {
+        value: { cursor: 'cursor-201', instanceId: 'instance-201' },
+      },
+    });
+
+    expect(ackCall).toBeDefined();
+    expect(ackCall?.[0]).toMatchObject({
+      update: {
+        value: expect.objectContaining({ cursor: 'cursor-201', count: 1 }),
+      },
     });
   });
 });

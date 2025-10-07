@@ -2073,6 +2073,184 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('returns ack metadata when WhatsApp message is dispatched', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const sendSpy = vi.spyOn(whatsappBrokerClient, 'sendText').mockResolvedValue({
+      id: 'wamid-ack-1',
+      status: 'SERVER_ACK',
+      ack: 1,
+      rate: { limit: 10, remaining: 9, resetAt: '2024-05-05T10:00:00.000Z' },
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ to: '5511988888888', message: 'Ack test' }),
+      });
+
+      const body = await response.json();
+
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'tenant-123', to: '5511988888888' })
+      );
+      expect(response.status).toBe(202);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          id: 'wamid-ack-1',
+          status: 'SERVER_ACK',
+          ack: 1,
+          rate: {
+            limit: 10,
+            remaining: 9,
+            resetAt: '2024-05-05T10:00:00.000Z',
+          },
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('maps ack failures from Baileys as message errors', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const sendSpy = vi.spyOn(whatsappBrokerClient, 'sendText').mockResolvedValue({
+      id: 'wamid-fail-1',
+      status: 'FAILED',
+      ack: -1,
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ to: '5511977777777', message: 'Should fail' }),
+      });
+
+      const body = await response.json();
+
+      expect(sendSpy).toHaveBeenCalledOnce();
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({
+        success: false,
+        error: {
+          code: 'WHATSAPP_MESSAGE_FAILED',
+          details: { ack: -1, status: 'FAILED', id: 'wamid-fail-1' },
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns ack payload when creating WhatsApp polls', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const pollSpy = vi.spyOn(whatsappBrokerClient, 'createPoll').mockResolvedValue({
+      id: 'poll-123',
+      status: 'PENDING',
+      ack: 0,
+      rate: { limit: 5, remaining: 4, resetAt: '2024-05-06T12:00:00.000Z' },
+      raw: { selectableCount: 1 },
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/polls`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({
+          to: '5511999999999',
+          question: 'Qual opção?',
+          options: ['A', 'B'],
+        }),
+      });
+
+      const body = await response.json();
+
+      expect(pollSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'tenant-123', to: '5511999999999' })
+      );
+      expect(response.status).toBe(201);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          poll: {
+            id: 'poll-123',
+            status: 'PENDING',
+            ack: 0,
+            raw: { selectableCount: 1 },
+          },
+          rate: {
+            limit: 5,
+            remaining: 4,
+            resetAt: '2024-05-06T12:00:00.000Z',
+          },
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('propagates Baileys poll failures via error payload', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+
+    const pollSpy = vi.spyOn(whatsappBrokerClient, 'createPoll').mockResolvedValue({
+      id: 'poll-failed-1',
+      status: 'FAILED',
+      ack: 'failed',
+    });
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/polls`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({
+          to: '5511999999999',
+          question: 'Erro?',
+          options: ['Sim', 'Não'],
+        }),
+      });
+
+      const body = await response.json();
+
+      expect(pollSpy).toHaveBeenCalledOnce();
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({
+        success: false,
+        error: {
+          code: 'WHATSAPP_POLL_FAILED',
+          details: { ack: 'failed', status: 'FAILED', id: 'poll-failed-1' },
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('returns broker 4xx errors with sanitized message and code', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const brokerModule = await import('../services/whatsapp-broker-client');
