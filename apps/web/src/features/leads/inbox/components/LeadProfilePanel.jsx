@@ -22,10 +22,10 @@ const STATUS_LABEL = {
 };
 
 const STATUS_TONE = {
-  allocated: 'border-white/10 bg-white/5 text-muted-foreground',
-  contacted: 'border-sky-500/40 bg-sky-500/10 text-sky-100',
-  won: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100',
-  lost: 'border-rose-500/40 bg-rose-500/10 text-rose-100',
+  allocated: 'border-white/10 bg-white/[0.05] text-muted-foreground/85',
+  contacted: 'border-slate-500/35 bg-slate-500/12 text-slate-100/90',
+  won: 'border-slate-200/40 bg-slate-200/10 text-slate-100',
+  lost: 'border-rose-500/45 bg-rose-500/12 text-rose-100',
 };
 
 const formatCurrency = (value) => {
@@ -98,11 +98,16 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp }) => {
     <Card className="rounded-3xl border-white/5 bg-slate-950/70 shadow-[0_6px_28px_rgba(15,23,42,0.38)]">
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm font-semibold text-foreground/90">Informações do lead</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-[0.12em] text-foreground/90 uppercase">
+            Informações do lead
+          </CardTitle>
           {allocation ? (
             <Badge
               variant="outline"
-              className={cn('border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide', statusTone)}
+              className={cn(
+                'border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.26em] transition-colors',
+                statusTone
+              )}
             >
               {statusLabel}
             </Badge>
@@ -134,7 +139,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp }) => {
             size="sm"
             onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
             disabled={!allocation?.phone || !onOpenWhatsApp}
-            className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/90 px-4 py-3 text-sm font-semibold text-emerald-950 shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400"
+            className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/90 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400"
           >
             <Phone className="h-4 w-4" /> Abrir conversa
           </Button>
