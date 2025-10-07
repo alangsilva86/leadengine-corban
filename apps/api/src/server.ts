@@ -29,6 +29,7 @@ import { ticketMessagesRouter } from './routes/messages.ticket';
 import { contactMessagesRouter } from './routes/messages.contact';
 import { whatsappMessagesRouter } from './routes/integrations/whatsapp.messages';
 import { registerSocketConnectionHandlers } from './socket/connection-handlers';
+import { preferencesRouter } from './routes/preferences';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -326,6 +327,7 @@ app.use('/api', authMiddleware, whatsappMessagesRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
+app.use('/api', authMiddleware, preferencesRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {

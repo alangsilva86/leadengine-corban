@@ -161,6 +161,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
   return (
     <InboxAppShell
+      currentUser={currentUser}
       sidebar={
         <QueueList
           tickets={controller.tickets}
