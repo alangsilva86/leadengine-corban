@@ -2386,13 +2386,6 @@ const WhatsAppConnect = ({
         : `/api/integrations/whatsapp/instances/${encodedId}`;
       const method = isJid ? 'POST' : 'DELETE';
 
-      logError('Falha ao remover instância WhatsApp', {
-        error: err,
-        method,
-        url,
-        instanceId: target.id,
-      });
-
       const statusCode =
         typeof err?.response?.status === 'number'
           ? err.response.status
@@ -2404,6 +2397,45 @@ const WhatsAppConnect = ({
         (responseData && typeof responseData === 'object' && responseData !== null
           ? responseData.error?.code || responseData.code
           : null) || err?.code || null;
+      const isInstanceMissing =
+        statusCode === 404 ||
+        errorCode === 'INSTANCE_NOT_FOUND' ||
+        errorCode === 'BROKER_INSTANCE_NOT_FOUND';
+
+      if (isInstanceMissing) {
+        const nextCurrentId = instance?.id === target.id ? null : instance?.id ?? null;
+        warn('Instância não encontrada no servidor; removendo localmente', {
+          agreementId,
+          instanceId: target.id,
+          method,
+          url,
+          statusCode,
+          errorCode,
+        });
+        clearInstancesCache(agreementId);
+        setInstances((prev) => {
+          const nextList = Array.isArray(prev)
+            ? prev.filter((item) => item && item.id !== target.id)
+            : [];
+          persistInstancesCache(agreementId, nextList, nextCurrentId);
+          return nextList;
+        });
+        if (instance?.id === target.id) {
+          setInstance(null);
+          setLocalStatus('disconnected');
+        }
+        await loadInstances({ preferredInstanceId: nextCurrentId, forceRefresh: true });
+        toast.success('Instância removida com sucesso.');
+        return;
+      }
+
+      logError('Falha ao remover instância WhatsApp', {
+        error: err,
+        method,
+        url,
+        instanceId: target.id,
+      });
+
       let bodyPreview = null;
       if (responseData && typeof responseData === 'object') {
         try {
