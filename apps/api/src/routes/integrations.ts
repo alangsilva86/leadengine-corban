@@ -1888,6 +1888,65 @@ const parseRateLimit = (value: unknown): BrokerRateLimit | null => {
   return { limit, remaining, resetAt };
 };
 
+const normalizeBaileysAck = (value: unknown): number | string | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  return null;
+};
+
+const isBaileysAckFailure = (
+  ack: number | string | null,
+  status: unknown
+): boolean => {
+  if (typeof ack === 'number') {
+    return ack < 0;
+  }
+
+  if (typeof ack === 'string') {
+    const normalized = ack.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+
+    return normalized.includes('fail') || normalized.includes('erro');
+  }
+
+  if (typeof status === 'string') {
+    const normalizedStatus = status.trim().toLowerCase();
+    return normalizedStatus.includes('fail') || normalizedStatus.includes('erro');
+  }
+
+  return false;
+};
+
+const readMessageIdFromBrokerPayload = (
+  payload: Record<string, unknown> | null | undefined
+): string | null => {
+  if (!payload) {
+    return null;
+  }
+
+  const candidates = ['id', 'messageId', 'externalId'];
+  for (const key of candidates) {
+    const value = payload[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+
+  return null;
+};
+
 const normalizeSessionStatus = (status: BrokerSessionStatus | null | undefined) => {
   const rawStatus = typeof status?.status === 'string' ? status.status.toLowerCase() : undefined;
   const connected = Boolean(status?.connected ?? (rawStatus === 'connected'));
@@ -3196,11 +3255,7 @@ router.post(
     };
 
     try {
-      const result = await whatsappBrokerClient.sendText<{
-        externalId?: string;
-        status?: string;
-        rate?: unknown;
-      }>({
+      const result = await whatsappBrokerClient.sendText<Record<string, unknown>>({
         sessionId,
         to,
         message,
@@ -3208,12 +3263,39 @@ router.post(
         externalId,
       });
 
+      const record =
+        result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+      const ack = normalizeBaileysAck(record?.['ack']);
+      const statusValue = record?.['status'];
+      const status =
+        typeof statusValue === 'string' && statusValue.trim().length > 0
+          ? statusValue
+          : 'queued';
+      const messageId = readMessageIdFromBrokerPayload(record);
+
+      if (isBaileysAckFailure(ack, statusValue)) {
+        res.status(502).json({
+          success: false,
+          error: {
+            code: 'WHATSAPP_MESSAGE_FAILED',
+            message: 'WhatsApp retornou falha ao enviar a mensagem.',
+            details: {
+              ack,
+              status: typeof statusValue === 'string' ? statusValue : null,
+              id: messageId,
+            },
+          },
+        });
+        return;
+      }
+
       res.status(202).json({
         success: true,
         data: {
-          externalId: typeof result?.externalId === 'string' ? result.externalId : null,
-          status: typeof result?.status === 'string' ? result.status : 'queued',
-          rate: parseRateLimit(result?.rate ?? null),
+          id: messageId,
+          status,
+          ack,
+          rate: parseRateLimit(record?.['rate'] ?? null),
         },
       });
     } catch (error: unknown) {
@@ -3246,7 +3328,7 @@ router.post(
     };
 
     try {
-      const poll = await whatsappBrokerClient.createPoll<{ rate?: unknown } & Record<string, unknown>>({
+      const poll = await whatsappBrokerClient.createPoll({
         sessionId,
         to,
         question,
@@ -3254,10 +3336,38 @@ router.post(
         allowMultipleAnswers,
       });
 
+      const ack = normalizeBaileysAck(poll?.ack);
+      const statusValue = poll?.status;
+      const status =
+        typeof statusValue === 'string' && statusValue.trim().length > 0
+          ? statusValue
+          : 'queued';
+
+      if (isBaileysAckFailure(ack, statusValue)) {
+        res.status(502).json({
+          success: false,
+          error: {
+            code: 'WHATSAPP_POLL_FAILED',
+            message: 'WhatsApp retornou falha ao criar a enquete.',
+            details: {
+              ack,
+              status: typeof statusValue === 'string' ? statusValue : null,
+              id: poll?.id ?? null,
+            },
+          },
+        });
+        return;
+      }
+
       res.status(201).json({
         success: true,
         data: {
-          poll,
+          poll: {
+            id: poll?.id ?? null,
+            status,
+            ack,
+            raw: poll?.raw ?? null,
+          },
           rate: parseRateLimit(poll?.rate ?? null),
         },
       });
