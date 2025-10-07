@@ -4,22 +4,25 @@ import { useIsMobile } from '@/hooks/use-mobile.js';
 import { Drawer, DrawerContent } from '@/components/ui/drawer.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 
-const ContextDrawer = ({ open, onOpenChange, children }) => {
+const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktopContentClassName }) => {
   const isMobile = useIsMobile();
 
   const content = useMemo(
     () => (
       <ScrollArea className="h-full">
-        <div className="min-h-full px-4 py-6 sm:px-5">{children}</div>
+        <div className={cn('min-h-full px-4 py-6 sm:px-5', desktopContentClassName)}>{children}</div>
       </ScrollArea>
     ),
-    [children]
+    [children, desktopContentClassName]
   );
 
   if (isMobile) {
     return (
       <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent side="right" className="border-slate-900/80 bg-slate-950 text-slate-100">
+        <DrawerContent
+          side="right"
+          className={cn('border-slate-900/50 bg-slate-950/90 text-slate-100 backdrop-blur-xl', desktopClassName)}
+        >
           {content}
         </DrawerContent>
       </Drawer>
@@ -29,8 +32,9 @@ const ContextDrawer = ({ open, onOpenChange, children }) => {
   return (
     <aside
       className={cn(
-        'relative hidden h-full flex-col border-l border-slate-900/70 bg-slate-950/80 transition-all duration-200 ease-linear lg:flex',
-        open ? 'w-[360px] opacity-100' : 'w-0 opacity-0'
+        'relative hidden h-full min-w-0 flex-col transition-all duration-200 ease-linear lg:flex',
+        desktopClassName,
+        open ? 'w-[360px] opacity-100' : 'pointer-events-none w-0 opacity-0'
       )}
     >
       <div className="pointer-events-auto h-full overflow-hidden">

@@ -201,27 +201,23 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         />
       }
     >
-      <div className="flex h-full flex-1 justify-center bg-gradient-to-br from-slate-950/60 via-slate-950 to-slate-950/80">
-        <div className="flex h-full w-full max-w-6xl flex-col gap-4 px-4 pb-6 pt-4">
-          <ConversationArea
-            ticket={controller.selectedTicket}
-            conversation={controller.conversation}
-            messagesQuery={controller.messagesQuery}
-            onSendMessage={sendMessage}
-            onCreateNote={createNote}
-          onMarkWon={markWon}
-          onMarkLost={markLost}
-          onAssign={() => assignToMe(controller.selectedTicket)}
-          onGenerateProposal={() =>
-            toast.info('Gerador de proposta', { description: 'Integração com mini simulador em breve.' })
-          }
-          typingIndicator={controller.typingIndicator}
-          quality={quality}
-          isSending={controller.sendMessageMutation.isPending}
-          sendError={controller.sendMessageMutation.error}
-        />
-        </div>
-      </div>
+      <ConversationArea
+        ticket={controller.selectedTicket}
+        conversation={controller.conversation}
+        messagesQuery={controller.messagesQuery}
+        onSendMessage={sendMessage}
+        onCreateNote={createNote}
+        onMarkWon={markWon}
+        onMarkLost={markLost}
+        onAssign={() => assignToMe(controller.selectedTicket)}
+        onGenerateProposal={() =>
+          toast.info('Gerador de proposta', { description: 'Integração com mini simulador em breve.' })
+        }
+        typingIndicator={controller.typingIndicator}
+        quality={quality}
+        isSending={controller.sendMessageMutation.isPending}
+        sendError={controller.sendMessageMutation.error}
+      />
     </InboxAppShell>
   );
 };
