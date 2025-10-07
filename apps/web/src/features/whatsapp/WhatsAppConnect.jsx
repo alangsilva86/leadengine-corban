@@ -940,6 +940,9 @@ const normalizeInstancesCollection = (rawList, options = {}) => {
         .map((value) => value.trim())
         .filter((value) => value.length > 0)
     : [];
+  const shouldFilterByTenant =
+    (options.filterByTenant === true || options.enforceTenantScope === true) &&
+    allowedTenants.length > 0;
 
   const order = [];
   const map = new Map();
@@ -955,7 +958,7 @@ const normalizeInstancesCollection = (rawList, options = {}) => {
     }
 
     if (
-      allowedTenants.length > 0 &&
+      shouldFilterByTenant &&
       normalized.tenantId &&
       !allowedTenants.includes(normalized.tenantId)
     ) {
@@ -1761,12 +1764,7 @@ const WhatsAppConnect = ({
         list = list.map((item) => (item.id === candidate.id ? { ...item, ...candidate } : item));
       }
 
-      const allowedTenants = [selectedAgreement?.tenantId, selectedAgreement?.id]
-        .filter((value) => typeof value === 'string')
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0);
-
-      const normalizedList = normalizeInstancesCollection(list, { allowedTenants });
+      const normalizedList = normalizeInstancesCollection(list);
       list = normalizedList;
 
       if (current) {
