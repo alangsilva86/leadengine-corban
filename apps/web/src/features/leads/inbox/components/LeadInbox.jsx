@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Trophy, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Trophy, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -547,7 +547,7 @@ export const LeadInbox = ({
     }
 
     setLeadPanelSwitching(true);
-    const timeout = window.setTimeout(() => setLeadPanelSwitching(false), 180);
+    const timeout = window.setTimeout(() => setLeadPanelSwitching(false), 150);
     return () => window.clearTimeout(timeout);
   }, [activeAllocationId]);
 
@@ -641,6 +641,7 @@ export const LeadInbox = ({
     if (!phone) {
       toast.info('Nenhum telefone disponível para este lead.', {
         description: 'Cadastre um telefone válido para abrir o WhatsApp automaticamente.',
+        position: 'bottom-right',
       });
       return;
     }
@@ -656,14 +657,20 @@ export const LeadInbox = ({
       const copy = statusToastCopy[status] ?? statusToastCopy.default;
       const toastId = `lead-status-${allocationId}`;
 
-      toast.loading(copy.loading, { id: toastId });
+      toast.loading(copy.loading, { id: toastId, position: 'bottom-right' });
       try {
         await updateAllocationStatus(allocationId, status);
-        toast.success(copy.success, { id: toastId });
+        toast.success(copy.success, {
+          id: toastId,
+          duration: 2000,
+          position: 'bottom-right',
+          icon: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
+        });
       } catch (error) {
         toast.error(copy.error, {
           id: toastId,
           description: error?.message ?? 'Tente novamente em instantes.',
+          position: 'bottom-right',
         });
       }
     },
@@ -805,6 +812,8 @@ export const LeadInbox = ({
             allocation={activeAllocation}
             onUpdateStatus={handleUpdateAllocationStatus}
             onOpenWhatsApp={handleOpenWhatsApp}
+            isLoading={loading}
+            isSwitching={leadPanelSwitching}
           />
 
           <InboxActions

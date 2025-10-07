@@ -53,7 +53,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
       onClick={() => onSelect?.(allocation)}
       onDoubleClick={() => (allocation && onDoubleOpen ? onDoubleOpen(allocation) : null)}
       className={cn(
-        'group flex w-full flex-col gap-4 rounded-3xl border border-white/6 bg-white/[0.02] p-5 text-left transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950',
+        'group flex w-full flex-col gap-4 rounded-3xl border border-white/6 bg-white/[0.02] p-5 text-left transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950',
         isActive
           ? 'border-sky-500/45 bg-sky-500/10 shadow-[0_18px_48px_rgba(14,116,144,0.24)] focus-visible:ring-sky-400'
           : 'hover:border-sky-500/25 hover:bg-white/[0.05] focus-visible:ring-sky-400/40'
