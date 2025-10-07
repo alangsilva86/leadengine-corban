@@ -699,8 +699,8 @@ export const LeadInbox = ({
       />
 
       <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:gap-7">
-        <div className="relative">
-          <section className="flex min-h-[520px] flex-col gap-5 rounded-[28px] border border-white/10 bg-[#0c192e] p-5 shadow-[0_24px_52px_rgba(4,10,24,0.55)] ring-1 ring-white/10 xl:max-h-[calc(100vh-220px)] xl:overflow-hidden">
+        <div className="relative xl:h-[calc(100vh-220px)] xl:min-h-[520px]">
+          <section className="flex h-full min-h-[520px] min-w-0 flex-col gap-5 rounded-[28px] border border-white/15 bg-slate-950/45 p-5 shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)] ring-1 ring-white/10 backdrop-blur-xl">
             <GlobalFiltersBar
               filters={filters}
               onUpdateFilters={handleUpdateFilters}
@@ -718,20 +718,23 @@ export const LeadInbox = ({
 
             <div className="h-px bg-white/12" />
 
-            <div className="flex-1 overflow-y-auto pr-1 xl:pr-2">
-              <InboxList
-                allocations={allocations}
-                filteredAllocations={filteredAllocations}
-                loading={loading}
-              selectedAgreement={selectedAgreement}
-              campaign={campaign}
-              onBackToWhatsApp={onBackToWhatsApp}
-              onSelectAgreement={onSelectAgreement}
-              onSelectAllocation={handleSelectAllocation}
-              activeAllocationId={activeAllocationId}
-              onOpenWhatsApp={handleOpenWhatsApp}
-            />
-          </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <div className="h-full overflow-y-auto pr-1 xl:pr-2">
+                <InboxList
+                  allocations={allocations}
+                  filteredAllocations={filteredAllocations}
+                  loading={loading}
+                  selectedAgreement={selectedAgreement}
+                  campaign={campaign}
+                  onBackToWhatsApp={onBackToWhatsApp}
+                  onSelectAgreement={onSelectAgreement}
+                  onSelectAllocation={handleSelectAllocation}
+                  activeAllocationId={activeAllocationId}
+                  onOpenWhatsApp={handleOpenWhatsApp}
+                  className="pb-3"
+                />
+              </div>
+            </div>
 
             <div className="space-y-3 text-sm">
               {!realtimeConnected && !connectionError ? (
@@ -793,7 +796,7 @@ export const LeadInbox = ({
           </div>
         </div>
 
-        <aside className="flex min-h-[520px] flex-col gap-4 rounded-[28px] border border-white/12 bg-[#162946] p-5 shadow-[0_24px_52px_rgba(6,14,38,0.55)] ring-1 ring-white/10">
+        <aside className="flex min-h-[520px] flex-col gap-4 rounded-[28px] border border-white/15 bg-slate-950/40 p-5 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
           <Card className="rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
             <CardHeader className="space-y-2 pb-2">
               <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">

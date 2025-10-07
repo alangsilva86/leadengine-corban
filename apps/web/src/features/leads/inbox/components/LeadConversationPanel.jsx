@@ -191,8 +191,8 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
     ]) ?? allocation?.notes ?? null;
 
   return (
-    <div className="flex h-full min-h-[520px] flex-col rounded-[32px] border border-white/12 bg-[#111f38] shadow-[0_26px_60px_rgba(3,8,23,0.55)] ring-1 ring-white/10">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/12 bg-white/[0.04] px-6 py-4 shadow-[0_16px_30px_rgba(4,9,24,0.35)]">
+    <div className="flex h-full min-h-[520px] flex-col rounded-[32px] border border-white/15 bg-slate-950/50 shadow-[0_30px_64px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/12 bg-white/[0.05] px-6 py-4 shadow-[0_20px_38px_-28px_rgba(15,23,42,0.9)]">
         <div className="space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-[0.3em] text-white/70">Timeline</p>
           <div className="flex flex-wrap items-center gap-3">
