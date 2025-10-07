@@ -906,19 +906,9 @@ class WhatsAppBrokerClient {
     const encodedSessionId = encodeURIComponent(sessionId);
     const preferBroker = this.shouldAttemptBrokerSessionRoutes();
 
-    await this.request<void>(
-      `/instances/${encodedSessionId}/logout`,
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            instanceId: options.instanceId ?? sessionId,
-            wipe: options.wipe,
-          })
-        ),
     const logoutViaLegacyRoute = async (): Promise<void> => {
       await this.request<void>(
-        `/instances/${encodedSessionId}/disconnect`,
+        `/instances/${encodedSessionId}/logout`,
         {
           method: 'POST',
           body: JSON.stringify(
@@ -1007,20 +997,6 @@ class WhatsAppBrokerClient {
       );
     }
 
-    const encodedSessionId = encodeURIComponent(sessionId);
-
-    const requestOptions: BrokerRequestOptions =
-      normalizedInstanceId && normalizedInstanceId !== sessionId
-        ? { searchParams: { instanceId: normalizedInstanceId } }
-        : {};
-
-    return this.request<T>(
-      `/instances/${encodedSessionId}`,
-      {
-        method: 'GET',
-      },
-      requestOptions
-    );
     const encodedSessionId = encodeURIComponent(sessionId);
     const preferBroker = this.shouldAttemptBrokerSessionRoutes();
 
