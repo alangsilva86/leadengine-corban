@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeftRight, MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
@@ -54,7 +54,6 @@ const InboxAppShell = ({
   const [contextOpen, setContextOpen] = useState(() => readPreference(CONTEXT_PREFERENCE_KEY, defaultContextOpen));
   const [desktopListVisible, setDesktopListVisible] = useState(true);
   const [mobileListOpen, setMobileListOpen] = useState(false);
-  const [localListPosition, setLocalListPosition] = useState(DEFAULT_INBOX_LAYOUT_PREFERENCES.inboxListPosition);
   const [listWidth, setListWidth] = useState(DEFAULT_INBOX_LIST_WIDTH);
 
   useEffect(() => {
@@ -79,28 +78,11 @@ const InboxAppShell = ({
     }
   }, [preferences?.inboxListWidth]);
 
-  useEffect(() => {
-    if (preferences?.inboxListPosition) {
-      setLocalListPosition(preferences.inboxListPosition);
-    }
-  }, [preferences?.inboxListPosition]);
-
   const canPersistPreferences = Boolean(currentUser?.id);
 
-  const effectiveListPosition = useMemo(
-    () => (canPersistPreferences ? preferences?.inboxListPosition ?? 'left' : localListPosition),
-    [canPersistPreferences, preferences?.inboxListPosition, localListPosition]
-  );
+  const effectiveListPosition = 'left';
 
   const updatePreferences = useUpdateInboxLayoutPreferences({ userId: currentUser?.id });
-
-  const handleToggleListPosition = useCallback(() => {
-    const nextPosition = effectiveListPosition === 'left' ? 'right' : 'left';
-    setLocalListPosition(nextPosition);
-    if (canPersistPreferences) {
-      updatePreferences.mutate({ inboxListPosition: nextPosition });
-    }
-  }, [effectiveListPosition, canPersistPreferences, updatePreferences]);
 
   const toggleListVisibility = useCallback(() => {
     if (isDesktop) {
@@ -137,7 +119,7 @@ const InboxAppShell = ({
     [canPersistPreferences, updatePreferences]
   );
 
-  const listBorderClass = effectiveListPosition === 'left' ? 'border-r border-slate-900/70' : 'border-l border-slate-900/70';
+  const listBorderClass = 'border-r border-slate-900/70';
 
   const renderListPane = useCallback(
     ({ showCloseButton = false } = {}) => (
@@ -182,8 +164,6 @@ const InboxAppShell = ({
   );
 
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
-  const positionButtonLabel = effectiveListPosition === 'left' ? 'Mover lista para a direita' : 'Mover lista para a esquerda';
-
   const detailSurface = (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-slate-950">
       <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', contextOpen ? 'lg:pr-0' : '')}>{children}</div>
@@ -195,8 +175,6 @@ const InboxAppShell = ({
 
   const listContent = renderListPane();
   const mobileListContent = renderListPane({ showCloseButton: true });
-
-  const toggleDisabled = preferencesQuery.isFetching || updatePreferences.isPending;
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
@@ -222,16 +200,6 @@ const InboxAppShell = ({
           >
             {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
             <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-slate-800 bg-slate-900/60 text-slate-200 hover:bg-slate-900"
-            onClick={handleToggleListPosition}
-            disabled={toggleDisabled && canPersistPreferences}
-          >
-            <ArrowLeftRight className="h-4 w-4" />
-            <span className="ml-2 hidden text-xs font-medium sm:inline">{positionButtonLabel}</span>
           </Button>
           <Button
             variant="outline"
@@ -274,11 +242,8 @@ const InboxAppShell = ({
       </div>
       <Sheet open={mobileListOpen} onOpenChange={setMobileListOpen}>
         <SheetContent
-          side={effectiveListPosition === 'right' ? 'right' : 'left'}
-          className={cn(
-            'w-[min(420px,90vw)] border-slate-900/70 bg-slate-950/95 p-0 text-slate-100',
-            effectiveListPosition === 'left' ? 'border-r' : 'border-l'
-          )}
+          side="left"
+          className={cn('w-[min(420px,90vw)] border-slate-900/70 bg-slate-950/95 p-0 text-slate-100', 'border-r')}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Lista de tickets</SheetTitle>
