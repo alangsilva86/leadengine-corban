@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictError } from '@ticketz/core';
+import { ConflictError, NotFoundError } from '@ticketz/core';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../lib/prisma';
@@ -13,7 +13,15 @@ import { normalizeInboundMessage } from '../utils/normalize';
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const dedupeCache = new Map<string, number>();
-const queueCacheByTenant = new Map<string, string>();
+
+const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type QueueCacheEntry = {
+  id: string;
+  expires: number;
+};
+
+const queueCacheByTenant = new Map<string, QueueCacheEntry>();
 
 interface InboundContactDetails {
   phone?: string | null;
@@ -124,9 +132,70 @@ const shouldSkipByDedupe = (key: string, now: number): boolean => {
   return false;
 };
 
+const mapErrorForLog = (error: unknown) =>
+  error instanceof Error ? { message: error.message, stack: error.stack } : error;
+
+const isForeignKeyError = (error: unknown): boolean => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+    return true;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (code === 'P2003') {
+      return true;
+    }
+
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause && cause !== error && isForeignKeyError(cause)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const isMissingQueueError = (error: unknown): boolean => {
+  if (!error) {
+    return false;
+  }
+
+  if (error instanceof NotFoundError) {
+    return true;
+  }
+
+  if (isForeignKeyError(error)) {
+    return true;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    if (error instanceof Error && error.name === 'NotFoundError') {
+      return true;
+    }
+
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause && cause !== error) {
+      return isMissingQueueError(cause);
+    }
+  }
+
+  return false;
+};
+
 const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
-  if (queueCacheByTenant.has(tenantId)) {
-    return queueCacheByTenant.get(tenantId) as string;
+  const now = Date.now();
+  const cached = queueCacheByTenant.get(tenantId);
+
+  if (cached) {
+    if (cached.expires <= now) {
+      queueCacheByTenant.delete(tenantId);
+    } else {
+      const existingQueue = await prisma.queue.findUnique({ where: { id: cached.id } });
+      if (existingQueue) {
+        return cached.id;
+      }
+      queueCacheByTenant.delete(tenantId);
+    }
   }
 
   const queue = await prisma.queue.findFirst({
@@ -138,7 +207,10 @@ const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
     return null;
   }
 
-  queueCacheByTenant.set(tenantId, queue.id);
+  queueCacheByTenant.set(tenantId, {
+    id: queue.id,
+    expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
+  });
   return queue.id;
 };
 
@@ -270,17 +342,20 @@ const ensureTicketForContact = async (
   subject: string,
   metadata: Record<string, unknown>
 ): Promise<string | null> => {
-  try {
-    const ticket = await createTicketService({
+  const createTicketWithQueue = async (targetQueueId: string) =>
+    createTicketService({
       tenantId,
       contactId,
-      queueId,
+      queueId: targetQueueId,
       channel: 'WHATSAPP',
       priority: 'NORMAL',
       subject,
       tags: ['whatsapp', 'inbound'],
       metadata,
     });
+
+  try {
+    const ticket = await createTicketWithQueue(queueId);
     return ticket.id;
   } catch (error: unknown) {
     if (error instanceof ConflictError) {
@@ -295,8 +370,39 @@ const ensureTicketForContact = async (
       }
     }
 
+    if (isMissingQueueError(error)) {
+      queueCacheByTenant.delete(tenantId);
+      const refreshedQueueId = await getDefaultQueueId(tenantId);
+
+      if (refreshedQueueId) {
+        try {
+          const ticket = await createTicketWithQueue(refreshedQueueId);
+          return ticket.id;
+        } catch (retryError) {
+          if (retryError instanceof ConflictError) {
+            const conflict = retryError as ConflictError;
+            const details = (conflict.details ?? {}) as Record<string, unknown>;
+            const existingTicketId =
+              typeof details.existingTicketId === 'string'
+                ? details.existingTicketId
+                : undefined;
+            if (existingTicketId) {
+              return existingTicketId;
+            }
+          }
+
+          logger.error('Failed to ensure WhatsApp ticket for contact after queue refresh', {
+            error: mapErrorForLog(retryError),
+            tenantId,
+            contactId,
+          });
+          return null;
+        }
+      }
+    }
+
     logger.error('Failed to ensure WhatsApp ticket for contact', {
-      error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+      error: mapErrorForLog(error),
       tenantId,
       contactId,
     });
@@ -560,4 +666,11 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       }
     }
   }
+};
+
+export const __testing = {
+  queueCacheByTenant,
+  getDefaultQueueId,
+  ensureTicketForContact,
+  DEFAULT_QUEUE_CACHE_TTL_MS,
 };
