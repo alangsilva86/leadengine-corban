@@ -191,6 +191,12 @@ type BrokerRequestOptions = {
   idempotencyKey?: string;
 };
 
+type DeleteInstanceOptions = {
+  instanceId?: string;
+  wipe?: boolean;
+  [key: string]: string | number | boolean | undefined;
+};
+
 const compactObject = <T extends Record<string, unknown>>(value: T): T => {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
@@ -1492,10 +1498,54 @@ class WhatsAppBrokerClient {
 
   async deleteInstance(
     brokerId: string,
-    options: { instanceId?: string; wipe?: boolean } = {}
+    options: DeleteInstanceOptions = {}
   ): Promise<void> {
     this.ensureConfigured();
-    await this.logoutSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
+
+    const encodedBrokerId = encodeURIComponent(brokerId);
+    const normalizedInstanceId =
+      typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
+
+    const { instanceId: _instanceId, ...flags } = options;
+    const searchParams: Record<string, string | number | undefined> = {};
+
+    if (normalizedInstanceId) {
+      searchParams.instanceId = normalizedInstanceId;
+    }
+
+    Object.entries(flags).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+
+      if (typeof value === 'boolean') {
+        searchParams[key] = value ? 'true' : 'false';
+        return;
+      }
+
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        searchParams[key] = value;
+        return;
+      }
+
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) {
+          searchParams[key] = trimmed;
+        }
+      }
+    });
+
+    const requestOptions: BrokerRequestOptions =
+      Object.keys(searchParams).length > 0 ? { searchParams } : {};
+
+    await this.request<void>(
+      `/instances/${encodedBrokerId}`,
+      {
+        method: 'DELETE',
+      },
+      requestOptions
+    );
   }
 
   async getQrCode(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppQrCode> {
