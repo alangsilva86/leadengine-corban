@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils.js';
+
 import LeadAllocationCard from './LeadAllocationCard.jsx';
 import EmptyInboxState from './EmptyInboxState.jsx';
 
@@ -12,10 +14,11 @@ export const InboxList = ({
   onSelectAllocation,
   activeAllocationId,
   onOpenWhatsApp,
+  className,
 }) => {
   if (loading) {
     return (
-      <div className="space-y-3" aria-live="polite" aria-busy="true">
+      <div className={cn('space-y-3', className)} aria-live="polite" aria-busy="true">
         <span className="sr-only">Carregando leads…</span>
         {Array.from({ length: 4 }).map((_, index) => (
           <div
@@ -69,14 +72,19 @@ export const InboxList = ({
 
   if (filteredAllocations.length === 0) {
     return (
-      <div className="rounded-[24px] border border-dashed border-white/12 bg-[#101d33] p-6 text-center text-sm text-white/75 shadow-[0_18px_44px_rgba(3,9,24,0.45)]">
+      <div
+        className={cn(
+          'rounded-[24px] border border-dashed border-white/12 bg-[#101d33] p-6 text-center text-sm text-white/75 shadow-[0_18px_44px_rgba(3,9,24,0.45)]',
+          className
+        )}
+      >
         Nenhum lead com o filtro selecionado.
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className={cn('space-y-3', className)}>
       {filteredAllocations.map((allocation) => (
         <LeadAllocationCard
           key={allocation.allocationId}
