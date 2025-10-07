@@ -2702,9 +2702,6 @@ const WhatsAppConnect = ({
     ? looksLikeWhatsAppJid(instancePendingDelete.id)
     : false;
   const removalDialogTitle = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
-  const removalDialogDescription = removalTargetIsJid
-    ? `Esta ação desconecta a sessão ${removalTargetLabel}. Utilize quando precisar encerrar um dispositivo sincronizado com o broker.`
-    : `Esta ação remove permanentemente a instância ${removalTargetLabel}. Verifique se não há campanhas ativas utilizando este número.`;
   const removalDialogAction = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
 
   return (
