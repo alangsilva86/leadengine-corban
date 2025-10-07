@@ -460,71 +460,42 @@ class WhatsAppBrokerClient {
     };
   }
 
-  private buildDirectMessagePayload(
-    instanceId: string,
+  private buildDirectMediaRequestPayload(
     normalizedPayload: BrokerOutboundMessage,
     rawPayload: SendMessagePayload
   ): Record<string, unknown> {
-    const media = rawPayload.media ?? normalizedPayload.media ?? undefined;
+    const rawMedia =
+      rawPayload.media && typeof rawPayload.media === 'object' ? rawPayload.media : undefined;
 
-    const mediaUrl = (() => {
-      if (typeof rawPayload.mediaUrl === 'string' && rawPayload.mediaUrl.length > 0) {
-        return rawPayload.mediaUrl;
+    const toTrimmedString = (value: unknown): string | undefined => {
+      if (typeof value !== 'string') {
+        return undefined;
       }
-      if (media && typeof (media as Record<string, unknown>).url === 'string') {
-        return ((media as Record<string, unknown>).url as string) || undefined;
-      }
-      return undefined;
-    })();
 
-    const mediaMimeType = (() => {
-      if (typeof rawPayload.mediaMimeType === 'string') {
-        const trimmed = rawPayload.mediaMimeType.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
-      }
-      if (media && typeof (media as Record<string, unknown>).mimetype === 'string') {
-        const trimmed = ((media as Record<string, unknown>).mimetype as string).trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-      }
-      return undefined;
-    })();
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    };
 
-    const mediaFileName = (() => {
-      if (typeof rawPayload.mediaFileName === 'string') {
-        const trimmed = rawPayload.mediaFileName.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
+    const toPositiveInteger = (value: unknown): number | undefined => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return undefined;
       }
-      if (media && typeof (media as Record<string, unknown>).filename === 'string') {
-        const trimmed = ((media as Record<string, unknown>).filename as string).trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-      }
-      return undefined;
-    })();
 
-    const mediaSize = (() => {
-      if (media && typeof media === 'object' && 'size' in media) {
-        const candidate = (media as { size?: unknown }).size;
-        return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : undefined;
-      }
-      return undefined;
-    })();
+      const parsed = Number(value);
+      const normalized = Number.isInteger(parsed) ? parsed : Math.trunc(parsed);
+      return normalized > 0 ? normalized : undefined;
+    };
 
     const captionCandidate = (() => {
-      if (typeof rawPayload.caption === 'string') {
-        const trimmed = rawPayload.caption.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
+      const directCaption = toTrimmedString(rawPayload.caption);
+      if (directCaption) {
+        return directCaption;
       }
 
       if (normalizedPayload.type !== 'text') {
-        const trimmed = normalizedPayload.content.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
+        const normalized = toTrimmedString(normalizedPayload.content);
+        if (normalized) {
+          return normalized;
         }
       }
 
@@ -532,21 +503,26 @@ class WhatsAppBrokerClient {
     })();
 
     return compactObject({
-      sessionId: normalizedPayload.sessionId ?? instanceId,
-      instanceId: normalizedPayload.instanceId ?? instanceId,
-      to: normalizedPayload.to,
-      type: normalizedPayload.type,
-      text: normalizedPayload.content,
+      mediaUrl:
+        toTrimmedString(rawPayload.mediaUrl) ??
+        toTrimmedString(normalizedPayload.media?.url) ??
+        (rawMedia ? toTrimmedString(rawMedia['url']) : undefined),
+      mimeType:
+        toTrimmedString(rawPayload.mediaMimeType) ??
+        toTrimmedString(normalizedPayload.media?.mimetype) ??
+        (rawMedia
+          ? toTrimmedString(rawMedia['mimeType'] ?? rawMedia['mimetype'])
+          : undefined),
+      fileName:
+        toTrimmedString(rawPayload.mediaFileName) ??
+        toTrimmedString(normalizedPayload.media?.filename) ??
+        (rawMedia
+          ? toTrimmedString(rawMedia['fileName'] ?? rawMedia['filename'])
+          : undefined),
+      mediaSize:
+        toPositiveInteger(normalizedPayload.media?.size) ??
+        (rawMedia ? toPositiveInteger(rawMedia['size']) : undefined),
       caption: captionCandidate,
-      mediaUrl,
-      mimeType: mediaMimeType,
-      fileName: mediaFileName,
-      mediaSize,
-      previewUrl: normalizedPayload.previewUrl,
-      externalId: normalizedPayload.externalId,
-      template: normalizedPayload.template,
-      location: normalizedPayload.location,
-      metadata: normalizedPayload.metadata,
     });
   }
 
@@ -572,19 +548,78 @@ class WhatsAppBrokerClient {
     normalizedPayload: BrokerOutboundMessage,
     options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
-    const response = await this.request<Record<string, unknown>>(
-      `/instances/${encodeURIComponent(instanceId)}/messages`,
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          this.buildDirectMessagePayload(instanceId, normalizedPayload, options.rawPayload)
-        ),
-      },
-      { idempotencyKey: options.idempotencyKey }
-    );
+    const encodedInstanceId = encodeURIComponent(instanceId);
 
-    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
-    return this.buildMessageResult(normalizedPayload, normalizedResponse);
+    const sendRequest = async (
+      path: string,
+      body: Record<string, unknown>
+    ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> => {
+      const response = await this.request<Record<string, unknown>>(
+        path,
+        {
+          method: 'POST',
+          body: JSON.stringify(compactObject(body)),
+        },
+        { idempotencyKey: options.idempotencyKey }
+      );
+
+      const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+      return this.buildMessageResult(normalizedPayload, normalizedResponse);
+    };
+
+    if (normalizedPayload.type === 'text') {
+      return sendRequest(`/instances/${encodedInstanceId}/send-text`, {
+        to: normalizedPayload.to,
+        text: normalizedPayload.content,
+        previewUrl: normalizedPayload.previewUrl,
+        externalId: normalizedPayload.externalId,
+        metadata: normalizedPayload.metadata,
+      });
+    }
+
+    if (
+      normalizedPayload.type === 'image' ||
+      normalizedPayload.type === 'video' ||
+      normalizedPayload.type === 'document' ||
+      normalizedPayload.type === 'audio'
+    ) {
+      const mediaPayload = this.buildDirectMediaRequestPayload(
+        normalizedPayload,
+        options.rawPayload
+      );
+
+      const mediaUrl = mediaPayload['mediaUrl'];
+      if (!mediaUrl || typeof mediaUrl !== 'string') {
+        throw new WhatsAppBrokerError(
+          `Direct route for ${normalizedPayload.type} messages requires mediaUrl`,
+          'INVALID_MEDIA_PAYLOAD',
+          422
+        );
+      }
+
+      const endpointMap: Record<typeof normalizedPayload.type, string> = {
+        image: 'send-image',
+        video: 'send-video',
+        document: 'send-document',
+        audio: 'send-audio',
+      };
+
+      const endpoint = endpointMap[normalizedPayload.type];
+
+      return sendRequest(`/instances/${encodedInstanceId}/${endpoint}`, {
+        to: normalizedPayload.to,
+        ...mediaPayload,
+        externalId: normalizedPayload.externalId,
+        metadata: normalizedPayload.metadata,
+      });
+    }
+
+    const unsupportedMessage = `Direct route for ${normalizedPayload.type} messages is not supported yet`;
+    throw new WhatsAppBrokerError(
+      unsupportedMessage,
+      'DIRECT_ROUTE_UNAVAILABLE',
+      415
+    );
   }
 
   private async sendViaInstanceRoutes(
