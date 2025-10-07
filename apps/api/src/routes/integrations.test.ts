@@ -382,6 +382,92 @@ describe('WhatsApp integration routes when broker is not configured', () => {
       await stopTestServer(server);
     }
   });
+
+  it('responds with 503 when connecting the default instance without broker configuration', async () => {
+    const { server, url } = await startTestServer();
+    const { prisma } = await import('../lib/prisma');
+
+    const storedInstance = {
+      id: 'leadengine-default',
+      tenantId: 'tenant-123',
+      name: 'Default Instance',
+      brokerId: 'leadengine-default',
+      phoneNumber: null,
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/connect`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ instanceId: storedInstance.id }),
+      });
+
+      const responseBody = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(responseBody).toMatchObject({
+        success: false,
+        error: { code: 'WHATSAPP_NOT_CONFIGURED' },
+      });
+    } finally {
+      delete process.env.LEADENGINE_INSTANCE_ID;
+      await stopTestServer(server);
+    }
+  });
+
+  it('responds with 503 when disconnecting the default instance without broker configuration', async () => {
+    const { server, url } = await startTestServer();
+    const { prisma } = await import('../lib/prisma');
+
+    const storedInstance = {
+      id: 'leadengine-default',
+      tenantId: 'tenant-123',
+      name: 'Default Instance',
+      brokerId: 'leadengine-default',
+      phoneNumber: null,
+      status: 'connected',
+      connected: true,
+      lastSeenAt: new Date('2024-01-01T00:00:00.000Z'),
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/disconnect`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ instanceId: storedInstance.id }),
+      });
+
+      const responseBody = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(responseBody).toMatchObject({
+        success: false,
+        error: { code: 'WHATSAPP_NOT_CONFIGURED' },
+      });
+    } finally {
+      delete process.env.LEADENGINE_INSTANCE_ID;
+      await stopTestServer(server);
+    }
+  });
 });
 
 describe('WhatsApp integration routes with configured broker', () => {
