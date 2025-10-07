@@ -66,7 +66,7 @@ const infoRows = (allocation) => {
   ];
 };
 
-const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp }) => {
+const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoading, isSwitching }) => {
   const status = allocation?.status ?? 'allocated';
   const statusLabel = STATUS_LABEL[status] ?? 'Em acompanhamento';
   const statusTone = STATUS_TONE[status] ?? STATUS_TONE.allocated;
@@ -94,14 +94,24 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp }) => {
     },
   ];
 
+  const showSkeleton = Boolean(isLoading);
+
   return (
-    <Card className="rounded-3xl border-white/5 bg-slate-950/70 shadow-[0_6px_28px_rgba(15,23,42,0.38)]">
+    <Card
+      className={cn(
+        'rounded-3xl border-white/5 bg-slate-950/70 shadow-[0_6px_28px_rgba(15,23,42,0.38)] transition-opacity duration-150 ease-out',
+        isSwitching ? 'opacity-0' : 'opacity-100'
+      )}
+      aria-busy={showSkeleton}
+    >
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-sm font-semibold tracking-[0.12em] text-foreground/90 uppercase">
             Informações do lead
           </CardTitle>
-          {allocation ? (
+          {showSkeleton ? (
+            <div className="h-6 w-32 animate-pulse rounded-full bg-white/10" />
+          ) : allocation ? (
             <Badge
               variant="outline"
               className={cn(
@@ -118,56 +128,81 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp }) => {
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className={cn('grid grid-cols-1 gap-3 text-sm text-muted-foreground/90', 'sm:grid-cols-2')}>
-          {infoRows(allocation).map((row) => {
-            const Icon = row.icon;
-            return (
-              <div key={row.label} className="space-y-1">
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground/60">
-                  <Icon className="h-3.5 w-3.5" />
-                  <span>{row.label}</span>
+        {showSkeleton ? (
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={`skeleton-info-${index}`} className="space-y-2">
+                  <div className="h-3 w-32 animate-pulse rounded-full bg-white/10" />
+                  <div className="h-4 w-full animate-pulse rounded-full bg-white/10" />
                 </div>
-                <p className="text-sm font-medium text-foreground/90">{row.value || '—'}</p>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
-            disabled={!allocation?.phone || !onOpenWhatsApp}
-            className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/90 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400"
-          >
-            <Phone className="h-4 w-4" /> Abrir conversa
-          </Button>
-          {actions.map((action) => {
-            const Icon = action.icon;
-            return (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={`skeleton-action-${index}`} className="h-10 animate-pulse rounded-2xl bg-white/10" />
+              ))}
+            </div>
+
+            <div className="h-8 w-3/4 animate-pulse rounded-2xl bg-white/10" />
+          </div>
+        ) : (
+          <>
+            <div className={cn('grid grid-cols-1 gap-3 text-sm text-muted-foreground/90', 'sm:grid-cols-2')}>
+              {infoRows(allocation).map((row) => {
+                const Icon = row.icon;
+                return (
+                  <div key={row.label} className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground/60">
+                      <Icon className="h-3.5 w-3.5" />
+                      <span>{row.label}</span>
+                    </div>
+                    <p className="text-sm font-medium text-foreground/90">{row.value || '—'}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button
-                key={action.key}
                 type="button"
                 size="sm"
-                variant="outline"
-                disabled={action.disabled || !onUpdateStatus}
-                onClick={() => (allocation && onUpdateStatus ? onUpdateStatus(allocation.allocationId, action.status) : null)}
-                className="flex items-center justify-center gap-2 rounded-2xl border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-foreground/90 transition hover:border-white/30 hover:bg-white/10"
+                onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
+                disabled={!allocation?.phone || !onOpenWhatsApp || showSkeleton}
+                className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/90 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400"
               >
-                <Icon className="h-4 w-4" />
-                {action.label}
+                <Phone className="h-4 w-4" /> Abrir conversa
               </Button>
-            );
-          })}
-        </div>
+              {actions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Button
+                    key={action.key}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={action.disabled || !onUpdateStatus || showSkeleton}
+                    onClick={() =>
+                      allocation && onUpdateStatus ? onUpdateStatus(allocation.allocationId, action.status) : null
+                    }
+                    className="flex items-center justify-center gap-2 rounded-2xl border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-foreground/90 transition hover:border-white/30 hover:bg-white/10"
+                  >
+                    <Icon className="h-4 w-4" />
+                    {action.label}
+                  </Button>
+                );
+              })}
+            </div>
 
-        {allocation?.email ? (
-          <div className="flex items-center gap-2 rounded-2xl border border-white/5 bg-white/5 px-3 py-2 text-xs text-muted-foreground/80">
-            <Mail className="h-4 w-4 text-muted-foreground/60" />
-            <span>{allocation.email}</span>
-          </div>
-        ) : null}
+            {allocation?.email ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-white/5 bg-white/5 px-3 py-2 text-xs text-muted-foreground/80">
+                <Mail className="h-4 w-4 text-muted-foreground/60" />
+                <span>{allocation.email}</span>
+              </div>
+            ) : null}
+          </>
+        )}
       </CardContent>
     </Card>
   );
