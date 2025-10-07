@@ -45,38 +45,131 @@ const formatDateTime = (value) => {
   });
 };
 
+const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+
+const getNestedValue = (object, path) => {
+  if (!isPlainObject(object)) return undefined;
+  return path.reduce((acc, key) => {
+    if (acc && typeof acc === 'object' && key in acc) {
+      return acc[key];
+    }
+    return undefined;
+  }, object);
+};
+
+const getFirstValidDate = (object, paths) => {
+  for (const path of paths) {
+    const candidate = getNestedValue(object, path);
+    const date = ensureDate(candidate);
+    if (date) {
+      return { value: candidate, date, path };
+    }
+  }
+  return null;
+};
+
+const getFirstString = (object, paths) => {
+  for (const path of paths) {
+    const candidate = getNestedValue(object, path);
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
 const buildTimeline = (allocation) => {
   if (!allocation) return [];
 
-  const events = [
-    {
-      key: 'lastMessageAt',
-      label: 'Última mensagem',
-      icon: MessageCircle,
-      timestamp: allocation.lastMessageAt ?? allocation.lastInteractionAt,
-      description: allocation.lastMessageSnippet ?? allocation.lastMessage ?? null,
-    },
-    {
-      key: 'allocatedAt',
-      label: 'Lead atribuído',
-      icon: UserCheck,
-      timestamp: allocation.allocatedAt,
-    },
-    {
-      key: 'firstMessageAt',
-      label: 'Primeira mensagem',
-      icon: PhoneCall,
-      timestamp: allocation.firstMessageAt ?? allocation.createdAt,
-    },
-  ];
+  const events = [];
+  const pushEvent = (event) => {
+    const date = ensureDate(event.timestamp);
+    if (!date) return;
+    events.push({ ...event, date });
+  };
 
-  return events
-    .map((event) => ({
-      ...event,
-      date: ensureDate(event.timestamp),
-    }))
-    .filter((event) => event.date)
-    .sort((a, b) => b.date.getTime() - a.date.getTime());
+  pushEvent({
+    key: 'receivedAt',
+    label: 'Lead recebido',
+    icon: UserCheck,
+    timestamp: allocation.receivedAt,
+    description: allocation.notes ?? null,
+  });
+
+  pushEvent({
+    key: 'updatedAt',
+    label: 'Atualização do lead',
+    icon: CalendarClock,
+    timestamp: allocation.updatedAt,
+  });
+
+  const payload = isPlainObject(allocation.payload) ? allocation.payload : null;
+
+  if (payload) {
+    const creation = getFirstValidDate(payload, [
+      ['createdAt'],
+      ['metadata', 'createdAt'],
+      ['details', 'createdAt'],
+    ]);
+    if (creation) {
+      pushEvent({
+        key: `payload-created-${creation.path.join('.')}`,
+        label: 'Lead criado na origem',
+        icon: CalendarClock,
+        timestamp: creation.value,
+      });
+    }
+
+    const firstInteraction = getFirstValidDate(payload, [
+      ['firstInteractionAt'],
+      ['firstMessageAt'],
+      ['metadata', 'firstInteractionAt'],
+      ['history', 'firstMessageAt'],
+    ]);
+    if (firstInteraction) {
+      pushEvent({
+        key: `payload-first-${firstInteraction.path.join('.')}`,
+        label: 'Primeira interação registrada',
+        icon: PhoneCall,
+        timestamp: firstInteraction.value,
+      });
+    }
+
+    const lastInteraction =
+      getFirstValidDate(payload, [
+        ['lastInteractionAt'],
+        ['lastMessageAt'],
+        ['lastInteraction', 'timestamp'],
+        ['lastInteraction', 'createdAt'],
+        ['lastMessage', 'timestamp'],
+        ['lastMessage', 'createdAt'],
+        ['metadata', 'lastInteractionAt'],
+      ]) ?? null;
+
+    if (lastInteraction) {
+      const lastMessageText =
+        getFirstString(payload, [
+          ['lastMessagePreview'],
+          ['lastMessageSnippet'],
+          ['lastMessage', 'preview'],
+          ['lastMessage', 'text'],
+          ['lastMessage', 'body'],
+          ['lastInteraction', 'message'],
+          ['lastInteraction', 'text'],
+          ['lastInteraction', 'body'],
+        ]) ?? null;
+
+      pushEvent({
+        key: `payload-last-${lastInteraction.path.join('.')}`,
+        label: 'Última interação',
+        icon: MessageCircle,
+        timestamp: lastInteraction.value,
+        description: lastMessageText,
+      });
+    }
+  }
+
+  return events.sort((a, b) => b.date.getTime() - a.date.getTime());
 };
 
 const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitching }) => {
@@ -84,7 +177,18 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
   const status = allocation?.status ?? 'allocated';
   const statusLabel = STATUS_LABEL[status] ?? 'Em acompanhamento';
   const statusTone = STATUS_TONE[status] ?? STATUS_TONE.allocated;
-  const lastMessagePreview = allocation?.lastMessageSnippet ?? allocation?.lastMessage ?? null;
+  const payload = isPlainObject(allocation?.payload) ? allocation.payload : null;
+  const lastMessagePreview =
+    getFirstString(payload, [
+      ['lastMessagePreview'],
+      ['lastMessageSnippet'],
+      ['lastMessage', 'preview'],
+      ['lastMessage', 'text'],
+      ['lastMessage', 'body'],
+      ['lastInteraction', 'message'],
+      ['lastInteraction', 'text'],
+      ['lastInteraction', 'body'],
+    ]) ?? allocation?.notes ?? null;
 
   return (
     <div className="flex h-full min-h-[520px] flex-col rounded-3xl border border-white/5 bg-slate-950/70 shadow-[0_8px_32px_rgba(15,23,42,0.32)]">
