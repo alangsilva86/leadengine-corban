@@ -6,12 +6,15 @@ import makeWASocket, {
   type WAMessageUpdate,
   type WASocket,
   type ConnectionState,
+  downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import Boom from '@hapi/boom';
 import type { Boom as BoomError } from '@hapi/boom';
 import type { MessageProvider } from '../types/message-provider';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
+import { storeMedia } from '../utils/media-storage';
+import type { StoredMedia } from '../utils/media-storage';
 
 export interface WhatsAppConfig {
   instanceId: string;
@@ -37,6 +40,9 @@ export interface WhatsAppMessage {
   timestamp: Date;
   mediaUrl?: string;
   mediaType?: string;
+  mediaFileName?: string;
+  mediaSizeBytes?: number;
+  mediaExpiresAt?: Date | null;
   quotedMessage?: string;
 }
 
@@ -91,9 +97,16 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     this.socket.ev.on('creds.update', saveCreds);
 
     // Messages
-    this.socket.ev.on('messages.upsert', (messageUpdate: { messages: WAMessage[]; type: 'notify' | 'append' | 'notify-link' }) => {
-      this.handleIncomingMessages(messageUpdate);
-    });
+    this.socket.ev.on(
+      'messages.upsert',
+      async (messageUpdate: { messages: WAMessage[]; type: 'notify' | 'append' | 'notify-link' }) => {
+        try {
+          await this.handleIncomingMessages(messageUpdate);
+        } catch (error) {
+          logger.error('Failed to handle incoming WhatsApp messages:', error);
+        }
+      }
+    );
 
     // Message status updates
     this.socket.ev.on('messages.update', (messageUpdates: WAMessageUpdate[]) => {
@@ -144,7 +157,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
   }
 
-  private handleIncomingMessages(messageUpdate: { messages: WAMessage[]; type: 'notify' | 'append' | 'notify-link' }): void {
+  private async handleIncomingMessages(messageUpdate: { messages: WAMessage[]; type: 'notify' | 'append' | 'notify-link' }): Promise<void> {
     const { messages, type } = messageUpdate;
 
     if (type !== 'notify') return;
@@ -152,7 +165,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     for (const message of messages) {
       if (message.key.fromMe) continue; // Ignore own messages
 
-      const whatsappMessage = this.parseMessage(message);
+      const whatsappMessage = await this.parseMessage(message);
       if (whatsappMessage) {
         logger.info('Received WhatsApp message:', {
           id: whatsappMessage.id,
@@ -175,7 +188,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
   }
 
-  private parseMessage(message: WAMessage): WhatsAppMessage | null {
+  private async parseMessage(message: WAMessage): Promise<WhatsAppMessage | null> {
     try {
       const messageContent = message.message;
       if (!messageContent) return null;
@@ -188,6 +201,10 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
       let type: WhatsAppMessage['type'] = 'text';
       let mediaUrl: string | undefined;
       let mediaType: string | undefined;
+      let mediaFileName: string | undefined;
+      let mediaSizeBytes: number | undefined;
+      let mediaExpiresAt: Date | null | undefined;
+      let storedMedia: StoredMedia | null = null;
 
       // Text message
       if (messageContent.conversation) {
@@ -204,24 +221,38 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
         content = messageContent.imageMessage.caption || '';
         type = 'image';
         mediaType = messageContent.imageMessage.mimetype ?? undefined;
+        storedMedia = await this.downloadAndStoreMedia(message, mediaType);
       }
       // Audio message
       else if (messageContent.audioMessage) {
         content = '[Áudio]';
         type = 'audio';
         mediaType = messageContent.audioMessage.mimetype ?? undefined;
+        storedMedia = await this.downloadAndStoreMedia(message, mediaType);
       }
       // Video message
       else if (messageContent.videoMessage) {
         content = messageContent.videoMessage.caption || '[Vídeo]';
         type = 'video';
         mediaType = messageContent.videoMessage.mimetype ?? undefined;
+        mediaFileName = (messageContent.videoMessage as { fileName?: string }).fileName ?? undefined;
+        storedMedia = await this.downloadAndStoreMedia(message, mediaType, mediaFileName);
       }
       // Document message
       else if (messageContent.documentMessage) {
         content = messageContent.documentMessage.fileName || '[Documento]';
         type = 'document';
         mediaType = messageContent.documentMessage.mimetype ?? undefined;
+        mediaFileName = messageContent.documentMessage.fileName ?? undefined;
+        storedMedia = await this.downloadAndStoreMedia(message, mediaType, mediaFileName);
+      }
+
+      if (storedMedia) {
+        mediaUrl = storedMedia.url;
+        mediaType = storedMedia.mimeType ?? mediaType;
+        mediaFileName = mediaFileName ?? storedMedia.fileName;
+        mediaSizeBytes = storedMedia.size;
+        mediaExpiresAt = storedMedia.expiresAt;
       }
 
       return {
@@ -232,10 +263,34 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
         type,
         timestamp,
         mediaUrl,
-        mediaType
+        mediaType,
+        mediaFileName,
+        mediaSizeBytes,
+        mediaExpiresAt
       };
     } catch (error) {
       logger.error('Error parsing WhatsApp message:', error);
+      return null;
+    }
+  }
+
+  private async downloadAndStoreMedia(
+    message: WAMessage,
+    mimeType?: string,
+    fileName?: string
+  ): Promise<StoredMedia | null> {
+    try {
+      const buffer = (await downloadMediaMessage(message, 'buffer', {})) as Buffer | Uint8Array;
+
+      const normalizedBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+
+      return await storeMedia(normalizedBuffer, {
+        mimeType,
+        fileName,
+        messageId: message.key.id ?? undefined
+      });
+    } catch (error) {
+      logger.error('Failed to download or store media message:', error);
       return null;
     }
   }

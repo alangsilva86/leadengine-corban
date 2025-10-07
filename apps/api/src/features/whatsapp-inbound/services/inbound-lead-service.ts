@@ -11,6 +11,7 @@ import { emitToTenant } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_DEDUPE_CACHE_SIZE = 10_000;
 
 const dedupeCache = new Map<string, number>();
 
@@ -22,6 +23,34 @@ type QueueCacheEntry = {
 };
 
 const queueCacheByTenant = new Map<string, QueueCacheEntry>();
+const pruneDedupeCache = (now: number): void => {
+  if (dedupeCache.size === 0) {
+    return;
+  }
+
+  let removedExpiredEntries = 0;
+
+  for (const [key, storedAt] of dedupeCache.entries()) {
+    if (now - storedAt >= DEDUPE_WINDOW_MS) {
+      dedupeCache.delete(key);
+      removedExpiredEntries += 1;
+    }
+  }
+
+  if (dedupeCache.size > MAX_DEDUPE_CACHE_SIZE) {
+    const sizeBefore = dedupeCache.size;
+    dedupeCache.clear();
+    logger.warn(
+      {
+        maxSize: MAX_DEDUPE_CACHE_SIZE,
+        removedExpiredEntries,
+        sizeBefore,
+      },
+      'whatsappInbound.dedupeCache.massivePurge'
+    );
+  }
+};
+const queueCacheByTenant = new Map<string, string>();
 
 interface InboundContactDetails {
   phone?: string | null;
@@ -123,7 +152,9 @@ const pickPreferredName = (...values: Array<unknown>): string | null => {
   return null;
 };
 
-const shouldSkipByDedupe = (key: string, now: number): boolean => {
+export const shouldSkipByDedupe = (key: string, now: number): boolean => {
+  pruneDedupeCache(now);
+
   const lastSeen = dedupeCache.get(key);
   if (typeof lastSeen === 'number' && now - lastSeen < DEDUPE_WINDOW_MS) {
     return true;
@@ -333,6 +364,13 @@ const ensureContact = async (
   }
 
   return contact;
+};
+
+export const __testing = {
+  DEDUPE_WINDOW_MS,
+  MAX_DEDUPE_CACHE_SIZE,
+  dedupeCache,
+  pruneDedupeCache,
 };
 
 const ensureTicketForContact = async (
