@@ -15,12 +15,12 @@ export const InboxList = ({
 }) => {
   if (loading) {
     return (
-      <div className="space-y-3" aria-live="polite" aria-busy="true">
+      <div className="space-y-2.5" aria-live="polite" aria-busy="true">
         <span className="sr-only">Carregando leads…</span>
         {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={`allocation-skeleton-${index}`}
-            className="space-y-4 rounded-3xl border border-white/6 bg-white/[0.03] p-5"
+            className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
@@ -33,7 +33,7 @@ export const InboxList = ({
               <div className="h-6 w-28 animate-pulse rounded-full bg-white/10" />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-3">
               {Array.from({ length: 3 }).map((_, detailIndex) => (
                 <div key={`allocation-detail-${detailIndex}`} className="space-y-2">
                   <div className="h-2.5 w-24 animate-pulse rounded-full bg-white/10" />
@@ -42,7 +42,7 @@ export const InboxList = ({
               ))}
             </div>
 
-            <div className="grid gap-3 border-t border-white/5 pt-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 border-t border-white/5 pt-3 sm:grid-cols-2">
               {Array.from({ length: 2 }).map((_, summaryIndex) => (
                 <div key={`allocation-summary-${summaryIndex}`} className="space-y-2">
                   <div className="h-2.5 w-24 animate-pulse rounded-full bg-white/10" />
@@ -76,7 +76,7 @@ export const InboxList = ({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {filteredAllocations.map((allocation) => (
         <LeadAllocationCard
           key={allocation.allocationId}
