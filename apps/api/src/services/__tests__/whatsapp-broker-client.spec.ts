@@ -110,7 +110,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-900/messages');
+    expect(url).toBe('https://broker.test/instances/instance-900/send-text');
     expect(init?.method).toBe('POST');
 
     const headers = init?.headers as Headers;
@@ -118,11 +118,8 @@ describe('WhatsAppBrokerClient', () => {
     expect(headers.get('x-api-key')).toBe('test-key');
 
     const parsed = JSON.parse(init?.body as string);
-    expect(parsed).toMatchObject({
-      sessionId: 'instance-900',
-      instanceId: 'instance-900',
+    expect(parsed).toEqual({
       to: '+5511999999999',
-      type: 'text',
       text: 'Olá via broker',
       metadata: { idempotencyKey: 'idem-900', custom: true },
     });
@@ -156,18 +153,17 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-media/messages');
+    expect(url).toBe('https://broker.test/instances/instance-media/send-document');
     const headers = init?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('media-123');
 
     const parsed = JSON.parse(init?.body as string);
-    expect(parsed).toMatchObject({
-      type: 'document',
-      text: 'Confira o documento',
-      caption: 'Confira o documento',
+    expect(parsed).toEqual({
+      to: '+5511977777777',
       mediaUrl: 'https://cdn.test/doc.pdf',
       mimeType: 'application/pdf',
       fileName: 'doc.pdf',
+      caption: 'Confira o documento',
       metadata: { idempotencyKey: 'media-123' },
     });
 
@@ -200,7 +196,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [firstUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/messages');
+    expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
     const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(secondUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
     const headers = secondInit?.headers as Headers;
@@ -208,6 +204,23 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(result.externalId).toBe('wamid-654');
     expect(result.status).toBe('QUEUED');
+  });
+
+  it('rejects unsupported template payloads on direct routes', async () => {
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    await expect(
+      whatsappBrokerClient.sendMessage('instance-template', {
+        to: '+5511999988888',
+        type: 'template',
+        template: { name: 'greeting_template', language: 'pt_BR' },
+      })
+    ).rejects.toMatchObject({
+      status: 415,
+      code: 'DIRECT_ROUTE_UNAVAILABLE',
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('prefers direct instance event routes and falls back gracefully', async () => {
