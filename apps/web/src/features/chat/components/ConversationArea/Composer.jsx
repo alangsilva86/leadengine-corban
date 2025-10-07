@@ -155,84 +155,90 @@ export const Composer = ({
         </div>
       ) : null}
 
-      <div className="flex items-end gap-2">
-        <Textarea
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            onTyping?.();
-          }}
-          onKeyDown={(event) => {
-            if (
-              (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
-              (event.key === 'Enter' && event.shiftKey === false && !templatePickerOpen)
-            ) {
-              event.preventDefault();
-              handleSend();
-            }
-            if (event.key === '/' && !value) {
-              setTemplatePickerOpen(false);
-            }
-          }}
-          disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
-          placeholder={placeholder}
-          className="min-h-[88px] flex-1 resize-none border-slate-800 bg-slate-900/70 text-slate-100 placeholder:text-slate-600"
-        />
-        <div className="flex flex-col gap-2">
-          <QuickReplyMenu
-            replies={quickReplies}
-            onSelect={(text) => {
-              setValue((current) => `${current ? `${current}\n` : ''}${text}`);
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <QuickReplyMenu
+              replies={quickReplies}
+              onSelect={(text) => {
+                setValue((current) => `${current ? `${current}\n` : ''}${text}`);
+              }}
+              onCreate={(reply) => {
+                setQuickReplies((current) => {
+                  const exists = current.some((item) => item.label === reply.label && item.text === reply.text);
+                  if (exists) {
+                    return current;
+                  }
+                  return [...current, reply];
+                });
+              }}
+              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white"
+              onClick={handleAttachmentClick}
+            >
+              <Paperclip className="h-4 w-4" />
+              <span className="sr-only">Anexar arquivo</span>
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={handleFilesSelected}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white"
+              onClick={() => setTemplatePickerOpen((open) => !open)}
+            >
+              <Smile className="h-4 w-4" />
+              <span className="sr-only">Abrir sugestões</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white"
+              onClick={() => onRequestSuggestion?.()}
+              disabled={aiLoading}
+            >
+              {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              <span className="sr-only">Sugestões com IA</span>
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-end gap-3">
+          <Textarea
+            value={value}
+            onChange={(event) => {
+              setValue(event.target.value);
+              onTyping?.();
             }}
-            onCreate={(reply) => {
-              setQuickReplies((current) => {
-                const exists = current.some((item) => item.label === reply.label && item.text === reply.text);
-                if (exists) {
-                  return current;
-                }
-                return [...current, reply];
-              });
+            onKeyDown={(event) => {
+              if (
+                (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) ||
+                (event.key === 'Enter' && event.shiftKey === false && !templatePickerOpen)
+              ) {
+                event.preventDefault();
+                handleSend();
+              }
+              if (event.key === '/' && !value) {
+                setTemplatePickerOpen(false);
+              }
             }}
+            disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
+            placeholder={placeholder}
+            className="min-h-[88px] flex-1 resize-none rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-3 text-slate-100 placeholder:text-slate-600"
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 text-slate-300 hover:text-white"
-            onClick={handleAttachmentClick}
-          >
-            <Paperclip className="h-4 w-4" />
-            <span className="sr-only">Anexar arquivo</span>
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            multiple
-            onChange={handleFilesSelected}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 text-slate-300 hover:text-white"
-            onClick={() => setTemplatePickerOpen((open) => !open)}
-          >
-            <Smile className="h-4 w-4" />
-            <span className="sr-only">Abrir sugestões</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 text-slate-300 hover:text-white"
-            onClick={() => onRequestSuggestion?.()}
-            disabled={aiLoading}
-          >
-            {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
-            <span className="sr-only">Sugestões com IA</span>
-          </Button>
           <Button
             variant="default"
             size="icon"
-            className="h-10 w-10 bg-sky-600 hover:bg-sky-500"
+            className="h-12 w-12 rounded-full bg-sky-600 text-white hover:bg-sky-500"
             disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
             onClick={handleSend}
           >
