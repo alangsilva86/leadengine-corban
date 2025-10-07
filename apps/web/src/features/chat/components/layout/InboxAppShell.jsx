@@ -63,14 +63,17 @@ const InboxAppShell = ({
       <div className="flex min-h-screen bg-slate-950 text-slate-100">
         <Sidebar collapsible="icon" className="border-slate-900/80 bg-slate-950/90">
           <SidebarHeader className="px-3 py-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
-                <MessageSquare className="h-4 w-4" />
-              </span>
-              <div className="space-y-0.5">
-                <p className="text-sm font-semibold leading-none">Inbox</p>
-                <p className="text-xs text-slate-400">Atendimento em tempo real</p>
+            <div className="flex items-center justify-between gap-3 text-sm font-semibold">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
+                  <MessageSquare className="h-4 w-4" />
+                </span>
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold leading-none">Inbox</p>
+                  <p className="text-xs text-slate-400">Atendimento em tempo real</p>
+                </div>
               </div>
+              <SidebarTrigger className="hidden text-slate-300 md:inline-flex" />
             </div>
           </SidebarHeader>
           <SidebarSeparator />
@@ -85,7 +88,7 @@ const InboxAppShell = ({
         <SidebarInset className="flex flex-1 flex-col">
           <header className="flex items-center justify-between border-b border-slate-900/60 px-4 py-3">
             <div className="flex items-center gap-3">
-              <SidebarTrigger className="text-slate-300" />
+              <SidebarTrigger className="text-slate-300 md:hidden" />
               <h1 className="text-base font-semibold text-slate-100 sm:text-lg">{title}</h1>
             </div>
             <Button
