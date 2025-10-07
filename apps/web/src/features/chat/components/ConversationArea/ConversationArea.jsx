@@ -11,10 +11,11 @@ export const ConversationArea = ({
   messagesQuery,
   onSendMessage,
   onCreateNote,
-  onMarkWon,
-  onMarkLost,
+  onRegisterResult,
   onAssign,
   onGenerateProposal,
+  onScheduleFollowUp,
+  isRegisteringResult = false,
   typingIndicator,
   quality,
   isSending,
@@ -40,10 +41,11 @@ export const ConversationArea = ({
     <div className="flex h-full min-h-0 flex-col gap-6">
       <ConversationHeader
         ticket={ticket}
-        onMarkWon={onMarkWon}
-        onMarkLost={onMarkLost}
+        onRegisterResult={onRegisterResult}
         onAssign={onAssign}
         onGenerateProposal={onGenerateProposal}
+        onScheduleFollowUp={onScheduleFollowUp}
+        isRegisteringResult={isRegisteringResult}
         typingAgents={typingIndicator?.agentsTyping ?? []}
       />
 

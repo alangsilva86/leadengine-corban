@@ -76,24 +76,24 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     );
   };
 
-  const markWon = () => {
-    controller.statusMutation.mutate(
-      { ticketId: controller.selectedTicketId, status: 'RESOLVED', reason: 'Ganho no WhatsApp' },
-      {
-        onSuccess: () => toast.success('Ticket marcado como ganho'),
-        onError: (error) => toast.error('Erro ao atualizar status', { description: error?.message }),
-      }
-    );
-  };
+  const registerResult = async ({ outcome, reason }) => {
+    if (!controller.selectedTicketId) return;
 
-  const markLost = () => {
-    controller.statusMutation.mutate(
-      { ticketId: controller.selectedTicketId, status: 'CLOSED', reason: 'Sem interesse' },
-      {
-        onSuccess: () => toast.success('Ticket marcado como perda'),
-        onError: (error) => toast.error('Erro ao atualizar status', { description: error?.message }),
-      }
-    );
+    const payload = {
+      ticketId: controller.selectedTicketId,
+      status: outcome === 'won' ? 'RESOLVED' : 'CLOSED',
+      reason,
+    };
+
+    try {
+      await controller.statusMutation.mutateAsync(payload);
+      toast.success('Resultado registrado.');
+    } catch (error) {
+      toast.error('Não foi possível concluir. Tente novamente.', {
+        description: error?.message,
+      });
+      throw error;
+    }
   };
 
   const assignToMe = (ticket) => {
@@ -110,6 +110,16 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         onError: (error) => toast.error('Erro ao atribuir ticket', { description: error?.message }),
       }
     );
+  };
+
+  const handleGenerateProposal = () => {
+    toast.success('Proposta gerada.');
+  };
+
+  const handleScheduleFollowUp = () => {
+    toast.info('Agendar follow-up', {
+      description: 'Conecte um calendário para programar o próximo contato.',
+    });
   };
 
   const metrics = controller.metrics;
@@ -207,12 +217,11 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         messagesQuery={controller.messagesQuery}
         onSendMessage={sendMessage}
         onCreateNote={createNote}
-        onMarkWon={markWon}
-        onMarkLost={markLost}
+        onRegisterResult={registerResult}
         onAssign={() => assignToMe(controller.selectedTicket)}
-        onGenerateProposal={() =>
-          toast.info('Gerador de proposta', { description: 'Integração com mini simulador em breve.' })
-        }
+        onGenerateProposal={handleGenerateProposal}
+        onScheduleFollowUp={handleScheduleFollowUp}
+        isRegisteringResult={controller.statusMutation.isPending}
         typingIndicator={controller.typingIndicator}
         quality={quality}
         isSending={controller.sendMessageMutation.isPending}
