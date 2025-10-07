@@ -21,9 +21,11 @@ const formatTime = (value) => {
 export const MessageBubble = ({ message }) => {
   const direction = message.direction ?? 'INBOUND';
   const outbound = direction === 'OUTBOUND';
-  const tone = outbound ? 'bg-sky-600/30 border-sky-500/40 text-slate-50' : 'bg-slate-900/80 border-slate-800/80 text-slate-100';
+  const tone = outbound
+    ? 'bg-sky-500/15 text-slate-50 ring-1 ring-sky-500/40'
+    : 'bg-slate-950/30 text-slate-100 ring-1 ring-white/5';
   const bubbleClass = cn(
-    'max-w-[75%] rounded-2xl border px-4 py-2 text-sm shadow-sm',
+    'max-w-[75%] rounded-[26px] px-4 py-3 text-sm leading-relaxed shadow-[0_20px_45px_-32px_rgba(15,23,42,0.9)] backdrop-blur',
     tone,
     outbound ? 'self-end rounded-tr-sm' : 'self-start rounded-tl-sm'
   );

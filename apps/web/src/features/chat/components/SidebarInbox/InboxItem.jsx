@@ -62,6 +62,18 @@ export const InboxItem = ({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
               <span className="max-w-[160px] truncate" title={name}>
+        'flex w-full flex-col gap-3 rounded-xl border border-slate-800/70 bg-slate-950/75 p-3 text-left transition hover:border-sky-500/40 hover:bg-slate-900',
+        selected && 'border-sky-500/80 bg-slate-900'
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <span className="rounded-full bg-slate-900/80 p-2 text-sky-300">
+            <ChannelIcon className="h-4 w-4" />
+          </span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <span className="max-w-[180px] truncate" title={name}>
                 {name}
               </span>
               <StatusBadge status={ticket.status} />
@@ -121,18 +133,27 @@ export const InboxItem = ({
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <Avatar className="h-8 w-8 border border-slate-800/70">
+      <div className="text-[13px] text-muted-foreground/80">
+        {typingLabel ? <span className="font-medium text-emerald-300">{typingLabel}</span> : formatPreview(ticket)}
+      </div>
+
+      <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/70">
+        <div className="flex items-center gap-1.5 text-[13px] font-normal text-muted-foreground/80">
+          <Avatar className="h-6 w-6 border border-slate-800/70">
             <AvatarImage src={ticket.contact?.avatar} alt={name} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          {ticket.userId ? <span>Atribuído</span> : <span>Não atribuído</span>}
+          {ticket.userId ? <span className="text-[13px] text-muted-foreground/80">Atribuído</span> : <span className="text-[13px] text-muted-foreground/80">Não atribuído</span>}
         </div>
-        {phoneLabel ? <span className="text-slate-500">{phoneLabel}</span> : null}
+        {phoneLabel ? <span className="text-[11px] font-medium text-muted-foreground/70">{phoneLabel}</span> : null}
         {ticket.timeline?.lastInboundAt ? (
           <span>
             Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', {
               hour: '2-digit',
               minute: '2-digit',
             })}
+          <span className="text-[11px] font-medium text-muted-foreground/70">
+            Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
         ) : null}
       </div>

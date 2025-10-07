@@ -119,15 +119,13 @@ const InboxAppShell = ({
     [canPersistPreferences, updatePreferences]
   );
 
-  const listBorderClass = 'border-r border-slate-900/70';
-
   const renderListPane = useCallback(
     ({ showCloseButton = false } = {}) => (
       <div className="flex h-full flex-col">
-        <div className="px-4 py-4">
-          <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-200">
+        <div className="px-5 pb-4 pt-5">
+          <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-100">
             <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
+              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300 shadow-inner shadow-slate-950/50">
                 <MessageSquare className="h-4 w-4" />
               </span>
               <div className="space-y-0.5">
@@ -150,9 +148,9 @@ const InboxAppShell = ({
           </div>
         </div>
         <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full pr-2">{sidebar}</ScrollArea>
+          <ScrollArea className="h-full px-2 pb-6">{sidebar}</ScrollArea>
         </div>
-        <div className="border-t border-slate-900/70 px-4 py-3 text-xs text-slate-500">
+        <div className="px-5 pb-5 pt-4 text-xs text-slate-500">
           <p className="font-medium text-slate-400">⌥ L alterna lista</p>
           <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-600">
             {canPersistPreferences ? 'Preferência salva automaticamente' : 'Preferência local temporária'}
@@ -164,21 +162,36 @@ const InboxAppShell = ({
   );
 
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
-  const detailSurface = (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-slate-950">
-      <div className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', contextOpen ? 'lg:pr-0' : '')}>{children}</div>
-      <ContextDrawer open={contextOpen} onOpenChange={setContextOpen}>
-        {context}
-      </ContextDrawer>
-    </div>
-  );
+  const renderDetailSurface = () => {
+    const detailGap = contextOpen ? 'lg:gap-6' : 'lg:gap-0';
+
+    return (
+      <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] bg-slate-950/35 p-0 shadow-[0_30px_60px_-40px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur-xl">
+            <div className="flex min-h-0 flex-1 flex-col px-4 pb-5 pt-5 sm:px-6 lg:px-8">
+              {children}
+            </div>
+          </div>
+        </div>
+        <ContextDrawer
+          open={contextOpen}
+          onOpenChange={setContextOpen}
+          desktopClassName="rounded-[32px] bg-slate-950/40 shadow-[0_30px_60px_-45px_rgba(15,23,42,0.95)] ring-1 ring-white/5 backdrop-blur-xl"
+          desktopContentClassName="px-5 py-6"
+        >
+          {context}
+        </ContextDrawer>
+      </div>
+    );
+  };
 
   const listContent = renderListPane();
   const mobileListContent = renderListPane({ showCloseButton: true });
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-900/60 px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/85 px-4 py-3 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.9)] supports-[backdrop-filter]:bg-slate-950/60 backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -215,35 +228,41 @@ const InboxAppShell = ({
         </div>
       </header>
       {toolbar ? (
-        <div className="border-b border-slate-900/60 bg-slate-950/95 px-4 py-5">
+        <div className="bg-slate-950/80 px-4 py-4 shadow-[0_20px_48px_-36px_rgba(15,23,42,0.8)] supports-[backdrop-filter]:bg-slate-950/55 backdrop-blur-xl">
           <div className="mx-auto w-full max-w-6xl">
             {toolbar}
           </div>
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {isDesktop ? (
-          <SplitLayout
-            className="min-h-0 flex-1"
-            list={listContent}
-            detail={detailSurface}
-            listPosition={effectiveListPosition}
-            listClassName={cn('bg-slate-950/90', listBorderClass)}
-            detailClassName="bg-slate-950"
-            listWidth={listWidth}
-            isListVisible={desktopListVisible && Boolean(sidebar)}
-            onListWidthChange={handleListWidthChange}
-            onListWidthCommit={handleListWidthCommit}
-            resizable={desktopListVisible && Boolean(sidebar)}
-          />
-        ) : (
-          detailSurface
-        )}
+        <div className="mx-auto flex h-full w-full max-w-7xl flex-1">
+          {isDesktop ? (
+            <SplitLayout
+              className="h-full w-full gap-6 px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-6"
+              list={listContent}
+              detail={renderDetailSurface()}
+              listPosition={effectiveListPosition}
+              listClassName={cn(
+                'flex flex-col overflow-hidden rounded-[28px] bg-slate-950/75 shadow-[0_24px_56px_-34px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur-xl'
+              )}
+              detailClassName="min-h-0 min-w-0"
+              listWidth={listWidth}
+              isListVisible={desktopListVisible && Boolean(sidebar)}
+              onListWidthChange={handleListWidthChange}
+              onListWidthCommit={handleListWidthCommit}
+              resizable={desktopListVisible && Boolean(sidebar)}
+            />
+          ) : (
+            <div className="flex h-full w-full px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-6">
+              {renderDetailSurface()}
+            </div>
+          )}
+        </div>
       </div>
       <Sheet open={mobileListOpen} onOpenChange={setMobileListOpen}>
         <SheetContent
           side="left"
-          className={cn('w-[min(420px,90vw)] border-slate-900/70 bg-slate-950/95 p-0 text-slate-100', 'border-r')}
+          className={cn('w-[min(420px,90vw)] border-slate-900/40 bg-slate-950/90 p-0 text-slate-100 backdrop-blur-xl', 'border-r')}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Lista de tickets</SheetTitle>

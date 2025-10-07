@@ -4,12 +4,12 @@ import { ShieldAlert, Sparkles, Repeat2 } from 'lucide-react';
 
 export const QuickActionsBar = ({ onReopenWindow, onMacro, quality }) => {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800/60 bg-slate-950/80 px-4 py-2 text-xs text-slate-300">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] bg-slate-950/25 px-5 py-3 text-xs text-slate-300 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
       <div className="flex items-center gap-2">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="inline-flex items-center gap-1 rounded-md border border-slate-700/70 bg-slate-900/70 px-2 py-1">
+              <span className="inline-flex items-center gap-1 rounded-md bg-slate-900/40 px-3 py-1 text-slate-100 ring-1 ring-white/5">
                 <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />
                 Qualidade WA: {quality?.qualityTier ?? '—'}
               </span>
@@ -22,10 +22,15 @@ export const QuickActionsBar = ({ onReopenWindow, onMacro, quality }) => {
       </div>
 
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline" onClick={onMacro} className="border-slate-700/60 text-slate-200">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onMacro}
+          className="border-transparent bg-slate-900/40 text-slate-200 hover:bg-slate-900/30"
+        >
           <Sparkles className="mr-1 h-4 w-4" /> Aplicar macro
         </Button>
-        <Button size="sm" variant="secondary" onClick={onReopenWindow}>
+        <Button size="sm" variant="secondary" className="bg-sky-600/80 text-white hover:bg-sky-500/80" onClick={onReopenWindow}>
           <Repeat2 className="mr-1 h-4 w-4" /> Reabrir janela
         </Button>
       </div>

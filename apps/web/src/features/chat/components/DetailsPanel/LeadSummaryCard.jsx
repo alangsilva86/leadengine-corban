@@ -4,7 +4,7 @@ import StatusBadge from '../Shared/StatusBadge.jsx';
 export const LeadSummaryCard = ({ lead }) => {
   if (!lead) {
     return (
-      <Card className="border-slate-800/60 bg-slate-950/80 text-slate-400">
+      <Card className="border-0 bg-slate-950/25 text-slate-400 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
         <CardHeader>
           <CardTitle className="text-sm text-slate-200">Resumo do lead</CardTitle>
         </CardHeader>
@@ -14,14 +14,14 @@ export const LeadSummaryCard = ({ lead }) => {
   }
 
   return (
-    <Card className="border-slate-800/60 bg-slate-950/80 text-slate-200">
+    <Card className="border-0 bg-slate-950/25 text-slate-100 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           Resumo do lead
           <StatusBadge status={lead.status} />
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2 text-xs">
+      <CardContent className="flex flex-col gap-2 text-xs text-slate-300">
         <div className="flex justify-between">
           <span>Valor estimado</span>
           <span>{lead.value ? `R$ ${lead.value}` : '—'}</span>
