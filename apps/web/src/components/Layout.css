@@ -124,20 +124,20 @@
   border-radius: var(--radius);
   font-size: 0.9rem;
   font-weight: 500;
-  transition: all 0.2s ease;
-  color: inherit;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  color: var(--text-muted);
   background: transparent;
 }
 
 .nav-item:hover {
-  transform: translateX(4px);
-  background: color-mix(in oklab, var(--primary) 15%, transparent);
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+  color: var(--text);
 }
 
 .nav-item-active {
-  background: color-mix(in oklab, var(--primary) 22%, transparent);
-  color: var(--primary-foreground);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 45%, transparent);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 28%, transparent);
 }
 
 .sidebar-collapsed .nav-item {
