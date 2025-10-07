@@ -19,6 +19,11 @@ import { Button } from '@/components/ui/button.jsx';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible.jsx';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -29,7 +34,15 @@ import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
-import { ChevronDown, IdCard, Phone } from 'lucide-react';
+import {
+  CalendarClock,
+  ChevronDown,
+  ClipboardList,
+  FileText,
+  IdCard,
+  Phone,
+  UserPlus,
+} from 'lucide-react';
 
 const LOSS_REASONS = [
   { value: 'sem_interesse', label: 'Sem interesse' },
@@ -197,6 +210,7 @@ export const ConversationHeader = ({
   isRegisteringResult = false,
 }) => {
   const [isFadeIn, setIsFadeIn] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [resultSelection, setResultSelection] = useState('');
   const [lossDialogOpen, setLossDialogOpen] = useState(false);
   const [lossReason, setLossReason] = useState('');
@@ -206,6 +220,7 @@ export const ConversationHeader = ({
   useEffect(() => {
     if (!ticket) return;
     setIsFadeIn(false);
+    setIsExpanded(false);
     const frame = requestAnimationFrame(() => setIsFadeIn(true));
     return () => cancelAnimationFrame(frame);
   }, [ticket?.id, ticket]);
@@ -352,13 +367,15 @@ export const ConversationHeader = ({
   }
 
   return (
-    <div
+    <Collapsible
+      open={isExpanded}
+      onOpenChange={setIsExpanded}
       className={cn(
-        'space-y-4 rounded-2xl border border-white/12 bg-slate-950/85 p-4 shadow-[0_4px_24px_rgba(15,23,42,0.45)] backdrop-blur transition-opacity duration-150',
+        'rounded-2xl border border-white/12 bg-slate-950/85 p-4 shadow-[0_4px_24px_rgba(15,23,42,0.45)] backdrop-blur transition-opacity duration-150',
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
-      <header className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-[18px] font-semibold tracking-[0.2px] text-white">
             {title}
@@ -375,94 +392,244 @@ export const ConversationHeader = ({
             </TooltipContent>
           </Tooltip>
         </div>
-        <p className="text-[13px] font-medium text-white/70">{subtitle}</p>
-      </header>
 
-      <section className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          size="lg"
-          onClick={() => onGenerateProposal?.(ticket)}
-          className="min-h-[44px] rounded-xl bg-sky-500 text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-        >
-          Gerar proposta
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          onClick={() => onAssign?.(ticket)}
-          className="min-h-[44px] rounded-xl border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
-        >
-          Atribuir
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          onClick={() => onScheduleFollowUp?.(ticket)}
-          className="min-h-[44px] rounded-xl border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
-        >
-          Agendar follow-up
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onGenerateProposal?.(ticket)}
+                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                aria-label="Gerar proposta"
+              >
+                <FileText className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Gerar proposta</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onAssign?.(ticket)}
+                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                aria-label="Atribuir"
+              >
+                <UserPlus className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Atribuir</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onScheduleFollowUp?.(ticket)}
+                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                aria-label="Agendar follow-up"
+              >
+                <CalendarClock className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Agendar follow-up</TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Registrar resultado"
+                    className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                    disabled={isRegisteringResult}
+                  >
+                    <ClipboardList className="size-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Registrar resultado</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                {RESULT_ITEMS.map((item) => (
+                  <DropdownMenuRadioItem
+                    key={item.value}
+                    value={item.value}
+                    className="min-h-[44px]"
+                    disabled={isRegisteringResult}
+                  >
+                    {item.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Opções de telefone"
+                    className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                  >
+                    <Phone className="size-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Opções de telefone</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                Ligar
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                Abrir WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+                Copiar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleCopyDocument}
+                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                aria-label="Copiar documento"
+              >
+                <IdCard className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Copiar documento</TooltipContent>
+          </Tooltip>
+
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
+              className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+            >
+              <ChevronDown
+                className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+                aria-hidden
+              />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+      </div>
+
+      <CollapsibleContent>
+        <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+          <p className="text-[13px] font-medium text-white/70">{subtitle}</p>
+
+          <section className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
               size="lg"
-              aria-label="Registrar resultado"
-              className="min-h-[44px] rounded-xl bg-white/12 text-white hover:bg-white/16 focus-visible:ring-white/40"
-              disabled={isRegisteringResult}
+              onClick={() => onGenerateProposal?.(ticket)}
+              className="min-h-[44px] rounded-xl bg-sky-500 text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
             >
-              <span className="mr-1">Registrar resultado</span>
-              <ChevronDown className="size-4" aria-hidden />
+              Gerar proposta
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-              {RESULT_ITEMS.map((item) => (
-                <DropdownMenuRadioItem
-                  key={item.value}
-                  value={item.value}
-                  className="min-h-[44px]"
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              onClick={() => onAssign?.(ticket)}
+              className="min-h-[44px] rounded-xl border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
+            >
+              Atribuir
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              onClick={() => onScheduleFollowUp?.(ticket)}
+              className="min-h-[44px] rounded-xl border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
+            >
+              Agendar follow-up
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="lg"
+                  aria-label="Registrar resultado"
+                  className="min-h-[44px] rounded-xl bg-white/12 text-white hover:bg-white/16 focus-visible:ring-white/40"
                   disabled={isRegisteringResult}
                 >
-                  {item.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <TypingIndicator agents={typingAgents} />
-      </section>
+                  <span className="mr-1">Registrar resultado</span>
+                  <ChevronDown className="size-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                  {RESULT_ITEMS.map((item) => (
+                    <DropdownMenuRadioItem
+                      key={item.value}
+                      value={item.value}
+                      className="min-h-[44px]"
+                      disabled={isRegisteringResult}
+                    >
+                      {item.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <TypingIndicator agents={typingAgents} />
+          </section>
 
-      <footer className="flex flex-wrap items-center gap-2 pt-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <MetadataBadge icon={Phone} aria-label="Telefone">
-              {phoneDisplay}
+          <footer className="flex flex-wrap items-center gap-2 pt-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <MetadataBadge icon={Phone} aria-label="Telefone">
+                  {phoneDisplay}
+                </MetadataBadge>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                  Ligar
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                  Abrir WhatsApp
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+                  Copiar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <MetadataBadge
+              icon={IdCard}
+              aria-label="Copiar documento"
+              onClick={handleCopyDocument}
+            >
+              Doc: {document}
             </MetadataBadge>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-              Ligar
-            </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-              Abrir WhatsApp
-            </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-              Copiar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <MetadataBadge
-          icon={IdCard}
-          aria-label="Copiar documento"
-          onClick={handleCopyDocument}
-        >
-          Doc: {document}
-        </MetadataBadge>
-      </footer>
+          </footer>
+        </div>
+      </CollapsibleContent>
 
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
         <DialogContent className="sm:max-w-md">
@@ -516,7 +683,7 @@ export const ConversationHeader = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Collapsible>
   );
 };
 
