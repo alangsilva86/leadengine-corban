@@ -256,10 +256,10 @@ class WhatsAppEventPoller {
       instanceId: this.cursorInstanceId ?? undefined,
     });
 
-    const rawEvents = Array.isArray(response?.items)
-      ? response.items
-      : Array.isArray(response?.events)
-        ? response.events
+    const rawEvents = Array.isArray(response?.events)
+      ? response.events
+      : Array.isArray(response?.items)
+        ? response.items
         : Array.isArray(response?.data)
           ? response.data
           : [];
