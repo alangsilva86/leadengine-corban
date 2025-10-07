@@ -691,37 +691,38 @@ export const LeadInbox = ({
   }, [agreementId, campaign?.instanceId, campaignId, filters.status]);
 
   return (
-    <div className="space-y-6 xl:space-y-8">
+    <div className="space-y-8 xl:space-y-10">
       <InboxHeader
         stepLabel={stepLabel}
         campaign={campaign}
         onboarding={onboarding}
       />
 
-      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:gap-6">
-        <section className="flex min-h-[520px] flex-col gap-4 rounded-2xl border border-white/5 bg-slate-950/60 p-4 shadow-[0_12px_32px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-220px)] xl:overflow-hidden">
-          <GlobalFiltersBar
-            filters={filters}
-            onUpdateFilters={handleUpdateFilters}
-            onResetFilters={handleResetFilters}
-            queueOptions={queueOptions}
-            windowOptions={TIME_WINDOW_OPTIONS}
-            savedViews={savedViewsWithCount}
-            activeViewId={activeViewId}
-            onSelectSavedView={handleSelectSavedView}
-            onSaveCurrentView={handleSaveCurrentView}
-            onDeleteSavedView={handleDeleteSavedView}
-            canSaveView={canSaveCurrentView}
-            viewLimit={SAVED_VIEWS_LIMIT}
-          />
+      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:gap-7">
+        <div className="relative">
+          <section className="flex min-h-[520px] flex-col gap-5 rounded-[28px] border border-white/10 bg-[#0c192e] p-5 shadow-[0_24px_52px_rgba(4,10,24,0.55)] ring-1 ring-white/10 xl:max-h-[calc(100vh-220px)] xl:overflow-hidden">
+            <GlobalFiltersBar
+              filters={filters}
+              onUpdateFilters={handleUpdateFilters}
+              onResetFilters={handleResetFilters}
+              queueOptions={queueOptions}
+              windowOptions={TIME_WINDOW_OPTIONS}
+              savedViews={savedViewsWithCount}
+              activeViewId={activeViewId}
+              onSelectSavedView={handleSelectSavedView}
+              onSaveCurrentView={handleSaveCurrentView}
+              onDeleteSavedView={handleDeleteSavedView}
+              canSaveView={canSaveCurrentView}
+              viewLimit={SAVED_VIEWS_LIMIT}
+            />
 
-          <div className="h-px bg-white/5" />
+            <div className="h-px bg-white/12" />
 
-          <div className="flex-1 overflow-y-auto pr-1 xl:pr-2">
-            <InboxList
-              allocations={allocations}
-              filteredAllocations={filteredAllocations}
-              loading={loading}
+            <div className="flex-1 overflow-y-auto pr-1 xl:pr-2">
+              <InboxList
+                allocations={allocations}
+                filteredAllocations={filteredAllocations}
+                loading={loading}
               selectedAgreement={selectedAgreement}
               campaign={campaign}
               onBackToWhatsApp={onBackToWhatsApp}
@@ -732,74 +733,85 @@ export const LeadInbox = ({
             />
           </div>
 
-          <div className="space-y-3 text-sm">
-            {!realtimeConnected && !connectionError ? (
-              <NoticeBanner
-                variant="info"
-                className="rounded-2xl border-white/10 bg-white/5 text-foreground/90"
-              >
-                Conectando ao tempo real para receber novos leads automaticamente…
-              </NoticeBanner>
-            ) : null}
+            <div className="space-y-3 text-sm">
+              {!realtimeConnected && !connectionError ? (
+                <NoticeBanner
+                  variant="info"
+                  className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                >
+                  Conectando ao tempo real para receber novos leads automaticamente…
+                </NoticeBanner>
+              ) : null}
 
-            {connectionError ? (
-              <NoticeBanner
-                variant="warning"
-                icon={<AlertCircle className="h-4 w-4" />}
-                className="rounded-2xl border-white/10 bg-white/5 text-foreground/90"
-              >
-                Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
-              </NoticeBanner>
-            ) : null}
+              {connectionError ? (
+                <NoticeBanner
+                  variant="warning"
+                  icon={<AlertCircle className="h-4 w-4" />}
+                  className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                >
+                  Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
+                </NoticeBanner>
+              ) : null}
 
-            {error ? (
-              <NoticeBanner
-                variant="danger"
-                icon={<AlertCircle className="h-4 w-4" />}
-                className="rounded-2xl border-white/10 bg-rose-500/10 text-rose-100"
-              >
-                {error}
-              </NoticeBanner>
-            ) : null}
+              {error ? (
+                <NoticeBanner
+                  variant="danger"
+                  icon={<AlertCircle className="h-4 w-4" />}
+                  className="rounded-2xl border-white/15 bg-rose-500/15 text-rose-50"
+                >
+                  {error}
+                </NoticeBanner>
+              ) : null}
 
-            {!error && warningMessage ? (
-              <NoticeBanner
-                variant="warning"
-                icon={<AlertCircle className="h-4 w-4" />}
-                className="rounded-2xl border-white/10 bg-white/5 text-foreground/90"
-              >
-                {warningMessage}
-              </NoticeBanner>
-            ) : null}
+              {!error && warningMessage ? (
+                <NoticeBanner
+                  variant="warning"
+                  icon={<AlertCircle className="h-4 w-4" />}
+                  className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                >
+                  {warningMessage}
+                </NoticeBanner>
+              ) : null}
+            </div>
+          </section>
+
+          <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
+            <span className="block h-full w-px rounded-full bg-white/12 shadow-[1px_0_18px_rgba(5,10,26,0.55)]" />
           </div>
-        </section>
+        </div>
 
-        <LeadConversationPanel
-          allocation={activeAllocation}
-          onOpenWhatsApp={handleOpenWhatsApp}
-          isLoading={loading}
-          isSwitching={leadPanelSwitching}
-        />
+        <div className="relative">
+          <LeadConversationPanel
+            allocation={activeAllocation}
+            onOpenWhatsApp={handleOpenWhatsApp}
+            isLoading={loading}
+            isSwitching={leadPanelSwitching}
+          />
 
-        <aside className="flex flex-col gap-5">
-          <Card className="rounded-3xl border-white/5 bg-slate-950/60 shadow-[0_12px_36px_rgba(15,23,42,0.32)]">
+          <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
+            <span className="block h-full w-px rounded-full bg-white/10 shadow-[1px_0_20px_rgba(4,9,24,0.5)]" />
+          </div>
+        </div>
+
+        <aside className="flex min-h-[520px] flex-col gap-4 rounded-[28px] border border-white/12 bg-[#162946] p-5 shadow-[0_24px_52px_rgba(6,14,38,0.55)] ring-1 ring-white/10">
+          <Card className="rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
             <CardHeader className="space-y-2 pb-2">
-              <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-muted-foreground/70">
+              <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
                 Resumo
               </CardTitle>
-              <CardDescription className="text-xs text-muted-foreground/80">
+              <CardDescription className="text-xs text-white/70">
                 Distribuição dos leads recebidos via WhatsApp conectado.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-2 gap-4">
                 {statusMetrics.map(({ key, label, accent, icon }) => (
-                  <div key={key} className="space-y-1 rounded-2xl border border-white/5 bg-white/5 px-3 py-3">
-                    <dt className="flex items-center gap-2 text-xs font-medium text-muted-foreground/70">
+                  <div key={key} className="space-y-1 rounded-2xl border border-white/15 bg-white/[0.07] px-3 py-3 shadow-[0_14px_30px_rgba(5,12,28,0.35)]">
+                    <dt className="flex items-center gap-2 text-xs font-medium text-white/75">
                       {icon ? icon : null}
                       <span>{label}</span>
                     </dt>
-                    <dd className={cn('text-xl font-semibold text-foreground/90', accent ?? '')}>
+                    <dd className={cn('text-xl font-semibold text-white/90', accent ?? '')}>
                       {formatSummaryValue(summary[key])}
                     </dd>
                   </div>
