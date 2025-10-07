@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import './Layout.css';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
@@ -50,15 +49,16 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
     return () => window.removeEventListener('leadengine:inbox-count', handler);
   }, []);
 
+  const inboxLabel = typeof inboxCount === 'number' ? `Inbox (${inboxCount})` : 'Inbox';
+
   const navigation = [
     { id: 'dashboard', name: 'Visão Geral', icon: Home },
     { id: 'agreements', name: 'Convênios', icon: Briefcase },
     { id: 'whatsapp', name: 'WhatsApp', icon: QrCode },
     {
       id: 'inbox',
-      name: 'Inbox de Leads',
+      name: inboxLabel,
       icon: MessageSquare,
-      badge: typeof inboxCount === 'number' ? inboxCount : null,
     },
     { id: 'reports', name: 'Relatórios', icon: BarChart3 },
     { id: 'settings', name: 'Configurações', icon: Settings },
@@ -119,11 +119,6 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
                 >
                   <item.icon className="nav-icon" />
                   <span className="nav-text">{item.name}</span>
-                  {item.badge ? (
-                    <Badge variant="secondary" className="nav-badge">
-                      {item.badge}
-                    </Badge>
-                  ) : null}
                 </button>
               </li>
             ))}

@@ -8,22 +8,20 @@ import {
 } from '@/components/ui/breadcrumb.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
+import { MessageSquare } from 'lucide-react';
 
 export const InboxHeader = ({
   stepLabel,
-  selectedAgreement,
   campaign,
   onboarding,
-  leadCount = 0,
 }) => {
-  const agreementName = selectedAgreement?.name;
   const activeStep = onboarding?.activeStep ?? 0;
   const nextStage = onboarding?.stages?.[activeStep + 1]?.title ?? 'Relatórios';
   const campaignName = campaign?.name;
 
   const breadcrumbItems = [
     { label: 'Leads', href: '#leads' },
-    { label: 'Inbox', current: true },
+    { label: 'Inbox', current: true, icon: MessageSquare },
   ];
 
   return (
@@ -44,8 +42,9 @@ export const InboxHeader = ({
             {breadcrumbItems.map((item, index) => (
               <BreadcrumbItem key={item.label}>
                 {item.current ? (
-                  <BreadcrumbPage className="text-sm font-medium text-foreground/90">
-                    {item.label}
+                  <BreadcrumbPage className="flex items-center gap-1.5 text-sm font-medium text-foreground/90">
+                    {item.icon ? <item.icon className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden /> : null}
+                    <span>{item.label}</span>
                   </BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink
@@ -61,20 +60,9 @@ export const InboxHeader = ({
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-[1.625rem] font-semibold leading-tight tracking-tight text-foreground">
-              Inbox de Leads
-            </h1>
-            <p className="max-w-xl text-sm text-muted-foreground">
-              Leads do convênio {agreementName ?? 'selecionado'} sincronizados automaticamente após cada mensagem no WhatsApp
-              conectado.
-            </p>
-          </div>
-          <div className="text-right text-xs text-muted-foreground/80">
-            <p className="font-medium text-foreground/80">{leadCount} leads ativos</p>
-            <p>Próximo passo: {nextStage}</p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-[1.625rem] font-semibold leading-tight tracking-tight text-foreground">Inbox de Leads</h1>
+          <p className="text-xs text-muted-foreground/80">Próximo passo: {nextStage}</p>
         </div>
       </div>
 
