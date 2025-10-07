@@ -11,12 +11,22 @@
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 50;
-  width: 16rem;
+  width: var(--sidebar-width, 16rem);
   transform: translateX(-100%);
   border-right: 1px solid var(--sidebar-border);
   background: var(--sidebar);
   backdrop-filter: blur(18px);
-  transition: transform 0.3s ease;
+  transition: transform 0.3s ease, width 0.3s ease;
+}
+
+.sidebar-collapsed {
+  --sidebar-width: 4.5rem;
+}
+
+@media (max-width: 1023px) {
+  .sidebar-collapsed {
+    --sidebar-width: 16rem;
+  }
 }
 
 .sidebar-open {
@@ -26,6 +36,10 @@
 @media (min-width: 1024px) {
   .sidebar {
     position: relative;
+    transform: translateX(0);
+  }
+
+  .sidebar-collapsed {
     transform: translateX(0);
   }
 }
@@ -42,6 +56,11 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.sidebar-collapsed .sidebar-logo {
+  justify-content: center;
+  gap: 0;
 }
 
 .logo-icon {
@@ -67,6 +86,10 @@
   color: var(--text-muted);
 }
 
+.sidebar-collapsed .logo-text {
+  display: none;
+}
+
 .sidebar-close {
   display: none;
 }
@@ -82,6 +105,10 @@
   height: calc(100% - 88px);
   overflow-y: auto;
   padding: var(--space-3);
+}
+
+.sidebar-collapsed .sidebar-nav {
+  padding: var(--space-3) 12px;
 }
 
 .nav-list {
@@ -113,6 +140,21 @@
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 45%, transparent);
 }
 
+.sidebar-collapsed .nav-item {
+  justify-content: center;
+  gap: 0;
+  padding: 10px 10px;
+}
+
+.sidebar-collapsed .nav-item:hover {
+  transform: none;
+}
+
+.sidebar-collapsed .nav-text,
+.sidebar-collapsed .nav-badge {
+  display: none;
+}
+
 .nav-icon {
   flex-shrink: 0;
   width: 20px;
@@ -122,6 +164,10 @@
 .nav-text {
   flex: 1;
   text-align: left;
+}
+
+.sidebar-collapsed .nav-icon {
+  margin: 0;
 }
 
 .nav-badge {
@@ -134,10 +180,23 @@
   border-top: 1px solid var(--divider);
 }
 
+.sidebar-collapsed .sidebar-footer {
+  padding: var(--space-3) 0;
+}
+
 .user-profile {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.sidebar-collapsed .user-profile {
+  justify-content: center;
+  gap: 8px;
+}
+
+.sidebar-collapsed .user-profile button {
+  margin-left: 0;
 }
 
 .user-avatar {
@@ -153,6 +212,10 @@
 .user-info {
   flex: 1;
   min-width: 0;
+}
+
+.sidebar-collapsed .user-info {
+  display: none;
 }
 
 .user-name {
@@ -207,12 +270,22 @@
   gap: 16px;
 }
 
+.sidebar-collapse-toggle {
+  display: none;
+}
+
 .sidebar-toggle {
   display: none;
 }
 
 @media (max-width: 1023px) {
   .sidebar-toggle {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 1024px) {
+  .sidebar-collapse-toggle {
     display: inline-flex;
   }
 }
