@@ -112,7 +112,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-900/messages');
+    expect(url).toBe('https://broker.test/instances/instance-900/send-text');
     expect(init?.method).toBe('POST');
 
     const headers = init?.headers as Headers;
@@ -125,10 +125,10 @@ describe('WhatsAppBrokerClient', () => {
       instanceId: 'instance-900',
       to: '+5511999999999',
       type: 'text',
+      message: 'Olá via broker',
       text: 'Olá via broker',
       metadata: { idempotencyKey: 'idem-900', custom: true },
     });
-    expect(parsed).not.toHaveProperty('message');
     expect(parsed).not.toHaveProperty('mediaUrl');
 
     expect(result.externalId).toBe('wamid-999');
@@ -159,7 +159,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-media/messages');
+    expect(url).toBe('https://broker.test/instances/instance-media/send-text');
     const headers = init?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('media-123');
 
@@ -169,6 +169,7 @@ describe('WhatsAppBrokerClient', () => {
       instanceId: 'instance-media',
       to: '+5511977777777',
       type: 'document',
+      message: 'Confira o documento',
       mediaUrl: 'https://cdn.test/doc.pdf',
       mimeType: 'application/pdf',
       fileName: 'doc.pdf',
@@ -204,19 +205,30 @@ describe('WhatsAppBrokerClient', () => {
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [firstUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/messages');
+    const [firstUrl, firstInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(firstUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
+    const firstBody = JSON.parse(firstInit?.body as string);
+    expect(firstBody).toMatchObject({
+      sessionId: 'instance-fallback',
+      instanceId: 'instance-fallback',
+      to: '+5511888888888',
+      type: 'text',
+      message: 'Mensagem com fallback',
+      text: 'Mensagem com fallback',
+    });
+
     const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(secondUrl).toBe('https://broker.test/broker/messages');
     const headers = secondInit?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('fallback-001');
 
-    const parsedBody = JSON.parse(secondInit?.body as string);
-    expect(parsedBody).toEqual({
+    const secondBody = JSON.parse(secondInit?.body as string);
+    expect(secondBody).toMatchObject({
       sessionId: 'instance-fallback',
       instanceId: 'instance-fallback',
       to: '+5511888888888',
       type: 'text',
+      message: 'Mensagem com fallback',
       text: 'Mensagem com fallback',
     });
 
@@ -243,7 +255,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/instance-template/messages');
+    expect(url).toBe('https://broker.test/instances/instance-template/send-text');
 
     const parsed = JSON.parse(init?.body as string);
     expect(parsed).toEqual({
@@ -251,6 +263,7 @@ describe('WhatsAppBrokerClient', () => {
       instanceId: 'instance-template',
       to: '+5511999988888',
       type: 'template',
+      message: '',
       template: { name: 'greeting_template', language: 'pt_BR' },
     });
 

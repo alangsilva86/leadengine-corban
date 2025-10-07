@@ -536,6 +536,15 @@ class WhatsAppBrokerClient {
     };
   }
 
+  private createInstanceDisconnectedError(source: WhatsAppBrokerError): WhatsAppBrokerError {
+    return new WhatsAppBrokerError(
+      NORMALIZED_ERROR_COPY.INSTANCE_NOT_CONNECTED.message,
+      'INSTANCE_NOT_CONNECTED',
+      409,
+      source.requestId
+    );
+  }
+
   private async sendViaDirectRoutes(
     instanceId: string,
     normalizedPayload: BrokerOutboundMessage,
@@ -583,8 +592,10 @@ class WhatsAppBrokerClient {
       instanceId,
       to: normalizedPayload.to,
       type: normalizedPayload.type,
+      message: normalizedPayload.content,
       text: normalizedPayload.type === 'text' ? normalizedPayload.content : undefined,
       previewUrl: normalizedPayload.previewUrl,
+      externalId: normalizedPayload.externalId,
       template:
         normalizedPayload.type === 'template' ? (normalizedPayload.template as unknown) : undefined,
       location:
@@ -609,8 +620,29 @@ class WhatsAppBrokerClient {
       return this.buildMessageResult(normalizedPayload, normalizedResponse);
     };
 
+    const sendViaBrokerEndpoint = async (): Promise<
+      WhatsAppMessageResult & { raw?: Record<string, unknown> | null }
+    > => {
+      try {
+        return await sendRequest('/broker/messages');
+      } catch (brokerError) {
+        if (
+          brokerError instanceof WhatsAppBrokerError &&
+          (brokerError.status === 404 || brokerError.status === 405)
+        ) {
+          throw this.createInstanceDisconnectedError(brokerError);
+        }
+
+        throw brokerError;
+      }
+    };
+
+    if (this.deliveryMode === 'broker') {
+      return sendViaBrokerEndpoint();
+    }
+
     try {
-      return await sendRequest(`/instances/${encodedInstanceId}/messages`);
+      return await sendRequest(`/instances/${encodedInstanceId}/send-text`);
     } catch (error) {
       if (
         error instanceof WhatsAppBrokerError &&
@@ -621,7 +653,7 @@ class WhatsAppBrokerClient {
           status: error.status,
           code: error.code,
         });
-        return sendRequest('/broker/messages');
+        return sendViaBrokerEndpoint();
       }
 
       throw error;
@@ -641,24 +673,35 @@ class WhatsAppBrokerClient {
       );
     }
 
-    const response = await this.request<Record<string, unknown>>(
-      `/instances/${encodeURIComponent(instanceId)}/send-text`,
-      {
-        method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            to: this.formatLegacyRecipient(normalizedPayload.to),
-            message: normalizedPayload.content,
-            text: normalizedPayload.content,
-            previewUrl: normalizedPayload.previewUrl,
-            externalId: normalizedPayload.externalId,
-          })
-        ),
-      },
-      { idempotencyKey: options.idempotencyKey }
-    );
+    try {
+      const response = await this.request<Record<string, unknown>>(
+        `/instances/${encodeURIComponent(instanceId)}/send-text`,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            compactObject({
+              to: this.formatLegacyRecipient(normalizedPayload.to),
+              message: normalizedPayload.content,
+              text: normalizedPayload.content,
+              previewUrl: normalizedPayload.previewUrl,
+              externalId: normalizedPayload.externalId,
+            })
+          ),
+        },
+        { idempotencyKey: options.idempotencyKey }
+      );
 
-    return this.normalizeLegacyResponse(normalizedPayload, response);
+      return this.normalizeLegacyResponse(normalizedPayload, response);
+    } catch (error) {
+      if (
+        error instanceof WhatsAppBrokerError &&
+        (error.status === 404 || error.status === 405)
+      ) {
+        throw this.createInstanceDisconnectedError(error);
+      }
+
+      throw error;
+    }
   }
 
   private async request<T>(
@@ -974,28 +1017,70 @@ class WhatsAppBrokerClient {
     }
   ): Promise<T> {
     const sessionId = payload.sessionId;
+    const instanceId = payload.instanceId ?? sessionId;
+    const encodedInstanceId = encodeURIComponent(instanceId);
     const requestBody = JSON.stringify(
       compactObject({
         sessionId,
-        instanceId: payload.instanceId ?? sessionId,
+        instanceId,
         to: payload.to,
         type: 'text',
+        message: payload.message,
         text: payload.message,
         previewUrl: payload.previewUrl,
         externalId: payload.externalId,
       })
     );
 
-    return this.request<T>(
-      `/instances/${encodeURIComponent(sessionId)}/messages`,
-      {
-        method: 'POST',
-        body: requestBody,
+    const sendRequest = async (path: string): Promise<T> => {
+      return await this.request<T>(
+        path,
+        {
+          method: 'POST',
+          body: requestBody,
+        }
+      );
+    };
+
+    const sendViaBrokerEndpoint = async (): Promise<T> => {
+      try {
+        return await sendRequest('/broker/messages');
+      } catch (brokerError) {
+        if (
+          brokerError instanceof WhatsAppBrokerError &&
+          (brokerError.status === 404 || brokerError.status === 405)
+        ) {
+          throw this.createInstanceDisconnectedError(brokerError);
+        }
+
+        throw brokerError;
       }
-    );
+    };
+
+    if (this.deliveryMode === 'broker') {
+      return sendViaBrokerEndpoint();
+    }
+
+    try {
+      return await sendRequest(`/instances/${encodedInstanceId}/send-text`);
+    } catch (error) {
+      if (
+        error instanceof WhatsAppBrokerError &&
+        (error.status === 404 || error.status === 405)
+      ) {
+        logger.warn('Direct send-text route unavailable, retrying via broker endpoint', {
+          instanceId,
+          status: error.status,
+          code: error.code,
+        });
+        return sendViaBrokerEndpoint();
+      }
+
+      throw error;
+    }
   }
 
-  async createPoll<T = Record<string, unknown>>(
+  async createPoll(
     payload: {
       sessionId: string;
       instanceId?: string;
@@ -1004,27 +1089,76 @@ class WhatsAppBrokerClient {
       options: string[];
       allowMultipleAnswers?: boolean;
     }
-  ): Promise<T> {
+  ): Promise<{
+    id: string;
+    status: string;
+    ack: string | number | null;
+    rate: unknown;
+    raw: Record<string, unknown> | null;
+  }> {
     const sessionId = payload.sessionId;
+    const instanceId = payload.instanceId ?? sessionId;
+    const encodedInstanceId = encodeURIComponent(instanceId);
+    const selectableCount = payload.allowMultipleAnswers ? Math.max(2, payload.options.length) : 1;
+
     const requestBody = JSON.stringify(
       compactObject({
         sessionId,
-        instanceId: payload.instanceId ?? sessionId,
+        instanceId,
         to: payload.to,
-        type: 'poll',
         question: payload.question,
         options: payload.options,
-        allowMultipleAnswers: payload.allowMultipleAnswers,
+        selectableCount,
       })
     );
 
-    return this.request<T>(
-      `/instances/${encodeURIComponent(sessionId)}/messages`,
+    const response = await this.request<Record<string, unknown>>(
+      `/instances/${encodedInstanceId}/send-poll`,
       {
         method: 'POST',
         body: requestBody,
       }
     );
+
+    const rawResponse =
+      response && typeof response === 'object'
+        ? (response as Record<string, unknown>)
+        : null;
+    const record = rawResponse ?? {};
+    const fallbackId = `poll-${Date.now()}`;
+    const idCandidates = [
+      record['id'],
+      record['messageId'],
+      record['externalId'],
+      fallbackId,
+    ];
+    let resolvedId = fallbackId;
+    for (const candidate of idCandidates) {
+      if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed.length > 0) {
+          resolvedId = trimmed;
+          break;
+        }
+      }
+    }
+
+    const status = typeof record['status'] === 'string' ? (record['status'] as string) : 'pending';
+    const ackCandidate = record['ack'];
+    const ack =
+      typeof ackCandidate === 'number' || typeof ackCandidate === 'string'
+        ? ackCandidate
+        : null;
+
+    const rate = record['rate'] ?? null;
+
+    return {
+      id: resolvedId,
+      status,
+      ack,
+      rate,
+      raw: rawResponse,
+    };
   }
 
   async fetchEvents<T = { events: unknown[] }>(
