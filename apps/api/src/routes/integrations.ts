@@ -185,6 +185,111 @@ const isBrokerMissingInstanceError = (error: unknown): boolean => {
   return status === 404 || (code ? BROKER_NOT_FOUND_CODES.has(code) : false);
 };
 
+const readBrokerErrorMessage = (error: unknown): string | null => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    const normalized = ((error as { message: string }).message || '').trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  return null;
+};
+
+const BROKER_ALREADY_CONNECTED_CODES = new Set([
+  'SESSION_ALREADY_CONNECTED',
+  'SESSION_ALREADY_OPEN',
+  'SESSION_OPEN',
+  'ALREADY_CONNECTED',
+  'SESSION_INITIALIZED',
+  'SESSION_ALREADY_INITIALIZED',
+]);
+
+const BROKER_ALREADY_DISCONNECTED_CODES = new Set([
+  'SESSION_NOT_CONNECTED',
+  'SESSION_ALREADY_DISCONNECTED',
+  'SESSION_ALREADY_LOGGED_OUT',
+  'SESSION_NOT_OPEN',
+  'SESSION_CLOSED',
+  'ALREADY_DISCONNECTED',
+  'ALREADY_LOGGED_OUT',
+  'SESSION_NOT_INITIALIZED',
+]);
+
+const includesBrokerMessageKeyword = (message: string | null, keywords: string[]): boolean => {
+  if (!message) {
+    return false;
+  }
+
+  const normalized = message.toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+};
+
+const isBrokerAlreadyConnectedError = (error: unknown): boolean => {
+  const code = readBrokerErrorCode(error);
+  if (code && BROKER_ALREADY_CONNECTED_CODES.has(code)) {
+    return true;
+  }
+
+  const message = readBrokerErrorMessage(error);
+  if (
+    includesBrokerMessageKeyword(message, [
+      'already connected',
+      'already logged in',
+      'session already open',
+      'já conectad',
+      'sessão já conectada',
+    ])
+  ) {
+    return true;
+  }
+
+  const status = readBrokerErrorStatus(error);
+  return status === 409 && includesBrokerMessageKeyword(message, ['connected', 'session open']);
+};
+
+const isBrokerAlreadyDisconnectedError = (error: unknown): boolean => {
+  const code = readBrokerErrorCode(error);
+  if (code && (BROKER_ALREADY_DISCONNECTED_CODES.has(code) || BROKER_NOT_FOUND_CODES.has(code))) {
+    return true;
+  }
+
+  const message = readBrokerErrorMessage(error);
+  if (
+    includesBrokerMessageKeyword(message, [
+      'already disconnected',
+      'already logged out',
+      'not connected',
+      'session closed',
+      'sessão já desconectada',
+      'sessão encerrada',
+      'não está conectada',
+    ])
+  ) {
+    return true;
+  }
+
+  const status = readBrokerErrorStatus(error);
+  return status === 409 || status === 410 || status === 404;
+};
+
+const respondWhatsAppBrokerFailure = (res: Response, error: WhatsAppBrokerError): void => {
+  res.status(502).json({
+    success: false,
+    error: {
+      code: error.code || 'BROKER_ERROR',
+      message: error.message || 'WhatsApp broker request failed',
+      details: compactRecord({
+        status: error.status,
+        requestId: error.requestId ?? undefined,
+      }),
+    },
+  });
+};
+
 const router: Router = Router();
 
 // ============================================================================
@@ -1811,13 +1916,39 @@ const disconnectStoredInstance = async (
   options: { wipe?: boolean } = {}
 ): Promise<InstanceOperationContext> => {
   const disconnectOptions = options.wipe === undefined ? undefined : { wipe: options.wipe };
+  let cachedContext: InstanceOperationContext | null = null;
 
-  await whatsappBrokerClient.disconnectInstance(stored.brokerId, {
-    ...(disconnectOptions ?? {}),
-    instanceId: stored.id,
-  });
+  try {
+    await whatsappBrokerClient.disconnectInstance(stored.brokerId, {
+      ...(disconnectOptions ?? {}),
+      instanceId: stored.id,
+    });
+  } catch (error) {
+    if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+      const brokerError = error as WhatsAppBrokerError;
 
-  const context = await resolveInstanceOperationContext(tenantId, stored, { refresh: true });
+      if (
+        isBrokerAlreadyDisconnectedError(brokerError) ||
+        brokerError.status === 409 ||
+        brokerError.status === 410
+      ) {
+        logger.info('WhatsApp broker reported stored session already disconnected', {
+          tenantId,
+          instanceId: stored.id,
+          status: brokerError.status,
+          code: brokerError.code,
+          requestId: brokerError.requestId,
+        });
+        cachedContext = await resolveInstanceOperationContext(tenantId, stored, { refresh: true });
+      } else {
+        throw brokerError;
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  const context = cachedContext ?? (await resolveInstanceOperationContext(tenantId, stored, { refresh: true }));
 
   const historyEntry = buildHistoryEntry('disconnect-instance', actorId, {
     status: context.status.status,
@@ -1984,6 +2115,11 @@ router.get(
 
       res.json(responsePayload);
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2229,22 +2365,91 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
       return;
     }
 
+    const finalizeWithContext = async (context: InstanceOperationContext) => {
+      if (!context.status.connected) {
+        logger.warn('WhatsApp instance did not report connected status after connect', {
+          tenantId,
+          instanceId: instance.id,
+          status: context.status.status,
+        });
+      }
+
+      const historyEntry = buildHistoryEntry('connect-instance', actorId, {
+        status: context.status.status,
+        connected: context.status.connected,
+      });
+
+      const metadataWithHistory = appendInstanceHistory(
+        context.stored.metadata as InstanceMetadata,
+        historyEntry
+      );
+      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+      const derivedStatus = context.brokerStatus
+        ? mapBrokerStatusToDbStatus(context.brokerStatus)
+        : mapBrokerInstanceStatusToDbStatus(context.status.status);
+
+      await prisma.whatsAppInstance.update({
+        where: { id: context.stored.id },
+        data: {
+          status: derivedStatus,
+          connected: context.status.connected,
+          metadata: metadataWithoutError,
+          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
+        },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          instance: context.instance,
+          status: context.status,
+          connected: context.status.connected,
+          qr: context.qr,
+          instances: context.instances,
+        },
+      });
+    };
+
     try {
       await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
+      });
+      await finalizeWithContext(context);
+      return;
     } catch (error) {
-      if (error instanceof WhatsAppBrokerError) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const brokerError = error as WhatsAppBrokerError;
+
+        if (isBrokerAlreadyConnectedError(brokerError) || brokerError.status === 409) {
+          logger.info('WhatsApp broker reported session already connected', {
+            tenantId,
+            instanceId: instance.id,
+            status: brokerError.status,
+            code: brokerError.code,
+            requestId: brokerError.requestId,
+          });
+
+          const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+            refresh: true,
+          });
+          await finalizeWithContext(context);
+          return;
+        }
+
         logger.warn('WhatsApp broker rejected connect request', {
           tenantId,
           instanceId: instance.id,
-          status: error.status,
-          code: error.code,
-          requestId: error.requestId,
+          status: brokerError.status,
+          code: brokerError.code,
+          requestId: brokerError.requestId,
         });
 
         const failureHistory = buildHistoryEntry('connect-instance-failed', actorId, {
-          code: error.code,
-          message: error.message,
-          requestId: error.requestId ?? null,
+          code: brokerError.code,
+          message: brokerError.message,
+          requestId: brokerError.requestId ?? null,
         });
 
         const metadataWithHistory = appendInstanceHistory(
@@ -2252,9 +2457,9 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
           failureHistory
         );
         const metadataWithError = withInstanceLastError(metadataWithHistory, {
-          code: error.code,
-          message: error.message,
-          requestId: error.requestId ?? null,
+          code: brokerError.code,
+          message: brokerError.message,
+          requestId: brokerError.requestId ?? null,
         });
 
         await prisma.whatsAppInstance.update({
@@ -2266,7 +2471,7 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
           },
         });
 
-        if (isBrokerMissingInstanceError(error)) {
+        if (isBrokerMissingInstanceError(brokerError)) {
           res.status(422).json({
             success: false,
             error: {
@@ -2274,7 +2479,7 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
               message: 'Instance not found in broker',
               details: compactRecord({
                 instanceId: instance.id,
-                requestId: error.requestId ?? undefined,
+                requestId: brokerError.requestId ?? undefined,
               }),
             },
           });
@@ -2284,11 +2489,11 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
         res.status(502).json({
           success: false,
           error: {
-            code: error.code || 'BROKER_ERROR',
-            message: error.message || 'WhatsApp broker request failed',
+            code: brokerError.code || 'BROKER_ERROR',
+            message: brokerError.message || 'WhatsApp broker request failed',
             details: compactRecord({
-              status: error.status,
-              requestId: error.requestId ?? undefined,
+              status: brokerError.status,
+              requestId: brokerError.requestId ?? undefined,
             }),
           },
         });
@@ -2301,54 +2506,6 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
 
       throw error;
     }
-
-    const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-      refresh: true,
-    });
-
-    if (!context.status.connected) {
-      logger.warn('WhatsApp instance did not report connected status after connect', {
-        tenantId,
-        instanceId: instance.id,
-        status: context.status.status,
-      });
-    }
-
-    const historyEntry = buildHistoryEntry('connect-instance', actorId, {
-      status: context.status.status,
-      connected: context.status.connected,
-    });
-
-    const metadataWithHistory = appendInstanceHistory(
-      context.stored.metadata as InstanceMetadata,
-      historyEntry
-    );
-    const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-    const derivedStatus = context.brokerStatus
-      ? mapBrokerStatusToDbStatus(context.brokerStatus)
-      : mapBrokerInstanceStatusToDbStatus(context.status.status);
-
-    await prisma.whatsAppInstance.update({
-      where: { id: context.stored.id },
-      data: {
-        status: derivedStatus,
-        connected: context.status.connected,
-        metadata: metadataWithoutError,
-        lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
-      },
-    });
-
-    res.json({
-      success: true,
-      data: {
-        instance: context.instance,
-        status: context.status,
-        connected: context.status.connected,
-        qr: context.qr,
-        instances: context.instances,
-      },
-    });
   } catch (error: unknown) {
     if (handleWhatsAppIntegrationError(res, error)) {
       return;
@@ -2396,77 +2553,99 @@ router.post(
         return;
       }
 
+      let cachedContext: InstanceOperationContext | null = null;
+
       try {
         await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
       } catch (error) {
-        if (error instanceof WhatsAppBrokerError) {
-          logger.warn('WhatsApp broker rejected default connect request', {
-            tenantId,
-            instanceId: instance.id,
-            status: error.status,
-            code: error.code,
-            requestId: error.requestId,
-          });
+        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+          const brokerError = error as WhatsAppBrokerError;
 
-          const failureHistory = buildHistoryEntry('connect-instance-failed', req.user?.id ?? 'system', {
-            code: error.code,
-            message: error.message,
-            requestId: error.requestId ?? null,
-          });
+          if (isBrokerAlreadyConnectedError(brokerError) || brokerError.status === 409) {
+            logger.info('WhatsApp broker reported default session already connected', {
+              tenantId,
+              instanceId: instance.id,
+              status: brokerError.status,
+              code: brokerError.code,
+              requestId: brokerError.requestId,
+            });
 
-          const metadataWithHistory = appendInstanceHistory(
-            instance.metadata as InstanceMetadata,
-            failureHistory
-          );
-          const metadataWithError = withInstanceLastError(metadataWithHistory, {
-            code: error.code,
-            message: error.message,
-            requestId: error.requestId ?? null,
-          });
+            cachedContext = await resolveInstanceOperationContext(
+              tenantId,
+              instance as StoredInstance,
+              {
+                refresh: true,
+              }
+            );
+          } else {
+            logger.warn('WhatsApp broker rejected default connect request', {
+              tenantId,
+              instanceId: instance.id,
+              status: brokerError.status,
+              code: brokerError.code,
+              requestId: brokerError.requestId,
+            });
 
-          await prisma.whatsAppInstance.update({
-            where: { id: instance.id },
-            data: {
-              status: 'failed',
-              connected: false,
-              metadata: metadataWithError,
-            },
-          });
+            const failureHistory = buildHistoryEntry('connect-instance-failed', req.user?.id ?? 'system', {
+              code: brokerError.code,
+              message: brokerError.message,
+              requestId: brokerError.requestId ?? null,
+            });
 
-          if (isBrokerMissingInstanceError(error)) {
-            res.status(422).json({
+            const metadataWithHistory = appendInstanceHistory(
+              instance.metadata as InstanceMetadata,
+              failureHistory
+            );
+            const metadataWithError = withInstanceLastError(metadataWithHistory, {
+              code: brokerError.code,
+              message: brokerError.message,
+              requestId: brokerError.requestId ?? null,
+            });
+
+            await prisma.whatsAppInstance.update({
+              where: { id: instance.id },
+              data: {
+                status: 'failed',
+                connected: false,
+                metadata: metadataWithError,
+              },
+            });
+
+            if (isBrokerMissingInstanceError(brokerError)) {
+              res.status(422).json({
+                success: false,
+                error: {
+                  code: 'BROKER_NOT_FOUND',
+                  message: 'Instance not found in broker',
+                  details: compactRecord({
+                    instanceId: instance.id,
+                    requestId: brokerError.requestId ?? undefined,
+                  }),
+                },
+              });
+              return;
+            }
+
+            res.status(502).json({
               success: false,
               error: {
-                code: 'BROKER_NOT_FOUND',
-                message: 'Instance not found in broker',
+                code: brokerError.code || 'BROKER_ERROR',
+                message: brokerError.message || 'WhatsApp broker request failed',
                 details: compactRecord({
-                  instanceId: instance.id,
-                  requestId: error.requestId ?? undefined,
+                  status: brokerError.status,
+                  requestId: brokerError.requestId ?? undefined,
                 }),
               },
             });
             return;
           }
+        } else {
+          if (handleWhatsAppIntegrationError(res, error)) {
+            return;
+          }
 
-          res.status(502).json({
-            success: false,
-            error: {
-              code: error.code || 'BROKER_ERROR',
-              message: error.message || 'WhatsApp broker request failed',
-              details: compactRecord({
-                status: error.status,
-                requestId: error.requestId ?? undefined,
-              }),
-            },
-          });
-          return;
+          throw error;
         }
-
-        if (handleWhatsAppIntegrationError(res, error)) {
-          return;
-        }
-
-        throw error;
       }
 
       const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
@@ -2510,6 +2689,11 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2545,14 +2729,47 @@ router.post(
         return;
       }
 
-      await whatsappBrokerClient.disconnectInstance(instance.brokerId, {
-        ...(disconnectOptions ?? {}),
-        instanceId: instance.id,
-      });
+      let cachedContext: InstanceOperationContext | null = null;
 
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        refresh: true,
-      });
+      try {
+        await whatsappBrokerClient.disconnectInstance(instance.brokerId, {
+          ...(disconnectOptions ?? {}),
+          instanceId: instance.id,
+        });
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+          const brokerError = error as WhatsAppBrokerError;
+
+          if (
+            isBrokerAlreadyDisconnectedError(brokerError) ||
+            brokerError.status === 409 ||
+            brokerError.status === 410
+          ) {
+            logger.info('WhatsApp broker reported instance already disconnected', {
+              tenantId,
+              instanceId: instance.id,
+              status: brokerError.status,
+              code: brokerError.code,
+              requestId: brokerError.requestId,
+            });
+            cachedContext = await resolveInstanceOperationContext(
+              tenantId,
+              instance as StoredInstance,
+              {
+                refresh: true,
+              }
+            );
+          } else {
+            throw brokerError;
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      const context =
+        cachedContext ??
+        (await resolveInstanceOperationContext(tenantId, instance as StoredInstance, { refresh: true }));
 
       if (context.status.connected) {
         logger.warn('WhatsApp instance still connected after disconnect request', {
@@ -2601,6 +2818,11 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2683,6 +2905,25 @@ router.delete(
 
       res.status(204).send();
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const brokerError = error as WhatsAppBrokerError;
+
+        if (brokerError.status === 404 || isBrokerMissingInstanceError(brokerError)) {
+          res.sendStatus(404);
+          return;
+        }
+
+        logger.warn('WhatsApp broker failed to provide QR image', {
+          tenantId,
+          instanceId: instance?.id ?? req.params.id,
+          status: brokerError.status,
+          code: brokerError.code,
+          requestId: brokerError.requestId,
+        });
+        res.sendStatus(502);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2738,6 +2979,11 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2835,6 +3081,32 @@ router.post(
           return;
         }
 
+        if (
+          (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) &&
+          (isBrokerAlreadyDisconnectedError(error) || error.status === 409 || error.status === 410)
+        ) {
+          const brokerError = error as WhatsAppBrokerError;
+
+          logger.info('WhatsApp broker reported direct session already disconnected', {
+            tenantId,
+            instanceId,
+            status: brokerError.status,
+            code: brokerError.code,
+            requestId: brokerError.requestId,
+          });
+
+          res.json({
+            success: true,
+            data: {
+              instanceId,
+              disconnected: true,
+              existed: true,
+              connected: false,
+            },
+          });
+          return;
+        }
+
         if (handleWhatsAppIntegrationError(res, error)) {
           return;
         }
@@ -2842,6 +3114,11 @@ router.post(
         throw error;
       }
     } catch (error) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2891,6 +3168,25 @@ router.get(
         },
       });
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const brokerError = error as WhatsAppBrokerError;
+
+        if (brokerError.status === 404 || isBrokerMissingInstanceError(brokerError)) {
+          res.sendStatus(404);
+          return;
+        }
+
+        logger.warn('WhatsApp broker failed to provide default QR image', {
+          tenantId,
+          instanceId,
+          status: brokerError.status,
+          code: brokerError.code,
+          requestId: brokerError.requestId,
+        });
+        res.sendStatus(502);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -2930,6 +3226,11 @@ router.get(
       res.setHeader('Cache-Control', 'private, max-age=5');
       res.send(buffer);
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }

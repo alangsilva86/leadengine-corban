@@ -35,6 +35,7 @@ describe('WhatsAppBrokerClient', () => {
     process.env.WHATSAPP_BROKER_API_KEY = 'test-key';
     delete process.env.WHATSAPP_BROKER_DELIVERY_MODE;
     delete process.env.WHATSAPP_BROKER_LEGACY_STRIP_PLUS;
+    delete process.env.BROKER_MODE;
   });
 
   it('dispatches via legacy instance routes when configured', async () => {
@@ -211,15 +212,11 @@ describe('WhatsAppBrokerClient', () => {
     expect(headers.get('Idempotency-Key')).toBe('fallback-001');
 
     const parsedBody = JSON.parse(secondInit?.body as string);
-    expect(parsedBody).toEqual({
+    expect(parsedBody).toMatchObject({
       sessionId: 'instance-fallback',
       instanceId: 'instance-fallback',
       to: '+5511888888888',
       type: 'text',
-    const fallbackBody = JSON.parse(secondInit?.body as string);
-    expect(fallbackBody).toMatchObject({
-      to: '+5511888888888',
-      message: 'Mensagem com fallback',
       text: 'Mensagem com fallback',
     });
 
@@ -380,6 +377,157 @@ describe('WhatsAppBrokerClient', () => {
     expect(tenantAckUrl.pathname).toBe('/instances/events/ack');
     const tenantBody = fetchMock.mock.calls[2][1]?.body as string;
     expect(JSON.parse(tenantBody)).toEqual({ ids: ['evt-1', 'evt-2'], instanceId: 'instance-91' });
+  });
+
+  it('connects session via broker endpoints when BROKER_MODE is broker', async () => {
+    process.env.BROKER_MODE = 'broker';
+
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.connectInstance('session-001', {
+      instanceId: 'custom-session',
+      webhookUrl: 'https://hooks.test/whatsapp',
+      forceReopen: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/broker/session/connect');
+
+    const payload = JSON.parse(init?.body as string);
+    expect(payload).toEqual({
+      sessionId: 'session-001',
+      instanceId: 'custom-session',
+      webhookUrl: 'https://hooks.test/whatsapp',
+      forceReopen: true,
+    });
+  });
+
+  it('logs out session via instance routes when broker mode is disabled', async () => {
+    delete process.env.BROKER_MODE;
+
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.disconnectInstance('session-logout', {
+      instanceId: 'custom-logout',
+      wipe: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/session-logout/logout');
+    expect(JSON.parse(init?.body as string)).toEqual({ instanceId: 'custom-logout', wipe: true });
+  });
+
+  it('retrieves status via broker session endpoint when BROKER_MODE is broker', async () => {
+    process.env.BROKER_MODE = 'broker';
+
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'connected', connected: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const status = await whatsappBrokerClient.getStatus('session-status');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/broker/session/status');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      sessionId: 'session-status',
+      instanceId: 'session-status',
+    });
+    expect(status.status).toBe('connected');
+    expect(status.connected).toBe(true);
+  });
+
+  it('retrieves status via direct instance lookup when broker mode is not broker', async () => {
+    delete process.env.BROKER_MODE;
+
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'disconnected', connected: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const status = await whatsappBrokerClient.getStatus('session-off', { instanceId: 'external' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/session-off?instanceId=external');
+    expect(init?.method).toBe('GET');
+    expect(status.status).toBe('disconnected');
+    expect(status.connected).toBe(false);
+  });
+
+  it('converts QR image responses to base64 data URLs', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    const pngBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+    fetchMock.mockResolvedValue(
+      new Response(pngBuffer, {
+        status: 200,
+        headers: {
+          'content-type': 'image/png',
+          'x-qr-expires-at': '2024-01-01T00:00:00.000Z',
+        },
+      })
+    );
+
+    const qr = await whatsappBrokerClient.getQrCode('session-qr');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/session-qr/qr.png');
+    expect(init?.method).toBe('GET');
+    expect(qr.qrCode).toMatch(/^data:image\/png;base64,/);
+    expect(qr.qrExpiresAt).toBe('2024-01-01T00:00:00.000Z');
+  });
+
+  it('falls back to status when QR image is unavailable', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ qr: 'fallback-qr', qrExpiresAt: '2024-01-02T00:00:00.000Z' }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
+      );
+
+    const qr = await whatsappBrokerClient.getQrCode('session-qr-fallback');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstCall = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(firstCall[0]).toBe('https://broker.test/instances/session-qr-fallback/qr.png');
+
+    const secondCall = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(secondCall[0]).toBe('https://broker.test/instances/session-qr-fallback');
+    expect(secondCall[1]?.method).toBe('GET');
+
+    expect(qr.qr).toBe('fallback-qr');
+    expect(qr.qrExpiresAt).toBe('2024-01-02T00:00:00.000Z');
   });
 });
 
