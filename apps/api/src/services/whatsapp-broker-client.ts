@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { fetch, type RequestInit, type Response as UndiciResponse } from 'undici';
 import { logger } from '../config/logger';
 import {
@@ -214,6 +215,24 @@ class WhatsAppBrokerClient {
 
   private get mode(): string {
     return (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
+  }
+
+  private get brokerMode(): 'broker' | 'instances' | 'default' {
+    const normalized = (process.env.BROKER_MODE || '').trim().toLowerCase();
+
+    if (['broker', 'session', 'sessions'].includes(normalized)) {
+      return 'broker';
+    }
+
+    if (['instance', 'instances'].includes(normalized)) {
+      return 'instances';
+    }
+
+    return 'default';
+  }
+
+  private get useBrokerSessions(): boolean {
+    return this.brokerMode === 'broker';
   }
 
   private get deliveryMode(): 'broker' | 'instances' | 'auto' {
@@ -771,6 +790,20 @@ class WhatsAppBrokerClient {
     sessionId: string,
     payload: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
   ): Promise<void> {
+    const normalizedPayload = compactObject({
+      sessionId,
+      instanceId: payload.instanceId ?? sessionId,
+      webhookUrl: payload.webhookUrl,
+      forceReopen: payload.forceReopen,
+    });
+
+    if (this.useBrokerSessions) {
+      await this.request<void>('/broker/session/connect', {
+        method: 'POST',
+        body: JSON.stringify(normalizedPayload),
+      });
+      return;
+    }
     const normalizedInstanceId =
       typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
         ? payload.instanceId.trim()
@@ -852,6 +885,19 @@ class WhatsAppBrokerClient {
     sessionId: string,
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
+    const normalizedPayload = compactObject({
+      sessionId,
+      instanceId: options.instanceId ?? sessionId,
+      wipe: options.wipe,
+    });
+
+    if (this.useBrokerSessions) {
+      await this.request<void>('/broker/session/logout', {
+        method: 'POST',
+        body: JSON.stringify(normalizedPayload),
+      });
+      return;
+    }
     const normalizedInstanceId =
       typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
         ? options.instanceId.trim()
@@ -860,6 +906,16 @@ class WhatsAppBrokerClient {
     const encodedSessionId = encodeURIComponent(sessionId);
     const preferBroker = this.shouldAttemptBrokerSessionRoutes();
 
+    await this.request<void>(
+      `/instances/${encodedSessionId}/logout`,
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          compactObject({
+            instanceId: options.instanceId ?? sessionId,
+            wipe: options.wipe,
+          })
+        ),
     const logoutViaLegacyRoute = async (): Promise<void> => {
       await this.request<void>(
         `/instances/${encodedSessionId}/disconnect`,
@@ -936,6 +992,35 @@ class WhatsAppBrokerClient {
         ? options.instanceId.trim()
         : sessionId;
 
+    if (this.useBrokerSessions) {
+      const payload = compactObject({
+        sessionId,
+        instanceId: normalizedInstanceId || sessionId,
+      });
+
+      return this.request<T>(
+        '/broker/session/status',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }
+      );
+    }
+
+    const encodedSessionId = encodeURIComponent(sessionId);
+
+    const requestOptions: BrokerRequestOptions =
+      normalizedInstanceId && normalizedInstanceId !== sessionId
+        ? { searchParams: { instanceId: normalizedInstanceId } }
+        : {};
+
+    return this.request<T>(
+      `/instances/${encodedSessionId}`,
+      {
+        method: 'GET',
+      },
+      requestOptions
+    );
     const encodedSessionId = encodeURIComponent(sessionId);
     const preferBroker = this.shouldAttemptBrokerSessionRoutes();
 
@@ -1863,30 +1948,98 @@ class WhatsAppBrokerClient {
   async getQrCode(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppQrCode> {
     this.ensureConfigured();
 
-    try {
-      const statusPayload = await this.getSessionStatus<Record<string, unknown>>(
-        brokerId,
-        { instanceId: options.instanceId ?? brokerId }
-      );
-      const normalized = this.normalizeQrPayload(statusPayload);
+    const instanceId = options.instanceId ?? brokerId;
+    const normalizedInstanceId =
+      typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
+    const searchParams: BrokerRequestOptions['searchParams'] =
+      normalizedInstanceId && normalizedInstanceId !== brokerId
+        ? { instanceId: normalizedInstanceId }
+        : undefined;
 
-      if (normalized.qr || normalized.qrCode || normalized.qrExpiresAt || normalized.expiresAt) {
-        return normalized;
+    const fallbackFromStatus = async (): Promise<WhatsAppQrCode> => {
+      try {
+        const statusPayload = await this.getSessionStatus<Record<string, unknown>>(
+          brokerId,
+          { instanceId }
+        );
+        return this.normalizeQrPayload(statusPayload);
+      } catch (statusError) {
+        if (statusError instanceof WhatsAppBrokerNotConfiguredError) {
+          throw statusError;
+        }
+
+        if (statusError instanceof WhatsAppBrokerError) {
+          if (statusError.status === 404) {
+            return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
+          }
+
+          logger.warn('Failed to fetch WhatsApp QR code via status fallback', {
+            instanceId,
+            error: statusError,
+          });
+          return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
+        }
+
+        logger.warn('Unexpected error while fetching WhatsApp QR code fallback', {
+          instanceId,
+          error: statusError,
+        });
+        return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
+      }
+    };
+
+    const encodedBrokerId = encodeURIComponent(brokerId);
+    const url = this.buildUrl(`/instances/${encodedBrokerId}/qr.png`, searchParams);
+    const headers = new Headers();
+    headers.set('x-api-key', this.brokerApiKey);
+    headers.set('accept', 'image/png,application/json;q=0.9,*/*;q=0.8');
+
+    const { signal, cancel } = this.createTimeoutSignal(this.timeoutMs);
+
+    try {
+      const response = await fetch(url, { method: 'GET', headers, signal });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return await fallbackFromStatus();
+        }
+
+        await this.handleError(response);
       }
 
-      const encodedBrokerId = encodeURIComponent(brokerId);
-      const normalizedInstanceId =
-        typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
-      const requestOptions: BrokerRequestOptions =
-        normalizedInstanceId && normalizedInstanceId !== brokerId
-          ? { searchParams: { instanceId: normalizedInstanceId } }
-          : {};
+      const contentType = response.headers?.get?.('content-type') || '';
 
-      const payload = await this.request<Record<string, unknown>>(
-        `/instances/${encodedBrokerId}/qr`,
-        { method: 'GET' },
-        requestOptions
-      );
+      if (contentType.includes('application/json')) {
+        const payload = (await response.json()) as Record<string, unknown>;
+        return this.normalizeQrPayload(payload);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        return await fallbackFromStatus();
+      }
+
+      const buffer = Buffer.from(arrayBuffer);
+      if (buffer.length === 0) {
+        return await fallbackFromStatus();
+      }
+
+      const base64 = buffer.toString('base64');
+      const expiresHeader =
+        response.headers?.get?.('x-qr-expires-at') ||
+        response.headers?.get?.('x-qr-expires') ||
+        response.headers?.get?.('x-qr-expiresat') ||
+        null;
+
+      const payload: Record<string, unknown> = {
+        qr: `data:image/png;base64,${base64}`,
+        qrCode: `data:image/png;base64,${base64}`,
+      };
+
+      if (expiresHeader) {
+        payload.qrExpiresAt = expiresHeader;
+        payload.expiresAt = expiresHeader;
+      }
 
       return this.normalizeQrPayload(payload);
     } catch (error) {
@@ -1894,12 +2047,19 @@ class WhatsAppBrokerClient {
         throw error;
       }
 
-      logger.warn('Failed to fetch WhatsApp QR code from broker', {
-        instanceId: options.instanceId ?? brokerId,
+      if (error instanceof WhatsAppBrokerError && error.status === 404) {
+        return await fallbackFromStatus();
+      }
+
+      logger.warn('Failed to fetch WhatsApp QR code image from broker', {
+        instanceId,
         error,
       });
-      return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
+    } finally {
+      cancel();
     }
+
+    return fallbackFromStatus();
   }
 
   async getStatus(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppStatus> {
