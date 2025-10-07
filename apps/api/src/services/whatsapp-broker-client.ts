@@ -1478,6 +1478,7 @@ class WhatsAppBrokerClient {
     brokerId: string,
     options: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
   ): Promise<void> {
+    this.ensureConfigured();
     await this.connectSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
   }
 
@@ -1485,6 +1486,7 @@ class WhatsAppBrokerClient {
     brokerId: string,
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
+    this.ensureConfigured();
     await this.logoutSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
   }
 
@@ -1492,6 +1494,7 @@ class WhatsAppBrokerClient {
     brokerId: string,
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
+    this.ensureConfigured();
     await this.logoutSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
   }
 
