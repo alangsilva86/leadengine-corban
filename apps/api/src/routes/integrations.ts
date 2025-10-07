@@ -12,6 +12,7 @@ import {
   WhatsAppBrokerError,
   type WhatsAppStatus,
   type WhatsAppBrokerInstanceSnapshot,
+  type WhatsAppInstance,
 } from '../services/whatsapp-broker-client';
 import { emitToTenant } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
@@ -2018,7 +2019,7 @@ router.post(
         : null;
     try {
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
-      let brokerInstance: WhatsAppBrokerInstanceSnapshot['instance'] | null = null;
+      let brokerInstance: WhatsAppInstance | null = null;
 
       try {
         brokerInstance = await whatsappBrokerClient.createInstance({
@@ -2059,14 +2060,21 @@ router.post(
         throw brokerError;
       }
 
-      const brokerId = brokerInstance?.id ?? normalizedId;
+      const brokerId = brokerInstance?.id;
+      if (!brokerId) {
+        logger.warn('WhatsApp broker did not return an instance id, falling back to requested identifier', {
+          tenantId,
+          requestedId: normalizedId,
+        });
+      }
+      const resolvedBrokerId = brokerId ?? normalizedId;
       const actorId = req.user?.id ?? 'system';
       const historyEntry = buildHistoryEntry(
         'created',
         actorId,
         compactRecord({
           name: normalizedName,
-          brokerId,
+          brokerId: resolvedBrokerId,
           agreementId: normalizedAgreementId ?? undefined,
         })
       );
@@ -2074,7 +2082,7 @@ router.post(
         compactRecord({
           displayId: normalizedId,
           slug: slugCandidate,
-          brokerId,
+          brokerId: resolvedBrokerId,
           ...(normalizedAgreementId
             ? { agreementId: normalizedAgreementId, agreement: { id: normalizedAgreementId } }
             : {}),
@@ -2091,7 +2099,7 @@ router.post(
           id: normalizedId,
           tenantId,
           name: normalizedName,
-          brokerId,
+          brokerId: resolvedBrokerId,
           status: derivedStatus,
           connected: isConnected,
           phoneNumber: brokerInstance?.phoneNumber ?? null,
@@ -2104,7 +2112,7 @@ router.post(
       logger.info('WhatsApp instance created', {
         tenantId,
         instanceId: normalizedId,
-        brokerId,
+        brokerId: resolvedBrokerId,
         actorId,
       });
 
@@ -2114,7 +2122,7 @@ router.post(
         connected: instance.connected,
         ...(normalizedAgreementId ? { agreementId: normalizedAgreementId } : {}),
         ...(instance.phoneNumber ? { phoneNumber: instance.phoneNumber } : {}),
-        brokerId,
+        brokerId: resolvedBrokerId,
         syncedAt: new Date().toISOString(),
         history: historyEntry,
       });
