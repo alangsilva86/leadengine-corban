@@ -691,15 +691,15 @@ export const LeadInbox = ({
   }, [agreementId, campaign?.instanceId, campaignId, filters.status]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 xl:space-y-8">
       <InboxHeader
         stepLabel={stepLabel}
         campaign={campaign}
         onboarding={onboarding}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-        <section className="flex min-h-[520px] flex-col gap-5 rounded-3xl border border-white/5 bg-slate-950/60 p-5 shadow-[0_12px_38px_rgba(15,23,42,0.32)]">
+      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:gap-6">
+        <section className="flex min-h-[520px] flex-col gap-4 rounded-2xl border border-white/5 bg-slate-950/60 p-4 shadow-[0_12px_32px_rgba(15,23,42,0.28)] xl:max-h-[calc(100vh-220px)] xl:overflow-hidden">
           <GlobalFiltersBar
             filters={filters}
             onUpdateFilters={handleUpdateFilters}
@@ -717,7 +717,7 @@ export const LeadInbox = ({
 
           <div className="h-px bg-white/5" />
 
-          <div className="flex-1 overflow-y-auto pr-1">
+          <div className="flex-1 overflow-y-auto pr-1 xl:pr-2">
             <InboxList
               allocations={allocations}
               filteredAllocations={filteredAllocations}
