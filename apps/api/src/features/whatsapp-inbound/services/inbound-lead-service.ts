@@ -50,7 +50,6 @@ const pruneDedupeCache = (now: number): void => {
     );
   }
 };
-const queueCacheByTenant = new Map<string, string>();
 
 interface InboundContactDetails {
   phone?: string | null;
@@ -369,8 +368,12 @@ const ensureContact = async (
 export const __testing = {
   DEDUPE_WINDOW_MS,
   MAX_DEDUPE_CACHE_SIZE,
+  DEFAULT_QUEUE_CACHE_TTL_MS,
   dedupeCache,
+  queueCacheByTenant,
   pruneDedupeCache,
+  getDefaultQueueId,
+  ensureTicketForContact,
 };
 
 const ensureTicketForContact = async (
@@ -706,9 +709,3 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   }
 };
 
-export const __testing = {
-  queueCacheByTenant,
-  getDefaultQueueId,
-  ensureTicketForContact,
-  DEFAULT_QUEUE_CACHE_TTL_MS,
-};
