@@ -6,7 +6,7 @@ export const ConsentInfo = ({ consent }) => {
   }
   const grantedAt = consent.grantedAt ? new Date(consent.grantedAt).toLocaleString('pt-BR') : null;
   return (
-    <Card className="border-slate-800/60 bg-slate-950/80 text-slate-200">
+    <Card className="border-0 bg-slate-950/25 text-slate-200 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
       <CardHeader>
         <CardTitle className="text-sm">Consentimento</CardTitle>
       </CardHeader>

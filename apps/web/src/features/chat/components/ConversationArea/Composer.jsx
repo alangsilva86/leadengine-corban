@@ -131,14 +131,14 @@ export const Composer = ({
   };
 
   return (
-    <div className="rounded-xl border border-slate-800/60 bg-slate-950/85 p-3">
+    <div className="rounded-[26px] bg-slate-950/25 p-4 shadow-[0_24px_56px_-34px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
       {attachments.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((file) => (
             <Badge
               key={file.id}
               variant="secondary"
-              className="flex items-center gap-2 border border-slate-700/70 bg-slate-900/80 text-[11px] text-slate-200"
+              className="flex items-center gap-2 bg-slate-900/40 text-[11px] text-slate-200 ring-1 ring-white/5"
             >
               <span>{file.name}</span>
               <span className="text-slate-400">{Math.round(file.size / 1024)} KB</span>
@@ -172,12 +172,12 @@ export const Composer = ({
                   return [...current, reply];
                 });
               }}
-              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60"
+              className="h-10 w-10 rounded-full bg-slate-900/40 ring-1 ring-white/5"
             />
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white"
+              className="h-10 w-10 rounded-full bg-slate-900/40 text-slate-300 ring-1 ring-white/5 transition hover:bg-slate-900/30 hover:text-white"
               onClick={handleAttachmentClick}
             >
               <Paperclip className="h-4 w-4" />
@@ -193,7 +193,7 @@ export const Composer = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white"
+              className="h-10 w-10 rounded-full bg-slate-900/40 text-slate-300 ring-1 ring-white/5 transition hover:bg-slate-900/30 hover:text-white"
               onClick={() => setTemplatePickerOpen((open) => !open)}
             >
               <Smile className="h-4 w-4" />
@@ -202,7 +202,7 @@ export const Composer = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white"
+              className="h-10 w-10 rounded-full bg-slate-900/40 text-slate-300 ring-1 ring-white/5 transition hover:bg-slate-900/30 hover:text-white"
               onClick={() => onRequestSuggestion?.()}
               disabled={aiLoading}
             >
@@ -233,12 +233,12 @@ export const Composer = ({
             }}
             disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
             placeholder={placeholder}
-            className="min-h-[88px] flex-1 resize-none rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-3 text-slate-100 placeholder:text-slate-600"
+            className="min-h-[88px] flex-1 resize-none rounded-[22px] border-none bg-slate-950/35 px-4 py-3 text-slate-100 placeholder:text-slate-500 ring-1 ring-white/5"
           />
           <Button
             variant="default"
             size="icon"
-            className="h-12 w-12 rounded-full bg-sky-600 text-white hover:bg-sky-500"
+            className="h-12 w-12 rounded-full bg-sky-500 text-white shadow-[0_18px_36px_-24px_rgba(14,165,233,0.7)] transition hover:bg-sky-400"
             disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
             onClick={handleSend}
           >
@@ -249,18 +249,20 @@ export const Composer = ({
       </div>
 
       {windowInfo?.isOpen === false ? (
-        <div className="mt-2 flex items-center gap-2 text-xs text-amber-300">
+        <div className="mt-2 flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
           <FileText className="h-4 w-4" />
           Janela de 24h expirada — envie um template aprovado para retomar a conversa.
         </div>
       ) : null}
 
       {sendError ? (
-        <div className="mt-2 text-xs text-rose-300">{sendError.message ?? 'Falha ao enviar mensagem.'}</div>
+        <div className="mt-2 rounded-md bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+          {sendError.message ?? 'Falha ao enviar mensagem.'}
+        </div>
       ) : null}
 
       {aiSuggestions.length > 0 ? (
-        <div className="mt-3 space-y-2 rounded-lg border border-slate-800/70 bg-slate-900/70 p-3 text-sm text-slate-200">
+        <div className="mt-3 space-y-2 rounded-2xl bg-slate-950/30 p-3 text-sm text-slate-200 ring-1 ring-white/5">
           <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
             <span>Sugestões da IA</span>
             <Button variant="ghost" size="sm" className="h-7 px-2 text-slate-400 hover:text-slate-100" onClick={onDiscardSuggestion}>
@@ -272,7 +274,7 @@ export const Composer = ({
               <button
                 key={`${index}-${suggestion.slice(0, 20)}`}
                 type="button"
-                className="w-full rounded-lg border border-slate-800/70 bg-slate-950/70 px-3 py-2 text-left text-xs transition hover:border-sky-500/50 hover:bg-slate-900"
+                className="w-full rounded-xl bg-slate-900/40 px-3 py-2 text-left text-xs text-slate-200 ring-1 ring-white/5 transition hover:bg-slate-900/30"
                 onClick={() => onApplySuggestion?.(suggestion)}
               >
                 {suggestion}
