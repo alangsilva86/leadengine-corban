@@ -646,6 +646,7 @@ class WhatsAppBrokerClient {
         body: JSON.stringify(
           compactObject({
             to: this.formatLegacyRecipient(normalizedPayload.to),
+            message: normalizedPayload.content,
             text: normalizedPayload.content,
             previewUrl: normalizedPayload.previewUrl,
             externalId: normalizedPayload.externalId,
