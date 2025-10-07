@@ -2018,12 +2018,63 @@ router.post(
         : null;
     try {
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
+      let brokerInstance: WhatsAppBrokerInstanceSnapshot['instance'] | null = null;
+
+      try {
+        brokerInstance = await whatsappBrokerClient.createInstance({
+          tenantId,
+          name: normalizedName,
+          instanceId: normalizedId,
+        });
+      } catch (brokerError) {
+        if (brokerError instanceof WhatsAppBrokerError || hasErrorName(brokerError, 'WhatsAppBrokerError')) {
+          const normalizedError = brokerError as WhatsAppBrokerError;
+          logger.warn('WhatsApp broker rejected instance creation request', {
+            tenantId,
+            name: normalizedName,
+            error: normalizedError.message,
+            code: normalizedError.code,
+            status: normalizedError.status,
+            requestId: normalizedError.requestId,
+          });
+
+          res.status(502).json({
+            success: false,
+            error: {
+              code: normalizedError.code || 'BROKER_ERROR',
+              message: normalizedError.message || 'WhatsApp broker request failed',
+              details: compactRecord({
+                status: normalizedError.status,
+                requestId: normalizedError.requestId ?? undefined,
+              }),
+            },
+          });
+          return;
+        }
+
+        if (handleWhatsAppIntegrationError(res, brokerError)) {
+          return;
+        }
+
+        throw brokerError;
+      }
+
+      const brokerId = brokerInstance?.id ?? normalizedId;
       const actorId = req.user?.id ?? 'system';
-      const historyEntry = buildHistoryEntry('created', actorId, { name: normalizedName });
+      const historyEntry = buildHistoryEntry(
+        'created',
+        actorId,
+        compactRecord({
+          name: normalizedName,
+          brokerId,
+          agreementId: normalizedAgreementId ?? undefined,
+        })
+      );
       const metadata = appendInstanceHistory(
         compactRecord({
           displayId: normalizedId,
           slug: slugCandidate,
+          brokerId,
           ...(normalizedAgreementId
             ? { agreementId: normalizedAgreementId, agreement: { id: normalizedAgreementId } }
             : {}),
@@ -2031,14 +2082,19 @@ router.post(
         historyEntry
       );
       const metadataWithoutError = withInstanceLastError(metadata, null);
+      const derivedStatus = brokerInstance
+        ? mapBrokerInstanceStatusToDbStatus(brokerInstance.status)
+        : 'pending';
+      const isConnected = brokerInstance?.connected ?? false;
       const instance = await prisma.whatsAppInstance.create({
         data: {
           id: normalizedId,
           tenantId,
           name: normalizedName,
-          brokerId: normalizedId,
-          status: 'pending',
-          connected: false,
+          brokerId,
+          status: derivedStatus,
+          connected: isConnected,
+          phoneNumber: brokerInstance?.phoneNumber ?? null,
           metadata: metadataWithoutError,
         },
       });
@@ -2048,6 +2104,7 @@ router.post(
       logger.info('WhatsApp instance created', {
         tenantId,
         instanceId: normalizedId,
+        brokerId,
         actorId,
       });
 
@@ -2057,6 +2114,7 @@ router.post(
         connected: instance.connected,
         ...(normalizedAgreementId ? { agreementId: normalizedAgreementId } : {}),
         ...(instance.phoneNumber ? { phoneNumber: instance.phoneNumber } : {}),
+        brokerId,
         syncedAt: new Date().toISOString(),
         history: historyEntry,
       });

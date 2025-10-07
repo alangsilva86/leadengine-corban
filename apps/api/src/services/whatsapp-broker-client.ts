@@ -1445,13 +1445,22 @@ class WhatsAppBrokerClient {
     return [...deduped.values(), ...fallbacks];
   }
 
-  async createInstance(args: { tenantId: string; name: string; webhookUrl?: string }): Promise<WhatsAppInstance> {
+  async createInstance(args: {
+    tenantId: string;
+    name: string;
+    instanceId?: string;
+    webhookUrl?: string;
+  }): Promise<WhatsAppInstance> {
     this.ensureConfigured();
 
-    const sessionId = `${this.slugify(args.tenantId, 'tenant')}--${this.slugify(args.name)}`;
+    const sessionSlugSource = args.instanceId ?? args.name;
+    const sessionId = `${this.slugify(args.tenantId, 'tenant')}--${this.slugify(sessionSlugSource, 'instance')}`;
 
     try {
-      await this.connectSession(sessionId, { webhookUrl: args.webhookUrl });
+      await this.connectSession(sessionId, {
+        webhookUrl: args.webhookUrl,
+        instanceId: args.instanceId ?? sessionId,
+      });
     } catch (error) {
       logger.warn('Unable to pre-connect WhatsApp session via minimal broker', { error });
     }
