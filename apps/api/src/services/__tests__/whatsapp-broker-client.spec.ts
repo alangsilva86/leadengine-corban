@@ -75,6 +75,7 @@ describe('WhatsAppBrokerClient', () => {
     const parsedBody = JSON.parse(init?.body as string);
     expect(parsedBody).toEqual({
       to: '554499999999',
+      message: 'Teste via legacy',
       text: 'Teste via legacy',
       previewUrl: true,
       externalId: 'custom-id',
@@ -123,6 +124,7 @@ describe('WhatsAppBrokerClient', () => {
       text: 'Olá via broker',
       metadata: { idempotencyKey: 'idem-900', custom: true },
     });
+    expect(parsed).not.toHaveProperty('message');
     expect(parsed).not.toHaveProperty('mediaUrl');
 
     expect(result.externalId).toBe('wamid-999');
@@ -201,6 +203,13 @@ describe('WhatsAppBrokerClient', () => {
     expect(secondUrl).toBe('https://broker.test/instances/instance-fallback/send-text');
     const headers = secondInit?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('fallback-001');
+
+    const fallbackBody = JSON.parse(secondInit?.body as string);
+    expect(fallbackBody).toMatchObject({
+      to: '+5511888888888',
+      message: 'Mensagem com fallback',
+      text: 'Mensagem com fallback',
+    });
 
     expect(result.externalId).toBe('wamid-654');
     expect(result.status).toBe('QUEUED');
