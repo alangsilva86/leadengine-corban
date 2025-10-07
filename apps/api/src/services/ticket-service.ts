@@ -109,7 +109,26 @@ const resolveDefaultQueueId = async (tenantId: string): Promise<string> => {
   });
 
   if (!queue) {
-    throw new Error('DEFAULT_QUEUE_NOT_FOUND');
+    const fallbackName = 'Atendimento Geral';
+    const fallbackQueue = await prisma.queue.upsert({
+      where: {
+        tenantId_name: {
+          tenantId,
+          name: fallbackName,
+        },
+      },
+      update: {},
+      create: {
+        tenantId,
+        name: fallbackName,
+        description: 'Fila criada automaticamente para envios de WhatsApp.',
+        color: '#3B82F6',
+        orderIndex: 0,
+      },
+    });
+
+    defaultQueueCache.set(tenantId, fallbackQueue.id);
+    return fallbackQueue.id;
   }
 
   defaultQueueCache.set(tenantId, queue.id);

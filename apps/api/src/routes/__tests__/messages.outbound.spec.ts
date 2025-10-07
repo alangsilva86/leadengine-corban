@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   queueFindFirstMock,
+  queueUpsertMock,
   contactFindUniqueMock,
   contactUpdateMock,
   contactCreateMock,
   whatsAppInstanceFindUniqueMock,
 } = vi.hoisted(() => ({
   queueFindFirstMock: vi.fn(),
+  queueUpsertMock: vi.fn(),
   contactFindUniqueMock: vi.fn(),
   contactUpdateMock: vi.fn(),
   contactCreateMock: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock('../../lib/prisma', () => ({
   prisma: {
     queue: {
       findFirst: (...args: unknown[]) => queueFindFirstMock(...args),
+      upsert: (...args: unknown[]) => queueUpsertMock(...args),
     },
     contact: {
       findUnique: (...args: unknown[]) => contactFindUniqueMock(...args),
@@ -58,11 +61,21 @@ class MockSocketServer {
   }
 }
 
-const buildApp = () => {
+type MockUser = {
+  id: string;
+  tenantId: string;
+  email: string;
+  name: string;
+  role: string;
+  isActive: boolean;
+  permissions: string[];
+};
+
+const buildApp = (overrides: Partial<MockUser> = {}) => {
   const app = express();
   app.use(express.json());
   app.use(((req, _res, next) => {
-    (req as Request).user = {
+    const baseUser: MockUser = {
       id: 'operator-1',
       tenantId: 'tenant-123',
       email: 'agent@example.com',
@@ -71,6 +84,8 @@ const buildApp = () => {
       isActive: true,
       permissions: ['tickets:write'],
     };
+
+    (req as Request).user = { ...baseUser, ...overrides };
     next();
   }) as express.RequestHandler);
 
@@ -82,6 +97,24 @@ const buildApp = () => {
 };
 
 const RATE_KEY = 'outbound:tenant-123:instance-001';
+
+type MockContact = {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  document: string | null;
+  avatar: string | null;
+  tags: string[];
+  customFields: Record<string, unknown>;
+  lastInteractionAt: Date;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const contacts = new Map<string, MockContact>();
 
 describe('Outbound message routes', () => {
   let socket: MockSocketServer;
@@ -96,8 +129,18 @@ describe('Outbound message routes', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    queueUpsertMock.mockResolvedValue({
+      id: 'queue-1',
+      tenantId: 'tenant-123',
+      name: 'Default',
+      orderIndex: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
-    const baseContact = {
+    contacts.clear();
+
+    const baseContact: MockContact = {
       id: 'contact-123',
       tenantId: 'tenant-123',
       name: 'John Doe',
@@ -113,23 +156,64 @@ describe('Outbound message routes', () => {
       updatedAt: new Date(),
     };
 
+    contacts.set(baseContact.id, baseContact);
+
     contactFindUniqueMock.mockImplementation(async (args: { where: Record<string, unknown> }) => {
-      if ('id' in args.where!) {
-        return baseContact;
+      const { where } = args;
+
+      if (where && 'id' in where && typeof where.id === 'string') {
+        return contacts.get(where.id) ?? null;
       }
 
-      if ('tenantId_phone' in args.where!) {
+      if (where && 'tenantId_phone' in where) {
+        const { tenantId, phone } = where.tenantId_phone as { tenantId: string; phone: string };
+        for (const contact of contacts.values()) {
+          if (contact.tenantId === tenantId && contact.phone === phone) {
+            return contact;
+          }
+        }
         return null;
       }
 
       return null;
     });
 
-    contactUpdateMock.mockResolvedValue(baseContact);
-    contactCreateMock.mockResolvedValue({
-      ...baseContact,
-      id: 'contact-new',
-      phone: '+554488887777',
+    contactUpdateMock.mockImplementation(async (args: { where: { id: string }; data: Partial<MockContact> }) => {
+      const existing = contacts.get(args.where.id);
+      if (!existing) {
+        throw new Error(`Contact ${args.where.id} not found`);
+      }
+
+      const updated: MockContact = {
+        ...existing,
+        ...args.data,
+        updatedAt: new Date(),
+      };
+      contacts.set(updated.id, updated);
+      return updated;
+    });
+
+    contactCreateMock.mockImplementation(async (args: { data: Record<string, unknown> }) => {
+      const data = args.data;
+      const id = (data.id as string) ?? `contact-${contacts.size + 1}`;
+      const created: MockContact = {
+        id,
+        tenantId: data.tenantId as string,
+        name: (data.name as string) ?? 'Novo Contato',
+        phone: (data.phone as string) ?? null,
+        email: (data.email as string) ?? null,
+        document: (data.document as string) ?? null,
+        avatar: (data.avatar as string) ?? null,
+        tags: (data.tags as string[]) ?? [],
+        customFields: (data.customFields as Record<string, unknown>) ?? {},
+        lastInteractionAt: (data.lastInteractionAt as Date) ?? new Date(),
+        notes: (data.notes as string) ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      contacts.set(created.id, created);
+      return created;
     });
 
     whatsAppInstanceFindUniqueMock.mockResolvedValue({
@@ -168,6 +252,7 @@ describe('Outbound message routes', () => {
     registerSocketServer(null);
     sendMessageSpy.mockRestore();
     queueFindFirstMock.mockReset();
+    queueUpsertMock.mockReset();
     contactFindUniqueMock.mockReset();
     contactUpdateMock.mockReset();
     contactCreateMock.mockReset();
@@ -425,6 +510,82 @@ describe('Outbound message routes', () => {
     expect(second.body.messageId).toBe(messageId);
     expect(second.body.status).toBe(first.body.status);
     expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
+  it('creates a fallback queue automatically when tenant has none', async () => {
+    const tenantId = 'tenant-fallback';
+    const contact: MockContact = {
+      id: 'contact-fallback',
+      tenantId,
+      name: 'Fallback Contact',
+      phone: '+551197778888',
+      email: null,
+      document: null,
+      avatar: null,
+      tags: [],
+      customFields: {},
+      lastInteractionAt: new Date(),
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    contacts.set(contact.id, contact);
+
+    queueFindFirstMock.mockResolvedValueOnce(null);
+    queueUpsertMock.mockResolvedValueOnce({
+      id: 'queue-fallback',
+      tenantId,
+      name: 'Atendimento Geral',
+      orderIndex: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    whatsAppInstanceFindUniqueMock.mockImplementation(async () => ({
+      id: 'instance-001',
+      tenantId,
+      name: 'Fallback Instance',
+      brokerId: 'broker-fallback',
+      status: 'connected',
+      connected: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+
+    const app = buildApp({ tenantId, id: 'operator-fallback' });
+    const response = await request(app)
+      .post(`/api/contacts/${contact.id}/messages`)
+      .set('Idempotency-Key', 'test-fallback-queue')
+      .send({
+        to: contact.phone,
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem via fila automática',
+        },
+      });
+
+    expect(response.status).toBe(202);
+    expect(queueFindFirstMock).toHaveBeenCalled();
+    expect(queueUpsertMock).toHaveBeenCalledWith({
+      where: {
+        tenantId_name: {
+          tenantId,
+          name: 'Atendimento Geral',
+        },
+      },
+      update: {},
+      create: expect.objectContaining({
+        tenantId,
+        name: 'Atendimento Geral',
+      }),
+    });
+    expect(response.body.queued).toBe(true);
+    expect(response.body.ticketId).toBeTruthy();
+    expect(sendMessageSpy).toHaveBeenCalledWith('instance-001', expect.objectContaining({
+      to: contact.phone,
+    }));
   });
 
   it('supports legacy payload shape when sending ad-hoc WhatsApp messages', async () => {
