@@ -687,10 +687,8 @@ export const LeadInbox = ({
     <div className="space-y-8">
       <InboxHeader
         stepLabel={stepLabel}
-        selectedAgreement={selectedAgreement}
         campaign={campaign}
         onboarding={onboarding}
-        leadCount={filteredCount}
       />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_360px]">

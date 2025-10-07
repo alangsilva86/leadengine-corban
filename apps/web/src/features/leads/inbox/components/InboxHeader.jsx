@@ -8,22 +8,20 @@ import {
 } from '@/components/ui/breadcrumb.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
+import { MessageSquare } from 'lucide-react';
 
 export const InboxHeader = ({
   stepLabel,
-  selectedAgreement,
   campaign,
   onboarding,
-  leadCount = 0,
 }) => {
-  const agreementName = selectedAgreement?.name;
   const activeStep = onboarding?.activeStep ?? 0;
   const nextStage = onboarding?.stages?.[activeStep + 1]?.title ?? 'Relatórios';
   const campaignName = campaign?.name;
 
   const breadcrumbItems = [
     { label: 'Leads', href: '#leads' },
-    { label: 'Inbox', current: true },
+    { label: 'Inbox', current: true, icon: MessageSquare },
   ];
 
   return (
@@ -46,6 +44,9 @@ export const InboxHeader = ({
                 {item.current ? (
                   <BreadcrumbPage className="text-sm font-medium text-foreground/85">
                     {item.label}
+                  <BreadcrumbPage className="flex items-center gap-1.5 text-sm font-medium text-foreground/90">
+                    {item.icon ? <item.icon className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden /> : null}
+                    <span>{item.label}</span>
                   </BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink
@@ -76,6 +77,9 @@ export const InboxHeader = ({
             <p className="text-base font-semibold text-foreground/90">{leadCount} leads ativos</p>
             <p className="text-[12px] text-muted-foreground/70">Próximo passo: {nextStage}</p>
           </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-[1.625rem] font-semibold leading-tight tracking-tight text-foreground">Inbox de Leads</h1>
+          <p className="text-xs text-muted-foreground/80">Próximo passo: {nextStage}</p>
         </div>
       </div>
 
