@@ -82,6 +82,8 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
     }
   }, [sidebarOpen]);
 
+  const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
+
   return (
     <div className="layout-container">
       <aside
@@ -189,7 +191,7 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
 
         <main className="page-content">
           <div className="page-content-inner">
-            {stageList.length > 0 ? (
+            {shouldShowOnboardingTrack ? (
               <div className="onboarding-track" aria-label="Progresso do onboarding">
                 {stageList.map((stage, index) => {
                   const status =
