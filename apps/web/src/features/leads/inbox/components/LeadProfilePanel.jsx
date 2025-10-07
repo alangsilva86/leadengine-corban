@@ -22,10 +22,10 @@ const STATUS_LABEL = {
 };
 
 const STATUS_TONE = {
-  allocated: 'border-white/10 bg-white/[0.05] text-muted-foreground/85',
-  contacted: 'border-slate-500/35 bg-slate-500/12 text-slate-100/90',
-  won: 'border-slate-200/40 bg-slate-200/10 text-slate-100',
-  lost: 'border-rose-500/45 bg-rose-500/12 text-rose-100',
+  allocated: 'border-white/20 bg-white/[0.08] text-white/80',
+  contacted: 'border-sky-400/40 bg-sky-500/20 text-sky-100',
+  won: 'border-emerald-400/45 bg-emerald-400/20 text-emerald-100',
+  lost: 'border-rose-500/50 bg-rose-500/18 text-rose-100',
 };
 
 const formatCurrency = (value) => {
@@ -99,23 +99,23 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
   return (
     <Card
       className={cn(
-        'rounded-3xl border-white/5 bg-slate-950/70 shadow-[0_6px_28px_rgba(15,23,42,0.38)] transition-opacity duration-150 ease-out',
+        'rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)] transition-opacity duration-150 ease-out',
         isSwitching ? 'opacity-0' : 'opacity-100'
       )}
       aria-busy={showSkeleton}
     >
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm font-semibold tracking-[0.12em] text-foreground/90 uppercase">
+          <CardTitle className="text-sm font-semibold uppercase tracking-[0.12em] text-white/80">
             Informações do lead
           </CardTitle>
           {showSkeleton ? (
-            <div className="h-6 w-32 animate-pulse rounded-full bg-white/10" />
+            <div className="h-6 w-32 animate-pulse rounded-full bg-white/12" />
           ) : allocation ? (
             <Badge
               variant="outline"
               className={cn(
-                'border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.26em] transition-colors',
+                'border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.26em] text-white/80 transition-colors',
                 statusTone
               )}
             >
@@ -123,7 +123,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             </Badge>
           ) : null}
         </div>
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-xs text-white/70">
           Dados essenciais sempre visíveis para agilizar o atendimento e garantir foco na conversa.
         </p>
       </CardHeader>
@@ -133,32 +133,32 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div key={`skeleton-info-${index}`} className="space-y-2">
-                  <div className="h-3 w-32 animate-pulse rounded-full bg-white/10" />
-                  <div className="h-4 w-full animate-pulse rounded-full bg-white/10" />
+                  <div className="h-3 w-32 animate-pulse rounded-full bg-white/12" />
+                  <div className="h-4 w-full animate-pulse rounded-full bg-white/12" />
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Array.from({ length: 3 }).map((_, index) => (
-                <div key={`skeleton-action-${index}`} className="h-10 animate-pulse rounded-2xl bg-white/10" />
+                <div key={`skeleton-action-${index}`} className="h-10 animate-pulse rounded-2xl bg-white/12" />
               ))}
             </div>
 
-            <div className="h-8 w-3/4 animate-pulse rounded-2xl bg-white/10" />
+            <div className="h-8 w-3/4 animate-pulse rounded-2xl bg-white/12" />
           </div>
         ) : (
           <>
-            <div className={cn('grid grid-cols-1 gap-3 text-sm text-muted-foreground/90', 'sm:grid-cols-2')}>
+            <div className={cn('grid grid-cols-1 gap-3 rounded-2xl border border-white/12 bg-white/[0.06] p-4 text-sm text-white/80', 'sm:grid-cols-2')}>
               {infoRows(allocation).map((row) => {
                 const Icon = row.icon;
                 return (
                   <div key={row.label} className="space-y-1">
-                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-muted-foreground/60">
-                      <Icon className="h-3.5 w-3.5" />
+                    <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/65">
+                      <Icon className="h-3.5 w-3.5 text-white/70" />
                       <span>{row.label}</span>
                     </div>
-                    <p className="text-sm font-medium text-foreground/90">{row.value || '—'}</p>
+                    <p className="text-sm font-medium text-white/90">{row.value || '—'}</p>
                   </div>
                 );
               })}
@@ -170,7 +170,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
                 size="sm"
                 onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
                 disabled={!allocation?.phone || !onOpenWhatsApp || showSkeleton}
-                className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500/90 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_10px_30px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400"
+                className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_12px_34px_rgba(16,185,129,0.45)] transition hover:bg-emerald-400"
               >
                 <Phone className="h-4 w-4" /> Abrir conversa
               </Button>
@@ -186,7 +186,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
                     onClick={() =>
                       allocation && onUpdateStatus ? onUpdateStatus(allocation.allocationId, action.status) : null
                     }
-                    className="flex items-center justify-center gap-2 rounded-2xl border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-foreground/90 transition hover:border-white/30 hover:bg-white/10"
+                    className="flex items-center justify-center gap-2 rounded-2xl border-white/15 bg-white/[0.08] px-4 py-3 text-sm font-medium text-white/90 transition hover:border-white/30 hover:bg-white/[0.12]"
                   >
                     <Icon className="h-4 w-4" />
                     {action.label}
@@ -196,8 +196,8 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             </div>
 
             {allocation?.email ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-white/5 bg-white/5 px-3 py-2 text-xs text-muted-foreground/80">
-                <Mail className="h-4 w-4 text-muted-foreground/60" />
+              <div className="flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.08] px-3 py-2 text-xs text-white/75">
+                <Mail className="h-4 w-4 text-white/65" />
                 <span>{allocation.email}</span>
               </div>
             ) : null}
