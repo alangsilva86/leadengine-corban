@@ -432,6 +432,13 @@ export const LeadInbox = ({
     campaignId: campaignId ?? null,
   });
   const firstActiveSelectionRef = useRef(true);
+  const inboxListRef = useRef(null);
+  const [inboxScrollParent, setInboxScrollParent] = useState(null);
+
+  const handleColumnScrollAreaRef = useCallback((instance) => {
+    const nextNode = instance?.node ?? null;
+    setInboxScrollParent((current) => (current === nextNode ? current : nextNode));
+  }, []);
 
   useEffect(() => {
     const previous = previousContextRef.current;
@@ -606,6 +613,26 @@ export const LeadInbox = ({
     const timeout = window.setTimeout(() => setLeadPanelSwitching(false), 150);
     return () => window.clearTimeout(timeout);
   }, [activeAllocationId]);
+
+  useEffect(() => {
+    if (!activeAllocationId || firstActiveSelectionRef.current || !inboxScrollParent) {
+      return;
+    }
+
+    const index = filteredAllocations.findIndex(
+      (item) => item.allocationId === activeAllocationId
+    );
+
+    if (index < 0) {
+      return;
+    }
+
+    inboxListRef.current?.scrollToIndex?.({
+      index,
+      align: 'center',
+      behavior: 'smooth',
+    });
+  }, [activeAllocationId, filteredAllocations, inboxScrollParent]);
 
   const handleUpdateFilters = useCallback(
     (partial) => {
@@ -782,6 +809,7 @@ export const LeadInbox = ({
             </div>
 
             <ColumnScrollArea
+              ref={handleColumnScrollAreaRef}
               ref={inboxScrollRef}
               className="flex-1 min-h-0"
               viewportClassName="space-y-5 px-5 pb-6 pr-6 pt-5"
@@ -798,6 +826,8 @@ export const LeadInbox = ({
                 activeAllocationId={activeAllocationId}
                 onOpenWhatsApp={handleOpenWhatsApp}
                 className="pb-3"
+                ref={inboxListRef}
+                scrollParent={inboxScrollParent}
               />
 
               {hasNotices ? (
