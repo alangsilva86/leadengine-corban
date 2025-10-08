@@ -440,6 +440,14 @@ export const LeadInbox = ({
     setInboxScrollParent((current) => (current === nextNode ? current : nextNode));
   }, []);
 
+  const registerColumnScrollAreaRef = useCallback(
+    (instance) => {
+      inboxScrollRef.current = instance;
+      handleColumnScrollAreaRef(instance);
+    },
+    [handleColumnScrollAreaRef]
+  );
+
   useEffect(() => {
     const previous = previousContextRef.current;
     const current = {
@@ -809,8 +817,7 @@ export const LeadInbox = ({
             </div>
 
             <ColumnScrollArea
-              ref={handleColumnScrollAreaRef}
-              ref={inboxScrollRef}
+              ref={registerColumnScrollAreaRef}
               className="flex-1 min-h-0"
               viewportClassName="space-y-5 px-5 pb-6 pr-6 pt-5"
             >
