@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Menu,
   Home,
@@ -38,6 +38,15 @@ import {
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
 import DemoAuthDialog from './DemoAuthDialog.jsx';
+
+const NAVIGATION_ITEMS = [
+  { id: 'dashboard', label: 'Visão Geral', icon: Home },
+  { id: 'agreements', label: 'Convênios', icon: Briefcase },
+  { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
+  { id: 'inbox', label: 'Inbox', icon: MessageSquare },
+  { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+  { id: 'settings', label: 'Configurações', icon: Settings },
+];
 
 const LayoutHeader = ({ children, className }) => (
   <header
@@ -159,12 +168,12 @@ const LayoutShell = ({
                       type="button"
                       onClick={handleNavigate(item.id)}
                       isActive={currentPage === item.id}
-                      tooltip={item.name}
-                      aria-label={item.name}
+                      tooltip={item.label}
+                      aria-label={item.label}
                     >
                       <item.icon className="h-4 w-4" />
                       <span className="truncate group-data-[collapsible=icon]:hidden">
-                        {item.name}
+                        {item.label}
                       </span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -305,20 +314,23 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
     return () => window.removeEventListener('leadengine:inbox-count', handler);
   }, []);
 
-  const inboxLabel = typeof inboxCount === 'number' ? `Inbox (${inboxCount})` : 'Inbox';
+  const navigation = useMemo(
+    () =>
+      NAVIGATION_ITEMS.map((item) => {
+        if (item.id !== 'inbox') {
+          return item;
+        }
 
-  const navigation = [
-    { id: 'dashboard', name: 'Visão Geral', icon: Home },
-    { id: 'agreements', name: 'Convênios', icon: Briefcase },
-    { id: 'whatsapp', name: 'WhatsApp', icon: QrCode },
-    {
-      id: 'inbox',
-      name: inboxLabel,
-      icon: MessageSquare,
-    },
-    { id: 'reports', name: 'Relatórios', icon: BarChart3 },
-    { id: 'settings', name: 'Configurações', icon: Settings },
-  ];
+        const inboxLabel =
+          typeof inboxCount === 'number' ? `Inbox (${inboxCount})` : 'Inbox';
+
+        return {
+          ...item,
+          label: inboxLabel,
+        };
+      }),
+    [inboxCount]
+  );
 
   const stageList = onboarding?.stages ?? [];
 
