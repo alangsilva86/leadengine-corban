@@ -6,6 +6,31 @@ import { cn } from '@/lib/utils.js';
 import LeadAllocationCard from './LeadAllocationCard.jsx';
 import EmptyInboxState from './EmptyInboxState.jsx';
 
+export const InboxList = ({
+  allocations,
+  filteredAllocations,
+  loading,
+  selectedAgreement,
+  campaign,
+  onBackToWhatsApp,
+  onSelectAgreement,
+  onSelectAllocation,
+  activeAllocationId,
+  onOpenWhatsApp,
+  className,
+}) => {
+  if (loading) {
+    return (
+      <div className={cn('space-y-3', className)} aria-live="polite" aria-busy="true">
+        <span className="sr-only">Carregando leads…</span>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            key={`allocation-skeleton-${index}`}
+            className="space-y-4 rounded-[24px] border border-white/12 bg-slate-950/45 p-5 shadow-[0_18px_44px_rgba(3,9,24,0.45)] backdrop-blur-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <div className="h-2.5 w-16 animate-pulse rounded-full bg-white/12" />
 export const InboxList = forwardRef(
   (
     {
@@ -120,6 +145,14 @@ export const InboxList = forwardRef(
     }
 
     return (
+      <div
+        className={cn(
+          'rounded-[24px] border border-dashed border-white/12 bg-slate-950/45 p-6 text-center text-sm text-muted-foreground shadow-[0_18px_44px_rgba(3,9,24,0.45)] backdrop-blur-xl',
+          className
+        )}
+      >
+        Nenhum lead com o filtro selecionado.
+      </div>
       <Virtuoso
         ref={virtuosoRef}
         className={className}
