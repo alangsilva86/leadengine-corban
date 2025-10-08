@@ -46,7 +46,7 @@ RUN pnpm install --frozen-lockfile
 RUN cd apps/api && pnpm db:generate
 
 # Build de todos os packages e da API
-RUN pnpm -r build
+RUN pnpm run build:libs && pnpm run build:api
 
 # ============================================================================
 # Stage 3: Preparar deployment (apenas dependências de produção)
