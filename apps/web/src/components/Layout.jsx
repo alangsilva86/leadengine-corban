@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   Menu,
-  X,
   Home,
   Briefcase,
   QrCode,
@@ -19,13 +18,262 @@ import {
   Moon,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import { SidebarProvider, useSidebar } from '@/components/ui/sidebar.jsx';
-import './Layout.css';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  useSidebar,
+} from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
 import DemoAuthDialog from './DemoAuthDialog.jsx';
+
+const LayoutHeader = ({ children, className }) => (
+  <header
+    className={cn(
+      'flex h-16 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6',
+      className
+    )}
+  >
+    {children}
+  </header>
+);
+
+const LayoutContent = ({ children, className }) => (
+  <div className={cn('flex-1 overflow-y-auto', className)}>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-6 md:p-8">{children}</div>
+  </div>
+);
+
+const OnboardingTrack = ({ stages, activeStep }) => {
+  if (!stages?.length) {
+    return null;
+  }
+
+  return (
+    <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-muted/60 p-1.5 pr-2 text-xs">
+      {stages.map((stage, index) => {
+        const status =
+          index < activeStep ? 'done' : index === activeStep ? 'current' : 'todo';
+
+        return (
+          <div
+            key={stage.id}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors',
+              status === 'done' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
+              status === 'current' && 'bg-primary/10 text-primary',
+              status === 'todo' && 'text-muted-foreground'
+            )}
+          >
+            <span
+              className={cn(
+                'flex size-5 items-center justify-center rounded-full border text-[0.65rem] font-semibold',
+                status === 'done' && 'border-transparent bg-emerald-500 text-emerald-50',
+                status === 'current' && 'border-transparent bg-primary text-primary-foreground',
+                status === 'todo' && 'border-transparent bg-muted text-muted-foreground'
+              )}
+            >
+              {index + 1}
+            </span>
+            <span className="whitespace-nowrap">{stage.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const LayoutShell = ({
+  children,
+  navigation,
+  currentPage,
+  onNavigate,
+  shouldShowOnboardingTrack,
+  stageList,
+  activeOnboardingStep,
+  isDarkMode,
+  themeMounted,
+  setTheme,
+}) => {
+  const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
+  const isSidebarCollapsed = state === 'collapsed';
+
+  const handleNavigate = (page) => (event) => {
+    event.preventDefault();
+    onNavigate?.(page);
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+
+  const handleSidebarCollapseToggle = () => {
+    if (isMobile) {
+      setOpenMobile(true);
+      return;
+    }
+
+    toggleSidebar();
+  };
+
+  const handleMobileSidebarOpen = () => {
+    if (isMobile) {
+      setOpenMobile(true);
+    } else {
+      setOpen(true);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen w-full bg-background text-foreground">
+      <Sidebar collapsible="icon" variant="inset">
+        <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
+          <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <Ticket className="h-5 w-5" />
+            </div>
+            <div className="space-y-1 group-data-[collapsible=icon]:hidden">
+              <p className="text-sm font-semibold leading-none">Lead Engine</p>
+              <p className="text-xs text-muted-foreground">Máquina de Vendas</p>
+            </div>
+          </div>
+        </SidebarHeader>
+        <SidebarContent className="px-2 py-4">
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {navigation.map((item) => (
+                  <SidebarMenuItem key={item.id}>
+                    <SidebarMenuButton
+                      type="button"
+                      onClick={handleNavigate(item.id)}
+                      isActive={currentPage === item.id}
+                      tooltip={item.name}
+                      aria-label={item.name}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span className="truncate group-data-[collapsible=icon]:hidden">
+                        {item.name}
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter className="border-t border-sidebar-border px-4 py-4">
+          <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+            <div className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <User className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-0.5 group-data-[collapsible=icon]:hidden">
+              <p className="truncate text-sm font-medium leading-none">João Silva</p>
+              <p className="text-xs text-muted-foreground">Agente</p>
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <LogOut className="h-4 w-4" />
+              <span className="sr-only">Sair</span>
+            </Button>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset className="flex min-h-screen flex-1 flex-col">
+        <LayoutHeader>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={handleMobileSidebarOpen}
+              aria-label="Abrir navegação"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden md:inline-flex"
+              onClick={handleSidebarCollapseToggle}
+              aria-label={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+              title={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+            >
+              {isSidebarCollapsed ? (
+                <ChevronsRight className="h-5 w-5" />
+              ) : (
+                <ChevronsLeft className="h-5 w-5" />
+              )}
+            </Button>
+            <div className="relative hidden min-w-0 flex-1 items-center sm:flex">
+              <Search className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Buscar tickets, contatos..."
+                className="h-9 w-full rounded-lg border border-border bg-muted/40 pl-9 text-sm shadow-none placeholder:text-muted-foreground"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
+              aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+              title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            >
+              {themeMounted ? (
+                isDarkMode ? (
+                  <Moon className="h-5 w-5" aria-hidden="true" />
+                ) : (
+                  <Sun className="h-5 w-5" aria-hidden="true" />
+                )
+              ) : (
+                <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
+              )}
+              <span className="sr-only">Alternar tema</span>
+            </Button>
+            <DemoAuthDialog />
+            <TenantSelector />
+            <Button variant="ghost" size="icon" className="relative">
+              <Bell className="h-5 w-5" />
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[0.65rem] font-medium text-primary-foreground">
+                5
+              </span>
+            </Button>
+            <HealthIndicator />
+          </div>
+        </LayoutHeader>
+        <div className="px-4 py-4 sm:hidden">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Buscar tickets, contatos..."
+              className="h-9 w-full rounded-lg border border-border bg-muted/40 pl-9 text-sm shadow-none placeholder:text-muted-foreground"
+            />
+          </div>
+        </div>
+        <LayoutContent>
+          {shouldShowOnboardingTrack ? (
+            <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
+          ) : null}
+          {children}
+        </LayoutContent>
+      </SidebarInset>
+    </div>
+  );
+};
 
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
   const [inboxCount, setInboxCount] = useState(
@@ -76,198 +324,23 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
 
   const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
-
-  const LayoutShell = () => {
-    const { isMobile, state, setOpen, setOpenMobile, openMobile, toggleSidebar } = useSidebar();
-
-    const isSidebarCollapsed = !isMobile && state === 'collapsed';
-    const isSidebarOpen = isMobile ? openMobile : true;
-
-    const handleNavigate = (page) => (event) => {
-      event.preventDefault();
-      onNavigate?.(page);
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-    };
-
-    const handleSidebarCollapseToggle = () => {
-      if (isMobile) {
-        return;
-      }
-      toggleSidebar();
-    };
-
-    const handleMobileSidebarOpen = () => {
-      if (isMobile) {
-        setOpenMobile(true);
-      } else {
-        setOpen(true);
-      }
-    };
-
-    const handleMobileSidebarClose = () => {
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-    };
-
-    return (
-      <div className="layout-container">
-        <aside
-          className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}
-        >
-          <div className="sidebar-header">
-            <div className="sidebar-logo">
-              <div className="logo-icon">
-                <Ticket className="h-5 w-5" />
-              </div>
-              <div className="logo-text">
-                <h1>Lead Engine</h1>
-                <p>Maquina de Vendas</p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="sidebar-close"
-              onClick={handleMobileSidebarClose}
-            >
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
-
-          <nav className="sidebar-nav">
-            <ul className="nav-list">
-              {navigation.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={handleNavigate(item.id)}
-                    className={`nav-item ${currentPage === item.id ? 'nav-item-active' : ''}`}
-                    aria-label={item.name}
-                  >
-                    <item.icon className="nav-icon" />
-                    <span className="nav-text">{item.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-
-          <div className="sidebar-footer">
-            <div className="user-profile">
-              <div className="user-avatar">
-                <User className="h-5 w-5" />
-              </div>
-              <div className="user-info">
-                <p className="user-name">João Silva</p>
-                <p className="user-role">Agente</p>
-              </div>
-              <Button variant="ghost" size="sm">
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </aside>
-
-        {isMobile && isSidebarOpen ? (
-          <div className="sidebar-overlay" onClick={handleMobileSidebarClose} />
-        ) : null}
-
-        <div className="main-content">
-          <header className="main-header">
-            <div className="header-left">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="sidebar-toggle"
-                onClick={handleMobileSidebarOpen}
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                className="sidebar-collapse-toggle"
-                onClick={handleSidebarCollapseToggle}
-                aria-label={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-                title={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-              >
-                {isSidebarCollapsed ? (
-                  <ChevronsRight className="h-5 w-5" />
-                ) : (
-                  <ChevronsLeft className="h-5 w-5" />
-                )}
-              </Button>
-
-              <div className="search-container">
-                <Search className="search-icon" />
-                <Input type="search" placeholder="Buscar tickets, contatos..." className="search-input" />
-              </div>
-            </div>
-
-            <div className="header-right" style={{ gap: 12 }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
-                aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-                title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-              >
-                {themeMounted ? (
-                  isDarkMode ? (
-                    <Moon className="h-5 w-5" aria-hidden="true" />
-                  ) : (
-                    <Sun className="h-5 w-5" aria-hidden="true" />
-                  )
-                ) : (
-                  <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
-                )}
-                <span className="sr-only">Alternar tema</span>
-              </Button>
-              <DemoAuthDialog />
-              <TenantSelector />
-              <Button variant="ghost" size="sm" className="notification-btn">
-                <Bell className="h-5 w-5" />
-                <span className="notification-badge">5</span>
-              </Button>
-              <HealthIndicator />
-            </div>
-          </header>
-
-          <main className="page-content">
-            <div className="page-content-inner">
-              {shouldShowOnboardingTrack ? (
-                <div className="onboarding-track" aria-label="Progresso do onboarding">
-                  {stageList.map((stage, index) => {
-                    const status =
-                      index < onboarding.activeStep
-                        ? 'done'
-                        : index === onboarding.activeStep
-                        ? 'current'
-                        : 'todo';
-                    return (
-                      <div key={stage.id} className={`onboarding-pill onboarding-pill--${status}`}>
-                        <span className="onboarding-pill__index">{index + 1}</span>
-                        <span className="onboarding-pill__label">{stage.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-              {children}
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  };
+  const activeOnboardingStep = onboarding?.activeStep ?? 0;
 
   return (
     <SidebarProvider>
-      <LayoutShell />
+      <LayoutShell
+        navigation={navigation}
+        currentPage={currentPage}
+        onNavigate={onNavigate}
+        shouldShowOnboardingTrack={shouldShowOnboardingTrack}
+        stageList={stageList}
+        activeOnboardingStep={activeOnboardingStep}
+        isDarkMode={isDarkMode}
+        themeMounted={themeMounted}
+        setTheme={setTheme}
+      >
+        {children}
+      </LayoutShell>
     </SidebarProvider>
   );
 };
