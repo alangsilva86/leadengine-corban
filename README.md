@@ -414,7 +414,7 @@ docker-compose -f docker-compose.prod.yml up -d
 ### Health Checks
 ```bash
 # API Health
-curl http://localhost:4000/health
+curl http://localhost:4000/healthz
 
 # Integrações Health
 curl http://localhost:4000/api/integrations/health

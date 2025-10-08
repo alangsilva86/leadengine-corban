@@ -71,7 +71,7 @@ docker compose --profile production up --build
 A primeira execução fará o build das imagens da API e do frontend.
 
 ## 5. Verificações rápidas
-- API: `curl http://localhost:4000/health`
+- API: `curl http://localhost:4000/healthz`
 - Web: acessar `http://localhost:5173`
 - Postgres: `docker exec -it ticketz-postgres psql -U ticketz`
 - Redis: `docker exec -it ticketz-redis redis-cli ping`

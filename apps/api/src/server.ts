@@ -298,17 +298,18 @@ app.get('/metrics', (_req, res) => {
   });
 });
 
-// Health check simples para o MVP (sem dependência de banco)
-app.get('/health', (_req, res) => {
-  const details: Record<string, unknown> = {
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: NODE_ENV,
-    storage: 'in-memory',
-    whatsappEventPoller: getWhatsAppEventPollerMetrics(),
-  };
+const buildHealthPayload = () => ({
+  status: 'ok' as const,
+  timestamp: new Date().toISOString(),
+  uptime: process.uptime(),
+  environment: NODE_ENV,
+  storage: 'in-memory',
+  whatsappEventPoller: getWhatsAppEventPollerMetrics(),
+});
 
-  res.json({ status: 'ok', ...details });
+// Health check simples para o MVP (sem dependência de banco)
+app.get(['/health', '/healthz'], (_req, res) => {
+  res.json(buildHealthPayload());
 });
 
 // Rotas públicas (sem autenticação)
