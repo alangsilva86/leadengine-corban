@@ -7,10 +7,19 @@
   --primary: #4f46e5;
   --primary-foreground: #eef2ff;
   --success: #16a34a;
+  --success-soft-foreground: #14532d;
+  --success-strong-foreground: #f0fdf4;
   --warning: #d97706;
+  --warning-soft-foreground: #92400e;
   --error: #dc2626;
+  --error-soft-foreground: #991b1b;
   --surface: rgba(255, 255, 255, 0.78);
   --surface-strong: rgba(255, 255, 255, 0.92);
+  --inbox-surface: rgba(255, 255, 255, 0.72);
+  --inbox-surface-strong: rgba(255, 255, 255, 0.88);
+  --inbox-border: rgba(15, 23, 42, 0.12);
+  --inbox-foreground: var(--text);
+  --inbox-foreground-muted: rgba(15, 23, 42, 0.6);
   --radius: 12px;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -65,6 +74,13 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-success-strong-foreground: var(--success-strong-foreground);
+  --color-warning: var(--warning);
+  --color-warning-soft-foreground: var(--warning-soft-foreground);
+  --color-error: var(--error);
+  --color-error-soft-foreground: var(--error-soft-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -81,6 +97,11 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-inbox-surface: var(--inbox-surface);
+  --color-inbox-surface-strong: var(--inbox-surface-strong);
+  --color-inbox-border: var(--inbox-border);
+  --color-inbox-foreground: var(--inbox-foreground);
+  --color-inbox-foreground-muted: var(--inbox-foreground-muted);
 }
 
 .dark {
@@ -92,10 +113,19 @@
   --primary: #6366f1;
   --primary-foreground: #f8fafc;
   --success: #22c55e;
+  --success-soft-foreground: #bbf7d0;
+  --success-strong-foreground: #022c17;
   --warning: #facc15;
+  --warning-soft-foreground: #fde68a;
   --error: #ef4444;
+  --error-soft-foreground: #fecaca;
   --surface: rgba(124, 138, 163, 0.14);
   --surface-strong: rgba(124, 138, 163, 0.22);
+  --inbox-surface: rgba(15, 23, 42, 0.78);
+  --inbox-surface-strong: rgba(15, 23, 42, 0.9);
+  --inbox-border: rgba(255, 255, 255, 0.12);
+  --inbox-foreground: rgba(241, 245, 249, 0.92);
+  --inbox-foreground-muted: rgba(241, 245, 249, 0.75);
   --border: #7c8aa3;
   --input: #7c8aa3;
   --secondary: rgba(99, 102, 241, 0.12);

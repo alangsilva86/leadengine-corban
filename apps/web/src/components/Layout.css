@@ -300,13 +300,13 @@
 }
 
 .onboarding-pill--done {
-  color: #bbf7d0;
+  color: var(--color-success-soft-foreground);
   background: color-mix(in oklab, var(--color-success) 20%, transparent);
 }
 
 .onboarding-pill--done .onboarding-pill__index {
   background: var(--color-success);
-  color: #022c17;
+  color: var(--color-success-strong-foreground);
   border-color: transparent;
 }
 

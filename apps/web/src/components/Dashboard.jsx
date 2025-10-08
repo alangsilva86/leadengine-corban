@@ -629,7 +629,7 @@ const Dashboard = ({ onboarding, onStart }) => {
                 todo: 'border-white/5 bg-white/5',
               };
               const indexClasses = {
-                done: 'bg-emerald-500 text-[#022c17] border-transparent',
+                done: 'bg-[var(--color-success)] text-[var(--color-success-strong-foreground)] border-transparent',
                 current: 'bg-[var(--primary)] text-[var(--primary-foreground)] border-transparent',
                 todo: 'bg-white/10 text-[var(--text-muted)] border-white/20',
               };
@@ -730,9 +730,9 @@ const Dashboard = ({ onboarding, onStart }) => {
                     <XAxis dataKey="name" />
                     <YAxis allowDecimals={false} />
                     <Tooltip />
-                    <Bar dataKey="abertos" fill="#ef4444" name="Abertos" />
-                    <Bar dataKey="fechados" fill="#22c55e" name="Fechados" />
-                    <Bar dataKey="pendentes" fill="#f59e0b" name="Pendentes" />
+                    <Bar dataKey="abertos" fill="var(--color-error)" name="Abertos" />
+                    <Bar dataKey="fechados" fill="var(--color-success)" name="Fechados" />
+                    <Bar dataKey="pendentes" fill="var(--color-warning)" name="Pendentes" />
                   </BarChart>
                 </ResponsiveContainer>
                 {ticketsSeries.length === 0 ? (
@@ -761,11 +761,11 @@ const Dashboard = ({ onboarding, onStart }) => {
                     <XAxis dataKey="name" />
                     <YAxis allowDecimals={false} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="leads" stroke="#3b82f6" strokeWidth={2} name="Leads" />
+                    <Line type="monotone" dataKey="leads" stroke="var(--color-chart-2)" strokeWidth={2} name="Leads" />
                     <Line
                       type="monotone"
                       dataKey="conversoes"
-                      stroke="#10b981"
+                      stroke="var(--color-success)"
                       strokeWidth={2}
                       name="Conversões"
                     />

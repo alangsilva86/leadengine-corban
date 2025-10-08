@@ -20,10 +20,10 @@ const Reports = () => {
   ];
 
   const conveniosData = [
-    { name: 'SAEC Goiânia', value: 45, color: '#8884d8' },
-    { name: 'RF1 Boa Vista', value: 30, color: '#82ca9d' },
-    { name: 'EConsig Londrina', value: 15, color: '#ffc658' },
-    { name: 'SAEC Curaçá', value: 10, color: '#ff7300' },
+    { name: 'SAEC Goiânia', value: 45, color: 'var(--color-chart-1)' },
+    { name: 'RF1 Boa Vista', value: 30, color: 'var(--color-chart-2)' },
+    { name: 'EConsig Londrina', value: 15, color: 'var(--color-chart-3)' },
+    { name: 'SAEC Curaçá', value: 10, color: 'var(--color-chart-4)' },
   ];
 
   const performanceData = [
@@ -127,8 +127,8 @@ const Reports = () => {
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Bar dataKey="leads" fill="#8884d8" name="Leads" />
-                <Bar dataKey="conversoes" fill="#82ca9d" name="Conversões" />
+                <Bar dataKey="leads" fill="var(--color-chart-1)" name="Leads" />
+                <Bar dataKey="conversoes" fill="var(--color-chart-2)" name="Conversões" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -150,7 +150,7 @@ const Reports = () => {
                   labelLine={false}
                   label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   outerRadius={80}
-                  fill="#8884d8"
+                  fill="var(--color-chart-1)"
                   dataKey="value"
                 >
                   {conveniosData.map((entry, index) => (
