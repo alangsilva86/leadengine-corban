@@ -2,9 +2,24 @@ import { useEffect, useState } from 'react';
 import { apiGet } from '@/lib/api.js';
 
 const STATUS_COLORS = {
-  ok: { dot: '#22c55e', bg: 'rgba(34,197,94,0.12)', fg: '#14532d' },
-  unhealthy: { dot: '#ef4444', bg: 'rgba(239,68,68,0.12)', fg: '#7f1d1d' },
-  unknown: { dot: '#f59e0b', bg: 'rgba(245,158,11,0.12)', fg: '#7c2d12' },
+  ok: {
+    dot: 'var(--success)',
+    bg: 'color-mix(in srgb, var(--success) 18%, transparent)',
+    fg: 'color-mix(in srgb, var(--success) 38%, var(--foreground))',
+    border: '1px solid color-mix(in srgb, var(--success) 28%, transparent)',
+  },
+  unhealthy: {
+    dot: 'var(--error)',
+    bg: 'color-mix(in srgb, var(--error) 20%, transparent)',
+    fg: 'color-mix(in srgb, var(--error) 40%, var(--foreground))',
+    border: '1px solid color-mix(in srgb, var(--error) 30%, transparent)',
+  },
+  unknown: {
+    dot: 'var(--warning)',
+    bg: 'color-mix(in srgb, var(--warning) 20%, transparent)',
+    fg: 'color-mix(in srgb, var(--warning) 42%, var(--foreground))',
+    border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
+  },
 };
 
 export default function HealthIndicator({ intervalMs = 30000 }) {
@@ -41,7 +56,7 @@ export default function HealthIndicator({ intervalMs = 30000 }) {
   return (
     <div
       className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs"
-      style={{ background: palette.bg, color: palette.fg }}
+      style={{ background: palette.bg, color: palette.fg, border: palette.border }}
       title={JSON.stringify(details)}
     >
       <span
