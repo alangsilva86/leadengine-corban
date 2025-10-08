@@ -184,14 +184,16 @@ const SplitLayout = ({
           onPointerDown={handleResizerPointerDown}
           onKeyDown={handleResizerKeyDown}
           className={cn(
-            'absolute inset-y-0 z-20 w-2 cursor-col-resize touch-none outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sky-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950',
+            'absolute inset-y-0 z-20 w-2 cursor-col-resize touch-none outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-[color:var(--ring-shell)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
             listPosition === 'left' ? '-right-1 translate-x-1/2' : '-left-1 -translate-x-1/2',
-            isDragging ? 'bg-slate-600/40' : 'bg-transparent'
+            isDragging
+              ? 'bg-[color:color-mix(in_srgb,var(--border-shell)_55%,transparent)]'
+              : 'bg-transparent'
           )}
         >
           <span
             aria-hidden="true"
-            className="absolute inset-y-[30%] left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-slate-700/70"
+            className="absolute inset-y-[30%] left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-[color:color-mix(in_srgb,var(--border-shell)_75%,transparent)]"
           />
         </div>
       ) : null}

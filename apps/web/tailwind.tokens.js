@@ -13,6 +13,30 @@ export const colors = {
       light: '#f8fafc',
       dark: '#0f172a',
     },
+    shell: {
+      solid: {
+        light: '#f8fafc',
+        dark: '#020617',
+      },
+      muted: {
+        light: 'rgba(248, 250, 252, 0.86)',
+        dark: 'rgba(2, 6, 23, 0.85)',
+      },
+      subtle: {
+        light: 'rgba(241, 245, 249, 0.72)',
+        dark: 'rgba(2, 6, 23, 0.65)',
+      },
+    },
+    toolbar: {
+      solid: {
+        light: 'rgba(248, 250, 252, 0.9)',
+        dark: 'rgba(15, 23, 42, 0.85)',
+      },
+      muted: {
+        light: 'rgba(248, 250, 252, 0.78)',
+        dark: 'rgba(15, 23, 42, 0.6)',
+      },
+    },
     overlay: {
       quiet: {
         light: 'rgba(255, 255, 255, 0.78)',
@@ -57,6 +81,12 @@ export const colors = {
       light: '#475569',
       dark: '#94a3b8',
     },
+    shell: {
+      muted: {
+        light: 'rgba(15, 23, 42, 0.65)',
+        dark: 'rgba(148, 163, 184, 0.78)',
+      },
+    },
     inbox: {
       primary: {
         light: '#0f172a',
@@ -93,6 +123,10 @@ export const colors = {
     input: {
       light: 'rgba(15, 23, 42, 0.18)',
       dark: '#7c8aa3',
+    },
+    shell: {
+      light: 'rgba(15, 23, 42, 0.14)',
+      dark: 'rgba(148, 163, 184, 0.32)',
     },
     inbox: {
       light: 'rgba(15, 23, 42, 0.12)',
@@ -205,6 +239,10 @@ export const colors = {
     focus: {
       light: 'rgba(79, 70, 229, 0.55)',
       dark: '#6366f1',
+    },
+    shell: {
+      light: 'rgba(15, 23, 42, 0.16)',
+      dark: 'rgba(255, 255, 255, 0.08)',
     },
   },
   /**
