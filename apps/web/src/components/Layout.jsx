@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  Menu,
-  X,
   Home,
   Briefcase,
   QrCode,
@@ -17,17 +15,32 @@ import {
   ChevronsRight,
   Sun,
   Moon,
+  X,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import './Layout.css';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar.jsx';
+import { cn } from '@/lib/utils.js';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
 import DemoAuthDialog from './DemoAuthDialog.jsx';
 
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inboxCount, setInboxCount] = useState(
     typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
@@ -73,176 +86,255 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
     { id: 'settings', name: 'Configurações', icon: Settings },
   ];
 
-  const handleNavigate = (page) => (event) => {
-    event.preventDefault();
-    onNavigate?.(page);
-    setSidebarOpen(false);
-  };
-
   const stageList = onboarding?.stages ?? [];
 
   useEffect(() => {
-    if (!sidebarOpen) {
+    if (typeof window === 'undefined') {
       return;
     }
 
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-      setSidebarCollapsed(false);
-    }
-  }, [sidebarOpen]);
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setSidebarCollapsed(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
 
   return (
-    <div className="layout-container">
-      <aside
-        className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}
-      >
-        <div className="sidebar-header">
-          <div className="sidebar-logo">
-            <div className="logo-icon">
-              <Ticket className="h-5 w-5" />
-            </div>
-            <div className="logo-text">
-              <h1>Lead Engine</h1>
-              <p>Maquina de Vendas</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="sidebar-close"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+    <SidebarProvider
+      defaultOpen
+      open={!sidebarCollapsed}
+      onOpenChange={(open) => setSidebarCollapsed(!open)}
+      className="bg-background text-foreground"
+    >
+      <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+        <SidebarContent className="gap-0">
+          <SidebarBrand />
+          <SidebarNavigation
+            navigation={navigation}
+            currentPage={currentPage}
+            onNavigate={onNavigate}
+          />
+        </SidebarContent>
+        <SidebarFooter className="border-t border-sidebar-border px-3 py-4">
+          <SidebarUserFooter />
+        </SidebarFooter>
+      </Sidebar>
 
-        <nav className="sidebar-nav">
-          <ul className="nav-list">
-            {navigation.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={handleNavigate(item.id)}
-                  className={`nav-item ${currentPage === item.id ? 'nav-item-active' : ''}`}
-                  aria-label={item.name}
-                >
-                  <item.icon className="nav-icon" />
-                  <span className="nav-text">{item.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="user-profile">
-            <div className="user-avatar">
-              <User className="h-5 w-5" />
-            </div>
-            <div className="user-info">
-              <p className="user-name">João Silva</p>
-              <p className="user-role">Agente</p>
-            </div>
-            <Button variant="ghost" size="sm">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </aside>
-
-      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
-
-      <div className="main-content">
-        <header className="main-header">
-          <div className="header-left">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="sidebar-toggle"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="sidebar-collapse-toggle"
-              onClick={() => setSidebarCollapsed((previous) => !previous)}
-              aria-label={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-              title={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-            >
-              {sidebarCollapsed ? (
-                <ChevronsRight className="h-5 w-5" />
-              ) : (
-                <ChevronsLeft className="h-5 w-5" />
-              )}
-            </Button>
-
-            <div className="search-container">
-              <Search className="search-icon" />
-              <Input type="search" placeholder="Buscar tickets, contatos..." className="search-input" />
-            </div>
-          </div>
-
-          <div className="header-right" style={{ gap: 12 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
-              aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-              title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-            >
-              {themeMounted ? (
-                isDarkMode ? (
-                  <Moon className="h-5 w-5" aria-hidden="true" />
-                ) : (
-                  <Sun className="h-5 w-5" aria-hidden="true" />
-                )
-              ) : (
-                <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
-              )}
-              <span className="sr-only">Alternar tema</span>
-            </Button>
-            <DemoAuthDialog />
-            <TenantSelector />
-            <Button variant="ghost" size="sm" className="notification-btn">
-              <Bell className="h-5 w-5" />
-              <span className="notification-badge">5</span>
-            </Button>
-            <HealthIndicator />
-          </div>
-        </header>
-
-        <main className="page-content">
-          <div className="page-content-inner">
+      <SidebarInset>
+        <LayoutHeader
+          isDarkMode={isDarkMode}
+          onToggleTheme={() => setTheme(isDarkMode ? 'light' : 'dark')}
+          themeMounted={themeMounted}
+        />
+        <main className="flex flex-1 flex-col overflow-y-auto p-4 sm:p-6 md:p-8">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
             {shouldShowOnboardingTrack ? (
-              <div className="onboarding-track" aria-label="Progresso do onboarding">
-                {stageList.map((stage, index) => {
-                  const status =
-                    index < onboarding.activeStep
-                      ? 'done'
-                      : index === onboarding.activeStep
-                      ? 'current'
-                      : 'todo';
-                  return (
-                    <div key={stage.id} className={`onboarding-pill onboarding-pill--${status}`}>
-                      <span className="onboarding-pill__index">{index + 1}</span>
-                      <span className="onboarding-pill__label">{stage.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              <OnboardingTrack stages={stageList} activeStep={onboarding.activeStep} />
             ) : null}
             {children}
           </div>
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 };
 
 export default Layout;
+
+const SidebarBrand = () => {
+  const { setOpenMobile } = useSidebar();
+
+  return (
+    <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary-foreground">
+            <Ticket className="h-5 w-5" />
+          </div>
+          <div className="space-y-0.5 group-data-[collapsible=icon]:hidden">
+            <h1 className="text-lg font-semibold leading-tight">Lead Engine</h1>
+            <p className="text-xs text-muted-foreground">Maquina de Vendas</p>
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          onClick={() => setOpenMobile(false)}
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Fechar menu</span>
+        </Button>
+      </div>
+    </SidebarHeader>
+  );
+};
+
+const SidebarNavigation = ({ navigation, currentPage, onNavigate }) => {
+  const { setOpenMobile } = useSidebar();
+
+  const handleNavigate = (page) => (event) => {
+    event.preventDefault();
+    onNavigate?.(page);
+    setOpenMobile(false);
+  };
+
+  return (
+    <SidebarGroup className="px-2 py-4">
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {navigation.map((item) => (
+            <SidebarMenuItem key={item.id}>
+              <SidebarMenuButton
+                onClick={handleNavigate(item.id)}
+                isActive={currentPage === item.id}
+                tooltip={item.name}
+                className="transition-colors"
+              >
+                <item.icon className="h-5 w-5" />
+                <span className="flex-1 truncate">{item.name}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+};
+
+const SidebarUserFooter = () => {
+  return (
+    <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20">
+        <User className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+        <p className="truncate text-sm font-medium">João Silva</p>
+        <p className="text-xs text-muted-foreground">Agente</p>
+      </div>
+      <Button variant="ghost" size="icon" className="ml-auto">
+        <LogOut className="h-4 w-4" />
+        <span className="sr-only">Sair</span>
+      </Button>
+    </div>
+  );
+};
+
+const LayoutHeader = ({ isDarkMode, onToggleTheme, themeMounted }) => {
+  const { state, setOpen } = useSidebar();
+
+  return (
+    <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/80 px-4 py-4 backdrop-blur-md md:px-6">
+      <div className="flex items-center gap-2 md:gap-3">
+        <SidebarTrigger className="md:hidden" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden md:inline-flex"
+          onClick={() => setOpen((previous) => !previous)}
+          aria-label={state === 'collapsed' ? 'Expandir sidebar' : 'Recolher sidebar'}
+          title={state === 'collapsed' ? 'Expandir sidebar' : 'Recolher sidebar'}
+        >
+          {state === 'collapsed' ? (
+            <ChevronsRight className="h-5 w-5" />
+          ) : (
+            <ChevronsLeft className="h-5 w-5" />
+          )}
+        </Button>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Buscar tickets, contatos..."
+            className="w-48 rounded-lg pl-9 sm:w-64 lg:w-72"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 md:gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleTheme}
+          aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+          title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+        >
+          {themeMounted ? (
+            isDarkMode ? (
+              <Moon className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <Sun className="h-5 w-5" aria-hidden="true" />
+            )
+          ) : (
+            <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
+          )}
+          <span className="sr-only">Alternar tema</span>
+        </Button>
+        <DemoAuthDialog />
+        <TenantSelector />
+        <Button variant="ghost" size="icon" className="relative">
+          <Bell className="h-5 w-5" />
+          <span className="bg-primary text-primary-foreground absolute -right-1.5 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[0.65rem] font-semibold leading-none">
+            5
+          </span>
+        </Button>
+        <HealthIndicator />
+      </div>
+    </header>
+  );
+};
+
+const OnboardingTrack = ({ stages, activeStep }) => {
+  return (
+    <div
+      className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/60 p-1.5"
+      aria-label="Progresso do onboarding"
+    >
+      {stages.map((stage, index) => {
+        const status =
+          index < activeStep ? 'done' : index === activeStep ? 'current' : 'todo';
+
+        return (
+          <div
+            key={stage.id}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              onboardingPillStyles[status]
+            )}
+          >
+            <span
+              className={cn(
+                'inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border text-[0.65rem]',
+                onboardingIndexStyles[status]
+              )}
+            >
+              {index + 1}
+            </span>
+            <span className="truncate">{stage.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const onboardingPillStyles = {
+  todo: 'bg-transparent text-muted-foreground',
+  current: 'bg-primary/20 text-primary-foreground',
+  done: 'bg-emerald-500/20 text-emerald-100',
+};
+
+const onboardingIndexStyles = {
+  todo: 'border-border/60 text-muted-foreground',
+  current: 'border-transparent bg-primary text-primary-foreground',
+  done: 'border-transparent bg-emerald-500 text-emerald-950',
+};
