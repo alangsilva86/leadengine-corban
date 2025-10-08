@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, Trophy, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, MessageSquare, Trophy, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -295,9 +295,9 @@ const loadStoredViews = () => {
 
 const statusMetrics = [
   { key: 'total', label: 'Total recebido' },
-  { key: 'contacted', label: 'Em conversa' },
-  { key: 'won', label: 'Ganhos', accent: 'text-emerald-400', icon: <Trophy className="h-4 w-4" /> },
-  { key: 'lost', label: 'Perdidos', accent: 'text-rose-400', icon: <XCircle className="h-4 w-4" /> },
+  { key: 'contacted', label: 'Em conversa', accent: 'text-status-whatsapp', icon: <MessageSquare className="h-4 w-4 text-status-whatsapp" /> },
+  { key: 'won', label: 'Ganhos', accent: 'text-success', icon: <Trophy className="h-4 w-4 text-success" /> },
+  { key: 'lost', label: 'Perdidos', accent: 'text-status-error', icon: <XCircle className="h-4 w-4 text-status-error" /> },
 ];
 
 const formatSummaryValue = (value) => value ?? 0;
@@ -798,7 +798,7 @@ export const LeadInbox = ({
 
       <div className="flex-1 min-h-0">
         <div className="grid h-full min-h-0 gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
-          <section className="relative flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-white/15 bg-slate-950/45 shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)] ring-1 ring-white/10 backdrop-blur-xl">
+          <section className="relative flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-surface-contrast bg-surface-shell shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)] ring-1 ring-white/10 backdrop-blur-xl">
             <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
               <GlobalFiltersBar
                 filters={filters}
@@ -842,7 +842,7 @@ export const LeadInbox = ({
                   {showRealtimeConnecting ? (
                     <NoticeBanner
                       variant="info"
-                      className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                      className="rounded-2xl border-white/12 bg-white/[0.07] text-foreground-muted"
                     >
                       Conectando ao tempo real para receber novos leads automaticamente…
                     </NoticeBanner>
@@ -852,7 +852,7 @@ export const LeadInbox = ({
                     <NoticeBanner
                       variant="warning"
                       icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                      className="rounded-2xl border-white/12 bg-white/[0.07] text-foreground-muted"
                     >
                       Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
                     </NoticeBanner>
@@ -862,7 +862,7 @@ export const LeadInbox = ({
                     <NoticeBanner
                       variant="danger"
                       icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl border-white/15 bg-rose-500/15 text-rose-50"
+                      className="rounded-2xl"
                     >
                       {error}
                     </NoticeBanner>
@@ -872,7 +872,7 @@ export const LeadInbox = ({
                     <NoticeBanner
                       variant="warning"
                       icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                      className="rounded-2xl border-white/12 bg-white/[0.07] text-foreground-muted"
                     >
                       {warningMessage}
                     </NoticeBanner>
@@ -899,9 +899,9 @@ export const LeadInbox = ({
             </div>
           </div>
 
-          <aside className="flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-white/15 bg-slate-950/40 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
+          <aside className="flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-surface-contrast bg-slate-950/40 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
             <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
-              <Card className="rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
+              <Card className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
                 <CardHeader className="space-y-2 pb-2">
                   <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
                     Resumo
@@ -915,7 +915,7 @@ export const LeadInbox = ({
                     {statusMetrics.map(({ key, label, accent, icon }) => (
                       <div
                         key={key}
-                        className="space-y-1 rounded-2xl border border-white/15 bg-white/[0.07] px-3 py-3 shadow-[0_14px_30px_rgba(5,12,28,0.35)]"
+                        className="space-y-1 rounded-2xl border border-surface-contrast bg-white/[0.07] px-3 py-3 shadow-[0_14px_30px_rgba(5,12,28,0.35)]"
                       >
                         <dt className="flex items-center gap-2 text-xs font-medium text-white/75">
                           {icon ? icon : null}
