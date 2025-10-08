@@ -1,4 +1,10 @@
 {
+  {
+  "scripts": {
+    "build": "vite build",
+    "start": "vite preview --host 0.0.0.0 --strictPort --port ${PORT:-4173}"
+  }
+}
   "name": "web",
   "private": true,
   "version": "0.0.0",
