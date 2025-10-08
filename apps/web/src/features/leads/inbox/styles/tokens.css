@@ -1,6 +1,6 @@
 :root {
-  --inbox-glass-bg: rgba(148, 163, 184, 0.08);
-  --inbox-glass-border: rgba(148, 163, 184, 0.25);
+  --inbox-glass-bg: var(--color-surface-glass);
+  --inbox-glass-border: var(--color-surface-glass-border);
 }
 
 .inbox-glass-surface {
