@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
+process.env.TAILWIND_CONFIG = path.resolve(__dirname, './tailwind.config.js')
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
