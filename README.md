@@ -185,6 +185,12 @@ pnpm run build:api
 pnpm run build:web
 ```
 
+Em ambientes limitados (como CI ou containers com pouca memória), execute o build do frontend com a configuração enxuta:
+
+```bash
+pnpm -C apps/web exec vite build --config apps/web/vite.build.ci.mjs
+```
+
 ## 📱 Funcionalidades
 
 ### 🎫 Sistema de Tickets
