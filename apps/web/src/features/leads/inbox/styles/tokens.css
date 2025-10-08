@@ -9,7 +9,7 @@
 }
 
 .inbox-glass-surface {
-  background-color: var(--inbox-glass-bg);
-  border: 1px solid var(--inbox-glass-border);
+  background-color: var(--color-surface-glass);
+  border: 1px solid var(--color-surface-glass-border);
   backdrop-filter: blur(6px);
 }
