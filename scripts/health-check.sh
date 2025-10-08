@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 
 # Configurações
 API_URL="${API_URL:-http://localhost:4000}"
+API_HEALTH_PATH="${API_HEALTH_PATH:-/healthz}"
 WEB_URL="${WEB_URL:-http://localhost}"
 TIMEOUT="${TIMEOUT:-10}"
 
@@ -48,11 +49,13 @@ check_api() {
     log_info "Verificando API em $API_URL..."
     
     # Health check endpoint
-    if curl -f -s --max-time $TIMEOUT "$API_URL/health" > /dev/null; then
+    local endpoint="${API_URL%/}${API_HEALTH_PATH}"
+
+    if curl -f -s --max-time $TIMEOUT "$endpoint" > /dev/null; then
         log_success "API está respondendo"
         return 0
     else
-        log_error "API não está respondendo"
+        log_error "API não está respondendo em $endpoint"
         return 1
     fi
 }
