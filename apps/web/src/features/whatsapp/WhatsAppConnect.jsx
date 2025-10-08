@@ -96,26 +96,47 @@ const clearInstancesCache = (agreementId) => {
 };
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
+const STATUS_TONE_CLASSES = {
+  disconnected: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
+  connecting: 'border-sky-500/40 bg-sky-500/15 text-sky-200',
+  connected: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200',
+  qr_required: 'border-purple-500/40 bg-purple-500/15 text-purple-200',
+  fallback: 'border-white/10 bg-white/10 text-white',
+};
+
+const SURFACE_COLOR_UTILS = {
+  instancesPanel: 'border border-[var(--border)]/60 bg-[rgba(15,23,42,0.5)]',
+  qrInstructionsPanel: 'border border-[var(--border)]/60 bg-[rgba(15,23,42,0.35)]',
+  glassTile: 'border border-white/10 bg-white/5',
+  glassTileDashed: 'border border-dashed border-white/10 bg-white/5',
+  glassTileActive: 'border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(99,102,241,0.45)]',
+  glassTileIdle: 'border-white/10 bg-white/5 hover:border-primary/30',
+  destructiveBanner: 'border border-destructive/40 bg-destructive/10 text-destructive',
+  qrIllustration: 'border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner',
+  progressTrack: 'bg-white/10',
+  progressIndicator: 'bg-primary',
+};
+
 const statusCopy = {
   disconnected: {
     badge: 'Pendente',
     description: 'Leia o QR Code no WhatsApp Web para conectar seu número e começar a receber leads.',
-    tone: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
+    tone: STATUS_TONE_CLASSES.disconnected,
   },
   connecting: {
     badge: 'Conectando',
     description: 'Estamos sincronizando com o seu número. Mantenha o WhatsApp aberto até concluir.',
-    tone: 'border-sky-500/40 bg-sky-500/15 text-sky-200',
+    tone: STATUS_TONE_CLASSES.connecting,
   },
   connected: {
     badge: 'Ativo',
     description: 'Pronto! Todos os leads qualificados serão entregues diretamente no seu WhatsApp.',
-    tone: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200',
+    tone: STATUS_TONE_CLASSES.connected,
   },
   qr_required: {
     badge: 'QR necessário',
     description: 'Gere um novo QR Code e escaneie para reativar a sessão.',
-    tone: 'border-purple-500/40 bg-purple-500/15 text-purple-200',
+    tone: STATUS_TONE_CLASSES.qr_required,
   },
 };
 
@@ -1241,7 +1262,7 @@ const WhatsAppConnect = ({
   const hasQr = Boolean(qrImageSrc);
   const isAuthenticated = (sessionActive || Boolean(authToken)) && !authDeferred;
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
-  const statusTone = copy.tone || 'border-white/10 bg-white/10 text-white';
+  const statusTone = copy.tone || STATUS_TONE_CLASSES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage;
   const confirmLabel = hasCampaign ? 'Ir para a inbox de leads' : 'Configurar campanha';
@@ -2760,7 +2781,7 @@ const WhatsAppConnect = ({
       ) : null}
 
       <div className="space-y-6">
-        <Card className="border border-[var(--border)]/60 bg-[rgba(15,23,42,0.5)]">
+        <Card className={cn(SURFACE_COLOR_UTILS.instancesPanel)}>
           <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <CardTitle>Painel de instâncias</CardTitle>
@@ -2789,7 +2810,12 @@ const WhatsAppConnect = ({
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 rounded-[var(--radius)] border border-white/10 bg-white/5 p-4 text-sm">
+                <div
+                  className={cn(
+                    'grid gap-4 rounded-[var(--radius)] p-4 text-sm',
+                    SURFACE_COLOR_UTILS.glassTile
+                  )}
+                >
               <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
@@ -2846,7 +2872,10 @@ const WhatsAppConnect = ({
                   {Array.from({ length: 2 }).map((_, index) => (
                     <div
                       key={index}
-                      className="flex h-full w-full flex-col rounded-2xl border border-white/10 bg-white/5 p-4"
+                      className={cn(
+                        'flex h-full w-full flex-col rounded-2xl p-4',
+                        SURFACE_COLOR_UTILS.glassTile
+                      )}
                     >
                       <Skeleton className="h-5 w-3/4" />
                       <Skeleton className="mt-2 h-4 w-1/2" />
@@ -2881,8 +2910,8 @@ const WhatsAppConnect = ({
                         className={cn(
                           'flex h-full w-full flex-col rounded-2xl border p-4 transition-colors',
                           isCurrent
-                            ? 'border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(99,102,241,0.45)]'
-                            : 'border-white/10 bg-white/5 hover:border-primary/30'
+                            ? SURFACE_COLOR_UTILS.glassTileActive
+                            : SURFACE_COLOR_UTILS.glassTileIdle
                         )}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -2920,19 +2949,25 @@ const WhatsAppConnect = ({
 
                     <div className="mt-4 space-y-3">
                           <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
-                            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                            <div
+                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                            >
                               <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
                               <p className="mt-1 text-base font-semibold text-foreground">
                                 {formatMetricValue(metrics.sent)}
                               </p>
                             </div>
-                            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                            <div
+                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                            >
                               <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
                               <p className="mt-1 text-base font-semibold text-foreground">
                                 {formatMetricValue(metrics.queued)}
                               </p>
                             </div>
-                            <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                            <div
+                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                            >
                               <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
                               <p className="mt-1 text-base font-semibold text-foreground">
                                 {formatMetricValue(metrics.failed)}
@@ -2944,7 +2979,7 @@ const WhatsAppConnect = ({
                             {statusCodeMeta.map((meta) => (
                               <div
                                 key={meta.code}
-                                className="rounded-lg border border-white/10 bg-white/5 p-3"
+                                className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
                                 title={meta.description}
                               >
                                 <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
@@ -2958,16 +2993,27 @@ const WhatsAppConnect = ({
                           </div>
 
                           <div
-                            className="rounded-lg border border-white/10 bg-white/5 p-3 text-left"
+                            className={cn(
+                              'rounded-lg p-3 text-left',
+                              SURFACE_COLOR_UTILS.glassTile
+                            )}
                             title="Uso do limite de envio reportado pelo broker."
                           >
                             <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-muted-foreground">
                               <span>Utilização do limite</span>
                               <span>{ratePercentage}%</span>
                             </div>
-                            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className={cn(
+                                'mt-2 h-2 w-full overflow-hidden rounded-full',
+                                SURFACE_COLOR_UTILS.progressTrack
+                              )}
+                            >
                               <div
-                                className="h-full rounded-full bg-primary transition-all"
+                                className={cn(
+                                  'h-full rounded-full transition-all',
+                                  SURFACE_COLOR_UTILS.progressIndicator
+                                )}
                                 style={{ width: `${ratePercentage}%` }}
                               />
                             </div>
@@ -3007,7 +3053,12 @@ const WhatsAppConnect = ({
                   })}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-muted-foreground">
+                <div
+                  className={cn(
+                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
+                    SURFACE_COLOR_UTILS.glassTileDashed
+                  )}
+                >
                   <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o convênio selecionado.</p>
                   <Button
                     size="sm"
@@ -3022,7 +3073,12 @@ const WhatsAppConnect = ({
             </div>
 
             {errorState ? (
-              <div className="flex flex-wrap items-start gap-3 rounded-[var(--radius)] border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+              <div
+                className={cn(
+                  'flex flex-wrap items-start gap-3 rounded-[var(--radius)] p-3 text-xs',
+                  SURFACE_COLOR_UTILS.destructiveBanner
+                )}
+              >
                 <AlertCircle className="mt-0.5 h-4 w-4" />
                 <div className="flex-1 space-y-1">
                   <p className="font-medium">{errorState.title ?? 'Algo deu errado'}</p>
@@ -3080,7 +3136,7 @@ const WhatsAppConnect = ({
           actionState={campaignAction}
           selectedInstanceId={instance?.id ?? null}
         />
-        <Card className="border border-[var(--border)]/60 bg-[rgba(15,23,42,0.35)]">
+        <Card className={cn(SURFACE_COLOR_UTILS.qrInstructionsPanel)}>
           <Collapsible open={qrPanelOpen} onOpenChange={setQrPanelOpen}>
             <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -3106,8 +3162,18 @@ const WhatsAppConnect = ({
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="space-y-6">
-                <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-white/10 bg-white/5 p-6">
-                  <div className="flex h-44 w-44 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">
+                <div
+                  className={cn(
+                    'flex flex-col items-center gap-4 rounded-xl p-6',
+                    SURFACE_COLOR_UTILS.glassTileDashed
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'flex h-44 w-44 items-center justify-center rounded-2xl',
+                      SURFACE_COLOR_UTILS.qrIllustration
+                    )}
+                  >
                     {hasQr ? (
                       <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-36 w-36 rounded-lg shadow-inner" />
                     ) : isGeneratingQrImage ? (
@@ -3155,7 +3221,12 @@ const WhatsAppConnect = ({
                   </div>
                 </div>
 
-                <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div
+                  className={cn(
+                    'space-y-3 rounded-xl p-4',
+                    SURFACE_COLOR_UTILS.glassTile
+                  )}
+                >
                   <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
                     <span className="flex items-center gap-2">
                       <History className="h-4 w-4" /> Atividade recente
@@ -3169,7 +3240,10 @@ const WhatsAppConnect = ({
                       {timelineItems.map((item) => (
                         <li
                           key={item.id}
-                          className="flex flex-wrap justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2"
+                          className={cn(
+                            'flex flex-wrap justify-between gap-3 rounded-lg px-3 py-2',
+                            SURFACE_COLOR_UTILS.glassTile
+                          )}
                         >
                           <div className="space-y-1">
                             <p className="font-medium text-foreground">{humanizeLabel(item.type)}</p>
@@ -3299,7 +3373,12 @@ const WhatsAppConnect = ({
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4">
-            <div className="flex h-64 w-64 items-center justify-center rounded-2xl border border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner">
+            <div
+              className={cn(
+                'flex h-64 w-64 items-center justify-center rounded-2xl',
+                SURFACE_COLOR_UTILS.qrIllustration
+              )}
+            >
               {hasQr ? (
                 <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-56 w-56 rounded-lg shadow-inner" />
               ) : isGeneratingQrImage ? (
