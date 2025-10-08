@@ -348,6 +348,7 @@ export const LeadInbox = ({
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(null);
   const [activeAllocationId, setActiveAllocationId] = useState(null);
   const [leadPanelSwitching, setLeadPanelSwitching] = useState(false);
+  const inboxScrollRef = useRef(null);
 
   const {
     allocations,
@@ -569,14 +570,43 @@ export const LeadInbox = ({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
     if (!activeAllocationId) {
       setLeadPanelSwitching(false);
-      return;
+      return undefined;
+    }
+
+    const viewport = inboxScrollRef.current?.node ?? inboxScrollRef.current ?? null;
+    if (viewport) {
+      const rawId = String(activeAllocationId);
+      const escapedId = window.CSS?.escape
+        ? window.CSS.escape(rawId)
+        : rawId.replace(/(["\\])/g, '\\$1');
+      const selector = `[data-allocation-id="${escapedId}"]`;
+      const activeElement = viewport.querySelector(selector);
+
+      if (activeElement) {
+        if (document.activeElement !== activeElement && typeof activeElement.focus === 'function') {
+          activeElement.focus({ preventScroll: true });
+        }
+
+        if (typeof activeElement.scrollIntoView === 'function') {
+          activeElement.scrollIntoView({
+            block: 'nearest',
+            inline: 'nearest',
+            behavior: firstActiveSelectionRef.current ? 'auto' : 'smooth',
+          });
+        }
+      }
     }
 
     if (firstActiveSelectionRef.current) {
       firstActiveSelectionRef.current = false;
-      return;
+      setLeadPanelSwitching(false);
+      return undefined;
     }
 
     setLeadPanelSwitching(true);
@@ -780,6 +810,7 @@ export const LeadInbox = ({
 
             <ColumnScrollArea
               ref={handleColumnScrollAreaRef}
+              ref={inboxScrollRef}
               className="flex-1 min-h-0"
               viewportClassName="space-y-5 px-5 pb-6 pr-6 pt-5"
             >

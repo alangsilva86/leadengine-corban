@@ -52,6 +52,8 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
       type="button"
       onClick={() => onSelect?.(allocation)}
       onDoubleClick={() => (allocation && onDoubleOpen ? onDoubleOpen(allocation) : null)}
+      data-allocation-id={allocation?.allocationId ?? undefined}
+      aria-current={isActive ? 'true' : undefined}
       className={cn(
         'group flex w-full flex-col gap-4 rounded-[24px] border border-white/12 bg-[#101d33] p-5 text-left shadow-[0_18px_44px_rgba(3,9,24,0.45)] transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070f1f] hover:border-white/20 hover:shadow-[0_26px_54px_rgba(5,12,30,0.55)]',
         isActive
