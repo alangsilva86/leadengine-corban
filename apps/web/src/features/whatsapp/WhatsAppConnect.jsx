@@ -97,23 +97,23 @@ const clearInstancesCache = (agreementId) => {
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
 const STATUS_TONE_CLASSES = {
-  disconnected: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
-  connecting: 'border-sky-500/40 bg-sky-500/15 text-sky-200',
-  connected: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200',
-  qr_required: 'border-purple-500/40 bg-purple-500/15 text-purple-200',
-  fallback: 'border-white/10 bg-white/10 text-white',
+  disconnected: 'border border-warning/40 bg-warning/10 text-warning-soft-foreground',
+  connecting: 'border border-primary/40 bg-primary/10 text-primary',
+  connected: 'border border-status-whatsapp/40 bg-status-whatsapp/15 text-status-whatsapp',
+  qr_required: 'border border-secondary/40 bg-secondary text-secondary-foreground',
+  fallback: 'border border-surface-overlay-glass-border bg-surface-overlay-glass text-foreground',
 };
 
 const SURFACE_COLOR_UTILS = {
-  instancesPanel: 'border border-[var(--border)]/60 bg-[rgba(15,23,42,0.5)]',
-  qrInstructionsPanel: 'border border-[var(--border)]/60 bg-[rgba(15,23,42,0.35)]',
-  glassTile: 'border border-white/10 bg-white/5',
-  glassTileDashed: 'border border-dashed border-white/10 bg-white/5',
-  glassTileActive: 'border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(99,102,241,0.45)]',
-  glassTileIdle: 'border-white/10 bg-white/5 hover:border-primary/30',
+  instancesPanel: 'border border-border/60 bg-surface-overlay-strong',
+  qrInstructionsPanel: 'border border-border/60 bg-surface-overlay-quiet',
+  glassTile: 'border border-surface-overlay-glass-border bg-surface-overlay-glass',
+  glassTileDashed: 'border border-dashed border-surface-overlay-glass-border bg-surface-overlay-glass',
+  glassTileActive: 'border-primary/60 bg-primary/10 ring-1 ring-primary/40 shadow-sm',
+  glassTileIdle: 'border-surface-overlay-glass-border bg-surface-overlay-glass hover:border-primary/30',
   destructiveBanner: 'border border-destructive/40 bg-destructive/10 text-destructive',
-  qrIllustration: 'border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner',
-  progressTrack: 'bg-white/10',
+  qrIllustration: 'border-surface-overlay-glass-border bg-surface-overlay-glass text-primary shadow-inner',
+  progressTrack: 'bg-surface-overlay-glass',
   progressIndicator: 'bg-primary',
 };
 
