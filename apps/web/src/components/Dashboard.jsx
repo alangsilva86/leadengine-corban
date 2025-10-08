@@ -53,26 +53,26 @@ const channelLabels = {
 };
 
 const channelColors = {
-  whatsapp: '#25D366',
-  email: '#EA4335',
-  phone: '#4285F4',
-  chat: '#9333EA',
-  sms: '#f97316',
-  social: '#f472b6',
-  other: '#64748b',
+  whatsapp: 'var(--status-whatsapp)',
+  email: 'var(--color-chart-1)',
+  phone: 'var(--color-chart-2)',
+  chat: 'var(--color-chart-4)',
+  sms: 'var(--color-chart-3)',
+  social: 'var(--color-chart-5)',
+  other: 'var(--muted)',
 };
 
 const changeBadgeVariants = {
-  up: 'bg-emerald-500/15 text-emerald-300',
-  down: 'bg-rose-500/15 text-rose-300',
-  neutral: 'bg-slate-500/15 text-slate-300',
+  up: 'bg-success/15 text-success-strong-foreground',
+  down: 'bg-error/15 text-error-soft-foreground',
+  neutral: 'bg-muted text-muted-foreground',
 };
 
 const statIconStyles = {
-  blue: 'bg-blue-500/15 text-blue-300',
-  green: 'bg-emerald-500/15 text-emerald-300',
-  purple: 'bg-purple-500/15 text-purple-300',
-  orange: 'bg-amber-500/15 text-amber-300',
+  blue: 'bg-primary/15 text-primary',
+  green: 'bg-success/15 text-success',
+  purple: 'bg-accent text-accent-foreground',
+  orange: 'bg-warning/15 text-warning',
 };
 
 const parseDate = (value) => {
@@ -467,11 +467,11 @@ const getStatusBadge = (status) => {
 
 const getPriorityColor = (priority) => {
   const colors = {
-    high: 'text-red-500',
-    medium: 'text-yellow-500',
-    low: 'text-green-500',
+    high: 'text-error',
+    medium: 'text-warning',
+    low: 'text-success',
   };
-  return colors[priority] || 'text-gray-500';
+  return colors[priority] || 'text-muted-foreground';
 };
 
 const getChannelIcon = (channel) => {
@@ -517,8 +517,8 @@ const getOnboardingProgress = (onboarding) => {
 
 const heroStyle = {
   background:
-    'radial-gradient(circle at top left, rgba(99,102,241,0.2), transparent 55%), radial-gradient(circle at bottom right, rgba(34,197,94,0.15), transparent 60%), rgba(15,23,42,0.65)',
-  boxShadow: '0 24px 60px rgba(15, 23, 42, 0.45)',
+    'radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 28%, transparent) 0%, transparent 55%), radial-gradient(circle at bottom right, color-mix(in srgb, var(--success) 22%, transparent) 0%, transparent 60%), color-mix(in srgb, var(--surface-overlay-strong) 78%, transparent)',
+  boxShadow: '0 24px 60px color-mix(in srgb, var(--color-border) 45%, transparent)',
 };
 
 const Dashboard = ({ onboarding, onStart }) => {
@@ -579,7 +579,7 @@ const Dashboard = ({ onboarding, onStart }) => {
   return (
     <div className="space-y-6">
       <div
-        className="grid gap-6 rounded-[24px] border border-[rgba(99,102,241,0.2)] p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+        className="grid gap-6 rounded-[24px] border border-secondary p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
         style={heroStyle}
       >
         <div className="grid max-w-xl gap-4">
@@ -589,15 +589,15 @@ const Dashboard = ({ onboarding, onStart }) => {
             tempo real neste painel.
           </p>
           {total ? (
-            <div className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[rgba(226,232,240,0.72)]">
+            <div className="space-y-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet p-4">
+              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-inbox-foreground-muted">
                 <span>Primeira configuração</span>
                 <span>
                   {displayIndex} de {total}
                 </span>
               </div>
               <Progress value={progressValue} className="h-2" />
-              <p className="text-xs text-slate-300">
+              <p className="text-xs text-muted-foreground">
                 {isComplete ? 'Tudo pronto:' : 'Próximo passo:'}{' '}
                 <span className="font-medium text-foreground">{stageLabel}</span>
               </p>
@@ -615,7 +615,7 @@ const Dashboard = ({ onboarding, onStart }) => {
           </div>
         </div>
         {onboarding?.stages ? (
-          <div className="grid min-w-[220px] gap-3 rounded-2xl border border-white/10 bg-[rgba(15,23,42,0.5)] p-4">
+          <div className="grid min-w-[220px] gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong p-4">
             {onboarding.stages.map((stage, index) => {
               const status =
                 index < onboarding.activeStep
@@ -624,14 +624,14 @@ const Dashboard = ({ onboarding, onStart }) => {
                   ? 'current'
                   : 'todo';
               const statusClasses = {
-                done: 'border-emerald-500/40 bg-emerald-500/20',
-                current: 'border-[rgba(99,102,241,0.4)] bg-[rgba(99,102,241,0.16)]',
-                todo: 'border-white/5 bg-white/5',
+                done: 'border-success/40 bg-success/15',
+                current: 'border-primary/50 bg-primary/15',
+                todo: 'border-surface-overlay-glass-border bg-surface-overlay-quiet',
               };
               const indexClasses = {
-                done: 'bg-[var(--color-success)] text-[var(--color-success-strong-foreground)] border-transparent',
-                current: 'bg-[var(--primary)] text-[var(--primary-foreground)] border-transparent',
-                todo: 'bg-white/10 text-[var(--text-muted)] border-white/20',
+                done: 'border-transparent bg-success text-success-strong-foreground',
+                current: 'border-transparent bg-primary text-primary-foreground',
+                todo: 'border-surface-overlay-glass-border bg-surface-overlay-quiet text-muted-foreground',
               };
               return (
                 <div
@@ -854,7 +854,7 @@ const Dashboard = ({ onboarding, onStart }) => {
                 {Array.from({ length: 3 }).map((_, index) => (
                   <div
                     key={`recent-ticket-skeleton-${index}`}
-                    className="flex animate-pulse items-start justify-between gap-4 rounded-lg border border-[var(--border)] bg-[rgba(15,23,42,0.35)] p-4"
+                    className="flex animate-pulse items-start justify-between gap-4 rounded-lg border border-border bg-surface-overlay-strong p-4"
                   >
                     <div className="flex-1 space-y-3">
                       <Skeleton className="h-4 w-24" />
@@ -875,7 +875,7 @@ const Dashboard = ({ onboarding, onStart }) => {
                 {recentTickets.map((ticket, index) => (
                   <div
                     key={`${ticket.id}-${index}`}
-                    className="flex transform items-start justify-between gap-4 rounded-lg border border-[var(--border)] bg-[rgba(15,23,42,0.35)] p-4 transition-all duration-200 ease-in-out hover:scale-[1.02] hover:bg-[rgba(99,102,241,0.08)]"
+                    className="flex transform items-start justify-between gap-4 rounded-lg border border-border bg-surface-overlay-strong p-4 transition-all duration-200 ease-in-out hover:scale-[1.02] hover:bg-secondary"
                   >
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -902,7 +902,7 @@ const Dashboard = ({ onboarding, onStart }) => {
                 ))}
               </div>
             ) : (
-              <div className="rounded-[var(--radius)] border border-dashed border-[var(--border)]/70 p-6 text-center text-sm text-muted-foreground">
+              <div className="rounded-[var(--radius)] border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                 Nenhum ticket recente encontrado. Assim que novos atendimentos chegarem, eles aparecerão aqui.
               </div>
             )}

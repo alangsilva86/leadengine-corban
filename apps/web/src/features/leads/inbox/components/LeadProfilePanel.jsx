@@ -99,7 +99,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
   return (
     <Card
       className={cn(
-        'rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)] transition-opacity duration-150 ease-out',
+        'rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)] transition-opacity duration-150 ease-out',
         isSwitching ? 'opacity-0' : 'opacity-100'
       )}
       aria-busy={showSkeleton}
@@ -186,7 +186,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
                     onClick={() =>
                       allocation && onUpdateStatus ? onUpdateStatus(allocation.allocationId, action.status) : null
                     }
-                    className="flex items-center justify-center gap-2 rounded-2xl border-white/15 bg-white/[0.08] px-4 py-3 text-sm font-medium text-white/90 transition hover:border-white/30 hover:bg-white/[0.12]"
+                    className="flex items-center justify-center gap-2 rounded-2xl border-surface-contrast bg-white/[0.08] px-4 py-3 text-sm font-medium text-white/90 transition hover:border-white/30 hover:bg-white/[0.12]"
                   >
                     <Icon className="h-4 w-4" />
                     {action.label}
