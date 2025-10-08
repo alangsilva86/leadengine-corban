@@ -1,10 +1,10 @@
 import { cn } from '@/lib/utils.js';
 
 const VARIANT_STYLES = {
-  info: 'border-sky-500/40 bg-sky-500/10 text-sky-100',
-  warning: 'border-amber-500/40 bg-amber-500/15 text-amber-100',
+  info: 'border-status-whatsapp-border bg-status-whatsapp-surface text-status-whatsapp-foreground',
+  warning: 'border-status-whatsapp-border bg-status-whatsapp-surface text-status-whatsapp-foreground',
   success: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100',
-  danger: 'border-destructive/60 bg-destructive/10 text-destructive',
+  danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
 };
 
 export const NoticeBanner = ({ variant = 'info', icon = null, children, className }) => {

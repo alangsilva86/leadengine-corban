@@ -24,7 +24,7 @@
 
 .column-scroll-viewport[data-scrolling='true'],
 .group:hover .column-scroll-viewport {
-  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  scrollbar-color: var(--inbox-scrollbar-thumb, rgba(148, 163, 184, 0.55)) transparent;
 }
 
 .column-scroll-viewport::-webkit-scrollbar {
@@ -43,7 +43,7 @@
 
 .column-scroll-viewport[data-scrolling='true']::-webkit-scrollbar-thumb,
 .group:hover .column-scroll-viewport::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.55);
+  background: var(--inbox-scrollbar-thumb, rgba(148, 163, 184, 0.55));
 }
 
 @media (max-width: 1023px) {
