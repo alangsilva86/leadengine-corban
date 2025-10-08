@@ -23,7 +23,7 @@ export const InboxList = ({
         {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={`allocation-skeleton-${index}`}
-            className="space-y-4 rounded-[24px] border border-white/12 bg-[#101d33] p-5 shadow-[0_18px_44px_rgba(3,9,24,0.45)]"
+            className="space-y-4 rounded-[24px] border border-white/12 bg-slate-950/45 p-5 shadow-[0_18px_44px_rgba(3,9,24,0.45)] backdrop-blur-xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
@@ -74,7 +74,7 @@ export const InboxList = ({
     return (
       <div
         className={cn(
-          'rounded-[24px] border border-dashed border-white/12 bg-[#101d33] p-6 text-center text-sm text-white/75 shadow-[0_18px_44px_rgba(3,9,24,0.45)]',
+          'rounded-[24px] border border-dashed border-white/12 bg-slate-950/45 p-6 text-center text-sm text-muted-foreground shadow-[0_18px_44px_rgba(3,9,24,0.45)] backdrop-blur-xl',
           className
         )}
       >
