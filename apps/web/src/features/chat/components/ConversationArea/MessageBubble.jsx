@@ -1,4 +1,4 @@
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import { Check, CheckCheck, BadgeCheck, AlertTriangle } from 'lucide-react';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
@@ -41,16 +41,21 @@ export const MessageBubble = ({ message }) => {
         <AttachmentPreview attachments={message.attachments} />
         <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
           <span>{formatTime(message.createdAt)}</span>
-          <TooltipProvider delayDuration={200}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className={cn('inline-flex items-center gap-1', ack.tone)}>
-                  <ack.icon className="h-3 w-3" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{ack.label}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full px-1.5 py-1 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  ack.tone
+                )}
+                aria-label={ack.label}
+              >
+                <ack.icon className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{ack.label}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>
