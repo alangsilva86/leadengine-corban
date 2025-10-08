@@ -1,0 +1,53 @@
+.page-content--inbox {
+  overflow: hidden;
+}
+
+.page-content--inbox .page-content-inner {
+  height: 100%;
+  min-height: 0;
+}
+
+.page-content-inner--inbox {
+  height: 100%;
+  min-height: 0;
+}
+
+.column-scroll-viewport {
+  position: relative;
+  padding-right: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable both-edges;
+  overscroll-behavior: contain;
+  transition: scrollbar-color 0.2s ease;
+}
+
+.column-scroll-viewport[data-scrolling='true'],
+.group:hover .column-scroll-viewport {
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+.column-scroll-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.column-scroll-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.column-scroll-viewport::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background-color 0.2s ease;
+}
+
+.column-scroll-viewport[data-scrolling='true']::-webkit-scrollbar-thumb,
+.group:hover .column-scroll-viewport::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+@media (max-width: 1023px) {
+  .column-scroll-viewport {
+    padding-right: 0.25rem;
+  }
+}

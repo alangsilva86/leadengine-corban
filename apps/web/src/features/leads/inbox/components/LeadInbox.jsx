@@ -14,6 +14,9 @@ import InboxList from './InboxList.jsx';
 import GlobalFiltersBar from './GlobalFiltersBar.jsx';
 import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
+import ColumnScrollArea from './ColumnScrollArea.jsx';
+
+import '../styles/layout.css';
 
 const SAVED_FILTERS_STORAGE_KEY = 'leadengine_inbox_filters_v1';
 const SAVED_VIEWS_STORAGE_KEY = 'leadengine_inbox_saved_views_v1';
@@ -368,6 +371,29 @@ export const LeadInbox = ({
   });
 
   useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const pageContent = document.querySelector('.page-content');
+    const pageContentInner = document.querySelector('.page-content-inner');
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    pageContent?.classList.add('page-content--inbox');
+    pageContentInner?.classList.add('page-content-inner--inbox');
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      pageContent?.classList.remove('page-content--inbox');
+      pageContentInner?.classList.remove('page-content-inner--inbox');
+    };
+  }, []);
+
+  useEffect(() => {
     setSavedViews((current) => {
       const now = Date.now();
       const pruned = current.filter((view) => {
@@ -690,156 +716,168 @@ export const LeadInbox = ({
     window.open(`/api/lead-engine/allocations/export?${params.toString()}`, '_blank');
   }, [agreementId, campaign?.instanceId, campaignId, filters.status]);
 
+  const showRealtimeConnecting = !realtimeConnected && !connectionError;
+  const showRealtimeError = Boolean(connectionError);
+  const showErrorNotice = Boolean(error);
+  const showWarningNotice = !error && Boolean(warningMessage);
+  const hasNotices =
+    showRealtimeConnecting || showRealtimeError || showErrorNotice || showWarningNotice;
+
   return (
-    <div className="space-y-8 xl:space-y-10">
+    <div className="flex h-full min-h-0 flex-col gap-6 xl:gap-8">
       <InboxHeader
         stepLabel={stepLabel}
         campaign={campaign}
         onboarding={onboarding}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:gap-7">
-        <div className="relative xl:h-[calc(100vh-220px)] xl:min-h-[520px]">
-          <section className="flex h-full min-h-[520px] min-w-0 flex-col gap-5 rounded-[28px] border border-white/15 bg-slate-950/45 p-5 shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)] ring-1 ring-white/10 backdrop-blur-xl">
-            <GlobalFiltersBar
-              filters={filters}
-              onUpdateFilters={handleUpdateFilters}
-              onResetFilters={handleResetFilters}
-              queueOptions={queueOptions}
-              windowOptions={TIME_WINDOW_OPTIONS}
-              savedViews={savedViewsWithCount}
-              activeViewId={activeViewId}
-              onSelectSavedView={handleSelectSavedView}
-              onSaveCurrentView={handleSaveCurrentView}
-              onDeleteSavedView={handleDeleteSavedView}
-              canSaveView={canSaveCurrentView}
-              viewLimit={SAVED_VIEWS_LIMIT}
-            />
-
-            <div className="h-px bg-white/12" />
-
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <div className="h-full overflow-y-auto pr-1 xl:pr-2">
-                <InboxList
-                  allocations={allocations}
-                  filteredAllocations={filteredAllocations}
-                  loading={loading}
-                  selectedAgreement={selectedAgreement}
-                  campaign={campaign}
-                  onBackToWhatsApp={onBackToWhatsApp}
-                  onSelectAgreement={onSelectAgreement}
-                  onSelectAllocation={handleSelectAllocation}
-                  activeAllocationId={activeAllocationId}
-                  onOpenWhatsApp={handleOpenWhatsApp}
-                  className="pb-3"
-                />
-              </div>
+      <div className="flex-1 min-h-0">
+        <div className="grid h-full min-h-0 gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
+          <section className="relative flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-white/15 bg-slate-950/45 shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)] ring-1 ring-white/10 backdrop-blur-xl">
+            <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
+              <GlobalFiltersBar
+                filters={filters}
+                onUpdateFilters={handleUpdateFilters}
+                onResetFilters={handleResetFilters}
+                queueOptions={queueOptions}
+                windowOptions={TIME_WINDOW_OPTIONS}
+                savedViews={savedViewsWithCount}
+                activeViewId={activeViewId}
+                onSelectSavedView={handleSelectSavedView}
+                onSaveCurrentView={handleSaveCurrentView}
+                onDeleteSavedView={handleDeleteSavedView}
+                canSaveView={canSaveCurrentView}
+                viewLimit={SAVED_VIEWS_LIMIT}
+              />
             </div>
 
-            <div className="space-y-3 text-sm">
-              {!realtimeConnected && !connectionError ? (
-                <NoticeBanner
-                  variant="info"
-                  className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
-                >
-                  Conectando ao tempo real para receber novos leads automaticamente…
-                </NoticeBanner>
-              ) : null}
+            <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pr-6 pt-5">
+              <InboxList
+                allocations={allocations}
+                filteredAllocations={filteredAllocations}
+                loading={loading}
+                selectedAgreement={selectedAgreement}
+                campaign={campaign}
+                onBackToWhatsApp={onBackToWhatsApp}
+                onSelectAgreement={onSelectAgreement}
+                onSelectAllocation={handleSelectAllocation}
+                activeAllocationId={activeAllocationId}
+                onOpenWhatsApp={handleOpenWhatsApp}
+                className="pb-3"
+              />
 
-              {connectionError ? (
-                <NoticeBanner
-                  variant="warning"
-                  icon={<AlertCircle className="h-4 w-4" />}
-                  className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
-                >
-                  Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
-                </NoticeBanner>
-              ) : null}
+              {hasNotices ? (
+                <div className="space-y-3 text-sm">
+                  {showRealtimeConnecting ? (
+                    <NoticeBanner
+                      variant="info"
+                      className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                    >
+                      Conectando ao tempo real para receber novos leads automaticamente…
+                    </NoticeBanner>
+                  ) : null}
 
-              {error ? (
-                <NoticeBanner
-                  variant="danger"
-                  icon={<AlertCircle className="h-4 w-4" />}
-                  className="rounded-2xl border-white/15 bg-rose-500/15 text-rose-50"
-                >
-                  {error}
-                </NoticeBanner>
-              ) : null}
+                  {showRealtimeError ? (
+                    <NoticeBanner
+                      variant="warning"
+                      icon={<AlertCircle className="h-4 w-4" />}
+                      className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                    >
+                      Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
+                    </NoticeBanner>
+                  ) : null}
 
-              {!error && warningMessage ? (
-                <NoticeBanner
-                  variant="warning"
-                  icon={<AlertCircle className="h-4 w-4" />}
-                  className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
-                >
-                  {warningMessage}
-                </NoticeBanner>
+                  {showErrorNotice ? (
+                    <NoticeBanner
+                      variant="danger"
+                      icon={<AlertCircle className="h-4 w-4" />}
+                      className="rounded-2xl border-white/15 bg-rose-500/15 text-rose-50"
+                    >
+                      {error}
+                    </NoticeBanner>
+                  ) : null}
+
+                  {showWarningNotice ? (
+                    <NoticeBanner
+                      variant="warning"
+                      icon={<AlertCircle className="h-4 w-4" />}
+                      className="rounded-2xl border-white/12 bg-white/[0.07] text-white/85"
+                    >
+                      {warningMessage}
+                    </NoticeBanner>
+                  ) : null}
+                </div>
               ) : null}
+            </ColumnScrollArea>
+
+            <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
+              <span className="block h-full w-px rounded-full bg-white/12 shadow-[1px_0_18px_rgba(5,10,26,0.55)]" />
             </div>
           </section>
 
-          <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
-            <span className="block h-full w-px rounded-full bg-white/12 shadow-[1px_0_18px_rgba(5,10,26,0.55)]" />
+          <div className="relative flex min-h-[520px] min-w-0 flex-col">
+            <LeadConversationPanel
+              allocation={activeAllocation}
+              onOpenWhatsApp={handleOpenWhatsApp}
+              isLoading={loading}
+              isSwitching={leadPanelSwitching}
+            />
+
+            <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
+              <span className="block h-full w-px rounded-full bg-white/10 shadow-[1px_0_20px_rgba(4,9,24,0.5)]" />
+            </div>
           </div>
+
+          <aside className="flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-white/15 bg-slate-950/40 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
+            <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
+              <Card className="rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
+                <CardHeader className="space-y-2 pb-2">
+                  <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
+                    Resumo
+                  </CardTitle>
+                  <CardDescription className="text-xs text-white/70">
+                    Distribuição dos leads recebidos via WhatsApp conectado.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid grid-cols-2 gap-4">
+                    {statusMetrics.map(({ key, label, accent, icon }) => (
+                      <div
+                        key={key}
+                        className="space-y-1 rounded-2xl border border-white/15 bg-white/[0.07] px-3 py-3 shadow-[0_14px_30px_rgba(5,12,28,0.35)]"
+                      >
+                        <dt className="flex items-center gap-2 text-xs font-medium text-white/75">
+                          {icon ? icon : null}
+                          <span>{label}</span>
+                        </dt>
+                        <dd className={cn('text-xl font-semibold text-white/90', accent ?? '')}>
+                          {formatSummaryValue(summary[key])}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+
+              <LeadProfilePanel
+                allocation={activeAllocation}
+                onUpdateStatus={handleUpdateAllocationStatus}
+                onOpenWhatsApp={handleOpenWhatsApp}
+                isLoading={loading}
+                isSwitching={leadPanelSwitching}
+              />
+
+              <InboxActions
+                loading={loading}
+                onRefresh={refresh}
+                onExport={handleExport}
+                rateLimitInfo={rateLimitInfo}
+                autoRefreshSeconds={autoRefreshSeconds}
+                lastUpdatedAt={lastUpdatedAt}
+              />
+            </ColumnScrollArea>
+          </aside>
         </div>
-
-        <div className="relative">
-          <LeadConversationPanel
-            allocation={activeAllocation}
-            onOpenWhatsApp={handleOpenWhatsApp}
-            isLoading={loading}
-            isSwitching={leadPanelSwitching}
-          />
-
-          <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
-            <span className="block h-full w-px rounded-full bg-white/10 shadow-[1px_0_20px_rgba(4,9,24,0.5)]" />
-          </div>
-        </div>
-
-        <aside className="flex min-h-[520px] flex-col gap-4 rounded-[28px] border border-white/15 bg-slate-950/40 p-5 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
-          <Card className="rounded-3xl border-white/15 bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
-            <CardHeader className="space-y-2 pb-2">
-              <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
-                Resumo
-              </CardTitle>
-              <CardDescription className="text-xs text-white/70">
-                Distribuição dos leads recebidos via WhatsApp conectado.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-2 gap-4">
-                {statusMetrics.map(({ key, label, accent, icon }) => (
-                  <div key={key} className="space-y-1 rounded-2xl border border-white/15 bg-white/[0.07] px-3 py-3 shadow-[0_14px_30px_rgba(5,12,28,0.35)]">
-                    <dt className="flex items-center gap-2 text-xs font-medium text-white/75">
-                      {icon ? icon : null}
-                      <span>{label}</span>
-                    </dt>
-                    <dd className={cn('text-xl font-semibold text-white/90', accent ?? '')}>
-                      {formatSummaryValue(summary[key])}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </CardContent>
-          </Card>
-
-          <LeadProfilePanel
-            allocation={activeAllocation}
-            onUpdateStatus={handleUpdateAllocationStatus}
-            onOpenWhatsApp={handleOpenWhatsApp}
-            isLoading={loading}
-            isSwitching={leadPanelSwitching}
-          />
-
-          <InboxActions
-            loading={loading}
-            onRefresh={refresh}
-            onExport={handleExport}
-            rateLimitInfo={rateLimitInfo}
-            autoRefreshSeconds={autoRefreshSeconds}
-            lastUpdatedAt={lastUpdatedAt}
-          />
-        </aside>
       </div>
     </div>
   );
