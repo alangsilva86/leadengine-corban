@@ -62,7 +62,6 @@ const LAYOUT_MAIN_CLASS = 'flex flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-
 const NOTIFICATION_COUNT = 5;
 
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [inboxCount, setInboxCount] = useState(
     typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
   );
@@ -103,33 +102,12 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
   const stageList = onboarding?.stages ?? [];
   const activeStep = typeof onboarding?.activeStep === 'number' ? onboarding.activeStep : 0;
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        setIsSidebarOpen(true);
-      }
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
   const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
 
   return (
-    <SidebarProvider
-      defaultOpen
-      open={isSidebarOpen}
-      onOpenChange={setIsSidebarOpen}
-      className="bg-background text-foreground"
-    >
+    <SidebarProvider defaultOpen className="bg-background text-foreground">
+      <SidebarViewportSync />
       <Sidebar collapsible="icon" className="border-r border-sidebar-border/60 bg-sidebar">
         <SidebarBrand />
         <SidebarContent className="gap-0 px-2 py-4">
@@ -166,6 +144,18 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
 };
 
 export default Layout;
+
+const SidebarViewportSync = () => {
+  const { isMobile, setOpen } = useSidebar();
+
+  useEffect(() => {
+    if (isMobile) {
+      setOpen(true);
+    }
+  }, [isMobile, setOpen]);
+
+  return null;
+};
 
 const SidebarBrand = () => {
   const { setOpenMobile } = useSidebar();
