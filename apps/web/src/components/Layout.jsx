@@ -15,7 +15,10 @@ import {
   LogOut,
   ChevronsLeft,
   ChevronsRight,
+  Sun,
+  Moon,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import './Layout.css';
@@ -29,12 +32,18 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
   const [inboxCount, setInboxCount] = useState(
     typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
   );
+  const [themeMounted, setThemeMounted] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
     if (typeof onboarding?.metrics?.inboxCount === 'number') {
       setInboxCount(onboarding.metrics.inboxCount);
     }
   }, [onboarding?.metrics?.inboxCount]);
+
+  useEffect(() => {
+    setThemeMounted(true);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -83,6 +92,7 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
   }, [sidebarOpen]);
 
   const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
+  const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
 
   return (
     <div className="layout-container">
@@ -179,6 +189,24 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
           </div>
 
           <div className="header-right" style={{ gap: 12 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
+              aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+              title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            >
+              {themeMounted ? (
+                isDarkMode ? (
+                  <Moon className="h-5 w-5" aria-hidden="true" />
+                ) : (
+                  <Sun className="h-5 w-5" aria-hidden="true" />
+                )
+              ) : (
+                <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
+              )}
+              <span className="sr-only">Alternar tema</span>
+            </Button>
             <DemoAuthDialog />
             <TenantSelector />
             <Button variant="ghost" size="sm" className="notification-btn">
