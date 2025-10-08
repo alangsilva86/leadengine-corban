@@ -1,94 +1,271 @@
+/**
+ * Design token groups exposed to Tailwind. Structure tokens semantically so that
+ * documentation and components can reference intent-driven names instead of
+ * presentation-specific aliases.
+ */
 export const colors = {
-  backgroundDark: '#0f172a',
-  backgroundLight: '#f8fafc',
-  foregroundDark: '#f1f5f9',
-  foregroundLight: '#0f172a',
-  foregroundMutedDark: '#94a3b8',
-  foregroundMutedLight: '#475569',
-  dividerDark: 'rgba(124, 138, 163, 0.35)',
-  dividerLight: 'rgba(15, 23, 42, 0.08)',
-  primaryDark: '#6366f1',
-  primaryLight: '#4f46e5',
-  primaryForegroundDark: '#f8fafc',
-  primaryForegroundLight: '#eef2ff',
-  successDark: '#22c55e',
-  successLight: '#16a34a',
-  successSoftForegroundDark: '#bbf7d0',
-  successSoftForegroundLight: '#14532d',
-  successStrongForegroundDark: '#022c17',
-  successStrongForegroundLight: '#f0fdf4',
-  warningDark: '#facc15',
-  warningLight: '#d97706',
-  warningSoftForegroundDark: '#fde68a',
-  warningSoftForegroundLight: '#92400e',
-  errorDark: '#ef4444',
-  errorLight: '#dc2626',
-  errorSoftForegroundDark: '#fecaca',
-  errorSoftForegroundLight: '#991b1b',
-  surfaceDark: 'rgba(124, 138, 163, 0.14)',
-  surfaceLight: 'rgba(255, 255, 255, 0.78)',
-  surfaceStrongDark: 'rgba(124, 138, 163, 0.22)',
-  surfaceStrongLight: 'rgba(255, 255, 255, 0.92)',
-  surfaceGlassDark: 'rgba(148, 163, 184, 0.08)',
-  surfaceGlassLight: 'rgba(255, 255, 255, 0.85)',
-  surfaceGlassBorderDark: 'rgba(148, 163, 184, 0.25)',
-  surfaceGlassBorderLight: 'rgba(15, 23, 42, 0.12)',
-  inboxSurfaceDark: 'rgba(15, 23, 42, 0.78)',
-  inboxSurfaceLight: 'rgba(255, 255, 255, 0.72)',
-  inboxSurfaceStrongDark: 'rgba(15, 23, 42, 0.9)',
-  inboxSurfaceStrongLight: 'rgba(255, 255, 255, 0.88)',
-  inboxBorderDark: 'rgba(255, 255, 255, 0.12)',
-  inboxBorderLight: 'rgba(15, 23, 42, 0.12)',
-  inboxForegroundDark: 'rgba(241, 245, 249, 0.92)',
-  inboxForegroundLight: '#0f172a',
-  inboxForegroundMutedDark: 'rgba(241, 245, 249, 0.75)',
-  inboxForegroundMutedLight: 'rgba(15, 23, 42, 0.6)',
-  borderDark: '#7c8aa3',
-  borderLight: 'rgba(15, 23, 42, 0.12)',
-  inputDark: '#7c8aa3',
-  inputLight: 'rgba(15, 23, 42, 0.18)',
-  ringDark: '#6366f1',
-  ringLight: 'rgba(79, 70, 229, 0.55)',
-  secondaryDark: 'rgba(99, 102, 241, 0.12)',
-  secondaryLight: 'rgba(79, 70, 229, 0.1)',
-  secondaryForegroundDark: '#f1f5f9',
-  secondaryForegroundLight: '#0f172a',
-  mutedDark: 'rgba(148, 163, 184, 0.08)',
-  mutedLight: 'rgba(148, 163, 184, 0.16)',
-  mutedForegroundDark: '#94a3b8',
-  mutedForegroundLight: '#475569',
-  accentDark: 'rgba(99, 102, 241, 0.18)',
-  accentLight: 'rgba(79, 70, 229, 0.16)',
-  accentForegroundDark: '#f1f5f9',
-  accentForegroundLight: '#0f172a',
-  destructiveDark: '#ef4444',
-  destructiveLight: '#dc2626',
-  chart1Dark: '#6366f1',
-  chart1Light: '#4f46e5',
-  chart2Dark: '#22d3ee',
-  chart2Light: '#0ea5e9',
-  chart3Dark: '#f97316',
-  chart3Light: '#f97316',
-  chart4Dark: '#22c55e',
-  chart4Light: '#16a34a',
-  chart5Dark: '#facc15',
-  chart5Light: '#facc15',
-  sidebarDark: 'rgba(15, 23, 42, 0.96)',
-  sidebarLight: 'rgba(255, 255, 255, 0.85)',
-  sidebarForegroundDark: '#f1f5f9',
-  sidebarForegroundLight: '#0f172a',
-  sidebarPrimaryDark: '#6366f1',
-  sidebarPrimaryLight: '#4f46e5',
-  sidebarPrimaryForegroundDark: '#f8fafc',
-  sidebarPrimaryForegroundLight: '#eef2ff',
-  sidebarAccentDark: 'rgba(148, 163, 184, 0.12)',
-  sidebarAccentLight: 'rgba(79, 70, 229, 0.1)',
-  sidebarAccentForegroundDark: '#f1f5f9',
-  sidebarAccentForegroundLight: '#0f172a',
-  sidebarBorderDark: 'rgba(255, 255, 255, 0.12)',
-  sidebarBorderLight: 'rgba(15, 23, 42, 0.1)',
-  sidebarRingDark: 'rgba(99, 102, 241, 0.4)',
-  sidebarRingLight: 'rgba(79, 70, 229, 0.25)',
+  /**
+   * Surface layering tokens that describe the application canvas and its
+   * various overlay states (cards, popovers, inbox, glass effects, etc.).
+   */
+  surface: {
+    canvas: {
+      light: '#f8fafc',
+      dark: '#0f172a',
+    },
+    overlay: {
+      quiet: {
+        light: 'rgba(255, 255, 255, 0.78)',
+        dark: 'rgba(124, 138, 163, 0.14)',
+      },
+      bold: {
+        light: 'rgba(255, 255, 255, 0.92)',
+        dark: 'rgba(124, 138, 163, 0.22)',
+      },
+      glass: {
+        layer: {
+          light: 'rgba(255, 255, 255, 0.85)',
+          dark: 'rgba(148, 163, 184, 0.08)',
+        },
+        border: {
+          light: 'rgba(15, 23, 42, 0.12)',
+          dark: 'rgba(148, 163, 184, 0.25)',
+        },
+      },
+      inbox: {
+        quiet: {
+          light: 'rgba(255, 255, 255, 0.72)',
+          dark: 'rgba(15, 23, 42, 0.78)',
+        },
+        bold: {
+          light: 'rgba(255, 255, 255, 0.88)',
+          dark: 'rgba(15, 23, 42, 0.9)',
+        },
+      },
+    },
+  },
+  /**
+   * Content tokens define foreground colors for text and iconography across
+   * neutral, muted and contextual areas like the inbox.
+   */
+  content: {
+    primary: {
+      light: '#0f172a',
+      dark: '#f1f5f9',
+    },
+    muted: {
+      light: '#475569',
+      dark: '#94a3b8',
+    },
+    inbox: {
+      primary: {
+        light: '#0f172a',
+        dark: 'rgba(241, 245, 249, 0.92)',
+      },
+      muted: {
+        light: 'rgba(15, 23, 42, 0.6)',
+        dark: 'rgba(241, 245, 249, 0.75)',
+      },
+    },
+  },
+  /**
+   * Stroke tokens cover borders, dividers and other lines separating or
+   * outlining surfaces.
+   */
+  stroke: {
+    divider: {
+      light: 'rgba(15, 23, 42, 0.08)',
+      dark: 'rgba(124, 138, 163, 0.35)',
+    },
+    default: {
+      light: 'rgba(15, 23, 42, 0.12)',
+      dark: '#7c8aa3',
+    },
+    input: {
+      light: 'rgba(15, 23, 42, 0.18)',
+      dark: '#7c8aa3',
+    },
+    inbox: {
+      light: 'rgba(15, 23, 42, 0.12)',
+      dark: 'rgba(255, 255, 255, 0.12)',
+    },
+  },
+  /**
+   * Brand palettes for primary calls to action and supporting accent hues.
+   */
+  brand: {
+    primary: {
+      solid: {
+        light: '#4f46e5',
+        dark: '#6366f1',
+      },
+      onSolid: {
+        light: '#eef2ff',
+        dark: '#f8fafc',
+      },
+    },
+    secondary: {
+      surface: {
+        light: 'rgba(79, 70, 229, 0.1)',
+        dark: 'rgba(99, 102, 241, 0.12)',
+      },
+      onSurface: {
+        light: '#0f172a',
+        dark: '#f1f5f9',
+      },
+    },
+    accent: {
+      surface: {
+        light: 'rgba(79, 70, 229, 0.16)',
+        dark: 'rgba(99, 102, 241, 0.18)',
+      },
+      onSurface: {
+        light: '#0f172a',
+        dark: '#f1f5f9',
+      },
+    },
+  },
+  /**
+   * Neutral support colors for subdued surfaces and corresponding typography.
+   */
+  support: {
+    muted: {
+      surface: {
+        light: 'rgba(148, 163, 184, 0.16)',
+        dark: 'rgba(148, 163, 184, 0.08)',
+      },
+      onSurface: {
+        light: '#475569',
+        dark: '#94a3b8',
+      },
+    },
+  },
+  /**
+   * Feedback states used for success, warnings, errors and destructive actions.
+   */
+  feedback: {
+    success: {
+      solid: {
+        light: '#16a34a',
+        dark: '#22c55e',
+      },
+      onSoft: {
+        light: '#14532d',
+        dark: '#bbf7d0',
+      },
+      onStrong: {
+        light: '#f0fdf4',
+        dark: '#022c17',
+      },
+    },
+    warning: {
+      solid: {
+        light: '#d97706',
+        dark: '#facc15',
+      },
+      onSoft: {
+        light: '#92400e',
+        dark: '#fde68a',
+      },
+    },
+    error: {
+      solid: {
+        light: '#dc2626',
+        dark: '#ef4444',
+      },
+      onSoft: {
+        light: '#991b1b',
+        dark: '#fecaca',
+      },
+    },
+    destructive: {
+      solid: {
+        light: '#dc2626',
+        dark: '#ef4444',
+      },
+    },
+  },
+  /**
+   * Interaction-specific strokes such as input outlines and focus rings.
+   */
+  interaction: {
+    input: {
+      light: 'rgba(15, 23, 42, 0.18)',
+      dark: '#7c8aa3',
+    },
+    focus: {
+      light: 'rgba(79, 70, 229, 0.55)',
+      dark: '#6366f1',
+    },
+  },
+  /**
+   * Data visualization palettes for categorical charts and dashboards.
+   */
+  data: {
+    visualization: {
+      categorical: {
+        '1': {
+          light: '#4f46e5',
+          dark: '#6366f1',
+        },
+        '2': {
+          light: '#0ea5e9',
+          dark: '#22d3ee',
+        },
+        '3': {
+          light: '#f97316',
+          dark: '#f97316',
+        },
+        '4': {
+          light: '#16a34a',
+          dark: '#22c55e',
+        },
+        '5': {
+          light: '#facc15',
+          dark: '#facc15',
+        },
+      },
+    },
+  },
+  /**
+   * Navigation-specific tokens tailored for sidebar shells and their accents.
+   */
+  navigation: {
+    sidebar: {
+      surface: {
+        light: 'rgba(255, 255, 255, 0.85)',
+        dark: 'rgba(15, 23, 42, 0.96)',
+      },
+      onSurface: {
+        light: '#0f172a',
+        dark: '#f1f5f9',
+      },
+      primary: {
+        light: '#4f46e5',
+        dark: '#6366f1',
+      },
+      onPrimary: {
+        light: '#eef2ff',
+        dark: '#f8fafc',
+      },
+      accent: {
+        light: 'rgba(79, 70, 229, 0.1)',
+        dark: 'rgba(148, 163, 184, 0.12)',
+      },
+      onAccent: {
+        light: '#0f172a',
+        dark: '#f1f5f9',
+      },
+      border: {
+        light: 'rgba(15, 23, 42, 0.1)',
+        dark: 'rgba(255, 255, 255, 0.12)',
+      },
+      focusRing: {
+        light: 'rgba(79, 70, 229, 0.25)',
+        dark: 'rgba(99, 102, 241, 0.4)',
+      },
+    },
+  },
 }
 
 export const spacing = {
