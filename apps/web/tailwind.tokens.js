@@ -69,6 +69,15 @@ export const colors = {
     },
   },
   /**
+   * Channel and status specific colors for messaging integrations.
+   */
+  status: {
+    whatsapp: {
+      light: '#25d366',
+      dark: '#25d366',
+    },
+  },
+  /**
    * Stroke tokens cover borders, dividers and other lines separating or
    * outlining surfaces.
    */
