@@ -22,32 +22,32 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
   ];
 
   return (
-    <header className="rounded-[32px] border border-white/12 bg-[#0b172b] p-6 shadow-[0_20px_46px_rgba(3,8,22,0.5)] ring-1 ring-white/10">
-      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-white/70">
+    <header className="glass-surface rounded-[32px] border border-[var(--border)] p-6 shadow-[0_20px_46px_rgba(3,8,22,0.5)] ring-1 ring-white/10">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
         {stepLabel ? (
           <Badge
             variant="outline"
-            className="border-white/40 bg-white/[0.08] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.28em] text-white/80"
+            className="border-white/40 bg-white/[0.08] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.28em] text-foreground"
           >
             {stepLabel}
           </Badge>
         ) : null}
-        <span className="text-white/70">Fluxo concluído</span>
+        <span className="text-muted-foreground">Fluxo concluído</span>
       </div>
 
-      <Breadcrumb className="mt-5 text-[11px] font-medium text-white/70">
+      <Breadcrumb className="mt-5 text-[11px] font-medium text-muted-foreground">
         <BreadcrumbList>
           {breadcrumbItems.map((item, index) => (
             <BreadcrumbItem key={item.label}>
               {item.current ? (
-                <BreadcrumbPage className="flex items-center gap-1.5 text-sm font-semibold text-white/85">
-                  {item.icon ? <item.icon className="h-3.5 w-3.5 text-white/65" aria-hidden /> : null}
+                <BreadcrumbPage className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  {item.icon ? <item.icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden /> : null}
                   <span>{item.label}</span>
                 </BreadcrumbPage>
               ) : (
                 <BreadcrumbLink
                   href={item.href}
-                  className="text-[11px] font-medium text-white/70 hover:text-white/90"
+                  className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
                 >
                   {item.label}
                 </BreadcrumbLink>
@@ -60,28 +60,34 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
 
       <div className="mt-6 flex flex-wrap items-start justify-between gap-6">
         <div className="space-y-2">
-          <h1 className="text-xl font-semibold text-white/95">Inbox de Leads</h1>
-          <p className="text-sm font-semibold text-white/75">
+          <h1 className="text-xl font-semibold text-foreground">Inbox de Leads</h1>
+          <p className="text-sm font-semibold text-muted-foreground">
             Organize e priorize as conversas do seu time em um só lugar.
           </p>
-          <p className="max-w-xl text-[13px] text-white/70">
+          <p className="max-w-xl text-[13px] text-muted-foreground">
             Respostas rápidas mantêm a confiança do lead. Acompanhe métricas e prossiga para {nextStage.toLowerCase()} quando estiver tudo pronto.
           </p>
         </div>
 
-        <div className="flex flex-col items-end gap-1 rounded-2xl border border-white/15 bg-white/[0.08] px-5 py-4 text-right shadow-[0_12px_32px_rgba(3,9,24,0.4)]">
-          <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/70">Status atual</p>
-          <p className="text-base font-semibold text-emerald-300">
-            {hasLeadCount ? `${leadCount} leads ativos` : 'Monitorando leads'}
+        <div className="flex flex-col items-end gap-1 rounded-2xl border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-5 py-4 text-right text-muted-foreground shadow-[0_12px_32px_rgba(3,9,24,0.4)]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.24em]">Status atual</p>
+          <p className="text-base font-semibold text-foreground">
+            {hasLeadCount ? (
+              <>
+                <span className="text-[color:var(--primary)]">{leadCount}</span> leads ativos
+              </>
+            ) : (
+              'Monitorando leads'
+            )}
           </p>
-          <p className="text-[13px] text-white/70">Próximo passo: {nextStage}</p>
+          <p className="text-[13px]">Próximo passo: {nextStage}</p>
         </div>
       </div>
 
       {campaignName ? (
-        <div className="mt-6 flex flex-wrap items-center gap-2 text-[13px] text-white/75">
-          <span className="text-sm font-semibold text-white/80">Campanha ativa</span>
-          <span className="rounded-full border border-white/15 bg-white/[0.08] px-3 py-1 text-[11px] font-medium text-white/70">
+        <div className="mt-6 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+          <span className="text-sm font-semibold text-foreground">Campanha ativa</span>
+          <span className="rounded-full border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-3 py-1 text-[11px] font-medium text-muted-foreground">
             {campaignName}
           </span>
         </div>
