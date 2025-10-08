@@ -1,5 +1,6 @@
 @theme {
   --color-background: theme('colors.surface.canvas.dark', #0f172a);
+  --surface-canvas: theme('colors.surface.canvas.dark', #0f172a);
   --color-foreground: theme('colors.content.primary.dark', #f1f5f9);
   --color-foreground-muted: theme('colors.content.muted.dark', #94a3b8);
   --color-divider: theme('colors.stroke.divider.dark', rgba(124, 138, 163, 0.35));
@@ -19,9 +20,12 @@
   --color-surface-shell: theme('colors.surface.overlay.inbox.quiet.dark', rgba(15, 23, 42, 0.45));
   --color-surface-contrast: theme('colors.stroke.inbox.dark', rgba(255, 255, 255, 0.15));
   --surface-overlay-quiet: theme('colors.surface.overlay.quiet.dark', rgba(124, 138, 163, 0.14));
-  --surface-overlay-strong: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
+  --surface-overlay-bold: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
+  --surface-overlay-strong: var(--surface-overlay-bold);
   --surface-overlay-glass: theme('colors.surface.overlay.glass.layer.dark', rgba(148, 163, 184, 0.08));
   --surface-overlay-glass-border: theme('colors.surface.overlay.glass.border.dark', rgba(148, 163, 184, 0.25));
+  --surface-overlay-inbox-quiet: theme('colors.surface.overlay.inbox.quiet.dark', rgba(15, 23, 42, 0.78));
+  --surface-overlay-inbox-bold: theme('colors.surface.overlay.inbox.bold.dark', rgba(15, 23, 42, 0.9));
   --status-whatsapp: theme('colors.status.whatsapp.dark', #25d366);
   --color-status-whatsapp-surface: rgba(37, 211, 102, 0.14);
   --color-status-whatsapp-border: rgba(37, 211, 102, 0.38);
@@ -74,7 +78,7 @@
   --radius-xl: theme('borderRadius.xl');
   --radius: var(--radius-lg);
 
-  --bg: var(--color-background);
+  --bg: var(--surface-canvas);
   --text: var(--color-foreground);
   --text-muted: var(--color-foreground-muted);
   --divider: var(--color-divider);
@@ -87,6 +91,15 @@
   --warning-soft-foreground: var(--color-warning-soft-foreground);
   --error: var(--color-error);
   --error-soft-foreground: var(--color-error-soft-foreground);
+  --surface: var(--surface-overlay-quiet);
+  --surface-strong: var(--surface-overlay-bold);
+  --inbox-surface: var(--surface-overlay-inbox-quiet);
+  --inbox-surface-strong: var(--surface-overlay-inbox-bold);
+  --inbox-border: var(--color-inbox-border);
+  --inbox-foreground: var(--color-inbox-foreground);
+  --inbox-foreground-muted: var(--color-inbox-foreground-muted);
+  --surface-glass: var(--surface-overlay-glass);
+  --surface-glass-border: var(--surface-overlay-glass-border);
   --surface: var(--color-surface);
   --surface-strong: var(--color-surface-strong);
   --surface-shell: var(--color-surface-shell);
@@ -130,15 +143,15 @@
   --sidebar-border: var(--color-sidebar-border);
   --sidebar-ring: var(--color-sidebar-ring);
 
-  --background: var(--color-background);
+  --background: var(--surface-canvas);
   --foreground: var(--color-foreground);
-  --card: var(--color-surface);
+  --card: var(--surface);
   --card-foreground: var(--color-foreground);
-  --popover: var(--color-surface-strong);
+  --popover: var(--surface-strong);
   --popover-foreground: var(--color-foreground);
-  --color-card: var(--color-surface);
+  --color-card: var(--surface);
   --color-card-foreground: var(--color-foreground);
-  --color-popover: var(--color-surface-strong);
+  --color-popover: var(--surface-strong);
   --color-popover-foreground: var(--color-foreground);
   --color-secondary-muted: var(--color-muted);
   --color-secondary-muted-foreground: var(--color-muted-foreground);
@@ -148,6 +161,7 @@
 :root {
   color-scheme: light;
   --color-background: theme('colors.surface.canvas.light', #f8fafc);
+  --surface-canvas: theme('colors.surface.canvas.light', #f8fafc);
   --color-foreground: theme('colors.content.primary.light', #0f172a);
   --color-foreground-muted: theme('colors.content.muted.light', #475569);
   --color-divider: theme('colors.stroke.divider.light', rgba(15, 23, 42, 0.08));
@@ -167,9 +181,12 @@
   --color-surface-shell: theme('colors.surface.overlay.inbox.quiet.light', rgba(255, 255, 255, 0.82));
   --color-surface-contrast: theme('colors.stroke.inbox.light', rgba(15, 23, 42, 0.12));
   --surface-overlay-quiet: theme('colors.surface.overlay.quiet.light', rgba(255, 255, 255, 0.78));
-  --surface-overlay-strong: theme('colors.surface.overlay.bold.light', rgba(255, 255, 255, 0.92));
+  --surface-overlay-bold: theme('colors.surface.overlay.bold.light', rgba(255, 255, 255, 0.92));
+  --surface-overlay-strong: var(--surface-overlay-bold);
   --surface-overlay-glass: theme('colors.surface.overlay.glass.layer.light', rgba(255, 255, 255, 0.85));
   --surface-overlay-glass-border: theme('colors.surface.overlay.glass.border.light', rgba(15, 23, 42, 0.12));
+  --surface-overlay-inbox-quiet: theme('colors.surface.overlay.inbox.quiet.light', rgba(255, 255, 255, 0.72));
+  --surface-overlay-inbox-bold: theme('colors.surface.overlay.inbox.bold.light', rgba(255, 255, 255, 0.88));
   --status-whatsapp: theme('colors.status.whatsapp.light', #25d366);
   --color-status-whatsapp-surface: rgba(37, 211, 102, 0.18);
   --color-status-whatsapp-border: rgba(37, 211, 102, 0.3);
@@ -223,6 +240,7 @@
 .dark {
   color-scheme: dark;
   --color-background: theme('colors.surface.canvas.dark', #0f172a);
+  --surface-canvas: theme('colors.surface.canvas.dark', #0f172a);
   --color-foreground: theme('colors.content.primary.dark', #f1f5f9);
   --color-foreground-muted: theme('colors.content.muted.dark', #94a3b8);
   --color-divider: theme('colors.stroke.divider.dark', rgba(124, 138, 163, 0.35));
@@ -240,9 +258,12 @@
   --color-surface-glass: theme('colors.surface.overlay.glass.layer.dark', rgba(148, 163, 184, 0.08));
   --color-surface-glass-border: theme('colors.surface.overlay.glass.border.dark', rgba(148, 163, 184, 0.25));
   --surface-overlay-quiet: theme('colors.surface.overlay.quiet.dark', rgba(124, 138, 163, 0.14));
-  --surface-overlay-strong: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
+  --surface-overlay-bold: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
+  --surface-overlay-strong: var(--surface-overlay-bold);
   --surface-overlay-glass: theme('colors.surface.overlay.glass.layer.dark', rgba(148, 163, 184, 0.08));
   --surface-overlay-glass-border: theme('colors.surface.overlay.glass.border.dark', rgba(148, 163, 184, 0.25));
+  --surface-overlay-inbox-quiet: theme('colors.surface.overlay.inbox.quiet.dark', rgba(15, 23, 42, 0.78));
+  --surface-overlay-inbox-bold: theme('colors.surface.overlay.inbox.bold.dark', rgba(15, 23, 42, 0.9));
   --status-whatsapp: theme('colors.status.whatsapp.dark', #25d366);
   --color-inbox-surface: theme('colors.surface.overlay.inbox.quiet.dark', rgba(15, 23, 42, 0.78));
   --color-inbox-surface-strong: theme('colors.surface.overlay.inbox.bold.dark', rgba(15, 23, 42, 0.9));
