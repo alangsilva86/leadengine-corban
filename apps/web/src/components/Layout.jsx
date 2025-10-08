@@ -21,14 +21,13 @@ import {
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
+import { SidebarProvider, useSidebar } from '@/components/ui/sidebar.jsx';
 import './Layout.css';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
 import DemoAuthDialog from './DemoAuthDialog.jsx';
 
 const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inboxCount, setInboxCount] = useState(
     typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
   );
@@ -73,175 +72,203 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
     { id: 'settings', name: 'Configurações', icon: Settings },
   ];
 
-  const handleNavigate = (page) => (event) => {
-    event.preventDefault();
-    onNavigate?.(page);
-    setSidebarOpen(false);
-  };
-
   const stageList = onboarding?.stages ?? [];
-
-  useEffect(() => {
-    if (!sidebarOpen) {
-      return;
-    }
-
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-      setSidebarCollapsed(false);
-    }
-  }, [sidebarOpen]);
 
   const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
 
-  return (
-    <div className="layout-container">
-      <aside
-        className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}
-      >
-        <div className="sidebar-header">
-          <div className="sidebar-logo">
-            <div className="logo-icon">
-              <Ticket className="h-5 w-5" />
-            </div>
-            <div className="logo-text">
-              <h1>Lead Engine</h1>
-              <p>Maquina de Vendas</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="sidebar-close"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+  const LayoutShell = () => {
+    const { isMobile, state, setOpen, setOpenMobile, openMobile, toggleSidebar } = useSidebar();
 
-        <nav className="sidebar-nav">
-          <ul className="nav-list">
-            {navigation.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={handleNavigate(item.id)}
-                  className={`nav-item ${currentPage === item.id ? 'nav-item-active' : ''}`}
-                  aria-label={item.name}
-                >
-                  <item.icon className="nav-icon" />
-                  <span className="nav-text">{item.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
+    const isSidebarCollapsed = !isMobile && state === 'collapsed';
+    const isSidebarOpen = isMobile ? openMobile : true;
 
-        <div className="sidebar-footer">
-          <div className="user-profile">
-            <div className="user-avatar">
-              <User className="h-5 w-5" />
-            </div>
-            <div className="user-info">
-              <p className="user-name">João Silva</p>
-              <p className="user-role">Agente</p>
-            </div>
-            <Button variant="ghost" size="sm">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </aside>
+    const handleNavigate = (page) => (event) => {
+      event.preventDefault();
+      onNavigate?.(page);
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+    };
 
-      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+    const handleSidebarCollapseToggle = () => {
+      if (isMobile) {
+        return;
+      }
+      toggleSidebar();
+    };
 
-      <div className="main-content">
-        <header className="main-header">
-          <div className="header-left">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="sidebar-toggle"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
+    const handleMobileSidebarOpen = () => {
+      if (isMobile) {
+        setOpenMobile(true);
+      } else {
+        setOpen(true);
+      }
+    };
 
-            <Button
-              variant="ghost"
-              size="sm"
-              className="sidebar-collapse-toggle"
-              onClick={() => setSidebarCollapsed((previous) => !previous)}
-              aria-label={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-              title={sidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-            >
-              {sidebarCollapsed ? (
-                <ChevronsRight className="h-5 w-5" />
-              ) : (
-                <ChevronsLeft className="h-5 w-5" />
-              )}
-            </Button>
+    const handleMobileSidebarClose = () => {
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+    };
 
-            <div className="search-container">
-              <Search className="search-icon" />
-              <Input type="search" placeholder="Buscar tickets, contatos..." className="search-input" />
-            </div>
-          </div>
-
-          <div className="header-right" style={{ gap: 12 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
-              aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-              title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-            >
-              {themeMounted ? (
-                isDarkMode ? (
-                  <Moon className="h-5 w-5" aria-hidden="true" />
-                ) : (
-                  <Sun className="h-5 w-5" aria-hidden="true" />
-                )
-              ) : (
-                <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
-              )}
-              <span className="sr-only">Alternar tema</span>
-            </Button>
-            <DemoAuthDialog />
-            <TenantSelector />
-            <Button variant="ghost" size="sm" className="notification-btn">
-              <Bell className="h-5 w-5" />
-              <span className="notification-badge">5</span>
-            </Button>
-            <HealthIndicator />
-          </div>
-        </header>
-
-        <main className="page-content">
-          <div className="page-content-inner">
-            {shouldShowOnboardingTrack ? (
-              <div className="onboarding-track" aria-label="Progresso do onboarding">
-                {stageList.map((stage, index) => {
-                  const status =
-                    index < onboarding.activeStep
-                      ? 'done'
-                      : index === onboarding.activeStep
-                      ? 'current'
-                      : 'todo';
-                  return (
-                    <div key={stage.id} className={`onboarding-pill onboarding-pill--${status}`}>
-                      <span className="onboarding-pill__index">{index + 1}</span>
-                      <span className="onboarding-pill__label">{stage.label}</span>
-                    </div>
-                  );
-                })}
+    return (
+      <div className="layout-container">
+        <aside
+          className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}
+        >
+          <div className="sidebar-header">
+            <div className="sidebar-logo">
+              <div className="logo-icon">
+                <Ticket className="h-5 w-5" />
               </div>
-            ) : null}
-            {children}
+              <div className="logo-text">
+                <h1>Lead Engine</h1>
+                <p>Maquina de Vendas</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="sidebar-close"
+              onClick={handleMobileSidebarClose}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
-        </main>
+
+          <nav className="sidebar-nav">
+            <ul className="nav-list">
+              {navigation.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={handleNavigate(item.id)}
+                    className={`nav-item ${currentPage === item.id ? 'nav-item-active' : ''}`}
+                    aria-label={item.name}
+                  >
+                    <item.icon className="nav-icon" />
+                    <span className="nav-text">{item.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          <div className="sidebar-footer">
+            <div className="user-profile">
+              <div className="user-avatar">
+                <User className="h-5 w-5" />
+              </div>
+              <div className="user-info">
+                <p className="user-name">João Silva</p>
+                <p className="user-role">Agente</p>
+              </div>
+              <Button variant="ghost" size="sm">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </aside>
+
+        {isMobile && isSidebarOpen ? (
+          <div className="sidebar-overlay" onClick={handleMobileSidebarClose} />
+        ) : null}
+
+        <div className="main-content">
+          <header className="main-header">
+            <div className="header-left">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="sidebar-toggle"
+                onClick={handleMobileSidebarOpen}
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="sidebar-collapse-toggle"
+                onClick={handleSidebarCollapseToggle}
+                aria-label={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+                title={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+              >
+                {isSidebarCollapsed ? (
+                  <ChevronsRight className="h-5 w-5" />
+                ) : (
+                  <ChevronsLeft className="h-5 w-5" />
+                )}
+              </Button>
+
+              <div className="search-container">
+                <Search className="search-icon" />
+                <Input type="search" placeholder="Buscar tickets, contatos..." className="search-input" />
+              </div>
+            </div>
+
+            <div className="header-right" style={{ gap: 12 }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
+                aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+                title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+              >
+                {themeMounted ? (
+                  isDarkMode ? (
+                    <Moon className="h-5 w-5" aria-hidden="true" />
+                  ) : (
+                    <Sun className="h-5 w-5" aria-hidden="true" />
+                  )
+                ) : (
+                  <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
+                )}
+                <span className="sr-only">Alternar tema</span>
+              </Button>
+              <DemoAuthDialog />
+              <TenantSelector />
+              <Button variant="ghost" size="sm" className="notification-btn">
+                <Bell className="h-5 w-5" />
+                <span className="notification-badge">5</span>
+              </Button>
+              <HealthIndicator />
+            </div>
+          </header>
+
+          <main className="page-content">
+            <div className="page-content-inner">
+              {shouldShowOnboardingTrack ? (
+                <div className="onboarding-track" aria-label="Progresso do onboarding">
+                  {stageList.map((stage, index) => {
+                    const status =
+                      index < onboarding.activeStep
+                        ? 'done'
+                        : index === onboarding.activeStep
+                        ? 'current'
+                        : 'todo';
+                    return (
+                      <div key={stage.id} className={`onboarding-pill onboarding-pill--${status}`}>
+                        <span className="onboarding-pill__index">{index + 1}</span>
+                        <span className="onboarding-pill__label">{stage.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    );
+  };
+
+  return (
+    <SidebarProvider>
+      <LayoutShell />
+    </SidebarProvider>
   );
 };
 
