@@ -26,6 +26,11 @@ const semanticColorTokens = {
   'surface-overlay-strong': 'var(--surface-overlay-strong)',
   'surface-overlay-glass': 'var(--surface-overlay-glass)',
   'surface-overlay-glass-border': 'var(--surface-overlay-glass-border)',
+  'surface-shell': 'var(--surface-shell)',
+  'surface-shell-muted': 'var(--surface-shell-muted)',
+  'surface-shell-subtle': 'var(--surface-shell-subtle)',
+  'surface-toolbar': 'var(--surface-toolbar)',
+  'surface-toolbar-muted': 'var(--surface-toolbar-muted)',
   'status-whatsapp': 'var(--status-whatsapp)',
   'status-whatsapp-surface': 'var(--status-whatsapp-surface)',
   'status-whatsapp-border': 'var(--status-whatsapp-border)',
@@ -62,6 +67,9 @@ const semanticColorTokens = {
   'sidebar-accent-foreground': 'var(--color-sidebar-accent-foreground)',
   'sidebar-border': 'var(--color-sidebar-border)',
   'sidebar-ring': 'var(--color-sidebar-ring)',
+  'ring-shell': 'var(--ring-shell)',
+  'text-shell-muted': 'var(--text-shell-muted)',
+  'border-shell': 'var(--border-shell)',
 } as const
 
 const pascalCase = (value: string) =>

@@ -13,10 +13,15 @@
   --color-warning-soft-foreground: theme('colors.feedback.warning.onSoft.dark', #fde68a);
   --color-error: theme('colors.feedback.error.solid.dark', #ef4444);
   --color-error-soft-foreground: theme('colors.feedback.error.onSoft.dark', #fecaca);
+  --color-surface-shell: theme('colors.surface.shell.solid.dark', #020617);
+  --color-surface-shell-muted: theme('colors.surface.shell.muted.dark', rgba(2, 6, 23, 0.85));
+  --color-surface-shell-subtle: theme('colors.surface.shell.subtle.dark', rgba(2, 6, 23, 0.65));
   --color-surface: theme('colors.surface.overlay.quiet.dark', rgba(124, 138, 163, 0.14));
   --color-surface-strong: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
   --color-surface-glass: theme('colors.surface.overlay.glass.layer.dark', rgba(148, 163, 184, 0.08));
   --color-surface-glass-border: theme('colors.surface.overlay.glass.border.dark', rgba(148, 163, 184, 0.25));
+  --color-surface-toolbar: theme('colors.surface.toolbar.solid.dark', rgba(15, 23, 42, 0.85));
+  --color-surface-toolbar-muted: theme('colors.surface.toolbar.muted.dark', rgba(15, 23, 42, 0.6));
   --color-surface-shell: theme('colors.surface.overlay.inbox.quiet.dark', rgba(15, 23, 42, 0.45));
   --color-surface-contrast: theme('colors.stroke.inbox.dark', rgba(255, 255, 255, 0.15));
   --surface-overlay-quiet: theme('colors.surface.overlay.quiet.dark', rgba(124, 138, 163, 0.14));
@@ -40,8 +45,10 @@
   --color-inbox-scrollbar-thumb: rgba(148, 163, 184, 0.55);
   --color-inbox-foreground: theme('colors.content.inbox.primary.dark', rgba(241, 245, 249, 0.92));
   --color-inbox-foreground-muted: theme('colors.content.inbox.muted.dark', rgba(241, 245, 249, 0.75));
+  --color-border-shell: theme('colors.stroke.shell.dark', rgba(148, 163, 184, 0.32));
   --color-border: theme('colors.stroke.default.dark', #7c8aa3);
   --color-input: theme('colors.interaction.input.dark', #7c8aa3);
+  --color-ring-shell: theme('colors.interaction.shell.dark', rgba(255, 255, 255, 0.08));
   --color-ring: theme('colors.interaction.focus.dark', #6366f1);
   --color-secondary: theme('colors.brand.secondary.surface.dark', rgba(99, 102, 241, 0.12));
   --color-secondary-foreground: theme('colors.brand.secondary.onSurface.dark', #f1f5f9);
@@ -63,6 +70,7 @@
   --color-sidebar-accent-foreground: theme('colors.navigation.sidebar.onAccent.dark', #f1f5f9);
   --color-sidebar-border: theme('colors.navigation.sidebar.border.dark', rgba(255, 255, 255, 0.12));
   --color-sidebar-ring: theme('colors.navigation.sidebar.focusRing.dark', rgba(99, 102, 241, 0.4));
+  --color-text-shell-muted: theme('colors.content.shell.muted.dark', rgba(148, 163, 184, 0.78));
 
   --shadow-xs: theme('boxShadow.xs');
   --shadow-sm: theme('boxShadow.sm');
@@ -119,13 +127,21 @@
   --inbox-scrollbar-thumb: var(--color-inbox-scrollbar-thumb);
   --surface-glass: var(--color-surface-glass);
   --surface-glass-border: var(--color-surface-glass-border);
+  --surface-shell: var(--color-surface-shell);
+  --surface-shell-muted: var(--color-surface-shell-muted);
+  --surface-shell-subtle: var(--color-surface-shell-subtle);
+  --surface-toolbar: var(--color-surface-toolbar);
+  --surface-toolbar-muted: var(--color-surface-toolbar-muted);
   --border: var(--color-border);
+  --border-shell: var(--color-border-shell);
   --input: var(--color-input);
+  --ring-shell: var(--color-ring-shell);
   --ring: var(--color-ring);
   --secondary: var(--color-secondary);
   --secondary-foreground: var(--color-secondary-foreground);
   --muted: var(--color-muted);
   --muted-foreground: var(--color-muted-foreground);
+  --text-shell-muted: var(--color-text-shell-muted);
   --accent: var(--color-accent);
   --accent-foreground: var(--color-accent-foreground);
   --destructive: var(--color-destructive);
@@ -181,10 +197,15 @@
   --color-warning-soft-foreground: theme('colors.feedback.warning.onSoft.light', #92400e);
   --color-error: theme('colors.feedback.error.solid.light', #dc2626);
   --color-error-soft-foreground: theme('colors.feedback.error.onSoft.light', #991b1b);
+  --color-surface-shell: theme('colors.surface.shell.solid.light', #f8fafc);
+  --color-surface-shell-muted: theme('colors.surface.shell.muted.light', rgba(248, 250, 252, 0.86));
+  --color-surface-shell-subtle: theme('colors.surface.shell.subtle.light', rgba(241, 245, 249, 0.72));
   --color-surface: theme('colors.surface.overlay.quiet.light', rgba(255, 255, 255, 0.78));
   --color-surface-strong: theme('colors.surface.overlay.bold.light', rgba(255, 255, 255, 0.92));
   --color-surface-glass: theme('colors.surface.overlay.glass.layer.light', rgba(255, 255, 255, 0.85));
   --color-surface-glass-border: theme('colors.surface.overlay.glass.border.light', rgba(15, 23, 42, 0.12));
+  --color-surface-toolbar: theme('colors.surface.toolbar.solid.light', rgba(248, 250, 252, 0.9));
+  --color-surface-toolbar-muted: theme('colors.surface.toolbar.muted.light', rgba(248, 250, 252, 0.78));
   --color-surface-shell: theme('colors.surface.overlay.inbox.quiet.light', rgba(255, 255, 255, 0.82));
   --color-surface-contrast: theme('colors.stroke.inbox.light', rgba(15, 23, 42, 0.12));
   --surface-overlay-quiet: theme('colors.surface.overlay.quiet.light', rgba(255, 255, 255, 0.78));
@@ -208,8 +229,10 @@
   --color-inbox-scrollbar-thumb: rgba(148, 163, 184, 0.35);
   --color-inbox-foreground: theme('colors.content.inbox.primary.light', #0f172a);
   --color-inbox-foreground-muted: theme('colors.content.inbox.muted.light', rgba(15, 23, 42, 0.6));
+  --color-border-shell: theme('colors.stroke.shell.light', rgba(15, 23, 42, 0.14));
   --color-border: theme('colors.stroke.default.light', rgba(15, 23, 42, 0.12));
   --color-input: theme('colors.interaction.input.light', rgba(15, 23, 42, 0.18));
+  --color-ring-shell: theme('colors.interaction.shell.light', rgba(15, 23, 42, 0.16));
   --color-ring: theme('colors.interaction.focus.light', rgba(79, 70, 229, 0.55));
   --color-secondary: theme('colors.brand.secondary.surface.light', rgba(79, 70, 229, 0.1));
   --color-secondary-foreground: theme('colors.brand.secondary.onSurface.light', #0f172a);
@@ -231,6 +254,7 @@
   --color-sidebar-accent-foreground: theme('colors.navigation.sidebar.onAccent.light', #0f172a);
   --color-sidebar-border: theme('colors.navigation.sidebar.border.light', rgba(15, 23, 42, 0.1));
   --color-sidebar-ring: theme('colors.navigation.sidebar.focusRing.light', rgba(79, 70, 229, 0.25));
+  --color-text-shell-muted: theme('colors.content.shell.muted.light', rgba(15, 23, 42, 0.65));
 
   --shadow-xs: theme('boxShadow.xs');
   --shadow-sm: theme('boxShadow.sm');
@@ -266,10 +290,15 @@
   --color-warning-soft-foreground: theme('colors.feedback.warning.onSoft.dark', #fde68a);
   --color-error: theme('colors.feedback.error.solid.dark', #ef4444);
   --color-error-soft-foreground: theme('colors.feedback.error.onSoft.dark', #fecaca);
+  --color-surface-shell: theme('colors.surface.shell.solid.dark', #020617);
+  --color-surface-shell-muted: theme('colors.surface.shell.muted.dark', rgba(2, 6, 23, 0.85));
+  --color-surface-shell-subtle: theme('colors.surface.shell.subtle.dark', rgba(2, 6, 23, 0.65));
   --color-surface: theme('colors.surface.overlay.quiet.dark', rgba(124, 138, 163, 0.14));
   --color-surface-strong: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
   --color-surface-glass: theme('colors.surface.overlay.glass.layer.dark', rgba(148, 163, 184, 0.08));
   --color-surface-glass-border: theme('colors.surface.overlay.glass.border.dark', rgba(148, 163, 184, 0.25));
+  --color-surface-toolbar: theme('colors.surface.toolbar.solid.dark', rgba(15, 23, 42, 0.85));
+  --color-surface-toolbar-muted: theme('colors.surface.toolbar.muted.dark', rgba(15, 23, 42, 0.6));
   --surface-overlay-quiet: theme('colors.surface.overlay.quiet.dark', rgba(124, 138, 163, 0.14));
   --surface-overlay-bold: theme('colors.surface.overlay.bold.dark', rgba(124, 138, 163, 0.22));
   --surface-overlay-strong: var(--surface-overlay-bold);
@@ -283,8 +312,10 @@
   --color-inbox-border: theme('colors.stroke.inbox.dark', rgba(255, 255, 255, 0.12));
   --color-inbox-foreground: theme('colors.content.inbox.primary.dark', rgba(241, 245, 249, 0.92));
   --color-inbox-foreground-muted: theme('colors.content.inbox.muted.dark', rgba(241, 245, 249, 0.75));
+  --color-border-shell: theme('colors.stroke.shell.dark', rgba(148, 163, 184, 0.32));
   --color-border: theme('colors.stroke.default.dark', #7c8aa3);
   --color-input: theme('colors.interaction.input.dark', #7c8aa3);
+  --color-ring-shell: theme('colors.interaction.shell.dark', rgba(255, 255, 255, 0.08));
   --color-ring: theme('colors.interaction.focus.dark', #6366f1);
   --color-secondary: theme('colors.brand.secondary.surface.dark', rgba(99, 102, 241, 0.12));
   --color-secondary-foreground: theme('colors.brand.secondary.onSurface.dark', #f1f5f9);
@@ -306,6 +337,7 @@
   --color-sidebar-accent-foreground: theme('colors.navigation.sidebar.onAccent.dark', #f1f5f9);
   --color-sidebar-border: theme('colors.navigation.sidebar.border.dark', rgba(255, 255, 255, 0.12));
   --color-sidebar-ring: theme('colors.navigation.sidebar.focusRing.dark', rgba(99, 102, 241, 0.4));
+  --color-text-shell-muted: theme('colors.content.shell.muted.dark', rgba(148, 163, 184, 0.78));
 
   --shadow-xs: theme('boxShadow.xs');
   --shadow-sm: theme('boxShadow.sm');

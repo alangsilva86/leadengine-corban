@@ -21,7 +21,7 @@ const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktop
       <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent
           side="right"
-          className={cn('border-slate-900/50 bg-slate-950/90 text-slate-100 backdrop-blur-xl', desktopClassName)}
+          className={cn('border-[color:var(--border-shell)] bg-surface-shell-muted text-foreground shadow-xl backdrop-blur-xl', desktopClassName)}
         >
           {content}
         </DrawerContent>
