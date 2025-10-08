@@ -176,12 +176,19 @@ Antes de rodar, preencha o arquivo `.env` na raiz com as credenciais reais. Cons
 
 #### Build para Produção
 ```bash
-# Build completo
+# Build completo (libs -> API -> Web)
 pnpm run build
 
-# Ou individual
-cd apps/api && npm run build
-cd apps/web && npm run build
+# Ou individuais
+pnpm run build:libs
+pnpm run build:api
+pnpm run build:web
+```
+
+Em ambientes limitados (como CI ou containers com pouca memória), execute o build do frontend com a configuração enxuta:
+
+```bash
+pnpm -C apps/web exec vite build --config apps/web/vite.build.ci.mjs
 ```
 
 ## 📱 Funcionalidades
@@ -361,13 +368,11 @@ pnpm run dev          # Inicia todos os serviços
 pnpm run dev:api      # Apenas API
 pnpm run dev:web      # Apenas frontend
 
-# Build (ordem recomendada)
-pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
-pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
-pnpm -F @ticketz/api run db:generate
-pnpm -F @ticketz/api build
-pnpm run build        # Build completo (segue as dependências internas)
-pnpm run build:web    # Build apenas frontend
+# Build (ordem serializada)
+pnpm run build:libs   # Shared -> Core -> Storage -> Integrations
+pnpm run build:api    # API
+pnpm run build:web    # Frontend Web
+pnpm run build        # Build completo (executa os três passos acima)
 
 # Testes
 pnpm run test         # Executa todos os testes
@@ -409,7 +414,7 @@ docker-compose -f docker-compose.prod.yml up -d
 ### Health Checks
 ```bash
 # API Health
-curl http://localhost:4000/health
+curl http://localhost:4000/healthz
 
 # Integrações Health
 curl http://localhost:4000/api/integrations/health

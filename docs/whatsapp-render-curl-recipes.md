@@ -82,5 +82,5 @@ A successful response returns HTTP `202` with the WhatsApp broker acknowledgemen
 ## Troubleshooting tips
 
 - **401 responses** usually mean the API key or auth token is missing. Double-check the headers exported above.
-- **503 responses** point to broker connectivity problems. Re-run `curl "$API_URL/health"` and inspect the API logs for `whatsapp` errors.
+- **503 responses** point to broker connectivity problems. Re-run `curl "$API_URL/healthz"` and inspect the API logs for `whatsapp` errors.
 - **Message queued but not delivered?** Verify the instance connection via `curl "$API_URL/api/integrations/whatsapp/session/status"` and reconnect if needed.

@@ -110,7 +110,7 @@ O deploy do Ticketz LeadEngine foi executado com sucesso, incluindo todas as cor
 ## 🚨 Monitoramento e Alertas
 
 ### Health Checks
-- **API Health**: `/health` endpoint
+- **API Health**: `/healthz` endpoint
 - **Database**: Connection pool status
 - **Redis**: Cache availability
 - **External APIs**: Connectivity tests
@@ -162,7 +162,7 @@ logs/
 ### Endpoints Principais
 - **Frontend**: https://seudominio.com
 - **API**: https://api.seudominio.com
-- **Health Check**: https://api.seudominio.com/health
+- **Health Check**: https://api.seudominio.com/healthz
 - **Docs**: https://api.seudominio.com/docs
 
 ### Credenciais de Acesso

@@ -123,22 +123,41 @@ docker compose -f docker-compose.prod.yml up -d
 
 ### 3. Deploy no Render.com
 
-Caso utilize o Render.com para hospedar a API como serviço web, configure os comandos conforme abaixo para garantir que os pacotes compartilhados estejam compilados antes da execução do servidor:
+O ambiente da Render deve ser dividido em **dois serviços**: a API (serviço Node) e o frontend (serviço Static Site). Essa separação garante builds mais rápidos, isolamento de falhas e políticas de escalonamento independentes.
 
-| Etapa | Comando |
+#### Serviço Node (API)
+
+| Campo | Valor |
 | --- | --- |
-| Build Command | <pre><code>corepack enable \
-&& corepack prepare pnpm@9.12.3 --activate \
-&& pnpm fetch \
-&& pnpm -r install --frozen-lockfile --prod=false \
-&& pnpm run doctor \
-&& pnpm -F @ticketz/integrations exec node -e "const {createRequire}=require('node:module');const r=createRequire(require('node:path').resolve('packages/integrations/package.json'));console.log(r.resolve('@whiskeysockets/baileys/package.json'));console.log(r.resolve('@hapi/boom/package.json'))" \
-&& pnpm -w prisma generate --schema=prisma/schema.prisma \
-&& pnpm -F @ticketz/api build</code></pre> |
-| Start Command | `./node_modules/.bin/prisma migrate deploy --schema=prisma/schema.prisma && node apps/api/dist/server.js` |
-| Node version | Defina `NODE_VERSION=20` (ou use a configuração padrão do Render baseada no `package.json`) |
+| Build Command | `bash scripts/build-api-render.sh` |
+| Start Command | `NODE_ENV=production NODE_OPTIONS="--max-old-space-size=320" node apps/api/dist/server.js` |
+| Node version | Defina `NODE_VERSION=20` (ou deixe o Render usar a versão declarada no `package.json`) |
 
-> ℹ️ O script `build` da API executa `build:dependencies`, que por sua vez roda `typecheck` e `build:clean` (nessa ordem) nos pacotes `@ticketz/{core,storage,integrations}` **antes** do bundler (`tsup`). Dessa forma, os diretórios `dist` são gerados com declarações atualizadas e qualquer regressão de tipos falha cedo, antes do `node apps/api/dist/server.js`.
+- **Cache**: habilite o diretório `./.pnpm-store` no menu de _Build Cache_ da Render. Os scripts já exportam `PNPM_STORE_PATH=.pnpm-store`, portanto a restauração será automática entre deploys.
+- **Migrações**: utilize um _background worker_ ou _job manual_ com `pnpm --filter @ticketz/api exec prisma migrate deploy --schema=prisma/schema.prisma` antes de promover novas releases.
+- **Health check**: configure `Path = /healthz`, `Timeout = 30s` e `Interval = 60s` para evitar reinícios agressivos.
+
+Variáveis de ambiente (além das já mencionadas na seção de configuração geral):
+
+- `DATABASE_URL`
+- `NODE_ENV=production`
+- `PRISMA_CLIENT_ENGINE_TYPE=binary` (opcional, acelera cold start)
+- `PORT` (opcional; o Render define automaticamente, mas mantenha-a visível para debugging)
+- `LOG_LEVEL` (opcional, padrão `info`)
+- `JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_URL`, etc.
+
+> ℹ️ O script `build-api-render.sh` executa `pnpm run doctor` e o `build` da API, garantindo que todos os pacotes compartilhados sejam verificados antes do bundle final (`tsup`).
+
+#### Serviço Static (Frontend)
+
+| Campo | Valor |
+| --- | --- |
+| Build Command | `bash scripts/build-web-render.sh` |
+| Publish Directory | `apps/web/dist` |
+
+- **Rewrites**: adicione `/* -> /index.html` caso utilize o modo SPA (padrão).
+- **Cache**: habilite também o diretório `./.pnpm-store` para reaproveitar o cache entre builds do frontend.
+- **Variáveis**: defina `VITE_API_URL`, `VITE_DEMO_TENANT_ID`, `VITE_DEMO_OPERATOR_EMAIL`, `VITE_DEMO_OPERATOR_PASSWORD` e, se necessário, `VITE_API_AUTH_TOKEN`.
 
 > ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/start` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
 
@@ -173,7 +192,7 @@ docker compose -f docker-compose.prod.yml logs -f
 
 ```bash
 # Testar API
-curl http://localhost:4000/health
+curl http://localhost:4000/healthz
 
 # Testar Frontend
 curl http://localhost/health

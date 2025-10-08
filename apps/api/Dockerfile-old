@@ -21,7 +21,7 @@ RUN npm install -g pnpm \
  && pnpm install --frozen-lockfile
 
 # Build all packages (tsup / tsc outputs)
-RUN pnpm -r build
+RUN pnpm run build:libs && pnpm run build:api
 
 # Stage 2: create a portable deployment for the API
 FROM build AS deploy
