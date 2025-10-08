@@ -10,19 +10,19 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[var(--surface-strong)] text-[var(--text)]",
+          "bg-[var(--color-surface-strong)] text-[var(--color-foreground)]",
         secondary:
-          "bg-[rgba(99,102,241,0.14)] text-[var(--primary-foreground)]",
+          "bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)]",
         destructive:
-          "bg-[color-mix(in_oklab,_var(--error)_22%,_transparent)] text-[#fecaca]",
+          "bg-[color-mix(in_oklab,_var(--color-error)_22%,_transparent)] text-[var(--color-error-soft-foreground)]",
         outline:
-          "border-[var(--border)] text-[var(--text)]",
+          "border-[var(--color-border)] text-[var(--color-foreground)]",
         success:
-          "bg-[color-mix(in_oklab,_var(--success)_22%,_transparent)] text-[#bbf7d0]",
+          "bg-[color-mix(in_oklab,_var(--color-success)_22%,_transparent)] text-[var(--color-success-soft-foreground)]",
         warning:
-          "bg-[color-mix(in_oklab,_var(--warning)_22%,_transparent)] text-[#fde68a]",
+          "bg-[color-mix(in_oklab,_var(--color-warning)_22%,_transparent)] text-[var(--color-warning-soft-foreground)]",
         info:
-          "bg-[rgba(148,163,184,0.16)] text-[var(--text-muted)]",
+          "bg-[var(--color-muted)] text-[var(--color-muted-foreground)]",
       },
     },
     defaultVariants: {
