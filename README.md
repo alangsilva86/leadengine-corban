@@ -184,6 +184,12 @@ cd apps/api && npm run build
 cd apps/web && npm run build
 ```
 
+Em ambientes limitados (como CI ou containers com pouca memória), execute o build do frontend com a configuração enxuta:
+
+```bash
+pnpm -C apps/web exec vite build --config apps/web/vite.build.ci.mjs
+```
+
 ## 📱 Funcionalidades
 
 ### 🎫 Sistema de Tickets
