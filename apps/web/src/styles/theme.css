@@ -50,6 +50,13 @@
   --color-sidebar-border: theme('colors.navigation.sidebar.border.dark', rgba(255, 255, 255, 0.12));
   --color-sidebar-ring: theme('colors.navigation.sidebar.focusRing.dark', rgba(99, 102, 241, 0.4));
 
+  --shadow-xs: theme('boxShadow.xs');
+  --shadow-sm: theme('boxShadow.sm');
+  --shadow-md: theme('boxShadow.md');
+  --shadow-lg: theme('boxShadow.lg');
+  --shadow-xl: theme('boxShadow.xl');
+  --shadow: var(--shadow-lg);
+
   --spacing-1: theme('spacing.1');
   --spacing-2: theme('spacing.2');
   --spacing-3: theme('spacing.3');
@@ -177,6 +184,13 @@
   --color-sidebar-accent-foreground: theme('colors.navigation.sidebar.onAccent.light', #0f172a);
   --color-sidebar-border: theme('colors.navigation.sidebar.border.light', rgba(15, 23, 42, 0.1));
   --color-sidebar-ring: theme('colors.navigation.sidebar.focusRing.light', rgba(79, 70, 229, 0.25));
+
+  --shadow-xs: theme('boxShadow.xs');
+  --shadow-sm: theme('boxShadow.sm');
+  --shadow-md: theme('boxShadow.md');
+  --shadow-lg: theme('boxShadow.lg');
+  --shadow-xl: theme('boxShadow.xl');
+  --shadow: var(--shadow-lg);
 }
 
 .dark {
@@ -231,4 +245,11 @@
   --color-sidebar-accent-foreground: theme('colors.navigation.sidebar.onAccent.dark', #f1f5f9);
   --color-sidebar-border: theme('colors.navigation.sidebar.border.dark', rgba(255, 255, 255, 0.12));
   --color-sidebar-ring: theme('colors.navigation.sidebar.focusRing.dark', rgba(99, 102, 241, 0.4));
+
+  --shadow-xs: theme('boxShadow.xs');
+  --shadow-sm: theme('boxShadow.sm');
+  --shadow-md: theme('boxShadow.md');
+  --shadow-lg: theme('boxShadow.lg');
+  --shadow-xl: theme('boxShadow.xl');
+  --shadow: var(--shadow-lg);
 }
