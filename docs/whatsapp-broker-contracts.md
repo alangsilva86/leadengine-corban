@@ -43,6 +43,10 @@
 
 - Requests validated with `BrokerOutboundMessageSchema` inside `whatsappBrokerClient.sendMessage`.
 - Minimal required fields: `sessionId`/`instanceId`, `to`, `content`; `type` defaults to `text`.
+- Direct delivery posts to `/instances/:id/messages` com corpo plano `{ sessionId, instanceId, to, type, text, caption?, mediaUrl?, mimeType?, fileName?, previewUrl?, template?, location?, metadata? }`. Campos de mídia/template/location são encaminhados automaticamente quando presentes.
+- Payloads de mídia/template/location continuam opcionais, mas obrigatórios quando `type != text` (validação garantida pelo schema).
+- O cabeçalho `Idempotency-Key` é propagado a partir de `metadata.idempotencyKey` (ou argumento explícito) para evitar reenvios duplicados.
+- Se o broker retornar `404`, o cliente cai para `/broker/messages`; defina `WHATSAPP_BROKER_DELIVERY_MODE=broker` para forçar esse modo. `WHATSAPP_BROKER_DELIVERY_MODE=instances` continua direcionando para as rotas legadas `/instances/:id/send-text` (apenas texto).
 - Ambiente esperado: `WHATSAPP_MODE=http`, `WHATSAPP_BROKER_URL` apontando para o serviço externo e `WHATSAPP_BROKER_API_KEY` com o mesmo segredo aceito pelo broker (`x-api-key`). Não há mais variáveis de alternância de modo.
 - Direct delivery posts to `/instances/:id/send-text` enviando o payload normalizado `{ sessionId, instanceId, to, type, message, text?, previewUrl?, externalId?, template?, location?, mediaUrl?, mimeType?, fileName?, metadata? }`. Mesmo que a rota tenha o sufixo `send-text`, ela aceita o `type` informado e os campos extras necessários para mídia, template e location.
 - Payloads de mídia/template/location continuam opcionais, mas obrigatórios quando `type != text` (validação garantida pelo schema). `mediaUrl` torna-se obrigatório para `image`, `video`, `document` e `audio`.
