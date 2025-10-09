@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server.mjs",
-    "css:report": "node ./scripts/css-report.mjs"
+    "css:report": "node ./scripts/css-report.mjs",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "storybook:deploy": "chromatic --project-token=$CHROMATIC_PROJECT_TOKEN"

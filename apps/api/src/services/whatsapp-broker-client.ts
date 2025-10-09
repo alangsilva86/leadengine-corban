@@ -784,8 +784,20 @@ class WhatsAppBrokerClient {
         );
       }
 
+      const originalMessage =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      const contextMessage = originalMessage
+        ? `Unexpected error contacting WhatsApp broker for ${path}: ${originalMessage}`
+        : `Unexpected error contacting WhatsApp broker for ${path}`;
+
+      const wrappedError = new WhatsAppBrokerError(contextMessage, 'BROKER_ERROR', 502);
+
+      if (error instanceof Error && error.stack) {
+        wrappedError.stack = `${wrappedError.name}: ${wrappedError.message}\nCaused by: ${error.stack}`;
+      }
+
       logger.error('Unexpected WhatsApp broker request failure', { path, error });
-      throw error;
+      throw wrappedError;
     } finally {
       cancel();
     }

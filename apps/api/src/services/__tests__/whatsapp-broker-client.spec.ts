@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import type { Request as ExpressRequest } from 'express';
 import type { RequestInit, Headers } from 'undici';
 
 const fetchMock = vi.fn();
@@ -223,8 +224,6 @@ describe('WhatsAppBrokerClient', () => {
     const headers = secondInit?.headers as Headers;
     expect(headers.get('Idempotency-Key')).toBe('fallback-001');
 
-    const parsedBody = JSON.parse(secondInit?.body as string);
-    expect(parsedBody).toMatchObject({
     const secondBody = JSON.parse(secondInit?.body as string);
     expect(secondBody).toMatchObject({
       sessionId: 'instance-fallback',
@@ -386,7 +385,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [firstUrl] = fetchMock.mock.calls[0] as [string];
-    expect(firstUrl).toBe('https://broker.test/instances/session-legacy/disconnect');
+    expect(firstUrl).toBe('https://broker.test/instances/session-legacy/logout');
 
     const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(secondUrl).toBe('https://broker.test/broker/session/logout');
@@ -421,7 +420,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe('https://broker.test/broker/session/status?sessionId=session-qr&instanceId=session-qr');
+    expect(url).toBe('https://broker.test/instances/session-qr/qr.png');
     expect(qr.qr).toBe('qr-data');
     expect(qr.qrExpiresAt).toBe('2024-05-02T10:00:00.000Z');
   });
@@ -486,6 +485,7 @@ describe('WhatsAppBrokerClient', () => {
 
   it('logs out session via instance routes when broker mode is disabled', async () => {
     delete process.env.BROKER_MODE;
+    process.env.WHATSAPP_BROKER_DELIVERY_MODE = 'instances';
 
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
@@ -531,6 +531,7 @@ describe('WhatsAppBrokerClient', () => {
 
   it('retrieves status via direct instance lookup when broker mode is not broker', async () => {
     delete process.env.BROKER_MODE;
+    process.env.WHATSAPP_BROKER_DELIVERY_MODE = 'instances';
 
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
@@ -546,7 +547,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances/session-off?instanceId=external');
+    expect(url).toBe('https://broker.test/instances/session-off/status?instanceId=external');
     expect(init?.method).toBe('GET');
     expect(status.status).toBe('disconnected');
     expect(status.connected).toBe(false);
@@ -579,6 +580,8 @@ describe('WhatsAppBrokerClient', () => {
   });
 
   it('falls back to status when QR image is unavailable', async () => {
+    process.env.WHATSAPP_BROKER_DELIVERY_MODE = 'instances';
+
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
 
@@ -601,11 +604,192 @@ describe('WhatsAppBrokerClient', () => {
     expect(firstCall[0]).toBe('https://broker.test/instances/session-qr-fallback/qr.png');
 
     const secondCall = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(secondCall[0]).toBe('https://broker.test/instances/session-qr-fallback');
+    expect(secondCall[0]).toBe('https://broker.test/instances/session-qr-fallback/status');
     expect(secondCall[1]?.method).toBe('GET');
 
     expect(qr.qr).toBe('fallback-qr');
     expect(qr.qrExpiresAt).toBe('2024-01-02T00:00:00.000Z');
+  });
+
+  it('wraps unexpected fetch failures into WhatsAppBrokerError', async () => {
+    const { whatsappBrokerClient, WhatsAppBrokerError } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockRejectedValueOnce(new TypeError('Network unreachable'));
+
+    let caught: unknown;
+    try {
+      await whatsappBrokerClient.sendMessage('instance-network-error', {
+        to: '+551199999999',
+        content: 'Hello',
+        type: 'text',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(WhatsAppBrokerError);
+    const brokerError = caught as WhatsAppBrokerError;
+    expect(brokerError.code).toBe('BROKER_ERROR');
+    expect(brokerError.status).toBe(502);
+    expect(brokerError.message).toContain('Network unreachable');
+    expect(brokerError.message).toContain('/instances/instance-network-error/send-text');
+    expect(brokerError.stack ?? '').toContain('Caused by:');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('wraps JSON parse failures into WhatsAppBrokerError', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient, WhatsAppBrokerError } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValueOnce(
+      new Response('not-json', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const thrown = await whatsappBrokerClient
+      .sendMessage('instance-parse-error', {
+        to: '+5511988888888',
+        content: 'Teste',
+        type: 'text',
+      })
+      .catch((error: unknown) => error as WhatsAppBrokerError);
+
+    expect(thrown).toBeInstanceOf(WhatsAppBrokerError);
+    expect(thrown.code).toBe('BROKER_ERROR');
+    expect(thrown.status).toBe(502);
+    expect(thrown.message).toContain('Unexpected error contacting WhatsApp broker');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a structured 502 response when the connect route fails unexpectedly', async () => {
+    const createModelMock = () => ({
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      createMany: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+      upsert: vi.fn(),
+    });
+
+    const prismaMock = {
+      whatsAppInstance: createModelMock(),
+      campaign: createModelMock(),
+      processedIntegrationEvent: createModelMock(),
+      contact: createModelMock(),
+      ticket: createModelMock(),
+      user: createModelMock(),
+      $transaction: vi.fn(),
+      $connect: vi.fn(),
+      $disconnect: vi.fn(),
+    };
+
+    (prismaMock.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: (tx: unknown) => unknown) => {
+        return await callback(prismaMock as unknown);
+      }
+    );
+
+    vi.doMock('../../middleware/auth', () => ({
+      requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
+    }));
+
+    vi.doMock('../../middleware/validation', () => ({
+      validateRequest: (_req: unknown, _res: unknown, next: () => void) => next(),
+    }));
+
+    vi.doMock('../../lib/prisma', () => ({
+      prisma: prismaMock,
+    }));
+
+    vi.doMock('../../lib/socket-registry', () => ({
+      emitToTenant: vi.fn(),
+    }));
+
+    vi.doMock('../../config/logger', () => ({
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: () => ({
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+          debug: vi.fn(),
+        }),
+      },
+    }));
+
+    vi.doMock('../../lib/metrics', () => ({
+      whatsappHttpRequestsCounter: { inc: vi.fn() },
+    }));
+
+    const express = await import('express');
+    const request = (await import('supertest')).default;
+    const { whatsappBrokerClient, WhatsAppBrokerError } = await import('../whatsapp-broker-client');
+
+    const connectSessionSpy = vi
+      .spyOn(whatsappBrokerClient, 'connectSession')
+      .mockRejectedValue(
+        new WhatsAppBrokerError(
+          'Unexpected error contacting WhatsApp broker for /broker/session/connect: simulated failure',
+          'BROKER_ERROR',
+          502,
+          'req-789'
+        )
+      );
+
+    const getSessionStatusSpy = vi
+      .spyOn(whatsappBrokerClient, 'getSessionStatus')
+      .mockResolvedValue({ status: 'connected', connected: true } as never);
+
+    const { integrationsRouter } = await import('../../routes/integrations');
+    const { errorHandler } = await import('../../middleware/error-handler');
+
+    const app = express.default();
+    app.use(express.json());
+    app.use(((req, _res, next) => {
+      (req as ExpressRequest).user = {
+        id: 'user-1',
+        tenantId: 'tenant-123',
+        email: 'user@example.com',
+        name: 'Test User',
+        role: 'ADMIN',
+        isActive: true,
+        permissions: [],
+      };
+      next();
+    }) as express.RequestHandler);
+    app.use('/api/integrations', integrationsRouter);
+    app.use(errorHandler);
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/session/connect')
+      .send({ webhookUrl: 'https://hooks.test/whatsapp' });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toMatchObject({
+      error: {
+        code: 'BROKER_ERROR',
+        message: 'WhatsApp broker request failed',
+        details: { requestId: 'req-789' },
+      },
+      path: '/api/integrations/whatsapp/session/connect',
+      method: 'POST',
+    });
+
+    expect(connectSessionSpy).toHaveBeenCalledWith('tenant-123', {
+      webhookUrl: 'https://hooks.test/whatsapp',
+    });
+    expect(getSessionStatusSpy).not.toHaveBeenCalled();
+
+    connectSessionSpy.mockRestore();
+    getSessionStatusSpy.mockRestore();
   });
 });
 
