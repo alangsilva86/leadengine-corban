@@ -7,7 +7,7 @@ import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
-import { emitToTenant } from '../../../lib/socket-registry';
+import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -453,6 +453,85 @@ export const __testing = {
   ensureTicketForContact,
 };
 
+const emitRealtimeUpdatesForInbound = async ({
+  tenantId,
+  ticketId,
+  instanceId,
+  message,
+  providerMessageId,
+}: {
+  tenantId: string;
+  ticketId: string;
+  instanceId: string;
+  message: Awaited<ReturnType<typeof sendMessageService>>;
+  providerMessageId: string | null;
+}) => {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        tenantId: true,
+        agreementId: true,
+        status: true,
+        queueId: true,
+        subject: true,
+        updatedAt: true,
+        metadata: true,
+      },
+    });
+
+    if (!ticket) {
+      logger.warn('Inbound realtime event skipped: ticket not found', {
+        tenantId,
+        ticketId,
+        messageId: message.id,
+      });
+      return;
+    }
+
+    const envelopeBase = {
+      tenantId,
+      ticketId,
+      agreementId: ticket.agreementId ?? null,
+      instanceId,
+      messageId: message.id,
+      providerMessageId,
+      ticketStatus: ticket.status,
+      ticketUpdatedAt: ticket.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+    };
+
+    const messagePayload = {
+      ...envelopeBase,
+      message,
+    };
+
+    emitToTicket(ticketId, 'messages.new', messagePayload);
+    emitToTenant(tenantId, 'messages.new', messagePayload);
+    if (ticket.agreementId) {
+      emitToAgreement(ticket.agreementId, 'messages.new', messagePayload);
+    }
+
+    const ticketPayload = {
+      ...envelopeBase,
+      ticket,
+    };
+
+    emitToTicket(ticketId, 'tickets.updated', ticketPayload);
+    emitToTenant(tenantId, 'tickets.updated', ticketPayload);
+    if (ticket.agreementId) {
+      emitToAgreement(ticket.agreementId, 'tickets.updated', ticketPayload);
+    }
+  } catch (error) {
+    logger.error('Failed to emit realtime updates for inbound WhatsApp message', {
+      error,
+      tenantId,
+      ticketId,
+      messageId: message.id,
+    });
+  }
+};
+
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
   const { instanceId, contact, message, timestamp } = event;
   const normalizedPhone = sanitizePhone(contact.phone);
@@ -605,8 +684,10 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     return null;
   })();
 
+  let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+
   try {
-    await sendMessageService(tenantId, undefined, {
+    persistedMessage = await sendMessageService(tenantId, undefined, {
       ticketId,
       content: normalizedMessage.text,
       type: normalizedMessage.type,
@@ -648,6 +729,16 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       tenantId,
       ticketId,
       messageId: message.id ?? null,
+    });
+  }
+
+  if (persistedMessage) {
+    await emitRealtimeUpdatesForInbound({
+      tenantId,
+      ticketId,
+      instanceId,
+      message: persistedMessage,
+      providerMessageId: normalizedMessage.id ?? null,
     });
   }
 

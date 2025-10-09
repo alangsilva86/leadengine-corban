@@ -1,5 +1,7 @@
 import type { Server as SocketIOServer } from 'socket.io';
 
+import { wsEmitCounter } from './metrics';
+
 type BroadcastEmitter = {
   emit(event: string, payload: unknown): void;
 };
@@ -22,6 +24,7 @@ const emitToRoom = (room: string, event: string, payload: unknown) => {
   const broadcaster = socketServer.to(room) as BroadcastEmitter;
   if (typeof broadcaster.emit === 'function') {
     broadcaster.emit(event, payload);
+    wsEmitCounter.inc({ room, event });
   }
 };
 
@@ -35,4 +38,8 @@ export const emitToUser = (userId: string, event: string, payload: unknown) => {
 
 export const emitToTicket = (ticketId: string, event: string, payload: unknown) => {
   emitToRoom(`ticket:${ticketId}`, event, payload);
+};
+
+export const emitToAgreement = (agreementId: string, event: string, payload: unknown) => {
+  emitToRoom(`agreement:${agreementId}`, event, payload);
 };

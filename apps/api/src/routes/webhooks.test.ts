@@ -22,6 +22,9 @@ vi.mock('../lib/prisma', () => {
     update: vi.fn(),
     create: vi.fn(),
   };
+  const ticketMock = {
+    findUnique: vi.fn(),
+  };
 
   return {
     prisma: {
@@ -29,6 +32,7 @@ vi.mock('../lib/prisma', () => {
       campaign: campaignMock,
       queue: queueMock,
       contact: contactMock,
+      ticket: ticketMock,
     },
   };
 });
@@ -105,6 +109,7 @@ describe('WhatsApp webhook (integration)', () => {
     (prisma.contact.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.contact.update as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.contact.create as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
     (addAllocations as unknown as ReturnType<typeof vi.fn>).mockReset();
     createTicketSpy.mockReset();
     sendMessageSpy.mockReset();
@@ -119,6 +124,16 @@ describe('WhatsApp webhook (integration)', () => {
       id: where.id,
       tenantId: 'tenant-1',
     }));
+    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'ticket-1',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      status: 'OPEN',
+      updatedAt: new Date('2024-01-01T12:00:00.000Z'),
+      queueId: 'queue-1',
+      subject: 'Contato WhatsApp',
+      metadata: {},
+    });
   });
 
   afterEach(() => {
@@ -176,7 +191,17 @@ describe('WhatsApp webhook (integration)', () => {
     }));
 
     createTicketSpy.mockResolvedValue({ id: 'ticket-1' } as unknown as Ticket);
-    sendMessageSpy.mockResolvedValue({ id: 'message-1' } as unknown as Message);
+    sendMessageSpy.mockResolvedValue({
+      id: 'message-1',
+      ticketId: 'ticket-1',
+      tenantId: 'tenant-1',
+      direction: 'INBOUND',
+      status: 'SENT',
+      content: 'Olá',
+      metadata: {},
+      createdAt: new Date('2024-01-01T12:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T12:00:00.000Z'),
+    } as unknown as Message);
 
     const app = createApp();
 
@@ -229,5 +254,8 @@ describe('WhatsApp webhook (integration)', () => {
       },
     });
     expect(addAllocations).toHaveBeenCalled();
+    const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
+    expect(emittedEvents).toContain('messages.new');
+    expect(emittedEvents).toContain('tickets.updated');
   });
 });
