@@ -45,6 +45,14 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
             socketRef.current.disconnect();
           }
 
+          console.info(
+            '🎯 LeadEngine • Inbox :: 🚪 Abrindo canal tempo real',
+            {
+              tenantId,
+              transports,
+            }
+          );
+
           const socket = io(resolveSocketUrl(), {
             path: '/socket.io',
             transports,
@@ -58,12 +66,21 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
             if (!isMounted) return;
             setConnected(true);
             setConnectionError(null);
+            console.info('🎯 LeadEngine • Inbox :: 🤝 Conectado ao tempo real', {
+              tenantId,
+              transports,
+              socketId: socket.id,
+            });
             socket.emit('join-tenant', tenantId);
           });
 
           socket.on('disconnect', () => {
             if (!isMounted) return;
             setConnected(false);
+            console.info('🎯 LeadEngine • Inbox :: 👋 Conexão encerrada', {
+              tenantId,
+              socketId: socket.id,
+            });
           });
 
           socket.on('connect_error', (error) => {
@@ -73,16 +90,28 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
                 ? error.message
                 : 'Falha ao conectar no tempo real';
             setConnectionError(message);
+            console.warn('🎯 LeadEngine • Inbox :: ⚠️ Erro ao conectar no tempo real', {
+              tenantId,
+              transports,
+              message,
+            });
 
             if (transports.includes('websocket') && !fallbackAttemptedRef.current) {
               fallbackAttemptedRef.current = true;
               setConnected(false);
               setConnectionError('Falha ao conectar via WebSocket. Tentando reconectar via polling.');
+              console.info('🎯 LeadEngine • Inbox :: 🔁 Tentando fallback para polling', {
+                tenantId,
+              });
               initializeSocket(['polling']);
             }
           });
 
           const notifyLeadUpdate = (payload) => {
+            console.info('🎯 LeadEngine • Inbox :: 📨 Atualização recebida', {
+              tenantId,
+              hasPayload: Boolean(payload),
+            });
             if (typeof onLead === 'function') {
               onLead(payload);
             }
