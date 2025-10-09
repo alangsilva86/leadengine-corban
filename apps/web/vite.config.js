@@ -5,9 +5,15 @@ import path from 'path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
+const shouldGenerateCssReport = process.env.GENERATE_CSS_REPORT === 'true'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  css: {
+    postcss: {
+      map: shouldGenerateCssReport ? { inline: false } : false,
+    },
+  },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
@@ -25,7 +31,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
+    sourcemap: shouldGenerateCssReport,
     minify: 'esbuild',
     chunkSizeWarningLimit: 800,
     rollupOptions: {

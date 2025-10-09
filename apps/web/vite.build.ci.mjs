@@ -1,6 +1,8 @@
 import { mergeConfig } from 'vite'
 import baseConfig from './vite.config.js'
 
+const shouldGenerateCssReport = process.env.GENERATE_CSS_REPORT === 'true'
+
 const manualChunks = (id) => {
   if (!id.includes('node_modules')) return
   if (id.includes('/react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
@@ -19,7 +21,7 @@ export default mergeConfig(baseConfig, {
   },
   build: {
     target: 'es2020',
-    sourcemap: false,
+    sourcemap: shouldGenerateCssReport,
     minify: 'esbuild',
     chunkSizeWarningLimit: 800,
     rollupOptions: {

@@ -17,5 +17,12 @@ jobs:
       - run: pnpm fetch
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
-      - run: pnpm -r --filter "!web" build
-      - run: pnpm -C apps/web exec vite build --config apps/web/vite.build.ci.mjs
+      - run: pnpm build:css-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: css-bundle-report
+          if-no-files-found: warn
+          path: |
+            apps/web/dist/reports/css-report.html
+            apps/web/dist/reports/css-report.json
