@@ -697,13 +697,14 @@ class WhatsAppBrokerClient {
         ? payload.code.trim()
         : undefined;
 
-    const body = JSON.stringify(compactObject({ code: normalizedCode }));
+    const body =
+      normalizedCode !== undefined ? JSON.stringify({ code: normalizedCode }) : undefined;
 
     await this.request<void>(
       `/instances/${encodedInstanceId}/pair`,
       {
         method: 'POST',
-        body,
+        ...(body !== undefined ? { body } : {}),
       }
     );
   }
