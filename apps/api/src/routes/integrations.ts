@@ -1674,13 +1674,28 @@ const syncInstancesFromBroker = async (
         historyEntry
       ) as Record<string, unknown>;
       metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+      const brokerNameCandidate =
+        typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
+      const hasBrokerName = brokerNameCandidate.length > 0;
+      const existingDisplayName =
+        typeof existingInstance.name === 'string' && existingInstance.name.trim().length > 0
+          ? existingInstance.name.trim()
+          : null;
+      const shouldAdoptBrokerName =
+        hasBrokerName &&
+        (!existingDisplayName || existingDisplayName === instanceId || brokerNameCandidate !== instanceId);
+      const resolvedDisplayName = shouldAdoptBrokerName
+        ? brokerNameCandidate
+        : existingDisplayName ?? (hasBrokerName ? brokerNameCandidate : instanceId);
+      metadataWithHistory.displayName = resolvedDisplayName;
+      metadataWithHistory.label = resolvedDisplayName;
       const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       await prisma.whatsAppInstance.update({
         where: { id: existingInstance.id },
         data: {
           tenantId,
-          name: brokerInstance.name ?? existingInstance.name ?? instanceId,
+          name: resolvedDisplayName,
           status: derivedStatus,
           connected: derivedConnected,
           brokerId: instanceId,
@@ -1715,13 +1730,20 @@ const syncInstancesFromBroker = async (
         unknown
       >;
       metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+      const snapshotDisplayName =
+        typeof brokerInstance.name === 'string' && brokerInstance.name.trim().length > 0
+          ? brokerInstance.name.trim()
+          : instanceId;
+      metadataWithHistory.displayName = snapshotDisplayName;
+      metadataWithHistory.label = snapshotDisplayName;
+      metadataWithHistory.slug = instanceId;
       const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       await prisma.whatsAppInstance.create({
         data: {
           id: instanceId,
           tenantId,
-          name: brokerInstance.name ?? instanceId,
+          name: snapshotDisplayName,
           brokerId: instanceId,
           status: derivedStatus,
           connected: derivedConnected,
@@ -2231,47 +2253,74 @@ router.post(
     };
 
     const normalizedName = name.trim();
-    const slugCandidate = toSlug(normalizedName, '');
 
-    if (!slugCandidate) {
+    if (!normalizedName) {
       res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_INSTANCE_NAME',
-          message: 'Informe um nome válido utilizando letras minúsculas, números ou hífens.',
+          message: 'Informe um nome válido para a nova instância.',
         },
       });
       return;
     }
 
-    if (normalizedName !== slugCandidate) {
+    if (normalizedName.length > 120) {
       res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_INSTANCE_NAME',
-          message: 'Informe um nome válido utilizando letras minúsculas, números ou hífens.',
+          message: 'O nome da instância deve ter no máximo 120 caracteres.',
         },
       });
       return;
     }
 
-    const validatedName = slugCandidate;
+    const providedId = typeof id === 'string' ? id.trim() : '';
+    const hasProvidedId = providedId.length > 0;
+    const requestedIdSourceRaw = hasProvidedId ? providedId : normalizedName;
+    const requestedIdSlug = toSlug(requestedIdSourceRaw, 'instance');
+
+    if (!requestedIdSlug) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: 'Informe um identificador válido utilizando letras minúsculas, números ou hífens.',
+        },
+      });
+      return;
+    }
+
+    if (hasProvidedId && requestedIdSlug !== providedId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: 'Informe um identificador válido utilizando letras minúsculas, números ou hífens.',
+        },
+      });
+      return;
+    }
 
     try {
-      assertValidSlug(slugCandidate, 'nome');
+      assertValidSlug(requestedIdSlug, 'identificador');
     } catch (validationError) {
       res.status(400).json({
         success: false,
         error: {
-          code: 'INVALID_INSTANCE_NAME',
-          message: validationError instanceof Error ? validationError.message : 'Nome inválido para instância.',
+          code: 'INVALID_INSTANCE_ID',
+          message:
+            validationError instanceof Error
+              ? validationError.message
+              : 'Identificador inválido para instância.',
         },
       });
       return;
     }
 
-    const requestedIdSource =
-      typeof id === 'string' && id.trim().length > 0 ? id.trim() : validatedName;
+    const validatedName = normalizedName;
+    const requestedIdSource = requestedIdSlug;
     const normalizedAgreementId =
       typeof agreementId === 'string' && agreementId.trim().length > 0
         ? agreementId.trim()
@@ -2341,8 +2390,10 @@ router.post(
       const metadata = appendInstanceHistory(
         compactRecord({
           displayId: normalizedId,
-          slug: validatedName,
+          slug: requestedIdSlug,
           brokerId: resolvedBrokerId,
+          displayName: validatedName,
+          label: validatedName,
           ...(normalizedAgreementId
             ? { agreementId: normalizedAgreementId, agreement: { id: normalizedAgreementId } }
             : {}),
