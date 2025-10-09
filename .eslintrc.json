@@ -5,6 +5,7 @@
     "node": true
   },
   "extends": ["eslint:recommended"],
+  "rulePaths": ["./eslint-rules"],
   "overrides": [
     {
       "files": ["**/*.ts", "**/*.tsx"],
@@ -15,6 +16,18 @@
       },
       "plugins": ["@typescript-eslint"],
       "extends": ["plugin:@typescript-eslint/recommended"]
+    },
+    {
+      "files": ["**/*.{js,jsx,ts,tsx}"],
+      "rules": {
+        "no-forbidden-tailwind-colors": [
+          "error",
+          {
+            "allowlistPath": "./config/forbidden-tailwind-exceptions.json",
+            "baseDir": "."
+          }
+        ]
+      }
     },
     {
       "files": ["packages/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.{js,jsx}"],

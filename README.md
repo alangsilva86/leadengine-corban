@@ -500,6 +500,11 @@ pm2 start ecosystem.config.js
 4. Push para a branch (`git push origin feature/AmazingFeature`)
 5. Abra um Pull Request
 
+### Checklist de qualidade
+
+- Execute `pnpm lint` antes de abrir o PR. O projeto possui a regra `no-forbidden-tailwind-colors`, que impede o uso de classes `text-slate-*`, `bg-white/[...]` e `border-white/...`. Caso o lint aponte violações, substitua as classes por tokens semânticos descritos em [`docs/design-system/tokens.md`](docs/design-system/tokens.md).
+- Prefira sempre as utilities geradas a partir dos tokens (`textForeground`, `bgSurface`, `borderSurfaceGlassBorder`, etc.). Se não encontrar o token adequado, registre uma discussão no canal de design system e documente a intenção na descrição do PR.
+
 ## 📄 Licença
 
 Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
