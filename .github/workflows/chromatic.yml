@@ -1,0 +1,43 @@
+name: Chromatic
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/chromatic.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+
+jobs:
+  chromatic:
+    name: Publish preview
+    runs-on: ubuntu-latest
+    if: ${{ secrets.CHROMATIC_PROJECT_TOKEN != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Upload to Chromatic
+        run: pnpm --filter web run storybook:deploy
+        env:
+          CHROMATIC_PROJECT_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
