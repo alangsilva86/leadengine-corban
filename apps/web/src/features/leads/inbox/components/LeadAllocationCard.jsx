@@ -2,18 +2,11 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
 
-const STATUS_LABEL = {
-  allocated: 'Aguardando contato',
-  contacted: 'Em conversa',
-  won: 'Venda realizada',
-  lost: 'Sem interesse',
-};
-
-const STATUS_TONE = {
-  allocated: 'border-surface-contrast bg-white/[0.08] text-foreground/80',
-  contacted: 'border-primary/40 bg-primary/15 text-foreground',
-  won: 'border-emerald-400/45 bg-emerald-400/20 text-foreground',
-  lost: 'border-rose-500/50 bg-rose-500/18 text-foreground',
+const STATUS_META = {
+  allocated: { label: 'Aguardando contato', tone: 'neutral' },
+  contacted: { label: 'Em conversa', tone: 'info' },
+  won: { label: 'Venda realizada', tone: 'success' },
+  lost: { label: 'Sem interesse', tone: 'error' },
 };
 
 const formatCurrency = (value) => {
@@ -45,8 +38,7 @@ const resolveRegistrations = (registrations) => {
 
 export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpen }) => {
   const status = allocation?.status ?? 'allocated';
-  const statusLabel = STATUS_LABEL[status] ?? 'Em acompanhamento';
-  const statusTone = STATUS_TONE[status] ?? STATUS_TONE.allocated;
+  const statusMeta = STATUS_META[status] ?? STATUS_META.allocated;
 
   return (
     <GlassPanel
@@ -77,13 +69,11 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
           </div>
         </div>
         <Badge
-          variant="outline"
-          className={cn(
-            'border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.24em] text-foreground transition-colors',
-            statusTone
-          )}
+          variant="status"
+          tone={statusMeta.tone}
+          className="px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.24em]"
         >
-          {statusLabel}
+          {statusMeta.label}
         </Badge>
       </div>
 

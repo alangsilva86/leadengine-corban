@@ -90,10 +90,7 @@ export const InboxActions = ({
       </Card>
 
       {rateLimitInfo.show ? (
-        <NoticeBanner
-          variant="warning"
-          className="rounded-2xl border-white/12 bg-white/[0.08] text-sm text-foreground-muted"
-        >
+        <NoticeBanner tone="warning" className="rounded-2xl text-sm">
           Muitas requisições recentes. Aguarde {rateLimitInfo.retryAfter ?? rateLimitInfo.resetSeconds ?? 0}s para evitar
           bloqueios.
         </NoticeBanner>

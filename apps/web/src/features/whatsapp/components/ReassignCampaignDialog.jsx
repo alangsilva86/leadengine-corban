@@ -136,7 +136,7 @@ const ReassignCampaignDialog = ({
             </p>
           </div>
 
-          <NoticeBanner variant="warning" icon={<AlertCircle className="h-4 w-4" />}>
+          <NoticeBanner tone="warning" icon={<AlertCircle className="h-4 w-4" />}>
             <p>
               Antes de confirmar, revise o impacto abaixo. Todos os tickets e leads futuros passarão a ser associados à instância escolhida.
             </p>
