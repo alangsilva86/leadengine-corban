@@ -2174,6 +2174,127 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('normalizes broker metrics in status payloads for the dashboard cards', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const { prisma } = await import('../lib/prisma');
+
+    let storedInstance = {
+      id: 'instance-metrics',
+      tenantId: 'tenant-123',
+      name: 'Instance Metrics',
+      brokerId: 'instance-metrics',
+      phoneNumber: '+5511912345678',
+      status: 'connected',
+      connected: true,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockImplementation(async () => [storedInstance]);
+    prisma.whatsAppInstance.update.mockImplementation(async ({ data, where }) => {
+      if (where.id === storedInstance.id) {
+        storedInstance = {
+          ...storedInstance,
+          ...data,
+          metadata: data.metadata ?? storedInstance.metadata,
+        } as typeof storedInstance;
+      }
+
+      return storedInstance as Awaited<ReturnType<typeof prisma.whatsAppInstance.update>>;
+    });
+
+    const listSpy = vi.spyOn(whatsappBrokerClient, 'listInstances').mockResolvedValue([
+      {
+        instance: {
+          id: 'instance-metrics',
+          tenantId: 'tenant-123',
+          name: 'Instance Metrics',
+          status: 'connected',
+          connected: true,
+          phoneNumber: '+5511912345678',
+        },
+        status: {
+          status: 'connected',
+          connected: true,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
+          stats: null,
+          metrics: { messagesSent: '18' },
+          messages: {
+            pending: { total: '5' },
+            failures: { total: '2' },
+            statusCounts: { '1': '3', status_2: 4 },
+          },
+          rate: null,
+          rateUsage: { used: '40', limit: '100' },
+          raw: {
+            metrics: { throttle: { remaining: 60, limit: 100 } },
+            messages: { pending: { total: 5 } },
+          },
+        },
+      },
+    ]);
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${storedInstance.id}/status`,
+        {
+          method: 'GET',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(listSpy).toHaveBeenCalledWith('tenant-123');
+      expect(response.status).toBe(200);
+
+      const instancePayload = body?.data?.instance ?? null;
+      expect(instancePayload?.metrics).toMatchObject({
+        messagesSent: 18,
+        sent: 18,
+        queued: 5,
+        failed: 2,
+        statusCounts: {
+          '1': 3,
+          '2': 4,
+          '3': 0,
+          '4': 0,
+          '5': 0,
+        },
+        rateUsage: {
+          used: 40,
+          limit: 100,
+          remaining: 60,
+          percentage: 40,
+        },
+      });
+
+      const listInstance = Array.isArray(body?.data?.instances)
+        ? body.data.instances.find((item: { id?: string }) => item?.id === storedInstance.id)
+        : null;
+
+      expect(listInstance?.metrics).toMatchObject({
+        sent: 18,
+        queued: 5,
+        failed: 2,
+      });
+
+      const normalizedMetadata = instancePayload?.metadata?.normalizedMetrics ?? null;
+      expect(normalizedMetadata).toMatchObject({ sent: 18, queued: 5, failed: 2 });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('returns timeout errors from the WhatsApp broker with sanitized payload', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const brokerModule = await import('../services/whatsapp-broker-client');
