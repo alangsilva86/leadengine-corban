@@ -149,6 +149,23 @@ describe('WhatsAppBrokerClient', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ code: '123-456' });
   });
 
+  it('pairs instances without code using empty payload', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.connectInstance('broker-55', {
+      instanceId: 'crm-instance',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/crm-instance/pair');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBeUndefined();
+  });
+
   it('logs out instances using POST /instances/:id/logout', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
