@@ -1111,6 +1111,7 @@ const WhatsAppConnect = ({
   const [instances, setInstances] = useState([]);
   const [instance, setInstance] = useState(null);
   const [instancesReady, setInstancesReady] = useState(false);
+  const preferredInstanceIdRef = useRef(null);
   const [qrData, setQrData] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [loadingInstances, setLoadingInstances] = useState(false);
@@ -1163,6 +1164,7 @@ const WhatsAppConnect = ({
       setInstances([]);
       setInstance(null);
       clearInstancesCache(selectedAgreement?.id);
+      preferredInstanceIdRef.current = null;
       setLocalStatus('disconnected');
       setQrData(null);
       setSecondsLeft(null);
@@ -1217,12 +1219,14 @@ const WhatsAppConnect = ({
       setInstances([]);
       setInstance(null);
       setInstancesReady(true);
+      preferredInstanceIdRef.current = null;
       return;
     }
 
     const cached = readInstancesCache(agreementId);
     if (!cached) {
       setInstancesReady(false);
+      preferredInstanceIdRef.current = null;
       return;
     }
 
@@ -1233,12 +1237,14 @@ const WhatsAppConnect = ({
         : list[0];
       setInstances(list);
       setInstance(current ?? null);
+      preferredInstanceIdRef.current = current?.id ?? null;
       if (current?.status) {
         setLocalStatus(current.status);
       }
       setInstancesReady(true);
     } else {
       setInstancesReady(false);
+      preferredInstanceIdRef.current = null;
     }
     hasFetchedOnceRef.current = false;
   }, [selectedAgreement?.id]);
@@ -1611,9 +1617,31 @@ const WhatsAppConnect = ({
     return () => clearInterval(timer);
   }, [expiresAt, localStatus, onStatusChange]);
 
-  const pickCurrentInstance = (list) => {
+  const pickCurrentInstance = (
+    list,
+    { preferredInstanceId, campaignInstanceId } = {}
+  ) => {
     if (!Array.isArray(list) || list.length === 0) {
       return null;
+    }
+
+    const findMatch = (targetId) => {
+      if (!targetId) {
+        return null;
+      }
+      return (
+        list.find((item) => item.id === targetId || item.name === targetId) || null
+      );
+    };
+
+    const preferredMatch = findMatch(preferredInstanceId);
+    if (preferredMatch) {
+      return preferredMatch;
+    }
+
+    const campaignMatch = findMatch(campaignInstanceId);
+    if (campaignMatch) {
+      return campaignMatch;
     }
 
     const connected = list.find((item) => item.connected === true);
@@ -1673,11 +1701,19 @@ const WhatsAppConnect = ({
     };
   };
 
-  const loadInstances = async ({
-    connectResult: providedConnect,
-    preferredInstanceId,
-    forceRefresh,
-  } = {}) => {
+  const loadInstances = async (options = {}) => {
+    const {
+      connectResult: providedConnect,
+      preferredInstanceId: explicitPreferredInstanceId,
+      forceRefresh,
+    } = options;
+    const hasExplicitPreference = Object.prototype.hasOwnProperty.call(
+      options,
+      'preferredInstanceId'
+    );
+    const resolvedPreferredInstanceId = hasExplicitPreference
+      ? explicitPreferredInstanceId
+      : preferredInstanceIdRef.current ?? null;
     const agreementId = selectedAgreement?.id;
     const token = getAuthToken();
     setAuthTokenState(token);
@@ -1689,7 +1725,7 @@ const WhatsAppConnect = ({
     try {
       log('🚀 Iniciando sincronização de instâncias WhatsApp', {
         tenantAgreement: selectedAgreement?.id ?? null,
-        preferredInstanceId: preferredInstanceId ?? null,
+        preferredInstanceId: resolvedPreferredInstanceId ?? null,
       });
       const shouldForceBrokerSync =
         typeof forceRefresh === 'boolean' ? forceRefresh : true;
@@ -1726,13 +1762,14 @@ const WhatsAppConnect = ({
       }
 
       if (list.length === 0) {
-        const fallbackInstanceId = preferredInstanceId || campaign?.instanceId || null;
+        const fallbackInstanceId =
+          resolvedPreferredInstanceId || campaign?.instanceId || null;
         if (fallbackInstanceId) {
           connectResult = connectResult || (await connectInstance(fallbackInstanceId));
         } else {
           warn('Nenhuma instância padrão disponível para conexão automática', {
             agreementId,
-            preferredInstanceId: preferredInstanceId ?? null,
+            preferredInstanceId: resolvedPreferredInstanceId ?? null,
             campaignInstanceId: campaign?.instanceId ?? null,
           });
         }
@@ -1744,23 +1781,12 @@ const WhatsAppConnect = ({
         }
       }
 
-      let current = null;
-      if (preferredInstanceId) {
-        current =
-          list.find(
-            (item) => item.id === preferredInstanceId || item.name === preferredInstanceId
-          ) || null;
-      }
-      if (!current && campaign?.instanceId) {
-        current =
-          list.find(
-            (item) => item.id === campaign.instanceId || item.name === campaign.instanceId
-          ) || null;
-      }
+      const preferenceOptions = {
+        preferredInstanceId: resolvedPreferredInstanceId,
+        campaignInstanceId: campaign?.instanceId ?? null,
+      };
 
-      if (!current) {
-        current = pickCurrentInstance(list);
-      }
+      let current = pickCurrentInstance(list, preferenceOptions);
 
       if (!current && connectResult?.instance) {
         current = connectResult.instance;
@@ -1793,13 +1819,18 @@ const WhatsAppConnect = ({
         if (normalizedCurrent) {
           current = { ...normalizedCurrent, ...current };
           list = normalizedList.map((item) => (item.id === current.id ? { ...item, ...current } : item));
-        } else if (normalizedList.length > 0) {
-          current = pickCurrentInstance(normalizedList);
         } else {
-          current = null;
+          current = pickCurrentInstance(normalizedList, preferenceOptions);
         }
-      } else if (normalizedList.length > 0) {
-        current = pickCurrentInstance(normalizedList);
+      } else {
+        current = pickCurrentInstance(normalizedList, preferenceOptions);
+      }
+
+      if (!current && connectResult?.instance) {
+        const normalizedConnect = normalizedList.find(
+          (item) => item.id === connectResult.instance.id
+        );
+        current = normalizedConnect || connectResult.instance;
       }
 
       const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
@@ -1809,15 +1840,17 @@ const WhatsAppConnect = ({
       if (Array.isArray(list) && list.length > 0) {
         setInstances(list);
         setInstance(current);
+        preferredInstanceIdRef.current = current?.id ?? null;
         persistInstancesCache(agreementId, list, current?.id ?? null);
       } else if (hasServerList) {
         setInstances([]);
         setInstance(null);
+        preferredInstanceIdRef.current = null;
         clearInstancesCache(agreementId);
       } else {
         warn('Servidor não retornou instâncias; reutilizando cache local', {
           agreementId,
-          preferredInstanceId,
+          preferredInstanceId: resolvedPreferredInstanceId ?? null,
         });
       }
 
@@ -2385,6 +2418,7 @@ const WhatsAppConnect = ({
       clearInstancesCache(agreementId);
       if (instance?.id === target.id) {
         setInstance(null);
+        preferredInstanceIdRef.current = null;
         setLocalStatus('disconnected');
       }
       await loadInstances({ preferredInstanceId: null, forceRefresh: true });
@@ -2438,11 +2472,13 @@ const WhatsAppConnect = ({
           const nextList = Array.isArray(prev)
             ? prev.filter((item) => item && item.id !== target.id)
             : [];
+          preferredInstanceIdRef.current = nextCurrentId;
           persistInstancesCache(agreementId, nextList, nextCurrentId);
           return nextList;
         });
         if (instance?.id === target.id) {
           setInstance(null);
+          preferredInstanceIdRef.current = null;
           setLocalStatus('disconnected');
         }
         await loadInstances({ preferredInstanceId: nextCurrentId, forceRefresh: true });
@@ -2501,15 +2537,23 @@ const WhatsAppConnect = ({
       (item) => item.id === campaign.instanceId || item.name === campaign.instanceId
     );
 
-    if (!matched) {
+    if (!matched || instance?.id === matched.id) {
       return;
     }
 
     setInstance(matched);
+    preferredInstanceIdRef.current = matched.id ?? null;
+    persistInstancesCache(selectedAgreement?.id ?? null, instances, matched.id ?? null);
     const statusFromInstance = matched.status || 'disconnected';
     setLocalStatus(statusFromInstance);
     onStatusChange?.(statusFromInstance);
-  }, [campaign?.instanceId, instances, onStatusChange]);
+  }, [
+    campaign?.instanceId,
+    instance?.id,
+    instances,
+    onStatusChange,
+    selectedAgreement?.id,
+  ]);
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -2633,6 +2677,9 @@ const WhatsAppConnect = ({
   const handleInstanceSelect = async (inst, { skipAutoQr = false } = {}) => {
     if (!inst) return;
     setInstance(inst);
+    const nextInstanceId = inst?.id ?? null;
+    preferredInstanceIdRef.current = nextInstanceId;
+    persistInstancesCache(selectedAgreement?.id ?? null, instances, nextInstanceId);
     const statusFromInstance = inst.status || 'disconnected';
     setLocalStatus(statusFromInstance);
     onStatusChange?.(statusFromInstance);
