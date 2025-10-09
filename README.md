@@ -138,7 +138,7 @@ LOG_LEVEL=info
 >
 > **Compatibilidade com rotas legadas:** Ajuste `WHATSAPP_BROKER_DELIVERY_MODE` para `instances` quando o broker expuser apenas as rotas `/instances/:id/send-text`. Nesse modo, a API envia o corpo `{ to, text }` exigido pelas versões anteriores. Use o valor padrão `auto` (ou `broker`) para brokers que aceitam o modo direto. Se o endpoint legado rejeitar números iniciados com `+`, habilite `WHATSAPP_BROKER_LEGACY_STRIP_PLUS=true` para remover o prefixo automaticamente.
 
-> **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal.
+> **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal. Para o ambiente `ticketzapi-production` na Railway, utilize o arquivo [`docs/environments/ticketzapi-production.env`](docs/environments/ticketzapi-production.env) como referência ao atualizar as variáveis na plataforma.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.
 > **MVP:** Utilize `MVP_AUTH_BYPASS=true` para liberar o fluxo completo sem login em ambientes de demonstração. As variáveis `AUTH_MVP_*` continuam definindo o usuário padrão do bypass. Quando quiser reativar a autenticação obrigatória, defina `MVP_AUTH_BYPASS=false` (ou remova a variável) e garanta que os usuários estejam cadastrados.
 
