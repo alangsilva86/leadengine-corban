@@ -2,6 +2,15 @@
 
 Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada token descreve uma intenção de design e oferece valores para os temas claro/escuro expostos via CSS Custom Properties em `apps/web/src/styles/theme.css`. A tabela também aponta os principais componentes que utilizam cada token para facilitar a rastreabilidade.
 
+## Como aplicar tokens semânticos no Tailwind
+
+1. **Localize o propósito visual.** Use as tabelas abaixo para descobrir se o elemento representa conteúdo, superfície, borda, feedback etc. Prefira sempre o token cuja descrição melhor traduz a intenção de design.
+2. **Mapeie para uma utility semântica.** O arquivo `apps/web/tailwind.config.js` gera classes como `textForeground`, `bgSurface`, `borderSurfaceGlassBorder` e `bgSurfaceOverlayQuiet` diretamente a partir dos tokens. Combine-as com utilidades padrão do Tailwind (`rounded-lg`, `flex`, `gap-4`...) para montar o layout.
+3. **Falhou ao encontrar o token certo?** Consulte `docs/design-system/color-inventory.md` para exemplos visuais e abra uma issue em `#design-system` antes de recorrer a valores arbitrários.
+4. **Valide com o lint.** `pnpm lint` executa a regra `no-forbidden-tailwind-colors`, que bloqueia classes `text-slate-*`, `bg-white/[...]` e `border-white/...`. Ajuste a implementação até o lint passar sem precisar de exceções.
+
+> 💡 _Dica rápida_: quando precisar de tokens em contextos dinâmicos (`clsx`, `cva`, `class-variance-authority`), basta usar o mesmo nome das utilities (`textForeground`, `bgSurfaceStrong`, `borderMuted`). A regra de lint analisa literais dentro desses helpers automaticamente.
+
 ## Cores
 
 ### Superfícies
@@ -89,6 +98,16 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | `shadows.xs – shadows.xl` | Elevações graduais para superfícies interativas. | Definidos com `color-mix` a partir de `--color-border`. | `Card`, botões, painéis do dashboard |
 
 > **Fallbacks:** todas as custom properties usam `theme()` do Tailwind com valores padrão definidos em `apps/web/tailwind.tokens.js`. Em ambientes que não carregam a folha de estilos, os valores _hardcoded_ no arquivo de tokens são aplicados automaticamente.
+
+## Exceções temporárias
+
+Algumas áreas legadas ainda dependem da paleta `slate`/`white` para garantir compatibilidade com integrações externas. Elas foram mapeadas em `config/forbidden-tailwind-exceptions.json` e não devem receber novas ocorrências de classes proibidas. Sempre que tocar nesses módulos, planeje a migração para tokens e remova a exceção correspondente.
+
+- `apps/web/src/components/ui/glass-panel.*` — stories do antigo painel de vidro aguardam estabilização do componente definitivo.
+- `apps/web/src/features/leads/inbox/components/**/*` — inbox legado com layouts otimizados para a paleta neutra antiga.
+- `apps/web/src/features/chat/components/**/*` — fluxo de chat com widgets herdados dependentes de estilos externos.
+- `apps/web/src/features/whatsapp/components/**/*` — componentes do conector WhatsApp que compartilham estilos com a SDK do parceiro.
+- `apps/web/src/features/whatsapp/WhatsAppConnect.jsx` — onboarding em revisão junto a parceiros comerciais.
 
 ## Utilitários de layout e superfície
 
