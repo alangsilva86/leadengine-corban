@@ -1,317 +1,289 @@
 /**
- * Design token groups exposed to Tailwind. Structure tokens semantically so that
- * documentation and components can reference intent-driven names instead of
- * presentation-specific aliases.
+ * Semantic color tokens exposed to Tailwind. Each token stores fallback values
+ * for the default (light) palette and the dark palette so that CSS variables
+ * always have a single source of truth.
  */
-export const colors = {
-  /**
-   * Surface layering tokens that describe the application canvas and its
-   * various overlay states (cards, popovers, inbox, glass effects, etc.).
-   */
+export const surface = {
   surface: {
-    canvas: {
-      light: '#f8fafc',
-      dark: '#0f172a',
-    },
-    shell: {
-      solid: {
-        light: '#f8fafc',
-        dark: '#020617',
-      },
-      muted: {
-        light: 'rgba(248, 250, 252, 0.86)',
-        dark: 'rgba(2, 6, 23, 0.85)',
-      },
-      subtle: {
-        light: 'rgba(241, 245, 249, 0.72)',
-        dark: 'rgba(2, 6, 23, 0.65)',
-      },
-    },
-    toolbar: {
-      solid: {
-        light: 'rgba(248, 250, 252, 0.9)',
-        dark: 'rgba(15, 23, 42, 0.85)',
-      },
-      muted: {
-        light: 'rgba(248, 250, 252, 0.78)',
-        dark: 'rgba(15, 23, 42, 0.6)',
-      },
-    },
-    overlay: {
-      quiet: {
-        light: 'rgba(255, 255, 255, 0.78)',
-        dark: 'rgba(124, 138, 163, 0.14)',
-      },
-      bold: {
-        light: 'rgba(255, 255, 255, 0.92)',
-        dark: 'rgba(124, 138, 163, 0.22)',
-      },
-      glass: {
-        layer: {
-          light: 'rgba(255, 255, 255, 0.85)',
-          dark: 'rgba(148, 163, 184, 0.08)',
-        },
-        border: {
-          light: 'rgba(15, 23, 42, 0.12)',
-          dark: 'rgba(148, 163, 184, 0.25)',
-        },
-      },
-      inbox: {
-        quiet: {
-          light: 'rgba(255, 255, 255, 0.72)',
-          dark: 'rgba(15, 23, 42, 0.78)',
-        },
-        bold: {
-          light: 'rgba(255, 255, 255, 0.88)',
-          dark: 'rgba(15, 23, 42, 0.9)',
-        },
-      },
-    },
+    default: 'rgba(255, 255, 255, 0.78)',
+    dark: 'rgba(124, 138, 163, 0.14)',
   },
-  /**
-   * Content tokens define foreground colors for text and iconography across
-   * neutral, muted and contextual areas like the inbox.
-   */
-  content: {
-    primary: {
-      light: '#0f172a',
-      dark: '#f1f5f9',
-    },
-    muted: {
-      light: '#475569',
-      dark: '#94a3b8',
-    },
-    shell: {
-      muted: {
-        light: 'rgba(15, 23, 42, 0.65)',
-        dark: 'rgba(148, 163, 184, 0.78)',
-      },
-    },
-    inbox: {
-      primary: {
-        light: '#0f172a',
-        dark: 'rgba(241, 245, 249, 0.92)',
-      },
-      muted: {
-        light: 'rgba(15, 23, 42, 0.6)',
-        dark: 'rgba(241, 245, 249, 0.75)',
-      },
-    },
+  'surface-strong': {
+    default: 'rgba(255, 255, 255, 0.92)',
+    dark: 'rgba(124, 138, 163, 0.22)',
   },
-  /**
-   * Channel and status specific colors for messaging integrations.
-   */
-  status: {
-    whatsapp: {
-      light: '#25d366',
-      dark: '#25d366',
-    },
+  'surface-contrast': {
+    default: 'rgba(15, 23, 42, 0.12)',
+    dark: 'rgba(255, 255, 255, 0.15)',
   },
-  /**
-   * Stroke tokens cover borders, dividers and other lines separating or
-   * outlining surfaces.
-   */
-  stroke: {
-    divider: {
-      light: 'rgba(15, 23, 42, 0.08)',
-      dark: 'rgba(124, 138, 163, 0.35)',
-    },
-    default: {
-      light: 'rgba(15, 23, 42, 0.12)',
-      dark: '#7c8aa3',
-    },
-    input: {
-      light: 'rgba(15, 23, 42, 0.18)',
-      dark: '#7c8aa3',
-    },
-    shell: {
-      light: 'rgba(15, 23, 42, 0.14)',
-      dark: 'rgba(148, 163, 184, 0.32)',
-    },
-    inbox: {
-      light: 'rgba(15, 23, 42, 0.12)',
-      dark: 'rgba(255, 255, 255, 0.12)',
-    },
+  'surface-shell': {
+    default: '#f8fafc',
+    dark: '#020617',
   },
-  /**
-   * Brand palettes for primary calls to action and supporting accent hues.
-   */
-  brand: {
-    primary: {
-      solid: {
-        light: '#4f46e5',
-        dark: '#6366f1',
-      },
-      onSolid: {
-        light: '#eef2ff',
-        dark: '#f8fafc',
-      },
-    },
-    secondary: {
-      surface: {
-        light: 'rgba(79, 70, 229, 0.1)',
-        dark: 'rgba(99, 102, 241, 0.12)',
-      },
-      onSurface: {
-        light: '#0f172a',
-        dark: '#f1f5f9',
-      },
-    },
-    accent: {
-      surface: {
-        light: 'rgba(79, 70, 229, 0.16)',
-        dark: 'rgba(99, 102, 241, 0.18)',
-      },
-      onSurface: {
-        light: '#0f172a',
-        dark: '#f1f5f9',
-      },
-    },
+  'surface-shell-muted': {
+    default: 'rgba(248, 250, 252, 0.86)',
+    dark: 'rgba(2, 6, 23, 0.85)',
   },
-  /**
-   * Neutral support colors for subdued surfaces and corresponding typography.
-   */
-  support: {
-    muted: {
-      surface: {
-        light: 'rgba(148, 163, 184, 0.16)',
-        dark: 'rgba(148, 163, 184, 0.08)',
-      },
-      onSurface: {
-        light: '#475569',
-        dark: '#94a3b8',
-      },
-    },
+  'surface-shell-subtle': {
+    default: 'rgba(241, 245, 249, 0.72)',
+    dark: 'rgba(2, 6, 23, 0.65)',
   },
-  /**
-   * Feedback states used for success, warnings, errors and destructive actions.
-   */
-  feedback: {
-    success: {
-      solid: {
-        light: '#16a34a',
-        dark: '#22c55e',
-      },
-      onSoft: {
-        light: '#14532d',
-        dark: '#bbf7d0',
-      },
-      onStrong: {
-        light: '#f0fdf4',
-        dark: '#022c17',
-      },
-    },
-    warning: {
-      solid: {
-        light: '#d97706',
-        dark: '#facc15',
-      },
-      onSoft: {
-        light: '#92400e',
-        dark: '#fde68a',
-      },
-    },
-    error: {
-      solid: {
-        light: '#dc2626',
-        dark: '#ef4444',
-      },
-      onSoft: {
-        light: '#991b1b',
-        dark: '#fecaca',
-      },
-    },
-    destructive: {
-      solid: {
-        light: '#dc2626',
-        dark: '#ef4444',
-      },
-    },
+  'surface-toolbar': {
+    default: 'rgba(248, 250, 252, 0.9)',
+    dark: 'rgba(15, 23, 42, 0.85)',
   },
-  /**
-   * Interaction-specific strokes such as input outlines and focus rings.
-   */
-  interaction: {
-    input: {
-      light: 'rgba(15, 23, 42, 0.18)',
-      dark: '#7c8aa3',
-    },
-    focus: {
-      light: 'rgba(79, 70, 229, 0.55)',
-      dark: '#6366f1',
-    },
-    shell: {
-      light: 'rgba(15, 23, 42, 0.16)',
-      dark: 'rgba(255, 255, 255, 0.08)',
-    },
+  'surface-toolbar-muted': {
+    default: 'rgba(248, 250, 252, 0.78)',
+    dark: 'rgba(15, 23, 42, 0.6)',
   },
-  /**
-   * Data visualization palettes for categorical charts and dashboards.
-   */
-  data: {
-    visualization: {
-      categorical: {
-        '1': {
-          light: '#4f46e5',
-          dark: '#6366f1',
-        },
-        '2': {
-          light: '#0ea5e9',
-          dark: '#22d3ee',
-        },
-        '3': {
-          light: '#f97316',
-          dark: '#f97316',
-        },
-        '4': {
-          light: '#16a34a',
-          dark: '#22c55e',
-        },
-        '5': {
-          light: '#facc15',
-          dark: '#facc15',
-        },
-      },
-    },
+  'surface-glass': {
+    default: 'rgba(255, 255, 255, 0.85)',
+    dark: 'rgba(148, 163, 184, 0.08)',
   },
-  /**
-   * Navigation-specific tokens tailored for sidebar shells and their accents.
-   */
-  navigation: {
-    sidebar: {
-      surface: {
-        light: 'rgba(255, 255, 255, 0.85)',
-        dark: 'rgba(15, 23, 42, 0.96)',
-      },
-      onSurface: {
-        light: '#0f172a',
-        dark: '#f1f5f9',
-      },
-      primary: {
-        light: '#4f46e5',
-        dark: '#6366f1',
-      },
-      onPrimary: {
-        light: '#eef2ff',
-        dark: '#f8fafc',
-      },
-      accent: {
-        light: 'rgba(79, 70, 229, 0.1)',
-        dark: 'rgba(148, 163, 184, 0.12)',
-      },
-      onAccent: {
-        light: '#0f172a',
-        dark: '#f1f5f9',
-      },
-      border: {
-        light: 'rgba(15, 23, 42, 0.1)',
-        dark: 'rgba(255, 255, 255, 0.12)',
-      },
-      focusRing: {
-        light: 'rgba(79, 70, 229, 0.25)',
-        dark: 'rgba(99, 102, 241, 0.4)',
-      },
-    },
+  'surface-glass-border': {
+    default: 'rgba(15, 23, 42, 0.12)',
+    dark: 'rgba(148, 163, 184, 0.25)',
+  },
+  'surface-overlay-quiet': {
+    default: 'rgba(255, 255, 255, 0.78)',
+    dark: 'rgba(124, 138, 163, 0.14)',
+  },
+  'surface-overlay-strong': {
+    default: 'rgba(255, 255, 255, 0.92)',
+    dark: 'rgba(124, 138, 163, 0.22)',
+  },
+  'surface-overlay-glass': {
+    default: 'rgba(255, 255, 255, 0.85)',
+    dark: 'rgba(148, 163, 184, 0.08)',
+  },
+  'surface-overlay-glass-border': {
+    default: 'rgba(15, 23, 42, 0.12)',
+    dark: 'rgba(148, 163, 184, 0.25)',
+  },
+  'surface-overlay-inbox-quiet': {
+    default: 'rgba(255, 255, 255, 0.72)',
+    dark: 'rgba(15, 23, 42, 0.78)',
+  },
+  'surface-overlay-inbox-bold': {
+    default: 'rgba(255, 255, 255, 0.88)',
+    dark: 'rgba(15, 23, 42, 0.9)',
+  },
+  'inbox-surface': {
+    default: 'rgba(255, 255, 255, 0.72)',
+    dark: 'rgba(15, 23, 42, 0.78)',
+  },
+  'inbox-surface-strong': {
+    default: 'rgba(255, 255, 255, 0.88)',
+    dark: 'rgba(15, 23, 42, 0.9)',
+  },
+  'inbox-border': {
+    default: 'rgba(15, 23, 42, 0.12)',
+    dark: 'rgba(255, 255, 255, 0.12)',
+  },
+  background: {
+    default: '#f8fafc',
+    dark: '#0f172a',
+  },
+  border: {
+    default: 'rgba(15, 23, 42, 0.12)',
+    dark: '#7c8aa3',
+  },
+  'border-shell': {
+    default: 'rgba(15, 23, 42, 0.14)',
+    dark: 'rgba(148, 163, 184, 0.32)',
+  },
+  divider: {
+    default: 'rgba(15, 23, 42, 0.08)',
+    dark: 'rgba(124, 138, 163, 0.35)',
+  },
+  input: {
+    default: 'rgba(15, 23, 42, 0.18)',
+    dark: '#7c8aa3',
+  },
+  sidebar: {
+    default: 'rgba(255, 255, 255, 0.85)',
+    dark: 'rgba(15, 23, 42, 0.96)',
+  },
+  'sidebar-border': {
+    default: 'rgba(15, 23, 42, 0.1)',
+    dark: 'rgba(255, 255, 255, 0.12)',
+  },
+}
+
+export const foreground = {
+  foreground: {
+    default: '#0f172a',
+    dark: '#f1f5f9',
+  },
+  'foreground-muted': {
+    default: '#475569',
+    dark: '#94a3b8',
+  },
+  'inbox-foreground': {
+    default: '#0f172a',
+    dark: 'rgba(241, 245, 249, 0.92)',
+  },
+  'inbox-foreground-muted': {
+    default: 'rgba(15, 23, 42, 0.6)',
+    dark: 'rgba(241, 245, 249, 0.75)',
+  },
+  'text-shell-muted': {
+    default: 'rgba(15, 23, 42, 0.65)',
+    dark: 'rgba(148, 163, 184, 0.78)',
+  },
+  'sidebar-foreground': {
+    default: '#0f172a',
+    dark: '#f1f5f9',
+  },
+}
+
+export const accent = {
+  accent: {
+    default: 'rgba(79, 70, 229, 0.16)',
+    dark: 'rgba(99, 102, 241, 0.18)',
+  },
+  'accent-foreground': {
+    default: '#0f172a',
+    dark: '#f1f5f9',
+  },
+  primary: {
+    default: '#4f46e5',
+    dark: '#6366f1',
+  },
+  'primary-foreground': {
+    default: '#eef2ff',
+    dark: '#f8fafc',
+  },
+  secondary: {
+    default: 'rgba(79, 70, 229, 0.1)',
+    dark: 'rgba(99, 102, 241, 0.12)',
+  },
+  'secondary-foreground': {
+    default: '#0f172a',
+    dark: '#f1f5f9',
+  },
+  muted: {
+    default: 'rgba(148, 163, 184, 0.16)',
+    dark: 'rgba(148, 163, 184, 0.08)',
+  },
+  'muted-foreground': {
+    default: '#475569',
+    dark: '#94a3b8',
+  },
+  ring: {
+    default: 'rgba(79, 70, 229, 0.55)',
+    dark: '#6366f1',
+  },
+  'ring-shell': {
+    default: 'rgba(15, 23, 42, 0.16)',
+    dark: 'rgba(255, 255, 255, 0.08)',
+  },
+  destructive: {
+    default: '#dc2626',
+    dark: '#ef4444',
+  },
+  'chart-1': {
+    default: '#4f46e5',
+    dark: '#6366f1',
+  },
+  'chart-2': {
+    default: '#0ea5e9',
+    dark: '#22d3ee',
+  },
+  'chart-3': {
+    default: '#f97316',
+    dark: '#f97316',
+  },
+  'chart-4': {
+    default: '#16a34a',
+    dark: '#22c55e',
+  },
+  'chart-5': {
+    default: '#facc15',
+    dark: '#facc15',
+  },
+  'sidebar-primary': {
+    default: '#4f46e5',
+    dark: '#6366f1',
+  },
+  'sidebar-primary-foreground': {
+    default: '#eef2ff',
+    dark: '#f8fafc',
+  },
+  'sidebar-accent': {
+    default: 'rgba(79, 70, 229, 0.1)',
+    dark: 'rgba(148, 163, 184, 0.12)',
+  },
+  'sidebar-accent-foreground': {
+    default: '#0f172a',
+    dark: '#f1f5f9',
+  },
+  'sidebar-ring': {
+    default: 'rgba(79, 70, 229, 0.25)',
+    dark: 'rgba(99, 102, 241, 0.4)',
+  },
+}
+
+export const status = {
+  'status-whatsapp': {
+    default: '#25d366',
+    dark: '#25d366',
+  },
+  'status-whatsapp-surface': {
+    default: 'rgba(37, 211, 102, 0.18)',
+    dark: 'rgba(37, 211, 102, 0.14)',
+  },
+  'status-whatsapp-border': {
+    default: 'rgba(37, 211, 102, 0.3)',
+    dark: 'rgba(37, 211, 102, 0.38)',
+  },
+  'status-whatsapp-foreground': {
+    default: '#14532d',
+    dark: '#bbf7d0',
+  },
+  success: {
+    default: '#16a34a',
+    dark: '#22c55e',
+  },
+  'success-soft-foreground': {
+    default: '#14532d',
+    dark: '#bbf7d0',
+  },
+  'success-strong-foreground': {
+    default: '#f0fdf4',
+    dark: '#022c17',
+  },
+  warning: {
+    default: '#d97706',
+    dark: '#facc15',
+  },
+  'warning-soft-foreground': {
+    default: '#92400e',
+    dark: '#fde68a',
+  },
+  error: {
+    default: '#dc2626',
+    dark: '#ef4444',
+  },
+  'error-soft-foreground': {
+    default: '#991b1b',
+    dark: '#fecaca',
+  },
+  'status-error': {
+    default: '#dc2626',
+    dark: '#ef4444',
+  },
+  'status-error-surface': {
+    default: 'rgba(220, 38, 38, 0.16)',
+    dark: 'rgba(239, 68, 68, 0.15)',
+  },
+  'status-error-border': {
+    default: 'rgba(220, 38, 38, 0.35)',
+    dark: 'rgba(239, 68, 68, 0.4)',
+  },
+  'status-error-foreground': {
+    default: '#991b1b',
+    dark: '#fecaca',
   },
 }
 
