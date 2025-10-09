@@ -137,7 +137,7 @@ export const InboxItem = ({
         {typingLabel ? <span className="font-medium text-emerald-300">{typingLabel}</span> : formatPreview(ticket)}
       </div>
 
-      <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/70">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground/70">
         <div className="flex items-center gap-1.5 text-[13px] font-normal text-muted-foreground/80">
           <Avatar className="h-6 w-6 border border-slate-800/70">
             <AvatarImage src={ticket.contact?.avatar} alt={name} />
@@ -145,14 +145,14 @@ export const InboxItem = ({
           </Avatar>
           {ticket.userId ? <span className="text-[13px] text-muted-foreground/80">Atribuído</span> : <span className="text-[13px] text-muted-foreground/80">Não atribuído</span>}
         </div>
-        {phoneLabel ? <span className="text-[11px] font-medium text-muted-foreground/70">{phoneLabel}</span> : null}
+        {phoneLabel ? <span className="text-xs font-medium text-muted-foreground/70">{phoneLabel}</span> : null}
         {ticket.timeline?.lastInboundAt ? (
           <span>
             Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', {
               hour: '2-digit',
               minute: '2-digit',
             })}
-          <span className="text-[11px] font-medium text-muted-foreground/70">
+          <span className="text-xs font-medium text-muted-foreground/70">
             Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
         ) : null}

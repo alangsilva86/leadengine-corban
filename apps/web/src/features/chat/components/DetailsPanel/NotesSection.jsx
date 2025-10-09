@@ -38,7 +38,7 @@ export const NotesSection = forwardRef(({ notes = [], onCreate, loading }, ref) 
           <div className="flex flex-col gap-2">
             {notes.map((note) => (
               <div key={note.id} className="rounded-2xl bg-slate-900/35 p-3 ring-1 ring-white/5">
-                <div className="flex justify-between text-[11px] text-slate-400">
+                <div className="flex justify-between text-xs text-slate-400">
                   <span>{note.authorName ?? 'Agente'}</span>
                   <span>{new Date(note.createdAt ?? note.updatedAt ?? Date.now()).toLocaleString('pt-BR')}</span>
                 </div>

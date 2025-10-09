@@ -118,7 +118,7 @@ const FilterToolbar = ({
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-xl space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Painel de atendimento</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Painel de atendimento</p>
           <div className="space-y-1">
             <h2 className="text-xl font-semibold text-slate-100">Inbox de Leads</h2>
             <p className="text-sm text-slate-400">
@@ -165,7 +165,7 @@ const FilterToolbar = ({
                 {activeFiltersCount > 0 ? (
                   <Badge
                     variant="secondary"
-                    className="ml-2 rounded-full border-0 bg-sky-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200"
+                    className="ml-2 rounded-full border-0 bg-sky-500/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-sky-200"
                   >
                     {activeFiltersCount}
                   </Badge>
@@ -272,7 +272,7 @@ const FilterToolbar = ({
               <Badge
                 key={summary.id}
                 variant="outline"
-                className="inline-flex items-center gap-2 rounded-full border-slate-800/80 bg-slate-950/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-300"
+                className="inline-flex items-center gap-2 rounded-full border-slate-800/80 bg-slate-950/60 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-slate-300"
               >
                 <span className="text-slate-500">{summary.label}</span>
                 <span className="text-slate-100">{summary.value}</span>

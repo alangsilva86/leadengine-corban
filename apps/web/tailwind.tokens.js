@@ -245,6 +245,18 @@ export const status = {
     default: '#16a34a',
     dark: '#22c55e',
   },
+  'success-soft': {
+    default: '#dcfce7',
+    dark: 'rgba(34, 197, 94, 0.18)',
+  },
+  'success-soft-border': {
+    default: '#86efac',
+    dark: 'rgba(34, 197, 94, 0.32)',
+  },
+  'success-strong': {
+    default: '#14532d',
+    dark: '#bbf7d0',
+  },
   'success-soft-foreground': {
     default: '#14532d',
     dark: '#bbf7d0',
@@ -256,6 +268,18 @@ export const status = {
   warning: {
     default: '#d97706',
     dark: '#facc15',
+  },
+  'warning-soft': {
+    default: '#fef3c7',
+    dark: 'rgba(250, 204, 21, 0.18)',
+  },
+  'warning-soft-border': {
+    default: '#fcd34d',
+    dark: 'rgba(250, 204, 21, 0.32)',
+  },
+  'warning-strong': {
+    default: '#92400e',
+    dark: '#fde68a',
   },
   'warning-soft-foreground': {
     default: '#92400e',

@@ -57,7 +57,7 @@ export const InboxActions = ({
               </div>
             </div>
             {lastUpdatedLabel ? (
-              <span className="text-[11px] font-medium text-white/70">{lastUpdatedLabel}</span>
+              <span className="text-xs font-medium text-white/70">{lastUpdatedLabel}</span>
             ) : null}
           </div>
 

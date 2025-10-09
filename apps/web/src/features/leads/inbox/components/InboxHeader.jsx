@@ -23,11 +23,11 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
 
   return (
     <header className="glass-surface rounded-[32px] border border-[var(--border)] p-6 shadow-[0_20px_46px_rgba(3,8,22,0.5)] ring-1 ring-white/10">
-      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
         {stepLabel ? (
           <Badge
             variant="outline"
-            className="border-white/40 bg-white/[0.08] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.28em] text-foreground"
+            className="border-white/40 bg-white/[0.08] px-3 py-1 text-xs font-medium uppercase tracking-[0.28em] text-foreground"
           >
             {stepLabel}
           </Badge>
@@ -35,7 +35,7 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
         <span className="text-muted-foreground">Fluxo concluído</span>
       </div>
 
-      <Breadcrumb className="mt-5 text-[11px] font-medium text-muted-foreground">
+      <Breadcrumb className="mt-5 text-xs font-medium text-muted-foreground">
         <BreadcrumbList>
           {breadcrumbItems.map((item, index) => (
             <BreadcrumbItem key={item.label}>
@@ -47,7 +47,7 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
               ) : (
                 <BreadcrumbLink
                   href={item.href}
-                  className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
                 >
                   {item.label}
                 </BreadcrumbLink>
@@ -70,7 +70,7 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
         </div>
 
         <div className="flex flex-col items-end gap-1 rounded-2xl border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-5 py-4 text-right text-muted-foreground shadow-[0_12px_32px_rgba(3,9,24,0.4)]">
-          <p className="text-[11px] font-medium uppercase tracking-[0.24em]">Status atual</p>
+          <p className="text-xs font-medium uppercase tracking-[0.24em]">Status atual</p>
           <p className="text-base font-semibold text-foreground">
             {hasLeadCount ? (
               <>
@@ -87,7 +87,7 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
       {campaignName ? (
         <div className="mt-6 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
           <span className="text-sm font-semibold text-foreground">Campanha ativa</span>
-          <span className="rounded-full border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-3 py-1 text-[11px] font-medium text-muted-foreground">
+          <span className="rounded-full border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-3 py-1 text-xs font-medium text-muted-foreground">
             {campaignName}
           </span>
         </div>

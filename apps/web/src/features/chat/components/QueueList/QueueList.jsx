@@ -77,7 +77,7 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
           <p className="truncate text-sm font-semibold text-slate-100" title={displayName}>
             {displayName}
           </p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
             <span>{displayPhone}</span>
             {remoteJid ? <span className="text-slate-600">{remoteJid}</span> : null}
           </div>

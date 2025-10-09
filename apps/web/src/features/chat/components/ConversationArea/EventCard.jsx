@@ -21,7 +21,7 @@ export const EventCard = ({ entry }) => {
       </div>
       {description ? <p className="text-slate-400">{description}</p> : null}
       {timestamp ? (
-        <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+        <span className="text-xs uppercase tracking-[0.2em] text-slate-500">
           {timestamp.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
         </span>
       ) : null}
