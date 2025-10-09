@@ -2089,6 +2089,167 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('proxies contact existence checks to the broker', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+    const { prisma } = await import('../lib/prisma');
+
+    const instance = {
+      id: 'inst-exists',
+      tenantId: 'tenant-123',
+      brokerId: 'broker-123',
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(instance);
+
+    const existsSpy = vi
+      .spyOn(whatsappBrokerClient, 'checkRecipient')
+      .mockResolvedValue({ exists: true });
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${instance.id}/exists`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-tenant-id': 'tenant-123',
+          },
+          body: JSON.stringify({ to: '+5511988887777' }),
+        }
+      );
+
+      const body = await response.json();
+
+      expect(existsSpy).toHaveBeenCalledWith({
+        sessionId: 'broker-123',
+        instanceId: 'inst-exists',
+        to: '+5511988887777',
+      });
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ success: true, data: { exists: true } });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('proxies group listing to the broker', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+    const { prisma } = await import('../lib/prisma');
+
+    const instance = {
+      id: 'inst-groups',
+      tenantId: 'tenant-123',
+      brokerId: 'broker-groups',
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(instance);
+
+    const groupsSpy = vi
+      .spyOn(whatsappBrokerClient, 'getGroups')
+      .mockResolvedValue({ groups: [{ id: 'grp-1', subject: 'Equipe' }] });
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${instance.id}/groups`,
+        {
+          method: 'GET',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(groupsSpy).toHaveBeenCalledWith({
+        sessionId: 'broker-groups',
+        instanceId: 'inst-groups',
+      });
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ success: true, data: { groups: [{ id: 'grp-1', subject: 'Equipe' }] } });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('proxies metrics retrieval to the broker', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const brokerModule = await import('../services/whatsapp-broker-client');
+    const { whatsappBrokerClient } = brokerModule;
+    const { prisma } = await import('../lib/prisma');
+
+    const instance = {
+      id: 'inst-metrics',
+      tenantId: 'tenant-123',
+      brokerId: 'broker-metrics',
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(instance);
+
+    const metricsSpy = vi
+      .spyOn(whatsappBrokerClient, 'getMetrics')
+      .mockResolvedValue({ messages: { sent: 42 } });
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${instance.id}/metrics`,
+        {
+          method: 'GET',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(metricsSpy).toHaveBeenCalledWith({
+        sessionId: 'broker-metrics',
+        instanceId: 'inst-metrics',
+      });
+      expect(response.status).toBe(200);
+      expect(body).toEqual({ success: true, data: { messages: { sent: 42 } } });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns 410 Gone for legacy session endpoints', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+
+    try {
+      const connect = await fetch(`${url}/api/integrations/whatsapp/session/connect`, {
+        method: 'POST',
+        headers: { 'x-tenant-id': 'tenant-123' },
+      });
+      const connectBody = await connect.json();
+
+      expect(connect.status).toBe(410);
+      expect(connectBody).toMatchObject({ success: false, error: { code: 'ENDPOINT_GONE' } });
+
+      const logout = await fetch(`${url}/api/integrations/whatsapp/session/logout`, {
+        method: 'POST',
+        headers: { 'x-tenant-id': 'tenant-123' },
+      });
+      const logoutBody = await logout.json();
+
+      expect(logout.status).toBe(410);
+      expect(logoutBody).toMatchObject({ success: false, error: { code: 'ENDPOINT_GONE' } });
+
+      const status = await fetch(`${url}/api/integrations/whatsapp/session/status`, {
+        method: 'GET',
+        headers: { 'x-tenant-id': 'tenant-123' },
+      });
+      const statusBody = await status.json();
+
+      expect(status.status).toBe(410);
+      expect(statusBody).toMatchObject({ success: false, error: { code: 'ENDPOINT_GONE' } });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('returns ack metadata when WhatsApp message is dispatched', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const brokerModule = await import('../services/whatsapp-broker-client');

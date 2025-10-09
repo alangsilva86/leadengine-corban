@@ -126,7 +126,7 @@ WHATSAPP_MODE=http
 WHATSAPP_SESSIONS_PATH=./sessions
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=troque-por-uma-chave-forte
-WHATSAPP_BROKER_DELIVERY_MODE=auto
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=defina-um-token-para-validar-o-broker
 WHATSAPP_WEBHOOK_API_KEY=troque-se-diferente-da-chave-do-broker
 WHATSAPP_BROKER_TIMEOUT_MS=15000
 
@@ -134,12 +134,9 @@ WHATSAPP_BROKER_TIMEOUT_MS=15000
 LOG_LEVEL=info
 ```
 
-> **Importante:** defina `WHATSAPP_MODE=http` sempre que for consumir o broker HTTP externo. O valor de `WHATSAPP_BROKER_API_KEY` deve coincidir com a variável `API_KEY` configurada na Render para o serviço `baileys-acessuswpp`. Esse segredo precisa ser enviado em todas as chamadas para o broker através do cabeçalho `x-api-key`, inclusive por quaisquer serviços que consumam o `WEBHOOK_URL` configurado na instância. Caso o webhook utilize um segredo distinto, defina `WHATSAPP_WEBHOOK_API_KEY`.
+> **Importante:** defina `WHATSAPP_MODE=http` sempre que for consumir o broker HTTP externo. O valor de `WHATSAPP_BROKER_API_KEY` deve coincidir com a variável `API_KEY` configurada na Render para o serviço `baileys-acessuswpp`. Esse segredo precisa ser enviado em todas as chamadas para o broker através do cabeçalho `X-API-Key`, inclusive por quaisquer serviços que consumam o webhook configurado na instância. Utilize `WHATSAPP_WEBHOOK_VERIFY_TOKEN` para registrar o mesmo token configurado no broker e `WHATSAPP_WEBHOOK_API_KEY` caso o webhook utilize um segredo distinto do tráfego outbound.
 
-> **Modo direto do broker:** Por padrão, o cliente despacha mensagens em `/instances/:id/messages`, enviando campos planos (`text`, `caption`, `mediaUrl`, `mimeType`, `fileName`, além de `template`/`location` quando informados). O cabeçalho `Idempotency-Key` é repassado automaticamente quando presente em `metadata.idempotencyKey` (ou informado diretamente na chamada) para evitar duplicidades. Caso o broker retorne `404`, a API volta a usar `/broker/messages` sem intervenção manual.
->
-> **Compatibilidade com rotas legadas:** Ajuste `WHATSAPP_BROKER_DELIVERY_MODE` para `instances` quando o broker expuser apenas as rotas `/instances/:id/send-text`. Nesse modo, a API envia o corpo `{ to, text }` exigido pelas versões anteriores. Use o valor padrão `auto` (ou `broker`) para brokers que aceitam o modo direto.
-> **Modo direto do broker:** A API envia todas as mensagens via `POST /instances/:id/send-text`, preenchendo o corpo com os campos normalizados (`sessionId`, `instanceId`, `to`, `type`, `message`, `text`, `previewUrl`, `externalId`, além de `template`, `location` e atributos de mídia quando presentes). O cabeçalho `Idempotency-Key` continua sendo propagado automaticamente a partir de `metadata.idempotencyKey` (ou da chamada explícita) para evitar reenvios. O broker precisa aceitar esse contrato direto — não há mais fallback para rotas legadas.
+> **Fluxo oficial:** A API cria instâncias com `POST /api/integrations/whatsapp/instances` e encaminha o payload `{ id, webhookUrl, verifyToken }` para `POST /instances`. A conexão ocorre via QR (`GET /api/integrations/whatsapp/instances/:id/qr.png`) ou pareamento por código (`POST /api/integrations/whatsapp/instances/:id/pair`), sempre acompanhada de polling em `GET /api/integrations/whatsapp/instances/:id/status`. Envio de mensagens usa `POST /instances/:id/send-text` e consultas auxiliares aproveitam as rotas oficiais `/instances/:id/exists`, `/instances/:id/groups` e `/instances/:id/metrics`. Não há mais fallback para `/broker/**`.
 
 > **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal. Para o ambiente `ticketzapi-production` na Railway, utilize o arquivo [`docs/environments/ticketzapi-production.env`](docs/environments/ticketzapi-production.env) como referência ao atualizar as variáveis na plataforma.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.

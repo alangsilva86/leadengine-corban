@@ -55,6 +55,7 @@ describe('WhatsAppBrokerClient', () => {
     const headers = init?.headers as Headers;
     expect(headers.get('X-API-Key')).toBe('test-key');
     expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('Accept')).toBe('application/json');
     expect(headers.get('Idempotency-Key')).toBe('key-123');
 
     const body = JSON.parse(String(init?.body));
@@ -122,6 +123,7 @@ describe('WhatsAppBrokerClient', () => {
     const headers = init?.headers as Headers;
     expect(headers.get('X-API-Key')).toBe('test-key');
     expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('Accept')).toBe('application/json');
 
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
@@ -197,5 +199,93 @@ describe('WhatsAppBrokerClient', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://broker.test/instances/broker-10/status');
     expect(init?.method ?? 'GET').toBe('GET');
+  });
+
+  it('checks contact existence via POST /instances/:id/exists', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ exists: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const result = await whatsappBrokerClient.checkRecipient({
+      sessionId: 'instance-1',
+      to: '+5511999999999',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/instance-1/exists');
+    expect(init?.method).toBe('POST');
+    const headers = init?.headers as Headers;
+    expect(headers.get('Accept')).toBe('application/json');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      sessionId: 'instance-1',
+      instanceId: 'instance-1',
+      to: '+5511999999999',
+    });
+    expect(result).toEqual({ exists: true });
+  });
+
+  it('retrieves groups via GET /instances/:id/groups', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ groups: [{ id: '123', name: 'Squad' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const result = await whatsappBrokerClient.getGroups({ sessionId: 'instance-1' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/instance-1/groups');
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(result).toEqual({ groups: [{ id: '123', name: 'Squad' }] });
+  });
+
+  it('retrieves metrics via GET /instances/:id/metrics', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ messages: { sent: 10 } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const result = await whatsappBrokerClient.getMetrics({ sessionId: 'instance-1' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/instance-1/metrics');
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(result).toEqual({ messages: { sent: 10 } });
+  });
+
+  it('wraps network failures into WhatsAppBrokerError with BROKER_ERROR', async () => {
+    const { whatsappBrokerClient, WhatsAppBrokerError } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockRejectedValue(new TypeError('network down'));
+
+    await expect(() =>
+      whatsappBrokerClient.sendText({
+        sessionId: 'instance-1',
+        to: '+5511999999999',
+        message: 'oi',
+      })
+    ).rejects.toMatchObject({
+      constructor: WhatsAppBrokerError,
+      code: 'BROKER_ERROR',
+      status: 502,
+    });
   });
 });
