@@ -399,7 +399,7 @@ describe('WhatsApp integration routes when broker is not configured', () => {
     }
   });
 
-  it('responds with 503 when connecting the default instance without broker configuration', async () => {
+  it('responds with 503 when pairing an instance without broker configuration', async () => {
     const { server, url } = await startTestServer();
     const { prisma } = await import('../lib/prisma');
 
@@ -420,14 +420,16 @@ describe('WhatsApp integration routes when broker is not configured', () => {
     prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
 
     try {
-      const response = await fetch(`${url}/api/integrations/whatsapp/instances/pair`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-tenant-id': 'tenant-123',
-        },
-        body: JSON.stringify({ instanceId: storedInstance.id }),
-      });
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${storedInstance.id}/pair`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
 
       const responseBody = await response.json();
 
@@ -435,6 +437,31 @@ describe('WhatsApp integration routes when broker is not configured', () => {
       expect(responseBody).toMatchObject({
         success: false,
         error: { code: 'WHATSAPP_NOT_CONFIGURED' },
+      });
+    } finally {
+      delete process.env.LEADENGINE_INSTANCE_ID;
+      await stopTestServer(server);
+    }
+  });
+
+  it('responds with 410 when pairing without providing an instance id', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/pair`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      const responseBody = await response.json();
+
+      expect(response.status).toBe(410);
+      expect(responseBody).toMatchObject({
+        success: false,
+        error: { code: 'PAIR_ROUTE_MISSING_ID' },
       });
     } finally {
       delete process.env.LEADENGINE_INSTANCE_ID;

@@ -1649,9 +1649,14 @@ const WhatsAppConnect = ({
   };
 
   const connectInstance = async (instanceId = null) => {
+    if (!instanceId) {
+      throw new Error('ID da instância é obrigatório para iniciar o pareamento.');
+    }
+
+    const encodedId = encodeURIComponent(instanceId);
     const response = await apiPost(
-      '/api/integrations/whatsapp/instances/pair',
-      instanceId ? { instanceId } : {}
+      `/api/integrations/whatsapp/instances/${encodedId}/pair`,
+      {}
     );
     setSessionActive(true);
     setAuthDeferred(false);
@@ -2558,10 +2563,13 @@ const WhatsAppConnect = ({
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const generateQr = async (id, { skipConnect = false } = {}) => {
+    if (!id) return;
+
     const myPollId = ++pollIdRef.current;
     setLoadingQr(true);
     setErrorMessage(null);
     try {
+      const encodedId = encodeURIComponent(id);
       if (!skipConnect) {
         const connectResult = await connectInstance(id);
         const nextStatus =
@@ -2614,7 +2622,10 @@ const WhatsAppConnect = ({
 
       const connectQr = connectResult?.qr;
       if (connectResult?.connected === false && connectQr?.qrCode) {
-        setQrData(connectQr);
+        setQrData({
+          ...connectQr,
+          image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
+        });
         return;
       }
 
@@ -2639,7 +2650,7 @@ const WhatsAppConnect = ({
         let qrResponse = null;
         try {
           qrResponse = await apiGet(
-            `/api/integrations/whatsapp/instances/qr?instanceId=${encodeURIComponent(id)}`
+            `/api/integrations/whatsapp/instances/${encodedId}/qr`
           );
           setSessionActive(true);
           setAuthDeferred(false);
@@ -2652,7 +2663,10 @@ const WhatsAppConnect = ({
         const parsed = parseInstancesPayload(qrResponse);
         const qrPayload = parsed.qr;
         if (qrPayload?.qrCode) {
-          received = qrPayload;
+          received = {
+            ...qrPayload,
+            image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
+          };
           break;
         }
         await sleep(1000);
