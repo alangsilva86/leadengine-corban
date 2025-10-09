@@ -973,6 +973,7 @@ router.delete(
       where: { id: campaign.id },
       data: {
         status: 'ended',
+        whatsappInstanceId: null,
         metadata: metadataAccumulator as Prisma.JsonObject,
       },
       include: {

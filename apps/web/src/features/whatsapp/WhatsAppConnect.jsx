@@ -1964,11 +1964,12 @@ const WhatsAppConnect = ({
       const response = await apiGet(
         `/api/campaigns?agreementId=${encodeURIComponent(selectedAgreement.id)}&status=active,paused,draft,ended`
       );
-      const list = Array.isArray(response?.items)
+      const list = (Array.isArray(response?.items)
         ? response.items
         : Array.isArray(response?.data)
         ? response.data
-        : [];
+        : []
+      ).filter((entry) => entry?.status !== 'ended');
 
       setCampaigns(list);
 

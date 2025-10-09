@@ -17,6 +17,7 @@ import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 const statusTone = {
   active: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
   paused: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
+  ended: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
   archived: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
 };
 
@@ -39,7 +40,9 @@ const CampaignHistoryDialog = ({ agreementId }) => {
       setErrorMessage(null);
       try {
         log('📚 Listando campanhas cadastradas', { agreementId });
-        const response = await apiGet(`/api/campaigns?agreementId=${agreementId}`);
+        const response = await apiGet(
+          `/api/campaigns?agreementId=${agreementId}&status=active,paused,draft,ended`
+        );
         if (cancelled) return;
         const items = Array.isArray(response?.items)
           ? response.items
