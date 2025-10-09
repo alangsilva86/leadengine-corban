@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge.jsx';
+import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
 
 const STATUS_LABEL = {
@@ -48,14 +49,18 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
   const statusTone = STATUS_TONE[status] ?? STATUS_TONE.allocated;
 
   return (
-    <button
+    <GlassPanel
+      as="button"
       type="button"
       onClick={() => onSelect?.(allocation)}
       onDoubleClick={() => (allocation && onDoubleOpen ? onDoubleOpen(allocation) : null)}
       data-allocation-id={allocation?.allocationId ?? undefined}
       aria-current={isActive ? 'true' : undefined}
+      tone="surface"
+      radius="lg"
+      shadow="md"
       className={cn(
-        'group flex w-full flex-col gap-4 rounded-[24px] border border-white/12 bg-surface-shell p-5 text-left text-foreground shadow-[0_18px_44px_rgba(3,9,24,0.45)] transition-all duration-200 ease-out backdrop-blur-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 hover:border-primary/40 hover:bg-primary/15 hover:shadow-[0_26px_54px_rgba(5,12,30,0.55)]',
+        'group flex w-full flex-col gap-4 p-5 text-left text-foreground ring-0 ring-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 hover:border-primary/40 hover:bg-primary/15 hover:shadow-[0_26px_54px_rgba(5,12,30,0.55)]',
         isActive
           ? 'border-primary/60 bg-primary/15 shadow-[0_30px_70px_rgba(15,23,42,0.45)] focus-visible:ring-primary'
           : null
@@ -109,7 +114,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
           </p>
         </div>
       </div>
-    </button>
+    </GlassPanel>
   );
 };
 
