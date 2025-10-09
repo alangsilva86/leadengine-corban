@@ -355,7 +355,7 @@ io.use((socket, next) => {
 });
 
 io.engine.on('connection_error', (err) => {
-  logger.warn('Socket.IO handshake falhou — mantendo fallback em polling. Confirme se o proxy/front permite WebSocket.', {
+  logger.warn('🎯 LeadEngine • Tempo Real :: 🔌 Handshake WebSocket tropeçou — ativando plano B (polling).', {
     transport: err.context, // engine.io usa context para transporte
     code: (err as { code?: unknown }).code ?? null,
     message: err.message,

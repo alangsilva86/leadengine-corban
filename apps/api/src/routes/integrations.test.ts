@@ -681,6 +681,85 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('falls back to broker snapshots when persistence is unavailable', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const prismaError = Object.assign(new Error('whatsapp_instances table is missing'), {
+      code: 'P2021',
+    });
+
+    prisma.whatsAppInstance.findMany.mockRejectedValue(prismaError);
+
+    const brokerSnapshots: WhatsAppBrokerInstanceSnapshot[] = [
+      {
+        instance: {
+          id: 'broker-instance-1',
+          tenantId: 'tenant-123',
+          name: 'Broker Snapshot 1',
+          status: 'connected',
+          connected: true,
+          phoneNumber: '+5511988888888',
+          lastActivity: '2024-01-02T00:00:00.000Z',
+        },
+        status: {
+          status: 'connected',
+          connected: true,
+          metrics: { throughput: { perMinute: 10 } },
+          stats: { sent: 5 },
+          rate: { limit: 30, remaining: 29 },
+          rateUsage: { used: 1 },
+          messages: { sent: 5 },
+          raw: { debug: true },
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
+        },
+      },
+    ];
+
+    const listSpy = vi
+      .spyOn(whatsappBrokerClient, 'listInstances')
+      .mockResolvedValue(brokerSnapshots);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'GET',
+        headers: {
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(listSpy).toHaveBeenCalledWith('tenant-123');
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          instances: [
+            expect.objectContaining({
+              id: 'broker-instance-1',
+              status: 'connected',
+              connected: true,
+              metadata: expect.objectContaining({ fallbackSource: 'broker-snapshot' }),
+            }),
+          ],
+        },
+        meta: expect.objectContaining({
+          storageFallback: true,
+          warnings: expect.arrayContaining([
+            expect.objectContaining({ code: 'WHATSAPP_STORAGE_FALLBACK' }),
+          ]),
+        }),
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('creates a WhatsApp instance', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');

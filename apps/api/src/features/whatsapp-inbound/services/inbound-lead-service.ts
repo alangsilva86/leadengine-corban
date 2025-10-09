@@ -7,7 +7,7 @@ import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
-import { emitToTenant } from '../../../lib/socket-registry';
+import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -453,6 +453,85 @@ export const __testing = {
   ensureTicketForContact,
 };
 
+const emitRealtimeUpdatesForInbound = async ({
+  tenantId,
+  ticketId,
+  instanceId,
+  message,
+  providerMessageId,
+}: {
+  tenantId: string;
+  ticketId: string;
+  instanceId: string;
+  message: Awaited<ReturnType<typeof sendMessageService>>;
+  providerMessageId: string | null;
+}) => {
+  try {
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: {
+        id: true,
+        tenantId: true,
+        agreementId: true,
+        status: true,
+        queueId: true,
+        subject: true,
+        updatedAt: true,
+        metadata: true,
+      },
+    });
+
+    if (!ticket) {
+      logger.warn('Inbound realtime event skipped: ticket not found', {
+        tenantId,
+        ticketId,
+        messageId: message.id,
+      });
+      return;
+    }
+
+    const envelopeBase = {
+      tenantId,
+      ticketId,
+      agreementId: ticket.agreementId ?? null,
+      instanceId,
+      messageId: message.id,
+      providerMessageId,
+      ticketStatus: ticket.status,
+      ticketUpdatedAt: ticket.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+    };
+
+    const messagePayload = {
+      ...envelopeBase,
+      message,
+    };
+
+    emitToTicket(ticketId, 'messages.new', messagePayload);
+    emitToTenant(tenantId, 'messages.new', messagePayload);
+    if (ticket.agreementId) {
+      emitToAgreement(ticket.agreementId, 'messages.new', messagePayload);
+    }
+
+    const ticketPayload = {
+      ...envelopeBase,
+      ticket,
+    };
+
+    emitToTicket(ticketId, 'tickets.updated', ticketPayload);
+    emitToTenant(tenantId, 'tickets.updated', ticketPayload);
+    if (ticket.agreementId) {
+      emitToAgreement(ticket.agreementId, 'tickets.updated', ticketPayload);
+    }
+  } catch (error) {
+    logger.error('🎯 LeadEngine • WhatsApp :: 📡 Falha ao emitir eventos em tempo real para a mensagem inbound', {
+      error,
+      tenantId,
+      ticketId,
+      messageId: message.id,
+    });
+  }
+};
+
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
   const { instanceId, contact, message, timestamp } = event;
   const normalizedPhone = sanitizePhone(contact.phone);
@@ -493,7 +572,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     metadataPushName
   );
 
-  logger.info('Processing inbound WhatsApp message', {
+  logger.info('🎯 LeadEngine • WhatsApp :: ✉️ Processando mensagem inbound fresquinha', {
     instanceId,
     messageId: message.id ?? null,
     timestamp,
@@ -504,7 +583,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
   if (!instance) {
-    logger.warn('Inbound message ignored: instance not found', {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Instância não encontrada — mensagem inbound estacionada', {
       instanceId,
       messageId: message.id ?? null,
     });
@@ -522,7 +601,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   });
 
   if (!campaigns.length) {
-    logger.warn('Inbound message ignored: no active campaigns for instance', {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
       tenantId,
       instanceId,
       messageId: message.id ?? null,
@@ -535,7 +614,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const queueId = await getDefaultQueueId(tenantId);
   if (!queueId) {
-    logger.warn('Inbound message ignorado ❤️‍🩹 Nenhuma fila padrão definida para o tenant. Cadastre uma fila em Configurações → Filas para destravar o atendimento.', {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente — configure uma fila em Configurações → Filas para liberar o atendimento.', {
       tenantId,
       instanceId,
     });
@@ -573,7 +652,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   );
 
   if (!ticketId) {
-    logger.error('Inbound message ignored: failed to ensure ticket', {
+    logger.error('🎯 LeadEngine • WhatsApp :: 🚧 Não consegui garantir o ticket para a mensagem inbound', {
       tenantId,
       instanceId,
       messageId: message.id ?? null,
@@ -585,7 +664,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const dedupeKey = `${tenantId}:${normalizedMessage.id}`;
   if (shouldSkipByDedupe(dedupeKey, now)) {
-    logger.info('Inbound message skipped due to dedupe window', {
+    logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       tenantId,
       ticketId,
       brokerMessageId: normalizedMessage.id,
@@ -605,8 +684,10 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     return null;
   })();
 
+  let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+
   try {
-    await sendMessageService(tenantId, undefined, {
+    persistedMessage = await sendMessageService(tenantId, undefined, {
       ticketId,
       content: normalizedMessage.text,
       type: normalizedMessage.type,
@@ -643,11 +724,21 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       },
     });
   } catch (error) {
-    logger.error('Failed to persist inbound WhatsApp message in ticket timeline', {
+    logger.error('🎯 LeadEngine • WhatsApp :: 💾 Falha ao salvar a mensagem inbound na timeline do ticket', {
       error,
       tenantId,
       ticketId,
       messageId: message.id ?? null,
+    });
+  }
+
+  if (persistedMessage) {
+    await emitRealtimeUpdatesForInbound({
+      tenantId,
+      ticketId,
+      instanceId,
+      message: persistedMessage,
+      providerMessageId: normalizedMessage.id ?? null,
     });
   }
 
@@ -657,7 +748,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;
 
       if (shouldSkipByDedupe(dedupeKey, now)) {
-        logger.info('Skipping inbound message due to 24h dedupe window', {
+        logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
           tenantId,
           campaignId: campaign.id,
           instanceId,
@@ -689,7 +780,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       try {
         const { newlyAllocated } = await addAllocations(tenantId, campaign.id, [brokerLead]);
         if (newlyAllocated.length > 0) {
-          logger.info('Inbound WhatsApp lead allocated', {
+          logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
             tenantId,
             campaignId: campaign.id,
             instanceId,
@@ -699,7 +790,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
           });
         }
       } catch (error) {
-        logger.error('Failed to allocate inbound WhatsApp lead', {
+        logger.error('🎯 LeadEngine • WhatsApp :: 🚨 Falha ao alocar lead inbound', {
           error,
           tenantId,
           campaignId: campaign.id,

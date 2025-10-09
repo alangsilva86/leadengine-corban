@@ -81,40 +81,55 @@ const readPrismaErrorCode = (error: unknown): string | null => {
   return null;
 };
 
-const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boolean => {
+const resolveWhatsAppStorageError = (
+  error: unknown
+): { isStorageError: boolean; prismaCode: string | null } => {
   const prismaCode = readPrismaErrorCode(error);
 
   if (prismaCode && PRISMA_STORAGE_ERROR_CODES.has(prismaCode)) {
-    res.locals.errorCode = 'WHATSAPP_STORAGE_UNAVAILABLE';
-    res.status(503).json({
-      success: false,
-      error: {
-        code: 'WHATSAPP_STORAGE_UNAVAILABLE',
-        message:
-          'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
-        details: { prismaCode },
-      },
-    });
-    return true;
+    return { isStorageError: true, prismaCode };
   }
 
   if (
     hasErrorName(error, 'PrismaClientInitializationError') ||
     hasErrorName(error, 'PrismaClientRustPanicError')
   ) {
-    res.locals.errorCode = 'WHATSAPP_STORAGE_UNAVAILABLE';
-    res.status(503).json({
-      success: false,
-      error: {
-        code: 'WHATSAPP_STORAGE_UNAVAILABLE',
-        message:
-          'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
-      },
-    });
-    return true;
+    return { isStorageError: true, prismaCode: null };
   }
 
-  return false;
+  return { isStorageError: false, prismaCode: null };
+};
+
+const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boolean => {
+  const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
+
+  if (!isStorageError) {
+    return false;
+  }
+
+  res.locals.errorCode = 'WHATSAPP_STORAGE_UNAVAILABLE';
+  res.status(503).json({
+    success: false,
+    error: {
+      code: 'WHATSAPP_STORAGE_UNAVAILABLE',
+      message:
+        'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
+      ...(prismaCode ? { details: { prismaCode } } : {}),
+    },
+  });
+  return true;
+};
+
+const describeErrorForLog = (error: unknown): unknown => {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message, stack: error.stack };
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    return error;
+  }
+
+  return { value: error };
 };
 
 const handleWhatsAppIntegrationError = (res: Response, error: unknown): boolean => {
@@ -1778,6 +1793,87 @@ const toPublicInstance = (
   return publicInstance;
 };
 
+const buildFallbackInstancesFromSnapshots = (
+  tenantId: string,
+  snapshots: WhatsAppBrokerInstanceSnapshot[]
+): NormalizedInstance[] => {
+  return snapshots
+    .map((snapshot) => {
+      const normalized = normalizeInstance(snapshot.instance);
+      const status = normalizeInstanceStatusResponse(snapshot.status);
+      const fallbackMetadataBase =
+        (normalized?.metadata && typeof normalized.metadata === 'object'
+          ? (normalized.metadata as Record<string, unknown>)
+          : {}) ?? {};
+      const fallbackMetadata: Record<string, unknown> = {
+        ...fallbackMetadataBase,
+        fallbackSource: 'broker-snapshot',
+      };
+
+      if (snapshot.status?.raw && typeof snapshot.status.raw === 'object') {
+        fallbackMetadata.lastBrokerSnapshot = snapshot.status.raw;
+      }
+
+      if (normalized) {
+        return {
+          ...normalized,
+          tenantId: normalized.tenantId ?? snapshot.instance?.tenantId ?? tenantId ?? null,
+          status: status.status,
+          connected: status.connected,
+          stats: normalized.stats ?? snapshot.status?.stats ?? undefined,
+          metrics: normalized.metrics ?? snapshot.status?.metrics ?? null,
+          messages: normalized.messages ?? snapshot.status?.messages ?? null,
+          rate:
+            normalized.rate ??
+            snapshot.status?.rate ??
+            snapshot.status?.rateUsage ??
+            null,
+          rawStatus: normalized.rawStatus ?? snapshot.status?.raw ?? null,
+          metadata: fallbackMetadata,
+        } satisfies NormalizedInstance;
+      }
+
+      const instanceSource = snapshot.instance ?? ({} as BrokerWhatsAppInstance);
+      const instanceId =
+        typeof instanceSource.id === 'string' && instanceSource.id.trim().length > 0
+          ? instanceSource.id.trim()
+          : null;
+
+      if (!instanceId) {
+        return null;
+      }
+
+      const agreementId = (() => {
+        if (typeof (instanceSource as { agreementId?: unknown }).agreementId === 'string') {
+          const value = ((instanceSource as { agreementId?: string }).agreementId ?? '').trim();
+          return value.length > 0 ? value : null;
+        }
+        return null;
+      })();
+
+      return {
+        id: instanceId,
+        tenantId: instanceSource.tenantId ?? tenantId ?? null,
+        name: instanceSource.name ?? instanceId,
+        status: status.status,
+        connected: status.connected,
+        createdAt: instanceSource.createdAt ?? null,
+        lastActivity: instanceSource.lastActivity ?? null,
+        phoneNumber: instanceSource.phoneNumber ?? null,
+        user: instanceSource.user ?? null,
+        agreementId,
+        stats: snapshot.status?.stats ?? undefined,
+        metrics: snapshot.status?.metrics ?? null,
+        messages: snapshot.status?.messages ?? null,
+        rate: snapshot.status?.rate ?? snapshot.status?.rateUsage ?? null,
+        rawStatus: snapshot.status?.raw ?? null,
+        metadata: fallbackMetadata,
+        lastError: null,
+      } satisfies NormalizedInstance;
+    })
+    .filter((instance): instance is NormalizedInstance => Boolean(instance));
+};
+
 const collectInstancesForTenant = async (
   tenantId: string,
   options: InstanceCollectionOptions = {}
@@ -2158,59 +2254,133 @@ router.get(
       agreementId,
     });
 
-    try {
-      const collectionOptions =
-        refreshRequested === undefined ? {} : { refresh: refreshRequested };
+    const warnings: Array<{ code: string; message: string }> = [];
+    let filteredInstances: NormalizedInstance[] = [];
+    let usedStorageFallback = false;
 
+    const collectionOptions =
+      refreshRequested === undefined ? {} : { refresh: refreshRequested };
+
+    try {
       const { instances } = await collectInstancesForTenant(tenantId, collectionOptions);
 
-      const filteredInstances =
+      filteredInstances =
         agreementId === null
           ? instances
           : instances.filter((instance) => instance.agreementId === agreementId);
-
-      const warnings: Array<{ code: string; message: string }> = [];
-      if (agreementId && filteredInstances.length === 0) {
-        warnings.push({
-          code: 'NO_INSTANCES_FOR_AGREEMENT',
-          message: `Nenhuma instância WhatsApp encontrada para o convênio ${agreementId}.`,
-        });
-      }
-
-      logger.info('🛰️ [WhatsApp] Returning instances to client', {
-        tenantId,
-        count: filteredInstances.length,
-        refreshRequested,
-        agreementId,
-      });
-
-      const responsePayload: {
-        success: true;
-        data: { instances: NormalizedInstance[] };
-        meta?: { warnings: Array<{ code: string; message: string }> };
-      } = {
-        success: true,
-        data: {
-          instances: filteredInstances,
-        },
-      };
-
-      if (warnings.length > 0) {
-        responsePayload.meta = { warnings };
-      }
-
-      res.json(responsePayload);
     } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+      const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
+
+      if (isStorageError) {
+        usedStorageFallback = true;
+        logger.warn(
+          '🎯 LeadEngine • WhatsApp :: 🧰 Banco de instâncias indisponível — consultando snapshot direto do broker',
+          {
+            tenantId,
+            agreementId,
+            refreshRequested,
+            prismaCode,
+            error: describeErrorForLog(error),
+          }
+        );
+
+        let fallbackSnapshots: WhatsAppBrokerInstanceSnapshot[] = [];
+        try {
+          fallbackSnapshots = await whatsappBrokerClient.listInstances(tenantId);
+        } catch (fallbackError) {
+          if (
+            fallbackError instanceof WhatsAppBrokerError ||
+            hasErrorName(fallbackError, 'WhatsAppBrokerError')
+          ) {
+            respondWhatsAppBrokerFailure(res, fallbackError as WhatsAppBrokerError);
+            return;
+          }
+
+          if (handleWhatsAppIntegrationError(res, fallbackError)) {
+            return;
+          }
+
+          throw fallbackError;
+        }
+
+        const fallbackInstances = buildFallbackInstancesFromSnapshots(
+          tenantId,
+          fallbackSnapshots
+        );
+
+        filteredInstances =
+          agreementId === null
+            ? fallbackInstances
+            : fallbackInstances.filter((instance) => instance.agreementId === agreementId);
+
+        warnings.push({
+          code: 'WHATSAPP_STORAGE_FALLBACK',
+          message:
+            'Base de instâncias WhatsApp indisponível. Exibindo snapshot direto do broker (somente leitura).',
+        });
+
+        logger.info(
+          '🎯 LeadEngine • WhatsApp :: 🛰️ Snapshot do broker entregue durante indisponibilidade do banco',
+          {
+            tenantId,
+            agreementId,
+            refreshRequested,
+            instances: filteredInstances.length,
+            snapshots: fallbackSnapshots.length,
+            prismaCode,
+          }
+        );
+      } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
         return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
+      } else if (handleWhatsAppIntegrationError(res, error)) {
         return;
+      } else {
+        throw error;
       }
-      throw error;
     }
+
+    if (
+      agreementId &&
+      filteredInstances.length === 0 &&
+      !warnings.some((warning) => warning.code === 'NO_INSTANCES_FOR_AGREEMENT')
+    ) {
+      warnings.push({
+        code: 'NO_INSTANCES_FOR_AGREEMENT',
+        message: `Nenhuma instância WhatsApp encontrada para o convênio ${agreementId}.`,
+      });
+    }
+
+    logger.info('🛰️ [WhatsApp] Returning instances to client', {
+      tenantId,
+      count: filteredInstances.length,
+      refreshRequested,
+      agreementId,
+      storageFallback: usedStorageFallback,
+    });
+
+    const responsePayload: {
+      success: true;
+      data: { instances: NormalizedInstance[] };
+      meta?: {
+        warnings?: Array<{ code: string; message: string }>;
+        storageFallback?: boolean;
+      };
+    } = {
+      success: true,
+      data: {
+        instances: filteredInstances,
+      },
+    };
+
+    if (warnings.length > 0 || usedStorageFallback) {
+      responsePayload.meta = {
+        ...(warnings.length > 0 ? { warnings } : {}),
+        ...(usedStorageFallback ? { storageFallback: true } : {}),
+      };
+    }
+
+    res.json(responsePayload);
   })
 );
 

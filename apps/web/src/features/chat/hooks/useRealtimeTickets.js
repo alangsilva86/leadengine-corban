@@ -57,6 +57,13 @@ export const useRealtimeTickets = ({
         const token = getAuthToken();
         const transports = ['websocket', 'polling'];
 
+        console.info('🎯 LeadEngine • Chat :: 🚪 Abrindo canal tempo real', {
+          tenantId,
+          userId,
+          ticketId,
+          transports,
+        });
+
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
           transports,
@@ -72,6 +79,12 @@ export const useRealtimeTickets = ({
           if (!isMounted) return;
           setConnected(true);
           setConnectionError(null);
+          console.info('🎯 LeadEngine • Chat :: 🤝 Conectado ao tempo real', {
+            tenantId,
+            userId,
+            ticketId: ticketRoomRef.current,
+            socketId: socket.id,
+          });
           socket.emit('join-tenant', tenantId);
           if (userId) {
             socket.emit('join-user', userId);
@@ -85,81 +98,141 @@ export const useRealtimeTickets = ({
         socket.on('disconnect', () => {
           if (!isMounted) return;
           setConnected(false);
+          console.info('🎯 LeadEngine • Chat :: 👋 Desconectado do tempo real', {
+            tenantId,
+            userId,
+            ticketId: ticketRoomRef.current,
+          });
         });
 
         socket.on('connect_error', (error) => {
           if (!isMounted) return;
           setConnectionError(error instanceof Error ? error.message : 'Falha ao conectar no tempo real');
+          console.warn('🎯 LeadEngine • Chat :: ⚠️ Erro na conexão tempo real', {
+            tenantId,
+            userId,
+            ticketId: ticketRoomRef.current,
+            message: error instanceof Error ? error.message : error,
+          });
         });
 
         socket.on('reconnect_failed', () => {
           if (!isMounted) return;
           setConnectionError('Não foi possível estabelecer conexão em tempo real. Continuaremos no modo offline.');
+          console.warn('🎯 LeadEngine • Chat :: 💤 Reconnect falhou — seguindo em modo offline', {
+            tenantId,
+            userId,
+            ticketId: ticketRoomRef.current,
+          });
         });
 
         // Eventos do ticket bus
         const handleTicketEvent = (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 📨 Evento recebido', {
+            tenantId,
+            userId,
+            ticketId: ticketRoomRef.current,
+            eventKeys: Object.keys(payload ?? {}),
+          });
           if (typeof onTicketEvent === 'function') {
             onTicketEvent(payload);
           }
         };
 
         registerHandler(socket, 'ticket.created', handleTicketEvent);
-        registerHandler(socket, 'ticket.updated', (payload) => {
+        const handleTicketUpdated = (payload) => {
           handleTicketEvent(payload);
           if (typeof onTicketUpdated === 'function') {
             onTicketUpdated(payload);
           }
-        });
+        };
+
+        registerHandler(socket, 'ticket.updated', handleTicketUpdated);
+        registerHandler(socket, 'tickets.updated', handleTicketUpdated);
         registerHandler(socket, 'ticket.status.changed', (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 🔄 Status do ticket atualizado', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+            status: payload?.ticket?.status ?? payload?.ticketStatus ?? null,
+          });
           handleTicketEvent(payload);
           if (typeof onTicketStatusChanged === 'function') {
             onTicketStatusChanged(payload);
           }
         });
         registerHandler(socket, 'ticket.assigned', (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 🧑‍🚀 Ticket atribuído', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+            assignedTo: payload?.assigneeId ?? null,
+          });
           handleTicketEvent(payload);
           if (typeof onTicketAssigned === 'function') {
             onTicketAssigned(payload);
           }
         });
         registerHandler(socket, 'ticket.closed', (payload) => {
+          console.info('🎯 LeadEngine • Chat :: ✅ Ticket fechado', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+          });
           handleTicketEvent(payload);
           if (typeof onTicketClosed === 'function') {
             onTicketClosed(payload);
           }
         });
         registerHandler(socket, 'ticket.note.created', (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 📝 Nova nota registrada', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+          });
           handleTicketEvent(payload);
           if (typeof onNoteCreated === 'function') {
             onNoteCreated(payload);
           }
         });
-        registerHandler(socket, 'ticket.message.created', (payload) => {
+        const handleMessageCreated = (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 💬 Mensagem recebida', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+            direction: payload?.message?.direction ?? payload?.message?.Direction ?? null,
+          });
           handleTicketEvent(payload);
           if (typeof onMessageCreated === 'function') {
             onMessageCreated(payload);
           }
-        });
-        registerHandler(socket, 'ticket.message', (payload) => {
-          handleTicketEvent(payload);
-          if (typeof onMessageCreated === 'function') {
-            onMessageCreated(payload);
-          }
-        });
+        };
+
+        registerHandler(socket, 'ticket.message.created', handleMessageCreated);
+        registerHandler(socket, 'ticket.message', handleMessageCreated);
+        registerHandler(socket, 'messages.new', handleMessageCreated);
         registerHandler(socket, 'message.status.changed', (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 📬 Status de mensagem atualizado', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+            status: payload?.status ?? null,
+          });
           handleTicketEvent(payload);
           if (typeof onMessageStatusChanged === 'function') {
             onMessageStatusChanged(payload);
           }
         });
         registerHandler(socket, 'ticket.typing', (payload) => {
+          console.info('🎯 LeadEngine • Chat :: ⌨️ Indicador de digitação recebido', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+            from: payload?.userId ?? null,
+          });
           handleTicketEvent(payload);
           if (typeof onTyping === 'function') {
             onTyping(payload);
           }
         });
         registerHandler(socket, 'whatsapp.queue.missing', (payload) => {
+          console.warn('🎯 LeadEngine • Chat :: 🚨 Fila padrão ausente', {
+            tenantId,
+            payload,
+          });
           if (typeof onQueueMissing === 'function') {
             onQueueMissing(payload);
           }
