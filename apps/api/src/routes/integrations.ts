@@ -2437,6 +2437,10 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
   const instanceId = req.params.id;
   const tenantId = req.user!.tenantId;
   const actorId = req.user?.id ?? 'system';
+  const rawPhoneNumber = typeof req.body?.phoneNumber === 'string' ? req.body.phoneNumber : null;
+  const rawPairingCode = typeof req.body?.code === 'string' ? req.body.code : null;
+  let pairingPhoneNumber: string | null = null;
+  let pairingCode: string | null = null;
 
   try {
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -2452,8 +2456,49 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
       return;
     }
 
-    const finalizeWithContext = async (context: InstanceOperationContext) => {
-      if (!context.status.connected) {
+    if (rawPhoneNumber) {
+      const trimmedPhone = rawPhoneNumber.trim();
+      if (trimmedPhone.length > 0) {
+        try {
+          pairingPhoneNumber = normalizePhoneNumber(trimmedPhone).e164;
+        } catch (error) {
+          const message =
+            error instanceof PhoneNormalizationError ? error.message : 'Informe um telefone válido.';
+          res.locals.errorCode = 'VALIDATION_ERROR';
+          res.status(400).json({
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Corpo da requisição inválido.',
+              details: {
+                errors: [
+                  {
+                    field: 'phoneNumber',
+                    message,
+                  },
+                ],
+              },
+            },
+          });
+          return;
+        }
+      }
+    }
+
+    if (rawPairingCode && rawPairingCode.trim().length > 0) {
+      pairingCode = rawPairingCode.trim();
+    }
+
+    const finalizeWithContext = async (
+      context: InstanceOperationContext,
+      options: { recordHistory?: boolean; clearLastError?: boolean; warnIfDisconnected?: boolean; pairingPhoneNumber?: string | null } = {}
+    ) => {
+      const recordHistory = options.recordHistory !== false;
+      const clearLastError = options.clearLastError !== false;
+      const warnIfDisconnected = options.warnIfDisconnected ?? recordHistory;
+      const historyPhoneNumber = options.pairingPhoneNumber ?? null;
+
+      if (warnIfDisconnected && !context.status.connected) {
         logger.warn('WhatsApp instance did not report connected status after connect', {
           tenantId,
           instanceId: instance.id,
@@ -2461,29 +2506,39 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
         });
       }
 
-      const historyEntry = buildHistoryEntry('connect-instance', actorId, {
-        status: context.status.status,
-        connected: context.status.connected,
-      });
+      let metadataToPersist: Prisma.JsonObject | InstanceMetadata =
+        context.stored.metadata as InstanceMetadata;
 
-      const metadataWithHistory = appendInstanceHistory(
-        context.stored.metadata as InstanceMetadata,
-        historyEntry
-      );
-      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+      if (recordHistory) {
+        const historyEntry = buildHistoryEntry('connect-instance', actorId, {
+          status: context.status.status,
+          connected: context.status.connected,
+          ...(historyPhoneNumber ? { phoneNumber: historyPhoneNumber } : {}),
+        });
+        metadataToPersist = appendInstanceHistory(metadataToPersist as InstanceMetadata, historyEntry);
+      }
+
+      if (clearLastError) {
+        metadataToPersist = withInstanceLastError(metadataToPersist as InstanceMetadata, null);
+      }
 
       const derivedStatus = context.brokerStatus
         ? mapBrokerStatusToDbStatus(context.brokerStatus)
         : mapBrokerInstanceStatusToDbStatus(context.status.status);
 
+      const updateData: Prisma.WhatsAppInstanceUpdateInput = {
+        status: derivedStatus,
+        connected: context.status.connected,
+        lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
+      };
+
+      if (recordHistory || clearLastError) {
+        updateData.metadata = metadataToPersist as Prisma.JsonObject;
+      }
+
       await prisma.whatsAppInstance.update({
         where: { id: context.stored.id },
-        data: {
-          status: derivedStatus,
-          connected: context.status.connected,
-          metadata: metadataWithoutError,
-          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
-        },
+        data: updateData,
       });
 
       res.json({
@@ -2498,12 +2553,32 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
       });
     };
 
-    try {
-      await whatsappBrokerClient.connectInstance(instance.brokerId, { instanceId: instance.id });
+    const shouldRequestPairing = Boolean(pairingPhoneNumber || pairingCode);
+
+    if (!shouldRequestPairing) {
       const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
         refresh: true,
       });
-      await finalizeWithContext(context);
+      await finalizeWithContext(context, {
+        recordHistory: false,
+        clearLastError: false,
+        warnIfDisconnected: false,
+      });
+      return;
+    }
+
+    try {
+      await whatsappBrokerClient.connectInstance(instance.brokerId, {
+        instanceId: instance.id,
+        ...(pairingCode ? { code: pairingCode } : {}),
+        ...(pairingPhoneNumber ? { phoneNumber: pairingPhoneNumber } : {}),
+      });
+      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
+        refresh: true,
+      });
+      await finalizeWithContext(context, {
+        pairingPhoneNumber,
+      });
       return;
     } catch (error) {
       if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
@@ -2604,6 +2679,37 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
 
 const pairInstanceMiddleware = [
   instanceIdParamValidator(),
+  body('phoneNumber')
+    .optional({ nullable: true })
+    .custom((value, { req }) => {
+      if (value === undefined || value === null) {
+        return true;
+      }
+
+      if (typeof value !== 'string') {
+        throw new Error('Informe um telefone válido para parear por código.');
+      }
+
+      const trimmed = value.trim();
+
+      if (!trimmed) {
+        throw new Error('Informe um telefone válido para parear por código.');
+      }
+
+      try {
+        const normalized = normalizePhoneNumber(trimmed);
+        const request = req as Request;
+        (request.body as Record<string, unknown>).phoneNumber = normalized.e164;
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof PhoneNormalizationError
+            ? error.message
+            : 'Informe um telefone válido para parear por código.';
+        throw new Error(message);
+      }
+    }),
+  body('code').optional({ nullable: true }).isString().bail().trim().isLength({ min: 1 }).withMessage('Informe um código de pareamento válido.'),
   validateRequest,
   requireTenant,
   asyncHandler(connectInstanceHandler),
