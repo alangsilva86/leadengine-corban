@@ -43,7 +43,7 @@ export const registerSocketConnectionHandlers = (socket: Socket): void => {
     logger.info(`Client ${socket.id} typing on ticket ${ticketId}`);
   });
 
-  socket.on('disconnect', () => {
-    logger.info(`Client disconnected: ${socket.id}`);
+  socket.on('disconnect', (reason) => {
+    logger.info(`Client disconnected: ${socket.id}`, { reason });
   });
 };

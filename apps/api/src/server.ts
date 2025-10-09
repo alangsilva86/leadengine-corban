@@ -151,18 +151,25 @@ const corsOptions: CorsOptions = allowAllOrigins
       ...sharedCorsSettings,
     };
 
+const socketPath = process.env.SOCKET_IO_PATH ?? '/socket.io';
+
+const socketCorsConfig = allowAllOrigins
+  ? {
+      origin: '*',
+      methods: ['GET', 'POST'],
+      credentials: true,
+    }
+  : {
+      origin: resolvedCorsOrigins,
+      methods: ['GET', 'POST'],
+      credentials: true,
+    };
+
 const io = new SocketIOServer(server, {
-  cors: allowAllOrigins
-    ? {
-        origin: '*',
-        methods: ['GET', 'POST'],
-        credentials: true,
-      }
-    : {
-        origin: resolvedCorsOrigins,
-        methods: ['GET', 'POST'],
-        credentials: true,
-      },
+  path: socketPath,
+  cors: socketCorsConfig,
+  pingTimeout: 25_000,
+  pingInterval: 20_000,
 });
 
 registerSocketServer(io);

@@ -55,12 +55,13 @@ export const useRealtimeTickets = ({
         }
 
         const token = getAuthToken();
-        const transports = ['polling'];
+        const transports = ['websocket', 'polling'];
 
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
           transports,
           auth: token ? { token } : undefined,
+          withCredentials: true,
           reconnectionAttempts: 3,
           timeout: 8000,
         });
