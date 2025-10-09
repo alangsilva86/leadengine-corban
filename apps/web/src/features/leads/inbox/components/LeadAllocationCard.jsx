@@ -52,9 +52,9 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
       radius="lg"
       shadow="md"
       className={cn(
-        'group flex w-full flex-col gap-4 p-5 text-left text-foreground ring-0 ring-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 hover:border-primary/40 hover:bg-primary/15 hover:shadow-[0_26px_54px_rgba(5,12,30,0.55)]',
+        'group flex w-full flex-col gap-4 p-5 text-left text-foreground ring-0 ring-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:border-primary/40 hover:bg-primary/15 hover:shadow-[0_26px_54px_rgba(5,12,30,0.55)]',
         isActive
-          ? 'border-primary/60 bg-primary/15 shadow-[0_30px_70px_rgba(15,23,42,0.45)] focus-visible:ring-primary'
+          ? 'border-primary/60 bg-primary/15 shadow-[0_30px_70px_rgba(15,23,42,0.45)]'
           : null
       )}
     >

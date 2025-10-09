@@ -68,7 +68,7 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
       type="button"
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'w-full rounded-xl border border-slate-900/60 bg-slate-950/60 p-3 text-left transition hover:border-slate-700/70 hover:bg-slate-900/70',
+        'w-full rounded-xl border border-slate-900/60 bg-slate-950/60 p-3 text-left transition hover:border-slate-700/70 hover:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
         selected && 'border-sky-500/50 bg-slate-900'
       )}
     >
