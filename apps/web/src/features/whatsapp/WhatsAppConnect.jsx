@@ -142,11 +142,11 @@ const statusCopy = {
 };
 
 const statusCodeMeta = [
-  { code: '1', label: 'Status 1', description: 'Total de mensagens reportadas com status 1 pelo broker.' },
-  { code: '2', label: 'Status 2', description: 'Total de mensagens reportadas com status 2 pelo broker.' },
-  { code: '3', label: 'Status 3', description: 'Total de mensagens reportadas com status 3 pelo broker.' },
-  { code: '4', label: 'Status 4', description: 'Total de mensagens reportadas com status 4 pelo broker.' },
-  { code: '5', label: 'Status 5', description: 'Total de mensagens reportadas com status 5 pelo broker.' },
+  { code: '1', label: '1', description: 'Total de mensagens reportadas com o código 1 pelo broker.' },
+  { code: '2', label: '2', description: 'Total de mensagens reportadas com o código 2 pelo broker.' },
+  { code: '3', label: '3', description: 'Total de mensagens reportadas com o código 3 pelo broker.' },
+  { code: '4', label: '4', description: 'Total de mensagens reportadas com o código 4 pelo broker.' },
+  { code: '5', label: '5', description: 'Total de mensagens reportadas com o código 5 pelo broker.' },
 ];
 
 const DEFAULT_POLL_INTERVAL_MS = 15000;
