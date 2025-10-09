@@ -50,7 +50,7 @@ export const InboxItem = ({
       type="button"
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'flex w-full flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4 text-left text-slate-200 transition hover:border-slate-600 hover:bg-slate-900',
+        'flex w-full flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4 text-left text-slate-200 transition hover:border-slate-600 hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
         selected && 'border-sky-500/60 bg-slate-900'
       )}
     >
