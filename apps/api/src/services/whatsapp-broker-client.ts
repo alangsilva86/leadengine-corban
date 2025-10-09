@@ -280,13 +280,6 @@ class WhatsAppBrokerClient {
     return configured;
   }
 
-  private get shouldStripLegacyPlus(): boolean {
-    return (process.env.WHATSAPP_BROKER_LEGACY_STRIP_PLUS || '')
-      .trim()
-      .toLowerCase()
-      .startsWith('t');
-  }
-
   private get timeoutMs(): number {
     const parsed = Number.parseInt(process.env.WHATSAPP_BROKER_TIMEOUT_MS || '', 10);
     if (Number.isFinite(parsed) && parsed > 0) {
@@ -446,79 +439,6 @@ class WhatsAppBrokerClient {
       brokerStatus: response.status,
       requestId: normalizedError.requestId || headerRequestId,
     });
-  }
-
-  private formatLegacyRecipient(to: string): string {
-    const trimmed = to.trim();
-    if (!this.shouldStripLegacyPlus) {
-      return trimmed;
-    }
-
-    return trimmed.replace(/^\+/, '');
-  }
-
-  private normalizeLegacyTimestamp(candidate: unknown, fallback: string): string {
-    if (typeof candidate === 'string') {
-      const trimmed = candidate.trim();
-      return trimmed.length > 0 ? trimmed : fallback;
-    }
-
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      const ms = candidate > 1_000_000_000_000 ? candidate : candidate * 1000;
-      try {
-        return new Date(ms).toISOString();
-      } catch (error) {
-        logger.debug('Failed to normalise legacy broker timestamp', { error, candidate });
-        return fallback;
-      }
-    }
-
-    return fallback;
-  }
-
-  private normalizeLegacyResponse(
-    payload: BrokerOutboundMessage,
-    response: Record<string, unknown> | undefined
-  ): WhatsAppMessageResult & { raw?: Record<string, unknown> | null } {
-    const rawResponse = response ?? {};
-    const fallbackId = payload.externalId ?? `msg-${Date.now()}`;
-    const externalIdCandidate = (() => {
-      const candidates = [rawResponse.externalId, rawResponse.messageId, rawResponse.id, fallbackId];
-      for (const candidate of candidates) {
-        if (typeof candidate === 'string') {
-          const trimmed = candidate.trim();
-          if (trimmed.length > 0) {
-            return trimmed;
-          }
-        }
-      }
-      return fallbackId;
-    })();
-
-    const statusCandidate = (() => {
-      const candidates = [rawResponse.status, rawResponse.state, 'sent'];
-      for (const candidate of candidates) {
-        if (typeof candidate === 'string') {
-          const trimmed = candidate.trim();
-          if (trimmed.length > 0) {
-            return trimmed;
-          }
-        }
-      }
-      return 'sent';
-    })();
-
-    const fallbackTimestamp = new Date().toISOString();
-    const timestampCandidate =
-      rawResponse.timestamp ?? rawResponse.sentAt ?? rawResponse.createdAt ?? rawResponse.dispatchedAt;
-    const timestamp = this.normalizeLegacyTimestamp(timestampCandidate, fallbackTimestamp);
-
-    return {
-      externalId: externalIdCandidate,
-      status: statusCandidate,
-      timestamp,
-      raw: rawResponse ?? null,
-    };
   }
 
   private buildDirectMediaRequestPayload(

@@ -46,7 +46,7 @@
 - Direct delivery posts to `/instances/:id/messages` com corpo plano `{ sessionId, instanceId, to, type, text, caption?, mediaUrl?, mimeType?, fileName?, previewUrl?, template?, location?, metadata? }`. Campos de mídia/template/location são encaminhados automaticamente quando presentes.
 - Payloads de mídia/template/location continuam opcionais, mas obrigatórios quando `type != text` (validação garantida pelo schema).
 - O cabeçalho `Idempotency-Key` é propagado a partir de `metadata.idempotencyKey` (ou argumento explícito) para evitar reenvios duplicados.
-- Se o broker retornar `404`, o cliente cai para `/broker/messages`; defina `WHATSAPP_BROKER_DELIVERY_MODE=broker` para forçar esse modo. `WHATSAPP_BROKER_DELIVERY_MODE=instances` continua direcionando para as rotas legadas `/instances/:id/send-text` (apenas texto, opcionalmente removendo o `+` inicial com `WHATSAPP_BROKER_LEGACY_STRIP_PLUS=true`).
+- Se o broker retornar `404`, o cliente cai para `/broker/messages`; defina `WHATSAPP_BROKER_DELIVERY_MODE=broker` para forçar esse modo. `WHATSAPP_BROKER_DELIVERY_MODE=instances` continua direcionando para as rotas legadas `/instances/:id/send-text` (apenas texto).
 - Responses normalised via `BrokerOutboundResponseSchema`; `externalId` fallback maintained for idempotency.
 
 ### Error responses
