@@ -6,7 +6,7 @@ import { requireTenant } from '../middleware/auth';
 import { SendByContactSchema, normalizePayload } from '../dtos/message-schemas';
 import { sendToContact } from '../services/ticket-service';
 
-const router = Router();
+const router: Router = Router();
 
 router.post(
   '/contacts/:contactId/messages',

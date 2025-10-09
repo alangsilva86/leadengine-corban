@@ -15,17 +15,65 @@ export class WhatsAppBrokerNotConfiguredError extends Error {
   }
 }
 
-export class WhatsAppBrokerError extends Error {
-  readonly code: string;
-  readonly status: number;
-  readonly requestId?: string;
+export type WhatsAppBrokerErrorOptions = {
+  code?: string;
+  brokerStatus?: number;
+  brokerCode?: string;
+  requestId?: string;
+  cause?: unknown;
+};
 
-  constructor(message: string, code: string, status: number, requestId?: string) {
+export class WhatsAppBrokerError extends Error {
+  status = 502 as const;
+  code: string;
+  requestId?: string;
+  brokerStatus?: number;
+  brokerCode?: string;
+  cause?: unknown;
+
+  constructor(
+    message: string,
+    codeOrOptions?: string | WhatsAppBrokerErrorOptions,
+    legacyStatus?: number,
+    legacyRequestId?: string
+  ) {
+    const options: WhatsAppBrokerErrorOptions =
+      typeof codeOrOptions === 'string'
+        ? {
+            code: codeOrOptions,
+            brokerStatus: legacyStatus,
+            requestId: legacyRequestId,
+          }
+        : codeOrOptions ?? {};
+
     super(message);
     this.name = 'WhatsAppBrokerError';
-    this.code = code;
-    this.status = status;
-    this.requestId = requestId;
+    this.code = options.code ?? 'BROKER_ERROR';
+    this.requestId = options.requestId;
+    this.brokerStatus = options.brokerStatus;
+    this.brokerCode = options.brokerCode ?? options.code;
+
+    if (options.cause !== undefined) {
+      this.cause = options.cause;
+    }
+
+    if (typeof codeOrOptions === 'string') {
+      if (this.brokerStatus === undefined && typeof legacyStatus === 'number') {
+        this.brokerStatus = legacyStatus;
+      }
+
+      if (this.requestId === undefined && legacyRequestId) {
+        this.requestId = legacyRequestId;
+      }
+
+      if (!this.brokerCode && this.code) {
+        this.brokerCode = this.code;
+      }
+    }
+
+    if (!this.brokerCode && this.brokerStatus !== undefined) {
+      this.brokerCode = String(this.brokerStatus);
+    }
   }
 }
 
@@ -96,7 +144,9 @@ export const translateWhatsAppBrokerError = (
   }
 
   const code = normalizeErrorCode(error.code);
-  const status = Number.isFinite(error.status) ? (error.status as number) : null;
+  const status = Number.isFinite(error.brokerStatus)
+    ? (error.brokerStatus as number)
+    : null;
   const message = typeof error.message === 'string' ? error.message : '';
 
   if (status === 429 || RATE_LIMIT_CODES.has(code)) {
@@ -216,40 +266,8 @@ type SendMessagePayload = {
 };
 
 class WhatsAppBrokerClient {
-  private sessionRoutesPreference: 'unknown' | 'broker' | 'legacy' = 'unknown';
-
   private get mode(): string {
     return (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
-  }
-
-  private get brokerMode(): 'broker' | 'instances' | 'default' {
-    const normalized = (process.env.BROKER_MODE || '').trim().toLowerCase();
-
-    if (['broker', 'session', 'sessions'].includes(normalized)) {
-      return 'broker';
-    }
-
-    if (['instance', 'instances'].includes(normalized)) {
-      return 'instances';
-    }
-
-    return 'default';
-  }
-
-  private get useBrokerSessions(): boolean {
-    return this.brokerMode === 'broker';
-  }
-
-  private get deliveryMode(): 'broker' | 'instances' | 'auto' {
-    const normalized = (process.env.WHATSAPP_BROKER_DELIVERY_MODE || '')
-      .trim()
-      .toLowerCase();
-
-    if (normalized === 'broker' || normalized === 'instances') {
-      return normalized;
-    }
-
-    return 'auto';
   }
 
   private get baseUrl(): string {
@@ -269,16 +287,30 @@ class WhatsAppBrokerClient {
       .startsWith('t');
   }
 
-  private get webhookApiKey(): string {
-    return process.env.WHATSAPP_WEBHOOK_API_KEY || this.brokerApiKey;
-  }
-
   private get timeoutMs(): number {
     const parsed = Number.parseInt(process.env.WHATSAPP_BROKER_TIMEOUT_MS || '', 10);
     if (Number.isFinite(parsed) && parsed > 0) {
       return parsed;
     }
     return DEFAULT_TIMEOUT_MS;
+  }
+
+  private get brokerWebhookUrl(): string {
+    const configured =
+      (process.env.WHATSAPP_BROKER_WEBHOOK_URL ||
+        process.env.WHATSAPP_WEBHOOK_URL ||
+        process.env.WEBHOOK_URL ||
+        '').trim();
+
+    if (configured) {
+      return configured;
+    }
+
+    return 'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
+  }
+
+  private get webhookVerifyToken(): string {
+    return (process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '').trim();
   }
 
   private ensureConfigured(): void {
@@ -298,6 +330,12 @@ class WhatsAppBrokerClient {
     if (!this.brokerApiKey) {
       throw new WhatsAppBrokerNotConfiguredError(
         'WhatsApp broker API key is not configured. Set BROKER_API_KEY or WHATSAPP_BROKER_API_KEY.'
+      );
+    }
+
+    if (!this.webhookVerifyToken) {
+      throw new WhatsAppBrokerNotConfiguredError(
+        'WhatsApp webhook verify token is not configured. Set WHATSAPP_WEBHOOK_VERIFY_TOKEN.'
       );
     }
   }
@@ -383,34 +421,31 @@ class WhatsAppBrokerClient {
       return { code, message, requestId };
     })();
 
-    if (response.status === 401 || response.status === 403) {
-      const headerRequestId =
-        response.headers?.get?.('x-request-id') ||
-        response.headers?.get?.('x-requestid') ||
-        undefined;
+    const headerRequestId =
+      response.headers?.get?.('x-request-id') ||
+      response.headers?.get?.('x-requestid') ||
+      undefined;
 
+    if (response.status === 401 || response.status === 403) {
       throw new WhatsAppBrokerError(
         normalizedError.message || 'WhatsApp broker rejected credentials',
-        'BROKER_AUTH',
-        502,
-        normalizedError.requestId || headerRequestId
+        {
+          code: 'BROKER_AUTH',
+          brokerStatus: response.status,
+          requestId: normalizedError.requestId || headerRequestId,
+        }
       );
     }
 
     const code = normalizedError.code || 'BROKER_ERROR';
     const message =
       normalizedError.message || `WhatsApp broker request failed (${response.status})`;
-    const headerRequestId =
-      response.headers?.get?.('x-request-id') ||
-      response.headers?.get?.('x-requestid') ||
-      undefined;
 
-    throw new WhatsAppBrokerError(
-      message,
+    throw new WhatsAppBrokerError(message, {
       code,
-      response.status,
-      normalizedError.requestId || headerRequestId
-    );
+      brokerStatus: response.status,
+      requestId: normalizedError.requestId || headerRequestId,
+    });
   }
 
   private formatLegacyRecipient(to: string): string {
@@ -547,8 +582,18 @@ class WhatsAppBrokerClient {
     normalizedPayload: BrokerOutboundMessage,
     normalizedResponse: BrokerOutboundResponse
   ): WhatsAppMessageResult & { raw?: Record<string, unknown> | null } {
+    const responseRecord = normalizedResponse as Record<string, unknown>;
+    const fallbackId = `msg-${Date.now()}`;
+    const responseId = (() => {
+      const candidate = responseRecord['id'];
+      return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : null;
+    })();
+
     const externalId =
-      normalizedResponse.externalId ?? normalizedPayload.externalId ?? normalizedResponse.id ?? `msg-${Date.now()}`;
+      normalizedResponse.externalId ??
+      normalizedPayload.externalId ??
+      responseId ??
+      fallbackId;
 
     const status = normalizedResponse.status || 'sent';
 
@@ -558,15 +603,6 @@ class WhatsAppBrokerClient {
       timestamp: normalizedResponse.timestamp ?? new Date().toISOString(),
       raw: normalizedResponse.raw ?? null,
     };
-  }
-
-  private createInstanceDisconnectedError(source: WhatsAppBrokerError): WhatsAppBrokerError {
-    return new WhatsAppBrokerError(
-      NORMALIZED_ERROR_COPY.INSTANCE_NOT_CONNECTED.message,
-      'INSTANCE_NOT_CONNECTED',
-      409,
-      source.requestId
-    );
   }
 
   private async sendViaDirectRoutes(
@@ -586,7 +622,10 @@ class WhatsAppBrokerClient {
 
     if (!supportedTypes.has(normalizedPayload.type)) {
       const unsupportedMessage = `Direct route for ${normalizedPayload.type} messages is not supported yet`;
-      throw new WhatsAppBrokerError(unsupportedMessage, 'DIRECT_ROUTE_UNAVAILABLE', 415);
+      throw new WhatsAppBrokerError(unsupportedMessage, {
+        code: 'DIRECT_ROUTE_UNAVAILABLE',
+        brokerStatus: 415,
+      });
     }
 
     const encodedInstanceId = encodeURIComponent(instanceId);
@@ -605,8 +644,10 @@ class WhatsAppBrokerClient {
       if (typeof mediaUrl !== 'string' || mediaUrl.length === 0) {
         throw new WhatsAppBrokerError(
           `Direct route for ${normalizedPayload.type} messages requires mediaUrl`,
-          'INVALID_MEDIA_PAYLOAD',
-          422
+          {
+            code: 'INVALID_MEDIA_PAYLOAD',
+            brokerStatus: 422,
+          }
         );
       }
     }
@@ -628,104 +669,19 @@ class WhatsAppBrokerClient {
       ...mediaPayload,
     });
 
-    const sendRequest = async (
-      path: string
-    ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> => {
-      const response = await this.request<Record<string, unknown>>(
-        path,
-        {
-          method: 'POST',
-          body: JSON.stringify(directRequestBody),
-        },
-        { idempotencyKey: options.idempotencyKey }
-      );
+    const path = `/instances/${encodedInstanceId}/send-text`;
 
-      const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
-      return this.buildMessageResult(normalizedPayload, normalizedResponse);
-    };
+    const response = await this.request<Record<string, unknown>>(
+      path,
+      {
+        method: 'POST',
+        body: JSON.stringify(directRequestBody),
+      },
+      { idempotencyKey: options.idempotencyKey }
+    );
 
-    const sendViaBrokerEndpoint = async (): Promise<
-      WhatsAppMessageResult & { raw?: Record<string, unknown> | null }
-    > => {
-      try {
-        return await sendRequest('/broker/messages');
-      } catch (brokerError) {
-        if (
-          brokerError instanceof WhatsAppBrokerError &&
-          (brokerError.status === 404 || brokerError.status === 405)
-        ) {
-          throw this.createInstanceDisconnectedError(brokerError);
-        }
-
-        throw brokerError;
-      }
-    };
-
-    if (this.deliveryMode === 'broker') {
-      return sendViaBrokerEndpoint();
-    }
-
-    try {
-      return await sendRequest(`/instances/${encodedInstanceId}/send-text`);
-    } catch (error) {
-      if (
-        error instanceof WhatsAppBrokerError &&
-        (error.status === 404 || error.status === 405)
-      ) {
-        logger.warn('Direct route unavailable, retrying via broker endpoint', {
-          instanceId,
-          status: error.status,
-          code: error.code,
-        });
-        return sendViaBrokerEndpoint();
-      }
-
-      throw error;
-    }
-  }
-
-  private async sendViaInstanceRoutes(
-    instanceId: string,
-    normalizedPayload: BrokerOutboundMessage,
-    options: { rawPayload: SendMessagePayload; idempotencyKey?: string }
-  ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
-    if (normalizedPayload.type !== 'text') {
-      throw new WhatsAppBrokerError(
-        'Legacy instance routes only support text payloads',
-        'UNSUPPORTED_MESSAGE_TYPE',
-        415
-      );
-    }
-
-    try {
-      const response = await this.request<Record<string, unknown>>(
-        `/instances/${encodeURIComponent(instanceId)}/send-text`,
-        {
-          method: 'POST',
-          body: JSON.stringify(
-            compactObject({
-              to: this.formatLegacyRecipient(normalizedPayload.to),
-              message: normalizedPayload.content,
-              text: normalizedPayload.content,
-              previewUrl: normalizedPayload.previewUrl,
-              externalId: normalizedPayload.externalId,
-            })
-          ),
-        },
-        { idempotencyKey: options.idempotencyKey }
-      );
-
-      return this.normalizeLegacyResponse(normalizedPayload, response);
-    } catch (error) {
-      if (
-        error instanceof WhatsAppBrokerError &&
-        (error.status === 404 || error.status === 405)
-      ) {
-        throw this.createInstanceDisconnectedError(error);
-      }
-
-      throw error;
-    }
+    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+    return this.buildMessageResult(normalizedPayload, normalizedResponse);
   }
 
   private async request<T>(
@@ -738,11 +694,11 @@ class WhatsAppBrokerClient {
     const url = this.buildUrl(path, options.searchParams);
     const headers = new Headers(init.headers as HeadersInit | undefined);
 
-    if (init.body && !headers.has('content-type')) {
-      headers.set('content-type', 'application/json');
+    if (init.body && !headers.has('content-type') && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
     }
 
-    headers.set('x-api-key', options.apiKey || this.brokerApiKey);
+    headers.set('X-API-Key', options.apiKey || this.brokerApiKey);
     if (options.idempotencyKey && !headers.has('Idempotency-Key')) {
       headers.set('Idempotency-Key', options.idempotencyKey);
     }
@@ -777,11 +733,11 @@ class WhatsAppBrokerClient {
       }
 
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new WhatsAppBrokerError(
-          'WhatsApp broker request timed out',
-          'REQUEST_TIMEOUT',
-          408
-        );
+        throw new WhatsAppBrokerError('WhatsApp broker request timed out', {
+          code: 'REQUEST_TIMEOUT',
+          brokerStatus: 408,
+          cause: error,
+        });
       }
 
       const originalMessage =
@@ -790,7 +746,10 @@ class WhatsAppBrokerClient {
         ? `Unexpected error contacting WhatsApp broker for ${path}: ${originalMessage}`
         : `Unexpected error contacting WhatsApp broker for ${path}`;
 
-      const wrappedError = new WhatsAppBrokerError(contextMessage, 'BROKER_ERROR', 502);
+      const wrappedError = new WhatsAppBrokerError(contextMessage, {
+        code: 'BROKER_ERROR',
+        cause: error,
+      });
 
       if (error instanceof Error && error.stack) {
         wrappedError.stack = `${wrappedError.name}: ${wrappedError.message}\nCaused by: ${error.stack}`;
@@ -805,283 +764,67 @@ class WhatsAppBrokerClient {
 
   async connectSession(
     sessionId: string,
-    payload: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
+    payload: { instanceId?: string; code?: string } = {}
   ): Promise<void> {
-    const normalizedPayload = compactObject({
-      sessionId,
-      instanceId: payload.instanceId ?? sessionId,
-      webhookUrl: payload.webhookUrl,
-      forceReopen: payload.forceReopen,
-    });
-
-    if (this.useBrokerSessions) {
-      await this.request<void>('/broker/session/connect', {
-        method: 'POST',
-        body: JSON.stringify(normalizedPayload),
-      });
-      return;
-    }
-    const normalizedInstanceId =
+    const instanceId =
       typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
         ? payload.instanceId.trim()
         : sessionId;
 
-    const encodedSessionId = encodeURIComponent(sessionId);
-    const preferBroker = this.shouldAttemptBrokerSessionRoutes();
+    const encodedInstanceId = encodeURIComponent(instanceId);
+    const normalizedCode =
+      typeof payload.code === 'string' && payload.code.trim().length > 0
+        ? payload.code.trim()
+        : undefined;
 
-    const connectViaLegacyRoute = async (): Promise<void> => {
-      await this.request<void>(
-        `/instances/${encodedSessionId}/connect`,
-        {
-          method: 'POST',
-          body: JSON.stringify(
-            compactObject({
-              instanceId: normalizedInstanceId,
-              webhookUrl: payload.webhookUrl,
-              forceReopen: payload.forceReopen,
-            })
-          ),
-        }
-      );
-      this.sessionRoutesPreference = 'legacy';
-    };
+    const body = JSON.stringify(compactObject({ code: normalizedCode }));
 
-    const connectViaBrokerRoute = async (): Promise<void> => {
-      await this.request<void>(
-        '/broker/session/connect',
-        {
-          method: 'POST',
-          body: JSON.stringify(
-            compactObject({
-              sessionId,
-              instanceId: normalizedInstanceId,
-              webhookUrl: payload.webhookUrl,
-              forceReopen: payload.forceReopen,
-            })
-          ),
-        }
-      );
-      this.sessionRoutesPreference = 'broker';
-    };
-
-    if (preferBroker) {
-      try {
-        await connectViaBrokerRoute();
-        return;
-      } catch (error) {
-        if (!this.isRecoverableSessionRouteError(error)) {
-          throw error;
-        }
-
-        try {
-          await connectViaLegacyRoute();
-          return;
-        } catch (legacyError) {
-          if (this.isRecoverableSessionRouteError(legacyError)) {
-            await connectViaBrokerRoute();
-            return;
-          }
-
-          throw legacyError;
-        }
+    await this.request<void>(
+      `/instances/${encodedInstanceId}/pair`,
+      {
+        method: 'POST',
+        body,
       }
-    }
-
-    try {
-      await connectViaLegacyRoute();
-    } catch (error) {
-      if (!this.isRecoverableSessionRouteError(error)) {
-        throw error;
-      }
-
-      await connectViaBrokerRoute();
-    }
+    );
   }
 
   async logoutSession(
     sessionId: string,
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
-    const normalizedPayload = compactObject({
-      sessionId,
-      instanceId: options.instanceId ?? sessionId,
-      wipe: options.wipe,
-    });
-
-    if (this.useBrokerSessions) {
-      await this.request<void>('/broker/session/logout', {
-        method: 'POST',
-        body: JSON.stringify(normalizedPayload),
-      });
-      return;
-    }
-    const normalizedInstanceId =
+    const instanceId =
       typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
         ? options.instanceId.trim()
         : sessionId;
 
-    const encodedSessionId = encodeURIComponent(sessionId);
-    const preferBroker = this.shouldAttemptBrokerSessionRoutes();
+    const encodedInstanceId = encodeURIComponent(instanceId);
 
-    const logoutViaLegacyRoute = async (): Promise<void> => {
-      await this.request<void>(
-        `/instances/${encodedSessionId}/logout`,
-        {
-          method: 'POST',
-          body: JSON.stringify(
-            compactObject({
-              instanceId: normalizedInstanceId,
-              wipe: options.wipe,
-            })
-          ),
-        }
-      );
-      this.sessionRoutesPreference = 'legacy';
-    };
-
-    const logoutViaBrokerRoute = async (): Promise<void> => {
-      await this.request<void>(
-        '/broker/session/logout',
-        {
-          method: 'POST',
-          body: JSON.stringify(
-            compactObject({
-              sessionId,
-              instanceId: normalizedInstanceId,
-              wipe: options.wipe,
-            })
-          ),
-        }
-      );
-      this.sessionRoutesPreference = 'broker';
-    };
-
-    if (preferBroker) {
-      try {
-        await logoutViaBrokerRoute();
-        return;
-      } catch (error) {
-        if (!this.isRecoverableSessionRouteError(error)) {
-          throw error;
-        }
-
-        try {
-          await logoutViaLegacyRoute();
-          return;
-        } catch (legacyError) {
-          if (this.isRecoverableSessionRouteError(legacyError)) {
-            await logoutViaBrokerRoute();
-            return;
-          }
-
-          throw legacyError;
-        }
+    await this.request<void>(
+      `/instances/${encodedInstanceId}/logout`,
+      {
+        method: 'POST',
+        body: JSON.stringify(compactObject({ wipe: options.wipe })),
       }
-    }
-
-    try {
-      await logoutViaLegacyRoute();
-    } catch (error) {
-      if (!this.isRecoverableSessionRouteError(error)) {
-        throw error;
-      }
-
-      await logoutViaBrokerRoute();
-    }
+    );
   }
 
   async getSessionStatus<T = Record<string, unknown>>(
     sessionId: string,
     options: { instanceId?: string } = {}
   ): Promise<T> {
-    const normalizedInstanceId =
+    const instanceId =
       typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
         ? options.instanceId.trim()
         : sessionId;
 
-    if (this.useBrokerSessions) {
-      const payload = compactObject({
-        sessionId,
-        instanceId: normalizedInstanceId || sessionId,
-      });
+    const encodedInstanceId = encodeURIComponent(instanceId);
 
-      return this.request<T>(
-        '/broker/session/status',
-        {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        }
-      );
-    }
-
-    const encodedSessionId = encodeURIComponent(sessionId);
-    const preferBroker = this.shouldAttemptBrokerSessionRoutes();
-
-    const readViaLegacyRoute = async (): Promise<T> => {
-      const requestOptions: BrokerRequestOptions =
-        normalizedInstanceId && normalizedInstanceId !== sessionId
-          ? { searchParams: { instanceId: normalizedInstanceId } }
-          : {};
-
-      const response = await this.request<T>(
-        `/instances/${encodedSessionId}/status`,
-        {
-          method: 'GET',
-        },
-        requestOptions
-      );
-
-      this.sessionRoutesPreference = 'legacy';
-      return response;
-    };
-
-    const readViaBrokerRoute = async (): Promise<T> => {
-      const response = await this.request<T>(
-        '/broker/session/status',
-        {
-          method: 'GET',
-        },
-        {
-          searchParams: {
-            sessionId,
-            instanceId: normalizedInstanceId,
-          },
-        }
-      );
-
-      this.sessionRoutesPreference = 'broker';
-      return response;
-    };
-
-    if (preferBroker) {
-      try {
-        return await readViaBrokerRoute();
-      } catch (error) {
-        if (!this.isRecoverableSessionRouteError(error)) {
-          throw error;
-        }
-
-        try {
-          return await readViaLegacyRoute();
-        } catch (legacyError) {
-          if (this.isRecoverableSessionRouteError(legacyError)) {
-            return await readViaBrokerRoute();
-          }
-
-          throw legacyError;
-        }
+    return this.request<T>(
+      `/instances/${encodedInstanceId}/status`,
+      {
+        method: 'GET',
       }
-    }
-
-    try {
-      return await readViaLegacyRoute();
-    } catch (error) {
-      if (!this.isRecoverableSessionRouteError(error)) {
-        throw error;
-      }
-
-      return await readViaBrokerRoute();
-    }
+    );
   }
 
   async sendText<T = Record<string, unknown>>(
@@ -1110,52 +853,13 @@ class WhatsAppBrokerClient {
       })
     );
 
-    const sendRequest = async (path: string): Promise<T> => {
-      return await this.request<T>(
-        path,
-        {
-          method: 'POST',
-          body: requestBody,
-        }
-      );
-    };
-
-    const sendViaBrokerEndpoint = async (): Promise<T> => {
-      try {
-        return await sendRequest('/broker/messages');
-      } catch (brokerError) {
-        if (
-          brokerError instanceof WhatsAppBrokerError &&
-          (brokerError.status === 404 || brokerError.status === 405)
-        ) {
-          throw this.createInstanceDisconnectedError(brokerError);
-        }
-
-        throw brokerError;
+    return this.request<T>(
+      `/instances/${encodedInstanceId}/send-text`,
+      {
+        method: 'POST',
+        body: requestBody,
       }
-    };
-
-    if (this.deliveryMode === 'broker') {
-      return sendViaBrokerEndpoint();
-    }
-
-    try {
-      return await sendRequest(`/instances/${encodedInstanceId}/send-text`);
-    } catch (error) {
-      if (
-        error instanceof WhatsAppBrokerError &&
-        (error.status === 404 || error.status === 405)
-      ) {
-        logger.warn('Direct send-text route unavailable, retrying via broker endpoint', {
-          instanceId,
-          status: error.status,
-          code: error.code,
-        });
-        return sendViaBrokerEndpoint();
-      }
-
-      throw error;
-    }
+    );
   }
 
   async createPoll(
@@ -1237,55 +941,6 @@ class WhatsAppBrokerClient {
       rate,
       raw: rawResponse,
     };
-  }
-
-  async fetchEvents<T = { events: unknown[] }>(
-    params: { limit?: number; cursor?: string; instanceId?: string } = {}
-  ): Promise<T> {
-    return this.request<T>(
-      '/broker/events',
-      {
-        method: 'GET',
-      },
-      {
-        apiKey: this.webhookApiKey,
-        searchParams: {
-          limit: params.limit,
-          cursor: params.cursor,
-          instanceId: params.instanceId,
-        },
-      }
-    );
-  }
-
-  async ackEvents(payload: { ids: string[]; instanceId?: string }): Promise<void> {
-    const ids = Array.isArray(payload?.ids)
-      ? payload.ids
-          .map((id) => (typeof id === 'string' ? id.trim() : ''))
-          .filter((id) => id.length > 0)
-      : [];
-
-    if (ids.length === 0) {
-      return;
-    }
-
-    const body = JSON.stringify(
-      compactObject({
-        ids,
-        instanceId: payload.instanceId,
-      })
-    );
-
-    await this.request<void>(
-      '/broker/events/ack',
-      {
-        method: 'POST',
-        body,
-      },
-      {
-        apiKey: this.webhookApiKey,
-      }
-    );
   }
 
   private pickString(...values: unknown[]): string | null {
@@ -1819,19 +1474,21 @@ class WhatsAppBrokerClient {
         ? args.instanceId.trim()
         : this.slugify(args.name, 'instance');
 
+    const webhookUrl =
+      typeof args.webhookUrl === 'string' && args.webhookUrl.trim().length > 0
+        ? args.webhookUrl.trim()
+        : this.brokerWebhookUrl;
+
     let response: unknown;
 
     try {
       response = await this.request<unknown>('/instances', {
         method: 'POST',
-        body: JSON.stringify(
-          compactObject({
-            tenantId: args.tenantId,
-            instanceId: requestedInstanceId,
-            name: args.name,
-            webhookUrl: args.webhookUrl,
-          })
-        ),
+        body: JSON.stringify({
+          id: requestedInstanceId,
+          webhookUrl,
+          verifyToken: this.webhookVerifyToken,
+        }),
       });
     } catch (error) {
       logger.warn('Unable to create WhatsApp instance via broker', {
@@ -1872,10 +1529,13 @@ class WhatsAppBrokerClient {
 
   async connectInstance(
     brokerId: string,
-    options: { instanceId?: string; webhookUrl?: string; forceReopen?: boolean } = {}
+    options: { instanceId?: string; code?: string } = {}
   ): Promise<void> {
     this.ensureConfigured();
-    await this.connectSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
+    await this.connectSession(brokerId, {
+      instanceId: options.instanceId ?? brokerId,
+      code: options.code,
+    });
   }
 
   async disconnectInstance(
@@ -1962,7 +1622,7 @@ class WhatsAppBrokerClient {
         }
 
         if (statusError instanceof WhatsAppBrokerError) {
-          if (statusError.status === 404) {
+          if (statusError.brokerStatus === 404) {
             return { qr: null, qrCode: null, qrExpiresAt: null, expiresAt: null };
           }
 
@@ -2040,7 +1700,7 @@ class WhatsAppBrokerClient {
         throw error;
       }
 
-      if (error instanceof WhatsAppBrokerError && error.status === 404) {
+      if (error instanceof WhatsAppBrokerError && error.brokerStatus === 404) {
         return await fallbackFromStatus();
       }
 
@@ -2165,81 +1825,7 @@ class WhatsAppBrokerClient {
       idempotencyKey: normalizedIdempotencyKey,
     } as const;
 
-    const mode = this.deliveryMode;
-
-    if (mode === 'broker') {
-      return this.sendViaDirectRoutes(instanceId, normalizedPayload, dispatchOptions);
-    }
-
-    if (mode === 'instances') {
-      return this.sendViaInstanceRoutes(instanceId, normalizedPayload, dispatchOptions);
-    }
-
-    try {
-      return await this.sendViaDirectRoutes(instanceId, normalizedPayload, dispatchOptions);
-    } catch (error) {
-      if (error instanceof WhatsAppBrokerError && this.shouldRetryWithInstanceRoutes(error)) {
-        logger.warn('Direct route rejected payload; retrying via legacy instance endpoint', {
-          instanceId,
-          status: error.status,
-          code: error.code,
-        });
-        return this.sendViaInstanceRoutes(instanceId, normalizedPayload, dispatchOptions);
-      }
-
-      throw error;
-    }
-  }
-
-  private shouldRetryWithInstanceRoutes(error: WhatsAppBrokerError): boolean {
-    if (error.status === 404 || error.status === 405) {
-      return true;
-    }
-
-    if (error.status === 400) {
-      const message = error.message.toLowerCase();
-      return message.includes('route') || message.includes('path');
-    }
-
-    return false;
-  }
-
-  private shouldAttemptBrokerSessionRoutes(): boolean {
-    if (this.sessionRoutesPreference === 'broker') {
-      return true;
-    }
-
-    if (this.sessionRoutesPreference === 'legacy') {
-      return false;
-    }
-
-    const mode = this.deliveryMode;
-    if (mode === 'broker') {
-      return true;
-    }
-
-    if (mode === 'instances') {
-      return false;
-    }
-
-    return true;
-  }
-
-  private isRecoverableSessionRouteError(error: unknown): error is WhatsAppBrokerError {
-    if (!(error instanceof WhatsAppBrokerError)) {
-      return false;
-    }
-
-    if (error.status !== 404) {
-      return false;
-    }
-
-    const normalizedCode = normalizeErrorCode(error.code);
-    if (!normalizedCode || normalizedCode === 'NOT_FOUND') {
-      return true;
-    }
-
-    return !INSTANCE_DISCONNECTED_CODES.has(normalizedCode);
+    return this.sendViaDirectRoutes(instanceId, normalizedPayload, dispatchOptions);
   }
 }
 

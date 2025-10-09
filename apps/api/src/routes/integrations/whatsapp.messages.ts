@@ -74,7 +74,7 @@ const instrumentationMiddleware: express.RequestHandler = (req, res, next) => {
   next();
 };
 
-const router = Router();
+const router: Router = Router();
 
 router.use(express.json({ limit: '1mb' }));
 router.use(instrumentationMiddleware);
@@ -143,7 +143,7 @@ router.post(
             return 429;
           }
           if (normalized?.code === 'BROKER_TIMEOUT') {
-            return error.status === 504 ? 504 : 408;
+            return error.brokerStatus === 504 ? 504 : 408;
           }
           if (normalized?.code === 'INVALID_TO') {
             return 422;
@@ -151,8 +151,8 @@ router.post(
           if (normalized?.code === 'INSTANCE_NOT_CONNECTED') {
             return 409;
           }
-          if (typeof error.status === 'number' && error.status >= 400 && error.status < 600) {
-            return error.status;
+          if (typeof error.brokerStatus === 'number' && error.brokerStatus >= 400 && error.brokerStatus < 600) {
+            return error.brokerStatus;
           }
           return 502;
         })();

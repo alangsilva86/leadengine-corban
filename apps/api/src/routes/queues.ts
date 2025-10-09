@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
+import { Prisma } from '@prisma/client';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -116,7 +117,10 @@ router.post(
         color: sanitizeOptionalString(color) ?? undefined,
         isActive: typeof isActive === 'boolean' ? isActive : true,
         orderIndex: nextOrderIndex,
-        settings: typeof settings === 'object' && settings !== null ? settings : undefined,
+        settings:
+          typeof settings === 'object' && settings !== null
+            ? (settings as Prisma.JsonObject)
+            : undefined,
       },
       select: queueSelect,
     });

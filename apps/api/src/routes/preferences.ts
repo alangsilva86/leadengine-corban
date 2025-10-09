@@ -12,7 +12,7 @@ import {
   updateUserPreferences,
 } from '../data/user-preferences-store';
 
-const router = Router();
+const router: Router = Router();
 
 const widthSchema = z
   .preprocess((value) => {

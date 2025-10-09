@@ -277,14 +277,15 @@ POST   /api/integrations/whatsapp/session/logout
 GET    /api/integrations/whatsapp/session/status
 POST   /api/integrations/whatsapp/messages
 POST   /api/integrations/whatsapp/polls
-GET    /api/integrations/whatsapp/events
-POST   /api/integrations/whatsapp/events/ack
 ```
 
 > Após apontar a API para o broker HTTP (via `WHATSAPP_MODE=http`, `WHATSAPP_BROKER_URL` e chaves válidas), valide a integração
 > chamando os endpoints `/api/integrations/whatsapp/instances`, `/api/integrations/whatsapp/instances/:id/qr` e
 > `/api/integrations/whatsapp/instances/:id/status`. As respostas devem refletir os dados reais do broker (sem QR de fallback) e
 > confirmar que a criação/conexão de instâncias funciona end-to-end.
+
+> 📬 Eventos inbound agora chegam exclusivamente pelo webhook `/api/integrations/whatsapp/webhook`. As rotas legacy de polling
+> `/api/integrations/whatsapp/events` e `/api/integrations/whatsapp/events/ack` foram removidas.
 
 > ✅ Precisa validar o fluxo diretamente da Render shell? Consulte `docs/whatsapp-render-curl-recipes.md` para copiar os comandos
 > `curl` prontos para testar o webhook inbound e o disparo outbound.

@@ -41,6 +41,7 @@ type WhatsAppBrokerErrorShape = {
   status?: number;
   code?: string;
   requestId?: string | null;
+  brokerStatus?: number;
 };
 
 const toWhatsAppBrokerError = (
@@ -155,7 +156,9 @@ export const errorHandler = (
     };
   } else if (brokerError) {
     const { code, message } = getWhatsAppBrokerMessage(brokerError.code);
-    const status = Number.isInteger(brokerError.status) ? (brokerError.status as number) : 502;
+    const status = Number.isInteger(brokerError.brokerStatus)
+      ? (brokerError.brokerStatus as number)
+      : 502;
 
     apiError = {
       status: status >= 400 && status < 600 ? status : 502,

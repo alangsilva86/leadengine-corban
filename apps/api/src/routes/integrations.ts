@@ -1,6 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
-import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
+import {
+  Prisma,
+  WhatsAppInstanceStatus,
+  type WhatsAppInstance as PrismaWhatsAppInstance,
+} from '@prisma/client';
 import process from 'node:process';
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
@@ -13,7 +17,7 @@ import {
   WhatsAppBrokerError,
   type WhatsAppStatus,
   type WhatsAppBrokerInstanceSnapshot,
-  type WhatsAppInstance,
+  type WhatsAppInstance as BrokerWhatsAppInstance,
 } from '../services/whatsapp-broker-client';
 import { emitToTenant } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
@@ -142,7 +146,8 @@ const instanceIdParamValidator = () =>
 
       try {
         const decoded = decodeURIComponent(value);
-        req.params.id = decoded;
+        const request = req as Request;
+        (request.params as Record<string, string>).id = decoded;
         return true;
       } catch {
         throw new Error(INVALID_INSTANCE_ID_MESSAGE);
@@ -161,12 +166,15 @@ const BROKER_NOT_FOUND_CODES = new Set([
 ]);
 
 const readBrokerErrorStatus = (error: unknown): number | null => {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'status' in error &&
-    typeof (error as { status?: unknown }).status === 'number'
-  ) {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  if ('brokerStatus' in error && typeof (error as { brokerStatus?: unknown }).brokerStatus === 'number') {
+    return (error as { brokerStatus: number }).brokerStatus;
+  }
+
+  if ('status' in error && typeof (error as { status?: unknown }).status === 'number') {
     return (error as { status: number }).status;
   }
 
@@ -291,7 +299,7 @@ const respondWhatsAppBrokerFailure = (res: Response, error: WhatsAppBrokerError)
       code: error.code || 'BROKER_ERROR',
       message: error.message || 'WhatsApp broker request failed',
       details: compactRecord({
-        status: error.status,
+        status: readBrokerErrorStatus(error),
         requestId: error.requestId ?? undefined,
       }),
     },
@@ -1934,16 +1942,17 @@ const disconnectStoredInstance = async (
   } catch (error) {
     if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
       const brokerError = error as WhatsAppBrokerError;
+      const brokerStatus = readBrokerErrorStatus(brokerError);
 
       if (
         isBrokerAlreadyDisconnectedError(brokerError) ||
-        brokerError.status === 409 ||
-        brokerError.status === 410
+        brokerStatus === 409 ||
+        brokerStatus === 410
       ) {
         logger.info('WhatsApp broker reported stored session already disconnected', {
           tenantId,
           instanceId: stored.id,
-          status: brokerError.status,
+          status: brokerStatus,
           code: brokerError.code,
           requestId: brokerError.requestId,
         });
@@ -2245,7 +2254,7 @@ router.post(
         : null;
     try {
       const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
-      let brokerInstance: WhatsAppInstance | null = null;
+      let brokerInstance: BrokerWhatsAppInstance | null = null;
 
       try {
         brokerInstance = await whatsappBrokerClient.createInstance({
@@ -2256,12 +2265,13 @@ router.post(
       } catch (brokerError) {
         if (brokerError instanceof WhatsAppBrokerError || hasErrorName(brokerError, 'WhatsAppBrokerError')) {
           const normalizedError = brokerError as WhatsAppBrokerError;
+          const brokerStatus = readBrokerErrorStatus(normalizedError);
           logger.warn('WhatsApp broker rejected instance creation request', {
             tenantId,
             name: normalizedName,
             error: normalizedError.message,
             code: normalizedError.code,
-            status: normalizedError.status,
+            status: brokerStatus,
             requestId: normalizedError.requestId,
           });
 
@@ -2271,7 +2281,7 @@ router.post(
               code: normalizedError.code || 'BROKER_ERROR',
               message: normalizedError.message || 'WhatsApp broker request failed',
               details: compactRecord({
-                status: normalizedError.status,
+                status: brokerStatus,
                 requestId: normalizedError.requestId ?? undefined,
               }),
             },
@@ -2488,12 +2498,13 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
     } catch (error) {
       if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         const brokerError = error as WhatsAppBrokerError;
+        const brokerStatus = readBrokerErrorStatus(brokerError);
 
-        if (isBrokerAlreadyConnectedError(brokerError) || brokerError.status === 409) {
+        if (isBrokerAlreadyConnectedError(brokerError) || brokerStatus === 409) {
           logger.info('WhatsApp broker reported session already connected', {
             tenantId,
             instanceId: instance.id,
-            status: brokerError.status,
+            status: brokerStatus,
             code: brokerError.code,
             requestId: brokerError.requestId,
           });
@@ -2508,7 +2519,7 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
         logger.warn('WhatsApp broker rejected connect request', {
           tenantId,
           instanceId: instance.id,
-          status: brokerError.status,
+          status: brokerStatus,
           code: brokerError.code,
           requestId: brokerError.requestId,
         });
@@ -2559,7 +2570,7 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
             code: brokerError.code || 'BROKER_ERROR',
             message: brokerError.message || 'WhatsApp broker request failed',
             details: compactRecord({
-              status: brokerError.status,
+              status: brokerStatus,
               requestId: brokerError.requestId ?? undefined,
             }),
           },
@@ -2627,12 +2638,13 @@ router.post(
       } catch (error) {
         if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
           const brokerError = error as WhatsAppBrokerError;
+          const brokerStatus = readBrokerErrorStatus(brokerError);
 
-          if (isBrokerAlreadyConnectedError(brokerError) || brokerError.status === 409) {
+          if (isBrokerAlreadyConnectedError(brokerError) || brokerStatus === 409) {
             logger.info('WhatsApp broker reported default session already connected', {
               tenantId,
               instanceId: instance.id,
-              status: brokerError.status,
+              status: brokerStatus,
               code: brokerError.code,
               requestId: brokerError.requestId,
             });
@@ -2648,7 +2660,7 @@ router.post(
             logger.warn('WhatsApp broker rejected default connect request', {
               tenantId,
               instanceId: instance.id,
-              status: brokerError.status,
+              status: brokerStatus,
               code: brokerError.code,
               requestId: brokerError.requestId,
             });
@@ -2699,7 +2711,7 @@ router.post(
                 code: brokerError.code || 'BROKER_ERROR',
                 message: brokerError.message || 'WhatsApp broker request failed',
                 details: compactRecord({
-                  status: brokerError.status,
+                  status: brokerStatus,
                   requestId: brokerError.requestId ?? undefined,
                 }),
               },
@@ -2806,16 +2818,17 @@ router.post(
       } catch (error) {
         if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
           const brokerError = error as WhatsAppBrokerError;
+          const brokerStatus = readBrokerErrorStatus(brokerError);
 
           if (
             isBrokerAlreadyDisconnectedError(brokerError) ||
-            brokerError.status === 409 ||
-            brokerError.status === 410
+            brokerStatus === 409 ||
+            brokerStatus === 410
           ) {
             logger.info('WhatsApp broker reported instance already disconnected', {
               tenantId,
               instanceId: instance.id,
-              status: brokerError.status,
+              status: brokerStatus,
               code: brokerError.code,
               requestId: brokerError.requestId,
             });
@@ -2909,6 +2922,8 @@ router.delete(
     const tenantId = req.user!.tenantId;
     const wipe = typeof req.query?.wipe === 'boolean' ? (req.query.wipe as boolean) : false;
 
+    let instance: PrismaWhatsAppInstance | null = null;
+
     try {
       if (looksLikeWhatsAppJid(instanceId)) {
         res.status(400).json({
@@ -2923,7 +2938,7 @@ router.delete(
         return;
       }
 
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+      instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
       if (!instance || instance.tenantId !== tenantId) {
         res.status(404).json({
@@ -2936,10 +2951,12 @@ router.delete(
         return;
       }
 
+      const ensuredInstance = instance;
+
       const campaignsToRemove: Array<{ id: string; name: string | null }> = await prisma.campaign.findMany({
         where: {
           tenantId,
-          whatsappInstanceId: instance.id,
+          whatsappInstanceId: ensuredInstance.id,
         },
         select: {
           id: true,
@@ -2947,8 +2964,8 @@ router.delete(
         },
       });
 
-      await whatsappBrokerClient.deleteInstance(instance.brokerId, {
-        instanceId: instance.id,
+      await whatsappBrokerClient.deleteInstance(ensuredInstance.brokerId, {
+        instanceId: ensuredInstance.id,
         wipe,
       });
 
@@ -2958,12 +2975,12 @@ router.delete(
           await tx.campaign.deleteMany({ where: { id: { in: campaignIds } } });
         }
 
-        await tx.whatsAppInstance.delete({ where: { id: instance.id } });
+        await tx.whatsAppInstance.delete({ where: { id: ensuredInstance.id } });
       });
 
       logger.info('WhatsApp instance deleted', {
         tenantId,
-        instanceId: instance.id,
+        instanceId: ensuredInstance.id,
         actorId: req.user?.id ?? 'unknown',
         removedCampaigns: campaignsToRemove.length,
         campaignIds: campaignsToRemove.map((campaign) => campaign.id),
@@ -2974,8 +2991,9 @@ router.delete(
     } catch (error: unknown) {
       if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         const brokerError = error as WhatsAppBrokerError;
+        const brokerStatus = readBrokerErrorStatus(brokerError);
 
-        if (brokerError.status === 404 || isBrokerMissingInstanceError(brokerError)) {
+        if (brokerStatus === 404 || isBrokerMissingInstanceError(brokerError)) {
           res.sendStatus(404);
           return;
         }
@@ -2983,7 +3001,7 @@ router.delete(
         logger.warn('WhatsApp broker failed to provide QR image', {
           tenantId,
           instanceId: instance?.id ?? req.params.id,
-          status: brokerError.status,
+          status: brokerStatus,
           code: brokerError.code,
           requestId: brokerError.requestId,
         });
@@ -3150,14 +3168,15 @@ router.post(
 
         if (
           (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) &&
-          (isBrokerAlreadyDisconnectedError(error) || error.status === 409 || error.status === 410)
+          (isBrokerAlreadyDisconnectedError(error) || readBrokerErrorStatus(error) === 409 || readBrokerErrorStatus(error) === 410)
         ) {
           const brokerError = error as WhatsAppBrokerError;
+          const brokerStatus = readBrokerErrorStatus(brokerError);
 
           logger.info('WhatsApp broker reported direct session already disconnected', {
             tenantId,
             instanceId,
-            status: brokerError.status,
+            status: brokerStatus,
             code: brokerError.code,
             requestId: brokerError.requestId,
           });
@@ -3237,8 +3256,9 @@ router.get(
     } catch (error: unknown) {
       if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         const brokerError = error as WhatsAppBrokerError;
+        const brokerStatus = readBrokerErrorStatus(brokerError);
 
-        if (brokerError.status === 404 || isBrokerMissingInstanceError(brokerError)) {
+        if (brokerStatus === 404 || isBrokerMissingInstanceError(brokerError)) {
           res.sendStatus(404);
           return;
         }
@@ -3246,7 +3266,7 @@ router.get(
         logger.warn('WhatsApp broker failed to provide default QR image', {
           tenantId,
           instanceId,
-          status: brokerError.status,
+          status: brokerStatus,
           code: brokerError.code,
           requestId: brokerError.requestId,
         });
@@ -3463,22 +3483,17 @@ router.get(
 // POST /api/integrations/whatsapp/session/connect - Conectar sessão única
 router.post(
   '/whatsapp/session/connect',
-  body('webhookUrl').optional().isURL(),
-  body('forceReopen').optional().isBoolean().toBoolean(),
+  body('code').optional().isString().isLength({ min: 1 }).trim(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
     const sessionId = resolveTenantSessionId(tenantId);
-    const { webhookUrl, forceReopen } = req.body as {
-      webhookUrl?: string;
-      forceReopen?: boolean;
-    };
+    const { code } = req.body as { code?: string };
 
     try {
       await whatsappBrokerClient.connectSession(sessionId, {
-        webhookUrl,
-        forceReopen,
+        code: typeof code === 'string' && code.trim().length > 0 ? code.trim() : undefined,
       });
       const status = await whatsappBrokerClient.getSessionStatus<BrokerSessionStatus>(sessionId);
 
@@ -3747,83 +3762,6 @@ router.post(
         },
       });
     } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// GET /api/integrations/whatsapp/events - Listar eventos pendentes
-router.get(
-  '/whatsapp/events',
-  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-  query('cursor').optional().isString(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const { limit, cursor } = req.query as { limit?: number; cursor?: string };
-
-    try {
-      const events = await whatsappBrokerClient.fetchEvents<{
-        events?: unknown[];
-        items?: unknown[];
-        nextCursor?: string | null;
-        nextId?: string | null;
-        rate?: BrokerRateLimit | Record<string, unknown> | null;
-      }>({
-        limit,
-        cursor,
-      });
-
-      const items = Array.isArray(events?.items)
-        ? events.items
-        : Array.isArray(events?.events)
-          ? events.events
-          : [];
-
-      const nextCursorValue =
-        typeof events?.nextCursor === 'string' && events.nextCursor.trim().length > 0
-          ? events.nextCursor.trim()
-          : typeof events?.nextId === 'string' && events.nextId.trim().length > 0
-            ? events.nextId.trim()
-            : null;
-
-      res.json({
-        success: true,
-        data: {
-          items,
-          nextCursor: nextCursorValue,
-          rate: parseRateLimit(events?.rate ?? null),
-        },
-      });
-    } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// POST /api/integrations/whatsapp/events/ack - Confirmar processamento de eventos
-router.post(
-  '/whatsapp/events/ack',
-  body('eventIds').isArray({ min: 1 }),
-  body('eventIds.*').isString().isLength({ min: 1 }),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const { eventIds } = req.body as { eventIds: string[] };
-
-    try {
-      await whatsappBrokerClient.ackEvents({ ids: eventIds });
-
-      res.json({
-        success: true,
-      });
-    } catch (error) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
