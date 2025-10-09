@@ -6,8 +6,6 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
-process.env.TAILWIND_CONFIG = path.resolve(__dirname, './tailwind.config.js')
-
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -34,13 +32,12 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return
-          if (id.includes('/react@') || id.includes('/react/')) return 'vendor-react-core'
-          if (id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react-dom'
-          if (id.includes('react-router-dom')) return 'vendor-react-router'
-          if (id.includes('@tanstack/react-query')) return 'vendor-react-query'
+          if (id.includes('/react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
+          if (id.includes('react-router-dom')) return 'vendor-router'
+          if (id.includes('@tanstack/react-query')) return 'vendor-query'
           if (id.includes('recharts')) return 'vendor-recharts'
-          if (id.includes('@radix-ui')) return 'vendor-react-core'
-          if (id.includes('framer-motion')) return 'vendor-framer-motion'
+          if (id.includes('@radix-ui')) return 'vendor-radix'
+          if (id.includes('framer-motion')) return 'vendor-motion'
           if (id.includes('lucide-react')) return 'vendor-icons'
         },
       },
