@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
+import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
 import { Filter, RefreshCw, Search, X } from 'lucide-react';
 
@@ -109,7 +110,12 @@ const FilterToolbar = ({
   };
 
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-900/70 bg-slate-950/80 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.35)]">
+    <GlassPanel
+      tone="overlay"
+      radius="md"
+      shadow="lg"
+      className="space-y-4 border-slate-900/70 bg-slate-950/80 p-5 text-slate-100"
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-xl space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">Painel de atendimento</p>
@@ -283,7 +289,7 @@ const FilterToolbar = ({
           </div>
         ) : null}
       </div>
-    </div>
+    </GlassPanel>
   );
 };
 

@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, MessageSquare, Trophy, XCircle } from 'lucid
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { cn } from '@/lib/utils.js';
 
@@ -798,7 +799,13 @@ export const LeadInbox = ({
 
       <div className="flex-1 min-h-0">
         <div className="grid h-full min-h-0 gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
-          <section className="relative flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-surface-contrast bg-surface-shell shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)] ring-1 ring-white/10 backdrop-blur-xl">
+          <GlassPanel
+            as="section"
+            tone="surface"
+            radius="xl"
+            shadow="2xl"
+            className="relative flex min-h-[520px] min-w-0 flex-col"
+          >
             <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
               <GlobalFiltersBar
                 filters={filters}
@@ -884,7 +891,7 @@ export const LeadInbox = ({
             <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
               <span className="block h-full w-px rounded-full bg-white/12 shadow-[1px_0_18px_rgba(5,10,26,0.55)]" />
             </div>
-          </section>
+          </GlassPanel>
 
           <div className="relative flex min-h-[520px] min-w-0 flex-col">
             <LeadConversationPanel
@@ -899,7 +906,13 @@ export const LeadInbox = ({
             </div>
           </div>
 
-          <aside className="flex min-h-[520px] min-w-0 flex-col rounded-[28px] border border-surface-contrast bg-slate-950/40 shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl">
+          <GlassPanel
+            as="aside"
+            tone="overlay"
+            radius="xl"
+            shadow="xl"
+            className="flex min-h-[520px] min-w-0 flex-col"
+          >
             <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
               <Card className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
                 <CardHeader className="space-y-2 pb-2">
@@ -947,7 +960,7 @@ export const LeadInbox = ({
                 lastUpdatedAt={lastUpdatedAt}
               />
             </ColumnScrollArea>
-          </aside>
+          </GlassPanel>
         </div>
       </div>
     </div>
