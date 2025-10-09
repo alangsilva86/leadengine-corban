@@ -368,7 +368,15 @@ class LeadEngineClient {
       | { success?: boolean; value?: { total?: number } };
     const payload = await this.request<CountResponse>(`/api/v1/lead?${params.toString()}`);
     const total = (payload as any)?.value?.total ?? (payload as any)?.total;
-    const parsedTotal = Number.isFinite(total) ? Number(total) : 0;
+    const numericTotal =
+      typeof total === 'number'
+        ? total
+        : typeof total === 'string' && total.trim().length > 0
+          ? Number(total)
+          : undefined;
+
+    const safeTotal =
+      typeof numericTotal === 'number' && Number.isFinite(numericTotal) ? numericTotal : 0;
 
     const printableFilters = Object.fromEntries(
       Object.entries(filters).filter(([_, value]) => value !== undefined && value !== null)
@@ -376,18 +384,18 @@ class LeadEngineClient {
 
     logger.info(`${LOG_PREFIX} 📊 Contagem de leads concluída`, {
       filters: printableFilters,
-      total: parsedTotal,
+      total: safeTotal,
       rangeStart: range.start ?? null,
       rangeEnd: range.end ?? null,
     });
 
-    if (parsedTotal === 0) {
+    if (safeTotal === 0) {
       logger.warn(`${LOG_PREFIX} ℹ️ Consulta retornou zero leads`, {
         filters: printableFilters,
       });
     }
 
-    return parsedTotal;
+    return safeTotal;
   }
 
   private getFallbackLeads(params: {
@@ -434,8 +442,10 @@ class LeadEngineClient {
 
     const agreementCode = definition.slug;
 
-    const availableLeads = await this.countLeads({ agreementCode });
-    const hotLeads = await this.countLeads({ agreementCode, classification: 2 });
+    const [availableLeads, hotLeads] = await Promise.all([
+      this.countLeads({ agreementCode }),
+      this.countLeads({ agreementCode, classification: 2 }),
+    ]);
 
     const summary: AgreementSummary = {
       ...definition,
