@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { errorHandler } from '../middleware/error-handler';
+import { normalizePhoneNumber } from '../utils/phone';
 import {
   WhatsAppBrokerError,
   type WhatsAppBrokerInstanceSnapshot,
@@ -956,7 +957,7 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
-  it('pairs a WhatsApp instance', async () => {
+  it('returns latest snapshot without triggering broker pairing when no phone number is provided', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
@@ -1031,7 +1032,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(connectSpy).toHaveBeenCalledWith('broker-3', { instanceId: 'instance-3' });
+      expect(connectSpy).not.toHaveBeenCalled();
       expect(listSpy).toHaveBeenCalledWith('tenant-123');
       expect(prisma.whatsAppInstance.update).toHaveBeenCalledWith({
         where: { id: 'instance-3' },
@@ -1054,6 +1055,106 @@ describe('WhatsApp integration routes with configured broker', () => {
           ]),
         },
       });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('requests broker pairing when a phone number is provided', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    let storedInstance = {
+      id: 'instance-4',
+      tenantId: 'tenant-123',
+      name: 'Instance 4',
+      brokerId: 'broker-4',
+      phoneNumber: null,
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-07T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-07T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockImplementation(async () => [storedInstance]);
+    prisma.whatsAppInstance.update.mockImplementation(async ({ data, where }) => {
+      if (where.id === storedInstance.id) {
+        storedInstance = {
+          ...storedInstance,
+          ...data,
+          metadata: (data.metadata ?? storedInstance.metadata) as typeof storedInstance.metadata,
+        } as typeof storedInstance;
+      }
+
+      return storedInstance as Awaited<ReturnType<typeof prisma.whatsAppInstance.update>>;
+    });
+
+    const connectSpy = vi.spyOn(whatsappBrokerClient, 'connectInstance').mockResolvedValue();
+    const listSpy = vi.spyOn(whatsappBrokerClient, 'listInstances').mockResolvedValue([
+      {
+        instance: {
+          id: 'broker-4',
+          tenantId: 'tenant-123',
+          name: 'Instance 4',
+          status: 'connecting',
+          connected: false,
+          phoneNumber: '+5511999999999',
+        },
+        status: {
+          status: 'connecting',
+          connected: false,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
+          stats: null,
+          metrics: null,
+          messages: null,
+          rate: null,
+          rateUsage: null,
+          raw: null,
+        },
+      },
+    ]);
+
+    const phoneInput = '(11) 99999-9999';
+    const expectedPhoneNumber = normalizePhoneNumber(phoneInput).e164;
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/instance-4/pair`,
+        {
+          method: 'POST',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ phoneNumber: phoneInput }),
+        }
+      );
+
+      const body = await response.json();
+
+      expect(connectSpy).toHaveBeenCalledWith('broker-4', {
+        instanceId: 'instance-4',
+        phoneNumber: expectedPhoneNumber,
+      });
+      expect(listSpy).toHaveBeenCalledWith('tenant-123');
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({ success: true });
+
+      const updateArgs = prisma.whatsAppInstance.update.mock.calls.at(-1)?.[0];
+      expect(updateArgs?.data?.metadata).toEqual(
+        expect.objectContaining({
+          history: expect.arrayContaining([
+            expect.objectContaining({ phoneNumber: expectedPhoneNumber }),
+          ]),
+        })
+      );
     } finally {
       await stopTestServer(server);
     }
@@ -1140,7 +1241,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({
         where: { id: decodedId },
       });
-      expect(connectSpy).toHaveBeenCalledWith(decodedId, { instanceId: decodedId });
+      expect(connectSpy).not.toHaveBeenCalled();
       expect(listSpy).toHaveBeenCalledWith('tenant-123');
       expect(response.status).toBe(200);
       expect(body).toMatchObject({
@@ -1230,7 +1331,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(connectSpy).toHaveBeenCalledWith('broker-already', { instanceId: 'instance-already' });
+      expect(connectSpy).not.toHaveBeenCalled();
       expect(response.status).toBe(200);
       expect(body).toMatchObject({
         success: true,

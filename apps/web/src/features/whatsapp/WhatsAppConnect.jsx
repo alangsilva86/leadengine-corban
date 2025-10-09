@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { Input } from '@/components/ui/input.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import {
@@ -1116,6 +1117,9 @@ const WhatsAppConnect = ({
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [loadingQr, setLoadingQr] = useState(false);
+  const [pairingPhoneInput, setPairingPhoneInput] = useState('');
+  const [pairingPhoneError, setPairingPhoneError] = useState(null);
+  const [requestingPairingCode, setRequestingPairingCode] = useState(false);
   const [authToken, setAuthTokenState] = useState(() => getAuthToken());
   const [sessionActive, setSessionActive] = useState(() => Boolean(getAuthToken()));
   const [authDeferred, setAuthDeferred] = useState(false);
@@ -1249,6 +1253,11 @@ const WhatsAppConnect = ({
     hasFetchedOnceRef.current = false;
   }, [selectedAgreement?.id]);
 
+  useEffect(() => {
+    setPairingPhoneInput('');
+    setPairingPhoneError(null);
+  }, [instance?.id, selectedAgreement?.id]);
+
   const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
 
   const expiresAt = useMemo(() => {
@@ -1270,7 +1279,7 @@ const WhatsAppConnect = ({
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
-  const isBusy = loadingInstances || loadingQr || isGeneratingQrImage;
+  const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || requestingPairingCode;
   const confirmLabel = hasCampaign ? 'Ir para a inbox de leads' : 'Configurar campanha';
   const confirmDisabled = !isAuthenticated || !canContinue || isBusy;
   const qrStatusMessage = localStatus === 'connected'
@@ -1648,16 +1657,35 @@ const WhatsAppConnect = ({
     return connected || list[0];
   };
 
-  const connectInstance = async (instanceId = null) => {
+  const connectInstance = async (instanceId = null, options = {}) => {
     if (!instanceId) {
       throw new Error('ID da instância é obrigatório para iniciar o pareamento.');
     }
 
     const encodedId = encodeURIComponent(instanceId);
-    const response = await apiPost(
-      `/api/integrations/whatsapp/instances/${encodedId}/pair`,
-      {}
-    );
+    const { phoneNumber: rawPhoneNumber = null, code: rawCode = null } = options ?? {};
+    const trimmedPhone =
+      typeof rawPhoneNumber === 'string' && rawPhoneNumber.trim().length > 0
+        ? rawPhoneNumber.trim()
+        : null;
+    const trimmedCode =
+      typeof rawCode === 'string' && rawCode.trim().length > 0 ? rawCode.trim() : null;
+
+    if (rawPhoneNumber !== null && !trimmedPhone) {
+      throw new Error('Informe um telefone válido para parear por código.');
+    }
+
+    const shouldRequestPairing = Boolean(trimmedPhone || trimmedCode);
+
+    const response = shouldRequestPairing
+      ? await apiPost(
+          `/api/integrations/whatsapp/instances/${encodedId}/pair`,
+          {
+            ...(trimmedPhone ? { phoneNumber: trimmedPhone } : {}),
+            ...(trimmedCode ? { code: trimmedCode } : {}),
+          }
+        )
+      : await apiGet(`/api/integrations/whatsapp/instances/${encodedId}/status`);
     setSessionActive(true);
     setAuthDeferred(false);
 
@@ -1879,7 +1907,7 @@ const WhatsAppConnect = ({
       if (shouldShowQrFromConnect) {
         setQrData(connectQr);
       } else if (current && statusFromInstance !== 'connected') {
-        await generateQr(current.id, { skipConnect: Boolean(connectResult) });
+        await generateQr(current.id, { skipStatus: Boolean(connectResult) });
       } else {
         setQrData(null);
         setSecondsLeft(null);
@@ -2562,7 +2590,7 @@ const WhatsAppConnect = ({
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  const generateQr = async (id, { skipConnect = false } = {}) => {
+  const generateQr = async (id, { skipStatus = false } = {}) => {
     if (!id) return;
 
     const myPollId = ++pollIdRef.current;
@@ -2570,7 +2598,7 @@ const WhatsAppConnect = ({
     setErrorMessage(null);
     try {
       const encodedId = encodeURIComponent(id);
-      if (!skipConnect) {
+      if (!skipStatus) {
         const connectResult = await connectInstance(id);
         const nextStatus =
           connectResult?.status ||
@@ -2685,6 +2713,62 @@ const WhatsAppConnect = ({
       }
     } finally {
       setLoadingQr(false);
+    }
+  };
+
+  const handlePairingPhoneChange = (event) => {
+    const value = typeof event?.target?.value === 'string' ? event.target.value : '';
+    setPairingPhoneInput(value);
+    if (pairingPhoneError) {
+      setPairingPhoneError(null);
+    }
+  };
+
+  const handleRequestPairingCode = async () => {
+    if (!instance?.id) {
+      setPairingPhoneError('Selecione uma instância para solicitar o pareamento por código.');
+      return;
+    }
+
+    const trimmed = pairingPhoneInput.trim();
+    if (!trimmed) {
+      setPairingPhoneError('Informe o telefone que receberá o código.');
+      return;
+    }
+
+    setPairingPhoneError(null);
+    setRequestingPairingCode(true);
+    try {
+      const result = await connectInstance(instance.id, { phoneNumber: trimmed });
+      await loadInstances({
+        connectResult: result || undefined,
+        preferredInstanceId: instance.id,
+        forceRefresh: true,
+      });
+      toast.success(
+        'Solicitamos o código de pareamento. Abra o WhatsApp oficial e informe o código recebido para concluir a conexão.'
+      );
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback();
+        return;
+      }
+
+      const isValidationError =
+        err?.payload?.error?.code === 'VALIDATION_ERROR' || err?.code === 'VALIDATION_ERROR';
+      const friendly = resolveFriendlyError(
+        err,
+        'Não foi possível solicitar o pareamento por código. Verifique o telefone informado e tente novamente.'
+      );
+      setPairingPhoneError(friendly.message);
+      if (!isValidationError) {
+        setErrorMessage(friendly.message, {
+          code: friendly.code,
+          title: friendly.title ?? 'Falha ao solicitar pareamento por código',
+        });
+      }
+    } finally {
+      setRequestingPairingCode(false);
     }
   };
 
@@ -3280,6 +3364,55 @@ const WhatsAppConnect = ({
                     <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
                     <p>Se perder a conexão, repita o processo — seus leads permanecem reservados na sua inbox.</p>
                   </div>
+                </div>
+
+                <div
+                  className={cn(
+                    'space-y-3 rounded-xl p-4',
+                    SURFACE_COLOR_UTILS.glassTile
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <span className="flex items-center gap-2">
+                      <Link2 className="h-4 w-4" /> Pareamento por código
+                    </span>
+                    <span className="text-[0.65rem] text-muted-foreground">Opcional</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Receba um código de 8 dígitos no aplicativo oficial para vincular sem escanear o QR Code.
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      value={pairingPhoneInput}
+                      onChange={handlePairingPhoneChange}
+                      placeholder="DDD + número"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      disabled={isBusy || !instance || !isAuthenticated}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => void handleRequestPairingCode()}
+                      disabled={isBusy || !instance || !isAuthenticated}
+                    >
+                      {requestingPairingCode ? (
+                        <>
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Solicitando…
+                        </>
+                      ) : (
+                        <>
+                          <Link2 className="mr-2 h-3.5 w-3.5" /> Parear por código
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {pairingPhoneError ? (
+                    <p className="text-xs text-destructive">{pairingPhoneError}</p>
+                  ) : (
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      No WhatsApp: Configurações &gt; Dispositivos conectados &gt; Conectar com código.
+                    </p>
+                  )}
                 </div>
 
                 <div

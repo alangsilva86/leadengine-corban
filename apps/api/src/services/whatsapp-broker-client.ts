@@ -709,7 +709,7 @@ class WhatsAppBrokerClient {
 
   async connectSession(
     sessionId: string,
-    payload: { instanceId?: string; code?: string } = {}
+    payload: { instanceId?: string; code?: string; phoneNumber?: string } = {}
   ): Promise<void> {
     const instanceId =
       typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
@@ -721,9 +721,22 @@ class WhatsAppBrokerClient {
       typeof payload.code === 'string' && payload.code.trim().length > 0
         ? payload.code.trim()
         : undefined;
+    const normalizedPhoneNumber =
+      typeof payload.phoneNumber === 'string' && payload.phoneNumber.trim().length > 0
+        ? payload.phoneNumber.trim()
+        : undefined;
 
-    const body =
-      normalizedCode !== undefined ? JSON.stringify({ code: normalizedCode }) : undefined;
+    const requestBody: Record<string, string> = {};
+
+    if (normalizedCode !== undefined) {
+      requestBody.code = normalizedCode;
+    }
+
+    if (normalizedPhoneNumber !== undefined) {
+      requestBody.phoneNumber = normalizedPhoneNumber;
+    }
+
+    const body = Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined;
 
     await this.request<void>(
       `/instances/${encodedInstanceId}/pair`,
@@ -1530,12 +1543,13 @@ class WhatsAppBrokerClient {
 
   async connectInstance(
     brokerId: string,
-    options: { instanceId?: string; code?: string } = {}
+    options: { instanceId?: string; code?: string; phoneNumber?: string } = {}
   ): Promise<void> {
     this.ensureConfigured();
     await this.connectSession(brokerId, {
       instanceId: options.instanceId ?? brokerId,
       code: options.code,
+      phoneNumber: options.phoneNumber,
     });
   }
 
