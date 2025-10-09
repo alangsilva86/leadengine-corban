@@ -11,7 +11,7 @@
     "preinstall": "npx -y only-allow pnpm",
     "doctor": "node scripts/doctor.mjs",
     "prebuild": "pnpm exec prisma generate --schema=prisma/schema.prisma",
-    "start": "pnpm --filter @ticketz/api start",
+    "start": "pnpm --filter web run start",
     "build": "pnpm run build:libs && pnpm run build:api && pnpm run build:web",
     "build:libs": "pnpm --filter @ticketz/shared build && pnpm --filter @ticketz/core build && pnpm --filter @ticketz/storage build && pnpm --filter @ticketz/integrations build",
     "build:api": "pnpm --filter @ticketz/api build",
@@ -26,7 +26,9 @@
     "core:build": "pnpm --filter @ticketz/core build",
     "shared:build": "pnpm --filter @ticketz/shared build",
     "storage:build": "pnpm --filter @ticketz/storage build",
-    "integrations:build": "pnpm --filter @ticketz/integrations build"
+    "integrations:build": "pnpm --filter @ticketz/integrations build",
+    "start:api": "pnpm --filter @ticketz/api start",
+    "start:web": "pnpm --filter web run start"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
