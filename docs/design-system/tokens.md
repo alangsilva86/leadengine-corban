@@ -89,3 +89,16 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | `shadows.xs – shadows.xl` | Elevações graduais para superfícies interativas. | Definidos com `color-mix` a partir de `--color-border`. | `Card`, botões, painéis do dashboard |
 
 > **Fallbacks:** todas as custom properties usam `theme()` do Tailwind com valores padrão definidos em `apps/web/tailwind.tokens.js`. Em ambientes que não carregam a folha de estilos, os valores _hardcoded_ no arquivo de tokens são aplicados automaticamente.
+
+## Utilitários de layout e superfície
+
+As classes abaixo residem em `apps/web/src/App.css` dentro de `@layer components` e funcionam como atalhos padronizados que combinam múltiplos tokens. Utilize-as para manter consistência visual entre telas.
+
+| Classe | Descrição | Tokens utilizados | Uso recomendado |
+| --- | --- | --- | --- |
+| `.app-shell` | Aplica plano de fundo base e cor de texto global sem gradientes. | `colors.surface.canvas`, `colors.content.primary` | Wrapper raiz do layout ou páginas que dispensam efeitos decorativos. |
+| `.app-shell--gradient` | Gradiente opcional com realces nas diagonais. | `brand.primary.solid`, `feedback.success.solid` | Combinar com `.app-shell` quando quiser replicar o fundo degradê anterior apenas em páginas específicas. |
+| `.glass-surface` | Superfície translúcida com blur e borda suave. | `overlay.glass.layer`, `overlay.glass.border` | Cartões, cabeçalhos e caixas de diálogo com efeito vidro. |
+| `.glass-surface--strong` | Variação mais opaca do vidro para contextos com maior contraste. | `overlay.bold`, `colors.stroke.default` | Card dashboards e shells com necessidade de contraste adicional. |
+| `.section-divider` | Linha sutil para separar blocos de conteúdo. | `colors.stroke.divider` | `Separator` horizontais em componentes como `WhatsAppConnect`. |
+| `.filter-pill`, `.filter-pill--active` | Estilo de chip clicável com estados neutro e ativo. | `colors.stroke.default`, `colors.content.muted`, `brand.primary.onSolid` | Filtros de status e controles de segmentação na inbox. |
