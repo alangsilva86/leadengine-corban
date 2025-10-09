@@ -15,7 +15,7 @@ export TENANT_ID="demo-tenant"                                     # tenant serv
 # export AUTH_TOKEN="<jwt-token>"
 ```
 
-> ℹ️ When `MVP_AUTH_BYPASS=true` (default in demos), the API automatically injects the bypass user and you do **not** need the `Authorization` header. In production environments keep the header enabled.
+> ℹ️ When `MVP_AUTH_BYPASS=true` (explicitly enabled in demos), the API automatically injects the bypass user and you do **not** need the `Authorization` header. In production environments keep the header enabled.
 
 ## Inbound webhook check
 

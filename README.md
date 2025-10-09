@@ -140,7 +140,7 @@ LOG_LEVEL=info
 
 > **Dica:** Defina `CORS_ALLOWED_ORIGINS` com uma lista de domínios adicionais (separados por vírgula) quando precisar liberar múltiplos frontends hospedados simultaneamente. O valor de `FRONTEND_URL` continua sendo utilizado como origem principal. Para o ambiente `ticketzapi-production` na Railway, utilize o arquivo [`docs/environments/ticketzapi-production.env`](docs/environments/ticketzapi-production.env) como referência ao atualizar as variáveis na plataforma.
 > **Demo:** `AUTH_ALLOW_JWT_FALLBACK` permite aceitar tokens JWT válidos mesmo quando o usuário não existe no banco (útil em ambientes de demonstração). Defina como `false` em produção para exigir usuários persistidos.
-> **MVP:** Utilize `MVP_AUTH_BYPASS=true` para liberar o fluxo completo sem login em ambientes de demonstração. As variáveis `AUTH_MVP_*` continuam definindo o usuário padrão do bypass. Quando quiser reativar a autenticação obrigatória, defina `MVP_AUTH_BYPASS=false` (ou remova a variável) e garanta que os usuários estejam cadastrados.
+> **MVP:** O bypass fica desativado por padrão. Utilize `MVP_AUTH_BYPASS=true` para liberar o fluxo completo sem login em ambientes de demonstração. As variáveis `AUTH_MVP_*` continuam definindo o usuário padrão do bypass. Quando quiser reativar a autenticação obrigatória, defina `MVP_AUTH_BYPASS=false` (ou remova a variável) e garanta que os usuários estejam cadastrados.
 
 #### Frontend (apps/web/.env.local)
 ```env
