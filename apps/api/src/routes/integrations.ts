@@ -2592,22 +2592,19 @@ const connectInstanceHandler = async (req: Request, res: Response) => {
   }
 };
 
-const connectInstanceMiddleware = [
+const pairInstanceMiddleware = [
   instanceIdParamValidator(),
   validateRequest,
   requireTenant,
   asyncHandler(connectInstanceHandler),
 ];
 
-// POST /api/integrations/whatsapp/instances/:id/connect - Connect a WhatsApp instance
-router.post('/whatsapp/instances/:id/connect', ...connectInstanceMiddleware);
+// POST /api/integrations/whatsapp/instances/:id/pair - Pair a WhatsApp instance
+router.post('/whatsapp/instances/:id/pair', ...pairInstanceMiddleware);
 
-// Legacy alias kept for backwards compatibility
-router.post('/whatsapp/instances/:id/start', ...connectInstanceMiddleware);
-
-// POST /api/integrations/whatsapp/instances/connect - Connect the default WhatsApp instance
+// POST /api/integrations/whatsapp/instances/pair - Pair the default WhatsApp instance
 router.post(
-  '/whatsapp/instances/connect',
+  '/whatsapp/instances/pair',
   body('instanceId').optional().isString().trim().notEmpty(),
   validateRequest,
   requireTenant,

@@ -159,7 +159,7 @@ Variáveis de ambiente (além das já mencionadas na seção de configuração g
 - **Cache**: habilite também o diretório `./.pnpm-store` para reaproveitar o cache entre builds do frontend.
 - **Variáveis**: defina `VITE_API_URL`, `VITE_DEMO_TENANT_ID`, `VITE_DEMO_OPERATOR_EMAIL`, `VITE_DEMO_OPERATOR_PASSWORD` e, se necessário, `VITE_API_AUTH_TOKEN`.
 
-> ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/start` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
+> ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/pair` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
 
 #### Variáveis de ambiente obrigatórias no Render
 
