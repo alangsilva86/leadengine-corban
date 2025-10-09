@@ -384,3 +384,78 @@ describe('POST /campaigns', () => {
     );
   });
 });
+
+describe('DELETE /campaigns/:id', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('marks the campaign as ended and detaches the WhatsApp instance', async () => {
+    const existingCampaign = {
+      id: 'campaign-1',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      name: 'Campaign 1',
+      status: 'active',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+      whatsappInstanceId: 'instance-1',
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    } satisfies Record<string, unknown>;
+
+    const findSpy = vi
+      .spyOn(prisma.campaign, 'findFirst')
+      .mockResolvedValue(existingCampaign as unknown as Prisma.CampaignGetPayload<{ include: { whatsappInstance: true } }>);
+
+    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockImplementation(async (args) => ({
+      ...existingCampaign,
+      status: args.data.status as string,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      whatsappInstanceId: null,
+      updatedAt: new Date('2024-03-01T00:00:00.000Z'),
+      whatsappInstance: null,
+    }));
+
+    const app = buildApp();
+    const response = await request(app).delete('/campaign-1');
+
+    expect(response.status).toBe(200);
+    expect(findSpy).toHaveBeenCalledWith({
+      where: { id: 'campaign-1', tenantId: 'tenant-1' },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'campaign-1' },
+        data: expect.objectContaining({
+          status: 'ended',
+          whatsappInstanceId: null,
+          metadata: expect.objectContaining({ deletedAt: expect.any(String), deletedBy: 'user-1' }),
+        }),
+      })
+    );
+
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        id: 'campaign-1',
+        status: 'ended',
+        instanceId: null,
+        instanceName: null,
+      }),
+    });
+  });
+});
