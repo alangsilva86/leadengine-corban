@@ -23,7 +23,10 @@ const parseBoolean = (value: string | undefined, defaultValue: boolean): boolean
 
 const computeFlags = (): FeatureFlags => {
   const rawBypass = process.env.MVP_AUTH_BYPASS ?? process.env.AUTH_DISABLE_FOR_MVP;
-  const mvpAuthBypass = parseBoolean(rawBypass, true);
+  const mvpAuthBypass = parseBoolean(rawBypass, false);
+  if (mvpAuthBypass) {
+    logger.warn('[config] MVP auth bypass habilitado via variável de ambiente');
+  }
 
   const rawUseRealData = process.env.USE_REAL_DATA;
   const useRealData = parseBoolean(rawUseRealData, false);
@@ -46,6 +49,9 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
       useRealData: next.useRealData,
       mvpAuthBypass: next.mvpAuthBypass,
     });
+    if (next.mvpAuthBypass) {
+      logger.warn('[config] MVP auth bypass habilitado (refresh)');
+    }
   }
   cachedFlags = next;
   return cachedFlags;
