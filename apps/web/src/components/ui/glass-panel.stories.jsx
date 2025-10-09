@@ -17,14 +17,25 @@ const DemoContent = ({ title = 'Título do painel', description = 'Descrição b
 );
 
 export default {
-  title: 'Design System/GlassPanel',
+  title: 'Componentes/Base/GlassPanel',
   component: GlassPanel,
   tags: ['autodocs'],
+  argTypes: {
+    tone: {
+      control: 'select',
+      options: ['surface', 'overlay'],
+    },
+    radius: {
+      control: 'select',
+      options: ['none', 'sm', 'md', 'lg', 'xl', '2xl', 'full'],
+    },
+    shadow: {
+      control: 'select',
+      options: ['none', 'sm', 'md', 'lg', 'xl', '2xl'],
+    },
+  },
   parameters: {
     layout: 'centered',
-    backgrounds: {
-      default: 'dark',
-    },
   },
 };
 
@@ -36,7 +47,7 @@ const Template = (args) => (
   </div>
 );
 
-export const Surface = {
+export const Playground = {
   render: Template,
   args: {
     tone: 'surface',
@@ -51,7 +62,6 @@ export const Overlay = {
     tone: 'overlay',
     radius: 'xl',
     shadow: 'xl',
-    className: 'border-slate-900/70 bg-slate-950/80 text-slate-100',
   },
 };
 
@@ -61,6 +71,5 @@ export const SurfaceElevated = {
     tone: 'surface',
     radius: '2xl',
     shadow: '2xl',
-    className: 'border-white/20',
   },
 };
