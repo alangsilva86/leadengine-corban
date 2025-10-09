@@ -2,10 +2,8 @@ import { cn } from '@/lib/utils.js';
 
 const TONE_STYLES = {
   info: 'border-[var(--tone-info-border)] bg-[var(--tone-info-surface)] text-[var(--tone-info-foreground)]',
-  warning:
-    'border-[var(--tone-warning-border)] bg-[var(--tone-warning-surface)] text-[var(--tone-warning-foreground)]',
-  success:
-    'border-[var(--tone-success-border)] bg-[var(--tone-success-surface)] text-[var(--tone-success-foreground)]',
+  warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+  success: 'border-success-soft-border bg-success-soft text-success-strong',
   error: 'border-[var(--tone-error-border)] bg-[var(--tone-error-surface)] text-[var(--tone-error-foreground)]',
   neutral:
     'border-[var(--tone-neutral-border)] bg-[var(--tone-neutral-surface)] text-[var(--tone-neutral-foreground)]',

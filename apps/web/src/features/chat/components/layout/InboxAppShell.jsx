@@ -152,7 +152,7 @@ const InboxAppShell = ({
         </div>
         <div className="px-5 pb-5 pt-4 text-xs text-[color:var(--text-shell-muted)]">
           <p className="font-medium text-[color:var(--text-shell-muted)]">⌥ L alterna lista</p>
-          <p className="mt-1 text-[11px] uppercase tracking-wide text-[color:var(--text-shell-muted)]">
+          <p className="mt-1 text-xs uppercase tracking-wide text-[color:var(--text-shell-muted)]">
             {canPersistPreferences ? 'Preferência salva automaticamente' : 'Preferência local temporária'}
           </p>
         </div>

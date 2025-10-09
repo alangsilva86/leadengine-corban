@@ -39,14 +39,14 @@ export const MessageBubble = ({ message }) => {
           {message.content}
         </div>
         <AttachmentPreview attachments={message.attachments} />
-        <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+        <div className="mt-1 flex items-center gap-1 text-xs text-slate-400">
           <span>{formatTime(message.createdAt)}</span>
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full px-1.5 py-1 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  'inline-flex items-center gap-1 rounded-full px-1.5 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   ack.tone
                 )}
                 aria-label={ack.label}

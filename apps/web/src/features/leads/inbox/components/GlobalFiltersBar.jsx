@@ -50,7 +50,7 @@ const SavedViewChip = ({ view, isActive, onSelect, onDelete }) => {
         <span>{view.name}</span>
         <Badge
           variant={isActive ? 'info' : 'outline'}
-          className="border border-white/10 px-2 text-[10px] text-muted-foreground/80"
+          className="border border-white/10 px-2 text-xs text-muted-foreground/80"
         >
           {view.count ?? 0}
         </Badge>

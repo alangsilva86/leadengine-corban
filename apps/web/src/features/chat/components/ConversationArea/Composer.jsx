@@ -138,7 +138,7 @@ export const Composer = ({
             <Badge
               key={file.id}
               variant="secondary"
-              className="flex items-center gap-2 bg-slate-900/40 text-[11px] text-slate-200 ring-1 ring-white/5"
+              className="flex items-center gap-2 bg-slate-900/40 text-xs text-slate-200 ring-1 ring-white/5"
             >
               <span>{file.name}</span>
               <span className="text-slate-400">{Math.round(file.size / 1024)} KB</span>

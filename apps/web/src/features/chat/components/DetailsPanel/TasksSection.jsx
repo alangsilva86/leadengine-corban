@@ -29,7 +29,7 @@ export const TasksSection = ({ ticket, onReopenWindow }) => {
               key={task.id ?? index}
               className="flex flex-col gap-1 rounded-2xl bg-slate-900/35 p-3 ring-1 ring-white/5"
             >
-              <div className="flex justify-between text-[11px] text-slate-400">
+              <div className="flex justify-between text-xs text-slate-400">
                 <span>{task.type ?? 'Follow-up'}</span>
                 <span>
                   {task.dueAt

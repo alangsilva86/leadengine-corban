@@ -60,7 +60,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1.5">
-          <p className="text-[10px] font-medium uppercase tracking-[0.24em] text-muted-foreground">Lead</p>
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">Lead</p>
           <div className="space-y-0.5">
             <h3 className="text-base font-semibold leading-snug text-foreground">
               {allocation.fullName}
@@ -71,7 +71,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
         <Badge
           variant="status"
           tone={statusMeta.tone}
-          className="px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.24em]"
+          className="px-2.5 py-1 text-xs font-medium uppercase tracking-[0.24em]"
         >
           {statusMeta.label}
         </Badge>
@@ -79,26 +79,26 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
 
       <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-[13px] text-muted-foreground sm:grid-cols-3">
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Telefone</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Telefone</p>
           <p className="font-medium text-foreground">{allocation.phone ?? '—'}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Score</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Score</p>
           <p className="font-medium text-foreground">{allocation.score ?? '—'}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Registros</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Registros</p>
           <p className="font-medium text-foreground">{resolveRegistrations(allocation.registrations)}</p>
         </div>
       </div>
 
       <div className="grid gap-3 border-t border-white/10 pt-4 text-[13px] sm:grid-cols-2">
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Margem bruta</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Margem bruta</p>
           <p className="text-[15px] font-semibold text-foreground">{formatCurrency(allocation.margin)}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Margem disponível</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Margem disponível</p>
           <p className="text-[15px] font-semibold text-foreground">
             {formatCurrency(allocation.netMargin ?? allocation.margin)}
           </p>

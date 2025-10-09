@@ -78,7 +78,7 @@ export const InboxFilters = ({
 
       <div className="flex flex-wrap gap-3 text-[13px] text-muted-foreground/80">
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Responsável</span>
+          <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Responsável</span>
           <ToggleGroup
             type="single"
             value={filters.scope}
@@ -96,7 +96,7 @@ export const InboxFilters = ({
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Janela</span>
+          <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Janela</span>
           <ToggleGroup
             type="single"
             value={filters.window}
@@ -114,7 +114,7 @@ export const InboxFilters = ({
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Resultado</span>
+          <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground/70">Resultado</span>
           <ToggleGroup
             type="single"
             value={filters.outcome ?? undefined}

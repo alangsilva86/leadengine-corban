@@ -3,7 +3,7 @@ import MessageBubble from './MessageBubble.jsx';
 import EventCard from './EventCard.jsx';
 
 const Divider = ({ label }) => (
-  <div className="my-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-slate-500">
+  <div className="my-4 flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-slate-500">
     <span className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
     <span className="px-2 text-slate-300">{label}</span>
     <span className="h-px flex-1 bg-gradient-to-l from-transparent via-white/10 to-transparent" />
