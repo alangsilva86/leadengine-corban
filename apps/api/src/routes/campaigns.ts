@@ -438,11 +438,11 @@ router.post(
           );
         }
 
-        const updatedCampaign = await prisma.campaign.update({
+        const updatedCampaign = (await prisma.campaign.update({
           where: { id: existingCampaign.id },
           data: {
             status: requestedStatus,
-            metadata,
+            metadata: metadata as Prisma.JsonObject,
           },
           include: {
             whatsappInstance: {
@@ -452,7 +452,7 @@ router.post(
               },
             },
           },
-        });
+        })) as CampaignWithInstance;
 
         logger.info('Campaign status updated via POST /campaigns', {
           tenantId,
@@ -484,7 +484,7 @@ router.post(
 
     let campaign;
     try {
-      campaign = await prisma.campaign.create({
+      campaign = (await prisma.campaign.create({
         data: {
           tenantId,
           name: normalizedName,
@@ -492,7 +492,7 @@ router.post(
           agreementName: agreementName.trim(),
           whatsappInstanceId: instance.id,
           status: requestedStatus,
-          metadata: creationMetadata,
+          metadata: creationMetadata as Prisma.JsonObject,
         },
         include: {
           whatsappInstance: {
@@ -502,7 +502,7 @@ router.post(
             },
           },
         },
-      });
+      })) as CampaignWithInstance;
     } catch (error) {
       logger.error('Failed to create campaign, returning fallback', {
         error,
@@ -776,6 +776,7 @@ router.patch(
     }
 
     const updates: Prisma.CampaignUpdateInput = {};
+    let instanceReassigned = false;
     const currentStatus = normalizeStatus(campaign.status) ?? 'draft';
     let metadataAccumulator: CampaignMetadata = readMetadata(campaign.metadata as CampaignMetadata);
     let metadataDirty = false;
@@ -847,7 +848,8 @@ router.patch(
         return;
       }
 
-      updates.whatsappInstanceId = nextInstance.id;
+      updates.whatsappInstance = { connect: { id: nextInstance.id } };
+      instanceReassigned = true;
       updateMetadata((base) => {
         base.reassignedAt = new Date().toISOString();
         base.previousInstanceId = campaign.whatsappInstanceId ?? null;
@@ -864,7 +866,7 @@ router.patch(
       updates.metadata = metadataAccumulator as Prisma.JsonObject;
     }
 
-    if (!updates.status && !updates.metadata && !updates.whatsappInstanceId) {
+    if (!updates.status && !updates.metadata && !instanceReassigned) {
       res.json({ success: true, data: buildCampaignResponse(campaign) });
       return;
     }
@@ -888,7 +890,7 @@ router.patch(
       status: updated.status,
       instanceId: updated.whatsappInstanceId,
       statusChanged: Boolean(updates.status && rawStatus !== currentStatus),
-      instanceReassigned: Boolean(updates.whatsappInstanceId),
+      instanceReassigned,
     });
 
     res.json({
@@ -967,7 +969,7 @@ router.delete(
       })
     );
 
-    const updated = await prisma.campaign.update({
+    const updated = (await prisma.campaign.update({
       where: { id: campaign.id },
       data: {
         status: 'ended',
@@ -981,7 +983,7 @@ router.delete(
           },
         },
       },
-    });
+    })) as CampaignWithInstance;
 
     logger.info('Campaign soft-deleted', {
       tenantId,

@@ -6,7 +6,7 @@ import { requireTenant } from '../middleware/auth';
 import { SendByTicketSchema, normalizePayload } from '../dtos/message-schemas';
 import { sendOnTicket } from '../services/ticket-service';
 
-const router = Router();
+const router: Router = Router();
 
 router.post(
   '/tickets/:ticketId/messages',

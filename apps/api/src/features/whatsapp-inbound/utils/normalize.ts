@@ -135,6 +135,13 @@ const extractMediaUrl = (value: unknown): string | null => {
   return null;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+};
+
 const extractFileSize = (value: unknown): number | null => {
   if (!value) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -169,10 +176,18 @@ const extractContacts = (value: unknown): Array<{ name?: string | null; phone?: 
     .map((entry) => {
       if (!entry || typeof entry !== 'object') return null;
       const record = entry as Record<string, unknown>;
-      const nameRecord = record.displayName ?? record.vcard?.name ?? record.contact?.name;
-      const phoneRecord = record.vcard?.phoneNumber ?? record.contact?.phoneNumber ?? record.phoneNumber;
-      const name = safeString(nameRecord);
-      const phone = safeString(phoneRecord);
+      const vcard = asRecord(record.vcard);
+      const contact = asRecord(record.contact);
+      const nameCandidate =
+        record.displayName ??
+        (vcard ? vcard['name'] : undefined) ??
+        (contact ? contact['name'] : undefined);
+      const phoneCandidate =
+        (vcard ? vcard['phoneNumber'] : undefined) ??
+        (contact ? contact['phoneNumber'] : undefined) ??
+        record.phoneNumber;
+      const name = safeString(nameCandidate);
+      const phone = safeString(phoneCandidate);
       if (!name && !phone) return null;
       return { name: name ?? null, phone: phone ?? null };
     })

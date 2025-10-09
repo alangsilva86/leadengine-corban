@@ -45,14 +45,11 @@ const pruneDedupeCache = (now: number): void => {
   if (dedupeCache.size > MAX_DEDUPE_CACHE_SIZE) {
     const sizeBefore = dedupeCache.size;
     dedupeCache.clear();
-    logger.warn(
-      {
-        maxSize: MAX_DEDUPE_CACHE_SIZE,
-        removedExpiredEntries,
-        sizeBefore,
-      },
-      'whatsappInbound.dedupeCache.massivePurge'
-    );
+    logger.warn('whatsappInbound.dedupeCache.massivePurge', {
+      maxSize: MAX_DEDUPE_CACHE_SIZE,
+      removedExpiredEntries,
+      sizeBefore,
+    });
   }
 };
 

@@ -57,7 +57,7 @@ const adaptLegacyPayloadShape = (input: unknown): unknown => {
 };
 
 const withLegacyPayload = <Schema extends ZodTypeAny>(schema: Schema): Schema => {
-  return z.preprocess(adaptLegacyPayloadShape, schema) as Schema;
+  return z.preprocess(adaptLegacyPayloadShape, schema) as unknown as Schema;
 };
 
 export const MessagePayloadSchema = z

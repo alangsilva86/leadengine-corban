@@ -136,6 +136,17 @@ const normalizeStringArray = (value: unknown): string[] | null => {
   return normalized.length > 0 ? normalized : null;
 };
 
+const toRegistrationsTuple = (
+  registrations: string[] | null
+): [string, ...string[]] | null => {
+  if (!registrations || registrations.length === 0) {
+    return null;
+  }
+
+  const [first, ...rest] = registrations;
+  return [first, ...rest];
+};
+
 const compactObject = <T extends Record<string, unknown>>(value: T): T => {
   return Object.fromEntries(
     Object.entries(value).filter(([, candidate]) => candidate !== undefined)
@@ -287,7 +298,13 @@ const normalizeLegacyMessagesUpsert = (
 
 const buildInboundEvent = (
   parsed: BrokerWebhookInbound,
-  context: { index: number; origin: 'modern' | 'legacy'; messageIndex?: number }
+  context: {
+    index: number;
+    origin: 'modern' | 'legacy';
+    messageIndex?: number;
+    tenantId?: string;
+    sessionId?: string;
+  }
 ): BrokerInboundEvent => {
   const { instanceId, timestamp, message, from, metadata } = parsed;
   const rawMessage = { ...asRecord(message) };
@@ -307,11 +324,12 @@ const buildInboundEvent = (
       ? rawPushName
       : null;
 
+  const registrationsArray = normalizeStringArray(from.registrations);
   const contact = {
     phone: typeof from.phone === 'string' ? from.phone : null,
     name: displayName,
     document: typeof from.document === 'string' ? from.document : null,
-    registrations: normalizeStringArray(from.registrations),
+    registrations: toRegistrationsTuple(registrationsArray),
     avatarUrl: typeof from.avatarUrl === 'string' ? from.avatarUrl : null,
     pushName: rawPushName,
   };
@@ -341,6 +359,8 @@ const buildInboundEvent = (
   return {
     id: messageId,
     type: 'MESSAGE_INBOUND',
+    tenantId: context.tenantId,
+    sessionId: context.sessionId,
     instanceId,
     timestamp: normalizedTimestamp,
     cursor: null,
@@ -407,26 +427,55 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const rawEvents = asArray(payload);
 
+  type NormalizedCandidate = {
+    data: BrokerWebhookInbound;
+    origin: 'modern' | 'legacy';
+    sourceIndex: number;
+    messageIndex?: number;
+    tenantId?: string;
+    sessionId?: string;
+  };
+
   const normalizedEvents: BrokerInboundEvent[] = rawEvents
-    .flatMap((entry, index) => {
+    .flatMap<NormalizedCandidate>((entry, index) => {
       const parsed = BrokerWebhookInboundSchema.safeParse(entry);
       if (parsed.success) {
+        const tenantId =
+          typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
+            ? entry.tenantId.trim()
+            : undefined;
+        const sessionId =
+          typeof entry.sessionId === 'string' && entry.sessionId.trim().length > 0
+            ? entry.sessionId.trim()
+            : undefined;
         return [
           {
             data: parsed.data,
-            origin: 'modern' as const,
+            origin: 'modern',
             sourceIndex: index,
+            tenantId,
+            sessionId,
           },
         ];
       }
 
       const legacy = normalizeLegacyMessagesUpsert(entry, { index });
       if (legacy.length > 0) {
+        const tenantId =
+          typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
+            ? entry.tenantId.trim()
+            : undefined;
+        const sessionId =
+          typeof entry.sessionId === 'string' && entry.sessionId.trim().length > 0
+            ? entry.sessionId.trim()
+            : undefined;
         return legacy.map((item) => ({
           data: item.data,
-          origin: 'legacy' as const,
+          origin: 'legacy',
           messageIndex: item.messageIndex,
           sourceIndex: index,
+          tenantId,
+          sessionId,
         }));
       }
 
@@ -441,6 +490,8 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         index: candidate.sourceIndex,
         origin: candidate.origin,
         messageIndex: candidate.messageIndex,
+        tenantId: candidate.tenantId,
+        sessionId: candidate.sessionId,
       })
     );
 

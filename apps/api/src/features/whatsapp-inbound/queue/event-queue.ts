@@ -106,7 +106,11 @@ export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): Whats
     });
 
     if (parsed.success) {
-      return parsed.data;
+      const { timestamp: parsedTimestamp, ...rest } = parsed.data;
+      return {
+        ...rest,
+        timestamp: parsedTimestamp ?? undefined,
+      };
     }
 
     logger.warn('Failed to normalize inbound broker event with schema; falling back to raw payload', {
