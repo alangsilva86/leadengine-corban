@@ -98,6 +98,59 @@ const createApp = () => {
   return app;
 };
 
+const waitForNextProcessedEvent = () =>
+  new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      whatsappEventQueueEmitter.off('processed', onProcessed);
+      reject(new Error('Timed out waiting for WhatsApp event processing'));
+    }, 250);
+
+    const onProcessed = () => {
+      clearTimeout(timeoutId);
+      whatsappEventQueueEmitter.off('processed', onProcessed);
+      resolve();
+    };
+
+    whatsappEventQueueEmitter.on('processed', onProcessed);
+  });
+
+const stubInboundSuccessMocks = () => {
+  (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: 'inst-1',
+    tenantId: 'tenant-1',
+  });
+
+  (prisma.campaign.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
+    {
+      id: 'camp-1',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      whatsappInstanceId: 'inst-1',
+      status: 'active',
+    },
+  ]);
+
+  (prisma.contact.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  (prisma.contact.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  (prisma.contact.create as unknown as ReturnType<typeof vi.fn>).mockImplementation(async ({ data }) => ({
+    id: 'contact-1',
+    ...data,
+  }));
+
+  createTicketSpy.mockResolvedValue({ id: 'ticket-1' } as unknown as Ticket);
+  sendMessageSpy.mockResolvedValue({
+    id: 'message-1',
+    ticketId: 'ticket-1',
+    tenantId: 'tenant-1',
+    direction: 'INBOUND',
+    status: 'SENT',
+    content: 'Olá',
+    metadata: {},
+    createdAt: new Date('2024-01-01T12:00:00.000Z'),
+    updatedAt: new Date('2024-01-01T12:00:00.000Z'),
+  } as unknown as Message);
+};
+
 describe('WhatsApp webhook (integration)', () => {
   beforeEach(() => {
     resetInboundLeadServiceTestState();
@@ -168,40 +221,7 @@ describe('WhatsApp webhook (integration)', () => {
   });
 
   it('queues inbound message and creates allocation', async () => {
-    (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'inst-1',
-      tenantId: 'tenant-1',
-    });
-
-    (prisma.campaign.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        id: 'camp-1',
-        tenantId: 'tenant-1',
-        agreementId: 'agreement-1',
-        whatsappInstanceId: 'inst-1',
-        status: 'active',
-      },
-    ]);
-
-    (prisma.contact.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    (prisma.contact.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    (prisma.contact.create as unknown as ReturnType<typeof vi.fn>).mockImplementation(async ({ data }) => ({
-      id: 'contact-1',
-      ...data,
-    }));
-
-    createTicketSpy.mockResolvedValue({ id: 'ticket-1' } as unknown as Ticket);
-    sendMessageSpy.mockResolvedValue({
-      id: 'message-1',
-      ticketId: 'ticket-1',
-      tenantId: 'tenant-1',
-      direction: 'INBOUND',
-      status: 'SENT',
-      content: 'Olá',
-      metadata: {},
-      createdAt: new Date('2024-01-01T12:00:00.000Z'),
-      updatedAt: new Date('2024-01-01T12:00:00.000Z'),
-    } as unknown as Message);
+    stubInboundSuccessMocks();
 
     const app = createApp();
 
@@ -221,20 +241,7 @@ describe('WhatsApp webhook (integration)', () => {
       },
     };
 
-    const waitForProcessed = new Promise<void>((resolve, reject) => {
-      const onProcessed = () => {
-        clearTimeout(timeoutId);
-        whatsappEventQueueEmitter.off('processed', onProcessed);
-        resolve();
-      };
-
-      const timeoutId = setTimeout(() => {
-        whatsappEventQueueEmitter.off('processed', onProcessed);
-        reject(new Error('Timed out waiting for WhatsApp event processing'));
-      }, 200);
-
-      whatsappEventQueueEmitter.on('processed', onProcessed);
-    });
+    const waitForProcessed = waitForNextProcessedEvent();
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
@@ -257,5 +264,78 @@ describe('WhatsApp webhook (integration)', () => {
     const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
     expect(emittedEvents).toContain('messages.new');
     expect(emittedEvents).toContain('tickets.updated');
+  });
+
+  it('queues inbound message when payload uses MESSAGE_INBOUND type alias', async () => {
+    stubInboundSuccessMocks();
+
+    const app = createApp();
+
+    const payload = {
+      type: 'MESSAGE_INBOUND',
+      instanceId: 'inst-1',
+      timestamp: Date.now(),
+      from: {
+        phone: '+5511999998888',
+        name: 'Maria Alias',
+      },
+      message: {
+        id: 'wamid.456',
+        type: 'text',
+        text: 'Mensagem via alias',
+      },
+    };
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'test-key')
+      .send(payload);
+
+    expect(response.status).toBe(202);
+
+    await waitForProcessed;
+
+    expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'inst-1' } });
+    expect(addAllocations).toHaveBeenCalled();
+    const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
+    expect(emittedEvents).toContain('messages.new');
+  });
+
+  it('queues inbound message when direction uses uppercase alias', async () => {
+    stubInboundSuccessMocks();
+
+    const app = createApp();
+
+    const payload = {
+      instanceId: 'inst-1',
+      event: 'message',
+      direction: 'INBOUND',
+      timestamp: Date.now(),
+      from: {
+        phone: '+5511999998888',
+        name: 'Maria Upper',
+      },
+      message: {
+        id: 'wamid.789',
+        type: 'text',
+        text: 'Mensagem com direção maiúscula',
+      },
+    };
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'test-key')
+      .send(payload);
+
+    expect(response.status).toBe(202);
+
+    await waitForProcessed;
+
+    expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'inst-1' } });
+    expect(addAllocations).toHaveBeenCalled();
   });
 });

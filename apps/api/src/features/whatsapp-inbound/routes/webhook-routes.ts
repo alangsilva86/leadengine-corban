@@ -185,6 +185,108 @@ const normalizeRemoteJid = (input: unknown): string | null => {
   return withoutDomain || null;
 };
 
+const inboundTypeAliases = new Set([
+  'MESSAGE_INBOUND',
+  'INBOUND_MESSAGE',
+  'MESSAGE_RECEIVED',
+  'MESSAGE_RECEIVE',
+  'MESSAGE_INCOMING',
+  'INCOMING_MESSAGE',
+]);
+
+const normalizeInboundType = (value: unknown): 'message' | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const canonical = trimmed.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  if (inboundTypeAliases.has(canonical)) {
+    return 'message';
+  }
+
+  return null;
+};
+
+const normalizeInboundDirection = (value: unknown): 'inbound' | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (['inbound', 'incoming', 'received', 'receive', 'in'].includes(normalized)) {
+    return 'inbound';
+  }
+
+  return null;
+};
+
+type ModernWebhookNormalization = 'standard' | 'type-alias' | 'direction-alias';
+
+const tryParseModernWebhookEvent = (
+  entry: Record<string, unknown>,
+  context: { index: number }
+): { data: BrokerWebhookInbound; normalization: ModernWebhookNormalization } | null => {
+  const parsed = BrokerWebhookInboundSchema.safeParse(entry);
+  if (parsed.success) {
+    return { data: parsed.data, normalization: 'standard' };
+  }
+
+  const normalizedType = normalizeInboundType(entry.type);
+  const normalizedDirection = normalizeInboundDirection(entry.direction);
+
+  if (!normalizedType && !normalizedDirection) {
+    return null;
+  }
+
+  const candidate: Record<string, unknown> = { ...entry };
+  let normalization: ModernWebhookNormalization | null = null;
+
+  if (normalizedType) {
+    candidate.event = 'message';
+    candidate.direction = 'inbound';
+    normalization = 'type-alias';
+  } else if (normalizedDirection) {
+    candidate.direction = 'inbound';
+    normalization = 'direction-alias';
+  }
+
+  const fallback = BrokerWebhookInboundSchema.safeParse(candidate);
+  if (!fallback.success || !normalization) {
+    logger.warn('🛑 [Webhook] Falha ao normalizar evento inbound via alias', {
+      index: context.index,
+      type: typeof entry.type === 'string' ? entry.type : null,
+      direction: typeof entry.direction === 'string' ? entry.direction : null,
+      issues: fallback.success ? [] : fallback.error.issues,
+    });
+    return null;
+  }
+
+  if (normalization === 'type-alias') {
+    logger.debug('📥 [Webhook] Evento inbound aceito via alias de tipo', {
+      index: context.index,
+      originalType: typeof entry.type === 'string' ? entry.type : null,
+      instanceId: fallback.data.instanceId,
+    });
+  } else {
+    logger.debug('📥 [Webhook] Evento inbound aceito via alias de direção', {
+      index: context.index,
+      originalDirection: typeof entry.direction === 'string' ? entry.direction : null,
+      instanceId: fallback.data.instanceId,
+    });
+  }
+
+  return { data: fallback.data, normalization };
+};
+
 const normalizeLegacyMessagesUpsert = (
   entry: Record<string, unknown>,
   context: { index: number }
@@ -438,8 +540,8 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const normalizedEvents: BrokerInboundEvent[] = rawEvents
     .flatMap<NormalizedCandidate>((entry, index) => {
-      const parsed = BrokerWebhookInboundSchema.safeParse(entry);
-      if (parsed.success) {
+      const modern = tryParseModernWebhookEvent(entry, { index });
+      if (modern) {
         const tenantId =
           typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
             ? entry.tenantId.trim()
@@ -450,7 +552,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
             : undefined;
         return [
           {
-            data: parsed.data,
+            data: modern.data,
             origin: 'modern',
             sourceIndex: index,
             tenantId,
@@ -479,10 +581,11 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         }));
       }
 
-      logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
-        index,
-        issues: parsed.error.issues,
-      });
+        const parseAttempt = BrokerWebhookInboundSchema.safeParse(entry);
+        logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
+          index,
+          issues: parseAttempt.success ? [] : parseAttempt.error.issues,
+        });
       return [];
     })
     .map((candidate) =>
