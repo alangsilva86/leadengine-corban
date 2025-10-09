@@ -35,6 +35,9 @@ ticketz-leadengine/
 └── docs/             # Documentação
 ```
 
+### Documentação de Design & Acessibilidade
+- [Design System Foundations](docs/design-system/foundations.md): visão consolidada dos tokens revisados, exemplos de antes/depois de cores e tipografia, além de checklist de foco, contraste e tamanhos mínimos para garantir acessibilidade nas entregas.
+
 ### Stack Tecnológica
 
 #### Backend
