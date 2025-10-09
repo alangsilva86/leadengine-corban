@@ -2244,6 +2244,19 @@ router.post(
       return;
     }
 
+    if (normalizedName !== slugCandidate) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_NAME',
+          message: 'Informe um nome válido utilizando letras minúsculas, números ou hífens.',
+        },
+      });
+      return;
+    }
+
+    const validatedName = slugCandidate;
+
     try {
       assertValidSlug(slugCandidate, 'nome');
     } catch (validationError) {
@@ -2257,7 +2270,8 @@ router.post(
       return;
     }
 
-    const requestedIdSource = typeof id === 'string' && id.trim().length > 0 ? id : slugCandidate;
+    const requestedIdSource =
+      typeof id === 'string' && id.trim().length > 0 ? id.trim() : validatedName;
     const normalizedAgreementId =
       typeof agreementId === 'string' && agreementId.trim().length > 0
         ? agreementId.trim()
@@ -2269,7 +2283,7 @@ router.post(
       try {
         brokerInstance = await whatsappBrokerClient.createInstance({
           tenantId,
-          name: normalizedName,
+          name: validatedName,
           instanceId: normalizedId,
         });
       } catch (brokerError) {
@@ -2278,7 +2292,7 @@ router.post(
           const brokerStatus = readBrokerErrorStatus(normalizedError);
           logger.warn('WhatsApp broker rejected instance creation request', {
             tenantId,
-            name: normalizedName,
+            name: validatedName,
             error: normalizedError.message,
             code: normalizedError.code,
             status: brokerStatus,
@@ -2319,7 +2333,7 @@ router.post(
         'created',
         actorId,
         compactRecord({
-          name: normalizedName,
+          name: validatedName,
           brokerId: resolvedBrokerId,
           agreementId: normalizedAgreementId ?? undefined,
         })
@@ -2327,7 +2341,7 @@ router.post(
       const metadata = appendInstanceHistory(
         compactRecord({
           displayId: normalizedId,
-          slug: slugCandidate,
+          slug: validatedName,
           brokerId: resolvedBrokerId,
           ...(normalizedAgreementId
             ? { agreementId: normalizedAgreementId, agreement: { id: normalizedAgreementId } }
@@ -2344,7 +2358,7 @@ router.post(
         data: {
           id: normalizedId,
           tenantId,
-          name: normalizedName,
+          name: validatedName,
           brokerId: resolvedBrokerId,
           status: derivedStatus,
           connected: isConnected,

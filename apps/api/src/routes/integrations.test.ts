@@ -233,7 +233,7 @@ describe('WhatsApp integration routes when broker is not configured', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'Created Instance' }),
+        body: JSON.stringify({ name: 'created-instance' }),
       });
 
       const body = await response.json();
@@ -260,7 +260,7 @@ describe('WhatsApp integration routes when broker is not configured', () => {
     vi.spyOn(whatsappBrokerClient, 'createInstance').mockResolvedValue({
       id: 'tenant-123--invalid-instance',
       tenantId: 'tenant-123',
-      name: 'Invalid Instance',
+      name: 'invalid-instance',
       status: 'connecting',
       connected: false,
     });
@@ -273,7 +273,7 @@ describe('WhatsApp integration routes when broker is not configured', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'Invalid Instance' }),
+        body: JSON.stringify({ name: 'invalid-instance' }),
       });
 
       const body = await response.json();
@@ -689,7 +689,7 @@ describe('WhatsApp integration routes with configured broker', () => {
     const brokerInstance = {
       id: 'created-instance',
       tenantId: 'tenant-123',
-      name: 'Created Instance',
+      name: 'created-instance',
       status: 'connecting' as const,
       connected: false,
       phoneNumber: '+5511987654321',
@@ -703,7 +703,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(data).toMatchObject({
         id: 'created-instance',
         tenantId: 'tenant-123',
-        name: 'Created Instance',
+        name: 'created-instance',
         brokerId: 'created-instance',
         status: 'connecting',
         connected: false,
@@ -737,7 +737,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'Created Instance' }),
+        body: JSON.stringify({ name: 'created-instance' }),
       });
 
       const body = await response.json();
@@ -748,14 +748,14 @@ describe('WhatsApp integration routes with configured broker', () => {
       });
       expect(createInstanceSpy).toHaveBeenCalledWith({
         tenantId: 'tenant-123',
-        name: 'Created Instance',
+        name: 'created-instance',
         instanceId: 'created-instance',
       });
       expect(prisma.whatsAppInstance.create).toHaveBeenCalledWith({
         data: {
           id: 'created-instance',
           tenantId: 'tenant-123',
-          name: 'Created Instance',
+          name: 'created-instance',
           brokerId: 'created-instance',
           status: 'connecting',
           connected: false,
@@ -775,11 +775,38 @@ describe('WhatsApp integration routes with configured broker', () => {
         success: true,
         data: {
           id: 'created-instance',
-          name: 'Created Instance',
+          name: 'created-instance',
           status: 'connecting',
           connected: false,
         },
       });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects WhatsApp instance names that contain uppercase letters or spaces', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ name: 'Invalid Name' }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body).toMatchObject({
+        success: false,
+        error: { code: 'INVALID_INSTANCE_NAME' },
+      });
+      expect(prisma.whatsAppInstance.create).not.toHaveBeenCalled();
     } finally {
       await stopTestServer(server);
     }
@@ -800,7 +827,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'Created Instance' }),
+        body: JSON.stringify({ name: 'created-instance' }),
       });
 
       const body = await response.json();
@@ -833,6 +860,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       .spyOn(whatsappBrokerClient, 'createInstance')
       .mockImplementation(async ({ tenantId, name, instanceId }) => {
         expect(instanceId).toBe('created-instance-2');
+        expect(name).toBe('created-instance');
         return {
           id: `${tenantId}--${instanceId}`,
           tenantId,
@@ -875,7 +903,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'Created Instance' }),
+        body: JSON.stringify({ name: 'created-instance' }),
       });
 
       const body = await response.json();
@@ -892,7 +920,7 @@ describe('WhatsApp integration routes with configured broker', () => {
         data: {
           id: 'created-instance-2',
           tenantId: 'tenant-123',
-          name: 'Created Instance',
+          name: 'created-instance',
           brokerId: 'tenant-123--created-instance-2',
           status: 'connecting',
           connected: false,
@@ -909,7 +937,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       });
       expect(createInstanceSpy).toHaveBeenCalledWith({
         tenantId: 'tenant-123',
-        name: 'Created Instance',
+        name: 'created-instance',
         instanceId: 'created-instance-2',
       });
       expect(response.status).toBe(201);
@@ -940,7 +968,7 @@ describe('WhatsApp integration routes with configured broker', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'New Instance' }),
+        body: JSON.stringify({ name: 'new-instance' }),
       });
 
       const body = await response.json();
