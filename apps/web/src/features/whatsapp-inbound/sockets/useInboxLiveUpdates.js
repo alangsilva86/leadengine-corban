@@ -49,6 +49,7 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
             path: '/socket.io',
             transports,
             auth: token ? { token } : undefined,
+            withCredentials: true,
           });
 
           socketRef.current = socket;
