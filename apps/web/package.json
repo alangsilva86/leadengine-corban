@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server.mjs",
+    "css:report": "node ./scripts/css-report.mjs"
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "storybook:deploy": "chromatic --project-token=$CHROMATIC_PROJECT_TOKEN"
@@ -87,6 +88,8 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "analyze-css": "^2.4.15",
+    "source-map-explorer": "^2.5.3",
     "storybook": "8.5.4",
     "tw-animate-css": "^1.2.9",
     "vite": "^6.3.5",
