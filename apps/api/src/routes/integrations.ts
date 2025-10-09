@@ -3154,10 +3154,34 @@ router.delete(
         },
       });
 
-      await whatsappBrokerClient.deleteInstance(ensuredInstance.brokerId, {
-        instanceId: ensuredInstance.id,
-        wipe,
-      });
+      let brokerReportedMissing = false;
+      try {
+        await whatsappBrokerClient.deleteInstance(ensuredInstance.brokerId, {
+          instanceId: ensuredInstance.id,
+          wipe,
+        });
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+          const brokerError = error as WhatsAppBrokerError;
+          const brokerStatus = readBrokerErrorStatus(brokerError);
+
+          if (brokerStatus === 404 || isBrokerMissingInstanceError(brokerError)) {
+            brokerReportedMissing = true;
+            logger.info('WhatsApp broker reported instance missing during deletion; proceeding with local cleanup', {
+              tenantId,
+              instanceId: ensuredInstance.id,
+              brokerId: ensuredInstance.brokerId,
+              status: brokerStatus,
+              code: brokerError.code,
+              requestId: brokerError.requestId,
+            });
+          } else {
+            throw brokerError;
+          }
+        } else {
+          throw error;
+        }
+      }
 
       await prisma.$transaction(async (tx: PrismaTransactionClient) => {
         if (campaignsToRemove.length > 0) {
@@ -3175,6 +3199,7 @@ router.delete(
         removedCampaigns: campaignsToRemove.length,
         campaignIds: campaignsToRemove.map((campaign) => campaign.id),
         wipe,
+        brokerReportedMissing,
       });
 
       res.status(204).send();
@@ -3183,12 +3208,7 @@ router.delete(
         const brokerError = error as WhatsAppBrokerError;
         const brokerStatus = readBrokerErrorStatus(brokerError);
 
-        if (brokerStatus === 404 || isBrokerMissingInstanceError(brokerError)) {
-          res.sendStatus(404);
-          return;
-        }
-
-        logger.warn('WhatsApp broker failed to provide QR image', {
+        logger.warn('WhatsApp broker failed to delete instance', {
           tenantId,
           instanceId: instance?.id ?? req.params.id,
           status: brokerStatus,
