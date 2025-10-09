@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { isMvpAuthBypassEnabled } from '../config/feature-flags';
+import { JWT_SECRET } from '../config/auth';
 
 type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
 
@@ -65,7 +66,6 @@ declare global {
 // Utilities
 // ============================================================================
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
 const DEMO_JWT_SECRET = process.env.DEMO_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const MVP_AUTH_BYPASS_ENABLED = isMvpAuthBypassEnabled();

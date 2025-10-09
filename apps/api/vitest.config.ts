@@ -8,6 +8,7 @@ const resolvePackageRoot = (pkg: string) => path.resolve(currentDir, `../../pack
 export default defineConfig({
   test: {
     environment: 'node',
+    setupFiles: [path.resolve(currentDir, './test/bootstrap.ts')],
   },
   resolve: {
     alias: [
