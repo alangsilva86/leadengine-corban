@@ -14,12 +14,17 @@ const HTTP_REQUEST_METRIC = 'whatsapp_http_requests_total';
 const HTTP_REQUEST_HELP = '# HELP whatsapp_http_requests_total Contador de requisições HTTP para APIs de WhatsApp';
 const HTTP_REQUEST_TYPE = '# TYPE whatsapp_http_requests_total counter';
 
+const WS_EMIT_METRIC = 'ws_emit_total';
+const WS_EMIT_HELP = '# HELP ws_emit_total Contador de eventos emitidos via WebSocket/Socket.IO';
+const WS_EMIT_TYPE = '# TYPE ws_emit_total counter';
+
 type CounterLabels = Record<string, string | number | boolean | null | undefined>;
 
 const webhookCounterStore = new Map<string, number>();
 const outboundTotalStore = new Map<string, number>();
 const outboundLatencyStore = new Map<string, { sum: number; count: number }>();
 const httpRequestCounterStore = new Map<string, number>();
+const wsEmitCounterStore = new Map<string, number>();
 
 const serializeLabels = (labels: CounterLabels = {}): string => {
   const entries = Object.entries(labels)
@@ -61,6 +66,14 @@ export const whatsappHttpRequestsCounter = {
     const key = serializeLabels(labels);
     const current = httpRequestCounterStore.get(key) ?? 0;
     httpRequestCounterStore.set(key, current + value);
+  },
+};
+
+export const wsEmitCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = serializeLabels(labels);
+    const current = wsEmitCounterStore.get(key) ?? 0;
+    wsEmitCounterStore.set(key, current + value);
   },
 };
 
@@ -109,6 +122,16 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(WS_EMIT_HELP, WS_EMIT_TYPE);
+  if (wsEmitCounterStore.size === 0) {
+    lines.push(`${WS_EMIT_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of wsEmitCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WS_EMIT_METRIC}${suffix} ${value}`);
+    }
+  }
+
   return `${lines.join('\n')}\n`;
 };
 
@@ -117,4 +140,5 @@ export const resetMetrics = (): void => {
   outboundTotalStore.clear();
   outboundLatencyStore.clear();
   httpRequestCounterStore.clear();
+  wsEmitCounterStore.clear();
 };

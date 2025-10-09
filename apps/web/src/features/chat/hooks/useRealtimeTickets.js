@@ -105,12 +105,15 @@ export const useRealtimeTickets = ({
         };
 
         registerHandler(socket, 'ticket.created', handleTicketEvent);
-        registerHandler(socket, 'ticket.updated', (payload) => {
+        const handleTicketUpdated = (payload) => {
           handleTicketEvent(payload);
           if (typeof onTicketUpdated === 'function') {
             onTicketUpdated(payload);
           }
-        });
+        };
+
+        registerHandler(socket, 'ticket.updated', handleTicketUpdated);
+        registerHandler(socket, 'tickets.updated', handleTicketUpdated);
         registerHandler(socket, 'ticket.status.changed', (payload) => {
           handleTicketEvent(payload);
           if (typeof onTicketStatusChanged === 'function') {
@@ -135,18 +138,16 @@ export const useRealtimeTickets = ({
             onNoteCreated(payload);
           }
         });
-        registerHandler(socket, 'ticket.message.created', (payload) => {
+        const handleMessageCreated = (payload) => {
           handleTicketEvent(payload);
           if (typeof onMessageCreated === 'function') {
             onMessageCreated(payload);
           }
-        });
-        registerHandler(socket, 'ticket.message', (payload) => {
-          handleTicketEvent(payload);
-          if (typeof onMessageCreated === 'function') {
-            onMessageCreated(payload);
-          }
-        });
+        };
+
+        registerHandler(socket, 'ticket.message.created', handleMessageCreated);
+        registerHandler(socket, 'ticket.message', handleMessageCreated);
+        registerHandler(socket, 'messages.new', handleMessageCreated);
         registerHandler(socket, 'message.status.changed', (payload) => {
           handleTicketEvent(payload);
           if (typeof onMessageStatusChanged === 'function') {

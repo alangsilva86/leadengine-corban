@@ -82,11 +82,14 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
             }
           });
 
-          socket.on('leadengine:inbox:new', (payload) => {
+          const notifyLeadUpdate = (payload) => {
             if (typeof onLead === 'function') {
               onLead(payload);
             }
-          });
+          };
+
+          socket.on('leadengine:inbox:new', notifyLeadUpdate);
+          socket.on('tickets.updated', notifyLeadUpdate);
         };
 
         initializeSocket(['websocket', 'polling']);

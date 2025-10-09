@@ -26,6 +26,16 @@ export const registerSocketConnectionHandlers = (socket: Socket): void => {
     logger.info(`Client ${socket.id} joined ticket ${ticketId}`);
   });
 
+  socket.on('join-agreement', (agreementId: string) => {
+    socket.join(`agreement:${agreementId}`);
+    logger.info(`Client ${socket.id} joined agreement ${agreementId}`);
+  });
+
+  socket.on('leave-agreement', (agreementId: string) => {
+    void socket.leave(`agreement:${agreementId}`);
+    logger.info(`Client ${socket.id} left agreement ${agreementId}`);
+  });
+
   socket.on('leave-ticket', (ticketId: string) => {
     void socket.leave(`ticket:${ticketId}`);
     logger.info(`Client ${socket.id} left ticket ${ticketId}`);
