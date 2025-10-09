@@ -841,8 +841,8 @@ export const LeadInbox = ({
                 <div className="space-y-3 text-sm">
                   {showRealtimeConnecting ? (
                     <NoticeBanner
-                      variant="info"
-                      className="rounded-2xl border-white/12 bg-white/[0.07] text-foreground-muted"
+                      tone="info"
+                      className="rounded-2xl"
                     >
                       Conectando ao tempo real para receber novos leads automaticamente…
                     </NoticeBanner>
@@ -850,9 +850,9 @@ export const LeadInbox = ({
 
                   {showRealtimeError ? (
                     <NoticeBanner
-                      variant="warning"
+                      tone="warning"
                       icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl border-white/12 bg-white/[0.07] text-foreground-muted"
+                      className="rounded-2xl"
                     >
                       Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
                     </NoticeBanner>
@@ -860,7 +860,7 @@ export const LeadInbox = ({
 
                   {showErrorNotice ? (
                     <NoticeBanner
-                      variant="danger"
+                      tone="error"
                       icon={<AlertCircle className="h-4 w-4" />}
                       className="rounded-2xl"
                     >
@@ -870,9 +870,9 @@ export const LeadInbox = ({
 
                   {showWarningNotice ? (
                     <NoticeBanner
-                      variant="warning"
+                      tone="warning"
                       icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl border-white/12 bg-white/[0.07] text-foreground-muted"
+                      className="rounded-2xl"
                     >
                       {warningMessage}
                     </NoticeBanner>

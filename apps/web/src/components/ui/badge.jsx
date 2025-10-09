@@ -4,6 +4,17 @@ import { cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils"
 
+const statusToneVariants = {
+  success:
+    "border-[var(--tone-success-border)] bg-[var(--tone-success-surface)] text-[var(--tone-success-foreground)]",
+  warning:
+    "border-[var(--tone-warning-border)] bg-[var(--tone-warning-surface)] text-[var(--tone-warning-foreground)]",
+  info:
+    "border-[var(--tone-info-border)] bg-[var(--tone-info-surface)] text-[var(--tone-info-foreground)]",
+  error:
+    "border-[var(--tone-error-border)] bg-[var(--tone-error-surface)] text-[var(--tone-error-foreground)]",
+}
+
 const badgeVariants = cva(
   "inline-flex items-center justify-center rounded-full border border-transparent px-3 py-1 text-[0.7rem] font-medium tracking-wide w-fit whitespace-nowrap shrink-0 gap-1 [&>svg]:pointer-events-none [&>svg]:size-3 focus-visible:outline focus-visible:outline-[2px] focus-visible:outline-offset-2",
   {
@@ -23,10 +34,25 @@ const badgeVariants = cva(
           "bg-[color-mix(in_oklab,_var(--color-warning)_22%,_transparent)] text-[var(--color-warning-soft-foreground)]",
         info:
           "bg-[var(--color-muted)] text-[var(--color-muted-foreground)]",
+        status:
+          "border border-[var(--tone-neutral-border)] bg-[var(--tone-neutral-surface)] text-[var(--tone-neutral-foreground)]",
+      },
+      tone: {
+        neutral: "",
+        success: "",
+        warning: "",
+        info: "",
+        error: "",
       },
     },
+    compoundVariants: Object.entries(statusToneVariants).map(([tone, className]) => ({
+      variant: "status",
+      tone,
+      class: className,
+    })),
     defaultVariants: {
       variant: "default",
+      tone: "neutral",
     },
   }
 )
@@ -34,6 +60,7 @@ const badgeVariants = cva(
 function Badge({
   className,
   variant,
+  tone,
   asChild = false,
   ...props
 }) {
@@ -42,7 +69,7 @@ function Badge({
   return (
     <Comp
       data-slot="badge"
-      className={cn(badgeVariants({ variant }), className)}
+      className={cn(badgeVariants({ variant, tone }), className)}
       {...props} />
   );
 }

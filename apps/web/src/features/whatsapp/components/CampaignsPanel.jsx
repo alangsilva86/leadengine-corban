@@ -235,7 +235,7 @@ const CampaignsPanel = ({
       </CardHeader>
       <CardContent className="space-y-4">
         {error ? (
-          <NoticeBanner variant="danger">
+          <NoticeBanner tone="error">
             <p>{error}</p>
           </NoticeBanner>
         ) : null}

@@ -96,12 +96,12 @@ const clearInstancesCache = (agreementId) => {
 };
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
-const STATUS_TONE_CLASSES = {
-  disconnected: 'border border-warning/40 bg-warning/10 text-warning-soft-foreground',
-  connecting: 'border border-primary/40 bg-primary/10 text-primary',
-  connected: 'border border-status-whatsapp/40 bg-status-whatsapp/15 text-status-whatsapp',
-  qr_required: 'border border-secondary/40 bg-secondary text-secondary-foreground',
-  fallback: 'border border-surface-overlay-glass-border bg-surface-overlay-glass text-foreground',
+const STATUS_TONES = {
+  disconnected: 'warning',
+  connecting: 'info',
+  connected: 'success',
+  qr_required: 'warning',
+  fallback: 'neutral',
 };
 
 const SURFACE_COLOR_UTILS = {
@@ -121,22 +121,22 @@ const statusCopy = {
   disconnected: {
     badge: 'Pendente',
     description: 'Leia o QR Code no WhatsApp Web para conectar seu número e começar a receber leads.',
-    tone: STATUS_TONE_CLASSES.disconnected,
+    tone: STATUS_TONES.disconnected,
   },
   connecting: {
     badge: 'Conectando',
     description: 'Estamos sincronizando com o seu número. Mantenha o WhatsApp aberto até concluir.',
-    tone: STATUS_TONE_CLASSES.connecting,
+    tone: STATUS_TONES.connecting,
   },
   connected: {
     badge: 'Ativo',
     description: 'Pronto! Todos os leads qualificados serão entregues diretamente no seu WhatsApp.',
-    tone: STATUS_TONE_CLASSES.connected,
+    tone: STATUS_TONES.connected,
   },
   qr_required: {
     badge: 'QR necessário',
     description: 'Gere um novo QR Code e escaneie para reativar a sessão.',
-    tone: STATUS_TONE_CLASSES.qr_required,
+    tone: STATUS_TONES.qr_required,
   },
 };
 
@@ -1262,7 +1262,7 @@ const WhatsAppConnect = ({
   const hasQr = Boolean(qrImageSrc);
   const isAuthenticated = (sessionActive || Boolean(authToken)) && !authDeferred;
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
-  const statusTone = copy.tone || STATUS_TONE_CLASSES.fallback;
+  const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage;
   const confirmLabel = hasCampaign ? 'Ir para a inbox de leads' : 'Configurar campanha';
@@ -2743,9 +2743,9 @@ const WhatsAppConnect = ({
             </div>
           </div>
           <div className="flex flex-col items-end gap-2 text-xs text-muted-foreground">
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${statusTone}`}>
-              <span className="font-medium text-foreground/90">{copy.badge}</span>
-            </span>
+            <Badge variant="status" tone={statusTone} className="gap-2 text-xs font-medium">
+              {copy.badge}
+            </Badge>
             {hasAgreement ? (
               <span>
                 Convênio ativo:{' '}
@@ -2772,7 +2772,7 @@ const WhatsAppConnect = ({
       </header>
 
       {persistentWarning ? (
-        <NoticeBanner variant="warning" icon={<AlertTriangle className="h-4 w-4" />}>
+        <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
           <p>{persistentWarning}</p>
           <p className="text-xs text-amber-200/80">
             Assim que uma campanha ativa for vinculada à instância, os próximos leads inbound serão processados automaticamente.

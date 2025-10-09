@@ -1,20 +1,25 @@
 import { cn } from '@/lib/utils.js';
 
-const VARIANT_STYLES = {
-  info: 'border-status-whatsapp-border bg-status-whatsapp-surface text-status-whatsapp-foreground',
-  warning: 'border-status-whatsapp-border bg-status-whatsapp-surface text-status-whatsapp-foreground',
-  success: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100',
-  danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+const TONE_STYLES = {
+  info: 'border-[var(--tone-info-border)] bg-[var(--tone-info-surface)] text-[var(--tone-info-foreground)]',
+  warning:
+    'border-[var(--tone-warning-border)] bg-[var(--tone-warning-surface)] text-[var(--tone-warning-foreground)]',
+  success:
+    'border-[var(--tone-success-border)] bg-[var(--tone-success-surface)] text-[var(--tone-success-foreground)]',
+  error: 'border-[var(--tone-error-border)] bg-[var(--tone-error-surface)] text-[var(--tone-error-foreground)]',
+  neutral:
+    'border-[var(--tone-neutral-border)] bg-[var(--tone-neutral-surface)] text-[var(--tone-neutral-foreground)]',
 };
 
-export const NoticeBanner = ({ variant = 'info', icon = null, children, className }) => {
-  const variantClass = VARIANT_STYLES[variant] ?? VARIANT_STYLES.info;
+export const NoticeBanner = ({ tone, variant, icon = null, children, className }) => {
+  const resolvedTone = tone ?? variant ?? 'info';
+  const toneClass = TONE_STYLES[resolvedTone] ?? TONE_STYLES.info;
 
   return (
     <div
       className={cn(
         'flex items-start gap-2 rounded-lg border px-4 py-3 text-sm backdrop-blur-sm',
-        variantClass,
+        toneClass,
         className
       )}
     >
