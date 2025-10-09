@@ -916,8 +916,11 @@ const normalizeInstanceRecord = (entry) => {
   const name =
     pickStringValue(
       base.name,
+      base.displayName,
+      base.label,
       mergedMetadata.name,
       mergedMetadata.displayName,
+      mergedMetadata.label,
       mergedMetadata.instanceName,
       mergedMetadata.sessionName,
       mergedMetadata.profileName
@@ -1448,9 +1451,6 @@ const WhatsAppConnect = ({
 
   useEffect(() => {
     if (!selectedAgreement?.id) {
-      return;
-    }
-    if (!isAuthenticated) {
       return;
     }
     void loadInstances({ forceRefresh: true });
@@ -2170,6 +2170,18 @@ const WhatsAppConnect = ({
       const payload = response?.data ?? {};
       const createdInstance = extractInstanceFromPayload(payload);
       const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
+      const resolvedCreatedInstance = createdInstance
+        ? {
+            ...createdInstance,
+            name: createdInstance.name ?? normalizedName,
+            displayName:
+              createdInstance.displayName ||
+              createdInstance.label ||
+              createdInstance.metadata?.displayName ||
+              normalizedName,
+            label: createdInstance.label ?? createdInstance.displayName ?? undefined,
+          }
+        : null;
 
       let connectResult = null;
 
@@ -2180,7 +2192,7 @@ const WhatsAppConnect = ({
             connectResult = {
               ...startResult,
               instance: {
-                ...createdInstance,
+                ...(resolvedCreatedInstance || {}),
                 ...(startResult.instance || {}),
               },
             };
@@ -2196,22 +2208,22 @@ const WhatsAppConnect = ({
                 ? true
                 : undefined,
             qr: null,
-            instance: createdInstance || null,
+            instance: resolvedCreatedInstance || null,
           };
         }
       }
 
-      if (!connectResult && createdInstance) {
+      if (!connectResult && resolvedCreatedInstance) {
         connectResult = {
-          status: createdInstance.status,
+          status: resolvedCreatedInstance.status,
           connected:
-            typeof createdInstance.connected === 'boolean'
-              ? createdInstance.connected
-              : createdInstance.status === 'connected'
+            typeof resolvedCreatedInstance.connected === 'boolean'
+              ? resolvedCreatedInstance.connected
+              : resolvedCreatedInstance.status === 'connected'
               ? true
               : undefined,
           qr: extractQrPayload(payload),
-          instance: createdInstance,
+          instance: resolvedCreatedInstance,
         };
       }
 

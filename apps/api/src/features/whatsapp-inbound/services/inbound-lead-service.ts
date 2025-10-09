@@ -524,6 +524,7 @@ const emitRealtimeUpdatesForInbound = async ({
     }
   } catch (error) {
     logger.error('🎯 LeadEngine • WhatsApp :: 📡 Falha ao emitir eventos em tempo real para a mensagem inbound', {
+    logger.error('Failed to emit realtime updates for inbound WhatsApp message', {
       error,
       tenantId,
       ticketId,
