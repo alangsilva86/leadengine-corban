@@ -112,35 +112,45 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
   const statusMutation = useTicketStatusMutation({ fallbackTicketId: selectedTicketId });
   const assignMutation = useTicketAssignMutation({ fallbackTicketId: selectedTicketId });
 
-  const realtime = useRealtimeTickets({
-    tenantId,
-    userId: currentUser?.id,
-    ticketId: selectedTicketId,
-    enabled: Boolean(tenantId),
-    onTicketUpdated: () => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
-    },
-    onTicketAssigned: () => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
-    },
-    onTicketStatusChanged: () => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
-    },
-    onMessageCreated: (payload) => {
+  const handleTicketInvalidation = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
+  }, [queryClient]);
+
+  const handleMessageCreated = useCallback(
+    (payload) => {
       if (!payload?.ticketId) {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', payload.ticketId] });
     },
-    onNoteCreated: (payload) => {
+    [queryClient]
+  );
+
+  const handleNoteCreated = useCallback(
+    (payload) => {
       if (!payload?.ticketId) {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
     },
-    onQueueMissing: (payload) => {
-      setQueueAlerts((current) => [{ payload, timestamp: Date.now() }, ...current].slice(0, 5));
-    },
+    [queryClient]
+  );
+
+  const handleQueueMissing = useCallback((payload) => {
+    setQueueAlerts((current) => [{ payload, timestamp: Date.now() }, ...current].slice(0, 5));
+  }, []);
+
+  const realtime = useRealtimeTickets({
+    tenantId,
+    userId: currentUser?.id,
+    ticketId: selectedTicketId,
+    enabled: Boolean(tenantId),
+    onTicketUpdated: handleTicketInvalidation,
+    onTicketAssigned: handleTicketInvalidation,
+    onTicketStatusChanged: handleTicketInvalidation,
+    onMessageCreated: handleMessageCreated,
+    onNoteCreated: handleNoteCreated,
+    onQueueMissing: handleQueueMissing,
   });
 
   const typingIndicator = useTypingIndicator({ socket: realtime.socket });
