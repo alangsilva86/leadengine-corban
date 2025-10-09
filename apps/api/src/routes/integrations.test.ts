@@ -293,9 +293,9 @@ describe('WhatsApp integration routes when broker is not configured', () => {
 
   const brokerDependentRoutes = [
     {
-      name: 'start instance',
+      name: 'pair instance',
       method: 'POST',
-      path: '/whatsapp/instances/test-instance/start',
+      path: '/whatsapp/instances/test-instance/pair',
       setup: () => {
         (prismaMock.whatsAppInstance.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
           id: 'test-instance',
@@ -420,7 +420,7 @@ describe('WhatsApp integration routes when broker is not configured', () => {
     prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
 
     try {
-      const response = await fetch(`${url}/api/integrations/whatsapp/instances/connect`, {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances/pair`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -929,7 +929,7 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
-  it('connects a WhatsApp instance', async () => {
+  it('pairs a WhatsApp instance', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
@@ -993,7 +993,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
     try {
       const response = await fetch(
-        `${url}/api/integrations/whatsapp/instances/instance-3/start`,
+        `${url}/api/integrations/whatsapp/instances/instance-3/pair`,
         {
           method: 'POST',
           headers: {
@@ -1099,7 +1099,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
     try {
       const response = await fetch(
-        `${url}/api/integrations/whatsapp/instances/${encodedId}/connect`,
+        `${url}/api/integrations/whatsapp/instances/${encodedId}/pair`,
         {
           method: 'POST',
           headers: {
@@ -1192,7 +1192,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
     try {
       const response = await fetch(
-        `${url}/api/integrations/whatsapp/instances/instance-already/connect`,
+        `${url}/api/integrations/whatsapp/instances/instance-already/pair`,
         {
           method: 'POST',
           headers: {

@@ -1622,7 +1622,7 @@ const WhatsAppConnect = ({
 
   const connectInstance = async (instanceId = null) => {
     const response = await apiPost(
-      '/api/integrations/whatsapp/instances/connect',
+      '/api/integrations/whatsapp/instances/pair',
       instanceId ? { instanceId } : {}
     );
     setSessionActive(true);
