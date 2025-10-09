@@ -306,6 +306,16 @@ const respondWhatsAppBrokerFailure = (res: Response, error: WhatsAppBrokerError)
   });
 };
 
+const respondLegacyEndpointGone = (res: Response, message: string): void => {
+  res.status(410).json({
+    success: false,
+    error: {
+      code: 'ENDPOINT_GONE',
+      message,
+    },
+  });
+};
+
 const router: Router = Router();
 
 // ============================================================================
@@ -3477,84 +3487,170 @@ router.get(
   })
 );
 
-// POST /api/integrations/whatsapp/session/connect - Conectar sessão única
 router.post(
-  '/whatsapp/session/connect',
-  body('code').optional().isString().isLength({ min: 1 }).trim(),
+  '/whatsapp/instances/:id/exists',
+  instanceIdParamValidator(),
+  body('to').isString().trim().notEmpty(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
     const tenantId = req.user!.tenantId;
-    const sessionId = resolveTenantSessionId(tenantId);
-    const { code } = req.body as { code?: string };
+    const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
 
     try {
-      await whatsappBrokerClient.connectSession(sessionId, {
-        code: typeof code === 'string' && code.trim().length > 0 ? code.trim() : undefined,
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      const exists = await whatsappBrokerClient.checkRecipient({
+        sessionId: instance.brokerId,
+        instanceId: instance.id,
+        to,
       });
-      const status = await whatsappBrokerClient.getSessionStatus<BrokerSessionStatus>(sessionId);
 
       res.json({
         success: true,
-        data: normalizeSessionStatus(status),
+        data: exists,
       });
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
+
       throw error;
     }
   })
 );
 
-// POST /api/integrations/whatsapp/session/logout - Desconectar sessão
-router.post(
-  '/whatsapp/session/logout',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
-    const sessionId = resolveTenantSessionId(tenantId);
-
-    try {
-      await whatsappBrokerClient.logoutSession(sessionId);
-      const status = await whatsappBrokerClient.getSessionStatus<BrokerSessionStatus>(sessionId);
-
-      res.json({
-        success: true,
-        data: normalizeSessionStatus(status),
-      });
-    } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// GET /api/integrations/whatsapp/session/status - Status da sessão única
 router.get(
-  '/whatsapp/session/status',
+  '/whatsapp/instances/:id/groups',
+  instanceIdParamValidator(),
+  validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
     const tenantId = req.user!.tenantId;
-    const sessionId = resolveTenantSessionId(tenantId);
 
     try {
-      const status = await whatsappBrokerClient.getSessionStatus<BrokerSessionStatus>(sessionId);
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      const groups = await whatsappBrokerClient.getGroups({
+        sessionId: instance.brokerId,
+        instanceId: instance.id,
+      });
 
       res.json({
         success: true,
-        data: normalizeSessionStatus(status),
+        data: groups,
       });
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
+
       throw error;
     }
   })
 );
+
+router.get(
+  '/whatsapp/instances/:id/metrics',
+  instanceIdParamValidator(),
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = req.params.id;
+    const tenantId = req.user!.tenantId;
+
+    try {
+      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+      if (!instance || instance.tenantId !== tenantId) {
+        res.status(404).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_NOT_FOUND',
+            message: 'Instância WhatsApp não encontrada.',
+          },
+        });
+        return;
+      }
+
+      const metrics = await whatsappBrokerClient.getMetrics({
+        sessionId: instance.brokerId,
+        instanceId: instance.id,
+      });
+
+      res.json({
+        success: true,
+        data: metrics,
+      });
+    } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
+      if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      }
+
+      throw error;
+    }
+  })
+);
+
+router.post('/whatsapp/session/connect', requireTenant, (_req: Request, res: Response) => {
+  respondLegacyEndpointGone(
+    res,
+    'Esta rota foi descontinuada. Utilize POST /api/integrations/whatsapp/instances/:id/pair e acompanhe o status via GET /api/integrations/whatsapp/instances/:id/status.'
+  );
+});
+
+router.post('/whatsapp/session/logout', requireTenant, (_req: Request, res: Response) => {
+  respondLegacyEndpointGone(
+    res,
+    'Esta rota foi descontinuada. Utilize POST /api/integrations/whatsapp/instances/:id/logout para encerrar a sessão.'
+  );
+});
+
+router.get('/whatsapp/session/status', requireTenant, (_req: Request, res: Response) => {
+  respondLegacyEndpointGone(
+    res,
+    'Esta rota foi descontinuada. Consulte GET /api/integrations/whatsapp/instances/:id/status para obter o andamento da conexão.'
+  );
+});
 
 // POST /api/integrations/whatsapp/messages - Enviar mensagem de texto
 router.post(

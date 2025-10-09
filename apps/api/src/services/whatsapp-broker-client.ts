@@ -281,10 +281,31 @@ class WhatsAppBrokerClient {
   }
 
   private get timeoutMs(): number {
-    const parsed = Number.parseInt(process.env.WHATSAPP_BROKER_TIMEOUT_MS || '', 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
+    const read = (value: string | undefined): number | null => {
+      if (!value) {
+        return null;
+      }
+
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+
+      return null;
+    };
+
+    const candidates = [
+      process.env.WHATSAPP_BROKER_TIMEOUT_MS,
+      process.env.LEAD_ENGINE_TIMEOUT_MS,
+    ];
+
+    for (const candidate of candidates) {
+      const resolved = read(candidate);
+      if (resolved) {
+        return resolved;
+      }
     }
+
     return DEFAULT_TIMEOUT_MS;
   }
 
@@ -618,6 +639,10 @@ class WhatsAppBrokerClient {
       headers.set('Content-Type', 'application/json');
     }
 
+    if (!headers.has('accept') && !headers.has('Accept')) {
+      headers.set('Accept', 'application/json');
+    }
+
     headers.set('X-API-Key', options.apiKey || this.brokerApiKey);
     if (options.idempotencyKey && !headers.has('Idempotency-Key')) {
       headers.set('Idempotency-Key', options.idempotencyKey);
@@ -783,6 +808,35 @@ class WhatsAppBrokerClient {
     );
   }
 
+  async checkRecipient(
+    payload: {
+      sessionId: string;
+      instanceId?: string;
+      to: string;
+    }
+  ): Promise<Record<string, unknown>> {
+    const sessionId = payload.sessionId;
+    const instanceId = payload.instanceId ?? sessionId;
+    const encodedInstanceId = encodeURIComponent(instanceId);
+    const normalizedTo = `${payload.to ?? ''}`.trim();
+
+    const body = JSON.stringify(
+      compactObject({
+        sessionId,
+        instanceId,
+        to: normalizedTo,
+      })
+    );
+
+    return this.request<Record<string, unknown>>(
+      `/instances/${encodedInstanceId}/exists`,
+      {
+        method: 'POST',
+        body,
+      }
+    );
+  }
+
   async createPoll(
     payload: {
       sessionId: string;
@@ -862,6 +916,32 @@ class WhatsAppBrokerClient {
       rate,
       raw: rawResponse,
     };
+  }
+
+  async getGroups(
+    payload: { sessionId: string; instanceId?: string }
+  ): Promise<Record<string, unknown>> {
+    const sessionId = payload.sessionId;
+    const instanceId = payload.instanceId ?? sessionId;
+    const encodedInstanceId = encodeURIComponent(instanceId);
+
+    return this.request<Record<string, unknown>>(
+      `/instances/${encodedInstanceId}/groups`,
+      { method: 'GET' }
+    );
+  }
+
+  async getMetrics(
+    payload: { sessionId: string; instanceId?: string }
+  ): Promise<Record<string, unknown>> {
+    const sessionId = payload.sessionId;
+    const instanceId = payload.instanceId ?? sessionId;
+    const encodedInstanceId = encodeURIComponent(instanceId);
+
+    return this.request<Record<string, unknown>>(
+      `/instances/${encodedInstanceId}/metrics`,
+      { method: 'GET' }
+    );
   }
 
   private pickString(...values: unknown[]): string | null {
@@ -1565,7 +1645,8 @@ class WhatsAppBrokerClient {
     const encodedBrokerId = encodeURIComponent(brokerId);
     const url = this.buildUrl(`/instances/${encodedBrokerId}/qr.png`, searchParams);
     const headers = new Headers();
-    headers.set('x-api-key', this.brokerApiKey);
+    headers.set('X-API-Key', this.brokerApiKey);
+    headers.set('Accept', 'image/png, application/json');
     headers.set('accept', 'image/png,application/json;q=0.9,*/*;q=0.8');
 
     const { signal, cancel } = this.createTimeoutSignal(this.timeoutMs);
