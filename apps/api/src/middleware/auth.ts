@@ -379,7 +379,7 @@ export async function authenticateUser(credentials: LoginRequest): Promise<Login
  */
 export async function getUserById(userId: string): Promise<AuthenticatedUser | null> {
   const user = await prisma.user.findUnique({
-    where: { id: userId, isActive: true },
+    where: { id: userId },
     include: {
       tenant: {
         select: {
@@ -389,7 +389,7 @@ export async function getUserById(userId: string): Promise<AuthenticatedUser | n
     },
   });
 
-  if (!user || !user.tenant.isActive) {
+  if (!user || !user.isActive || user.tenant?.isActive === false) {
     return null;
   }
 
