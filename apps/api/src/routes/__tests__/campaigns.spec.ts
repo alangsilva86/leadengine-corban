@@ -20,6 +20,7 @@ vi.mock('../../middleware/auth', () => ({
 
 vi.mock('@ticketz/storage', () => ({
   getCampaignMetrics: getCampaignMetricsMock,
+  setPrismaClient: vi.fn(),
 }));
 
 import { campaignsRouter } from '../campaigns';
@@ -382,6 +383,65 @@ describe('POST /campaigns', () => {
         data: expect.objectContaining({ status: 'paused' }),
       })
     );
+  });
+
+  it('returns a warning payload when metrics enrichment fails during creation', async () => {
+    mockTenantAndInstance();
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(null);
+
+    const createdCampaignMetadata = {
+      history: [],
+    } as Prisma.JsonValue;
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockImplementation(async (args) => ({
+      id: 'campaign-4',
+      tenantId: 'tenant-1',
+      agreementId: args.data.agreementId as string,
+      agreementName: args.data.agreementName as string,
+      name: args.data.name as string,
+      status: args.data.status as string,
+      metadata: createdCampaignMetadata,
+      createdAt: new Date('2024-03-10T00:00:00.000Z'),
+      updatedAt: new Date('2024-03-10T00:00:00.000Z'),
+      whatsappInstanceId: args.data.whatsappInstanceId as string,
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    }));
+
+    getCampaignMetricsMock.mockImplementation(() => {
+      throw new Error('storage unavailable');
+    });
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-3',
+      agreementName: 'Agreement 3',
+      instanceId: 'instance-1',
+      status: 'active',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      success: true,
+      warnings: [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }],
+      data: expect.objectContaining({
+        id: 'campaign-4',
+        metrics: expect.objectContaining({
+          total: 0,
+          allocated: 0,
+          contacted: 0,
+          won: 0,
+          lost: 0,
+          averageResponseSeconds: 0,
+        }),
+      }),
+    });
+
+    expect(getCampaignMetricsMock).toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledTimes(1);
   });
 });
 

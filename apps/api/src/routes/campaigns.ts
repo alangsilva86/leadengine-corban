@@ -147,6 +147,27 @@ const buildCampaignResponse = (
   } satisfies CampaignDTO;
 };
 
+const buildCampaignResponseSafely = (
+  campaign: CampaignWithInstance,
+  logContext: Record<string, unknown>
+): { data: CampaignDTO; warnings?: CampaignWarning[] } => {
+  try {
+    return {
+      data: buildCampaignResponse(campaign),
+    };
+  } catch (metricsError) {
+    logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
+      ...logContext,
+      error: toSafeError(metricsError),
+    });
+
+    return {
+      data: buildCampaignResponse(campaign, createEmptyRawMetrics()),
+      warnings: [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }],
+    };
+  }
+};
+
 const router = Router();
 
 const normalizeStatus = (value: unknown): CampaignStatus | null => {
@@ -522,7 +543,23 @@ router.post(
       });
 
       if (fallback) {
-        res.json({ success: true, data: buildCampaignResponse(fallback) });
+        const responseLogContext = {
+          tenantId,
+          agreementId: agreementId.trim(),
+          instanceId: instance.id,
+          campaignId: fallback.id,
+        };
+        const { data, warnings } = buildCampaignResponseSafely(fallback as CampaignWithInstance, responseLogContext);
+        const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
+          success: true,
+          data,
+        };
+
+        if (warnings) {
+          payload.warnings = warnings;
+        }
+
+        res.json(payload);
         return;
       }
 
@@ -537,10 +574,23 @@ router.post(
       previousCampaignId: creationExtras ? existingCampaign?.id ?? null : null,
     });
 
-    res.status(201).json({
+    const responseLogContext = {
+      tenantId,
+      agreementId: agreementId.trim(),
+      instanceId: instance.id,
+      campaignId: campaign.id,
+    };
+    const { data, warnings } = buildCampaignResponseSafely(campaign, responseLogContext);
+    const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
       success: true,
-      data: buildCampaignResponse(campaign),
-    });
+      data,
+    };
+
+    if (warnings) {
+      payload.warnings = warnings;
+    }
+
+    res.status(201).json(payload);
   })
 );
 
