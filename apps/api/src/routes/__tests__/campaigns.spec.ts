@@ -199,11 +199,29 @@ describe('POST /campaigns', () => {
   });
 
   const mockTenantAndInstance = () => {
-    vi.spyOn(prisma.tenant, 'upsert').mockResolvedValue(defaultTenant as never);
+    vi.spyOn(prisma.tenant, 'findFirst').mockImplementation(async (args) => {
+      const orConditions = Array.isArray(args?.where?.OR) ? args?.where?.OR : [];
+      const matchesId = orConditions.some((condition) => condition?.id === defaultTenant.id);
+      const matchesSlug = orConditions.some((condition) => condition?.slug === defaultTenant.slug);
+      const slugCondition = (args?.where as { slug?: string } | undefined)?.slug;
+
+      if (matchesId || matchesSlug || slugCondition === defaultTenant.slug) {
+        return defaultTenant as never;
+      }
+
+      return null;
+    });
+    vi.spyOn(prisma.tenant, 'create').mockImplementation(async () => {
+      throw new Error('unexpected tenant creation');
+    });
     vi.spyOn(prisma.whatsAppInstance, 'findUnique').mockResolvedValue(defaultInstance as never);
     vi.spyOn(prisma.whatsAppInstance, 'create').mockImplementation(async () => {
       throw new Error('unexpected instance creation');
     });
+    vi.spyOn(prisma.whatsAppInstance, 'update').mockImplementation(async (args) => ({
+      ...defaultInstance,
+      ...(args?.data ?? {}),
+    }));
   };
 
   it('reactivates a paused campaign when allowed', async () => {
@@ -442,6 +460,96 @@ describe('POST /campaigns', () => {
 
     expect(getCampaignMetricsMock).toHaveBeenCalled();
     expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes WhatsApp instance tenant when the referenced tenant is missing', async () => {
+    const ghostTenantId = 'ghost-tenant';
+    const tenantFindFirstSpy = vi.spyOn(prisma.tenant, 'findFirst').mockImplementation(async (args) => {
+      const orConditions = Array.isArray(args?.where?.OR) ? args.where.OR : [];
+      const slugCondition = (args?.where as { slug?: string } | undefined)?.slug;
+
+      if (orConditions.some((condition) => condition?.id === defaultTenant.id)) {
+        return defaultTenant as never;
+      }
+
+      if (orConditions.some((condition) => condition?.id === ghostTenantId)) {
+        return null;
+      }
+
+      if (slugCondition === ghostTenantId) {
+        return defaultTenant as never;
+      }
+
+      return null;
+    });
+
+    const tenantCreateError = new Prisma.PrismaClientKnownRequestError('slug conflict', {
+      code: 'P2002',
+      clientVersion: '5.7.1',
+    });
+
+    const tenantCreateSpy = vi.spyOn(prisma.tenant, 'create').mockRejectedValue(tenantCreateError);
+
+    const ghostInstance = {
+      ...defaultInstance,
+      tenantId: ghostTenantId,
+    } satisfies typeof defaultInstance;
+
+    const instanceFindSpy = vi.spyOn(prisma.whatsAppInstance, 'findUnique').mockResolvedValue(ghostInstance as never);
+    const instanceUpdateSpy = vi.spyOn(prisma.whatsAppInstance, 'update').mockImplementation(async (args) => ({
+      ...ghostInstance,
+      ...(args?.data ?? {}),
+    }));
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(null);
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockImplementation(async (args) => ({
+      id: 'campaign-ghost',
+      tenantId: args.data.tenantId as string,
+      agreementId: args.data.agreementId as string,
+      agreementName: args.data.agreementName as string,
+      name: args.data.name as string,
+      status: args.data.status as string,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      createdAt: new Date('2024-03-20T00:00:00.000Z'),
+      updatedAt: new Date('2024-03-20T00:00:00.000Z'),
+      whatsappInstanceId: args.data.whatsappInstanceId as string,
+      whatsappInstance: {
+        id: ghostInstance.id,
+        name: ghostInstance.name,
+      },
+    }));
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-ghost',
+      agreementName: 'Agreement Ghost',
+      instanceId: ghostInstance.id,
+      status: 'active',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        id: 'campaign-ghost',
+        instanceId: ghostInstance.id,
+        status: 'active',
+      }),
+    });
+
+    expect(tenantFindFirstSpy).toHaveBeenCalled();
+    expect(tenantCreateSpy).toHaveBeenCalledTimes(1);
+    expect(instanceFindSpy).toHaveBeenCalledWith({ where: { id: ghostInstance.id } });
+    expect(instanceUpdateSpy).toHaveBeenCalledWith({
+      where: { id: ghostInstance.id },
+      data: { tenantId: defaultTenant.id },
+    });
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ tenantId: defaultTenant.id }),
+      })
+    );
   });
 });
 

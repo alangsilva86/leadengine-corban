@@ -170,6 +170,61 @@ const buildCampaignResponseSafely = (
 
 const router = Router();
 
+const ensureTenantRecord = async (
+  tenantId: string,
+  logContext: Record<string, unknown>
+) => {
+  const slug = toSlug(tenantId, tenantId);
+
+  const existingTenant = await prisma.tenant.findFirst({
+    where: {
+      OR: [{ id: tenantId }, { slug }],
+    },
+  });
+
+  if (existingTenant) {
+    if (existingTenant.slug === slug && existingTenant.id !== tenantId) {
+      logger.info(`${LOG_CONTEXT} reusing tenant slug from different tenant id`, {
+        ...logContext,
+        requestedTenantId: tenantId,
+        effectiveTenantId: existingTenant.id,
+        slug,
+      });
+    }
+
+    return existingTenant;
+  }
+
+  try {
+    return await prisma.tenant.create({
+      data: {
+        id: tenantId,
+        name: tenantId,
+        slug,
+        settings: {},
+      },
+    });
+  } catch (tenantError) {
+    if (tenantError instanceof Prisma.PrismaClientKnownRequestError && tenantError.code === 'P2002') {
+      const conflictingTenant = await prisma.tenant.findFirst({
+        where: { slug },
+      });
+
+      if (conflictingTenant) {
+        logger.info(`${LOG_CONTEXT} tenant slug conflict resolved by reusing existing tenant`, {
+          ...logContext,
+          requestedTenantId: tenantId,
+          effectiveTenantId: conflictingTenant.id,
+          slug,
+        });
+        return conflictingTenant;
+      }
+    }
+
+    throw tenantError;
+  }
+};
+
 const normalizeStatus = (value: unknown): CampaignStatus | null => {
   if (typeof value !== 'string') {
     return null;
@@ -315,57 +370,9 @@ router.post(
     const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
 
     const fallbackTenantId = requestedTenantId ?? 'demo-tenant';
-    const fallbackTenantSlug = toSlug(fallbackTenantId, fallbackTenantId);
+    const baseLogContext = { requestedTenantId, fallbackTenantId, instanceId };
 
-    const preexistingTenant = await prisma.tenant.findFirst({
-      where: {
-        OR: [{ id: fallbackTenantId }, { slug: fallbackTenantSlug }],
-      },
-    });
-
-    if (preexistingTenant && preexistingTenant.slug === fallbackTenantSlug && preexistingTenant.id !== fallbackTenantId) {
-      logger.info(`${LOG_CONTEXT} reusing tenant slug from different tenant id`, {
-        requestedTenantId,
-        fallbackTenantId,
-        effectiveTenantId: preexistingTenant.id,
-        slug: fallbackTenantSlug,
-      });
-    }
-
-    let ensuredTenant = preexistingTenant;
-
-    if (!ensuredTenant) {
-      try {
-        ensuredTenant = await prisma.tenant.create({
-          data: {
-            id: fallbackTenantId,
-            name: fallbackTenantId,
-            slug: fallbackTenantSlug,
-            settings: {},
-          },
-        });
-      } catch (tenantError) {
-        if (tenantError instanceof Prisma.PrismaClientKnownRequestError && tenantError.code === 'P2002') {
-          const conflictingTenant = await prisma.tenant.findFirst({
-            where: { slug: fallbackTenantSlug },
-          });
-
-          if (conflictingTenant) {
-            logger.info(`${LOG_CONTEXT} tenant slug conflict resolved by reusing existing tenant`, {
-              requestedTenantId,
-              fallbackTenantId,
-              effectiveTenantId: conflictingTenant.id,
-              slug: fallbackTenantSlug,
-            });
-            ensuredTenant = conflictingTenant;
-          } else {
-            throw tenantError;
-          }
-        } else {
-          throw tenantError;
-        }
-      }
-    }
+    const ensuredTenant = await ensureTenantRecord(fallbackTenantId, baseLogContext);
 
     if (!ensuredTenant) {
       throw new Error('Unable to ensure tenant for campaign creation');
@@ -394,7 +401,35 @@ router.post(
       });
     }
 
-    const tenantId = instance.tenantId ?? ensuredTenant.id;
+    let effectiveTenant = ensuredTenant;
+
+    if (instance.tenantId) {
+      effectiveTenant = await ensureTenantRecord(instance.tenantId, {
+        ...baseLogContext,
+        instanceTenantId: instance.tenantId,
+      });
+
+      if (effectiveTenant.id !== instance.tenantId) {
+        logger.warn('WhatsApp instance tenant normalized during campaign creation', {
+          ...baseLogContext,
+          previousTenantId: instance.tenantId,
+          normalizedTenantId: effectiveTenant.id,
+        });
+
+        instance = await prisma.whatsAppInstance.update({
+          where: { id: instance.id },
+          data: { tenantId: effectiveTenant.id },
+        });
+      }
+    } else if (instance.tenantId !== ensuredTenant.id) {
+      instance = await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: { tenantId: ensuredTenant.id },
+      });
+      effectiveTenant = ensuredTenant;
+    }
+
+    const tenantId = instance.tenantId ?? effectiveTenant.id;
 
     if (requestedTenantId && requestedTenantId !== tenantId) {
       logger.warn('Campaign creation using tenant fallback', {
