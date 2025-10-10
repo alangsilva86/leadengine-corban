@@ -211,9 +211,10 @@ describe('POST /campaigns', () => {
 
       return null;
     });
-    vi.spyOn(prisma.tenant, 'create').mockImplementation(async () => {
-      throw new Error('unexpected tenant creation');
-    });
+    vi.spyOn(prisma.tenant, 'create').mockImplementation(async (args) => ({
+      ...defaultTenant,
+      ...(args?.data ?? {}),
+    }));
     vi.spyOn(prisma.whatsAppInstance, 'findUnique').mockResolvedValue(defaultInstance as never);
     vi.spyOn(prisma.whatsAppInstance, 'create').mockImplementation(async () => {
       throw new Error('unexpected instance creation');
@@ -310,6 +311,13 @@ describe('POST /campaigns', () => {
       endedCampaign as unknown as Prisma.CampaignGetPayload<{ include: { whatsappInstance: true } }>
     );
 
+    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockImplementation(async (args) => ({
+      ...endedCampaign,
+      whatsappInstanceId: args?.data?.whatsappInstanceId ?? null,
+      metadata: args?.data?.metadata as Prisma.JsonValue,
+      updatedAt: new Date('2024-02-01T00:00:00.000Z'),
+    }));
+
     const createSpy = vi.spyOn(prisma.campaign, 'create').mockImplementation(async (args) => ({
       id: 'campaign-2',
       tenantId: 'tenant-1',
@@ -327,10 +335,6 @@ describe('POST /campaigns', () => {
       },
     }));
 
-    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockRejectedValue(
-      new Error('should not update ended campaign')
-    );
-
     const app = buildApp();
     const response = await request(app).post('/').send({
       agreementId: 'agreement-1',
@@ -344,8 +348,21 @@ describe('POST /campaigns', () => {
       success: true,
       data: expect.objectContaining({ status: 'active' }),
     });
+    expect(response.body.data.id).toBe('campaign-2');
+    expect(response.body.data.id).not.toBe(endedCampaign.id);
 
+    expect(updateSpy).toHaveBeenCalledTimes(1);
     expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy.mock.invocationCallOrder?.[0]).toBeLessThan(createSpy.mock.invocationCallOrder?.[0] ?? Infinity);
+
+    const releaseArgs = updateSpy.mock.calls[0]?.[0];
+    expect(releaseArgs?.data?.whatsappInstanceId).toBeNull();
+    const releaseMetadata = releaseArgs?.data?.metadata as Prisma.JsonObject;
+    const releaseHistory = Array.isArray(releaseMetadata?.history)
+      ? (releaseMetadata?.history as Array<Record<string, unknown>>)
+      : [];
+    expect(releaseHistory.map((entry) => entry?.action)).toContain('instance-released');
+
     const createArgs = createSpy.mock.calls[0]?.[0];
     expect(createArgs?.data?.status).toBe('active');
     const metadata = createArgs?.data?.metadata as Prisma.JsonObject;
@@ -355,7 +372,6 @@ describe('POST /campaigns', () => {
     expect(history.map((entry) => entry?.action)).toEqual(
       expect.arrayContaining(['created', 'reactivated'])
     );
-    expect(updateSpy).not.toHaveBeenCalled();
   });
 
   it('returns the requested status when creating a new campaign', async () => {
@@ -467,6 +483,7 @@ describe('POST /campaigns', () => {
     const tenantFindFirstSpy = vi.spyOn(prisma.tenant, 'findFirst').mockImplementation(async (args) => {
       const orConditions = Array.isArray(args?.where?.OR) ? args.where.OR : [];
       const slugCondition = (args?.where as { slug?: string } | undefined)?.slug;
+      const slugMatchesAgreement = orConditions.some((condition) => condition?.slug === 'agreement-ghost');
 
       if (orConditions.some((condition) => condition?.id === defaultTenant.id)) {
         return defaultTenant as never;
@@ -476,7 +493,7 @@ describe('POST /campaigns', () => {
         return null;
       }
 
-      if (slugCondition === ghostTenantId) {
+      if (slugMatchesAgreement || slugCondition === ghostTenantId || slugCondition === 'agreement-ghost') {
         return defaultTenant as never;
       }
 
