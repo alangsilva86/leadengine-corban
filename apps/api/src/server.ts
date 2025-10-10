@@ -285,6 +285,20 @@ app.use('/api/integrations/whatsapp/webhook', createWebhookRawParser(), webhookR
 app.use('/api/webhooks/whatsapp', createWebhookRawParser(), webhookRawBodyMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use((req, res, next) => {
+  const headerValue = req.headers['x-request-id'];
+  const fromHeader = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  const trimmed = typeof fromHeader === 'string' ? fromHeader.trim() : '';
+  const requestId =
+    trimmed.length > 0
+      ? trimmed
+      : `rid_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+  req.rid = requestId;
+  res.setHeader('X-Request-Id', requestId);
+
+  next();
+});
 app.use(requestLogger);
 
 // Rate limiting apenas em produção

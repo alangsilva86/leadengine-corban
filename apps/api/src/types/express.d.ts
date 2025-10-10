@@ -13,6 +13,7 @@ declare global {
     interface Request {
       rawBody?: Buffer;
       rawBodyParseError?: SyntaxError | null;
+      rid?: string;
     }
   }
 }

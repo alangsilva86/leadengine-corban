@@ -99,6 +99,7 @@ export const errorHandler = (
 
   let apiError: ApiError;
   const brokerError = toWhatsAppBrokerError(error);
+  const requestId = req.rid ?? null;
 
   // Tratar diferentes tipos de erro
   if (error instanceof ValidationError || hasErrorName(error, 'ValidationError')) {
@@ -245,15 +246,20 @@ export const errorHandler = (
     };
   })();
 
-  logger[logLevel]('API Error', logPayload);
+  logger[logLevel]('API Error', { requestId, ...logPayload });
 
   // Enviar resposta de erro
+  if (requestId) {
+    res.setHeader('X-Request-Id', requestId);
+  }
+
   res.status(apiError.status).json({
     error: {
       code: apiError.code,
       message: apiError.message,
       details: apiError.details,
       stack: apiError.stack,
+      requestId,
     },
     timestamp: new Date().toISOString(),
     path: req.path,

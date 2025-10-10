@@ -12,6 +12,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction): 
     const tenantId = (req as any).user?.tenantId ?? (Array.isArray(req.headers['x-tenant-id'])
       ? req.headers['x-tenant-id'][0]
       : req.headers['x-tenant-id']) ?? null;
+    const requestId = req.rid ?? null;
 
     logger.info('HTTP Request', {
       method: req.method,
@@ -24,6 +25,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction): 
       contentLength: res.get('Content-Length') || undefined,
       userId,
       tenantId,
+      requestId,
     });
   });
 
