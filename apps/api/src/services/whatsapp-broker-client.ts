@@ -390,6 +390,29 @@ class WhatsAppBrokerClient {
     return slug.length > 0 ? slug : fallback;
   }
 
+  async fetchEvents(options: { cursor?: string | null; limit?: number } = {}): Promise<unknown> {
+    const searchParams: Record<string, string> = {};
+
+    const cursor = typeof options.cursor === 'string' ? options.cursor.trim() : null;
+    if (cursor) {
+      searchParams.cursor = cursor;
+    }
+
+    if (typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
+      searchParams.limit = String(Math.floor(options.limit));
+    }
+
+    const hasSearchParams = Object.keys(searchParams).length > 0;
+
+    return this.request<unknown>(
+      '/events',
+      {
+        method: 'GET',
+      },
+      hasSearchParams ? { searchParams } : {}
+    );
+  }
+
   private async handleError(response: UndiciResponse): Promise<never> {
     let bodyText = '';
 

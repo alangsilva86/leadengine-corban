@@ -1,0 +1,65 @@
+import { getWhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
+import type { WhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
+
+export type HealthPayload = {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  environment: string;
+  storage: string;
+  whatsappEventPoller: WhatsAppEventPollerMetrics & {
+    status: 'running' | 'stopped' | 'disabled' | 'inactive' | 'error';
+    mode: string;
+    disabled: boolean;
+  };
+};
+
+const derivePollerStatus = (
+  metrics: WhatsAppEventPollerMetrics,
+  { disabled, mode }: { disabled: boolean; mode: string }
+): 'running' | 'stopped' | 'disabled' | 'inactive' | 'error' => {
+  if (disabled) {
+    return 'disabled';
+  }
+
+  if (mode !== 'http') {
+    return 'inactive';
+  }
+
+  if (metrics.running) {
+    return 'running';
+  }
+
+  if (metrics.consecutiveFailures > 0) {
+    return 'error';
+  }
+
+  return 'stopped';
+};
+
+export const buildHealthPayload = ({ environment }: { environment: string }): HealthPayload => {
+  const metrics = getWhatsAppEventPollerMetrics();
+  const disabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
+  const mode = (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
+  const pollerStatus = derivePollerStatus(metrics, { disabled, mode });
+
+  const overallStatus: HealthPayload['status'] = pollerStatus === 'error' ? 'degraded' : 'ok';
+
+  return {
+    status: overallStatus,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment,
+    storage: 'in-memory',
+    whatsappEventPoller: {
+      ...metrics,
+      status: pollerStatus,
+      mode,
+      disabled,
+    },
+  };
+};
+
+export const __private = {
+  derivePollerStatus,
+};
