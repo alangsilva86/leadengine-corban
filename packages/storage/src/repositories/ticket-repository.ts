@@ -1,4 +1,9 @@
-import { Prisma, type Message as PrismaMessage, type Ticket as PrismaTicket } from '@prisma/client';
+import {
+  Prisma,
+  $Enums,
+  type Message as PrismaMessage,
+  type Ticket as PrismaTicket,
+} from '@prisma/client';
 import {
   type CreateTicketDTO,
   type Message,
@@ -13,6 +18,50 @@ import {
 } from '@ticketz/core';
 
 import { getPrismaClient } from '../prisma-client';
+
+type PrismaMessageType = $Enums.MessageType;
+
+const PRISMA_MESSAGE_TYPES = new Set<PrismaMessageType>(
+  Object.values($Enums.MessageType)
+);
+
+const mapPrismaMessageTypeToDomain = (
+  type: PrismaMessageType
+): Message['type'] => {
+  if (type === $Enums.MessageType.STICKER) {
+    return 'IMAGE';
+  }
+
+  return type as Message['type'];
+};
+
+const normalizeMessageTypeForWrite = (
+  type: Message['type'] | undefined
+): PrismaMessageType => {
+  if (type && PRISMA_MESSAGE_TYPES.has(type as PrismaMessageType)) {
+    return type as PrismaMessageType;
+  }
+
+  return $Enums.MessageType.TEXT;
+};
+
+const normalizeMessageTypesForFilter = (
+  types: Message['type'][] | undefined
+): PrismaMessageType[] => {
+  if (!types?.length) {
+    return [];
+  }
+
+  return types
+    .map((type) => {
+      if (PRISMA_MESSAGE_TYPES.has(type as PrismaMessageType)) {
+        return type as PrismaMessageType;
+      }
+
+      return type === 'TEMPLATE' ? $Enums.MessageType.TEXT : null;
+    })
+    .filter((value): value is PrismaMessageType => value !== null);
+};
 
 const defaultPagination = (
   pagination: Pagination
@@ -52,7 +101,7 @@ const mapMessage = (record: PrismaMessage): Message => ({
   userId: record.userId ?? undefined,
   instanceId: record.instanceId ?? undefined,
   direction: record.direction,
-  type: record.type,
+  type: mapPrismaMessageTypeToDomain(record.type),
   content: record.content,
   caption: record.caption ?? undefined,
   mediaUrl: record.mediaUrl ?? undefined,
@@ -108,7 +157,7 @@ const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.Tick
 
   if (filters.search && filters.search.trim().length > 0) {
     const normalized = filters.search.trim();
-    const searchOr: Prisma.TicketWhereInput['OR'] = [
+    const searchOr: Prisma.TicketWhereInput[] = [
       { id: { contains: normalized, mode: 'insensitive' } },
       { subject: { contains: normalized, mode: 'insensitive' } },
       { contactId: { contains: normalized, mode: 'insensitive' } },
@@ -119,11 +168,15 @@ const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.Tick
         metadata: {
           path: ['summary'],
           string_contains: normalized,
-          mode: 'insensitive',
         },
       },
     ];
-    where.AND = [...(where.AND ?? []), { OR: searchOr }];
+    const existingAnd = Array.isArray(where.AND)
+      ? where.AND
+      : where.AND
+        ? [where.AND]
+        : [];
+    where.AND = [...existingAnd, { OR: searchOr }];
   }
 
   return where;
@@ -162,8 +215,9 @@ const buildMessageWhere = (tenantId: string, filters: MessageFilters): Prisma.Me
     where.direction = { in: filters.direction };
   }
 
-  if (filters.type?.length) {
-    where.type = { in: filters.type };
+  const normalizedTypes = normalizeMessageTypesForFilter(filters.type);
+  if (normalizedTypes.length) {
+    where.type = { in: normalizedTypes };
   }
 
   if (filters.status?.length) {
@@ -179,12 +233,17 @@ const buildMessageWhere = (tenantId: string, filters: MessageFilters): Prisma.Me
 
   if (filters.search && filters.search.trim().length > 0) {
     const normalized = filters.search.trim();
-    const searchOr: Prisma.MessageWhereInput['OR'] = [
+    const searchOr: Prisma.MessageWhereInput[] = [
       { id: { contains: normalized, mode: 'insensitive' } },
       { content: { contains: normalized, mode: 'insensitive' } },
-      { metadata: { path: ['summary'], string_contains: normalized, mode: 'insensitive' } },
+      { metadata: { path: ['summary'], string_contains: normalized } },
     ];
-    where.AND = [...(where.AND ?? []), { OR: searchOr }];
+    const existingAnd = Array.isArray(where.AND)
+      ? where.AND
+      : where.AND
+        ? [where.AND]
+        : [];
+    where.AND = [...existingAnd, { OR: searchOr }];
   }
 
   return where;
@@ -212,17 +271,20 @@ const resolveTimestamp = (value: unknown): number | null => {
 };
 
 const mergeMessageMetadata = (
-  current: Prisma.InputJsonValue,
+  current: Prisma.JsonValue | null | undefined,
   updates?: Record<string, unknown> | null
 ): Prisma.InputJsonValue => {
+  const base =
+    current && typeof current === 'object' && !Array.isArray(current)
+      ? ({ ...(current as Record<string, unknown>) } as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
   if (!updates) {
-    return current ?? {};
+    return base as Prisma.InputJsonValue;
   }
 
-  const currentObject =
-    current && typeof current === 'object' ? ((current as Record<string, unknown>) ?? {}) : {};
   return {
-    ...currentObject,
+    ...base,
     ...updates,
   } as Prisma.InputJsonValue;
 };
@@ -291,7 +353,7 @@ export const updateTicket = async (
     return null;
   }
 
-  const data: Prisma.TicketUpdateInput = {};
+  const data: Prisma.TicketUncheckedUpdateInput = {};
 
   if (typeof input.status === 'string') {
     data.status = input.status as TicketStatus;
@@ -442,7 +504,7 @@ export const createMessage = async (
         userId: input.userId ?? null,
         instanceId: input.instanceId ?? null,
         direction: input.direction,
-        type: input.type ?? 'TEXT',
+        type: normalizeMessageTypeForWrite(input.type),
         content: (input.content ?? '').trim(),
         caption: input.caption ?? null,
         mediaUrl: input.mediaUrl ?? null,

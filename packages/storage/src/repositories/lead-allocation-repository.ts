@@ -1,13 +1,16 @@
-import {
-  Prisma,
-  LeadAllocationStatus as PrismaLeadAllocationStatus,
-  type BrokerLead,
-  type Campaign as PrismaCampaign,
-  type LeadAllocation as PrismaLeadAllocation,
-} from '@prisma/client';
+import { Prisma, $Enums } from '@prisma/client';
 import { getPrismaClient } from '../prisma-client';
 
 export type LeadAllocationStatus = 'allocated' | 'contacted' | 'won' | 'lost';
+
+type PrismaLeadAllocationStatus = $Enums.LeadAllocationStatus;
+
+type LeadAllocationRecord = Prisma.LeadAllocationGetPayload<{
+  include: { lead: true; campaign: true };
+}>;
+
+type BrokerLead = LeadAllocationRecord['lead'];
+type PrismaCampaign = NonNullable<LeadAllocationRecord['campaign']>;
 
 export interface BrokerLeadInput {
   id: string;
@@ -99,7 +102,9 @@ const uniqueStrings = (items: string[]): string[] => {
   return normalized;
 };
 
-const mapCampaign = (campaign: PrismaCampaign | null): Pick<LeadAllocationDto, 'campaignName' | 'agreementId' | 'instanceId'> => {
+const mapCampaign = (
+  campaign: LeadAllocationRecord['campaign']
+): Pick<LeadAllocationDto, 'campaignName' | 'agreementId' | 'instanceId'> => {
   if (!campaign) {
     return {
       campaignName: 'Campanha desconhecida',
@@ -110,14 +115,12 @@ const mapCampaign = (campaign: PrismaCampaign | null): Pick<LeadAllocationDto, '
 
   return {
     campaignName: campaign.name,
-    agreementId: campaign.agreementId,
-    instanceId: campaign.whatsappInstanceId,
+    agreementId: campaign.agreementId ?? 'unknown',
+    instanceId: campaign.whatsappInstanceId ?? 'default',
   };
 };
 
-const mapAllocation = (
-  allocation: PrismaLeadAllocation & { lead: BrokerLead; campaign: PrismaCampaign | null }
-): LeadAllocationDto => {
+const mapAllocation = (allocation: LeadAllocationRecord): LeadAllocationDto => {
   const campaignInfo = mapCampaign(allocation.campaign);
   return {
     allocationId: allocation.id,
@@ -125,7 +128,8 @@ const mapAllocation = (
     tenantId: allocation.tenantId,
     campaignId: allocation.campaignId,
     campaignName: campaignInfo.campaignName,
-    agreementId: campaignInfo.agreementId || allocation.lead.agreementId,
+    agreementId:
+      campaignInfo.agreementId ?? allocation.lead.agreementId ?? 'unknown',
     instanceId: campaignInfo.instanceId,
     status: allocation.status as LeadAllocationStatus,
     receivedAt: allocation.receivedAt.toISOString(),
@@ -228,7 +232,10 @@ export const listAllocations = async (filters: AllocationFilters): Promise<LeadA
   }
 
   if (filters.statuses?.length) {
-    where.status = { in: filters.statuses as PrismaLeadAllocationStatus[] };
+    const statuses = filters.statuses.map(
+      (status) => status as PrismaLeadAllocationStatus
+    );
+    where.status = { in: statuses };
   }
 
   if (filters.agreementId) {
@@ -257,7 +264,7 @@ export const allocateBrokerLeads = async (params: {
   const threshold = new Date(now.getTime() - DEDUPE_WINDOW_MS);
 
   const created = await prisma.$transaction(async (tx) => {
-    const allocations: Array<PrismaLeadAllocation & { lead: BrokerLead; campaign: PrismaCampaign | null }> = [];
+    const allocations: LeadAllocationRecord[] = [];
 
     for (const leadInput of params.leads) {
       const normalizedPhone = normalizePhone(leadInput.phone);

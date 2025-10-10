@@ -1,4 +1,4 @@
-import { Prisma, type Campaign as PrismaCampaign } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { getPrismaClient } from '../prisma-client';
 
@@ -38,7 +38,22 @@ export interface CampaignFilters {
   status?: CampaignStatus[];
 }
 
-const mapCampaign = (record: PrismaCampaign): Campaign => ({
+const CAMPAIGN_SELECT = {
+  id: true,
+  tenantId: true,
+  agreementId: true,
+  whatsappInstanceId: true,
+  name: true,
+  status: true,
+  startDate: true,
+  endDate: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.CampaignSelect;
+
+type CampaignRecord = Prisma.CampaignGetPayload<{ select: typeof CAMPAIGN_SELECT }>;
+
+const mapCampaign = (record: CampaignRecord): Campaign => ({
   id: record.id,
   tenantId: record.tenantId,
   agreementId: record.agreementId,
@@ -71,6 +86,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
       agreementId: input.agreementId,
       whatsappInstanceId: input.instanceId,
     },
+    select: CAMPAIGN_SELECT,
   });
 
   if (existing) {
@@ -82,6 +98,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
         startDate: input.startDate ?? existing.startDate ?? now,
         endDate: input.endDate ?? (status === CampaignStatus.ACTIVE ? null : existing.endDate),
       },
+      select: CAMPAIGN_SELECT,
     });
 
     return mapCampaign(updated);
@@ -97,6 +114,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
       startDate: input.startDate ?? now,
       endDate: input.endDate ?? null,
     },
+    select: CAMPAIGN_SELECT,
   });
 
   return mapCampaign(created);
@@ -108,14 +126,17 @@ export const updateCampaignStatus = async (
   status: CampaignStatus
 ): Promise<Campaign | null> => {
   const prisma = getPrismaClient();
-  const existing = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId } });
+  const existing = await prisma.campaign.findFirst({
+    where: { id: campaignId, tenantId },
+    select: CAMPAIGN_SELECT,
+  });
 
   if (!existing) {
     return null;
   }
 
   const now = new Date();
-  const data: Prisma.CampaignUpdateInput = {
+  const data: Prisma.CampaignUncheckedUpdateInput = {
     status,
   };
 
@@ -129,6 +150,7 @@ export const updateCampaignStatus = async (
   const updated = await prisma.campaign.update({
     where: { id: existing.id },
     data,
+    select: CAMPAIGN_SELECT,
   });
 
   return mapCampaign(updated);
@@ -139,7 +161,10 @@ export const findCampaignById = async (
   campaignId: string
 ): Promise<Campaign | null> => {
   const prisma = getPrismaClient();
-  const record = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId } });
+  const record = await prisma.campaign.findFirst({
+    where: { id: campaignId, tenantId },
+    select: CAMPAIGN_SELECT,
+  });
   return record ? mapCampaign(record) : null;
 };
 
@@ -157,6 +182,7 @@ export const findActiveCampaign = async (
       ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
     },
     orderBy: { updatedAt: 'desc' },
+    select: CAMPAIGN_SELECT,
   });
 
   return record ? mapCampaign(record) : null;
@@ -173,7 +199,7 @@ export const listCampaigns = async (filters: CampaignFilters): Promise<Campaign[
     where.status = { in: filters.status };
   }
 
-  const records = await prisma.campaign.findMany({ where });
+  const records = await prisma.campaign.findMany({ where, select: CAMPAIGN_SELECT });
 
   return records
     .map(mapCampaign)
