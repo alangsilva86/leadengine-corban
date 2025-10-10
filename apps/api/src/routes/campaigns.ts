@@ -542,6 +542,29 @@ router.post(
       const currentStatus = normalizeStatus(existingCampaign.status) ?? 'draft';
 
       if (currentStatus === 'ended') {
+        let releasedMetadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
+        releasedMetadata = appendCampaignHistory(
+          releasedMetadata,
+          buildCampaignHistoryEntry('instance-released', actorId, {
+            reason: 'campaign-ended',
+          })
+        );
+
+        await prisma.campaign.update({
+          where: { id: existingCampaign.id },
+          data: {
+            whatsappInstanceId: null,
+            metadata: releasedMetadata as Prisma.JsonObject,
+          },
+        });
+
+        logger.info('Campaign instance released before recreation', {
+          tenantId,
+          agreementId: resolvedAgreementId,
+          instanceId: instance.id,
+          campaignId: existingCampaign.id,
+        });
+
         creationExtras = [
           buildCampaignHistoryEntry('reactivated', actorId, {
             previousCampaignId: existingCampaign.id,
