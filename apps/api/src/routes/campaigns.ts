@@ -169,6 +169,8 @@ const buildCampaignResponseSafely = (
 };
 
 const router = Router();
+const SAFE_MODE = process.env.SAFE_MODE === 'true';
+const IGNORE_TENANT_HEADER = process.env.TENANT_IGNORE_HEADER === 'true';
 
 const ensureTenantRecord = async (
   tenantId: string,
@@ -359,18 +361,67 @@ router.post(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const requestedTenantId = req.user?.tenantId;
-    const { agreementId, agreementName, instanceId } = req.body as {
-      agreementId: string;
-      agreementName: string;
-      instanceId: string;
-      name?: string;
-    };
+    const tenantHeaderValue = IGNORE_TENANT_HEADER ? undefined : req.headers['x-tenant-id'];
+    const tenantHeaderCandidate = Array.isArray(tenantHeaderValue)
+      ? tenantHeaderValue[0]
+      : tenantHeaderValue;
+    const tenantFromHeader = typeof tenantHeaderCandidate === 'string' ? tenantHeaderCandidate.trim() : '';
+    const rawAgreementId = typeof req.body?.agreementId === 'string' ? req.body.agreementId.trim() : '';
+    const resolvedAgreementId = rawAgreementId || tenantFromHeader || 'demo-tenant';
+    const rawAgreementName = typeof req.body?.agreementName === 'string' ? req.body.agreementName.trim() : '';
+    const resolvedAgreementName =
+      rawAgreementName || (resolvedAgreementId === 'demo-tenant' ? 'DEMO' : rawAgreementName);
+    const rawInstanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
+    const resolvedInstanceId = rawInstanceId || 'alan';
     const providedName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const resolvedName = providedName || resolvedAgreementName || `Campanha ${Date.now()}`;
     const budget = typeof req.body?.budget === 'number' ? req.body.budget : undefined;
     const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
+    const schedule = req.body?.schedule ?? { type: 'immediate' };
+    const channel = typeof req.body?.channel === 'string' ? req.body.channel : 'whatsapp';
+    const audienceCount = Array.isArray(req.body?.audience) ? req.body.audience.length : 0;
 
-    const fallbackTenantId = requestedTenantId ?? 'demo-tenant';
-    const baseLogContext = { requestedTenantId, fallbackTenantId, instanceId };
+    if (SAFE_MODE) {
+      const now = new Date();
+      const fakeId = `cmp_${Date.now()}`;
+      const metrics = {
+        ...createEmptyRawMetrics(),
+        budget: typeof budget === 'number' ? budget : null,
+        cplTarget: typeof cplTarget === 'number' ? cplTarget : null,
+        cpl: null,
+      } satisfies CampaignDTO['metrics'];
+      const responsePayload: CampaignDTO = {
+        id: fakeId,
+        tenantId: resolvedAgreementId,
+        agreementId: resolvedAgreementId,
+        agreementName: resolvedAgreementName || null,
+        name: resolvedName,
+        status: 'scheduled',
+        metadata: {
+          safeMode: true,
+          channel,
+          schedule,
+          audienceCount,
+        },
+        instanceId: resolvedInstanceId,
+        instanceName: resolvedInstanceId,
+        whatsappInstanceId: resolvedInstanceId,
+        createdAt: now,
+        updatedAt: now,
+        metrics,
+      };
+
+      res.status(201).json({ success: true, data: responsePayload, meta: { safeMode: true } });
+      return;
+    }
+
+    const fallbackTenantId = resolvedAgreementId || requestedTenantId || 'demo-tenant';
+    const baseLogContext = {
+      requestedTenantId,
+      fallbackTenantId,
+      instanceId: resolvedInstanceId,
+      agreementId: resolvedAgreementId,
+    };
 
     const ensuredTenant = await ensureTenantRecord(fallbackTenantId, baseLogContext);
 
@@ -378,20 +429,20 @@ router.post(
       throw new Error('Unable to ensure tenant for campaign creation');
     }
 
-    let instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+    let instance = await prisma.whatsAppInstance.findUnique({ where: { id: resolvedInstanceId } });
 
     if (!instance) {
       logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
-        instanceId,
+        instanceId: resolvedInstanceId,
         tenantId: ensuredTenant.id,
       });
 
       instance = await prisma.whatsAppInstance.create({
         data: {
-          id: instanceId,
+          id: resolvedInstanceId,
           tenantId: ensuredTenant.id,
-          name: instanceId,
-          brokerId: instanceId,
+          name: resolvedInstanceId,
+          brokerId: resolvedInstanceId,
           status: 'connected',
           connected: true,
           metadata: {
@@ -440,7 +491,7 @@ router.post(
     }
 
     const actorId = req.user?.id ?? 'system';
-    const normalizedName = providedName || `${agreementName.trim()} • ${instanceId}`;
+    const normalizedName = resolvedName;
     const slug = toSlug(normalizedName, '');
     const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
 
@@ -475,7 +526,7 @@ router.post(
       where: {
         tenantId,
         whatsappInstanceId: instance.id,
-        agreementId: agreementId.trim(),
+        agreementId: resolvedAgreementId,
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -556,7 +607,7 @@ router.post(
 
         logger.info('Campaign status updated via POST /campaigns', {
           tenantId,
-          agreementId,
+          agreementId: resolvedAgreementId,
           instanceId: instance.id,
           campaignId: existingCampaign.id,
           fromStatus: currentStatus,
@@ -568,7 +619,7 @@ router.post(
       } else {
         logger.info('Campaign reused for instance', {
           tenantId,
-          agreementId,
+          agreementId: resolvedAgreementId,
           instanceId: instance.id,
           campaignId: existingCampaign.id,
           status: existingCampaign.status,
@@ -588,8 +639,8 @@ router.post(
         data: {
           tenantId,
           name: normalizedName,
-          agreementId: agreementId.trim(),
-          agreementName: agreementName.trim(),
+          agreementId: resolvedAgreementId,
+          agreementName: resolvedAgreementName || resolvedAgreementId,
           whatsappInstanceId: instance.id,
           status: requestedStatus,
           metadata: creationMetadata as Prisma.JsonObject,
@@ -607,7 +658,7 @@ router.post(
       logger.error('Failed to create campaign, returning fallback', {
         error,
         tenantId,
-        agreementId,
+        agreementId: resolvedAgreementId,
         instanceId: instance.id,
       });
 
@@ -624,7 +675,7 @@ router.post(
       if (fallback) {
         const responseLogContext = {
           tenantId,
-          agreementId: agreementId.trim(),
+          agreementId: resolvedAgreementId,
           instanceId: instance.id,
           campaignId: fallback.id,
         };
@@ -648,14 +699,14 @@ router.post(
     logger.info(creationExtras ? 'Campaign recreated after ended' : 'Campaign created', {
       tenantId,
       campaignId: campaign.id,
-      instanceId,
+      instanceId: resolvedInstanceId,
       status: campaign.status,
       previousCampaignId: creationExtras ? existingCampaign?.id ?? null : null,
     });
 
     const responseLogContext = {
       tenantId,
-      agreementId: agreementId.trim(),
+      agreementId: resolvedAgreementId,
       instanceId: instance.id,
       campaignId: campaign.id,
     };

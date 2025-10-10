@@ -1814,6 +1814,33 @@ class WhatsAppBrokerClient {
     payload: SendMessagePayload,
     idempotencyKey?: string
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
+    if (process.env.WHATSAPP_MODE === 'dryrun') {
+      const now = new Date();
+      const externalId = (() => {
+        if (typeof payload.externalId === 'string' && payload.externalId.trim().length > 0) {
+          return payload.externalId.trim();
+        }
+        return `msg_${now.getTime()}`;
+      })();
+
+      logger.info('WhatsApp dryrun: skipping broker dispatch', {
+        instanceId,
+        to: payload.to,
+        externalId,
+      });
+
+      return {
+        externalId,
+        status: 'sent',
+        timestamp: now.toISOString(),
+        raw: {
+          dryrun: true,
+          mode: 'dryrun',
+          channel: 'whatsapp',
+        },
+      };
+    }
+
     const contentValue = payload.content ?? payload.caption ?? '';
 
     const mediaPayload = payload.media
