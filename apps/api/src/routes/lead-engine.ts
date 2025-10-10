@@ -228,7 +228,8 @@ router.get(
       const rawValues = Array.isArray(value) ? value : [value];
       return rawValues
         .flatMap((item) => (typeof item === 'string' ? item.split(',') : []))
-        .map((item) => item.trim().toUpperCase())
+        .map((item) => item.trim().toLowerCase())
+        .map((item) => (item === 'all' ? 'ALL' : item))
         .filter(Boolean);
     })
     .custom((value) => {
@@ -491,7 +492,7 @@ router.post(
     .optional()
     .isString()
     .trim()
-    .customSanitizer((status) => (typeof status === 'string' ? status.toUpperCase() : status))
+    .customSanitizer((status) => (typeof status === 'string' ? status.toLowerCase() : status))
     .custom((status) => {
       if (
         typeof status === 'string' &&

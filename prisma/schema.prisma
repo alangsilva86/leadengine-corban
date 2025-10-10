@@ -228,22 +228,75 @@ model Campaign {
   id                 String   @id @default(cuid())
   tenantId           String
   name               String
-  agreementId        String?
+  agreementId        String
   agreementName      String?
   whatsappInstanceId String?
-  status             String   @default("active")
+  status             String   @default("draft")
+  startDate          DateTime?
+  endDate            DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   metadata           Json?
 
   // Relations
-  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  leads             Lead[]
-  whatsappInstance  WhatsAppInstance? @relation(fields: [whatsappInstanceId], references: [id])
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads            Lead[]
+  whatsappInstance WhatsAppInstance? @relation(fields: [whatsappInstanceId], references: [id])
+  allocations      LeadAllocation[]
 
   @@index([tenantId, status])
   @@index([tenantId, agreementId])
+  @@unique([tenantId, agreementId, whatsappInstanceId], map: "campaigns_tenant_agreement_instance_unique")
   @@map("campaigns")
+}
+
+model BrokerLead {
+  id           String   @id @default(cuid())
+  tenantId     String
+  agreementId  String
+  fullName     String
+  document     String
+  matricula    String?
+  phone        String?
+  registrations String[] @default([])
+  tags         String[] @default([])
+  margin       Float?
+  netMargin    Float?
+  score        Float?
+  raw          Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  allocations LeadAllocation[]
+
+  @@unique([tenantId, document], map: "broker_leads_tenant_document_unique")
+  @@map("broker_leads")
+}
+
+enum LeadAllocationStatus {
+  allocated
+  contacted
+  won
+  lost
+}
+
+model LeadAllocation {
+  id         String              @id @default(cuid())
+  tenantId   String
+  campaignId String
+  leadId     String
+  status     LeadAllocationStatus @default(allocated)
+  notes      String?
+  payload    Json?
+  receivedAt DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  lead     BrokerLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, leadId, campaignId], map: "lead_allocations_unique_key")
+  @@index([tenantId, campaignId, status], map: "lead_allocations_status_idx")
+  @@map("lead_allocations")
 }
 
 model LeadActivity {

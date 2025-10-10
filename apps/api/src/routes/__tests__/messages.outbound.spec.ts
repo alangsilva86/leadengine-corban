@@ -18,6 +18,8 @@ const {
   whatsAppInstanceFindUniqueMock: vi.fn(),
 }));
 
+vi.mock('@ticketz/storage', () => import('../../test-utils/storage-mock'));
+
 vi.mock('../../middleware/auth', () => ({
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
@@ -120,7 +122,7 @@ describe('Outbound message routes', () => {
   let socket: MockSocketServer;
   let sendMessageSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     queueFindFirstMock.mockResolvedValue({
       id: 'queue-1',
       tenantId: 'tenant-123',
@@ -230,7 +232,7 @@ describe('Outbound message routes', () => {
     socket = new MockSocketServer();
     registerSocketServer(socket as unknown as SocketServerAdapter);
 
-    resetTicketStore();
+    await resetTicketStore();
     resetMetrics();
     resetRateLimit(RATE_KEY);
 

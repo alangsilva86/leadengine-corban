@@ -1,6 +1,11 @@
-import { randomUUID } from 'crypto';
-import type { Campaign } from './campaign-repository';
-import { findCampaignById } from './campaign-repository';
+import {
+  Prisma,
+  LeadAllocationStatus as PrismaLeadAllocationStatus,
+  type BrokerLead,
+  type Campaign as PrismaCampaign,
+  type LeadAllocation as PrismaLeadAllocation,
+} from '@prisma/client';
+import { getPrismaClient } from '../prisma-client';
 
 export type LeadAllocationStatus = 'allocated' | 'contacted' | 'won' | 'lost';
 
@@ -65,67 +70,7 @@ export interface LeadAllocationDto {
   payload?: Record<string, unknown> | null;
 }
 
-interface LeadRecord {
-  id: string;
-  tenantId: string;
-  agreementId: string;
-  fullName: string;
-  document: string;
-  matricula?: string | null;
-  phone?: string;
-  registrations: string[];
-  tags: string[];
-  margin?: number;
-  netMargin?: number;
-  score?: number;
-  raw?: Record<string, unknown> | null;
-  updatedAt: Date;
-}
-
-interface AllocationRecord {
-  id: string;
-  tenantId: string;
-  campaignId: string;
-  leadId: string;
-  status: LeadAllocationStatus;
-  notes?: string | null;
-  payload?: Record<string, unknown> | null;
-  receivedAt: Date;
-  updatedAt: Date;
-}
-
-const leadsByTenant = new Map<string, Map<string, LeadRecord>>();
-const leadDocumentIndex = new Map<string, Map<string, string>>();
-const allocationsByTenant = new Map<string, Map<string, AllocationRecord>>();
-const allocationKeyIndex = new Map<string, string>();
-const recentAllocationKeys = new Map<string, number>();
-
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-const getLeadBucket = (tenantId: string) => {
-  let leads = leadsByTenant.get(tenantId);
-  if (!leads) {
-    leads = new Map<string, LeadRecord>();
-    leadsByTenant.set(tenantId, leads);
-  }
-
-  let docIndex = leadDocumentIndex.get(tenantId);
-  if (!docIndex) {
-    docIndex = new Map<string, string>();
-    leadDocumentIndex.set(tenantId, docIndex);
-  }
-
-  return { leads, docIndex };
-};
-
-const getAllocationBucket = (tenantId: string) => {
-  let allocations = allocationsByTenant.get(tenantId);
-  if (!allocations) {
-    allocations = new Map<string, AllocationRecord>();
-    allocationsByTenant.set(tenantId, allocations);
-  }
-  return allocations;
-};
 
 const sanitizeDocument = (value: string): string => value.replace(/\D/g, '');
 
@@ -134,7 +79,10 @@ const normalizePhone = (value?: string): string | undefined => {
     return undefined;
   }
   const digits = value.replace(/\D/g, '');
-  return digits.length >= 10 ? digits : undefined;
+  if (digits.length < 10) {
+    return undefined;
+  }
+  return `+${digits.replace(/^\+/, '')}`;
 };
 
 const uniqueStrings = (items: string[]): string[] => {
@@ -142,268 +90,88 @@ const uniqueStrings = (items: string[]): string[] => {
   const normalized: string[] = [];
   items.forEach((item) => {
     const trimmed = item.trim();
-    if (!trimmed) {
+    if (!trimmed || seen.has(trimmed)) {
       return;
     }
-    if (!seen.has(trimmed)) {
-      seen.add(trimmed);
-      normalized.push(trimmed);
-    }
+    seen.add(trimmed);
+    normalized.push(trimmed);
   });
   return normalized;
 };
 
-const allocationKey = (tenantId: string, leadId: string, campaignId: string) =>
-  `${tenantId}:${leadId}:${campaignId}`;
+const mapCampaign = (campaign: PrismaCampaign | null): Pick<LeadAllocationDto, 'campaignName' | 'agreementId' | 'instanceId'> => {
+  if (!campaign) {
+    return {
+      campaignName: 'Campanha desconhecida',
+      agreementId: 'unknown',
+      instanceId: 'default',
+    };
+  }
 
-const toDto = async (allocation: AllocationRecord): Promise<LeadAllocationDto> => {
-  const leads = leadsByTenant.get(allocation.tenantId) ?? new Map<string, LeadRecord>();
-  const lead = leads.get(allocation.leadId);
-  const campaign: Campaign | null = await findCampaignById(allocation.tenantId, allocation.campaignId);
+  return {
+    campaignName: campaign.name,
+    agreementId: campaign.agreementId,
+    instanceId: campaign.whatsappInstanceId,
+  };
+};
 
+const mapAllocation = (
+  allocation: PrismaLeadAllocation & { lead: BrokerLead; campaign: PrismaCampaign | null }
+): LeadAllocationDto => {
+  const campaignInfo = mapCampaign(allocation.campaign);
   return {
     allocationId: allocation.id,
     leadId: allocation.leadId,
     tenantId: allocation.tenantId,
     campaignId: allocation.campaignId,
-    campaignName: campaign?.name ?? allocation.campaignId,
-    agreementId: campaign?.agreementId ?? lead?.agreementId ?? 'unknown',
-    instanceId: campaign?.instanceId ?? 'default',
-    status: allocation.status,
+    campaignName: campaignInfo.campaignName,
+    agreementId: campaignInfo.agreementId || allocation.lead.agreementId,
+    instanceId: campaignInfo.instanceId,
+    status: allocation.status as LeadAllocationStatus,
     receivedAt: allocation.receivedAt.toISOString(),
     updatedAt: allocation.updatedAt.toISOString(),
     notes: allocation.notes ?? undefined,
-    fullName: lead?.fullName ?? lead?.id ?? allocation.leadId,
-    document: lead?.document ?? '',
-    matricula: lead?.matricula ?? undefined,
-    registrations: lead?.registrations ?? [],
-    phone: lead?.phone ?? undefined,
-    margin: lead?.margin ?? undefined,
-    netMargin: lead?.netMargin ?? undefined,
-    score: lead?.score ?? undefined,
-    tags: lead?.tags ?? [],
-    payload: allocation.payload ?? null,
+    fullName: allocation.lead.fullName,
+    document: allocation.lead.document,
+    matricula: allocation.lead.matricula ?? undefined,
+    registrations: [...allocation.lead.registrations],
+    phone: allocation.lead.phone ?? undefined,
+    margin: allocation.lead.margin ?? undefined,
+    netMargin: allocation.lead.netMargin ?? undefined,
+    score: allocation.lead.score ?? undefined,
+    tags: [...allocation.lead.tags],
+    payload: (allocation.payload as Record<string, unknown> | null) ?? null,
   };
 };
 
-const getSummary = (tenantId: string, campaignId?: string): AllocationSummary => {
-  const allocations = allocationsByTenant.get(tenantId);
+const computeSummary = async (
+  tenantId: string,
+  campaignId?: string
+): Promise<{ summary: AllocationSummary; metrics: CampaignMetrics }> => {
+  const prisma = getPrismaClient();
+  const where: Prisma.LeadAllocationWhereInput = {
+    tenantId,
+    ...(campaignId ? { campaignId } : {}),
+  };
+
+  const records = await prisma.leadAllocation.findMany({
+    where,
+    select: {
+      status: true,
+      receivedAt: true,
+      updatedAt: true,
+    },
+  });
+
   const summary: AllocationSummary = {
-    total: 0,
+    total: records.length,
     contacted: 0,
     won: 0,
     lost: 0,
   };
 
-  if (!allocations) {
-    return summary;
-  }
-
-  allocations.forEach((allocation) => {
-    if (campaignId && allocation.campaignId !== campaignId) {
-      return;
-    }
-    summary.total += 1;
-    if (allocation.status === 'contacted') {
-      summary.contacted += 1;
-    } else if (allocation.status === 'won') {
-      summary.won += 1;
-    } else if (allocation.status === 'lost') {
-      summary.lost += 1;
-    }
-  });
-
-  return summary;
-};
-
-export const listAllocations = async (filters: AllocationFilters): Promise<LeadAllocationDto[]> => {
-  const allocations = allocationsByTenant.get(filters.tenantId);
-  if (!allocations) {
-    return [];
-  }
-
-  let items = Array.from(allocations.values());
-
-  if (filters.campaignId) {
-    items = items.filter((allocation) => allocation.campaignId === filters.campaignId);
-  }
-
-  if (filters.agreementId) {
-    items = await Promise.all(
-      items.map(async (allocation) => ({
-        allocation,
-        campaign: await findCampaignById(allocation.tenantId, allocation.campaignId),
-      }))
-    ).then((results) =>
-      results
-        .filter(({ campaign }) => campaign?.agreementId === filters.agreementId)
-        .map(({ allocation }) => allocation)
-    );
-  }
-
-  if (filters.statuses?.length) {
-    const allowed = new Set(filters.statuses);
-    items = items.filter((allocation) => allowed.has(allocation.status));
-  }
-
-  items.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
-
-  const dtos = await Promise.all(items.map((allocation) => toDto(allocation)));
-  return dtos;
-};
-
-export const allocateBrokerLeads = async (params: {
-  tenantId: string;
-  campaignId: string;
-  leads: BrokerLeadInput[];
-}): Promise<{ newlyAllocated: LeadAllocationDto[]; summary: AllocationSummary }> => {
-  const { leads, docIndex } = getLeadBucket(params.tenantId);
-  const allocations = getAllocationBucket(params.tenantId);
-
-  const created: AllocationRecord[] = [];
-  const now = new Date();
-
-  for (const leadInput of params.leads) {
-    const normalizedPhone = normalizePhone(leadInput.phone);
-    const document = sanitizeDocument(leadInput.document || normalizedPhone || '');
-
-    if (!document) {
-      continue;
-    }
-
-    const dedupeKey = `${params.tenantId}:${params.campaignId}:${document}`;
-    const nowTimestamp = now.getTime();
-    const lastSeen = recentAllocationKeys.get(dedupeKey);
-    if (lastSeen && nowTimestamp - lastSeen < DEDUPE_WINDOW_MS) {
-      continue;
-    }
-
-    const leadId = docIndex.get(document);
-    const normalizedRegistrations = uniqueStrings(leadInput.registrations ?? []);
-    const normalizedTags = uniqueStrings(leadInput.tags ?? []);
-
-    let lead: LeadRecord | undefined;
-
-    if (leadId) {
-      lead = leads.get(leadId);
-      if (lead) {
-        lead.fullName = leadInput.fullName || lead.fullName;
-        lead.agreementId = leadInput.agreementId;
-        lead.matricula = normalizedRegistrations[0] ?? null;
-        lead.phone = normalizedPhone;
-        lead.registrations = normalizedRegistrations;
-        lead.tags = normalizedTags;
-        lead.margin = leadInput.margin ?? lead.margin;
-        lead.netMargin = leadInput.netMargin ?? lead.netMargin;
-        lead.score = leadInput.score ?? lead.score;
-        lead.raw = leadInput.raw ?? lead.raw ?? null;
-        lead.updatedAt = now;
-      }
-    }
-
-    if (!lead) {
-      const id = randomUUID();
-      lead = {
-        id,
-        tenantId: params.tenantId,
-        agreementId: leadInput.agreementId,
-        fullName: leadInput.fullName,
-        document,
-        matricula: normalizedRegistrations[0] ?? null,
-        phone: normalizedPhone,
-        registrations: normalizedRegistrations,
-        tags: normalizedTags,
-        margin: leadInput.margin,
-        netMargin: leadInput.netMargin,
-        score: leadInput.score,
-        raw: leadInput.raw ?? null,
-        updatedAt: now,
-      };
-      leads.set(id, lead);
-      docIndex.set(document, id);
-    }
-
-    const key = allocationKey(params.tenantId, lead.id, params.campaignId);
-    if (allocationKeyIndex.has(key)) {
-      continue;
-    }
-
-    const allocation: AllocationRecord = {
-      id: randomUUID(),
-      tenantId: params.tenantId,
-      campaignId: params.campaignId,
-      leadId: lead.id,
-      status: 'allocated',
-      notes: null,
-      payload: leadInput.raw ?? null,
-      receivedAt: now,
-      updatedAt: now,
-    };
-
-    allocations.set(allocation.id, allocation);
-    allocationKeyIndex.set(key, allocation.id);
-    recentAllocationKeys.set(dedupeKey, nowTimestamp);
-    created.push(allocation);
-  }
-
-  const newlyAllocated = await Promise.all(created.map((allocation) => toDto(allocation)));
-  const summary = getSummary(params.tenantId, params.campaignId);
-
-  if (recentAllocationKeys.size > 2000) {
-    const threshold = now.getTime() - DEDUPE_WINDOW_MS;
-    for (const [key, timestamp] of recentAllocationKeys.entries()) {
-      if (timestamp < threshold) {
-        recentAllocationKeys.delete(key);
-      }
-    }
-  }
-
-  return { newlyAllocated, summary };
-};
-
-export const updateAllocation = async (params: {
-  tenantId: string;
-  allocationId: string;
-  updates: Partial<{ status: LeadAllocationStatus; notes: string | null }>;
-}): Promise<LeadAllocationDto | null> => {
-  const allocations = allocationsByTenant.get(params.tenantId);
-  if (!allocations) {
-    return null;
-  }
-
-  const allocation = allocations.get(params.allocationId);
-  if (!allocation) {
-    return null;
-  }
-
-  if (params.updates.status) {
-    allocation.status = params.updates.status;
-  }
-
-  if (params.updates.notes !== undefined) {
-    allocation.notes = params.updates.notes;
-  }
-
-  allocation.updatedAt = new Date();
-
-  return toDto(allocation);
-};
-
-export const resetAllocationStore = () => {
-  leadsByTenant.clear();
-  leadDocumentIndex.clear();
-  allocationsByTenant.clear();
-  allocationKeyIndex.clear();
-  recentAllocationKeys.clear();
-};
-
-export const getCampaignMetrics = (
-  tenantId: string,
-  campaignId: string
-): CampaignMetrics => {
-  const allocations = allocationsByTenant.get(tenantId);
-  const result: CampaignMetrics = {
-    total: 0,
+  const metrics: CampaignMetrics = {
+    total: records.length,
     allocated: 0,
     contacted: 0,
     won: 0,
@@ -411,44 +179,232 @@ export const getCampaignMetrics = (
     averageResponseSeconds: null,
   };
 
-  if (!allocations) {
-    return result;
-  }
-
   let totalResponseMs = 0;
   let responseCount = 0;
 
-  allocations.forEach((allocation) => {
-    if (allocation.campaignId !== campaignId) {
+  records.forEach((allocation) => {
+    if (allocation.status === 'allocated') {
+      metrics.allocated += 1;
       return;
     }
 
-    result.total += 1;
-    if (allocation.status === 'allocated') {
-      result.allocated += 1;
-    }
     if (allocation.status === 'contacted') {
-      result.contacted += 1;
-    }
-    if (allocation.status === 'won') {
-      result.won += 1;
-    }
-    if (allocation.status === 'lost') {
-      result.lost += 1;
+      summary.contacted += 1;
+      metrics.contacted += 1;
     }
 
-    if (allocation.status !== 'allocated') {
-      const diff = allocation.updatedAt.getTime() - allocation.receivedAt.getTime();
-      if (diff >= 0) {
-        totalResponseMs += diff;
-        responseCount += 1;
-      }
+    if (allocation.status === 'won') {
+      summary.won += 1;
+      metrics.won += 1;
+    }
+
+    if (allocation.status === 'lost') {
+      summary.lost += 1;
+      metrics.lost += 1;
+    }
+
+    const diff = allocation.updatedAt.getTime() - allocation.receivedAt.getTime();
+    if (diff >= 0) {
+      totalResponseMs += diff;
+      responseCount += 1;
     }
   });
 
   if (responseCount > 0) {
-    result.averageResponseSeconds = Math.round(totalResponseMs / responseCount / 1000);
+    metrics.averageResponseSeconds = Math.round(totalResponseMs / responseCount / 1000);
   }
 
-  return result;
+  return { summary, metrics };
+};
+
+export const listAllocations = async (filters: AllocationFilters): Promise<LeadAllocationDto[]> => {
+  const prisma = getPrismaClient();
+  const where: Prisma.LeadAllocationWhereInput = {
+    tenantId: filters.tenantId,
+  };
+
+  if (filters.campaignId) {
+    where.campaignId = filters.campaignId;
+  }
+
+  if (filters.statuses?.length) {
+    where.status = { in: filters.statuses as PrismaLeadAllocationStatus[] };
+  }
+
+  if (filters.agreementId) {
+    where.OR = [
+      { campaign: { agreementId: filters.agreementId } },
+      { lead: { agreementId: filters.agreementId } },
+    ];
+  }
+
+  const allocations = await prisma.leadAllocation.findMany({
+    where,
+    orderBy: { receivedAt: 'desc' },
+    include: { lead: true, campaign: true },
+  });
+
+  return allocations.map(mapAllocation);
+};
+
+export const allocateBrokerLeads = async (params: {
+  tenantId: string;
+  campaignId: string;
+  leads: BrokerLeadInput[];
+}): Promise<{ newlyAllocated: LeadAllocationDto[]; summary: AllocationSummary }> => {
+  const prisma = getPrismaClient();
+  const now = new Date();
+  const threshold = new Date(now.getTime() - DEDUPE_WINDOW_MS);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const allocations: Array<PrismaLeadAllocation & { lead: BrokerLead; campaign: PrismaCampaign | null }> = [];
+
+    for (const leadInput of params.leads) {
+      const normalizedPhone = normalizePhone(leadInput.phone);
+      const document = sanitizeDocument(leadInput.document || normalizedPhone || '');
+
+      if (!document) {
+        continue;
+      }
+
+      const recentAllocation = await tx.leadAllocation.findFirst({
+        where: {
+          tenantId: params.tenantId,
+          campaignId: params.campaignId,
+          receivedAt: { gte: threshold },
+          lead: { document },
+        },
+        orderBy: { receivedAt: 'desc' },
+      });
+
+      if (recentAllocation) {
+        continue;
+      }
+
+      const normalizedRegistrations = uniqueStrings(leadInput.registrations ?? []);
+      const normalizedTags = uniqueStrings(leadInput.tags ?? []);
+
+      const lead = await tx.brokerLead.upsert({
+        where: {
+          tenantId_document: {
+            tenantId: params.tenantId,
+            document,
+          },
+        },
+        update: {
+          fullName: leadInput.fullName,
+          agreementId: leadInput.agreementId,
+          matricula: normalizedRegistrations[0] ?? null,
+          phone: normalizedPhone ?? null,
+          registrations: { set: normalizedRegistrations },
+          tags: { set: normalizedTags },
+          margin: leadInput.margin ?? null,
+          netMargin: leadInput.netMargin ?? null,
+          score: leadInput.score ?? null,
+          raw: (leadInput.raw ?? null) as Prisma.InputJsonValue,
+        },
+        create: {
+          tenantId: params.tenantId,
+          agreementId: leadInput.agreementId,
+          fullName: leadInput.fullName,
+          document,
+          matricula: normalizedRegistrations[0] ?? null,
+          phone: normalizedPhone ?? null,
+          registrations: normalizedRegistrations,
+          tags: normalizedTags,
+          margin: leadInput.margin ?? null,
+          netMargin: leadInput.netMargin ?? null,
+          score: leadInput.score ?? null,
+          raw: (leadInput.raw ?? null) as Prisma.InputJsonValue,
+        },
+      });
+
+      const existingAllocation = await tx.leadAllocation.findUnique({
+        where: {
+          tenantId_leadId_campaignId: {
+            tenantId: params.tenantId,
+            leadId: lead.id,
+            campaignId: params.campaignId,
+          },
+        },
+      });
+
+      if (existingAllocation) {
+        continue;
+      }
+
+      const createdAllocation = await tx.leadAllocation.create({
+        data: {
+          tenantId: params.tenantId,
+          campaignId: params.campaignId,
+          leadId: lead.id,
+          status: 'allocated',
+          notes: null,
+          payload: (leadInput.raw ?? null) as Prisma.InputJsonValue,
+          receivedAt: now,
+        },
+        include: { lead: true, campaign: true },
+      });
+
+      allocations.push(createdAllocation);
+    }
+
+    return allocations;
+  });
+
+  const { summary } = await computeSummary(params.tenantId, params.campaignId);
+
+  return {
+    newlyAllocated: created.map(mapAllocation),
+    summary,
+  };
+};
+
+export const updateAllocation = async (params: {
+  tenantId: string;
+  allocationId: string;
+  updates: Partial<{ status: LeadAllocationStatus; notes: string | null }>;
+}): Promise<LeadAllocationDto | null> => {
+  const prisma = getPrismaClient();
+  const existing = await prisma.leadAllocation.findFirst({
+    where: { id: params.allocationId, tenantId: params.tenantId },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const data: Prisma.LeadAllocationUpdateInput = {};
+
+  if (params.updates.status) {
+    data.status = params.updates.status as PrismaLeadAllocationStatus;
+  }
+
+  if (params.updates.notes !== undefined) {
+    data.notes = params.updates.notes ?? null;
+  }
+
+  const updated = await prisma.leadAllocation.update({
+    where: { id: existing.id },
+    data,
+    include: { lead: true, campaign: true },
+  });
+
+  return mapAllocation(updated);
+};
+
+export const resetAllocationStore = async () => {
+  const prisma = getPrismaClient();
+  await prisma.$transaction([
+    prisma.leadAllocation.deleteMany({}),
+    prisma.brokerLead.deleteMany({}),
+  ]);
+};
+
+export const getCampaignMetrics = async (
+  tenantId: string,
+  campaignId: string
+): Promise<CampaignMetrics> => {
+  const { metrics } = await computeSummary(tenantId, campaignId);
+  return metrics;
 };

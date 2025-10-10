@@ -1,5 +1,7 @@
 export const STORAGE_VERSION = '1.0.0';
 
+export { getPrismaClient, setPrismaClient } from './prisma-client';
+
 export { CampaignStatus } from './repositories/campaign-repository';
 export type { Campaign } from './repositories/campaign-repository';
 
@@ -7,7 +9,6 @@ export {
   allocateBrokerLeads,
   listAllocations,
   updateAllocation,
-  resetAllocationStore,
   type LeadAllocationDto,
   type LeadAllocationStatus,
   type AllocationSummary,
@@ -15,17 +16,19 @@ export {
   type CampaignMetrics,
 } from './repositories/lead-allocation-repository';
 
+export { resetAllocationStore } from './repositories/lead-allocation-repository';
+
 export {
   createOrActivateCampaign,
   updateCampaignStatus,
   findCampaignById,
   findActiveCampaign,
   listCampaigns,
-  resetCampaignStore,
 } from './repositories/campaign-repository';
 
+export { resetCampaignStore } from './repositories/campaign-repository';
+
 export {
-  resetTicketStore,
   findTicketById,
   findTicketsByContact,
   createTicket,
@@ -39,3 +42,5 @@ export {
   listMessages,
   applyBrokerAck,
 } from './repositories/ticket-repository';
+
+export { resetTicketStore } from './repositories/ticket-repository';
