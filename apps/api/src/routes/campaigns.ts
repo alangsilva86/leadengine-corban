@@ -315,17 +315,61 @@ router.post(
     const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
 
     const fallbackTenantId = requestedTenantId ?? 'demo-tenant';
+    const fallbackTenantSlug = toSlug(fallbackTenantId, fallbackTenantId);
 
-    const ensuredTenant = await prisma.tenant.upsert({
-      where: { id: fallbackTenantId },
-      update: {},
-      create: {
-        id: fallbackTenantId,
-        name: fallbackTenantId,
-        slug: toSlug(fallbackTenantId, fallbackTenantId),
-        settings: {},
+    const preexistingTenant = await prisma.tenant.findFirst({
+      where: {
+        OR: [{ id: fallbackTenantId }, { slug: fallbackTenantSlug }],
       },
     });
+
+    if (preexistingTenant && preexistingTenant.slug === fallbackTenantSlug && preexistingTenant.id !== fallbackTenantId) {
+      logger.info(`${LOG_CONTEXT} reusing tenant slug from different tenant id`, {
+        requestedTenantId,
+        fallbackTenantId,
+        effectiveTenantId: preexistingTenant.id,
+        slug: fallbackTenantSlug,
+      });
+    }
+
+    let ensuredTenant = preexistingTenant;
+
+    if (!ensuredTenant) {
+      try {
+        ensuredTenant = await prisma.tenant.create({
+          data: {
+            id: fallbackTenantId,
+            name: fallbackTenantId,
+            slug: fallbackTenantSlug,
+            settings: {},
+          },
+        });
+      } catch (tenantError) {
+        if (tenantError instanceof Prisma.PrismaClientKnownRequestError && tenantError.code === 'P2002') {
+          const conflictingTenant = await prisma.tenant.findFirst({
+            where: { slug: fallbackTenantSlug },
+          });
+
+          if (conflictingTenant) {
+            logger.info(`${LOG_CONTEXT} tenant slug conflict resolved by reusing existing tenant`, {
+              requestedTenantId,
+              fallbackTenantId,
+              effectiveTenantId: conflictingTenant.id,
+              slug: fallbackTenantSlug,
+            });
+            ensuredTenant = conflictingTenant;
+          } else {
+            throw tenantError;
+          }
+        } else {
+          throw tenantError;
+        }
+      }
+    }
+
+    if (!ensuredTenant) {
+      throw new Error('Unable to ensure tenant for campaign creation');
+    }
 
     let instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
