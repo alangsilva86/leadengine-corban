@@ -37,6 +37,26 @@ const derivePollerStatus = (
   return 'stopped';
 };
 
+const deriveStorageBackend = (): string => {
+  const storageFlag = (process.env.STORAGE_BACKEND || '').trim().toLowerCase();
+
+  if (storageFlag === 'postgres' || storageFlag === 'postgres/prisma' || storageFlag === 'prisma') {
+    return 'postgres/prisma';
+  }
+
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+
+  if (databaseUrl) {
+    if (/^postgres/i.test(databaseUrl)) {
+      return 'postgres/prisma';
+    }
+
+    return 'database/prisma';
+  }
+
+  return 'in-memory';
+};
+
 export const buildHealthPayload = ({ environment }: { environment: string }): HealthPayload => {
   const metrics = getWhatsAppEventPollerMetrics();
   const disabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
@@ -50,7 +70,7 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment,
-    storage: 'in-memory',
+    storage: deriveStorageBackend(),
     whatsappEventPoller: {
       ...metrics,
       status: pollerStatus,
@@ -62,4 +82,5 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
 
 export const __private = {
   derivePollerStatus,
+  deriveStorageBackend,
 };

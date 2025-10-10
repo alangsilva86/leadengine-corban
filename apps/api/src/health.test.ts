@@ -33,6 +33,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.WHATSAPP_EVENT_POLLER_DISABLED;
   delete process.env.WHATSAPP_MODE;
+  delete process.env.DATABASE_URL;
 });
 
 describe('buildHealthPayload', () => {
@@ -47,6 +48,7 @@ describe('buildHealthPayload', () => {
     expect(payload.status).toBe('ok');
     expect(payload.whatsappEventPoller.status).toBe('disabled');
     expect(payload.whatsappEventPoller.disabled).toBe(true);
+    expect(payload.storage).toBe('in-memory');
   });
 
   it('reports running status when poller loop is active', async () => {
@@ -92,5 +94,17 @@ describe('buildHealthPayload', () => {
     expect(payload.status).toBe('ok');
     expect(payload.whatsappEventPoller.status).toBe('inactive');
     expect(payload.whatsappEventPoller.mode).toBe('baileys');
+  });
+
+  it('reports postgres storage when database url is configured', async () => {
+    process.env.DATABASE_URL = 'postgresql://ticketz:password@localhost:5432/ticketz';
+    process.env.WHATSAPP_MODE = 'http';
+    mockPollerMetrics(withMetrics({ running: true }));
+
+    const { buildHealthPayload } = await import('./health');
+    const payload = buildHealthPayload({ environment: 'production' });
+
+    expect(payload.storage).toBe('postgres/prisma');
+    expect(payload.status).toBe('ok');
   });
 });
