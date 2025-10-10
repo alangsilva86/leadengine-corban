@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { setPrismaClient as setStoragePrismaClient } from '@ticketz/storage';
 import { logger } from '../config/logger';
 
 const globalForPrisma = globalThis as unknown as {
@@ -25,6 +26,8 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({
     },
   ],
 });
+
+setStoragePrismaClient(prisma);
 
 // Logs do Prisma são configurados via log array acima
 

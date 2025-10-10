@@ -13,6 +13,7 @@ import {
   UpdateTicketDTO,
   NotFoundError,
 } from '@ticketz/core';
+import { Prisma } from '@prisma/client';
 import {
   assignTicket as storageAssignTicket,
   closeTicket as storageCloseTicket,
@@ -202,6 +203,63 @@ const buildOutboundResponse = (message: Message): OutboundMessageResponse => {
     externalId: message.externalId ?? null,
     error,
   } satisfies OutboundMessageResponse;
+};
+
+const isPrismaKnownError = (error: unknown): error is Prisma.PrismaClientKnownRequestError =>
+  error instanceof Prisma.PrismaClientKnownRequestError;
+
+const extractPrismaFieldNames = (error: Prisma.PrismaClientKnownRequestError): string[] => {
+  const raw = error.meta?.field_name;
+
+  if (Array.isArray(raw)) {
+    return raw.map((value) => String(value));
+  }
+
+  if (typeof raw === 'string') {
+    return raw
+      .replace(/[()"']/g, ' ')
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  return [];
+};
+
+const isForeignKeyViolation = (error: unknown, field: string): boolean => {
+  if (!isPrismaKnownError(error) || error.code !== 'P2003') {
+    return false;
+  }
+
+  const fieldNames = extractPrismaFieldNames(error).map((name) => name.split('.').pop() ?? name);
+  return fieldNames.includes(field);
+};
+
+const isUniqueViolation = (error: unknown): boolean => isPrismaKnownError(error) && error.code === 'P2002';
+
+const handleDatabaseError = (error: unknown, context: Record<string, unknown> = {}): never => {
+  logger.error('ticketService.databaseError', {
+    ...context,
+    error:
+      error instanceof Error
+        ? { message: error.message, name: error.name, code: (error as { code?: unknown }).code ?? null }
+        : error,
+  });
+
+  if (
+    error instanceof Prisma.PrismaClientInitializationError ||
+    error instanceof Prisma.PrismaClientRustPanicError ||
+    error instanceof Prisma.PrismaClientUnknownRequestError ||
+    error instanceof Prisma.PrismaClientValidationError
+  ) {
+    throw new ConflictError('Não foi possível concluir a operação no banco de dados.', { cause: error });
+  }
+
+  if (isUniqueViolation(error)) {
+    throw new ConflictError('Operação violou uma restrição de unicidade no banco de dados.', { cause: error });
+  }
+
+  throw error;
 };
 
 export type TicketIncludeOption = 'contact' | 'lead' | 'notes';
@@ -918,20 +976,37 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
     });
   }
 
-  const ticket = await storageCreateTicket(input);
-  emitTicketEvent(input.tenantId, ticket.id, 'ticket.created', ticket, ticket.userId ?? null);
-  emitTicketEvent(
-    input.tenantId,
-    ticket.id,
-    'ticket.status.changed',
-    {
-      ticketId: ticket.id,
-      status: ticket.status,
-      previousStatus: null,
-    },
-    ticket.userId ?? null
-  );
-  return ticket;
+  try {
+    const ticket = await storageCreateTicket(input);
+    emitTicketEvent(input.tenantId, ticket.id, 'ticket.created', ticket, ticket.userId ?? null);
+    emitTicketEvent(
+      input.tenantId,
+      ticket.id,
+      'ticket.status.changed',
+      {
+        ticketId: ticket.id,
+        status: ticket.status,
+        previousStatus: null,
+      },
+      ticket.userId ?? null
+    );
+    return ticket;
+  } catch (error) {
+    if (isForeignKeyViolation(error, 'contactId')) {
+      throw new NotFoundError('Contact', input.contactId);
+    }
+
+    if (isForeignKeyViolation(error, 'queueId')) {
+      throw new NotFoundError('Queue', input.queueId);
+    }
+
+    handleDatabaseError(error, {
+      action: 'createTicket',
+      tenantId: input.tenantId,
+      contactId: input.contactId,
+      queueId: input.queueId,
+    });
+  }
 };
 
 export const updateTicket = async (
@@ -940,7 +1015,21 @@ export const updateTicket = async (
   input: UpdateTicketDTO
 ): Promise<Ticket> => {
   const previous = await storageFindTicketById(tenantId, ticketId);
-  const updated = await storageUpdateTicket(tenantId, ticketId, input);
+  let updated: Ticket | null;
+
+  try {
+    updated = await storageUpdateTicket(tenantId, ticketId, input);
+  } catch (error) {
+    if (input.queueId && isForeignKeyViolation(error, 'queueId')) {
+      throw new NotFoundError('Queue', input.queueId);
+    }
+
+    handleDatabaseError(error, {
+      action: 'updateTicket',
+      tenantId,
+      ticketId,
+    });
+  }
   if (!updated) {
     throw new NotFoundError('Ticket', ticketId);
   }
@@ -969,7 +1058,18 @@ export const assignTicket = async (
   userId: string
 ): Promise<Ticket> => {
   const previous = await storageFindTicketById(tenantId, ticketId);
-  const updated = await storageAssignTicket(tenantId, ticketId, userId);
+  let updated: Ticket | null;
+
+  try {
+    updated = await storageAssignTicket(tenantId, ticketId, userId);
+  } catch (error) {
+    handleDatabaseError(error, {
+      action: 'assignTicket',
+      tenantId,
+      ticketId,
+      userId,
+    });
+  }
   if (!updated) {
     throw new NotFoundError('Ticket', ticketId);
   }
@@ -999,7 +1099,17 @@ export const closeTicket = async (
   userId: string | undefined
 ): Promise<Ticket> => {
   const previous = await storageFindTicketById(tenantId, ticketId);
-  const updated = await storageCloseTicket(tenantId, ticketId, reason, userId);
+  let updated: Ticket | null;
+
+  try {
+    updated = await storageCloseTicket(tenantId, ticketId, reason, userId);
+  } catch (error) {
+    handleDatabaseError(error, {
+      action: 'closeTicket',
+      tenantId,
+      ticketId,
+    });
+  }
   if (!updated) {
     throw new NotFoundError('Ticket', ticketId);
   }
@@ -1046,15 +1156,29 @@ export const sendMessage = async (
   const inferredInstanceId = resolveWhatsAppInstanceId(ticket);
   const effectiveInstanceId = input.instanceId ?? inferredInstanceId;
 
-  const messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
-    ...input,
-    content: input.content ?? input.caption ?? '',
-    direction: userId ? 'OUTBOUND' : 'INBOUND',
-    userId,
-    status: userId ? 'PENDING' : 'SENT',
-    instanceId: effectiveInstanceId ?? undefined,
-    idempotencyKey: input.idempotencyKey ?? undefined,
-  });
+  let messageRecord: Message | null;
+
+  try {
+    messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
+      ...input,
+      content: input.content ?? input.caption ?? '',
+      direction: userId ? 'OUTBOUND' : 'INBOUND',
+      userId,
+      status: userId ? 'PENDING' : 'SENT',
+      instanceId: effectiveInstanceId ?? undefined,
+      idempotencyKey: input.idempotencyKey ?? undefined,
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('Mensagem duplicada detectada para este ticket.', { cause: error });
+    }
+
+    handleDatabaseError(error, {
+      action: 'createMessage',
+      tenantId,
+      ticketId: input.ticketId,
+    });
+  }
 
   if (!messageRecord) {
     throw new NotFoundError('Ticket', input.ticketId);
@@ -1114,11 +1238,21 @@ export const sendMessage = async (
       (metadata.broker as Record<string, unknown>).rawError = errorDetails.raw;
     }
 
-    const failed = await storageUpdateMessage(tenantId, message.id, {
-      status: 'FAILED',
-      metadata,
-      instanceId: effectiveInstanceId ?? undefined,
-    });
+    let failed: Message | null;
+
+    try {
+      failed = await storageUpdateMessage(tenantId, message.id, {
+        status: 'FAILED',
+        metadata,
+        instanceId: effectiveInstanceId ?? undefined,
+      });
+    } catch (error) {
+      handleDatabaseError(error, {
+        action: 'markMessageFailed',
+        tenantId,
+        messageId: message.id,
+      });
+    }
 
     if (failed) {
       message = failed;
@@ -1174,12 +1308,22 @@ export const sendMessage = async (
             },
           } as Record<string, unknown>;
 
-          const updated = await storageUpdateMessage(tenantId, message.id, {
-            status: normalizeBrokerStatus(brokerResult.status),
-            externalId: brokerResult.externalId,
-            metadata,
-            instanceId,
-          });
+          let updated: Message | null;
+
+          try {
+            updated = await storageUpdateMessage(tenantId, message.id, {
+              status: normalizeBrokerStatus(brokerResult.status),
+              externalId: brokerResult.externalId,
+              metadata,
+              instanceId,
+            });
+          } catch (error) {
+            handleDatabaseError(error, {
+              action: 'applyBrokerAck',
+              tenantId,
+              messageId: message.id,
+            });
+          }
 
           if (updated) {
             message = updated;
@@ -1192,19 +1336,26 @@ export const sendMessage = async (
             : null;
           const reason = normalizedBrokerError?.message
             ?? (error instanceof Error ? error.message : 'unknown_error');
+          const brokerStatus =
+            typeof brokerError?.brokerStatus === 'number'
+              ? brokerError.brokerStatus
+              : typeof brokerError?.status === 'number'
+                ? brokerError.status
+                : undefined;
+
           logger.error('Failed to dispatch WhatsApp message via broker', {
             tenantId,
             ticketId: ticket.id,
             messageId: message.id,
             error: reason,
             brokerErrorCode: brokerError?.code,
-            brokerErrorStatus: brokerError?.status,
+            brokerErrorStatus: brokerStatus,
             brokerRequestId: brokerError?.requestId,
           });
           await markAsFailed({
             message: reason,
             code: normalizedBrokerError?.code ?? brokerError?.code,
-            status: brokerError?.status,
+            status: brokerStatus,
             requestId: brokerError?.requestId,
             normalized: normalizedBrokerError,
             raw: brokerError

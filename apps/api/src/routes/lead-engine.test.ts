@@ -4,6 +4,8 @@ import type { Server } from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CampaignStatus, resetCampaignStore, resetAllocationStore } from '@ticketz/storage';
 
+vi.mock('@ticketz/storage', () => import('../test-utils/storage-mock'));
+
 import { errorHandler } from '../middleware/error-handler';
 
 const originalLeadEngineEnv = {
@@ -66,9 +68,9 @@ const stopTestServer = (server: Server) =>
   });
 
 describe('Lead Engine campaigns routes', () => {
-  beforeEach(() => {
-    resetCampaignStore();
-    resetAllocationStore();
+  beforeEach(async () => {
+    await resetCampaignStore();
+    await resetAllocationStore();
   });
 
   afterEach(() => {
@@ -251,9 +253,9 @@ describe('Lead Engine campaigns routes', () => {
 });
 
 describe('Lead Engine allocations routes', () => {
-  beforeEach(() => {
-    resetCampaignStore();
-    resetAllocationStore();
+  beforeEach(async () => {
+    await resetCampaignStore();
+    await resetAllocationStore();
   });
 
   afterEach(() => {

@@ -187,6 +187,9 @@ const isForeignKeyError = (error: unknown): boolean => {
   return false;
 };
 
+const isUniqueViolation = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+
 const isMissingQueueError = (error: unknown): boolean => {
   if (!error) {
     return false;
@@ -790,8 +793,18 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
           });
         }
       } catch (error) {
+        if (isUniqueViolation(error)) {
+          logger.debug('🎯 LeadEngine • WhatsApp :: ⛔ Lead inbound já alocado recentemente — ignorando duplicidade', {
+            tenantId,
+            campaignId: campaign.id,
+            instanceId,
+            phone: maskPhone(normalizedPhone ?? null),
+          });
+          continue;
+        }
+
         logger.error('🎯 LeadEngine • WhatsApp :: 🚨 Falha ao alocar lead inbound', {
-          error,
+          error: mapErrorForLog(error),
           tenantId,
           campaignId: campaign.id,
           instanceId,

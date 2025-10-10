@@ -4,6 +4,8 @@ import type { AddressInfo } from 'net';
 import type { Server } from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@ticketz/storage', () => import('../test-utils/storage-mock'));
+
 import { ticketsRouter } from './tickets';
 import { errorHandler } from '../middleware/error-handler';
 import { registerSocketServer, type SocketServerAdapter } from '../lib/socket-registry';
@@ -65,10 +67,10 @@ const stopTestServer = (server: Server) =>
 describe('Tickets routes', () => {
   let mockSocket: MockSocketServer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockSocket = new MockSocketServer();
     registerSocketServer(mockSocket as unknown as SocketServerAdapter);
-    resetTicketStore();
+    await resetTicketStore();
   });
 
   afterEach(() => {

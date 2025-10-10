@@ -1,25 +1,18 @@
-import { randomUUID } from 'node:crypto';
+import { Prisma, type Message as PrismaMessage, type Ticket as PrismaTicket } from '@prisma/client';
 import {
-  CreateTicketDTO,
-  Message,
-  MessageFilters,
-  Pagination,
-  PaginatedResult,
-  SendMessageDTO,
-  Ticket,
-  TicketFilters,
-  TicketStatus,
-  UpdateTicketDTO,
+  type CreateTicketDTO,
+  type Message,
+  type MessageFilters,
+  type Pagination,
+  type PaginatedResult,
+  type SendMessageDTO,
+  type Ticket,
+  type TicketFilters,
+  type TicketStatus,
+  type UpdateTicketDTO,
 } from '@ticketz/core';
 
-type TicketRecord = Ticket & {
-  lastMessagePreview?: string;
-};
-
-type MessageRecord = Message;
-
-const ticketsByTenant = new Map<string, Map<string, TicketRecord>>();
-const messagesByTenant = new Map<string, Map<string, MessageRecord>>();
+import { getPrismaClient } from '../prisma-client';
 
 const defaultPagination = (
   pagination: Pagination
@@ -30,223 +23,253 @@ const defaultPagination = (
   sortOrder: pagination.sortOrder ?? 'desc',
 });
 
-const getTicketBucket = (tenantId: string) => {
-  let bucket = ticketsByTenant.get(tenantId);
-  if (!bucket) {
-    bucket = new Map<string, TicketRecord>();
-    ticketsByTenant.set(tenantId, bucket);
-  }
-  return bucket;
-};
-
-const getMessageBucket = (tenantId: string) => {
-  let bucket = messagesByTenant.get(tenantId);
-  if (!bucket) {
-    bucket = new Map<string, MessageRecord>();
-    messagesByTenant.set(tenantId, bucket);
-  }
-  return bucket;
-};
-
-const toTicket = (record: TicketRecord): Ticket => ({
-  ...record,
+const mapTicket = (record: PrismaTicket): Ticket => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  queueId: record.queueId,
+  userId: record.userId ?? undefined,
+  status: record.status as TicketStatus,
+  priority: record.priority,
+  subject: record.subject ?? undefined,
+  channel: record.channel,
+  lastMessageAt: record.lastMessageAt ?? undefined,
+  lastMessagePreview: record.lastMessagePreview ?? undefined,
   tags: [...record.tags],
-  metadata: { ...record.metadata },
+  metadata: (record.metadata as Record<string, unknown>) ?? {},
+  closedAt: record.closedAt ?? undefined,
+  closedBy: record.closedBy ?? undefined,
+  closeReason: record.closeReason ?? undefined,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
 });
 
-const toMessage = (record: MessageRecord): Message => ({
-  ...record,
-  metadata: { ...record.metadata },
+const mapMessage = (record: PrismaMessage): Message => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  ticketId: record.ticketId,
+  contactId: record.contactId,
+  userId: record.userId ?? undefined,
+  instanceId: record.instanceId ?? undefined,
+  direction: record.direction,
+  type: record.type,
+  content: record.content,
+  caption: record.caption ?? undefined,
+  mediaUrl: record.mediaUrl ?? undefined,
+  mediaFileName: record.mediaFileName ?? undefined,
+  mediaType: record.mediaType ?? undefined,
+  mediaSize: record.mediaSize ?? undefined,
+  status: record.status,
+  externalId: record.externalId ?? undefined,
+  quotedMessageId: record.quotedMessageId ?? undefined,
+  metadata: (record.metadata as Record<string, unknown>) ?? {},
+  idempotencyKey: record.idempotencyKey ?? undefined,
+  deliveredAt: record.deliveredAt ?? undefined,
+  readAt: record.readAt ?? undefined,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
 });
 
-const matchesTicketFilters = (ticket: TicketRecord, filters: TicketFilters): boolean => {
-  if (filters.status && filters.status.length > 0 && !filters.status.includes(ticket.status)) {
-    return false;
+const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.TicketWhereInput => {
+  const where: Prisma.TicketWhereInput = {
+    tenantId,
+  };
+
+  if (filters.status?.length) {
+    where.status = { in: filters.status };
   }
 
-  if (filters.priority && filters.priority.length > 0 && !filters.priority.includes(ticket.priority)) {
-    return false;
+  if (filters.priority?.length) {
+    where.priority = { in: filters.priority };
   }
 
-  if (filters.queueId && filters.queueId.length > 0 && !filters.queueId.includes(ticket.queueId)) {
-    return false;
+  if (filters.queueId?.length) {
+    where.queueId = { in: filters.queueId };
   }
 
-  if (filters.userId && filters.userId.length > 0 && (!ticket.userId || !filters.userId.includes(ticket.userId))) {
-    return false;
+  if (filters.userId?.length) {
+    where.userId = { in: filters.userId };
   }
 
-  if (filters.channel && filters.channel.length > 0 && !filters.channel.includes(ticket.channel)) {
-    return false;
+  if (filters.channel?.length) {
+    where.channel = { in: filters.channel };
   }
 
-  if (filters.tags && filters.tags.length > 0) {
-    const hasTag = ticket.tags.some((tag: string) => filters.tags!.includes(tag));
-    if (!hasTag) {
-      return false;
-    }
+  if (filters.tags?.length) {
+    where.tags = { hasSome: filters.tags };
   }
 
-  if (filters.dateFrom && ticket.createdAt < filters.dateFrom) {
-    return false;
-  }
-
-  if (filters.dateTo && ticket.createdAt > filters.dateTo) {
-    return false;
+  if (filters.dateFrom || filters.dateTo) {
+    where.createdAt = {
+      ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+      ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+    };
   }
 
   if (filters.search && filters.search.trim().length > 0) {
-    const normalized = filters.search.trim().toLowerCase();
-    const searchableValues = [
-      ticket.id,
-      ticket.subject ?? '',
-      ticket.contactId,
-      ticket.queueId,
-      ticket.userId ?? '',
-      ticket.tags.join(' '),
-      ticket.metadata?.summary ? String(ticket.metadata.summary) : '',
+    const normalized = filters.search.trim();
+    const searchOr: Prisma.TicketWhereInput['OR'] = [
+      { id: { contains: normalized, mode: 'insensitive' } },
+      { subject: { contains: normalized, mode: 'insensitive' } },
+      { contactId: { contains: normalized, mode: 'insensitive' } },
+      { queueId: { contains: normalized, mode: 'insensitive' } },
+      { userId: { contains: normalized, mode: 'insensitive' } },
+      { tags: { has: normalized } },
+      {
+        metadata: {
+          path: ['summary'],
+          string_contains: normalized,
+          mode: 'insensitive',
+        },
+      },
     ];
-
-    const hasMatch = searchableValues.some((value) => value.toLowerCase().includes(normalized));
-    if (!hasMatch) {
-      return false;
-    }
+    where.AND = [...(where.AND ?? []), { OR: searchOr }];
   }
 
-  return true;
+  return where;
 };
 
-const matchesMessageFilters = (message: MessageRecord, filters: MessageFilters): boolean => {
-  if (filters.ticketId && message.ticketId !== filters.ticketId) {
-    return false;
+const buildTicketOrderBy = (
+  sortBy?: string,
+  sortOrder: 'asc' | 'desc' = 'desc'
+): Prisma.TicketOrderByWithRelationInput => {
+  const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
+  const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof PrismaTicket) : 'createdAt';
+
+  return {
+    [field]: sortOrder,
+  } as Prisma.TicketOrderByWithRelationInput;
+};
+
+const buildMessageWhere = (tenantId: string, filters: MessageFilters): Prisma.MessageWhereInput => {
+  const where: Prisma.MessageWhereInput = {
+    tenantId,
+  };
+
+  if (filters.ticketId) {
+    where.ticketId = filters.ticketId;
   }
 
-  if (filters.contactId && message.contactId !== filters.contactId) {
-    return false;
+  if (filters.contactId) {
+    where.contactId = filters.contactId;
   }
 
-  if (filters.userId && message.userId !== filters.userId) {
-    return false;
+  if (filters.userId) {
+    where.userId = filters.userId;
   }
 
-  if (filters.direction && filters.direction.length > 0 && !filters.direction.includes(message.direction)) {
-    return false;
+  if (filters.direction?.length) {
+    where.direction = { in: filters.direction };
   }
 
-  if (filters.type && filters.type.length > 0 && !filters.type.includes(message.type)) {
-    return false;
+  if (filters.type?.length) {
+    where.type = { in: filters.type };
   }
 
-  if (filters.status && filters.status.length > 0 && !filters.status.includes(message.status)) {
-    return false;
+  if (filters.status?.length) {
+    where.status = { in: filters.status };
   }
 
-  if (filters.dateFrom && message.createdAt < filters.dateFrom) {
-    return false;
-  }
-
-  if (filters.dateTo && message.createdAt > filters.dateTo) {
-    return false;
+  if (filters.dateFrom || filters.dateTo) {
+    where.createdAt = {
+      ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+      ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+    };
   }
 
   if (filters.search && filters.search.trim().length > 0) {
-    const normalized = filters.search.trim().toLowerCase();
-    const searchableValues = [message.id, message.content, message.metadata?.summary ? String(message.metadata.summary) : ''];
-    const hasMatch = searchableValues.some((value) => value.toLowerCase().includes(normalized));
-    if (!hasMatch) {
-      return false;
-    }
+    const normalized = filters.search.trim();
+    const searchOr: Prisma.MessageWhereInput['OR'] = [
+      { id: { contains: normalized, mode: 'insensitive' } },
+      { content: { contains: normalized, mode: 'insensitive' } },
+      { metadata: { path: ['summary'], string_contains: normalized, mode: 'insensitive' } },
+    ];
+    where.AND = [...(where.AND ?? []), { OR: searchOr }];
   }
 
-  return true;
+  return where;
 };
 
-const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' | 'desc' = 'desc') => {
-  const direction = sortOrder === 'asc' ? 1 : -1;
-  const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
-  const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof TicketRecord) : 'createdAt';
+const resolveTimestamp = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
 
-  return tickets.sort((a, b) => {
-    const valueA = a[field];
-    const valueB = b[field];
-
-    if (valueA === valueB) {
-      return 0;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
     }
-
-    if (valueA === undefined || valueA === null) {
-      return 1;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
     }
+    const parsed = Date.parse(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
 
-    if (valueB === undefined || valueB === null) {
-      return -1;
-    }
-
-    if (valueA instanceof Date && valueB instanceof Date) {
-      return valueA.getTime() > valueB.getTime() ? direction : -direction;
-    }
-
-    if (typeof valueA === 'string' && typeof valueB === 'string') {
-      return valueA.localeCompare(valueB) * direction;
-    }
-
-    if (typeof valueA === 'number' && typeof valueB === 'number') {
-      return valueA > valueB ? direction : -direction;
-    }
-
-    return 0;
-  });
+  return null;
 };
 
-const sortMessages = (messages: MessageRecord[], sortOrder: 'asc' | 'desc') => {
-  const direction = sortOrder === 'asc' ? 1 : -1;
-  return messages.sort((a, b) => (a.createdAt > b.createdAt ? direction : -direction));
+const mergeMessageMetadata = (
+  current: Prisma.InputJsonValue,
+  updates?: Record<string, unknown> | null
+): Prisma.InputJsonValue => {
+  if (!updates) {
+    return current ?? {};
+  }
+
+  const currentObject =
+    current && typeof current === 'object' ? ((current as Record<string, unknown>) ?? {}) : {};
+  return {
+    ...currentObject,
+    ...updates,
+  } as Prisma.InputJsonValue;
 };
 
-export const resetTicketStore = () => {
-  ticketsByTenant.clear();
-  messagesByTenant.clear();
+export const resetTicketStore = async (): Promise<void> => {
+  const prisma = getPrismaClient();
+  await prisma.$transaction([
+    prisma.message.deleteMany({}),
+    prisma.ticket.deleteMany({}),
+  ]);
 };
 
 export const findTicketById = async (tenantId: string, ticketId: string): Promise<Ticket | null> => {
-  const bucket = getTicketBucket(tenantId);
-  const record = bucket.get(ticketId);
-  return record ? toTicket(record) : null;
+  const prisma = getPrismaClient();
+  const record = await prisma.ticket.findFirst({
+    where: { id: ticketId, tenantId },
+  });
+
+  return record ? mapTicket(record) : null;
 };
 
 export const findTicketsByContact = async (tenantId: string, contactId: string): Promise<Ticket[]> => {
-  const bucket = getTicketBucket(tenantId);
-  return Array.from(bucket.values())
-    .filter((ticket) => ticket.contactId === contactId)
-    .map(toTicket);
+  const prisma = getPrismaClient();
+  const records = await prisma.ticket.findMany({
+    where: { tenantId, contactId },
+  });
+
+  return records.map(mapTicket);
 };
 
 export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
-  const bucket = getTicketBucket(input.tenantId);
-  const now = new Date();
-  const record: TicketRecord = {
-    id: randomUUID(),
-    tenantId: input.tenantId,
-    contactId: input.contactId,
-    queueId: input.queueId,
-    userId: undefined,
-    status: 'OPEN',
-    priority: input.priority ?? 'NORMAL',
-    subject: input.subject,
-    channel: input.channel,
-    lastMessageAt: undefined,
-    lastMessagePreview: undefined,
-    tags: [...(input.tags ?? [])],
-    metadata: { ...(input.metadata ?? {}) },
-    closedAt: undefined,
-    closedBy: undefined,
-    closeReason: undefined,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const prisma = getPrismaClient();
+  const record = await prisma.ticket.create({
+    data: {
+      tenantId: input.tenantId,
+      contactId: input.contactId,
+      queueId: input.queueId,
+      status: 'OPEN',
+      priority: input.priority ?? 'NORMAL',
+      subject: input.subject ?? null,
+      channel: input.channel,
+      tags: input.tags ?? [],
+      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+    },
+  });
 
-  bucket.set(record.id, record);
-  return toTicket(record);
+  return mapTicket(record);
 };
 
 export const updateTicket = async (
@@ -259,63 +282,72 @@ export const updateTicket = async (
     closedBy?: string | null;
   }
 ): Promise<Ticket | null> => {
-  const bucket = getTicketBucket(tenantId);
-  const record = bucket.get(ticketId);
-  if (!record) {
+  const prisma = getPrismaClient();
+  const existing = await prisma.ticket.findFirst({
+    where: { id: ticketId, tenantId },
+  });
+
+  if (!existing) {
     return null;
   }
 
+  const data: Prisma.TicketUpdateInput = {};
+
   if (typeof input.status === 'string') {
-    record.status = input.status as TicketStatus;
+    data.status = input.status as TicketStatus;
   }
 
   if (typeof input.priority === 'string') {
-    record.priority = input.priority;
+    data.priority = input.priority;
   }
 
-  if (typeof input.subject === 'string' || input.subject === undefined) {
-    record.subject = input.subject ?? record.subject;
+  if (input.subject !== undefined) {
+    data.subject = input.subject ?? null;
   }
 
-  if (typeof input.userId === 'string' || input.userId === null) {
-    record.userId = input.userId ?? undefined;
+  if (input.userId !== undefined) {
+    data.userId = input.userId ?? null;
   }
 
   if (typeof input.queueId === 'string') {
-    record.queueId = input.queueId;
+    data.queueId = input.queueId;
   }
 
   if (Array.isArray(input.tags)) {
-    record.tags = [...input.tags];
+    data.tags = { set: input.tags };
   }
 
-  if (typeof input.metadata === 'object' && input.metadata !== null) {
-    record.metadata = { ...input.metadata };
+  if (input.metadata !== undefined) {
+    data.metadata = (input.metadata ?? {}) as Prisma.InputJsonValue;
   }
 
-  if (typeof input.closeReason === 'string' || input.closeReason === null) {
-    record.closeReason = input.closeReason ?? undefined;
+  if (input.closeReason !== undefined) {
+    data.closeReason = input.closeReason ?? null;
   }
 
-  if (input.lastMessageAt) {
-    record.lastMessageAt = input.lastMessageAt;
+  if (input.lastMessageAt !== undefined) {
+    data.lastMessageAt = input.lastMessageAt ?? null;
   }
 
-  if (input.lastMessagePreview) {
-    record.lastMessagePreview = input.lastMessagePreview;
+  if (input.lastMessagePreview !== undefined) {
+    data.lastMessagePreview = input.lastMessagePreview ?? null;
   }
 
   if (input.closedAt !== undefined) {
-    record.closedAt = input.closedAt ?? undefined;
+    data.closedAt = input.closedAt ?? null;
   }
 
   if (input.closedBy !== undefined) {
-    record.closedBy = input.closedBy ?? undefined;
+    data.closedBy = input.closedBy ?? null;
   }
 
-  record.updatedAt = new Date();
+  await prisma.ticket.update({
+    where: { id: existing.id },
+    data,
+  });
 
-  return toTicket(record);
+  const updated = await prisma.ticket.findUnique({ where: { id: existing.id } });
+  return updated ? mapTicket(updated) : null;
 };
 
 export const assignTicket = async (
@@ -323,8 +355,7 @@ export const assignTicket = async (
   ticketId: string,
   userId: string
 ): Promise<Ticket | null> => {
-  const updated = await updateTicket(tenantId, ticketId, { userId, status: 'ASSIGNED' });
-  return updated;
+  return updateTicket(tenantId, ticketId, { userId, status: 'ASSIGNED' });
 };
 
 export const closeTicket = async (
@@ -334,13 +365,12 @@ export const closeTicket = async (
   userId: string | undefined
 ): Promise<Ticket | null> => {
   const now = new Date();
-  const updated = await updateTicket(tenantId, ticketId, {
+  return updateTicket(tenantId, ticketId, {
     status: 'CLOSED',
     closeReason: reason,
     closedAt: now,
     closedBy: userId ?? null,
   });
-  return updated;
 };
 
 export const listTickets = async (
@@ -348,25 +378,31 @@ export const listTickets = async (
   filters: TicketFilters,
   pagination: Pagination
 ): Promise<PaginatedResult<Ticket>> => {
-  const bucket = getTicketBucket(tenantId);
-  const normalizedPagination = defaultPagination(pagination);
-  const filtered = Array.from(bucket.values()).filter((ticket) => matchesTicketFilters(ticket, filters));
-  const sorted = sortTickets(filtered, normalizedPagination.sortBy, normalizedPagination.sortOrder);
+  const prisma = getPrismaClient();
+  const normalized = defaultPagination(pagination);
+  const where = buildTicketWhere(tenantId, filters);
+  const orderBy = buildTicketOrderBy(normalized.sortBy, normalized.sortOrder);
 
-  const start = (normalizedPagination.page - 1) * normalizedPagination.limit;
-  const end = start + normalizedPagination.limit;
-  const paginated = sorted.slice(start, end);
-  const total = filtered.length;
-  const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedPagination.limit);
+  const [total, records] = await Promise.all([
+    prisma.ticket.count({ where }),
+    prisma.ticket.findMany({
+      where,
+      orderBy,
+      skip: (normalized.page - 1) * normalized.limit,
+      take: normalized.limit,
+    }),
+  ]);
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / normalized.limit);
 
   return {
-    items: paginated.map(toTicket),
+    items: records.map(mapTicket),
     total,
-    page: normalizedPagination.page,
-    limit: normalizedPagination.limit,
+    page: normalized.page,
+    limit: normalized.limit,
     totalPages,
-    hasNext: normalizedPagination.page < totalPages,
-    hasPrev: normalizedPagination.page > 1 && total > 0,
+    hasNext: normalized.page < totalPages,
+    hasPrev: normalized.page > 1 && total > 0,
   };
 };
 
@@ -381,123 +417,99 @@ export const createMessage = async (
     idempotencyKey?: string | null;
   }
 ): Promise<Message | null> => {
-  const ticketsBucket = getTicketBucket(tenantId);
-  const ticket = ticketsBucket.get(ticketId);
+  const prisma = getPrismaClient();
+  const ticket = await prisma.ticket.findFirst({ where: { id: ticketId, tenantId } });
 
   if (!ticket) {
     return null;
   }
 
-  const bucket = getMessageBucket(tenantId);
-  const now = new Date();
   const metadataRecord = (input.metadata ?? {}) as Record<string, unknown>;
-  const resolveTimestamp = (value: unknown): number | null => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value > 1_000_000_000_000 ? value : value * 1000;
-    }
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return null;
+  const createdAtCandidate =
+    resolveTimestamp(metadataRecord['normalizedTimestamp']) ??
+    resolveTimestamp(metadataRecord['brokerMessageTimestamp']) ??
+    resolveTimestamp(metadataRecord['receivedAt']);
+  const createdAt = createdAtCandidate ? new Date(createdAtCandidate) : new Date();
+  const previewSource = input.content && input.content.trim().length > 0 ? input.content : input.caption ?? '';
+  const lastMessagePreview = previewSource.slice(0, 280);
+
+  const message = await prisma.$transaction(async (tx) => {
+    const created = await tx.message.create({
+      data: {
+        tenantId,
+        ticketId,
+        contactId: ticket.contactId,
+        userId: input.userId ?? null,
+        instanceId: input.instanceId ?? null,
+        direction: input.direction,
+        type: input.type ?? 'TEXT',
+        content: (input.content ?? '').trim(),
+        caption: input.caption ?? null,
+        mediaUrl: input.mediaUrl ?? null,
+        mediaFileName: input.mediaFileName ?? null,
+        mediaType: input.mediaMimeType ?? null,
+        status: input.status ?? 'SENT',
+        quotedMessageId: input.quotedMessageId ?? null,
+        metadata: metadataRecord as Prisma.InputJsonValue,
+        idempotencyKey: input.idempotencyKey ?? null,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    });
+
+    const currentMetadata =
+      ticket.metadata && typeof ticket.metadata === 'object'
+        ? ({ ...(ticket.metadata as Record<string, unknown>) } as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+
+    const timelineSource =
+      currentMetadata['timeline'] && typeof currentMetadata['timeline'] === 'object'
+        ? ({ ...(currentMetadata['timeline'] as Record<string, unknown>) } as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+
+    const createdAtTime = createdAt.getTime();
+    const timestampIso = createdAt.toISOString();
+
+    const ensureMin = (key: 'firstInboundAt' | 'firstOutboundAt') => {
+      const currentValue = resolveTimestamp(timelineSource[key]);
+      if (currentValue === null || createdAtTime < currentValue) {
+        timelineSource[key] = timestampIso;
       }
-      const numeric = Number(trimmed);
-      if (Number.isFinite(numeric)) {
-        return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+    };
+
+    const ensureMax = (key: 'lastInboundAt' | 'lastOutboundAt') => {
+      const currentValue = resolveTimestamp(timelineSource[key]);
+      if (currentValue === null || createdAtTime >= currentValue) {
+        timelineSource[key] = timestampIso;
       }
-      const parsed = Date.parse(trimmed);
-      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    if (created.direction === 'INBOUND') {
+      ensureMin('firstInboundAt');
+      ensureMax('lastInboundAt');
+    } else {
+      ensureMin('firstOutboundAt');
+      ensureMax('lastOutboundAt');
     }
-    return null;
-  };
 
-  const normalizedTs = resolveTimestamp(metadataRecord['normalizedTimestamp']);
-  const brokerTs = resolveTimestamp(metadataRecord['brokerMessageTimestamp']);
-  const receivedTs = resolveTimestamp(metadataRecord['receivedAt']);
-  const createdAtCandidate = normalizedTs ?? brokerTs ?? receivedTs;
-  const createdAt = createdAtCandidate ? new Date(createdAtCandidate) : now;
-  const createdAtTime = createdAt.getTime();
-  const metadataCopy = { ...metadataRecord } as Record<string, unknown>;
-
-  const record: MessageRecord = {
-    id: randomUUID(),
-    tenantId,
-    ticketId,
-    contactId: ticket.contactId,
-    userId: input.userId,
-    instanceId: input.instanceId ?? undefined,
-    direction: input.direction,
-    type: input.type ?? 'TEXT',
-    content: (input.content ?? '').trim(),
-    caption: input.caption ?? undefined,
-    mediaUrl: input.mediaUrl,
-    mediaFileName: input.mediaFileName ?? undefined,
-    mediaType: input.mediaMimeType ?? undefined,
-    mediaSize: undefined,
-    status: input.status ?? 'SENT',
-    externalId: undefined,
-    quotedMessageId: input.quotedMessageId,
-    metadata: metadataCopy,
-    idempotencyKey: input.idempotencyKey ?? undefined,
-    deliveredAt: undefined,
-    readAt: undefined,
-    createdAt,
-    updatedAt: createdAt,
-  };
-
-  bucket.set(record.id, record);
-
-  const ticketMetadata =
-    typeof ticket.metadata === 'object' && ticket.metadata !== null
-      ? ({ ...(ticket.metadata as Record<string, unknown>) } as Record<string, unknown>)
-      : ({} as Record<string, unknown>);
-
-  const timelineSource =
-    typeof ticketMetadata['timeline'] === 'object' && ticketMetadata['timeline'] !== null
-      ? ({ ...(ticketMetadata['timeline'] as Record<string, unknown>) } as Record<string, unknown>)
-      : ({} as Record<string, unknown>);
-
-  const timestampIso = createdAt.toISOString();
-  const ensureMin = (key: 'firstInboundAt' | 'firstOutboundAt') => {
-    const currentValue = resolveTimestamp(timelineSource[key]);
-    if (currentValue === null || createdAtTime < currentValue) {
-      timelineSource[key] = timestampIso;
+    if (Object.keys(timelineSource).length > 0) {
+      currentMetadata['timeline'] = timelineSource;
     }
-  };
 
-  const ensureMax = (key: 'lastInboundAt' | 'lastOutboundAt') => {
-    const currentValue = resolveTimestamp(timelineSource[key]);
-    if (currentValue === null || createdAtTime >= currentValue) {
-      timelineSource[key] = timestampIso;
-    }
-  };
+    await tx.ticket.update({
+      where: { id: ticket.id },
+      data: {
+        metadata: currentMetadata as Prisma.InputJsonValue,
+        lastMessageAt: createdAt,
+        lastMessagePreview,
+        updatedAt: createdAt,
+      },
+    });
 
-  if (record.direction === 'INBOUND') {
-    ensureMin('firstInboundAt');
-    ensureMax('lastInboundAt');
-  } else {
-    ensureMin('firstOutboundAt');
-    ensureMax('lastOutboundAt');
-  }
+    return created;
+  });
 
-  if (Object.keys(timelineSource).length > 0) {
-    ticketMetadata['timeline'] = timelineSource;
-  }
-
-  ticket.metadata = ticketMetadata as Ticket['metadata'];
-
-  if (!ticket.lastMessageAt || createdAt > ticket.lastMessageAt) {
-    ticket.lastMessageAt = createdAt;
-    const previewSource = record.content && record.content.length > 0 ? record.content : record.caption ?? '';
-    ticket.lastMessagePreview = previewSource.slice(0, 280);
-  }
-
-  if (!ticket.updatedAt || createdAt > ticket.updatedAt) {
-    ticket.updatedAt = createdAt;
-  }
-
-  ticketsBucket.set(ticketId, ticket);
-
-  return toMessage(record);
+  return mapMessage(message);
 };
 
 export const listMessages = async (
@@ -505,25 +517,30 @@ export const listMessages = async (
   filters: MessageFilters,
   pagination: Pagination
 ): Promise<PaginatedResult<Message>> => {
-  const bucket = getMessageBucket(tenantId);
-  const normalizedPagination = defaultPagination(pagination);
-  const filtered = Array.from(bucket.values()).filter((message) => matchesMessageFilters(message, filters));
-  const sorted = sortMessages(filtered, normalizedPagination.sortOrder);
+  const prisma = getPrismaClient();
+  const normalized = defaultPagination(pagination);
+  const where = buildMessageWhere(tenantId, filters);
 
-  const start = (normalizedPagination.page - 1) * normalizedPagination.limit;
-  const end = start + normalizedPagination.limit;
-  const paginated = sorted.slice(start, end);
-  const total = filtered.length;
-  const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedPagination.limit);
+  const [total, records] = await Promise.all([
+    prisma.message.count({ where }),
+    prisma.message.findMany({
+      where,
+      orderBy: { createdAt: normalized.sortOrder },
+      skip: (normalized.page - 1) * normalized.limit,
+      take: normalized.limit,
+    }),
+  ]);
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / normalized.limit);
 
   return {
-    items: paginated.map(toMessage),
+    items: records.map(mapMessage),
     total,
-    page: normalizedPagination.page,
-    limit: normalizedPagination.limit,
+    page: normalized.page,
+    limit: normalized.limit,
     totalPages,
-    hasNext: normalizedPagination.page < totalPages,
-    hasPrev: normalizedPagination.page > 1 && total > 0,
+    hasNext: normalized.page < totalPages,
+    hasPrev: normalized.page > 1 && total > 0,
   };
 };
 
@@ -539,47 +556,45 @@ export const updateMessage = async (
     instanceId?: string | null;
   }
 ): Promise<Message | null> => {
-  const bucket = getMessageBucket(tenantId);
-  const record = bucket.get(messageId);
+  const prisma = getPrismaClient();
+  const existing = await prisma.message.findFirst({ where: { id: messageId, tenantId } });
 
-  if (!record) {
+  if (!existing) {
     return null;
   }
 
+  const data: Prisma.MessageUpdateInput = {};
+
   if (typeof updates.status === 'string') {
-    record.status = updates.status;
+    data.status = updates.status;
   }
 
   if (updates.externalId !== undefined) {
-    record.externalId = updates.externalId ?? undefined;
+    data.externalId = updates.externalId ?? null;
   }
 
   if (updates.metadata !== undefined) {
-    const currentMetadata = typeof record.metadata === 'object' && record.metadata !== null ? record.metadata : {};
-    const nextMetadata = updates.metadata ?? {};
-    record.metadata = {
-      ...currentMetadata,
-      ...nextMetadata,
-    } as Record<string, unknown>;
+    data.metadata = mergeMessageMetadata(existing.metadata, updates.metadata);
   }
 
   if (updates.deliveredAt !== undefined) {
-    record.deliveredAt = updates.deliveredAt ?? undefined;
+    data.deliveredAt = updates.deliveredAt ?? null;
   }
 
   if (updates.readAt !== undefined) {
-    record.readAt = updates.readAt ?? undefined;
+    data.readAt = updates.readAt ?? null;
   }
 
   if (updates.instanceId !== undefined) {
-    record.instanceId = updates.instanceId ?? undefined;
+    data.instanceId = updates.instanceId ?? null;
   }
 
-  record.updatedAt = new Date();
+  const updated = await prisma.message.update({
+    where: { id: existing.id },
+    data,
+  });
 
-  bucket.set(record.id, record);
-
-  return toMessage(record);
+  return mapMessage(updated);
 };
 
 export const createOutboundMessage = async (

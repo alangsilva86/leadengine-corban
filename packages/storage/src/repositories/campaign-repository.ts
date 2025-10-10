@@ -1,4 +1,6 @@
-import { randomUUID } from 'crypto';
+import { Prisma, type Campaign as PrismaCampaign } from '@prisma/client';
+
+import { getPrismaClient } from '../prisma-client';
 
 export enum CampaignStatus {
   DRAFT = 'draft',
@@ -36,65 +38,68 @@ export interface CampaignFilters {
   status?: CampaignStatus[];
 }
 
-const campaignsByTenant = new Map<string, Map<string, Campaign>>();
+const mapCampaign = (record: PrismaCampaign): Campaign => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  agreementId: record.agreementId,
+  instanceId: record.whatsappInstanceId ?? 'default',
+  name: record.name,
+  status: record.status as CampaignStatus,
+  startDate: record.startDate ?? null,
+  endDate: record.endDate ?? null,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
 
-const getTenantBucket = (tenantId: string): Map<string, Campaign> => {
-  let bucket = campaignsByTenant.get(tenantId);
-  if (!bucket) {
-    bucket = new Map<string, Campaign>();
-    campaignsByTenant.set(tenantId, bucket);
-  }
-  return bucket;
+const statusOrder: Record<CampaignStatus, number> = {
+  [CampaignStatus.DRAFT]: 0,
+  [CampaignStatus.ACTIVE]: 1,
+  [CampaignStatus.PAUSED]: 2,
+  [CampaignStatus.ENDED]: 3,
 };
 
-const findByCompositeKey = (
-  tenantId: string,
-  agreementId: string,
-  instanceId: string
-): Campaign | undefined => {
-  const bucket = campaignsByTenant.get(tenantId);
-  if (!bucket) {
-    return undefined;
-  }
-
-  for (const campaign of bucket.values()) {
-    if (campaign.agreementId === agreementId && campaign.instanceId === instanceId) {
-      return campaign;
-    }
-  }
-  return undefined;
-};
+const ensureStatus = (status?: CampaignStatus): CampaignStatus => status ?? CampaignStatus.DRAFT;
 
 export const createOrActivateCampaign = async (input: CreateCampaignInput): Promise<Campaign> => {
-  const status = input.status ?? CampaignStatus.DRAFT;
-  const bucket = getTenantBucket(input.tenantId);
-  const existing = findByCompositeKey(input.tenantId, input.agreementId, input.instanceId);
+  const prisma = getPrismaClient();
+  const status = ensureStatus(input.status);
   const now = new Date();
 
+  const existing = await prisma.campaign.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      agreementId: input.agreementId,
+      whatsappInstanceId: input.instanceId,
+    },
+  });
+
   if (existing) {
-    existing.name = input.name;
-    existing.status = status;
-    existing.startDate = input.startDate ?? existing.startDate ?? now;
-    existing.endDate = input.endDate ?? (status === CampaignStatus.ACTIVE ? null : existing.endDate);
-    existing.updatedAt = now;
-    return existing;
+    const updated = await prisma.campaign.update({
+      where: { id: existing.id },
+      data: {
+        name: input.name,
+        status,
+        startDate: input.startDate ?? existing.startDate ?? now,
+        endDate: input.endDate ?? (status === CampaignStatus.ACTIVE ? null : existing.endDate),
+      },
+    });
+
+    return mapCampaign(updated);
   }
 
-  const campaign: Campaign = {
-    id: randomUUID(),
-    tenantId: input.tenantId,
-    agreementId: input.agreementId,
-    instanceId: input.instanceId,
-    name: input.name,
-    status,
-    startDate: input.startDate ?? now,
-    endDate: input.endDate ?? null,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const created = await prisma.campaign.create({
+    data: {
+      tenantId: input.tenantId,
+      agreementId: input.agreementId,
+      whatsappInstanceId: input.instanceId,
+      name: input.name,
+      status,
+      startDate: input.startDate ?? now,
+      endDate: input.endDate ?? null,
+    },
+  });
 
-  bucket.set(campaign.id, campaign);
-  return campaign;
+  return mapCampaign(created);
 };
 
 export const updateCampaignStatus = async (
@@ -102,37 +107,40 @@ export const updateCampaignStatus = async (
   campaignId: string,
   status: CampaignStatus
 ): Promise<Campaign | null> => {
-  const bucket = campaignsByTenant.get(tenantId);
-  if (!bucket) {
-    return null;
-  }
+  const prisma = getPrismaClient();
+  const existing = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId } });
 
-  const campaign = bucket.get(campaignId);
-  if (!campaign) {
+  if (!existing) {
     return null;
   }
 
   const now = new Date();
-  campaign.status = status;
-  campaign.updatedAt = now;
+  const data: Prisma.CampaignUpdateInput = {
+    status,
+  };
+
   if (status === CampaignStatus.ACTIVE) {
-    campaign.endDate = null;
+    data.endDate = null;
+    data.startDate = existing.startDate ?? now;
   } else if (status === CampaignStatus.ENDED) {
-    campaign.endDate = now;
+    data.endDate = now;
   }
-  return campaign;
+
+  const updated = await prisma.campaign.update({
+    where: { id: existing.id },
+    data,
+  });
+
+  return mapCampaign(updated);
 };
 
 export const findCampaignById = async (
   tenantId: string,
   campaignId: string
 ): Promise<Campaign | null> => {
-  const bucket = campaignsByTenant.get(tenantId);
-  if (!bucket) {
-    return null;
-  }
-  const campaign = bucket.get(campaignId);
-  return campaign ?? null;
+  const prisma = getPrismaClient();
+  const record = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId } });
+  return record ? mapCampaign(record) : null;
 };
 
 export const findActiveCampaign = async (
@@ -140,64 +148,45 @@ export const findActiveCampaign = async (
   agreementId: string,
   instanceId?: string
 ): Promise<Campaign | null> => {
-  const bucket = campaignsByTenant.get(tenantId);
-  if (!bucket) {
-    return null;
-  }
-
-  const campaigns = Array.from(bucket.values()).filter((campaign) => {
-    if (campaign.agreementId !== agreementId) {
-      return false;
-    }
-    if (instanceId && campaign.instanceId !== instanceId) {
-      return false;
-    }
-    return campaign.status === CampaignStatus.ACTIVE;
+  const prisma = getPrismaClient();
+  const record = await prisma.campaign.findFirst({
+    where: {
+      tenantId,
+      agreementId,
+      status: CampaignStatus.ACTIVE,
+      ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
+    },
+    orderBy: { updatedAt: 'desc' },
   });
 
-  if (campaigns.length === 0) {
-    return null;
-  }
-
-  campaigns.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-  return campaigns[0];
+  return record ? mapCampaign(record) : null;
 };
 
 export const listCampaigns = async (filters: CampaignFilters): Promise<Campaign[]> => {
-  const bucket = campaignsByTenant.get(filters.tenantId);
-  if (!bucket) {
-    return [];
-  }
-
-  let campaigns = Array.from(bucket.values());
-
-  if (filters.agreementId) {
-    campaigns = campaigns.filter((campaign) => campaign.agreementId === filters.agreementId);
-  }
-
-  if (filters.status?.length) {
-    const allowed = new Set(filters.status);
-    campaigns = campaigns.filter((campaign) => allowed.has(campaign.status));
-  }
-
-  const statusOrder: Record<CampaignStatus, number> = {
-    [CampaignStatus.DRAFT]: 0,
-    [CampaignStatus.ACTIVE]: 1,
-    [CampaignStatus.PAUSED]: 2,
-    [CampaignStatus.ENDED]: 3,
+  const prisma = getPrismaClient();
+  const where: Prisma.CampaignWhereInput = {
+    tenantId: filters.tenantId,
+    ...(filters.agreementId ? { agreementId: filters.agreementId } : {}),
   };
 
-  campaigns.sort((a, b) => {
-    const statusDiff = statusOrder[a.status] - statusOrder[b.status];
-    if (statusDiff !== 0) {
-      return statusDiff;
-    }
-    return b.createdAt.getTime() - a.createdAt.getTime();
-  });
+  if (filters.status?.length) {
+    where.status = { in: filters.status };
+  }
 
-  return campaigns;
+  const records = await prisma.campaign.findMany({ where });
+
+  return records
+    .map(mapCampaign)
+    .sort((a, b) => {
+      const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
 };
 
-export const resetCampaignStore = () => {
-  campaignsByTenant.clear();
+export const resetCampaignStore = async () => {
+  const prisma = getPrismaClient();
+  await prisma.campaign.deleteMany({});
 };
