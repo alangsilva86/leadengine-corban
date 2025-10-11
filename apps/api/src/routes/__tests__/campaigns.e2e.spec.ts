@@ -99,7 +99,7 @@ describe('GET /api/campaigns', () => {
     featureFlagsState.mvpAuthBypass = false;
     fetchLeadEngineCampaignsMock.mockReset();
 
-    getCampaignMetricsMock.mockReturnValue({
+    getCampaignMetricsMock.mockResolvedValue({
       total: 10,
       allocated: 6,
       contacted: 4,
@@ -245,7 +245,7 @@ describe('GET /api/campaigns', () => {
         whatsappInstance: null,
       },
     ]);
-    getCampaignMetricsMock.mockImplementationOnce(() => {
+    getCampaignMetricsMock.mockImplementationOnce(async () => {
       throw new Error('metrics store unreachable');
     });
 

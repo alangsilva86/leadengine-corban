@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 
 const { getCampaignMetricsMock } = vi.hoisted(() => ({
-  getCampaignMetricsMock: vi.fn(() => ({
+  getCampaignMetricsMock: vi.fn(async () => ({
     total: 5,
     allocated: 5,
     contacted: 3,
@@ -52,7 +52,7 @@ describe('GET /campaigns', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     getCampaignMetricsMock.mockReset();
-    getCampaignMetricsMock.mockReturnValue({
+    getCampaignMetricsMock.mockResolvedValue({
       total: 5,
       allocated: 5,
       contacted: 3,
@@ -195,7 +195,7 @@ describe('POST /campaigns', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     getCampaignMetricsMock.mockReset();
-    getCampaignMetricsMock.mockReturnValue({ ...defaultMetrics });
+    getCampaignMetricsMock.mockResolvedValue({ ...defaultMetrics });
   });
 
   const mockTenantAndInstance = () => {
@@ -445,7 +445,7 @@ describe('POST /campaigns', () => {
       },
     }));
 
-    getCampaignMetricsMock.mockImplementation(() => {
+    getCampaignMetricsMock.mockImplementation(async () => {
       throw new Error('storage unavailable');
     });
 

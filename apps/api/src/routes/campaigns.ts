@@ -24,7 +24,7 @@ type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 const DEFAULT_STATUS: CampaignStatus = 'active';
 const LOG_CONTEXT = '[/api/campaigns]';
 
-type RawCampaignMetrics = ReturnType<typeof getCampaignMetrics>;
+type RawCampaignMetrics = Awaited<ReturnType<typeof getCampaignMetrics>>;
 
 const createEmptyRawMetrics = (): RawCampaignMetrics =>
   ({
@@ -133,12 +133,12 @@ const computeCampaignMetrics = (
   } as CampaignDTO['metrics'];
 };
 
-const buildCampaignResponse = (
+const buildCampaignResponse = async (
   campaign: CampaignWithInstance,
   rawMetrics?: RawCampaignMetrics
-): CampaignDTO => {
+): Promise<CampaignDTO> => {
   const base = buildCampaignBase(campaign);
-  const metricsSource = rawMetrics ?? getCampaignMetrics(campaign.tenantId, campaign.id);
+  const metricsSource = rawMetrics ?? (await getCampaignMetrics(campaign.tenantId, campaign.id));
   const metrics = computeCampaignMetrics(campaign, base.metadata, metricsSource);
 
   return {
@@ -147,13 +147,13 @@ const buildCampaignResponse = (
   } satisfies CampaignDTO;
 };
 
-const buildCampaignResponseSafely = (
+const buildCampaignResponseSafely = async (
   campaign: CampaignWithInstance,
   logContext: Record<string, unknown>
-): { data: CampaignDTO; warnings?: CampaignWarning[] } => {
+): Promise<{ data: CampaignDTO; warnings?: CampaignWarning[] }> => {
   try {
     return {
-      data: buildCampaignResponse(campaign),
+      data: await buildCampaignResponse(campaign),
     };
   } catch (metricsError) {
     logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
@@ -162,7 +162,7 @@ const buildCampaignResponseSafely = (
     });
 
     return {
-      data: buildCampaignResponse(campaign, createEmptyRawMetrics()),
+      data: await buildCampaignResponse(campaign, createEmptyRawMetrics()),
       warnings: [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }],
     };
   }
@@ -637,7 +637,8 @@ router.post(
           toStatus: requestedStatus,
         });
 
-        res.json({ success: true, data: buildCampaignResponse(updatedCampaign) });
+        const data = await buildCampaignResponse(updatedCampaign);
+        res.json({ success: true, data });
         return;
       } else {
         logger.info('Campaign reused for instance', {
@@ -649,7 +650,8 @@ router.post(
           requestedStatus,
         });
 
-        res.json({ success: true, data: buildCampaignResponse(existingCampaign) });
+        const data = await buildCampaignResponse(existingCampaign);
+        res.json({ success: true, data });
         return;
       }
     }
@@ -702,7 +704,10 @@ router.post(
           instanceId: instance.id,
           campaignId: fallback.id,
         };
-        const { data, warnings } = buildCampaignResponseSafely(fallback as CampaignWithInstance, responseLogContext);
+        const { data, warnings } = await buildCampaignResponseSafely(
+          fallback as CampaignWithInstance,
+          responseLogContext
+        );
         const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
           success: true,
           data,
@@ -733,7 +738,7 @@ router.post(
       instanceId: instance.id,
       campaignId: campaign.id,
     };
-    const { data, warnings } = buildCampaignResponseSafely(campaign, responseLogContext);
+    const { data, warnings } = await buildCampaignResponseSafely(campaign, responseLogContext);
     const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
       success: true,
       data,
@@ -857,14 +862,16 @@ router.get(
       let warnings: CampaignWarning[] | undefined;
 
       try {
-        items = campaigns.map((campaign) => buildCampaignResponse(campaign));
+        items = await Promise.all(campaigns.map((campaign) => buildCampaignResponse(campaign)));
       } catch (metricsError) {
         logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
           ...logContext,
           error: toSafeError(metricsError),
         });
         warnings = [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }];
-        items = campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()));
+        items = await Promise.all(
+          campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()))
+        );
       }
 
       const payload: {
@@ -1070,7 +1077,8 @@ router.patch(
     }
 
     if (!updates.status && !updates.metadata && !instanceReassigned) {
-      res.json({ success: true, data: buildCampaignResponse(campaign) });
+      const data = await buildCampaignResponse(campaign);
+      res.json({ success: true, data });
       return;
     }
 
@@ -1096,9 +1104,10 @@ router.patch(
       instanceReassigned,
     });
 
+    const data = await buildCampaignResponse(updated as CampaignWithInstance);
     res.json({
       success: true,
-      data: buildCampaignResponse(updated),
+      data,
     });
   })
 );
@@ -1195,9 +1204,10 @@ router.delete(
       previousStatus: currentStatus,
     });
 
+    const data = await buildCampaignResponse(updated);
     res.json({
       success: true,
-      data: buildCampaignResponse(updated),
+      data,
     });
   })
 );
