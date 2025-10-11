@@ -416,16 +416,31 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const rawEvents = asArray(payload);
 
-  type NormalizedCandidate = {
-    data: BrokerWebhookInbound;
-    sourceIndex: number;
-    messageIndex?: number;
-    tenantId?: string;
-    sessionId?: string;
-  };
+type NormalizedCandidate = {
+  data: BrokerWebhookInbound;
+  sourceIndex: number;
+  messageIndex?: number;
+  tenantId?: string;
+  sessionId?: string;
+};
+
+const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
+  const event = readString(entry.event);
+  return event === 'WHATSAPP_MESSAGES_UPSERT' || event === 'WHATSAPP_MESSAGES_UPDATE';
+};
 
   const normalizedEvents: BrokerInboundEvent[] = rawEvents
     .flatMap<NormalizedCandidate>((entry, index) => {
+      if (isRawBaileysEvent(entry)) {
+        logger.info('📥 [Webhook] Evento Baileys bruto recebido', {
+          index,
+          event: entry.event,
+          iid: entry.iid ?? null,
+        });
+        whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'raw_baileys_event' });
+        return [];
+      }
+
       const modern = tryParseModernWebhookEvent(entry, { index });
       if (modern) {
         const tenantId =
@@ -465,18 +480,10 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const queued = normalizedEvents.length;
 
   if (queued === 0) {
-    logger.warn('📭 [Webhook] Nenhum evento elegível encontrado', {
+    logger.debug('📭 [Webhook] Nenhum evento inbound elegível encontrado', {
       received: rawEvents.length,
     });
-    whatsappWebhookEventsCounter.inc({ result: 'ignored', reason: 'no_inbound_event' });
-    res.status(422).json({
-      ok: false,
-      error: {
-        code: 'NO_INBOUND_EVENTS',
-        message: 'Nenhum evento de mensagem inbound foi encontrado no payload informado.',
-      },
-    });
-    return;
+    return res.status(204).send();
   }
 
   normalizedEvents.forEach((event) => {
