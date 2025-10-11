@@ -2266,6 +2266,13 @@ const WhatsAppConnect = ({
       throw error;
     }
 
+    const targetInstance =
+      instances.find((entry) => entry && entry.id === instanceId) ?? null;
+    const brokerId =
+      targetInstance && isPlainRecord(targetInstance.metadata)
+        ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
+        : null;
+
     setCampaignError(null);
     setCampaignAction({ id: null, type: 'create' });
 
@@ -2274,6 +2281,7 @@ const WhatsAppConnect = ({
         agreementId: selectedAgreement.id,
         agreementName: selectedAgreement.name,
         instanceId,
+        ...(brokerId ? { brokerId } : {}),
         name: normalizedName || `${selectedAgreement.name} • ${instanceId}`,
         status,
       });

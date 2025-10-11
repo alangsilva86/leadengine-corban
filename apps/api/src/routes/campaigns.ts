@@ -354,6 +354,7 @@ router.post(
   body('agreementId').isString().trim().isLength({ min: 1 }),
   body('agreementName').isString().trim().isLength({ min: 1 }),
   body('instanceId').isString().trim().isLength({ min: 1 }),
+  body('brokerId').optional().isString().trim().isLength({ min: 1 }),
   body('name').optional().isString().trim().isLength({ min: 1 }),
   body('budget').optional().isFloat({ min: 0 }),
   body('cplTarget').optional().isFloat({ min: 0 }),
@@ -373,6 +374,15 @@ router.post(
       rawAgreementName || (resolvedAgreementId === 'demo-tenant' ? 'DEMO' : rawAgreementName);
     const rawInstanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const resolvedInstanceId = rawInstanceId || 'alan';
+    const rawBrokerIdInput = typeof req.body?.brokerId === 'string' ? req.body.brokerId.trim() : '';
+    const resolvedBrokerId = rawBrokerIdInput || null;
+    const identifierCandidates = Array.from(
+      new Set(
+        [resolvedInstanceId, resolvedBrokerId].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+      )
+    );
     const providedName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const resolvedName = providedName || resolvedAgreementName || `Campanha ${Date.now()}`;
     const budget = typeof req.body?.budget === 'number' ? req.body.budget : undefined;
@@ -420,6 +430,7 @@ router.post(
       requestedTenantId,
       fallbackTenantId,
       instanceId: resolvedInstanceId,
+      requestedBrokerId: resolvedBrokerId,
       agreementId: resolvedAgreementId,
     };
 
@@ -429,27 +440,50 @@ router.post(
       throw new Error('Unable to ensure tenant for campaign creation');
     }
 
-    let instance = await prisma.whatsAppInstance.findUnique({ where: { id: resolvedInstanceId } });
+    let instance: Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>> | null = null;
+
+    for (const candidateId of identifierCandidates) {
+      instance = await prisma.whatsAppInstance.findUnique({ where: { id: candidateId } });
+      if (instance) {
+        if (candidateId !== resolvedInstanceId) {
+          logger.info('WhatsApp instance resolved via alternate identifier during campaign creation', {
+            ...baseLogContext,
+            requestedInstanceId: resolvedInstanceId,
+            matchedIdentifier: candidateId,
+            resolvedInstanceId: instance.id,
+          });
+        }
+        break;
+      }
+    }
 
     if (!instance) {
-      instance = await prisma.whatsAppInstance.findUnique({
-        where: { brokerId: resolvedInstanceId },
-      });
-
-      if (instance) {
-        logger.info('WhatsApp instance resolved via brokerId during campaign creation', {
-          ...baseLogContext,
-          resolvedInstanceId: instance.id,
-          brokerId: instance.brokerId,
+      for (const candidateBrokerId of identifierCandidates) {
+        instance = await prisma.whatsAppInstance.findUnique({
+          where: { brokerId: candidateBrokerId },
         });
+
+        if (instance) {
+          logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
+            ...baseLogContext,
+            requestedInstanceId: resolvedInstanceId,
+            matchedBrokerId: candidateBrokerId,
+            resolvedInstanceId: instance.id,
+            resolvedBrokerId: instance.brokerId,
+          });
+          break;
+        }
       }
     }
 
     if (!instance) {
       logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
-        instanceId: resolvedInstanceId,
+        ...baseLogContext,
         tenantId: ensuredTenant.id,
+        identifierCandidates,
       });
+
+      const brokerIdentifier = resolvedBrokerId ?? resolvedInstanceId;
 
       try {
         instance = await prisma.whatsAppInstance.create({
@@ -457,7 +491,7 @@ router.post(
             id: resolvedInstanceId,
             tenantId: ensuredTenant.id,
             name: resolvedInstanceId,
-            brokerId: resolvedInstanceId,
+            brokerId: brokerIdentifier,
             status: 'connected',
             connected: true,
             metadata: {
@@ -470,12 +504,16 @@ router.post(
           logger.warn('WhatsApp instance creation hit unique constraint; reusing existing record', {
             ...baseLogContext,
             prismaError: creationError.meta,
+            identifierCandidates,
           });
 
+          const orConditions = identifierCandidates.flatMap((candidate) => [
+            { id: candidate },
+            { brokerId: candidate },
+          ]);
+
           instance = await prisma.whatsAppInstance.findFirst({
-            where: {
-              OR: [{ id: resolvedInstanceId }, { brokerId: resolvedInstanceId }],
-            },
+            where: orConditions.length > 0 ? { OR: orConditions } : undefined,
           });
 
           if (!instance) {

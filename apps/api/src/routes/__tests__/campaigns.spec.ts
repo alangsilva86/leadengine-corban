@@ -431,7 +431,7 @@ describe('POST /campaigns', () => {
       id: '551199998888@s.whatsapp.net',
       tenantId: tenantRecord.id,
       name: 'WhatsApp Principal',
-      brokerId: 'broker-alias',
+      brokerId: '551199998888@s.whatsapp.net',
       status: 'connected',
       connected: true,
       metadata: {} as Record<string, unknown>,
@@ -443,18 +443,20 @@ describe('POST /campaigns', () => {
     const findUniqueSpy = vi
       .spyOn(prisma.whatsAppInstance, 'findUnique')
       .mockImplementation(async (args) => {
-        if (args?.where && 'id' in args.where && args.where.id === 'broker-alias') {
+        if (args?.where && 'id' in args.where) {
+          if (args.where.id === canonicalInstance.id) {
+            return canonicalInstance as never;
+          }
           return null;
         }
-        if (args?.where && 'brokerId' in args.where && args.where.brokerId === 'broker-alias') {
-          return canonicalInstance as never;
+        if (args?.where && 'brokerId' in args.where) {
+          if (args.where.brokerId === canonicalInstance.brokerId) {
+            return canonicalInstance as never;
+          }
+          return null;
         }
         return null;
       });
-
-    const findFirstSpy = vi
-      .spyOn(prisma.whatsAppInstance, 'findFirst')
-      .mockResolvedValue(null as never);
 
     const createInstanceSpy = vi
       .spyOn(prisma.whatsAppInstance, 'create')
@@ -493,6 +495,7 @@ describe('POST /campaigns', () => {
       agreementId: 'agreement-broker',
       agreementName: 'Agreement Broker',
       instanceId: 'broker-alias',
+      brokerId: canonicalInstance.brokerId,
       name: 'Agreement Broker • WhatsApp Principal',
       status: 'active',
     });
@@ -509,8 +512,7 @@ describe('POST /campaigns', () => {
     });
 
     expect(findUniqueSpy).toHaveBeenCalledWith({ where: { id: 'broker-alias' } });
-    expect(findUniqueSpy).toHaveBeenCalledWith({ where: { brokerId: 'broker-alias' } });
-    expect(findFirstSpy).not.toHaveBeenCalled();
+    expect(findUniqueSpy).toHaveBeenCalledWith({ where: { id: canonicalInstance.brokerId } });
     expect(createInstanceSpy).not.toHaveBeenCalled();
 
     const createArgs = createCampaignSpy.mock.calls[0]?.[0];
