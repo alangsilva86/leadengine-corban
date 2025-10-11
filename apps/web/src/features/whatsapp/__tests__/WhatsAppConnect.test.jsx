@@ -206,6 +206,35 @@ describe('WhatsAppConnect', () => {
     expect(instanceLabels.length).toBeGreaterThan(0);
   });
 
+  it('keeps disconnected broker sessions visible for recovery actions', async () => {
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              {
+                id: '5511999999999@whatsapp.net',
+                name: 'WhatsApp Broker Desconectado',
+                status: 'disconnected',
+                connected: false,
+                source: 'broker',
+              },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    const brokerInstance = await screen.findAllByText('WhatsApp Broker Desconectado');
+    expect(brokerInstance.length).toBeGreaterThan(0);
+  });
+
   it('creates an instance and keeps the friendly name', async () => {
     const instancesQueue = [
       { data: { instances: [] } },

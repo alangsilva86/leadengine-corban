@@ -990,10 +990,6 @@ const normalizeInstancesCollection = (rawList, options = {}) => {
       continue;
     }
 
-    if (looksLikeWhatsAppJid(normalized.id) && normalized.source === 'broker' && normalized.connected !== true) {
-      continue;
-    }
-
     const existing = map.get(normalized.id);
     const merged = mergeInstanceEntries(existing, normalized);
 
