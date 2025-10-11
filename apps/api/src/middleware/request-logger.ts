@@ -1,32 +1,55 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../config/logger';
 
+const toNumericTenant = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    const candidate = value[0];
+    return typeof candidate === 'string' ? candidate : null;
+  }
+  return null;
+};
+
 export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
-  const start = process.hrtime.bigint();
+  const startedAt = Date.now();
 
   res.on('finish', () => {
-    const end = process.hrtime.bigint();
-    const durationMs = Number(end - start) / 1_000_000;
+    const durationMs = Date.now() - startedAt;
 
-    const userId = (req as any).user?.id ?? null;
-    const tenantId = (req as any).user?.tenantId ?? (Array.isArray(req.headers['x-tenant-id'])
-      ? req.headers['x-tenant-id'][0]
-      : req.headers['x-tenant-id']) ?? null;
     const requestId = req.rid ?? null;
+    const userId = (req as { user?: { id?: string | null } }).user?.id ?? null;
+    const tenantId =
+      (req as { user?: { tenantId?: string | null } }).user?.tenantId ??
+      toNumericTenant(req.headers['x-tenant-id']);
 
-    logger.info('HTTP Request', {
+    const payload = {
+      level: 'info' as const,
+      msg: 'http_request',
+      requestId,
       method: req.method,
       path: req.originalUrl,
       status: res.statusCode,
-      durationMs: Number(durationMs.toFixed(2)),
+      durationMs,
       ip: req.ip,
-      userAgent: req.get('User-Agent') || undefined,
-      referer: req.get('Referer') || undefined,
-      contentLength: res.get('Content-Length') || undefined,
-      userId,
+      userAgent: req.get('user-agent') ?? undefined,
+      referer: req.get('referer') ?? undefined,
+      contentLength: res.get('content-length') ?? undefined,
       tenantId,
-      requestId,
-    });
+      userId,
+    };
+
+    // Mantém logging centralizado pelo winston
+    logger.info('HTTP Request', payload);
+
+    // Em produção, garantir saída direta no stdout para facilitar debugging
+    try {
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify(payload));
+    } catch {
+      // noop – em caso de falha de serialização, preferimos não quebrar o fluxo
+    }
   });
 
   next();

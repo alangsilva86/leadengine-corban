@@ -248,6 +248,30 @@ export const errorHandler = (
 
   logger[logLevel]('API Error', { requestId, ...logPayload });
 
+  const consolePayload = {
+    level: logLevel,
+    msg: 'api_error',
+    requestId,
+    status: apiError.status,
+    code: apiError.code,
+    method: req.method,
+    path: req.originalUrl ?? req.path,
+    details: apiError.details,
+    stack: apiError.status >= 500 ? error.stack : undefined,
+  };
+
+  try {
+    if (apiError.status >= 500) {
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify(consolePayload));
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(JSON.stringify(consolePayload));
+    }
+  } catch {
+    // Falha ao serializar? ignora — resposta já será enviada.
+  }
+
   // Enviar resposta de erro
   if (requestId) {
     res.setHeader('X-Request-Id', requestId);

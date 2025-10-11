@@ -326,6 +326,24 @@ app.get(['/health', '/healthz'], (_req, res) => {
   res.json(buildHealthPayload({ environment: NODE_ENV }));
 });
 
+app.get('/_diag/echo', (req, res) => {
+  const payload = {
+    ok: true,
+    requestId: req.rid ?? null,
+    method: req.method,
+    path: req.originalUrl,
+    headers: {
+      'x-request-id': req.get('x-request-id') ?? null,
+      'x-tenant-id': req.get('x-tenant-id') ?? null,
+      authorization: req.get('authorization') ? true : false,
+      'content-type': req.get('content-type') ?? null,
+      'user-agent': req.get('user-agent') ?? null,
+    },
+  };
+
+  res.status(200).json(payload);
+});
+
 // Rotas públicas (sem autenticação)
 app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
