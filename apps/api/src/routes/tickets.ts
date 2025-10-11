@@ -28,6 +28,24 @@ import {
 
 const router: Router = Router();
 
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const cuidRegex = /^c[0-9a-z]{24}$/i;
+
+const isUuidOrCuid = (value: unknown): boolean => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const normalized = value.trim();
+  return uuidRegex.test(normalized) || cuidRegex.test(normalized);
+};
+
+const validateTicketId = (value: unknown): true => {
+  if (!isUuidOrCuid(value)) {
+    throw new Error('Ticket ID must be a valid UUID or CUID');
+  }
+  return true;
+};
+
 const parseListParam = (value: unknown): string[] | undefined => {
   if (typeof value === 'string') {
     return value.split(',').map((item) => item.trim()).filter(Boolean);
@@ -134,7 +152,7 @@ const createTicketValidation = [
 ];
 
 const updateTicketValidation = [
-  param('id').isUUID().withMessage('Ticket ID must be a valid UUID'),
+  param('id').custom(validateTicketId),
   body('status').optional().isIn(['OPEN', 'PENDING', 'ASSIGNED', 'RESOLVED', 'CLOSED']),
   body('priority').optional().isIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']),
   body('subject').optional().isString().isLength({ max: 200 }),
@@ -146,22 +164,22 @@ const updateTicketValidation = [
 ];
 
 const sendMessageValidation = [
-  body('ticketId').isUUID().withMessage('Ticket ID must be a valid UUID'),
+  body('ticketId').custom(validateTicketId),
   body('content').isString().isLength({ min: 1 }),
   body('type').optional().isIn(['TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'LOCATION', 'CONTACT', 'TEMPLATE']),
   body('mediaUrl').optional().isURL(),
-  body('quotedMessageId').optional().isUUID(),
+  body('quotedMessageId').optional().custom(validateTicketId),
   body('metadata').optional().isObject(),
 ];
 
 const updateStatusValidation = [
-  param('id').isUUID().withMessage('Ticket ID must be a valid UUID'),
+  param('id').custom(validateTicketId),
   body('status').isIn(['OPEN', 'PENDING', 'ASSIGNED', 'RESOLVED', 'CLOSED']).withMessage('Status inválido para ticket'),
   body('reason').optional().isString().isLength({ max: 500 }),
 ];
 
 const createNoteValidation = [
-  param('id').isUUID().withMessage('Ticket ID must be a valid UUID'),
+  param('id').custom(validateTicketId),
   body('body').isString().isLength({ min: 1, max: 4000 }),
   body('visibility').optional().isIn(['private', 'team', 'public']),
   body('tags').optional().isArray(),
@@ -264,7 +282,7 @@ router.get(
 // GET /api/tickets/:id - Buscar ticket por ID
 router.get(
   '/:id',
-  param('id').isUUID(),
+  param('id').custom(validateTicketId),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -363,7 +381,7 @@ router.post(
 // POST /api/tickets/:id/assign - Atribuir ticket a um usuário
 router.post(
   '/:id/assign',
-  param('id').isUUID(),
+  param('id').custom(validateTicketId),
   body('userId').isUUID(),
   validateRequest,
   requireTenant,
@@ -416,7 +434,7 @@ router.post(
 // POST /api/tickets/:id/close - Fechar ticket
 router.post(
   '/:id/close',
-  param('id').isUUID(),
+  param('id').custom(validateTicketId),
   body('reason').optional().isString().isLength({ max: 500 }),
   validateRequest,
   requireTenant,
@@ -436,7 +454,7 @@ router.post(
 // GET /api/tickets/:id/messages - Listar mensagens do ticket
 router.get(
   '/:id/messages',
-  param('id').isUUID(),
+  param('id').custom(validateTicketId),
   paginationValidation,
   validateRequest,
   requireTenant,
