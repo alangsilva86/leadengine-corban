@@ -432,24 +432,59 @@ router.post(
     let instance = await prisma.whatsAppInstance.findUnique({ where: { id: resolvedInstanceId } });
 
     if (!instance) {
+      instance = await prisma.whatsAppInstance.findUnique({
+        where: { brokerId: resolvedInstanceId },
+      });
+
+      if (instance) {
+        logger.info('WhatsApp instance resolved via brokerId during campaign creation', {
+          ...baseLogContext,
+          resolvedInstanceId: instance.id,
+          brokerId: instance.brokerId,
+        });
+      }
+    }
+
+    if (!instance) {
       logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
         instanceId: resolvedInstanceId,
         tenantId: ensuredTenant.id,
       });
 
-      instance = await prisma.whatsAppInstance.create({
-        data: {
-          id: resolvedInstanceId,
-          tenantId: ensuredTenant.id,
-          name: resolvedInstanceId,
-          brokerId: resolvedInstanceId,
-          status: 'connected',
-          connected: true,
-          metadata: {
-            origin: 'auto-created-for-campaign',
+      try {
+        instance = await prisma.whatsAppInstance.create({
+          data: {
+            id: resolvedInstanceId,
+            tenantId: ensuredTenant.id,
+            name: resolvedInstanceId,
+            brokerId: resolvedInstanceId,
+            status: 'connected',
+            connected: true,
+            metadata: {
+              origin: 'auto-created-for-campaign',
+            },
           },
-        },
-      });
+        });
+      } catch (creationError) {
+        if (creationError instanceof Prisma.PrismaClientKnownRequestError && creationError.code === 'P2002') {
+          logger.warn('WhatsApp instance creation hit unique constraint; reusing existing record', {
+            ...baseLogContext,
+            prismaError: creationError.meta,
+          });
+
+          instance = await prisma.whatsAppInstance.findFirst({
+            where: {
+              OR: [{ id: resolvedInstanceId }, { brokerId: resolvedInstanceId }],
+            },
+          });
+
+          if (!instance) {
+            throw creationError;
+          }
+        } else {
+          throw creationError;
+        }
+      }
     }
 
     let effectiveTenant = ensuredTenant;
@@ -481,6 +516,7 @@ router.post(
     }
 
     const tenantId = instance.tenantId ?? effectiveTenant.id;
+    const effectiveInstanceId = instance.id;
 
     if (requestedTenantId && requestedTenantId !== tenantId) {
       logger.warn('Campaign creation using tenant fallback', {
@@ -846,7 +882,7 @@ router.post(
     logger.info(creationExtras ? 'Campaign recreated after ended' : 'Campaign created', {
       tenantId,
       campaignId: campaign.id,
-      instanceId: resolvedInstanceId,
+      instanceId: effectiveInstanceId,
       status: campaign.status,
       previousCampaignId: creationExtras ? existingCampaign?.id ?? null : null,
     });

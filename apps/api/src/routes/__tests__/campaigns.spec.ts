@@ -419,6 +419,104 @@ describe('POST /campaigns', () => {
     );
   });
 
+  it('reuses existing WhatsApp instance when payload references broker id', async () => {
+    const tenantRecord = {
+      id: 'tenant-broker',
+      name: 'Tenant Broker',
+      slug: 'tenant-broker',
+      settings: {} as Record<string, unknown>,
+    };
+
+    const canonicalInstance = {
+      id: '551199998888@s.whatsapp.net',
+      tenantId: tenantRecord.id,
+      name: 'WhatsApp Principal',
+      brokerId: 'broker-alias',
+      status: 'connected',
+      connected: true,
+      metadata: {} as Record<string, unknown>,
+    };
+
+    vi.spyOn(prisma.tenant, 'findFirst').mockResolvedValue(tenantRecord as never);
+    vi.spyOn(prisma.tenant, 'create').mockResolvedValue(tenantRecord as never);
+
+    const findUniqueSpy = vi
+      .spyOn(prisma.whatsAppInstance, 'findUnique')
+      .mockImplementation(async (args) => {
+        if (args?.where && 'id' in args.where && args.where.id === 'broker-alias') {
+          return null;
+        }
+        if (args?.where && 'brokerId' in args.where && args.where.brokerId === 'broker-alias') {
+          return canonicalInstance as never;
+        }
+        return null;
+      });
+
+    const findFirstSpy = vi
+      .spyOn(prisma.whatsAppInstance, 'findFirst')
+      .mockResolvedValue(null as never);
+
+    const createInstanceSpy = vi
+      .spyOn(prisma.whatsAppInstance, 'create')
+      .mockRejectedValue(new Error('should not create placeholder instance'));
+
+    vi.spyOn(prisma.whatsAppInstance, 'update').mockResolvedValue(canonicalInstance as never);
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.campaign, 'update').mockRejectedValue(
+      new Error('should not update when creating via broker id')
+    );
+
+    const createdCampaign = {
+      id: 'campaign-broker-1',
+      tenantId: tenantRecord.id,
+      agreementId: 'agreement-broker',
+      agreementName: 'Agreement Broker',
+      name: 'Agreement Broker • WhatsApp Principal',
+      status: 'active',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-06-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-06-01T00:00:00.000Z'),
+      whatsappInstanceId: canonicalInstance.id,
+      whatsappInstance: {
+        id: canonicalInstance.id,
+        name: canonicalInstance.name,
+      },
+    };
+
+    const createCampaignSpy = vi
+      .spyOn(prisma.campaign, 'create')
+      .mockResolvedValue(createdCampaign as never);
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-broker',
+      agreementName: 'Agreement Broker',
+      instanceId: 'broker-alias',
+      name: 'Agreement Broker • WhatsApp Principal',
+      status: 'active',
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        id: createdCampaign.id,
+        instanceId: canonicalInstance.id,
+        instanceName: canonicalInstance.name,
+        status: 'active',
+      }),
+    });
+
+    expect(findUniqueSpy).toHaveBeenCalledWith({ where: { id: 'broker-alias' } });
+    expect(findUniqueSpy).toHaveBeenCalledWith({ where: { brokerId: 'broker-alias' } });
+    expect(findFirstSpy).not.toHaveBeenCalled();
+    expect(createInstanceSpy).not.toHaveBeenCalled();
+
+    const createArgs = createCampaignSpy.mock.calls[0]?.[0];
+    expect(createArgs?.data?.whatsappInstanceId).toBe(canonicalInstance.id);
+  });
+
   it('returns the existing campaign when creation hits a unique constraint', async () => {
     mockTenantAndInstance();
 
