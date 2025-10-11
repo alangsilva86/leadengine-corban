@@ -168,18 +168,53 @@ describe('WhatsAppBrokerClient', () => {
     expect(init?.body).toBeUndefined();
   });
 
-  it('logs out instances using POST /instances/:id/logout', async () => {
+  it('logs out instances using POST /instances/:id/logout sem payload extra', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
 
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
 
-    await whatsappBrokerClient.logoutSession('broker-10', { instanceId: 'crm-instance', wipe: true });
+    await whatsappBrokerClient.logoutSession('broker-10', { instanceId: 'crm-instance' });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://broker.test/instances/crm-instance/logout');
-    expect(JSON.parse(String(init?.body))).toEqual({ wipe: true });
+    expect(init?.body).toBeUndefined();
+  });
+
+  it('wipe session using POST /instances/:id/session/wipe', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.wipeSession('broker-10', { instanceId: 'crm-instance' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/crm-instance/session/wipe');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBeUndefined();
+  });
+
+  it('disconnects instance with optional wipe sequenciando logout e wipe', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.disconnectInstance('broker-77', {
+      instanceId: 'crm-instance',
+      wipe: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [logoutUrl, logoutInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [wipeUrl, wipeInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(logoutUrl).toBe('https://broker.test/instances/crm-instance/logout');
+    expect(logoutInit?.method).toBe('POST');
+    expect(wipeUrl).toBe('https://broker.test/instances/crm-instance/session/wipe');
+    expect(wipeInit?.method).toBe('POST');
   });
 
   it('retrieves status via GET /instances/:id/status', async () => {
@@ -269,6 +304,29 @@ describe('WhatsAppBrokerClient', () => {
     expect(url).toBe('https://broker.test/instances/instance-1/metrics');
     expect(init?.method ?? 'GET').toBe('GET');
     expect(result).toEqual({ messages: { sent: 10 } });
+  });
+
+  it('fetches events through /health returning envelope vazio', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'ok', queue: { pending: 0 } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+
+    const payload = await whatsappBrokerClient.fetchEvents();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/health');
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(payload).toEqual({
+      events: [],
+      health: { status: 'ok', queue: { pending: 0 } },
+    });
   });
 
   it('wraps network failures into WhatsAppBrokerError with BROKER_ERROR', async () => {

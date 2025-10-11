@@ -240,7 +240,6 @@ type BrokerRequestOptions = {
 type DeleteInstanceOptions = {
   instanceId?: string;
   wipe?: boolean;
-  [key: string]: string | number | boolean | undefined;
 };
 
 const compactObject = <T extends Record<string, unknown>>(value: T): T => {
@@ -390,27 +389,18 @@ class WhatsAppBrokerClient {
     return slug.length > 0 ? slug : fallback;
   }
 
-  async fetchEvents(options: { cursor?: string | null; limit?: number } = {}): Promise<unknown> {
-    const searchParams: Record<string, string> = {};
+  async fetchEvents(_options: { cursor?: string | null; limit?: number } = {}): Promise<unknown> {
+    // The refreshed broker API delivers inbound events exclusivamente via webhooks.
+    // Para manter compatibilidade com o poller, consultamos apenas /health para
+    // coletar métricas e retornamos um envelope vazio de eventos.
+    const healthSnapshot = await this.request<Record<string, unknown>>('/health', {
+      method: 'GET',
+    });
 
-    const cursor = typeof options.cursor === 'string' ? options.cursor.trim() : null;
-    if (cursor) {
-      searchParams.cursor = cursor;
-    }
-
-    if (typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
-      searchParams.limit = String(Math.floor(options.limit));
-    }
-
-    const hasSearchParams = Object.keys(searchParams).length > 0;
-
-    return this.request<unknown>(
-      '/events',
-      {
-        method: 'GET',
-      },
-      hasSearchParams ? { searchParams } : {}
-    );
+    return {
+      events: [],
+      health: healthSnapshot ?? {},
+    };
   }
 
   private async handleError(response: UndiciResponse): Promise<never> {
@@ -772,7 +762,7 @@ class WhatsAppBrokerClient {
 
   async logoutSession(
     sessionId: string,
-    options: { instanceId?: string; wipe?: boolean } = {}
+    options: { instanceId?: string } = {}
   ): Promise<void> {
     const instanceId =
       typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
@@ -781,13 +771,25 @@ class WhatsAppBrokerClient {
 
     const encodedInstanceId = encodeURIComponent(instanceId);
 
-    await this.request<void>(
-      `/instances/${encodedInstanceId}/logout`,
-      {
-        method: 'POST',
-        body: JSON.stringify(compactObject({ wipe: options.wipe })),
-      }
-    );
+    await this.request<void>(`/instances/${encodedInstanceId}/logout`, {
+      method: 'POST',
+    });
+  }
+
+  async wipeSession(
+    sessionId: string,
+    options: { instanceId?: string } = {}
+  ): Promise<void> {
+    const instanceId =
+      typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
+        ? options.instanceId.trim()
+        : sessionId;
+
+    const encodedInstanceId = encodeURIComponent(instanceId);
+
+    await this.request<void>(`/instances/${encodedInstanceId}/session/wipe`, {
+      method: 'POST',
+    });
   }
 
   async getSessionStatus<T = Record<string, unknown>>(
@@ -1581,7 +1583,11 @@ class WhatsAppBrokerClient {
     options: { instanceId?: string; wipe?: boolean } = {}
   ): Promise<void> {
     this.ensureConfigured();
-    await this.logoutSession(brokerId, { ...options, instanceId: options.instanceId ?? brokerId });
+    const instanceId = options.instanceId ?? brokerId;
+    await this.logoutSession(brokerId, { instanceId });
+    if (options.wipe) {
+      await this.wipeSession(brokerId, { instanceId });
+    }
   }
 
   async deleteInstance(
@@ -1592,48 +1598,17 @@ class WhatsAppBrokerClient {
 
     const encodedBrokerId = encodeURIComponent(brokerId);
     const normalizedInstanceId =
-      typeof options.instanceId === 'string' ? options.instanceId.trim() : '';
+      typeof options.instanceId === 'string' && options.instanceId.trim().length > 0
+        ? options.instanceId.trim()
+        : brokerId;
 
-    const { instanceId: _instanceId, ...flags } = options;
-    const searchParams: Record<string, string | number | undefined> = {};
-
-    if (normalizedInstanceId) {
-      searchParams.instanceId = normalizedInstanceId;
+    if (options.wipe) {
+      await this.wipeSession(brokerId, { instanceId: normalizedInstanceId });
     }
 
-    Object.entries(flags).forEach(([key, value]) => {
-      if (value === undefined || value === null) {
-        return;
-      }
-
-      if (typeof value === 'boolean') {
-        searchParams[key] = value ? 'true' : 'false';
-        return;
-      }
-
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        searchParams[key] = value;
-        return;
-      }
-
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed.length > 0) {
-          searchParams[key] = trimmed;
-        }
-      }
+    await this.request<void>(`/instances/${encodedBrokerId}`, {
+      method: 'DELETE',
     });
-
-    const requestOptions: BrokerRequestOptions =
-      Object.keys(searchParams).length > 0 ? { searchParams } : {};
-
-    await this.request<void>(
-      `/instances/${encodedBrokerId}`,
-      {
-        method: 'DELETE',
-      },
-      requestOptions
-    );
   }
 
   async getQrCode(brokerId: string, options: { instanceId?: string } = {}): Promise<WhatsAppQrCode> {
