@@ -142,8 +142,20 @@ const encodeCursor = (page: number): string => {
 
 // Validações
 const createTicketValidation = [
-  body('contactId').isUUID().withMessage('Contact ID must be a valid UUID'),
-  body('queueId').isUUID().withMessage('Queue ID must be a valid UUID'),
+  body('contactId')
+    .custom((value) => {
+      if (!isUuidOrCuid(value)) {
+        throw new Error('Contact ID must be a valid UUID or CUID');
+      }
+      return true;
+    }),
+  body('queueId')
+    .custom((value) => {
+      if (!isUuidOrCuid(value)) {
+        throw new Error('Queue ID must be a valid UUID or CUID');
+      }
+      return true;
+    }),
   body('subject').optional().isString().isLength({ max: 200 }),
   body('channel').isIn(['WHATSAPP', 'EMAIL', 'SMS', 'VOICE', 'CHAT', 'SOCIAL']),
   body('priority').optional().isIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']),

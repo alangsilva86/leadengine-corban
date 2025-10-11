@@ -52,11 +52,37 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
-    const { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search } = req.query as Partial<{
+    const { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search, phone } = req.query as Partial<{
       page: number;
       limit: number;
       search: string;
+      phone: string;
     }>;
+
+    const normalizedPhone = typeof phone === 'string' && phone.trim().length > 0 ? phone.trim() : undefined;
+
+    if (normalizedPhone) {
+      const contact = await prisma.contact.findFirst({
+        where: {
+          tenantId,
+          phone: normalizedPhone,
+        },
+      });
+
+      res.json({
+        success: true,
+        data: {
+          items: contact ? [contact] : [],
+          total: contact ? 1 : 0,
+          page: 1,
+          limit: 1,
+          totalPages: contact ? 1 : 0,
+          hasNext: false,
+          hasPrev: false,
+        },
+      });
+      return;
+    }
 
     const safeLimit = Math.min(Math.max(limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const safePage = Math.max(page ?? DEFAULT_PAGE, 1);
