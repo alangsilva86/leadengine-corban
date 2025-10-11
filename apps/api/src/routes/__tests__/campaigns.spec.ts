@@ -419,6 +419,100 @@ describe('POST /campaigns', () => {
     );
   });
 
+  it('returns the existing campaign when creation hits a unique constraint', async () => {
+    mockTenantAndInstance();
+
+    const existingCampaign = {
+      id: 'campaign-existing',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-3',
+      agreementName: 'Agreement 3',
+      name: 'Campaign 3',
+      status: 'active',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-03-10T00:00:00.000Z'),
+      updatedAt: new Date('2024-03-10T00:00:00.000Z'),
+      whatsappInstanceId: 'instance-1',
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    } satisfies Record<string, unknown>;
+
+    const findFirstSpy = vi
+      .spyOn(prisma.campaign, 'findFirst')
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingCampaign as never);
+
+    const createError = new Prisma.PrismaClientKnownRequestError('unique violation', {
+      code: 'P2002',
+      clientVersion: '5.7.1',
+    });
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockRejectedValue(createError);
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-3',
+      agreementName: 'Agreement 3',
+      instanceId: 'instance-1',
+      status: 'active',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        id: 'campaign-existing',
+        status: 'active',
+      }),
+    });
+    expect(findFirstSpy).toHaveBeenCalledTimes(2);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a friendly error when storage is temporarily unavailable during creation', async () => {
+    mockTenantAndInstance();
+
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(null);
+
+    const connectivityError = new Prisma.PrismaClientKnownRequestError('storage unavailable', {
+      code: 'P1001',
+      clientVersion: '5.7.1',
+    });
+
+    const createSpy = vi.spyOn(prisma.campaign, 'create').mockRejectedValue(connectivityError);
+    const loggerSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+
+    const app = buildApp();
+    const response = await request(app).post('/').send({
+      agreementId: 'agreement-4',
+      agreementName: 'Agreement 4',
+      instanceId: 'instance-1',
+      status: 'active',
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+      },
+    });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(loggerSpy).toHaveBeenCalledWith('Failed to create campaign due to Prisma error', {
+      agreementId: 'agreement-4',
+      error: expect.objectContaining({ message: 'storage unavailable' }),
+      instanceId: 'instance-1',
+      mappedError: expect.objectContaining({
+        code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+        status: 503,
+        type: 'connectivity',
+      }),
+      tenantId: 'tenant-1',
+    });
+  });
+
   it('returns a warning payload when metrics enrichment fails during creation', async () => {
     mockTenantAndInstance();
 

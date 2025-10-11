@@ -680,11 +680,132 @@ router.post(
         },
       })) as CampaignWithInstance;
     } catch (error) {
-      logger.error('Failed to create campaign, returning fallback', {
-        error,
+      const logContext = {
         tenantId,
         agreementId: resolvedAgreementId,
         instanceId: instance.id,
+      };
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const conflictingCampaign = await prisma.campaign.findFirst({
+          where: {
+            tenantId,
+            agreementId: resolvedAgreementId,
+            whatsappInstanceId: instance.id,
+          },
+          include: {
+            whatsappInstance: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (conflictingCampaign) {
+          const currentStatus = normalizeStatus(conflictingCampaign.status) ?? 'draft';
+          const responseLogContext = {
+            ...logContext,
+            campaignId: conflictingCampaign.id,
+          };
+          const { data, warnings } = buildCampaignResponseSafely(conflictingCampaign as CampaignWithInstance, responseLogContext);
+
+          const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
+            success: true,
+            data,
+          };
+
+          if (warnings) {
+            payload.warnings = warnings;
+          }
+
+          if (currentStatus === requestedStatus) {
+            logger.warn('Campaign already exists for agreement and instance, returning existing record', {
+              ...responseLogContext,
+              requestedStatus,
+            });
+            res.status(200).json(payload);
+            return;
+          }
+
+          logger.warn('Campaign already exists for agreement and instance with different status', {
+            ...responseLogContext,
+            requestedStatus,
+            currentStatus,
+          });
+
+          res.status(409).json({
+            success: false,
+            error: {
+              code: 'CAMPAIGN_ALREADY_EXISTS',
+              message: 'Já existe uma campanha para este acordo e instância.',
+            },
+            conflict: {
+              data,
+              ...(warnings ? { warnings } : {}),
+            },
+          });
+          return;
+        }
+      }
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2000', 'P2001'].includes(error.code)) {
+        logger.warn('Invalid parameters for campaign creation', {
+          ...logContext,
+          error: toSafeError(error),
+        });
+
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_CAMPAIGN_DATA',
+            message: 'Dados inválidos para criar a campanha.',
+          },
+        });
+        return;
+      }
+
+      const mapped = mapPrismaError(error, {
+        connectivity: {
+          code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+          message: 'Storage de campanhas indisponível no momento.',
+          status: 503,
+        },
+        validation: {
+          code: 'INVALID_CAMPAIGN_DATA',
+          message: 'Dados inválidos para criar a campanha.',
+          status: 400,
+        },
+        conflict: {
+          code: 'CAMPAIGN_ALREADY_EXISTS',
+          message: 'Já existe uma campanha para este acordo e instância.',
+          status: 409,
+        },
+      });
+
+      if (mapped) {
+        const log = mapped.type === 'validation' ? logger.warn.bind(logger) : logger.error.bind(logger);
+        log('Failed to create campaign due to Prisma error', {
+          ...logContext,
+          error: toSafeError(error),
+          mappedError: mapped,
+        });
+
+        res.status(mapped.status).json({
+          success: false,
+          error: {
+            code: mapped.code,
+            message: mapped.message,
+          },
+        });
+        return;
+      }
+
+      logger.error('Failed to create campaign, returning fallback', {
+        error,
+        ...logContext,
       });
 
       const fallback = await prisma.campaign.findFirst({
@@ -699,9 +820,7 @@ router.post(
 
       if (fallback) {
         const responseLogContext = {
-          tenantId,
-          agreementId: resolvedAgreementId,
-          instanceId: instance.id,
+          ...logContext,
           campaignId: fallback.id,
         };
         const { data, warnings } = await buildCampaignResponseSafely(
