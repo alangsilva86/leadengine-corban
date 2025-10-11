@@ -287,122 +287,10 @@ const tryParseModernWebhookEvent = (
   return { data: fallback.data, normalization };
 };
 
-const normalizeLegacyMessagesUpsert = (
-  entry: Record<string, unknown>,
-  context: { index: number }
-): Array<{ data: BrokerWebhookInbound; messageIndex: number }> => {
-  const eventName = readString(entry.event);
-  if (!eventName || eventName.toUpperCase() !== 'WHATSAPP_MESSAGES_UPSERT') {
-    return [];
-  }
-
-  const payload = asRecord(entry.payload);
-  const messages = Array.isArray(payload.messages)
-    ? payload.messages.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
-    : [];
-
-  if (messages.length === 0) {
-    logger.warn('📭 [Webhook] Legacy payload ignorado: nenhum item em messages', {
-      index: context.index,
-    });
-    return [];
-  }
-
-  const instanceId = readString(entry.instanceId, payload.instanceId, payload.iid);
-  if (!instanceId) {
-    logger.warn('🛑 [Webhook] Legacy payload ignorado: instanceId ausente', {
-      index: context.index,
-    });
-    return [];
-  }
-
-  const baseTimestamp = entry.timestamp ?? payload.timestamp ?? payload.ts ?? null;
-
-  return messages.flatMap((raw, messageIndex) => {
-    const record = raw as Record<string, unknown>;
-    const key = { ...asRecord(record.key) };
-    const fromMeValue = key.fromMe;
-    const isFromMe =
-      fromMeValue === true ||
-      fromMeValue === 'true' ||
-      fromMeValue === 1 ||
-      fromMeValue === '1';
-
-    if (isFromMe) {
-      logger.debug('🔁 [Webhook] Mensagem legacy ignorada por ser outbound', {
-        index: context.index,
-        messageIndex,
-        instanceId,
-      });
-      return [];
-    }
-
-    const remoteJid =
-      readString(key.participant) ?? readString(key.remoteJid) ?? readString(record.participant);
-    const phone = normalizeRemoteJid(remoteJid);
-    const pushName = readString(record.pushName, record.notifyName, record.displayName);
-
-    const messageTimestamp =
-      record.messageTimestamp ??
-      record.timestamp ??
-      payload.timestamp ??
-      baseTimestamp;
-
-    const messagePayload = { ...asRecord(record.message) };
-    const keyId = readString(key.id, key.keyId, record.id);
-    if (keyId && typeof messagePayload.id !== 'string') {
-      messagePayload.id = keyId;
-    }
-
-    const metadata = compactObject({
-      ...asRecord(record.metadata),
-      ...asRecord(payload.metadata),
-      legacyEvent: eventName,
-      key,
-      remoteJid: remoteJid ?? null,
-      messageTimestamp,
-      timestamp: messageTimestamp ?? baseTimestamp ?? null,
-      type: readString(payload.type, payload.messageType, payload.notifyType),
-      messageIndex,
-    });
-
-    const parsed = BrokerWebhookInboundSchema.safeParse({
-      event: 'message',
-      direction: 'inbound',
-      instanceId,
-      timestamp: messageTimestamp ?? baseTimestamp ?? null,
-      from: compactObject({
-        phone: phone ?? undefined,
-        name: pushName ?? undefined,
-        pushName: pushName ?? undefined,
-      }),
-      message: messagePayload,
-      metadata,
-    });
-
-    if (!parsed.success) {
-      logger.warn('🛑 [Webhook] Legacy mensagem ignorada: payload inválido', {
-        index: context.index,
-        messageIndex,
-        issues: parsed.error.issues,
-      });
-      return [];
-    }
-
-    return [
-      {
-        data: parsed.data,
-        messageIndex,
-      },
-    ];
-  });
-};
-
 const buildInboundEvent = (
   parsed: BrokerWebhookInbound,
   context: {
     index: number;
-    origin: 'modern' | 'legacy';
     messageIndex?: number;
     tenantId?: string;
     sessionId?: string;
@@ -450,7 +338,6 @@ const buildInboundEvent = (
           error,
           numericTs,
           index: context.index,
-          origin: context.origin,
           messageIndex: context.messageIndex ?? null,
         });
       }
@@ -531,7 +418,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   type NormalizedCandidate = {
     data: BrokerWebhookInbound;
-    origin: 'modern' | 'legacy';
     sourceIndex: number;
     messageIndex?: number;
     tenantId?: string;
@@ -553,7 +439,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         return [
           {
             data: modern.data,
-            origin: 'modern',
             sourceIndex: index,
             tenantId,
             sessionId,
@@ -561,37 +446,16 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         ];
       }
 
-      const legacy = normalizeLegacyMessagesUpsert(entry, { index });
-      if (legacy.length > 0) {
-        const tenantId =
-          typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
-            ? entry.tenantId.trim()
-            : undefined;
-        const sessionId =
-          typeof entry.sessionId === 'string' && entry.sessionId.trim().length > 0
-            ? entry.sessionId.trim()
-            : undefined;
-        return legacy.map((item) => ({
-          data: item.data,
-          origin: 'legacy',
-          messageIndex: item.messageIndex,
-          sourceIndex: index,
-          tenantId,
-          sessionId,
-        }));
-      }
-
-        const parseAttempt = BrokerWebhookInboundSchema.safeParse(entry);
-        logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
-          index,
-          issues: parseAttempt.success ? [] : parseAttempt.error.issues,
-        });
+      const parseAttempt = BrokerWebhookInboundSchema.safeParse(entry);
+      logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
+        index,
+        issues: parseAttempt.success ? [] : parseAttempt.error.issues,
+      });
       return [];
     })
     .map((candidate) =>
       buildInboundEvent(candidate.data, {
         index: candidate.sourceIndex,
-        origin: candidate.origin,
         messageIndex: candidate.messageIndex,
         tenantId: candidate.tenantId,
         sessionId: candidate.sessionId,
@@ -673,7 +537,6 @@ webhookRouter.get(
 export { integrationWebhookRouter as whatsappIntegrationWebhookRouter, webhookRouter as whatsappWebhookRouter };
 
 export const __testing = {
-  normalizeLegacyMessagesUpsert,
   normalizeRemoteJid,
   buildInboundEvent,
 };

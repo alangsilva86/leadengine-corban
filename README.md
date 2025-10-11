@@ -272,8 +272,8 @@ GET    /api/lead-engine/agreements/available
 POST   /api/integrations/whatsapp/session/connect
 POST   /api/integrations/whatsapp/session/logout
 GET    /api/integrations/whatsapp/session/status
-POST   /api/integrations/whatsapp/messages
-POST   /api/integrations/whatsapp/polls
+POST   /api/integrations/whatsapp/instances/:instanceId/messages
+POST   /api/integrations/whatsapp/instances/:instanceId/polls
 ```
 
 > Após apontar a API para o broker HTTP (via `WHATSAPP_MODE=http`, `WHATSAPP_BROKER_URL` e chaves válidas), valide a integração

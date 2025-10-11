@@ -11,6 +11,7 @@ These snippets help operators validate the WhatsApp webhook (inbound) and outbou
 export API_URL="https://leadengine-corban.onrender.com"            # or the environment specific host
 export WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)"  # adjust path if secrets differ
 export TENANT_ID="demo-tenant"                                     # tenant served by the MVP bypass
+export INSTANCE_ID="alan"                                          # WhatsApp instance bound to the tenant
 # Optional: only needed if MVP auth bypass is disabled
 # export AUTH_TOKEN="<jwt-token>"
 ```
@@ -63,19 +64,21 @@ tail -n 200 -f logs/api/current | rg "whatsapp"
 Dispatch an outbound text message for the same tenant:
 
 ```bash
-curl -X POST "$API_URL/api/integrations/whatsapp/messages" \
+curl -X POST "$API_URL/api/integrations/whatsapp/instances/$INSTANCE_ID/messages" \
   -H "Content-Type: application/json" \
   -H "x-tenant-id: $TENANT_ID" \
   ${AUTH_TOKEN:+-H "Authorization: Bearer $AUTH_TOKEN"} \
   -d '{
     "to": "+5511999999999",
-    "message": "Mensagem de teste enviada do Render shell",
-    "previewUrl": false,
-    "externalId": "render-shell-test-$(date +%s)"
+    "payload": {
+      "type": "text",
+      "text": "Mensagem de teste enviada do Render shell"
+    },
+    "idempotencyKey": "render-shell-test-$(date +%s)"
   }'
 ```
 
-A successful response returns HTTP `202` with the WhatsApp broker acknowledgement payload. Look for an `ack` of `server` or `delivery` to confirm the broker accepted the message.
+A successful response returns HTTP `202` with the enqueue confirmation. Inspect the payload to verify the broker metadata (`status`/`ack`) captured on the message record.
 
 > 💡 Need to test media or template flows? Replace the body with the payload documented in `docs/whatsapp-broker-contracts.md` while keeping the same headers.
 
@@ -83,4 +86,4 @@ A successful response returns HTTP `202` with the WhatsApp broker acknowledgemen
 
 - **401 responses** usually mean the API key or auth token is missing. Double-check the headers exported above.
 - **503 responses** point to broker connectivity problems. Re-run `curl "$API_URL/healthz"` and inspect the API logs for `whatsapp` errors.
-- **Message queued but not delivered?** Verify the instance connection via `curl "$API_URL/api/integrations/whatsapp/session/status"` and reconnect if needed.
+- **Message queued but not delivered?** Verify the instance connection via `curl "$API_URL/api/integrations/whatsapp/instances/$INSTANCE_ID/status"` and reconnect if needed.

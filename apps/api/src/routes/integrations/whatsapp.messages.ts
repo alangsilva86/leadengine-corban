@@ -4,11 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { asyncHandler } from '../../middleware/error-handler';
 import { requireTenant } from '../../middleware/auth';
 import { prisma } from '../../lib/prisma';
-import {
-  SendByInstanceSchema,
-  SendGenericMessageSchema,
-  normalizePayload,
-} from '../../dtos/message-schemas';
+import { SendByInstanceSchema, normalizePayload } from '../../dtos/message-schemas';
 import { sendAdHoc } from '../../services/ticket-service';
 import {
   WhatsAppBrokerError,
