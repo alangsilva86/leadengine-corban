@@ -835,14 +835,8 @@ export const LeadInbox = ({
         pendingFocusPhoneRef.current = null;
       }
 
-      if (sanitizedPhone) {
-        openWhatsAppWindow(
-          sanitizedPhone,
-          payload?.message ?? result?.message ?? ''
-        );
-      }
     },
-    [openWhatsAppWindow, refresh, setActiveAllocationId]
+    [refresh, setActiveAllocationId]
   );
 
   const handleUpdateAllocationStatus = useCallback(

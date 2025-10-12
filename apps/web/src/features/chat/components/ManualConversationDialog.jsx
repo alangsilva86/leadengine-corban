@@ -103,7 +103,7 @@ const ManualConversationDialog = ({
             Iniciar conversa manual
           </DialogTitle>
           <DialogDescription className="text-xs uppercase tracking-[0.24em] text-slate-400">
-            Cadastre o contato e abra o WhatsApp com a mensagem inicial desejada.
+            Cadastre o contato e envie a mensagem inicial diretamente pelo LeadEngine.
           </DialogDescription>
         </DialogHeader>
 

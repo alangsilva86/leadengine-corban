@@ -94,7 +94,7 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
           Iniciar conversa manual
         </CardTitle>
         <CardDescription className="text-xs text-white/70">
-          Registre um contato manualmente e abra o WhatsApp com a mensagem inicial desejada.
+          Cadastre o contato manualmente e envie a mensagem inicial sem sair do LeadEngine.
         </CardDescription>
       </CardHeader>
       <CardContent>
