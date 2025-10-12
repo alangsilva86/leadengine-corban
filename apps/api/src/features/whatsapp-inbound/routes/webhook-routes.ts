@@ -1,6 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../../../middleware/error-handler';
 import { logger } from '../../../config/logger';
@@ -19,6 +18,7 @@ import {
   type BrokerWebhookInbound,
 } from '../schemas/broker-contracts';
 import { prisma } from '../../../lib/prisma';
+import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -156,34 +156,6 @@ const toE164Phone = (remoteJid: string | null): string | null => {
   }
   const sanitized = digits.replace(/^0+/, '');
   return sanitized.length > 0 ? `+${sanitized}` : null;
-};
-
-const sanitizeJsonPayload = (value: unknown): Prisma.InputJsonValue => {
-  try {
-    return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
-  } catch {
-    return null;
-  }
-};
-
-const logBaileysDebugEvent = async (
-  source: string,
-  payload: unknown
-): Promise<void> => {
-  try {
-    await prisma.processedIntegrationEvent.create({
-      data: {
-        id: randomUUID(),
-        source,
-        payload: sanitizeJsonPayload(payload),
-      },
-    });
-  } catch (error) {
-    logger.warn('⚠️ [Webhook] Falha ao registrar payload para debug', {
-      source,
-      error,
-    });
-  }
 };
 
 const ensurePassthroughInstance = async (
@@ -836,7 +808,11 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
     logger.debug('📭 [Webhook] Nenhum evento de mensagem elegível encontrado', {
       received: rawEvents.length,
     });
-    return res.status(204).send();
+    return res.status(200).json({
+      ok: true,
+      queued: 0,
+      received: rawEvents.length,
+    });
   }
 
   const baileysLogPromises: Array<Promise<void>> = [];
@@ -933,7 +909,11 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
     documents: normalizedEvents.map((event) => maskDocument(event.payload.contact.document ?? null)),
   });
 
-  res.status(204).send();
+  res.status(200).json({
+    ok: true,
+    queued,
+    received: rawEvents.length,
+  });
 };
 
 webhookRouter.post('/whatsapp', asyncHandler(handleWhatsAppWebhook));

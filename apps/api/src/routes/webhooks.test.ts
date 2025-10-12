@@ -25,6 +25,9 @@ vi.mock('../lib/prisma', () => {
   const ticketMock = {
     findUnique: vi.fn(),
   };
+  const processedIntegrationEventMock = {
+    create: vi.fn(),
+  };
 
   return {
     prisma: {
@@ -33,6 +36,7 @@ vi.mock('../lib/prisma', () => {
       queue: queueMock,
       contact: contactMock,
       ticket: ticketMock,
+      processedIntegrationEvent: processedIntegrationEventMock,
     },
   };
 });
@@ -248,7 +252,10 @@ describe('WhatsApp webhook (integration)', () => {
       .set('x-api-key', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, queued: expect.any(Number), received: expect.any(Number) })
+    );
 
     await waitForProcessed;
 
@@ -293,7 +300,10 @@ describe('WhatsApp webhook (integration)', () => {
       .set('Authorization', 'Bearer test-key')
       .send(payload);
 
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, queued: expect.any(Number), received: expect.any(Number) })
+    );
 
     await waitForProcessed;
 
@@ -328,7 +338,10 @@ describe('WhatsApp webhook (integration)', () => {
       .set('X-Authorization', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, queued: expect.any(Number), received: expect.any(Number) })
+    );
 
     await waitForProcessed;
 
@@ -362,7 +375,10 @@ describe('WhatsApp webhook (integration)', () => {
       .set('x-api-key', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, queued: expect.any(Number), received: expect.any(Number) })
+    );
 
     await waitForProcessed;
 
@@ -400,7 +416,10 @@ describe('WhatsApp webhook (integration)', () => {
       .set('x-api-key', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, queued: expect.any(Number), received: expect.any(Number) })
+    );
 
     await waitForProcessed;
 

@@ -3,6 +3,7 @@ import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 import { logger } from '../../../config/logger';
 import { BrokerInboundEventSchema } from '../schemas/broker-contracts';
 import { isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
+import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 
 const PASSTHROUGH_TENANT_FALLBACK = 'demo-tenant';
 
@@ -41,10 +42,17 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       return;
     }
 
+    logger.debug('✅ WhatsApp MESSAGE_INBOUND schema validated', {
+      eventId: event.id,
+      tenantId: event.tenantId ?? null,
+      instanceId: event.instanceId ?? null,
+    });
+
     const normalized = parsed.data;
     const payload = normalized.payload;
     const messageRecord = asRecord(payload.message) ? { ...(payload.message as Record<string, unknown>) } : {};
     const keyRecord = asRecord(messageRecord.key);
+    const contactRecord = asRecord(payload.contact) ? { ...(payload.contact as Record<string, unknown>) } : {};
 
     const chatId =
       readString(messageRecord.chatId) ??
@@ -52,6 +60,7 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       readString(keyRecord?.jid) ??
       null;
     const externalId = readString(messageRecord.id) ?? readString(keyRecord?.id) ?? normalized.id;
+    const contactRemoteJid = readString(contactRecord.remoteJid) ?? readString(contactRecord.jid);
     const direction =
       payload.direction ?? (normalized.type === 'MESSAGE_OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
 
@@ -74,11 +83,54 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       metadata.cursor = event.cursor;
     }
 
+    if (chatId && !metadata.chatId) {
+      metadata.chatId = chatId;
+    }
+
+    const remoteJidCandidate = readString(metadata.remoteJid) ?? contactRemoteJid ?? chatId;
+    if (remoteJidCandidate) {
+      metadata.remoteJid = remoteJidCandidate;
+    }
+
     const passthroughMode = isWhatsappPassthroughModeEnabled();
     const fallbackTenant = passthroughMode ? PASSTHROUGH_TENANT_FALLBACK : null;
     const effectiveTenantId = normalized.tenantId ?? event.tenantId ?? fallbackTenant;
     if (effectiveTenantId && !metadata.tenantId) {
       metadata.tenantId = effectiveTenantId;
+    }
+
+    const debugSourceCandidate = readString(metadata.source);
+    const metadataConnector = readString(metadata.connector);
+    const metadataIntegration = readString(metadata.integration);
+
+    let debugSource: string | null = null;
+    if (debugSourceCandidate && debugSourceCandidate.toLowerCase().includes('baileys')) {
+      debugSource = debugSourceCandidate;
+    } else if (metadataConnector && metadataConnector.toLowerCase().includes('baileys')) {
+      debugSource = metadataConnector;
+    } else if (metadataIntegration && metadataIntegration.toLowerCase().includes('baileys')) {
+      debugSource = metadataIntegration;
+    } else if (remoteJidCandidate) {
+      debugSource = 'baileys:message_inbound';
+    }
+
+    if (debugSource) {
+      await logBaileysDebugEvent(debugSource, {
+        eventId: normalized.id,
+        tenantId: effectiveTenantId ?? null,
+        direction,
+        instanceId: normalized.instanceId,
+        sessionId: normalized.sessionId ?? event.sessionId ?? null,
+        chatId,
+        remoteJid: metadata.remoteJid ?? null,
+        messageId: externalId,
+        timestamp: payload.timestamp ?? null,
+        metadata,
+        contact: contactRecord,
+        message: messageRecord,
+        rawPayload: payload,
+        queueCursor: event.cursor ?? null,
+      });
     }
 
     await ingestInboundWhatsAppMessage({
@@ -96,7 +148,7 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
     });
   } catch (error) {
     logger.error('Failed to process WhatsApp message event', {
-      error,
+      error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
       eventId: event.id,
       type: event.type,
     });
