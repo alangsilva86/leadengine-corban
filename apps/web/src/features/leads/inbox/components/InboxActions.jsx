@@ -1,4 +1,4 @@
-import { Download, Loader2, RefreshCcw } from 'lucide-react';
+import { Download, Loader2, MessageSquarePlus, RefreshCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -20,6 +20,7 @@ export const InboxActions = ({
   loading,
   onRefresh,
   onExport,
+  onStartManualConversation,
   rateLimitInfo,
   autoRefreshSeconds,
   lastUpdatedAt,
@@ -62,6 +63,21 @@ export const InboxActions = ({
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+            {onStartManualConversation ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    onClick={onStartManualConversation}
+                    className="gap-2 rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-950 shadow-[0_10px_24px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400"
+                  >
+                    <MessageSquarePlus className="h-4 w-4" />
+                    Nova conversa manual
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Cadastre um contato e abra o WhatsApp imediatamente.</TooltipContent>
+              </Tooltip>
+            ) : null}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
