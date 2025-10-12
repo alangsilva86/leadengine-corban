@@ -796,15 +796,16 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const tenantId = instance.tenantId;
 
-  const campaigns = simpleMode
-    ? []
-    : await prisma.campaign.findMany({
-        where: {
-          tenantId,
-          whatsappInstanceId: instanceId,
-          status: 'active',
-        },
-      });
+  const campaigns =
+    simpleMode
+      ? []
+      : await prisma.campaign.findMany({
+          where: {
+            tenantId,
+            whatsappInstanceId: instanceId,
+            status: 'active',
+          },
+        });
 
   if (!campaigns.length && !simpleMode) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
@@ -819,19 +820,61 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 
-  const queueId = await getDefaultQueueId(tenantId);
+  let queueId = await getDefaultQueueId(tenantId);
   if (!queueId) {
-    logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente e fallback falhou', {
-      requestId,
-      tenantId,
-      instanceId,
-    });
-    emitToTenant(tenantId, 'whatsapp.queue.missing', {
-      tenantId,
-      instanceId,
-      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
-    });
-    return;
+    if (simpleMode) {
+      try {
+        const fallbackQueue = await prisma.queue.upsert({
+          where: {
+            tenantId_name: {
+              tenantId,
+              name: 'WhatsApp • Fallback',
+            },
+          },
+          update: {
+            description: 'Fila criada automaticamente em modo simples.',
+            isActive: true,
+          },
+          create: {
+            tenantId,
+            name: 'WhatsApp • Fallback',
+            description: 'Fila criada automaticamente em modo simples.',
+            color: '#22C55E',
+            orderIndex: 0,
+          },
+        });
+        queueCacheByTenant.set(tenantId, {
+          id: fallbackQueue.id,
+          expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
+        });
+        queueId = fallbackQueue.id;
+        logger.warn('🎯 LeadEngine • WhatsApp :: ⚙️ Modo simples — fila fallback provisionada', {
+          requestId,
+          tenantId,
+          instanceId,
+          queueId,
+        });
+      } catch (error) {
+        logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao provisionar fila fallback em modo simples', {
+          error: mapErrorForLog(error),
+          requestId,
+          tenantId,
+          instanceId,
+        });
+      }
+    } else {
+      logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente e fallback falhou', {
+        requestId,
+        tenantId,
+        instanceId,
+      });
+      emitToTenant(tenantId, 'whatsapp.queue.missing', {
+        tenantId,
+        instanceId,
+        message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
+      });
+      return;
+    }
   }
 
   const contactRecord = await ensureContact(tenantId, {
@@ -851,13 +894,36 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   };
 
   const ticketSubject = contactRecord.name || contactRecord.phone || 'Contato WhatsApp';
-  const ticketId = await ensureTicketForContact(
-    tenantId,
-    contactRecord.id,
-    queueId,
-    ticketSubject,
-    ticketMetadata
-  );
+  let ticketId: string | null = null;
+  if (queueId) {
+    ticketId = await ensureTicketForContact(
+      tenantId,
+      contactRecord.id,
+      queueId,
+      ticketSubject,
+      ticketMetadata
+    );
+  } else {
+    const existingTicket = await prisma.ticket.findFirst({
+      where: {
+        tenantId,
+        contactId: contactRecord.id,
+        channel: 'WHATSAPP',
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+    if (existingTicket) {
+      ticketId = existingTicket.id;
+      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Reutilizando ticket existente por ausência de fila', {
+        requestId,
+        tenantId,
+        instanceId,
+        ticketId,
+      });
+    }
+  }
 
   if (!ticketId) {
     logger.error('🎯 LeadEngine • WhatsApp :: 🚧 Não consegui garantir o ticket para a mensagem inbound', {

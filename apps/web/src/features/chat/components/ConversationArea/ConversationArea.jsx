@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import ConversationHeader from './ConversationHeader.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
@@ -21,6 +22,32 @@ export const ConversationArea = ({
 }) => {
   const disabled = ticket?.window?.isOpen === false;
   const ai = useAiSuggestions();
+
+  const timelineItems = useMemo(() => {
+    const pages = messagesQuery.data?.pages ?? [];
+    const messages = [];
+    for (const page of pages) {
+      if (!page || !Array.isArray(page.items)) {
+        continue;
+      }
+      for (const message of page.items) {
+        messages.push(message);
+      }
+    }
+
+    messages.sort((a, b) => {
+      const left = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const right = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return left - right;
+    });
+
+    return messages.map((entry) => ({
+      type: 'message',
+      id: entry.id,
+      date: entry.createdAt ? new Date(entry.createdAt) : undefined,
+      payload: entry,
+    }));
+  }, [messagesQuery.data?.pages]);
 
   const handleRequestSuggestion = async () => {
     if (!ticket) return;
@@ -49,7 +76,7 @@ export const ConversationArea = ({
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[26px] bg-slate-950/20 shadow-inner shadow-slate-950/40 ring-1 ring-white/5 backdrop-blur-xl">
         <MessageTimeline
-          items={conversation.timeline}
+          items={timelineItems}
           loading={messagesQuery.isFetchingNextPage}
           hasMore={Boolean(messagesQuery.hasNextPage)}
           onLoadMore={() => messagesQuery.fetchNextPage?.()}
