@@ -16,6 +16,7 @@ jobs:
       - run: pnpm -v
       - run: pnpm fetch
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
       - run: npx @stoplight/spectral lint ./packages/contracts/openapi.yaml
       - run: pnpm test
       - run: pnpm build:css-report
