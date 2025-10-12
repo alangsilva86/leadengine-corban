@@ -38,6 +38,13 @@ ticketz-leadengine/
 ### Documentação de Design & Acessibilidade
 - [Design System Foundations](docs/design-system/foundations.md): visão consolidada dos tokens revisados, exemplos de antes/depois de cores e tipografia, além de checklist de foco, contraste e tamanhos mínimos para garantir acessibilidade nas entregas.
 
+### Decisões de Arquitetura (ADRs)
+- As decisões ficam registradas em [`docs/adr/`](docs/adr/).
+- Use o template [`docs/adr/0000-template.md`](docs/adr/0000-template.md) para propor novas decisões.
+- Numere os arquivos sequencialmente com quatro dígitos (`0002`, `0003`, ...), garantindo que o número reflita a ordem de aprovação.
+- Ao abrir um ADR, defina o status inicial como `Proposto` e atualize para `Aceita`, `Rejeitada` ou outro estado relevante quando a decisão for encerrada.
+- Referencie ADRs anteriores sempre que uma nova decisão complementar ou alterar um registro existente.
+
 ### Stack Tecnológica
 
 #### Backend
