@@ -19,6 +19,10 @@ export WHATSAPP_INBOUND_SIMPLE_MODE="true"                             # optiona
 
 > ℹ️ With `MVP_AUTH_BYPASS=true` (enabled in demos), the API injects the bypass user automatically and you **do not** need the `Authorization` header. Keep the header enabled in production environments.
 
+> 🔐 Default (strict) mode requires the `x-api-key` header and, when configured, the `x-signature-sha256` HMAC. If the deployment
+> enables `WHATSAPP_PASSTHROUGH_MODE=true`, both validations are skipped and you may omit these headers—only do so in trusted
+> environments where webhook traffic is already controlled.
+
 ## Inbound webhook check
 
 Trigger ingestion with a representative WhatsApp event:

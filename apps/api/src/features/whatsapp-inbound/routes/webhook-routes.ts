@@ -541,10 +541,11 @@ const readWebhookSecretFromHeaders = (req: Request): string | null => {
 };
 
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
-  const providedApiKey = readWebhookSecretFromHeaders(req) ?? '';
-  const expectedApiKey = getWebhookApiKey();
   const requestId = readString(req.header('x-request-id')) ?? randomUUID();
   const passthroughMode = isWhatsappPassthroughModeEnabled();
+  const validationsEnabled = !passthroughMode;
+  const providedApiKey = validationsEnabled ? readWebhookSecretFromHeaders(req) ?? '' : '';
+  const expectedApiKey = validationsEnabled ? getWebhookApiKey() : '';
   const headerTenantId = readString(req.header('x-tenant-id'));
   const fallbackTenantId = headerTenantId ?? (passthroughMode ? PASSTHROUGH_TENANT_FALLBACK : undefined);
 
@@ -556,11 +557,13 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     route: req.originalUrl,
   });
 
-  if (!expectedApiKey || !safeCompare(providedApiKey, expectedApiKey)) {
-    logger.warn('WhatsApp webhook rejected due to invalid API key', { requestId });
-    whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_api_key' });
-    res.status(401).json({ ok: false });
-    return;
+  if (validationsEnabled) {
+    if (!expectedApiKey || !safeCompare(providedApiKey, expectedApiKey)) {
+      logger.warn('WhatsApp webhook rejected due to invalid API key', { requestId });
+      whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_api_key' });
+      res.status(401).json({ ok: false });
+      return;
+    }
   }
 
   const parseError = readRawBodyParseError(req);
@@ -577,12 +580,14 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     return;
   }
 
-  const signatureHeader = req.header('x-signature-sha256');
-  if (!verifyWebhookSignature(signatureHeader ?? null, req.rawBody)) {
-    logger.warn('WhatsApp webhook rejected due to invalid signature');
-    whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
-    res.status(401).json({ ok: false });
-    return;
+  if (validationsEnabled) {
+    const signatureHeader = req.header('x-signature-sha256');
+    if (!verifyWebhookSignature(signatureHeader ?? null, req.rawBody)) {
+      logger.warn('WhatsApp webhook rejected due to invalid signature');
+      whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
+      res.status(401).json({ ok: false });
+      return;
+    }
   }
 
   const payload = req.body ?? {};
