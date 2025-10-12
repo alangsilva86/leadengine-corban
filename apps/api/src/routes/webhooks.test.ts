@@ -16,6 +16,7 @@ vi.mock('@ticketz/storage', () => ({
 vi.mock('../lib/prisma', () => {
   const instanceMock = {
     findUnique: vi.fn(),
+    upsert: vi.fn(),
   };
   const campaignMock = {
     findMany: vi.fn(),
@@ -59,6 +60,8 @@ vi.mock('../data/lead-allocation-store', () => ({
 await import('../features/whatsapp-inbound/workers/inbound-processor');
 
 const { whatsappEventQueueEmitter } = await import('../features/whatsapp-inbound/queue/event-queue');
+
+const { refreshFeatureFlags } = await import('../config/feature-flags');
 
 const { prisma } = await import('../lib/prisma');
 const { addAllocations } = await import('../data/lead-allocation-store');
@@ -167,6 +170,7 @@ describe('WhatsApp webhook (integration)', () => {
   beforeEach(() => {
     resetInboundLeadServiceTestState();
     (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prisma.whatsAppInstance.upsert as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.campaign.findMany as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.queue.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
@@ -182,6 +186,8 @@ describe('WhatsApp webhook (integration)', () => {
     findOrCreateOpenTicketByChatMock.mockReset();
     upsertMessageByExternalIdMock.mockReset();
     process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
+    delete process.env.WHATSAPP_PASSTHROUGH_MODE;
+    refreshFeatureFlags({ whatsappPassthroughMode: false });
 
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'queue-1',
@@ -231,6 +237,9 @@ describe('WhatsApp webhook (integration)', () => {
 
   afterEach(() => {
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
+    delete process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET;
+    delete process.env.WHATSAPP_PASSTHROUGH_MODE;
+    refreshFeatureFlags({ whatsappPassthroughMode: false });
   });
 
   it('rejects webhook with invalid API key', async () => {
@@ -258,6 +267,19 @@ describe('WhatsApp webhook (integration)', () => {
       ok: false,
       error: { code: 'INVALID_WEBHOOK_JSON' },
     });
+  });
+
+  it('rejects webhook with invalid signature in strict mode', async () => {
+    process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET = 'signature-secret';
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'test-key')
+      .set('x-signature-sha256', 'deadbeef')
+      .send({ ping: 'pong' });
+
+    expect(response.status).toBe(401);
   });
 
   it('queues inbound message and creates allocation', async () => {
@@ -477,5 +499,53 @@ describe('WhatsApp webhook (integration)', () => {
     if (updatedCall) {
       expect(updatedCall[0]).toBe('tenant-1');
     }
+  });
+
+  it('accepts webhook without credentials when passthrough mode is enabled', async () => {
+    stubInboundSuccessMocks();
+    (prisma.whatsAppInstance.upsert as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'inst-1',
+      tenantId: 'tenant-1',
+      brokerId: 'inst-1',
+      name: 'Baileys inst-1',
+      connected: true,
+      status: 'connected',
+      metadata: {},
+    });
+
+    refreshFeatureFlags({ whatsappPassthroughMode: true });
+
+    const app = createApp();
+
+    const payload = {
+      instanceId: 'inst-1',
+      event: 'message',
+      direction: 'inbound',
+      timestamp: Date.now(),
+      from: {
+        phone: '+5511999998888',
+        name: 'Maria',
+      },
+      message: {
+        id: 'wamid.123',
+        type: 'text',
+        text: 'Olá',
+      },
+    };
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .send(payload);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, queued: expect.any(Number), received: expect.any(Number) })
+    );
+
+    await waitForProcessed;
+
+    expect(prisma.whatsAppInstance.upsert).toHaveBeenCalled();
   });
 });

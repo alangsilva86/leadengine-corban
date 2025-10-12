@@ -292,9 +292,14 @@ POST   /api/integrations/whatsapp/instances/:instanceId/polls
 POST   /api/integrations/whatsapp/webhook
 ```
 
-> Inclua o cabeçalho `x-api-key` com o valor configurado em `WHATSAPP_WEBHOOK_API_KEY` (ou o fallback `WHATSAPP_BROKER_API_KEY`).
-> Quando disponível, também envie `x-signature-sha256` calculado com o corpo bruto da requisição para validar a integridade do payload.
-> Para HMAC dedicado, defina `WHATSAPP_WEBHOOK_SIGNATURE_SECRET` (fallback automático para o mesmo valor do `x-api-key`).
+> No modo padrão (estrito), inclua o cabeçalho `x-api-key` com o valor configurado em `WHATSAPP_WEBHOOK_API_KEY` (ou o fallback
+> `WHATSAPP_BROKER_API_KEY`). Quando disponível, também envie `x-signature-sha256` calculado com o corpo bruto da requisição
+> para validar a integridade do payload. Para HMAC dedicado, defina `WHATSAPP_WEBHOOK_SIGNATURE_SECRET` (fallback automático
+> para o mesmo valor do `x-api-key`).
+> 
+> ⚠️ Em ambientes controlados é possível habilitar `WHATSAPP_PASSTHROUGH_MODE=true` para aceitar chamadas sem validar API key
+> ou assinatura. Use apenas para pipelines de ingestão totalmente confiáveis, pois nenhuma verificação de credenciais será
+> executada.
 
 ### WebSocket Events
 ```javascript
