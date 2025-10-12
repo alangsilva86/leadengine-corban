@@ -205,6 +205,48 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const socket = realtime.socket;
+    if (!socket) {
+      return undefined;
+    }
+
+    const handleRealtimeMessage = (incoming) => {
+      if (!incoming || typeof incoming !== 'object') {
+        return;
+      }
+
+      const ticketId = incoming.ticketId;
+      if (!ticketId) {
+        return;
+      }
+
+      const queryKey = ['chat', 'messages', ticketId, DEFAULT_MESSAGES_PAGE_SIZE];
+      queryClient.setQueryData(queryKey, (current) => {
+        if (!current || !Array.isArray(current.pages)) {
+          return current;
+        }
+
+        const [firstPage = {}, ...restPages] = current.pages;
+        const existingItems = Array.isArray(firstPage.items) ? firstPage.items : [];
+        const nextItems = [incoming, ...existingItems].slice(0, DEFAULT_MESSAGES_PAGE_SIZE);
+
+        return {
+          ...current,
+          pages: [{ ...firstPage, items: nextItems }, ...restPages],
+        };
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+    };
+
+    socket.on('messages.new', handleRealtimeMessage);
+
+    return () => {
+      socket.off('messages.new', handleRealtimeMessage);
+    };
+  }, [queryClient, realtime.socket]);
+
   const whatsAppLimits = useWhatsAppLimits({ enabled: Boolean(tenantId) });
 
   const selectTicket = useCallback((ticketId) => {

@@ -12,7 +12,12 @@ import {
 } from '../../../lib/metrics';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
 import { findOrCreateOpenTicketByChat, upsertMessageByExternalId } from '@ticketz/storage';
-import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
+import {
+  emitToAgreement,
+  emitToTenant,
+  emitToTicket,
+  getSocketServer,
+} from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 import { isWhatsappInboundSimpleModeEnabled, isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
 
@@ -1240,18 +1245,6 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     readString(messageKeyRecord?.id) ??
     event.id;
 
-  const dedupeKey = `${tenantId}:${messageExternalId ?? normalizedMessage.id}`;
-  if (!simpleMode && !passthroughMode && direction === 'INBOUND' && shouldSkipByDedupe(dedupeKey, now)) {
-    logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
-      requestId,
-      tenantId,
-      ticketId,
-      brokerMessageId: normalizedMessage.id,
-      dedupeKey,
-    });
-    return;
-  }
-
   const brokerTimestamp = normalizedMessage.brokerMessageTimestamp;
   const normalizedTimestamp = (() => {
     if (typeof brokerTimestamp === 'number') {
@@ -1264,13 +1257,159 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     return null;
   })();
 
+  const dedupeKey = `${tenantId}:${messageExternalId ?? normalizedMessage.id}`;
+  if (!simpleMode && !passthroughMode && direction === 'INBOUND' && shouldSkipByDedupe(dedupeKey, now)) {
+    logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
+      requestId,
+      tenantId,
+      ticketId,
+      brokerMessageId: normalizedMessage.id,
+      dedupeKey,
+    });
+    return;
+  }
+
+  if (passthroughMode) {
+    const socket = getSocketServer();
+    const metadataContactRecord = metadataContact ?? {};
+    const remoteJidCandidate =
+      readString(metadataContactRecord.remoteJid) ??
+      readString(metadataContactRecord.jid) ??
+      readString(metadataRecord.remoteJid);
+    const resolvedChatId =
+      readString(chatId) ??
+      remoteJidCandidate ??
+      readString(metadataRecord.chatId) ??
+      normalizedPhone ??
+      readString(contact.phone) ??
+      readString(document) ??
+      messageExternalId ??
+      randomUUID();
+
+    const externalIdForUpsert = messageExternalId ?? normalizedMessage.id ?? randomUUID();
+    const passthroughDirection =
+      typeof direction === 'string' && direction.toUpperCase() === 'OUTBOUND' ? 'outbound' : 'inbound';
+
+    const normalizedType = normalizedMessage.type;
+    let passthroughType: 'text' | 'media' | 'unknown' = 'unknown';
+    let passthroughText: string | null = null;
+    let passthroughMedia: {
+      mediaType: string;
+      url?: string | null;
+      mimeType?: string | null;
+      fileName?: string | null;
+      size?: number | null;
+      caption?: string | null;
+    } | null = null;
+
+    if (normalizedType === 'IMAGE' || normalizedType === 'VIDEO' || normalizedType === 'AUDIO' || normalizedType === 'DOCUMENT') {
+      passthroughType = 'media';
+      const mediaType = normalizedType.toLowerCase();
+      passthroughText = normalizedMessage.caption ?? normalizedMessage.text ?? null;
+      passthroughMedia = {
+        mediaType,
+        url: normalizedMessage.mediaUrl ?? undefined,
+        mimeType: normalizedMessage.mimetype ?? undefined,
+        size: normalizedMessage.fileSize ?? undefined,
+        caption: normalizedMessage.caption ?? undefined,
+      };
+    } else if (
+      normalizedType === 'TEXT' ||
+      normalizedType === 'TEMPLATE' ||
+      normalizedType === 'CONTACT' ||
+      normalizedType === 'LOCATION'
+    ) {
+      passthroughType = 'text';
+      passthroughText = normalizedMessage.text ?? null;
+    } else {
+      passthroughType = 'unknown';
+      passthroughText = normalizedMessage.text ?? null;
+    }
+
+    const metadataForUpsert = {
+      ...metadataRecord,
+      sourceInstance: instanceId,
+      remoteJid: remoteJidCandidate ?? resolvedChatId,
+      phoneE164: normalizedPhone ?? readString(metadataContactRecord.phone) ?? null,
+    };
+
+    const { ticket: passthroughTicket } = await findOrCreateOpenTicketByChat({
+      tenantId,
+      chatId: resolvedChatId,
+      displayName: resolvedName,
+      phone: normalizedPhone ?? readString(contact.phone) ?? resolvedChatId,
+      instanceId,
+    });
+
+    const { message: passthroughMessage, wasCreated } = await upsertMessageByExternalId({
+      tenantId,
+      ticketId: passthroughTicket.id,
+      chatId: resolvedChatId,
+      direction: passthroughDirection,
+      externalId: externalIdForUpsert,
+      type: passthroughType,
+      text: passthroughText,
+      media: passthroughMedia,
+      metadata: metadataForUpsert,
+      timestamp: normalizedTimestamp ?? Date.now(),
+    });
+
+    if (socket) {
+      socket.to(`tenant:${tenantId}`).emit('messages.new', passthroughMessage);
+      socket.to(`ticket:${passthroughTicket.id}`).emit('messages.new', passthroughMessage);
+    }
+
+    logger.info(
+      {
+        tenantId,
+        ticketId: passthroughTicket.id,
+        direction: passthroughDirection,
+        externalId: externalIdForUpsert,
+        wasCreated,
+      },
+      'passthrough: persisted + emitted messages.new'
+    );
+
+    return;
+  }
+
   let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+
+  const normalizedMessageMedia =
+    normalizedMessage.media && typeof normalizedMessage.media === 'object'
+      ? (normalizedMessage.media as Record<string, unknown>)
+      : null;
+  const timelineMessageType = (() => {
+    if (normalizedMessage.type === 'media') {
+      const mediaType = readString(normalizedMessageMedia?.mediaType) ?? '';
+      if (mediaType === 'image' || mediaType === 'sticker') {
+        return 'IMAGE';
+      }
+      if (mediaType === 'video') {
+        return 'VIDEO';
+      }
+      if (mediaType === 'audio') {
+        return 'AUDIO';
+      }
+      return 'DOCUMENT';
+    }
+
+    if (normalizedMessage.type === 'text') {
+      return 'TEXT';
+    }
+
+    if (normalizedMessage.type === 'unknown') {
+      return 'TEXT';
+    }
+
+    return normalizedMessage.type;
+  })();
 
   try {
     persistedMessage = await sendMessageService(tenantId, undefined, {
       ticketId,
-      content: normalizedMessage.text,
-      type: normalizedMessage.type,
+      content: normalizedMessage.text ?? '[Mensagem]',
+      type: timelineMessageType,
       direction,
       externalId: messageExternalId ?? undefined,
       mediaUrl: normalizedMessage.mediaUrl ?? undefined,

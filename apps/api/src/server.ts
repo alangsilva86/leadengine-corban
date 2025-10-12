@@ -32,6 +32,7 @@ import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
 import { manualConversationsRouter } from './routes/manual-conversations';
+import { debugMessagesRouter } from './features/debug/routes/messages';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -355,6 +356,7 @@ app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api', authMiddleware, ticketMessagesRouter);
 app.use('/api', authMiddleware, contactMessagesRouter);
 app.use('/api', authMiddleware, whatsappMessagesRouter);
+app.use('/api', authMiddleware, debugMessagesRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
