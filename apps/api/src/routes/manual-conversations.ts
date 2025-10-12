@@ -203,7 +203,11 @@ router.post(
       throw new ValidationError('Não foi possível criar o ticket para esta conversa.');
     }
 
-    const messageRecord = await sendMessage(tenantId, userId, {
+    const operator = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    const messageRecord = await sendMessage(tenantId, operator?.id ?? undefined, {
       ticketId: ticket.id,
       content: message,
       direction: 'OUTBOUND',
