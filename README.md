@@ -284,7 +284,7 @@ POST   /api/integrations/whatsapp/instances/:instanceId/polls
 > 📬 Eventos inbound agora chegam exclusivamente pelo webhook `/api/integrations/whatsapp/webhook`. As rotas legacy de polling
 > `/api/integrations/whatsapp/events` e `/api/integrations/whatsapp/events/ack` foram removidas.
 
-> ✅ Precisa validar o fluxo diretamente da Render shell? Consulte `docs/whatsapp-render-curl-recipes.md` para copiar os comandos
+> ✅ Precisa validar o fluxo diretamente na shell da Railway? Consulte `docs/whatsapp-railway-curl-recipes.md` para copiar os comandos
 > `curl` prontos para testar o webhook inbound e o disparo outbound.
 
 #### Webhooks

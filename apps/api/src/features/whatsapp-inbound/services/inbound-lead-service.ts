@@ -13,6 +13,7 @@ import {
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
 import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
+import { isWhatsappInboundSimpleModeEnabled } from '../../../config/feature-flags';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
@@ -733,6 +734,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const normalizedPhone = sanitizePhone(contact.phone);
   const document = sanitizeDocument(contact.document, normalizedPhone);
   const now = Date.now();
+  const simpleMode = isWhatsappInboundSimpleModeEnabled();
   const metadataRecord = (event.metadata && typeof event.metadata === 'object'
     ? (event.metadata as Record<string, unknown>)
     : {}) as Record<string, unknown>;
@@ -794,15 +796,17 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const tenantId = instance.tenantId;
 
-  const campaigns = await prisma.campaign.findMany({
-    where: {
-      tenantId,
-      whatsappInstanceId: instanceId,
-      status: 'active',
-    },
-  });
+  const campaigns = simpleMode
+    ? []
+    : await prisma.campaign.findMany({
+        where: {
+          tenantId,
+          whatsappInstanceId: instanceId,
+          status: 'active',
+        },
+      });
 
-  if (!campaigns.length) {
+  if (!campaigns.length && !simpleMode) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
       requestId,
       tenantId,
@@ -868,7 +872,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
 
   const dedupeKey = `${tenantId}:${normalizedMessage.id}`;
-  if (shouldSkipByDedupe(dedupeKey, now)) {
+  if (!simpleMode && shouldSkipByDedupe(dedupeKey, now)) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       requestId,
       tenantId,
@@ -951,26 +955,36 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     });
 
     let inboundLeadId: string | null = null;
-    try {
-      const { lead } = await upsertLeadFromInbound({
-        tenantId,
-        contactId: contactRecord.id,
-        ticketId,
-        instanceId,
-        providerMessageId,
-        message: persistedMessage,
-      });
-      inboundLeadId = lead.id;
-    } catch (error) {
-      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao sincronizar lead inbound', {
-        error: mapErrorForLog(error),
+
+    if (!simpleMode) {
+      try {
+        const { lead } = await upsertLeadFromInbound({
+          tenantId,
+          contactId: contactRecord.id,
+          ticketId,
+          instanceId,
+          providerMessageId,
+          message: persistedMessage,
+        });
+        inboundLeadId = lead.id;
+      } catch (error) {
+        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao sincronizar lead inbound', {
+          error: mapErrorForLog(error),
+          requestId,
+          tenantId,
+          ticketId,
+          instanceId,
+          contactId: contactRecord.id,
+          messageId: persistedMessage.id,
+          providerMessageId,
+        });
+      }
+    } else {
+      logger.debug('🎯 LeadEngine • WhatsApp :: ℹ️ Modo simples ativo — pulando sincronização de leads/CRM', {
         requestId,
         tenantId,
         ticketId,
-        instanceId,
-        contactId: contactRecord.id,
         messageId: persistedMessage.id,
-        providerMessageId,
       });
     }
 
@@ -988,7 +1002,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     });
   }
 
-  if (campaigns.length > 0) {
+  if (!simpleMode && campaigns.length > 0) {
     for (const campaign of campaigns) {
       const agreementId = campaign.agreementId || 'unknown';
       const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;

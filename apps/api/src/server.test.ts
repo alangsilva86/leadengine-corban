@@ -90,7 +90,7 @@ describe('CORS configuration', () => {
     const { server, url } = await startServer();
 
     try {
-      const origin = 'https://leadengine-corban.onrender.com/';
+      const origin = 'https://leadengine-corban.up.railway.app/';
       const response = await fetch(`${url}/`, {
         method: 'GET',
         headers: {

@@ -99,11 +99,7 @@ const normalizeOrigin = (origin: string): string => {
   return trimmed.toLowerCase().replace(/\/+$/, '');
 };
 
-const defaultCorsOrigins = [
-  'https://leadengine-corban.onrender.com',
-  'https://leadengine-corban-1.onrender.com',
-  'https://leadengine-corban.up.railway.app',
-].map(normalizeOrigin);
+const defaultCorsOrigins = ['https://leadengine-corban.up.railway.app'].map(normalizeOrigin);
 
 const configuredCorsOrigins = (process.env.FRONTEND_URL ?? '')
   .split(',')

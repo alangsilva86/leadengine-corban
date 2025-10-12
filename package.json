@@ -29,7 +29,8 @@
     "storage:build": "pnpm --filter @ticketz/storage build",
     "integrations:build": "pnpm --filter @ticketz/integrations build",
     "start:api": "pnpm --filter @ticketz/api start",
-    "start:web": "pnpm --filter web run start"
+    "start:web": "pnpm --filter web run start",
+    "test:whatsapp": "node scripts/whatsapp-smoke-test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
