@@ -1,27 +1,27 @@
-# WhatsApp Render Shell cURL Recipes
+# WhatsApp Railway Shell cURL Recipes
 
-These snippets help operators validate the WhatsApp webhook (inbound) and outbound delivery flows directly from a Render shell session.
+Use these snippets when you need to validate the inbound webhook and outbound delivery flows directly from a Railway shell session (API service).
 
 ## Prerequisites
 
-1. Open the shell for the API service in Render.
-2. Export the environment variables that mirror the deployment secrets:
+1. Open the shell for the **API** service in Railway (`ticketzapi-production`).
+2. Export the environment variables matching the deployment secrets (adjust paths if your secrets live elsewhere):
 
 ```bash
-export API_URL="https://leadengine-corban.onrender.com"            # or the environment specific host
-export WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)"  # adjust path if secrets differ
-export TENANT_ID="demo-tenant"                                     # tenant served by the MVP bypass
-export INSTANCE_ID="alan"                                          # WhatsApp instance bound to the tenant
-export WHATSAPP_INBOUND_SIMPLE_MODE="true"                         # optional: disables dedupe/CRM to focus on chat visibility
+export API_URL="https://ticketzapi-production.up.railway.app"          # replace with the environment specific host if different
+export WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)"
+export TENANT_ID="demo-tenant"
+export INSTANCE_ID="alan"
+export WHATSAPP_INBOUND_SIMPLE_MODE="true"                             # optional: disables dedupe/CRM to focus on chat visibility
 # Optional: only needed if MVP auth bypass is disabled
 # export AUTH_TOKEN="<jwt-token>"
 ```
 
-> ℹ️ When `MVP_AUTH_BYPASS=true` (explicitly enabled in demos), the API automatically injects the bypass user and you do **not** need the `Authorization` header. In production environments keep the header enabled.
+> ℹ️ With `MVP_AUTH_BYPASS=true` (enabled in demos), the API injects the bypass user automatically and you **do not** need the `Authorization` header. Keep the header enabled in production environments.
 
 ## Inbound webhook check
 
-Trigger the webhook ingestion with a representative WhatsApp event:
+Trigger ingestion with a representative WhatsApp event:
 
 ```bash
 curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
@@ -31,7 +31,7 @@ curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
     "events": [
       {
         "id": "wamid-123",
-        "instanceId": "${INSTANCE_ID}",
+        "instanceId": "'"$INSTANCE_ID"'",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
         "type": "MESSAGE_INBOUND",
         "from": {
@@ -47,14 +47,14 @@ curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
         },
         "metadata": {
           "broker": "baileys",
-          "source": "render-shell"
+          "source": "railway-shell"
         }
       }
     ]
   }'
 ```
 
-A successful request returns `{ "ok": true }`. You can tail the worker logs to confirm the event was enqueued and processed:
+A successful request returns `{ "ok": true }`. Tail the worker logs to confirm the event was enqueued and processed:
 
 ```bash
 tail -n 200 -f logs/api/current | rg "whatsapp"
@@ -73,19 +73,19 @@ curl -X POST "$API_URL/api/integrations/whatsapp/instances/$INSTANCE_ID/messages
     "to": "+5511999999999",
     "payload": {
       "type": "text",
-      "text": "Mensagem de teste enviada do Render shell"
+      "text": "Mensagem de teste enviada da shell Railway"
     },
-    "idempotencyKey": "render-shell-test-$(date +%s)"
+    "idempotencyKey": "railway-shell-test-$(date +%s)"
   }'
 ```
 
 A successful response returns HTTP `202` with the enqueue confirmation. Inspect the payload to verify the broker metadata (`status`/`ack`) captured on the message record.
 
-> 💡 Need to test media or template flows? Replace the body with the payload documented in `docs/whatsapp-broker-contracts.md` while keeping the same headers.
+> 💡 Need to test media or template flows? Replace the body with the payload from `docs/whatsapp-broker-contracts.md` while keeping the same headers.
 
 ## Raw `messages.upsert` fallback
 
-When the `WHATSAPP_RAW_FALLBACK_ENABLED` feature flag is enabled, the webhook accepts Baileys `WHATSAPP_MESSAGES_UPSERT` events and locally converts them into `MESSAGE_INBOUND`. Use the snippet below to emulate the broker sending a raw payload:
+When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts Baileys `WHATSAPP_MESSAGES_UPSERT` events and converts them into `MESSAGE_INBOUND`. Use the snippet below to emulate the broker sending a raw payload:
 
 ```bash
 curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
@@ -122,10 +122,10 @@ The API replies with HTTP `202` when at least one message is normalized. Check t
 
 ## Automated smoke test
 
-Need to validate the full webhook → socket → UI flow quickly? Use the bundled smoke runner:
+Validate the full webhook → socket → UI flow quickly with the bundled smoke runner:
 
 ```bash
-API_URL="https://leadengine-corban.onrender.com" \
+API_URL="https://ticketzapi-production.up.railway.app" \
 WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)" \
 TENANT_ID="demo-tenant" \
 INSTANCE_ID="alan" \
@@ -139,12 +139,12 @@ The script:
 - resolve automaticamente o ticket via `GET /api/tickets?search=<telefone>`; e
 - confirma que a mensagem aparece via `GET /api/tickets/:id/messages`.
 
-Se qualquer etapa falhar, o processo encerra com código ≠ 0 e imprime o motivo (webhook, socket ou persistência).
+If any step fails, the process exits with a non-zero code and prints the reason (webhook, socket, or persistence).
 
 ## Troubleshooting tips
 
 - **401 responses** usually mean the API key or auth token is missing. Double-check the headers exported above.
-- **503 responses** point to broker connectivity problems. Re-run `curl "$API_URL/healthz"` and inspect the API logs for `whatsapp` errors.
+- **503 responses** point to service availability problems. Re-run `curl "$API_URL/healthz"` and inspect API logs for `whatsapp` errors.
 - **Message queued but not delivered?** Verify the instance connection via `curl "$API_URL/api/integrations/whatsapp/instances/$INSTANCE_ID/status"` and reconnect if needed.
 
 ## QA checklist – raw fallback

@@ -13,7 +13,7 @@
  *  - MESSAGE_TEXT (custom text for the inbound payload)
  *
  * Usage:
- *   API_URL="https://leadengine-corban.onrender.com" \
+ *   API_URL="https://ticketzapi-production.up.railway.app" \
  *   WHATSAPP_WEBHOOK_API_KEY="..." \
  *   TENANT_ID="demo-tenant" \
  *   INSTANCE_ID="alan" \
