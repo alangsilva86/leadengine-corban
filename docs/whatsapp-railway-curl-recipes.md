@@ -79,7 +79,7 @@ curl -X POST "$API_URL/api/integrations/whatsapp/instances/$INSTANCE_ID/messages
   }'
 ```
 
-A successful response returns HTTP `202` with the enqueue confirmation. Inspect the payload to verify the broker metadata (`status`/`ack`) captured on the message record.
+A successful response returns HTTP `200` with the enqueue confirmation. Inspect the payload to verify the broker metadata (`status`/`ack`) captured on the message record.
 
 > 💡 Need to test media or template flows? Replace the body with the payload from `docs/whatsapp-broker-contracts.md` while keeping the same headers.
 
@@ -118,7 +118,19 @@ curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
   }'
 ```
 
-The API replies with HTTP `202` when at least one message is normalized. Check the worker logs (`tail -n 200 -f logs/api/current | rg "raw_inbound_normalized"`) to confirm the fallback was triggered and the broker metadata was appended to the queue event.
+The API replies with HTTP `200` when at least one message is normalized. Check the worker logs (`tail -n 200 -f logs/api/current | rg "raw_inbound_normalized"`) to confirm the fallback was triggered and the broker metadata was appended to the queue event.
+
+## Replay Baileys connector logs
+
+Use the helper script below to replay events stored by the Baileys connector (`baileys-acessuswpp`). This is helpful when validating that `MESSAGE_INBOUND` payloads end up in `/debug/baileys-events` without relying on live traffic.
+
+```bash
+# Defaults: URL=http://localhost:3000/api/integrations/whatsapp/webhook
+# and API key from WHATSAPP_WEBHOOK_API_KEY / WHATSAPP_BROKER_API_KEY
+node scripts/replay-baileys-log.mjs ./logs/baileys.ndjson --url="$API_URL/api/integrations/whatsapp/webhook"
+```
+
+The script accepts logs formatted as newline-delimited JSON. Each line must contain either a raw Baileys payload or an envelope with a `payload`/`event` property. Failed lines are reported but the replay continues processing the remainder of the file.
 
 ## Automated smoke test
 

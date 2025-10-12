@@ -1098,9 +1098,6 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   if (chatId && !metadataRecord.chatId) {
     metadataRecord.chatId = chatId;
   }
-  if (messageExternalId && !metadataRecord.externalId) {
-    metadataRecord.externalId = messageExternalId;
-  }
   if (eventTenantId && !metadataRecord.tenantId) {
     metadataRecord.tenantId = eventTenantId;
   }
@@ -1114,14 +1111,10 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   if (metadataBroker) {
     metadataBroker.direction = direction;
     metadataBroker.instanceId = metadataBroker.instanceId ?? instanceId;
-    if (messageExternalId && !metadataBroker.messageId) {
-      metadataBroker.messageId = messageExternalId;
-    }
   } else {
     metadataRecord.broker = {
       direction,
       instanceId,
-      messageId: messageExternalId,
     };
   }
 
@@ -1301,12 +1294,34 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     message && typeof message === 'object' && 'key' in message && message.key && typeof message.key === 'object'
       ? (message.key as { id?: string | null })
       : null;
-  const messageExternalId =
-    readString(externalId) ??
-    readString(normalizedMessage.id) ??
-    readString((message as InboundMessageDetails).id) ??
-    readString(messageKeyRecord?.id) ??
-    event.id;
+    const messageExternalId =
+      readString(externalId) ??
+      readString(normalizedMessage.id) ??
+      readString((message as InboundMessageDetails).id) ??
+      readString(messageKeyRecord?.id) ??
+      event.id;
+
+    if (messageExternalId && !metadataRecord.externalId) {
+      metadataRecord.externalId = messageExternalId;
+    }
+
+    const metadataBrokerRecord =
+      metadataRecord.broker && typeof metadataRecord.broker === 'object'
+        ? (metadataRecord.broker as Record<string, unknown>)
+        : null;
+    if (metadataBrokerRecord) {
+      if (messageExternalId && !metadataBrokerRecord.messageId) {
+        metadataBrokerRecord.messageId = messageExternalId;
+      }
+      metadataBrokerRecord.direction = direction;
+      metadataBrokerRecord.instanceId = metadataBrokerRecord.instanceId ?? instanceId;
+    } else if (messageExternalId) {
+      metadataRecord.broker = {
+        direction,
+        instanceId,
+        messageId: messageExternalId,
+      };
+    }
 
   const brokerTimestamp = normalizedMessage.brokerMessageTimestamp;
   const normalizedTimestamp = (() => {
