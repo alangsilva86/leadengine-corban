@@ -8,6 +8,7 @@ import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { cn } from '@/lib/utils.js';
 
 import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
+import { useManualConversationLauncher } from '../hooks/useManualConversationLauncher.js';
 import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiveUpdates.js';
 import InboxHeader from './InboxHeader.jsx';
 import InboxActions from './InboxActions.jsx';
@@ -16,6 +17,7 @@ import GlobalFiltersBar from './GlobalFiltersBar.jsx';
 import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ColumnScrollArea from './ColumnScrollArea.jsx';
+import ManualConversationCard from './ManualConversationCard.jsx';
 
 import '../styles/layout.css';
 
@@ -326,6 +328,8 @@ const statusToastCopy = {
   },
 };
 
+const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
+
 export const LeadInbox = ({
   selectedAgreement,
   campaign,
@@ -350,6 +354,11 @@ export const LeadInbox = ({
   const [activeAllocationId, setActiveAllocationId] = useState(null);
   const [leadPanelSwitching, setLeadPanelSwitching] = useState(false);
   const inboxScrollRef = useRef(null);
+  const {
+    launch: launchManualConversation,
+    isPending: manualConversationPending,
+  } = useManualConversationLauncher();
+  const pendingFocusPhoneRef = useRef(null);
 
   const {
     allocations,
@@ -527,6 +536,26 @@ export const LeadInbox = ({
       return filteredAllocations[0].allocationId;
     });
   }, [filteredAllocations]);
+
+  useEffect(() => {
+    if (!pendingFocusPhoneRef.current) {
+      return;
+    }
+
+    const targetPhone = pendingFocusPhoneRef.current;
+    const match = allocations.find((item) => {
+      if (!item?.allocationId) {
+        return false;
+      }
+      const digits = String(item?.phone ?? '').replace(/\D/g, '');
+      return digits === targetPhone;
+    });
+
+    if (match?.allocationId) {
+      setActiveAllocationId(match.allocationId);
+      pendingFocusPhoneRef.current = null;
+    }
+  }, [allocations]);
 
   const savedViewsWithCount = useMemo(
     () =>
@@ -728,17 +757,87 @@ export const LeadInbox = ({
     setActiveAllocationId((current) => (current === allocation.allocationId ? current : allocation.allocationId));
   }, []);
 
-  const handleOpenWhatsApp = useCallback((allocation) => {
-    const phone = allocation?.phone?.replace(/\D/g, '');
-    if (!phone) {
+  const openWhatsAppWindow = useCallback((rawPhone, initialMessage) => {
+    const digits = String(rawPhone ?? '').replace(/\D/g, '');
+    if (!digits) {
       toast.info('Nenhum telefone disponível para este lead.', {
         description: 'Cadastre um telefone válido para abrir o WhatsApp automaticamente.',
         position: 'bottom-right',
       });
-      return;
+      return false;
     }
-    window.open(`https://wa.me/${phone}`, '_blank');
+
+    const messageParam =
+      typeof initialMessage === 'string' && initialMessage.trim().length > 0
+        ? `?text=${encodeURIComponent(initialMessage.trim())}`
+        : '';
+
+    window.open(`https://wa.me/${digits}${messageParam}`, '_blank');
+    return true;
   }, []);
+
+  const handleOpenWhatsApp = useCallback(
+    (allocation) => {
+      openWhatsAppWindow(allocation?.phone);
+    },
+    [openWhatsAppWindow]
+  );
+
+  const handleManualConversationSubmit = useCallback(
+    async (payload) => {
+      toast.loading('Iniciando conversa…', {
+        id: MANUAL_CONVERSATION_TOAST_ID,
+        position: 'bottom-right',
+      });
+
+      try {
+        const result = await launchManualConversation(payload);
+        return result;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Não foi possível iniciar a conversa.';
+        toast.error(message, {
+          id: MANUAL_CONVERSATION_TOAST_ID,
+          description: 'Verifique os dados e tente novamente.',
+          position: 'bottom-right',
+        });
+        throw error;
+      }
+    },
+    [launchManualConversation]
+  );
+
+  const handleManualConversationSuccess = useCallback(
+    async (result, payload) => {
+      toast.success('Conversa iniciada', {
+        id: MANUAL_CONVERSATION_TOAST_ID,
+        duration: 2500,
+        position: 'bottom-right',
+      });
+
+      const sanitizedPhone = result?.phone ?? payload?.phone ?? '';
+      pendingFocusPhoneRef.current = sanitizedPhone || null;
+
+      try {
+        await refresh();
+      } catch (error) {
+        console.error('Falha ao recarregar inbox após iniciar conversa manual', error);
+      }
+
+      if (result?.lead?.allocationId) {
+        setActiveAllocationId(result.lead.allocationId);
+        pendingFocusPhoneRef.current = null;
+      }
+
+      if (sanitizedPhone) {
+        openWhatsAppWindow(
+          sanitizedPhone,
+          payload?.message ?? result?.message ?? ''
+        );
+      }
+    },
+    [openWhatsAppWindow, refresh, setActiveAllocationId]
+  );
 
   const handleUpdateAllocationStatus = useCallback(
     async (allocationId, status) => {
@@ -949,6 +1048,12 @@ export const LeadInbox = ({
                 onOpenWhatsApp={handleOpenWhatsApp}
                 isLoading={loading}
                 isSwitching={leadPanelSwitching}
+              />
+
+              <ManualConversationCard
+                onSubmit={handleManualConversationSubmit}
+                onSuccess={handleManualConversationSuccess}
+                isSubmitting={manualConversationPending}
               />
 
               <InboxActions
