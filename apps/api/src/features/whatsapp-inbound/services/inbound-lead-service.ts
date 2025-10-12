@@ -262,7 +262,6 @@ const pushUnique = (collection: string[], candidate: string | null): void => {
     collection.push(candidate);
   }
 };
-*/
 
 const resolveTenantIdentifiersFromMetadata = (metadata: Record<string, unknown>): string[] => {
   const identifiers: string[] = [];
@@ -1225,8 +1224,9 @@ export const __testing = {
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
   await handlePassthroughIngest(event);
 };
-/* Legacy pipeline (campaign/lead synchronization) retained for reference but disabled.
-   The passthrough handler above short-circuits all validations. */
+/*
+Legacy pipeline (campaign/lead synchronization) retained for reference but disabled.
+The passthrough handler above short-circuits all validations.
   const resolvedAvatar = [
     contact.avatarUrl,
     metadataContact.avatarUrl,
@@ -1816,3 +1816,4 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     }
   }
 };
+*/
