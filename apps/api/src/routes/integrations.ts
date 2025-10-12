@@ -25,6 +25,44 @@ import { assertValidSlug, toSlug } from '../lib/slug';
 import { respondWithValidationError } from '../utils/http-validation';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import { whatsappHttpRequestsCounter } from '../lib/metrics';
+import { getMvpBypassTenantId } from '../config/feature-flags';
+
+const normalizeQueryValue = (value: unknown): string | undefined => {
+  if (Array.isArray(value)) {
+    return normalizeQueryValue(value[0]);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  return undefined;
+};
+
+const resolveRequestTenantId = (req: Request): string => {
+  const queryTenant = normalizeQueryValue(req.query.tenantId);
+  if (queryTenant) {
+    return queryTenant;
+  }
+
+  const headerTenant = normalizeQueryValue(req.headers['x-tenant-id']);
+  if (headerTenant) {
+    return headerTenant;
+  }
+
+  const userTenant = typeof req.user?.tenantId === 'string' ? req.user.tenantId.trim() : '';
+  if (userTenant.length > 0) {
+    return userTenant;
+  }
+
+  const fallbackTenant = getMvpBypassTenantId();
+  if (fallbackTenant) {
+    return fallbackTenant;
+  }
+
+  return 'demo-tenant';
+};
 
 const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {
   if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -2250,7 +2288,7 @@ router.get(
   '/whatsapp/instances',
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
     const refreshQuery = req.query.refresh;
     const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
     const normalizedRefresh =
@@ -2411,7 +2449,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
     const { id, name, agreementId } = req.body as {
       id?: string;
       name: string;
@@ -2666,7 +2704,7 @@ router.post(
 
 const connectInstanceHandler = async (req: Request, res: Response) => {
   const instanceId = req.params.id;
-  const tenantId = req.user!.tenantId;
+  const tenantId = resolveRequestTenantId(req);
   const actorId = req.user?.id ?? 'system';
   const rawPhoneNumber = typeof req.body?.phoneNumber === 'string' ? req.body.phoneNumber : null;
   const rawPairingCode = typeof req.body?.code === 'string' ? req.body.code : null;
@@ -2978,7 +3016,7 @@ router.post(
     const instanceId = req.params.id;
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
     const disconnectOptions = wipe === undefined ? undefined : { wipe };
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3105,7 +3143,7 @@ router.delete(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id.trim();
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
     const wipe = typeof req.query?.wipe === 'boolean' ? (req.query.wipe as boolean) : false;
 
     let instance: PrismaWhatsAppInstance | null = null;
@@ -3235,7 +3273,7 @@ router.post(
       typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3290,7 +3328,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
     const actorId = req.user?.id ?? 'system';
     const instanceId = req.params.id.trim();
     const wipe = typeof req.body?.wipe === 'boolean' ? (req.body.wipe as boolean) : undefined;
@@ -3427,7 +3465,7 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3496,7 +3534,7 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3542,7 +3580,7 @@ router.get(
     const requestedInstanceId =
       typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3595,7 +3633,7 @@ router.get(
     const requestedInstanceId =
       typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
     const instanceId = requestedInstanceId || resolveDefaultInstanceId();
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3634,7 +3672,7 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3694,7 +3732,7 @@ router.post(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
     const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
 
     try {
@@ -3743,7 +3781,7 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3790,7 +3828,7 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = req.params.id;
-    const tenantId = req.user!.tenantId;
+    const tenantId = resolveRequestTenantId(req);
 
     try {
       const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
@@ -3853,7 +3891,7 @@ router.get('/whatsapp/session/status', requireTenant, (_req: Request, res: Respo
 
 // POST /api/integrations/whatsapp/instances/:instanceId/polls - Criar enquete
 router.post(
-  '/whatsapp/instances/:instanceId/polls',
+  '/whatsapp/instances/:id/polls',
   instanceIdParamValidator(),
   body('to').isString().isLength({ min: 1 }),
   body('question').isString().isLength({ min: 1 }),
@@ -3861,14 +3899,12 @@ router.post(
   body('options.*').isString().isLength({ min: 1 }),
   body('allowMultipleAnswers').optional().isBoolean().toBoolean(),
   validateRequest,
-  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
-    const { instanceId } = req.params;
+    const { id: instanceId } = req.params as { id: string };
 
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
-    if (!instance || instance.tenantId !== tenantId) {
+    if (!instance) {
       res.locals.errorCode = 'INSTANCE_NOT_FOUND';
       res.status(404).json({
         success: false,

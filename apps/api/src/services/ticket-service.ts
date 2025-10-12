@@ -2,7 +2,6 @@ import {
   ConflictError,
   Contact,
   CreateTicketDTO,
-  ForbiddenError,
   Lead,
   Message,
   Pagination,
@@ -140,18 +139,6 @@ const resolveDefaultQueueId = async (tenantId: string): Promise<string> => {
 
 export const getDefaultQueueIdForTenant = async (tenantId: string): Promise<string> =>
   resolveDefaultQueueId(tenantId);
-
-const ensureWhatsAppInstanceAccessible = async (tenantId: string, instanceId: string): Promise<void> => {
-  const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-  if (!instance) {
-    throw new NotFoundError('WhatsAppInstance', instanceId);
-  }
-
-  if (instance.tenantId !== tenantId) {
-    throw new ForbiddenError('Você não tem acesso a esta instância de WhatsApp.');
-  }
-};
 
 export type OutboundMessageError = {
   message: string;
@@ -1497,8 +1484,8 @@ export const sendMessage = async (
 };
 
 type SendOnTicketParams = {
-  tenantId: string;
-  operatorId: string;
+  tenantId?: string;
+  operatorId?: string;
   ticketId: string;
   payload: NormalizedMessagePayload;
   instanceId?: string;
@@ -1528,19 +1515,29 @@ export const sendOnTicket = async ({
   instanceId,
   idempotencyKey,
 }: SendOnTicketParams): Promise<OutboundMessageResponse> => {
-  const ticket = await storageFindTicketById(tenantId, ticketId);
+  let resolvedTenantId = tenantId ?? null;
+  let ticket: Ticket | null = null;
+
+  if (resolvedTenantId) {
+    ticket = await storageFindTicketById(resolvedTenantId, ticketId);
+  } else {
+    const ticketRecord = await prisma.ticket.findUnique({ where: { id: ticketId } });
+
+    if (!ticketRecord) {
+      throw new NotFoundError('Ticket', ticketId);
+    }
+
+    resolvedTenantId = ticketRecord.tenantId;
+    ticket = await storageFindTicketById(resolvedTenantId, ticketId);
+  }
 
   if (!ticket) {
     throw new NotFoundError('Ticket', ticketId);
   }
 
-  if (ticket.tenantId !== tenantId) {
-    throw new ConflictError('Ticket belongs to another tenant');
-  }
-
   const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
 
-  if (!contact || contact.tenantId !== tenantId) {
+  if (!contact) {
     throw new NotFoundError('Contact', ticket.contactId);
   }
 
@@ -1556,25 +1553,35 @@ export const sendOnTicket = async ({
     throw new Error('WHATSAPP_INSTANCE_REQUIRED');
   }
 
-  await ensureWhatsAppInstanceAccessible(tenantId, targetInstanceId);
+  const instance = await prisma.whatsAppInstance.findUnique({ where: { id: targetInstanceId } });
+
+  if (!instance) {
+    throw new NotFoundError('WhatsAppInstance', targetInstanceId);
+  }
+
+  if (!resolvedTenantId) {
+    throw new NotFoundError('Ticket', ticketId);
+  }
+
+  const tenantForOperations = resolvedTenantId;
 
   let payloadHash: string | null = null;
   if (idempotencyKey) {
     payloadHash = hashIdempotentPayload({
-      tenantId,
+      tenantId: tenantForOperations,
       ticketId,
       instanceId: targetInstanceId,
       payload,
     });
 
-    const cached = getIdempotentValue<OutboundMessageResponse>(tenantId, idempotencyKey);
+    const cached = getIdempotentValue<OutboundMessageResponse>(tenantForOperations, idempotencyKey);
     if (cached && cached.payloadHash === payloadHash) {
       return cached.value;
     }
   }
 
   const rateLimit = resolveInstanceRateLimit(targetInstanceId);
-  assertWithinRateLimit(rateKeyForInstance(tenantId, targetInstanceId), rateLimit);
+  assertWithinRateLimit(rateKeyForInstance(tenantForOperations, targetInstanceId), rateLimit);
 
   const metadata: Record<string, unknown> = {};
   if (typeof payload.previewUrl === 'boolean') {
@@ -1599,7 +1606,7 @@ export const sendOnTicket = async ({
   };
 
   const startedAt = Date.now();
-  const message = await sendMessage(tenantId, operatorId, messageInput);
+  const message = await sendMessage(tenantForOperations, operatorId, messageInput);
   const latencyMs = Date.now() - startedAt;
   const metricsInstanceId = message.instanceId ?? targetInstanceId;
 
@@ -1615,15 +1622,15 @@ export const sendOnTicket = async ({
   const response = buildOutboundResponse(message);
 
   if (idempotencyKey && payloadHash) {
-    rememberIdempotency(tenantId, idempotencyKey, payloadHash, response, IDEMPOTENCY_TTL_MS);
+    rememberIdempotency(tenantForOperations, idempotencyKey, payloadHash, response, IDEMPOTENCY_TTL_MS);
   }
 
   return response;
 };
 
 type SendToContactParams = {
-  tenantId: string;
-  operatorId: string;
+  tenantId?: string;
+  operatorId?: string;
   contactId: string;
   payload: NormalizedMessagePayload;
   instanceId?: string;
@@ -1642,12 +1649,22 @@ export const sendToContact = async ({
 }: SendToContactParams): Promise<OutboundMessageResponse> => {
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
 
-  if (!contact || contact.tenantId !== tenantId) {
+  if (!contact) {
+    throw new NotFoundError('Contact', contactId);
+  }
+
+  const resolvedTenantId = tenantId ?? contact.tenantId;
+
+  if (!resolvedTenantId) {
     throw new NotFoundError('Contact', contactId);
   }
 
   if (instanceId) {
-    await ensureWhatsAppInstanceAccessible(tenantId, instanceId);
+    const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+    if (!instance) {
+      throw new NotFoundError('WhatsAppInstance', instanceId);
+    }
   }
 
   let normalizedPhone = contact.phone?.trim() ?? undefined;
@@ -1671,13 +1688,13 @@ export const sendToContact = async ({
     throw new PhoneNormalizationError('Contato sem telefone válido para envio.');
   }
 
-  const existingTickets = await findTicketsByContact(tenantId, contactId);
+  const existingTickets = await findTicketsByContact(resolvedTenantId, contactId);
   let activeTicket = existingTickets.find((ticket) => OPEN_STATUSES.has(ticket.status));
 
   if (!activeTicket) {
-    const queueId = await resolveDefaultQueueId(tenantId);
+    const queueId = await resolveDefaultQueueId(resolvedTenantId);
     activeTicket = await createTicket({
-      tenantId,
+      tenantId: resolvedTenantId,
       contactId,
       queueId,
       channel: 'WHATSAPP',
@@ -1689,7 +1706,7 @@ export const sendToContact = async ({
   }
 
   return sendOnTicket({
-    tenantId,
+    tenantId: resolvedTenantId,
     operatorId,
     ticketId: activeTicket.id,
     payload,
@@ -1699,8 +1716,7 @@ export const sendToContact = async ({
 };
 
 type SendAdHocParams = {
-  tenantId: string;
-  operatorId: string;
+  operatorId?: string;
   instanceId: string;
   to: string;
   payload: NormalizedMessagePayload;
@@ -1708,14 +1724,19 @@ type SendAdHocParams = {
 };
 
 export const sendAdHoc = async ({
-  tenantId,
   operatorId,
   instanceId,
   to,
   payload,
   idempotencyKey,
 }: SendAdHocParams): Promise<OutboundMessageResponse> => {
-  await ensureWhatsAppInstanceAccessible(tenantId, instanceId);
+  const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+  if (!instance) {
+    throw new NotFoundError('WhatsAppInstance', instanceId);
+  }
+
+  const tenantId = instance.tenantId;
 
   const normalized = normalizePhoneNumber(to);
 

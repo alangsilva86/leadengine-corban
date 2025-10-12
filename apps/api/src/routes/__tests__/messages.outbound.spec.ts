@@ -1,6 +1,7 @@
 import express, { type Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Ticket } from '@ticketz/core';
 
 const {
   queueFindFirstMock,
@@ -9,6 +10,7 @@ const {
   contactUpdateMock,
   contactCreateMock,
   whatsAppInstanceFindUniqueMock,
+  ticketFindUniqueMock,
 } = vi.hoisted(() => ({
   queueFindFirstMock: vi.fn(),
   queueUpsertMock: vi.fn(),
@@ -16,6 +18,7 @@ const {
   contactUpdateMock: vi.fn(),
   contactCreateMock: vi.fn(),
   whatsAppInstanceFindUniqueMock: vi.fn(),
+  ticketFindUniqueMock: vi.fn(),
 }));
 
 vi.mock('@ticketz/storage', () => import('../../test-utils/storage-mock'));
@@ -37,6 +40,9 @@ vi.mock('../../lib/prisma', () => ({
     },
     whatsAppInstance: {
       findUnique: (...args: unknown[]) => whatsAppInstanceFindUniqueMock(...args),
+    },
+    ticket: {
+      findUnique: (...args: unknown[]) => ticketFindUniqueMock(...args),
     },
   },
 }));
@@ -117,6 +123,7 @@ type MockContact = {
 };
 
 const contacts = new Map<string, MockContact>();
+const tickets = new Map<string, Ticket>();
 
 describe('Outbound message routes', () => {
   let socket: MockSocketServer;
@@ -141,6 +148,15 @@ describe('Outbound message routes', () => {
     });
 
     contacts.clear();
+    tickets.clear();
+
+    ticketFindUniqueMock.mockImplementation(async (args: { where: Record<string, unknown> }) => {
+      const { where } = args;
+      if (where && 'id' in where && typeof where.id === 'string') {
+        return tickets.get(where.id) ?? null;
+      }
+      return null;
+    });
 
     const baseContact: MockContact = {
       id: 'contact-123',
@@ -259,6 +275,7 @@ describe('Outbound message routes', () => {
     contactUpdateMock.mockReset();
     contactCreateMock.mockReset();
     whatsAppInstanceFindUniqueMock.mockReset();
+    ticketFindUniqueMock.mockReset();
   });
 
   it('sends outbound message on ticket and emits realtime events', async () => {
@@ -271,6 +288,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     const app = buildApp();
     const response = await request(app)
@@ -324,6 +342,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     sendMessageSpy.mockRejectedValueOnce(
       new WhatsAppBrokerError('Request timed out', 'REQUEST_TIMEOUT', 408, 'req-123')
@@ -364,6 +383,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     sendMessageSpy.mockRejectedValueOnce(
       new WhatsAppBrokerError('Session disconnected', 'SESSION_NOT_CONNECTED', 409, 'req-409')
@@ -402,6 +422,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     sendMessageSpy.mockRejectedValueOnce(
       new WhatsAppBrokerError('Invalid recipient number', 'INVALID_RECIPIENT', 400, 'req-400')
@@ -440,6 +461,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     sendMessageSpy.mockRejectedValueOnce(
       new WhatsAppBrokerError('Rate limit reached', 'RATE_LIMIT_EXCEEDED', 429, 'req-429')
@@ -478,6 +500,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     const app = buildApp();
 
@@ -663,6 +686,7 @@ describe('Outbound message routes', () => {
       priority: 'NORMAL',
       tags: [],
     });
+    tickets.set(ticket.id, ticket);
 
     const app = buildApp();
 

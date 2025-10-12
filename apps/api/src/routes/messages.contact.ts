@@ -2,7 +2,6 @@ import { Router, type Request, type Response } from 'express';
 import { ZodError } from 'zod';
 
 import { asyncHandler } from '../middleware/error-handler';
-import { requireTenant } from '../middleware/auth';
 import { SendByContactSchema, normalizePayload } from '../dtos/message-schemas';
 import { sendToContact } from '../services/ticket-service';
 
@@ -10,7 +9,6 @@ const router: Router = Router();
 
 router.post(
   '/contacts/:contactId/messages',
-  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const { contactId } = req.params;
     let parsed;
@@ -36,8 +34,7 @@ router.post(
     const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
 
     const response = await sendToContact({
-      tenantId: req.user!.tenantId,
-      operatorId: req.user!.id,
+      operatorId: req.user?.id,
       contactId,
       instanceId: parsed.instanceId,
       to: parsed.to,

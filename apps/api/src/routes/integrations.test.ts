@@ -761,6 +761,8 @@ describe('WhatsApp integration routes with configured broker', () => {
   });
 
   it('creates a WhatsApp instance', async () => {
+  });
+
   it('creates a WhatsApp instance preserving the friendly name', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');
@@ -2605,14 +2607,15 @@ describe('WhatsApp integration routes with configured broker', () => {
       const body = await response.json();
 
       expect(response.status).toBe(202);
-      expect(sendAdHocMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: 'tenant-123',
-          instanceId: 'inst-1',
-          to: '5511999999999',
-          payload: expect.objectContaining({ type: 'text', content: 'Olá instancia' }),
-        })
-      );
+      expect(sendAdHocMock).toHaveBeenCalledTimes(1);
+      const adHocArgs = sendAdHocMock.mock.calls[0]?.[0];
+      expect(adHocArgs).toMatchObject({
+        operatorId: 'user-1',
+        instanceId: 'inst-1',
+        to: '5511999999999',
+        payload: expect.objectContaining({ type: 'text', content: 'Olá instancia' }),
+      });
+      expect(adHocArgs).not.toHaveProperty('tenantId');
       expect(body).toEqual({ success: true, data: { id: 'wamid-321' } });
     } finally {
       await stopTestServer(server);
