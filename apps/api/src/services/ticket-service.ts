@@ -138,6 +138,9 @@ const resolveDefaultQueueId = async (tenantId: string): Promise<string> => {
   return queue.id;
 };
 
+export const getDefaultQueueIdForTenant = async (tenantId: string): Promise<string> =>
+  resolveDefaultQueueId(tenantId);
+
 const ensureWhatsAppInstanceAccessible = async (tenantId: string, instanceId: string): Promise<void> => {
   const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 

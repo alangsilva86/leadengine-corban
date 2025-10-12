@@ -21,28 +21,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     useManualConversationLauncher();
   const [manualConversationOpen, setManualConversationOpen] = useState(false);
 
-  const openWhatsAppWindow = useCallback((rawPhone, initialMessage) => {
-    const digits = String(rawPhone ?? '').replace(/\D/g, '');
-    if (!digits) {
-      toast.info('Nenhum telefone disponível para este lead.', {
-        description: 'Cadastre um telefone válido para abrir o WhatsApp automaticamente.',
-        position: 'bottom-right',
-      });
-      return false;
-    }
-
-    const messageParam =
-      typeof initialMessage === 'string' && initialMessage.trim().length > 0
-        ? `?text=${encodeURIComponent(initialMessage.trim())}`
-        : '';
-
-    if (typeof window !== 'undefined') {
-      window.open(`https://wa.me/${digits}${messageParam}`, '_blank');
-    }
-
-    return true;
-  }, []);
-
   const handleManualConversationSubmit = useCallback(
     async (payload) => {
       toast.loading('Iniciando conversa…', {
@@ -68,7 +46,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   );
 
   const handleManualConversationSuccess = useCallback(
-    async (result, payload) => {
+    async (result) => {
       toast.success('Conversa iniciada', {
         id: MANUAL_CONVERSATION_TOAST_ID,
         duration: 2500,
@@ -77,8 +55,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
       setManualConversationOpen(false);
 
-      const sanitizedPhone = result?.phone ?? payload?.phone ?? '';
-      const initialMessage = result?.message ?? payload?.message ?? '';
+      const ticketId = result?.ticket?.id ?? result?.messageRecord?.ticketId ?? result?.message?.ticketId ?? null;
 
       try {
         await controller.ticketsQuery?.refetch?.({ cancelRefetch: false });
@@ -86,11 +63,11 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         console.error('Falha ao recarregar tickets após iniciar conversa manual', error);
       }
 
-      if (sanitizedPhone) {
-        openWhatsAppWindow(sanitizedPhone, initialMessage);
+      if (ticketId && typeof controller.selectTicket === 'function') {
+        controller.selectTicket(ticketId);
       }
     },
-    [controller.ticketsQuery, openWhatsAppWindow]
+    [controller.selectTicket, controller.ticketsQuery]
   );
 
   const sendMessage = ({ content, attachments = [], template }) => {
