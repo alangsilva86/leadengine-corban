@@ -39,6 +39,7 @@ export {
   createMessage,
   createOutboundMessage,
   updateMessage,
+  findMessageByExternalId,
   listMessages,
   applyBrokerAck,
 } from './repositories/ticket-repository';

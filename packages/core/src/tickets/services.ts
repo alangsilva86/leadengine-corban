@@ -307,12 +307,15 @@ export class SendMessageUseCase implements UseCase<SendMessageDTO & { tenantId: 
       const mediaUrl = input.mediaUrl ?? undefined;
 
       // Criar mensagem
+      const direction = input.direction;
+      const status = direction === 'INBOUND' ? 'SENT' : 'PENDING';
+
       const message = await this.messageRepository.create({
         tenantId: input.tenantId,
         ticketId: input.ticketId,
         contactId: ticket.contactId,
         userId: input.userId,
-        direction: 'OUTBOUND',
+        direction,
         type: input.type,
         content,
         caption: input.caption,
@@ -320,13 +323,17 @@ export class SendMessageUseCase implements UseCase<SendMessageDTO & { tenantId: 
         mediaFileName: input.mediaFileName,
         mediaType: input.mediaMimeType,
         quotedMessageId: input.quotedMessageId,
-        status: 'PENDING',
+        status,
         metadata: input.metadata,
         idempotencyKey: input.idempotencyKey,
+        externalId: input.externalId,
       });
 
       // Enviar via provedor externo
       try {
+        if (direction !== 'OUTBOUND') {
+          return success(message);
+        }
         const destination = contact.phone || contact.email;
         if (!destination) {
           throw new ValidationError('Contact has no phone or email');

@@ -514,6 +514,7 @@ export const createMessage = async (
         quotedMessageId: input.quotedMessageId ?? null,
         metadata: metadataRecord as Prisma.InputJsonValue,
         idempotencyKey: input.idempotencyKey ?? null,
+        externalId: input.externalId ?? null,
         createdAt,
         updatedAt: createdAt,
       },
@@ -657,6 +658,26 @@ export const updateMessage = async (
   });
 
   return mapMessage(updated);
+};
+
+export const findMessageByExternalId = async (
+  tenantId: string,
+  externalId: string
+): Promise<Message | null> => {
+  const prisma = getPrismaClient();
+  const trimmed = externalId.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const existing = await prisma.message.findFirst({
+    where: {
+      tenantId,
+      externalId: trimmed,
+    },
+  });
+
+  return existing ? mapMessage(existing) : null;
 };
 
 export const createOutboundMessage = async (

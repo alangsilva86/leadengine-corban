@@ -309,10 +309,15 @@ interface InboundMessageDetails {
 export interface InboundWhatsAppEvent {
   id: string;
   instanceId: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  chatId: string | null;
+  externalId?: string | null;
   timestamp: string | null;
   contact: InboundContactDetails;
   message: InboundMessageDetails;
   metadata?: Record<string, unknown> | null;
+  tenantId?: string | null;
+  sessionId?: string | null;
 }
 
 const sanitizePhone = (value?: string | null): string | undefined => {
@@ -965,7 +970,17 @@ export const __testing = {
 };
 
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
-  const { instanceId, contact, message, timestamp } = event;
+  const {
+    instanceId,
+    contact,
+    message,
+    timestamp,
+    direction,
+    chatId,
+    externalId,
+    tenantId: eventTenantId,
+    sessionId: eventSessionId,
+  } = event;
   const normalizedPhone = sanitizePhone(contact.phone);
   const document = sanitizeDocument(contact.document, normalizedPhone);
   const now = Date.now();
@@ -1009,11 +1024,43 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     metadataPushName
   );
 
-  logger.info('🎯 LeadEngine • WhatsApp :: ✉️ Processando mensagem inbound fresquinha', {
+  metadataRecord.direction = direction;
+  if (chatId && !metadataRecord.chatId) {
+    metadataRecord.chatId = chatId;
+  }
+  if (messageExternalId && !metadataRecord.externalId) {
+    metadataRecord.externalId = messageExternalId;
+  }
+  if (eventTenantId && !metadataRecord.tenantId) {
+    metadataRecord.tenantId = eventTenantId;
+  }
+  if (eventSessionId && !metadataRecord.sessionId) {
+    metadataRecord.sessionId = eventSessionId;
+  }
+  const metadataBroker =
+    metadataRecord.broker && typeof metadataRecord.broker === 'object'
+      ? (metadataRecord.broker as Record<string, unknown>)
+      : null;
+  if (metadataBroker) {
+    metadataBroker.direction = direction;
+    metadataBroker.instanceId = metadataBroker.instanceId ?? instanceId;
+    if (messageExternalId && !metadataBroker.messageId) {
+      metadataBroker.messageId = messageExternalId;
+    }
+  } else {
+    metadataRecord.broker = {
+      direction,
+      instanceId,
+      messageId: messageExternalId,
+    };
+  }
+
+  logger.info('🎯 LeadEngine • WhatsApp :: ✉️ Processando mensagem WhatsApp fresquinha', {
     requestId,
     instanceId,
     messageId: message.id ?? null,
     timestamp,
+    direction,
     phone: maskPhone(normalizedPhone ?? null),
     document: maskDocument(document),
   });
@@ -1180,9 +1227,19 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   }
 
   const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
+  const messageKeyRecord =
+    message && typeof message === 'object' && 'key' in message && message.key && typeof message.key === 'object'
+      ? (message.key as { id?: string | null })
+      : null;
+  const messageExternalId =
+    readString(externalId) ??
+    readString(normalizedMessage.id) ??
+    readString((message as InboundMessageDetails).id) ??
+    readString(messageKeyRecord?.id) ??
+    event.id;
 
-  const dedupeKey = `${tenantId}:${normalizedMessage.id}`;
-  if (!simpleMode && shouldSkipByDedupe(dedupeKey, now)) {
+  const dedupeKey = `${tenantId}:${messageExternalId ?? normalizedMessage.id}`;
+  if (!simpleMode && direction === 'INBOUND' && shouldSkipByDedupe(dedupeKey, now)) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       requestId,
       tenantId,
@@ -1212,15 +1269,18 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       ticketId,
       content: normalizedMessage.text,
       type: normalizedMessage.type,
+      direction,
+      externalId: messageExternalId ?? undefined,
       mediaUrl: normalizedMessage.mediaUrl ?? undefined,
       metadata: {
         broker: {
-          messageId: normalizedMessage.id,
+          messageId: messageExternalId ?? normalizedMessage.id,
           clientMessageId: normalizedMessage.clientMessageId,
           conversationId: normalizedMessage.conversationId,
           instanceId,
           campaignIds: campaigns.map((campaign) => campaign.id),
         },
+        externalId: messageExternalId ?? undefined,
         media: normalizedMessage.mediaUrl
           ? {
               url: normalizedMessage.mediaUrl,
@@ -1266,7 +1326,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
     let inboundLeadId: string | null = null;
 
-    if (!simpleMode) {
+    if (!simpleMode && direction === 'INBOUND') {
       try {
         const { lead } = await upsertLeadFromInbound({
           tenantId,

@@ -29,12 +29,17 @@ export const MessageBubble = ({ message }) => {
     tone,
     outbound ? 'self-end rounded-tr-sm' : 'self-start rounded-tl-sm'
   );
+  const directionChip = outbound ? 'bg-sky-500/30 text-sky-100' : 'bg-slate-800/60 text-slate-200';
+  const directionLabel = outbound ? 'OUT' : 'IN';
 
   const ack = STATUS_ICONS[message.status ?? 'SENT'] ?? STATUS_ICONS.SENT;
 
   return (
     <div className={cn('flex w-full flex-col gap-1', outbound ? 'items-end' : 'items-start')}>
       <div className={bubbleClass}>
+        <div className={cn('mb-2 flex text-[10px] font-semibold uppercase tracking-wide', outbound ? 'justify-end' : 'justify-start')}>
+          <span className={cn('rounded-full px-2 py-0.5', directionChip)}>{directionLabel}</span>
+        </div>
         <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
           {message.content}
         </div>

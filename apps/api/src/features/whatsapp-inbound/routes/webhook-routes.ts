@@ -218,7 +218,7 @@ const normalizeInboundType = (value: unknown): 'message' | null => {
   return null;
 };
 
-const normalizeInboundDirection = (value: unknown): 'inbound' | null => {
+const normalizeMessageDirection = (value: unknown): 'inbound' | 'outbound' | null => {
   if (typeof value !== 'string') {
     return null;
   }
@@ -230,6 +230,10 @@ const normalizeInboundDirection = (value: unknown): 'inbound' | null => {
 
   if (['inbound', 'incoming', 'received', 'receive', 'in'].includes(normalized)) {
     return 'inbound';
+  }
+
+  if (['outbound', 'sent', 'sending', 'out'].includes(normalized)) {
+    return 'outbound';
   }
 
   return null;
@@ -247,7 +251,7 @@ const tryParseModernWebhookEvent = (
   }
 
   const normalizedType = normalizeInboundType(entry.type);
-  const normalizedDirection = normalizeInboundDirection(entry.direction);
+  const normalizedDirection = normalizeMessageDirection(entry.direction);
 
   if (!normalizedType && !normalizedDirection) {
     return null;
@@ -258,10 +262,10 @@ const tryParseModernWebhookEvent = (
 
   if (normalizedType) {
     candidate.event = 'message';
-    candidate.direction = 'inbound';
+    candidate.direction = normalizedDirection ?? 'inbound';
     normalization = 'type-alias';
   } else if (normalizedDirection) {
-    candidate.direction = 'inbound';
+    candidate.direction = normalizedDirection;
     normalization = 'direction-alias';
   }
 
@@ -305,6 +309,9 @@ const buildInboundEvent = (
   }
 ): BrokerInboundEvent => {
   const { instanceId, timestamp, message, from, metadata } = parsed;
+  const direction =
+    parsed.direction === 'outbound' ? 'OUTBOUND' : parsed.direction === 'inbound' ? 'INBOUND' : 'INBOUND';
+  const eventType = direction === 'OUTBOUND' ? 'MESSAGE_OUTBOUND' : 'MESSAGE_INBOUND';
   const rawMessage = { ...asRecord(message) };
   const rawMetadata = asRecord(metadata);
 
@@ -356,6 +363,9 @@ const buildInboundEvent = (
   const receivedAt = context.receivedAt ?? new Date().toISOString();
   const metadataEnvelope = {
     ...rawMetadata,
+    direction,
+    tenantId: context.tenantId ?? (typeof rawMetadata.tenantId === 'string' ? rawMetadata.tenantId : undefined),
+    instanceId,
     requestId:
       typeof rawMetadata.requestId === 'string' && rawMetadata.requestId.trim().length > 0
         ? rawMetadata.requestId
@@ -365,10 +375,26 @@ const buildInboundEvent = (
         ? rawMetadata.receivedAt
         : receivedAt,
   };
+  const brokerMetadata =
+    metadataEnvelope && typeof metadataEnvelope === 'object' && metadataEnvelope !== null
+      ? (metadataEnvelope as Record<string, unknown>).broker
+      : undefined;
+  if (brokerMetadata && typeof brokerMetadata === 'object') {
+    (metadataEnvelope as Record<string, unknown>).broker = {
+      ...(brokerMetadata as Record<string, unknown>),
+      direction,
+      instanceId,
+    };
+  } else {
+    (metadataEnvelope as Record<string, unknown>).broker = {
+      direction,
+      instanceId,
+    };
+  }
 
   return {
     id: messageId,
-    type: 'MESSAGE_INBOUND',
+    type: eventType,
     tenantId: context.tenantId,
     sessionId: context.sessionId,
     instanceId,
@@ -377,6 +403,7 @@ const buildInboundEvent = (
     payload: {
       instanceId,
       timestamp: normalizedTimestamp,
+      direction,
       contact,
       message: rawMessage,
       metadata: metadataEnvelope,
@@ -647,17 +674,18 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
   const queued = normalizedEvents.length;
 
   if (queued === 0) {
-    logger.debug('📭 [Webhook] Nenhum evento inbound elegível encontrado', {
+    logger.debug('📭 [Webhook] Nenhum evento de mensagem elegível encontrado', {
       received: rawEvents.length,
     });
     return res.status(204).send();
   }
 
   normalizedEvents.forEach((event) => {
-    logger.info('📬 [Webhook] Evento inbound normalizado', {
+    logger.info('📬 [Webhook] Evento de mensagem normalizado', {
       requestId,
       eventId: event.id,
       instanceId: event.instanceId,
+      direction: event.payload.direction ?? null,
       hasMessage: Boolean(event.payload.message),
       hasContact: Boolean(event.payload.contact?.phone || event.payload.contact?.name),
     });

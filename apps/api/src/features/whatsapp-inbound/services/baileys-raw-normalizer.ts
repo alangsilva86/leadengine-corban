@@ -417,11 +417,12 @@ const buildBaseMetadata = (params: {
   sessionId?: string;
   brokerId?: string | null;
   instanceId?: string | null;
+  direction: 'inbound' | 'outbound';
 }): UnknownRecord => {
   return compactRecord({
     broker: compactRecord({
       type: 'baileys',
-      direction: 'inbound',
+      direction: params.direction,
       owner: params.owner ?? undefined,
       source: params.source ?? 'raw_normalized',
       messageType: params.messageType,
@@ -430,8 +431,10 @@ const buildBaseMetadata = (params: {
       sessionId: params.sessionId ?? undefined,
       brokerId: params.brokerId ?? undefined,
       normalized: true,
+      fromMe: params.direction === 'outbound',
     }),
     source: 'raw_normalized',
+    direction: params.direction,
     rawKey:
       params.remoteJid ||
       params.participant ||
@@ -490,15 +493,8 @@ const normalizeMessagePayload = (
   }
 ): { normalized: NormalizedRawUpsertMessage; contentType: string } | { ignore: IgnoredRawUpsertMessage } => {
   const key = asRecord(message.key);
-  if (key?.fromMe === true) {
-    return {
-      ignore: {
-        messageIndex,
-        reason: 'from_me',
-        details: { id: readString(key.id), remoteJid: readString(key.remoteJid) ?? null },
-      },
-    };
-  }
+  const fromMe = key?.fromMe === true;
+  const direction: 'inbound' | 'outbound' = fromMe ? 'outbound' : 'inbound';
 
   const rawContent = asRecord(message.message);
   const messageContent = unwrapMessageContent(rawContent);
@@ -564,6 +560,7 @@ const normalizeMessagePayload = (
       id: readString(key?.id) ?? messageId,
       remoteJid: readString(key?.remoteJid),
       participant: readString(key?.participant),
+      fromMe: fromMe || undefined,
     }),
     messageTimestamp,
     imageMessage: extractMediaDetails(messageContent, 'imageMessage') ??
@@ -610,6 +607,7 @@ const normalizeMessagePayload = (
     sessionId: context.sessionId,
     brokerId: context.brokerId ?? null,
     instanceId: context.instanceId,
+    direction,
   });
 
   metadata.contact = compactRecord({
@@ -634,7 +632,7 @@ const normalizeMessagePayload = (
 
   const normalized: BrokerWebhookInbound = {
     event: 'message',
-    direction: 'inbound',
+    direction,
     instanceId: context.instanceId,
     timestamp: toIsoTimestamp(messageTimestamp),
     from: compactRecord({

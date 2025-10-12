@@ -1098,6 +1098,7 @@ export const createMessage = async (
     mediaType: input.mediaMimeType ?? undefined,
     mediaSize: undefined,
     status: input.status ?? 'SENT',
+    externalId: input.externalId ?? undefined,
     externalId: undefined,
     quotedMessageId: input.quotedMessageId,
     metadata: metadataCopy,

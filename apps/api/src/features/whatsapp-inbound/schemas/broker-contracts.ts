@@ -13,14 +13,22 @@ const nullableTrimmedString = z
   })
   .nullable();
 
-const timestampInput = z.union([
-  z.string().transform((value) => {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }),
-  z.number().transform((value) => (Number.isFinite(value) ? value : null)),
-  z.null(),
-]).optional();
+const directionInput = z
+  .string()
+  .transform((value) => value.trim().toLowerCase())
+  .pipe(z.enum(['inbound', 'outbound']))
+  .optional();
+
+const timestampInput = z
+  .union([
+    z.string().transform((value) => {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
+    z.number().transform((value) => (Number.isFinite(value) ? value : null)),
+    z.null(),
+  ])
+  .optional();
 
 const normalizeTimestamp = (value: string | number | null | undefined): string | null => {
   if (value === undefined || value === null) {
@@ -78,16 +86,24 @@ export const BrokerInboundEventPayloadSchema = z
   .object({
     instanceId: trimmedString,
     timestamp: timestampInput,
+    direction: directionInput,
     contact: BrokerInboundContactSchema.default({}) as unknown as z.ZodType<BrokerInboundContact>,
     message: BrokerInboundMessageSchema.default({}) as unknown as z.ZodType<BrokerInboundMessage>,
     metadata: BrokerInboundMetadataSchema.default({}) as unknown as z.ZodType<BrokerInboundMetadata>,
   })
   .transform((payload) => {
     const normalizedTimestamp = normalizeTimestamp(payload.timestamp);
+    const normalizedDirection =
+      payload.direction === 'outbound'
+        ? 'OUTBOUND'
+        : payload.direction === 'inbound'
+        ? 'INBOUND'
+        : 'INBOUND';
 
     return {
       instanceId: payload.instanceId,
       timestamp: normalizedTimestamp,
+      direction: normalizedDirection,
       contact: payload.contact,
       message: payload.message,
       metadata: payload.metadata,
@@ -99,7 +115,7 @@ export type BrokerInboundEventPayload = z.infer<typeof BrokerInboundEventPayload
 export const BrokerInboundEventSchema = z
   .object({
     id: trimmedString,
-    type: z.literal('MESSAGE_INBOUND'),
+    type: z.enum(['MESSAGE_INBOUND', 'MESSAGE_OUTBOUND']),
     tenantId: nullableTrimmedString.optional(),
     sessionId: nullableTrimmedString.optional(),
     instanceId: trimmedString,
@@ -109,10 +125,15 @@ export const BrokerInboundEventSchema = z
   })
   .transform((event) => {
     const timestamp = normalizeTimestamp(event.timestamp) ?? event.payload.timestamp;
+    const type = event.type === 'MESSAGE_OUTBOUND' ? 'MESSAGE_OUTBOUND' : 'MESSAGE_INBOUND';
+    const direction =
+      event.payload.direction ??
+      (type === 'MESSAGE_OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
     const cursor = normalizeTimestamp(event.cursor) ?? null;
+
     return {
       id: event.id,
-      type: event.type,
+      type,
       tenantId: event.tenantId ?? undefined,
       sessionId: event.sessionId ?? undefined,
       instanceId: event.instanceId,
@@ -120,6 +141,7 @@ export const BrokerInboundEventSchema = z
       cursor,
       payload: {
         ...event.payload,
+        direction,
         timestamp,
       },
     };
@@ -218,7 +240,7 @@ export type BrokerOutboundResponse = z.infer<typeof BrokerOutboundResponseSchema
 export const BrokerWebhookInboundSchema = z
   .object({
     event: z.literal('message'),
-    direction: z.literal('inbound'),
+    direction: directionInput.default('inbound'),
     instanceId: trimmedString,
     timestamp: timestampInput,
     message: BrokerInboundMessageSchema,
@@ -231,6 +253,7 @@ export const BrokerWebhookInboundSchema = z
     message: entry.message,
     from: entry.from,
     metadata: entry.metadata,
+    direction: entry.direction === 'outbound' ? 'outbound' : 'inbound',
   }));
 
 export type BrokerWebhookInbound = z.infer<typeof BrokerWebhookInboundSchema>;

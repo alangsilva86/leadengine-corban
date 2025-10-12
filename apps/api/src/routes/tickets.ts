@@ -524,6 +524,7 @@ router.post(
       ticketId: req.body.ticketId,
       content: req.body.content,
       type: req.body.type || 'TEXT',
+      direction: 'OUTBOUND',
       mediaUrl: req.body.mediaUrl,
       quotedMessageId: req.body.quotedMessageId,
       metadata: req.body.metadata || {},

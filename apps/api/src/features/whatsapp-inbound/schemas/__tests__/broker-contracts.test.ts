@@ -27,6 +27,7 @@ describe('broker-contracts', () => {
     expect(result.instanceId).toBe('instance-123');
     expect(result.timestamp).toMatch(/^2023/);
     expect(result.message).toHaveProperty('conversation', 'Hello there');
+    expect(result.direction).toBe('inbound');
   });
 
   it('validates inbound broker queue events', () => {
@@ -38,6 +39,7 @@ describe('broker-contracts', () => {
       payload: {
         instanceId: 'instance-123',
         timestamp: '2024-04-30T12:00:00.000Z',
+        direction: 'inbound',
         contact: {
           phone: '+5511999999999',
           registrations: ['ABC123'],
@@ -51,6 +53,7 @@ describe('broker-contracts', () => {
 
     expect(parsed.payload.contact.registrations).toEqual(['ABC123']);
     expect(parsed.timestamp).toBe('2024-04-30T12:00:00.000Z');
+    expect(parsed.payload.direction).toBe('INBOUND');
   });
 
   it('enforces outbound message contract', () => {

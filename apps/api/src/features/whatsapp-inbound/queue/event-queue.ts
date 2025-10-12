@@ -93,10 +93,10 @@ export const normalizeWhatsAppBrokerEvent = (input: NormalizedEventInput): Whats
   const timestamp = typeof input.timestamp === 'string' && input.timestamp.trim().length > 0 ? input.timestamp.trim() : undefined;
   const cursor = typeof input.cursor === 'string' && input.cursor.trim().length > 0 ? input.cursor.trim() : null;
 
-  if (rawType === 'MESSAGE_INBOUND') {
+  if (rawType === 'MESSAGE_INBOUND' || rawType === 'MESSAGE_OUTBOUND') {
     const parsed = BrokerInboundEventSchema.safeParse({
       id,
-      type: 'MESSAGE_INBOUND',
+      type: rawType,
       tenantId,
       sessionId,
       instanceId: instanceId ?? '',

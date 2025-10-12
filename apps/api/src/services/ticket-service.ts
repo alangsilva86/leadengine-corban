@@ -21,6 +21,7 @@ import {
   createTicket as storageCreateTicket,
   findTicketById as storageFindTicketById,
   findTicketsByContact,
+  findMessageByExternalId as storageFindMessageByExternalId,
   listMessages as storageListMessages,
   listTickets as storageListTickets,
   updateMessage as storageUpdateMessage,
@@ -1234,27 +1235,37 @@ export const sendMessage = async (
   const effectiveInstanceId = input.instanceId ?? inferredInstanceId;
 
   let messageRecord: Message | null;
+  let wasDuplicate = false;
+  const direction = input.direction;
+  const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
 
   try {
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
       ...input,
       content: input.content ?? input.caption ?? '',
-      direction: userId ? 'OUTBOUND' : 'INBOUND',
+      direction,
       userId,
-      status: userId ? 'PENDING' : 'SENT',
+      status: inferredStatus,
       instanceId: effectiveInstanceId ?? undefined,
       idempotencyKey: input.idempotencyKey ?? undefined,
+      externalId: input.externalId ?? undefined,
     });
   } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('Mensagem duplicada detectada para este ticket.', { cause: error });
+    if (isUniqueViolation(error) && input.externalId) {
+      const existing = await storageFindMessageByExternalId(tenantId, input.externalId);
+      if (existing) {
+        messageRecord = existing;
+        wasDuplicate = true;
+      } else {
+        throw new ConflictError('Mensagem duplicada detectada para este ticket.', { cause: error });
+      }
+    } else {
+      handleDatabaseError(error, {
+        action: 'createMessage',
+        tenantId,
+        ticketId: input.ticketId,
+      });
     }
-
-    handleDatabaseError(error, {
-      action: 'createMessage',
-      tenantId,
-      ticketId: input.ticketId,
-    });
   }
 
   if (!messageRecord) {
@@ -1276,11 +1287,13 @@ export const sendMessage = async (
 
   const providerMessageId = resolveProviderMessageId(message.metadata);
 
-  emitMessageCreatedEvents(tenantId, ticketSnapshot, message, {
-    userId: userId ?? null,
-    instanceId: effectiveInstanceId ?? null,
-    providerMessageId,
-  });
+  if (!wasDuplicate) {
+    emitMessageCreatedEvents(tenantId, ticketSnapshot, message, {
+      userId: userId ?? null,
+      instanceId: effectiveInstanceId ?? null,
+      providerMessageId,
+    });
+  }
 
   const markAsFailed = async (errorDetails: {
     message: string;
@@ -1564,6 +1577,7 @@ export const sendOnTicket = async ({
     ticketId,
     type: toMessageType(payload.type),
     instanceId: targetInstanceId,
+    direction: 'OUTBOUND',
     content: payload.content,
     caption: payload.caption,
     mediaUrl: payload.mediaUrl,
