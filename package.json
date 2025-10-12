@@ -14,7 +14,7 @@
     "start": "pnpm --filter web run start",
     "build": "pnpm run build:libs && pnpm run build:api && pnpm run build:web",
     "build:css-report": "cross-env GENERATE_CSS_REPORT=true pnpm run build && pnpm --filter web run css:report",
-    "build:libs": "pnpm --filter @ticketz/shared build && pnpm --filter @ticketz/core build && pnpm --filter @ticketz/storage build && pnpm --filter @ticketz/integrations build",
+    "build:libs": "pnpm --filter @ticketz/contracts build && pnpm --filter @ticketz/shared build && pnpm --filter @ticketz/core build && pnpm --filter @ticketz/storage build && pnpm --filter @ticketz/integrations build",
     "build:api": "pnpm --filter @ticketz/api build",
     "build:web": "pnpm --filter web build",
     "dev": "pnpm -r --parallel dev",

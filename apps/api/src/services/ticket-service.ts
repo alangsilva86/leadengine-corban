@@ -49,7 +49,11 @@ import {
   hashIdempotentPayload,
   rememberIdempotency,
 } from '../utils/idempotency';
-import type { NormalizedMessagePayload } from '../dtos/message-schemas';
+import type {
+  NormalizedMessagePayload,
+  OutboundMessageError,
+  OutboundMessageResponse,
+} from '@ticketz/contracts';
 import { isWhatsappPassthroughModeEnabled } from '../config/feature-flags';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
@@ -139,22 +143,6 @@ const resolveDefaultQueueId = async (tenantId: string): Promise<string> => {
 
 export const getDefaultQueueIdForTenant = async (tenantId: string): Promise<string> =>
   resolveDefaultQueueId(tenantId);
-
-export type OutboundMessageError = {
-  message: string;
-  code?: string;
-  status?: number;
-  requestId?: string;
-};
-
-export type OutboundMessageResponse = {
-  queued: true;
-  ticketId: string;
-  messageId: string;
-  status: Message['status'];
-  externalId: string | null;
-  error: OutboundMessageError | null;
-};
 
 const buildOutboundResponse = (message: Message): OutboundMessageResponse => {
   const brokerMeta =

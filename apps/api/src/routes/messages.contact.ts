@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { ZodError } from 'zod';
 
+import { SendByContactSchema, normalizePayload } from '@ticketz/contracts';
 import { asyncHandler } from '../middleware/error-handler';
-import { SendByContactSchema, normalizePayload } from '../dtos/message-schemas';
 import { sendToContact } from '../services/ticket-service';
 
 const router: Router = Router();
