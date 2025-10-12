@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import ConversationArea from './components/ConversationArea/ConversationArea.jsx';
@@ -8,11 +8,90 @@ import QueueList from './components/QueueList/QueueList.jsx';
 import FilterToolbar from './components/FilterToolbar/FilterToolbar.jsx';
 import useChatController from './hooks/useChatController.js';
 import { resolveWhatsAppErrorCopy } from '../whatsapp/utils/whatsapp-error-codes.js';
+import ManualConversationDialog from './components/ManualConversationDialog.jsx';
+import { useManualConversationLauncher } from '@/features/leads/inbox/hooks/useManualConversationLauncher.js';
+
+const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
 export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
 
   const controller = useChatController({ tenantId, currentUser });
+  const { launch: launchManualConversation, isPending: manualConversationPending } =
+    useManualConversationLauncher();
+  const [manualConversationOpen, setManualConversationOpen] = useState(false);
+
+  const openWhatsAppWindow = useCallback((rawPhone, initialMessage) => {
+    const digits = String(rawPhone ?? '').replace(/\D/g, '');
+    if (!digits) {
+      toast.info('Nenhum telefone disponível para este lead.', {
+        description: 'Cadastre um telefone válido para abrir o WhatsApp automaticamente.',
+        position: 'bottom-right',
+      });
+      return false;
+    }
+
+    const messageParam =
+      typeof initialMessage === 'string' && initialMessage.trim().length > 0
+        ? `?text=${encodeURIComponent(initialMessage.trim())}`
+        : '';
+
+    if (typeof window !== 'undefined') {
+      window.open(`https://wa.me/${digits}${messageParam}`, '_blank');
+    }
+
+    return true;
+  }, []);
+
+  const handleManualConversationSubmit = useCallback(
+    async (payload) => {
+      toast.loading('Iniciando conversa…', {
+        id: MANUAL_CONVERSATION_TOAST_ID,
+        position: 'bottom-right',
+      });
+
+      try {
+        const result = await launchManualConversation(payload);
+        return result;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Não foi possível iniciar a conversa.';
+        toast.error(message, {
+          id: MANUAL_CONVERSATION_TOAST_ID,
+          description: 'Verifique os dados e tente novamente.',
+          position: 'bottom-right',
+        });
+        throw error;
+      }
+    },
+    [launchManualConversation]
+  );
+
+  const handleManualConversationSuccess = useCallback(
+    async (result, payload) => {
+      toast.success('Conversa iniciada', {
+        id: MANUAL_CONVERSATION_TOAST_ID,
+        duration: 2500,
+        position: 'bottom-right',
+      });
+
+      setManualConversationOpen(false);
+
+      const sanitizedPhone = result?.phone ?? payload?.phone ?? '';
+      const initialMessage = result?.message ?? payload?.message ?? '';
+
+      try {
+        await controller.ticketsQuery?.refetch?.({ cancelRefetch: false });
+      } catch (error) {
+        console.error('Falha ao recarregar tickets após iniciar conversa manual', error);
+      }
+
+      if (sanitizedPhone) {
+        openWhatsAppWindow(sanitizedPhone, initialMessage);
+      }
+    },
+    [controller.ticketsQuery, openWhatsAppWindow]
+  );
 
   const sendMessage = ({ content, attachments = [], template }) => {
     const trimmed = (content ?? '').trim();
@@ -169,63 +248,75 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   };
 
   return (
-    <InboxAppShell
-      currentUser={currentUser}
-      sidebar={
-        <QueueList
-          tickets={controller.tickets}
-          selectedTicketId={controller.selectedTicketId}
-          onSelectTicket={controller.selectTicket}
-          loading={controller.ticketsQuery.isFetching}
-          onRefresh={handleManualSync}
-          typingAgents={controller.typingIndicator?.agentsTyping ?? []}
-          metrics={metrics}
-        />
-      }
-      context={
-        <DetailsPanel
-          ticket={controller.selectedTicket}
-          onCreateNote={createNote}
-          notesLoading={controller.notesMutation.isPending}
-          onGenerateProposal={() =>
-            toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
-          }
-          onReopenWindow={() =>
-            toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
-          }
-          onOpenAudit={() =>
-            toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
-          }
-        />
-      }
-      defaultContextOpen={false}
-      toolbar={
-        <FilterToolbar
-          search={filters.search ?? ''}
-          onSearchChange={controller.setSearch}
-          filters={filters}
-          onFiltersChange={controller.setFilters}
-          loading={controller.ticketsQuery.isFetching}
-          onRefresh={handleManualSync}
-        />
-      }
-    >
-      <ConversationArea
-        ticket={controller.selectedTicket}
-        conversation={controller.conversation}
-        messagesQuery={controller.messagesQuery}
-        onSendMessage={sendMessage}
-        onCreateNote={createNote}
-        onRegisterResult={registerResult}
-        onAssign={() => assignToMe(controller.selectedTicket)}
-        onGenerateProposal={handleGenerateProposal}
-        onScheduleFollowUp={handleScheduleFollowUp}
-        isRegisteringResult={controller.statusMutation.isPending}
-        typingIndicator={controller.typingIndicator}
-        isSending={controller.sendMessageMutation.isPending}
-        sendError={controller.sendMessageMutation.error}
+    <>
+      <ManualConversationDialog
+        open={manualConversationOpen}
+        onOpenChange={setManualConversationOpen}
+        onSubmit={handleManualConversationSubmit}
+        onSuccess={handleManualConversationSuccess}
+        isSubmitting={manualConversationPending}
       />
-    </InboxAppShell>
+
+      <InboxAppShell
+        currentUser={currentUser}
+        sidebar={
+          <QueueList
+            tickets={controller.tickets}
+            selectedTicketId={controller.selectedTicketId}
+            onSelectTicket={controller.selectTicket}
+            loading={controller.ticketsQuery.isFetching}
+            onRefresh={handleManualSync}
+            typingAgents={controller.typingIndicator?.agentsTyping ?? []}
+            metrics={metrics}
+          />
+        }
+        context={
+          <DetailsPanel
+            ticket={controller.selectedTicket}
+            onCreateNote={createNote}
+            notesLoading={controller.notesMutation.isPending}
+            onGenerateProposal={() =>
+              toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
+            }
+            onReopenWindow={() =>
+              toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
+            }
+            onOpenAudit={() =>
+              toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
+            }
+          />
+        }
+        defaultContextOpen={false}
+        toolbar={
+          <FilterToolbar
+            search={filters.search ?? ''}
+            onSearchChange={controller.setSearch}
+            filters={filters}
+            onFiltersChange={controller.setFilters}
+            loading={controller.ticketsQuery.isFetching}
+            onRefresh={handleManualSync}
+            onStartManualConversation={() => setManualConversationOpen(true)}
+            manualConversationPending={manualConversationPending}
+          />
+        }
+      >
+        <ConversationArea
+          ticket={controller.selectedTicket}
+          conversation={controller.conversation}
+          messagesQuery={controller.messagesQuery}
+          onSendMessage={sendMessage}
+          onCreateNote={createNote}
+          onRegisterResult={registerResult}
+          onAssign={() => assignToMe(controller.selectedTicket)}
+          onGenerateProposal={handleGenerateProposal}
+          onScheduleFollowUp={handleScheduleFollowUp}
+          isRegisteringResult={controller.statusMutation.isPending}
+          typingIndicator={controller.typingIndicator}
+          isSending={controller.sendMessageMutation.isPending}
+          sendError={controller.sendMessageMutation.error}
+        />
+      </InboxAppShell>
+    </>
   );
 };
 

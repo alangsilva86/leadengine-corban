@@ -12,7 +12,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
-import { Filter, RefreshCw, Search, X } from 'lucide-react';
+import { Filter, Loader2, MessageSquarePlus, RefreshCw, Search, X } from 'lucide-react';
 
 const DEFAULT_FILTERS = {
   scope: 'team',
@@ -51,6 +51,8 @@ const FilterToolbar = ({
   onFiltersChange,
   loading,
   onRefresh,
+  onStartManualConversation,
+  manualConversationPending = false,
 }) => {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -136,6 +138,21 @@ const FilterToolbar = ({
               className="h-10 w-full rounded-xl border-slate-800/60 bg-slate-900/60 pl-9 text-slate-100 placeholder:text-slate-500"
             />
           </div>
+          {onStartManualConversation ? (
+            <Button
+              size="sm"
+              className="h-10 rounded-xl bg-emerald-500 px-4 text-xs font-semibold uppercase tracking-wide text-emerald-950 shadow-[0_10px_24px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400 disabled:opacity-70"
+              onClick={onStartManualConversation}
+              disabled={manualConversationPending}
+            >
+              {manualConversationPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MessageSquarePlus className="h-4 w-4" />
+              )}
+              <span className="ml-2 text-xs font-semibold uppercase tracking-wide">Nova conversa</span>
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             size="sm"
