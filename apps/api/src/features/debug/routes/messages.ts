@@ -6,6 +6,18 @@ import { requireTenant } from '../../../middleware/auth';
 import { prisma } from '../../../lib/prisma';
 import { mapPassthroughMessage } from '@ticketz/storage';
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+};
+
+const normalizeJsonRecord = (value: unknown): Record<string, unknown> => {
+  const record = asRecord(value);
+  return record ? { ...record } : {};
+};
+
 const router: Router = Router();
 
 const normalizeQueryValue = (value: unknown): string | null => {
@@ -77,6 +89,76 @@ router.get(
     res.json({
       success: true,
       data: payload,
+    });
+  })
+);
+
+router.get(
+  '/debug/baileys-events',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const rawLimit = normalizeQueryValue(req.query.limit);
+    const limitCandidate = rawLimit ? Number(rawLimit) : NaN;
+    let limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.floor(limitCandidate) : 50;
+    limit = Math.min(Math.max(limit, 1), 200);
+
+    const chatIdFilter = normalizeQueryValue(req.query.chatId);
+    const normalizedDirection = normalizeQueryValue(req.query.direction);
+    const directionFilter =
+      normalizedDirection && normalizedDirection.toLowerCase() === 'outbound'
+        ? 'outbound'
+        : normalizedDirection && normalizedDirection.toLowerCase() === 'inbound'
+          ? 'inbound'
+          : null;
+
+    const events = await prisma.processedIntegrationEvent.findMany({
+      where: {
+        source: {
+          contains: 'baileys',
+          mode: 'insensitive',
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit * 5, 500),
+    });
+
+    const normalized = events
+      .map((event) => {
+        const payload = normalizeJsonRecord(event.payload);
+        const payloadTenant = typeof payload.tenantId === 'string' ? payload.tenantId : null;
+        const direction = typeof payload.direction === 'string' ? payload.direction.toLowerCase() : null;
+        const chatId = typeof payload.chatId === 'string' ? payload.chatId : null;
+
+        return {
+          id: event.id,
+          source: event.source,
+          createdAt: event.createdAt,
+          tenantId: payloadTenant,
+          direction,
+          chatId,
+          instanceId: typeof payload.instanceId === 'string' ? payload.instanceId : null,
+          messageId: typeof payload.messageId === 'string' ? payload.messageId : null,
+          payload,
+        };
+      })
+      .filter((entry) => {
+        if (entry.tenantId && entry.tenantId !== tenantId) {
+          return false;
+        }
+        if (directionFilter && entry.direction !== directionFilter) {
+          return false;
+        }
+        if (chatIdFilter && entry.chatId && !entry.chatId.includes(chatIdFilter)) {
+          return false;
+        }
+        return true;
+      })
+      .slice(0, limit);
+
+    res.json({
+      success: true,
+      data: normalized,
     });
   })
 );

@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
+import { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../../../middleware/error-handler';
 import { logger } from '../../../config/logger';
@@ -155,6 +156,34 @@ const toE164Phone = (remoteJid: string | null): string | null => {
   }
   const sanitized = digits.replace(/^0+/, '');
   return sanitized.length > 0 ? `+${sanitized}` : null;
+};
+
+const sanitizeJsonPayload = (value: unknown): Prisma.InputJsonValue => {
+  try {
+    return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+  } catch {
+    return null;
+  }
+};
+
+const logBaileysDebugEvent = async (
+  source: string,
+  payload: unknown
+): Promise<void> => {
+  try {
+    await prisma.processedIntegrationEvent.create({
+      data: {
+        id: randomUUID(),
+        source,
+        payload: sanitizeJsonPayload(payload),
+      },
+    });
+  } catch (error) {
+    logger.warn('⚠️ [Webhook] Falha ao registrar payload para debug', {
+      source,
+      error,
+    });
+  }
 };
 
 const ensurePassthroughInstance = async (
@@ -810,7 +839,9 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
     return res.status(204).send();
   }
 
-  normalizedEvents.forEach((event) => {
+  const baileysLogPromises: Array<Promise<void>> = [];
+
+  normalizedEvents.forEach((event, eventIndex) => {
     logger.info('📬 [Webhook] Evento de mensagem normalizado', {
       requestId,
       eventId: event.id,
@@ -851,7 +882,34 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
       remoteJid,
       phone,
     });
+
+    const sourceValue = typeof metadataRecord.source === 'string' ? metadataRecord.source : null;
+    if (!sourceValue || !sourceValue.includes('baileys')) {
+      return;
+    }
+
+    const candidate = normalizedCandidates[eventIndex];
+    const rawEvent = candidate ? rawEvents[candidate.sourceIndex] : undefined;
+
+    baileysLogPromises.push(
+      logBaileysDebugEvent(sourceValue, {
+        requestId,
+        tenantId: event.tenantId ?? fallbackTenantId ?? null,
+        instanceId: event.instanceId ?? null,
+        direction: event.payload.direction ?? null,
+        chatId,
+        messageId,
+        metadata: metadataRecord,
+        message: event.payload.message ?? null,
+        raw: rawEvent ?? null,
+        receivedAt: metadataRecord.receivedAt ?? receivedAtIso,
+      })
+    );
   });
+
+  if (baileysLogPromises.length > 0) {
+    await Promise.allSettled(baileysLogPromises);
+  }
 
   enqueueWhatsAppBrokerEvents(
     normalizedEvents.map((event) => ({

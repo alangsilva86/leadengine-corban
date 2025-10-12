@@ -16,6 +16,7 @@ import {
   ChevronsRight,
   Sun,
   Moon,
+  ScrollText,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
@@ -45,6 +46,7 @@ const NAVIGATION_ITEMS = [
   { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare },
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+  { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
   { id: 'settings', label: 'Configurações', icon: Settings },
 ];
 

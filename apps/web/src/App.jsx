@@ -10,6 +10,7 @@ const WhatsAppConnect = lazy(() => import('./features/whatsapp/WhatsAppConnect.j
 const ChatCommandCenter = lazy(() => import('./features/chat/ChatCommandCenter.jsx'));
 const Reports = lazy(() => import('./components/Reports.jsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
+const BaileysLogs = lazy(() => import('./features/debug/BaileysLogs.jsx'));
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
@@ -228,6 +229,8 @@ function App() {
         return <Reports />;
       case 'settings':
         return <Settings />;
+      case 'baileys-logs':
+        return <BaileysLogs />;
       default:
         return <Dashboard />;
     }
