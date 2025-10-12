@@ -359,6 +359,7 @@ export const LeadInbox = ({
     isPending: manualConversationPending,
   } = useManualConversationLauncher();
   const pendingFocusPhoneRef = useRef(null);
+  const manualConversationCardRef = useRef(null);
 
   const {
     allocations,
@@ -807,6 +808,11 @@ export const LeadInbox = ({
     [launchManualConversation]
   );
 
+  const handleOpenManualConversationCard = useCallback(() => {
+    manualConversationCardRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    manualConversationCardRef.current?.focus?.();
+  }, [manualConversationCardRef]);
+
   const handleManualConversationSuccess = useCallback(
     async (result, payload) => {
       toast.success('Conversa iniciada', {
@@ -1051,6 +1057,7 @@ export const LeadInbox = ({
               />
 
               <ManualConversationCard
+                ref={manualConversationCardRef}
                 onSubmit={handleManualConversationSubmit}
                 onSuccess={handleManualConversationSuccess}
                 isSubmitting={manualConversationPending}
@@ -1060,6 +1067,7 @@ export const LeadInbox = ({
                 loading={loading}
                 onRefresh={refresh}
                 onExport={handleExport}
+                onStartManualConversation={handleOpenManualConversationCard}
                 rateLimitInfo={rateLimitInfo}
                 autoRefreshSeconds={autoRefreshSeconds}
                 lastUpdatedAt={lastUpdatedAt}
