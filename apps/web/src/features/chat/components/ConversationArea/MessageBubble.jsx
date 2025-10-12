@@ -1,7 +1,6 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import { Check, CheckCheck, BadgeCheck, AlertTriangle } from 'lucide-react';
-import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 
 const STATUS_ICONS = {
   PENDING: { icon: Check, tone: 'text-slate-400', label: 'Pendente' },
@@ -19,8 +18,8 @@ const formatTime = (value) => {
 };
 
 export const MessageBubble = ({ message }) => {
-  const direction = message.direction ?? 'INBOUND';
-  const outbound = direction === 'OUTBOUND';
+  const rawDirection = typeof message.direction === 'string' ? message.direction.toLowerCase() : 'inbound';
+  const outbound = rawDirection === 'outbound';
   const tone = outbound
     ? 'bg-sky-500/15 text-slate-50 ring-1 ring-sky-500/40'
     : 'bg-slate-950/30 text-slate-100 ring-1 ring-white/5';
@@ -32,7 +31,7 @@ export const MessageBubble = ({ message }) => {
   const metadata = (message.metadata && typeof message.metadata === 'object' ? message.metadata : {}) ?? {};
   const brokerMetadata = metadata?.broker && typeof metadata.broker === 'object' ? metadata.broker : {};
   const rawKeyMeta = metadata.rawKey && typeof metadata.rawKey === 'object' ? metadata.rawKey : {};
-  const sourceInstance = metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'baileys';
+  const sourceInstance = metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'desconhecido';
   const remoteJid = metadata.remoteJid ?? metadata.chatId ?? rawKeyMeta.remoteJid ?? null;
   const phoneLabel = metadata.phoneE164 ?? remoteJid ?? message.chatId ?? 'desconhecido';
   const originChipTone = outbound
@@ -46,6 +45,40 @@ export const MessageBubble = ({ message }) => {
   const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
 
   const ack = STATUS_ICONS[message.status ?? 'SENT'] ?? STATUS_ICONS.SENT;
+
+  const messageType = typeof message.type === 'string' ? message.type.toLowerCase() : 'text';
+  const media = message.media && typeof message.media === 'object' ? message.media : null;
+  const textContent =
+    typeof message.text === 'string' && message.text.trim().length > 0
+      ? message.text
+      : typeof message.content === 'string'
+        ? message.content
+        : '';
+
+  const renderBody = () => {
+    if (messageType === 'text') {
+      return <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{textContent}</p>;
+    }
+
+    if (messageType === 'media' && media?.mediaType === 'image' && media?.url) {
+      return (
+        <figure className="flex flex-col gap-2">
+          <img
+            src={media.url}
+            alt={media.caption ?? 'Imagem recebida'}
+            className="max-h-64 w-full rounded-lg object-contain"
+          />
+          {media.caption ? <figcaption className="text-xs text-slate-300">{media.caption}</figcaption> : null}
+        </figure>
+      );
+    }
+
+    return (
+      <span className="text-xs opacity-60">
+        Mensagem não suportada ({messageType || 'desconhecida'})
+      </span>
+    );
+  };
 
   return (
     <div className={cn('flex w-full flex-col gap-1', outbound ? 'items-end' : 'items-start')}>
@@ -67,10 +100,7 @@ export const MessageBubble = ({ message }) => {
             </TooltipContent>
           </Tooltip>
         </div>
-        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-          {message.content}
-        </div>
-        <AttachmentPreview attachments={message.attachments} />
+        <div className="break-words text-sm leading-relaxed">{renderBody()}</div>
         <div className="mt-1 flex items-center gap-1 text-xs text-slate-400">
           <span>{formatTime(message.createdAt)}</span>
           <Tooltip delayDuration={200}>

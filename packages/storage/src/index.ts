@@ -42,8 +42,14 @@ export {
   findMessageByExternalId,
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
+  mapPassthroughMessage,
   listMessages,
   applyBrokerAck,
+} from './repositories/ticket-repository';
+
+export type {
+  PassthroughMessage,
+  PassthroughMessageMedia,
 } from './repositories/ticket-repository';
 
 export { resetTicketStore } from './repositories/ticket-repository';

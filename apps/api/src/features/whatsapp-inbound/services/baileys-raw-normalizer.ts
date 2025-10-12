@@ -592,6 +592,50 @@ const normalizeMessagePayload = (
     quotedParticipant: quoted ? readString(quoted.quotedParticipant) ?? undefined : undefined,
   });
 
+  const mediaPriority = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'] as const;
+  const matchedMedia = mediaPriority.find((candidate) => normalizedMessage[candidate]);
+
+  const normalizeMediaType = (candidate: (typeof mediaPriority)[number]): string => {
+    if (candidate === 'imageMessage') {
+      return 'image';
+    }
+    if (candidate === 'videoMessage') {
+      return 'video';
+    }
+    if (candidate === 'audioMessage') {
+      return 'audio';
+    }
+    return 'document';
+  };
+
+  if (matchedMedia) {
+    const mediaRecord = asRecord(normalizedMessage[matchedMedia]);
+    const mediaType = normalizeMediaType(matchedMedia);
+    const caption = readString(mediaRecord?.caption) ?? normalizedMessage.caption ?? null;
+    normalizedMessage.type = 'media';
+    normalizedMessage.text = caption ?? null;
+    normalizedMessage.media = compactRecord({
+      mediaType,
+      caption: caption ?? undefined,
+      mimetype: readString(mediaRecord?.mimetype) ?? undefined,
+      fileName: readString(mediaRecord?.fileName) ?? undefined,
+      fileLength: readNumber(mediaRecord?.fileLength ?? (mediaRecord as { fileLength?: unknown })?.fileLength),
+    });
+  } else {
+    const hasText =
+      readString(messageContent.conversation) ||
+      readString(asRecord(messageContent.extendedTextMessage)?.text) ||
+      readString(normalizedMessage.text);
+
+    if (hasText) {
+      normalizedMessage.type = 'text';
+      normalizedMessage.text = hasText;
+    } else {
+      normalizedMessage.type = 'unknown';
+      normalizedMessage.text = null;
+    }
+  }
+
   const metadata = buildBaseMetadata({
     owner: context.owner,
     source: context.source,
@@ -628,6 +672,10 @@ const normalizeMessagePayload = (
     metadata.interactive = {
       type: interactive.type,
     };
+  }
+
+  if (messageContent.senderKeyDistributionMessage) {
+    metadata.skd = true;
   }
 
   const normalized: BrokerWebhookInbound = {

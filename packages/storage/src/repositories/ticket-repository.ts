@@ -28,6 +28,45 @@ const PRISMA_MESSAGE_TYPES = new Set<PrismaMessageType>(
   Object.values($Enums.MessageType)
 );
 
+type PassthroughMessageDirection = 'inbound' | 'outbound';
+type PassthroughMessageType = 'text' | 'media' | 'unknown';
+
+export type PassthroughMessageMedia = {
+  mediaType: string;
+  url?: string | null;
+  mimeType?: string | null;
+  fileName?: string | null;
+  size?: number | null;
+  caption?: string | null;
+};
+
+export type PassthroughMessage = {
+  id: string;
+  tenantId: string;
+  ticketId: string;
+  chatId: string;
+  direction: PassthroughMessageDirection;
+  type: PassthroughMessageType;
+  text: string | null;
+  media: PassthroughMessageMedia | null;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  externalId?: string | null;
+};
+
+type UpsertPassthroughMessageInput = {
+  tenantId: string;
+  ticketId: string;
+  chatId: string;
+  direction: PassthroughMessageDirection;
+  externalId: string;
+  type: PassthroughMessageType;
+  text: string | null | undefined;
+  media?: PassthroughMessageMedia | null;
+  metadata?: Record<string, unknown> | null;
+  timestamp?: number | string | Date | null;
+};
+
 const mapPrismaMessageTypeToDomain = (
   type: PrismaMessageType
 ): Message['type'] => {
@@ -138,6 +177,233 @@ const mapMessage = (record: PrismaMessage): Message => ({
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
 });
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const normalizePassthroughDirectionForWrite = (
+  direction: PassthroughMessageDirection
+): Message['direction'] => (direction === 'outbound' ? 'OUTBOUND' : 'INBOUND');
+
+const mapDirectionFromRecord = (
+  direction: PrismaMessage['direction']
+): PassthroughMessageDirection => (direction === 'OUTBOUND' ? 'outbound' : 'inbound');
+
+const mapPassthroughTypeToPrisma = (
+  type: PassthroughMessageType,
+  mediaType: string | null | undefined
+): Message['type'] => {
+  if (type === 'media') {
+    const normalized = (mediaType ?? '').toLowerCase();
+    if (normalized === 'image' || normalized === 'sticker') {
+      return 'IMAGE';
+    }
+    if (normalized === 'video') {
+      return 'VIDEO';
+    }
+    if (normalized === 'audio' || normalized === 'ptt') {
+      return 'AUDIO';
+    }
+    if (normalized === 'document' || normalized === 'file' || normalized === 'pdf') {
+      return 'DOCUMENT';
+    }
+  }
+
+  return 'TEXT';
+};
+
+const mapPrismaTypeToPassthroughMedia = (
+  type: PrismaMessageType
+): string | null => {
+  if (type === $Enums.MessageType.IMAGE || type === $Enums.MessageType.STICKER) {
+    return 'image';
+  }
+  if (type === $Enums.MessageType.VIDEO) {
+    return 'video';
+  }
+  if (type === $Enums.MessageType.AUDIO) {
+    return 'audio';
+  }
+  if (type === $Enums.MessageType.DOCUMENT) {
+    return 'document';
+  }
+  return null;
+};
+
+const coerceTimestamp = (value: UpsertPassthroughMessageInput['timestamp']): Date | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const millis = value > 1_000_000_000_000 ? value : value * 1000;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      const millis = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+      const date = new Date(millis);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    const parsed = Date.parse(trimmed);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed);
+    }
+  }
+
+  return null;
+};
+
+const normalizeMetadataRecord = (
+  current: Prisma.JsonValue | null | undefined
+): Record<string, unknown> => {
+  const record = asRecord(current);
+  return record ? { ...record } : {};
+};
+
+export const mapPassthroughMessage = (
+  record: PrismaMessage
+): PassthroughMessage => {
+  const metadataRecord = normalizeMetadataRecord(record.metadata);
+  const passthroughMetadata = asRecord(metadataRecord.passthrough) ?? {};
+  const metadataChatIdCandidate = ((): string | null => {
+    const chatId = metadataRecord.chatId;
+    if (typeof chatId === 'string' && chatId.trim().length > 0) {
+      return chatId.trim();
+    }
+    const passthroughChatId = passthroughMetadata.chatId;
+    if (typeof passthroughChatId === 'string' && passthroughChatId.trim().length > 0) {
+      return passthroughChatId.trim();
+    }
+    const broker = asRecord(metadataRecord.broker);
+    if (broker) {
+      const remoteJid = broker.remoteJid;
+      if (typeof remoteJid === 'string' && remoteJid.trim().length > 0) {
+        return remoteJid.trim();
+      }
+    }
+    return null;
+  })();
+
+  const resolvedMediaRecord = asRecord(passthroughMetadata.media);
+  const derivedMediaType = (() => {
+    const fromMetadata = typeof resolvedMediaRecord?.mediaType === 'string' ? resolvedMediaRecord.mediaType : null;
+    if (fromMetadata) {
+      return fromMetadata;
+    }
+    return mapPrismaTypeToPassthroughMedia(record.type);
+  })();
+
+  const resolvedMedia: PassthroughMessageMedia | null = (() => {
+    const url =
+      typeof resolvedMediaRecord?.url === 'string' && resolvedMediaRecord.url.trim().length > 0
+        ? resolvedMediaRecord.url.trim()
+        : record.mediaUrl ?? null;
+    const mimeType =
+      typeof resolvedMediaRecord?.mimeType === 'string' && resolvedMediaRecord.mimeType.trim().length > 0
+        ? resolvedMediaRecord.mimeType.trim()
+        : record.mediaType ?? null;
+    const fileName =
+      typeof resolvedMediaRecord?.fileName === 'string' && resolvedMediaRecord.fileName.trim().length > 0
+        ? resolvedMediaRecord.fileName.trim()
+        : record.mediaFileName ?? null;
+    const size =
+      typeof resolvedMediaRecord?.size === 'number' && Number.isFinite(resolvedMediaRecord.size)
+        ? resolvedMediaRecord.size
+        : record.mediaSize ?? null;
+    const caption =
+      typeof resolvedMediaRecord?.caption === 'string'
+        ? resolvedMediaRecord.caption
+        : record.caption ?? null;
+
+    if (!url && !mimeType && !fileName && !size) {
+      return null;
+    }
+
+    return {
+      mediaType: derivedMediaType ?? 'file',
+      url,
+      mimeType,
+      fileName,
+      size,
+      caption: caption ?? undefined,
+    } satisfies PassthroughMessageMedia;
+  })();
+
+  const metadataText =
+    typeof passthroughMetadata.text === 'string' && passthroughMetadata.text.trim().length > 0
+      ? passthroughMetadata.text
+      : null;
+  const captionText = record.caption && record.caption.trim().length > 0 ? record.caption : null;
+  const contentText = record.content && record.content.trim().length > 0 ? record.content : null;
+
+  const text = metadataText ?? captionText ?? contentText ?? null;
+
+  const candidateType = passthroughMetadata.type;
+  const type: PassthroughMessageType = (() => {
+    if (candidateType === 'text' || candidateType === 'media' || candidateType === 'unknown') {
+      return candidateType;
+    }
+    if (resolvedMedia) {
+      return 'media';
+    }
+    if (text) {
+      return 'text';
+    }
+    return 'unknown';
+  })();
+
+  const sourceInstanceCandidate = metadataRecord.sourceInstance;
+  const normalizedMetadata: Record<string, unknown> = {
+    ...metadataRecord,
+    sourceInstance:
+      typeof sourceInstanceCandidate === 'string'
+        ? sourceInstanceCandidate
+        : typeof record.instanceId === 'string'
+          ? record.instanceId
+          : null,
+    remoteJid:
+      typeof metadataRecord.remoteJid === 'string'
+        ? metadataRecord.remoteJid
+        : typeof metadataRecord.chatId === 'string'
+          ? metadataRecord.chatId
+          : metadataChatIdCandidate,
+    phoneE164:
+      typeof metadataRecord.phoneE164 === 'string' ? metadataRecord.phoneE164 : null,
+  };
+
+  return {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    chatId: metadataChatIdCandidate ?? record.ticketId,
+    direction: mapDirectionFromRecord(record.direction),
+    type,
+    text,
+    media: resolvedMedia,
+    metadata: normalizedMetadata,
+    createdAt: record.createdAt,
+    externalId: record.externalId,
+  } satisfies PassthroughMessage;
+};
 
 const PASSTHROUGH_QUEUE_NAME = 'WhatsApp • Passthrough';
 const PASSTHROUGH_QUEUE_DESCRIPTION =
@@ -846,12 +1112,52 @@ export const findOrCreateOpenTicketByChat = async (
 };
 
 export const upsertMessageByExternalId = async (
-  input: UpsertMessageByExternalIdInput
-): Promise<{ message: Message; created: boolean }> => {
+  input: UpsertPassthroughMessageInput
+): Promise<{ message: PassthroughMessage; wasCreated: boolean }> => {
   const prisma = getPrismaClient();
   const normalizedExternalId = input.externalId.trim();
-  const metadataRecord = input.metadata ?? {};
-  const createdAt = input.createdAt ?? new Date();
+  const metadataBase = normalizeMetadataRecord(input.metadata ?? null);
+  const timestamp = coerceTimestamp(input.timestamp) ?? new Date();
+
+  const passthroughMetadata = {
+    chatId: input.chatId,
+    type: input.type,
+    text: input.text ?? null,
+    media: input.media ?? null,
+  };
+
+  const metadataRecord: Record<string, unknown> = {
+    ...metadataBase,
+    chatId: input.chatId,
+    passthrough: passthroughMetadata,
+  };
+
+  const direction = normalizePassthroughDirectionForWrite(input.direction);
+  const storageType = mapPassthroughTypeToPrisma(input.type, input.media?.mediaType ?? null);
+
+  const resolveContent = (): string => {
+    const text = typeof input.text === 'string' ? input.text.trim() : '';
+    if (text) {
+      return text;
+    }
+
+    if (input.type === 'media') {
+      return `[${input.media?.mediaType ?? 'media'}]`;
+    }
+
+    if (input.type === 'unknown') {
+      return '[Mensagem não suportada]';
+    }
+
+    return '[Mensagem]';
+  };
+
+  const content = resolveContent();
+  const caption = input.type === 'media' ? input.text ?? undefined : undefined;
+  const mediaUrl =
+    input.type === 'media' && typeof input.media?.url === 'string' && input.media.url.trim().length > 0
+      ? input.media.url.trim()
+      : undefined;
 
   const existing = await prisma.message.findFirst({
     where: {
@@ -864,50 +1170,102 @@ export const upsertMessageByExternalId = async (
     const updated = await prisma.message.update({
       where: { id: existing.id },
       data: {
-        content: input.content,
-        caption: input.caption ?? null,
-        mediaUrl: input.mediaUrl ?? null,
-        mediaFileName: input.mediaFileName ?? null,
-        mediaType: input.mediaMimeType ?? null,
+        direction,
+        type: normalizeMessageTypeForWrite(storageType),
+        content,
+        caption: caption ?? null,
+        mediaUrl: mediaUrl ?? null,
+        mediaFileName: input.media?.fileName ?? null,
+        mediaType: input.media?.mimeType ?? null,
+        mediaSize: input.media?.size ?? null,
         metadata: mergeMessageMetadata(existing.metadata, metadataRecord),
-        instanceId: input.instanceId ?? existing.instanceId ?? null,
-        direction: input.direction,
-        type: normalizeMessageTypeForWrite(input.type),
-        updatedAt: createdAt,
+        instanceId:
+          typeof metadataBase.sourceInstance === 'string'
+            ? metadataBase.sourceInstance
+            : existing.instanceId ?? null,
+        updatedAt: timestamp,
       },
     });
 
     return {
-      message: mapMessage(updated),
-      created: false,
+      message: mapPassthroughMessage(updated),
+      wasCreated: false,
     };
   }
 
-  const created = await prisma.message.create({
-    data: {
-      tenantId: input.tenantId,
-      ticketId: input.ticketId,
-      contactId: input.contactId,
-      userId: null,
-      instanceId: input.instanceId ?? null,
-      direction: input.direction,
-      type: normalizeMessageTypeForWrite(input.type),
-      content: input.content,
-      caption: input.caption ?? null,
-      mediaUrl: input.mediaUrl ?? null,
-      mediaFileName: input.mediaFileName ?? null,
-      mediaType: input.mediaMimeType ?? null,
-      status: input.status ?? 'SENT',
-      externalId: normalizedExternalId,
-      metadata: metadataRecord as Prisma.InputJsonValue,
-      createdAt,
-      updatedAt: createdAt,
-    },
+  const mediaEnabled = storageType !== 'TEXT' && Boolean(mediaUrl);
+  const metadataWithTimestamps: Record<string, unknown> = {
+    ...metadataRecord,
+    normalizedTimestamp: timestamp.getTime(),
+    receivedAt: timestamp.getTime(),
+  };
+
+  const created = await createMessage(input.tenantId, input.ticketId, {
+    ticketId: input.ticketId,
+    direction,
+    type: mediaEnabled ? storageType : 'TEXT',
+    content,
+    caption,
+    externalId: normalizedExternalId,
+    mediaUrl: mediaEnabled ? mediaUrl : undefined,
+    mediaFileName: mediaEnabled ? input.media?.fileName ?? undefined : undefined,
+    mediaMimeType: mediaEnabled ? input.media?.mimeType ?? undefined : undefined,
+    metadata: metadataWithTimestamps,
+    instanceId:
+      typeof metadataBase.sourceInstance === 'string' ? metadataBase.sourceInstance : undefined,
   });
 
+  if (!created) {
+    const ticket = await prisma.ticket.findFirst({
+      where: { id: input.ticketId, tenantId: input.tenantId },
+      select: { contactId: true },
+    });
+
+    if (!ticket) {
+      throw new Error('Unable to create message: ticket not found');
+    }
+
+    const fallback = await prisma.message.create({
+      data: {
+        tenantId: input.tenantId,
+        ticketId: input.ticketId,
+        contactId: ticket.contactId,
+        userId: null,
+        instanceId:
+          typeof metadataBase.sourceInstance === 'string' ? metadataBase.sourceInstance : null,
+        direction,
+        type: normalizeMessageTypeForWrite(storageType),
+        content,
+        caption: caption ?? null,
+        mediaUrl: mediaUrl ?? null,
+        mediaFileName: input.media?.fileName ?? null,
+        mediaType: input.media?.mimeType ?? null,
+        mediaSize: input.media?.size ?? null,
+        status: 'SENT',
+        externalId: normalizedExternalId,
+        metadata: metadataWithTimestamps as Prisma.InputJsonValue,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    });
+
+    return {
+      message: mapPassthroughMessage(fallback),
+      wasCreated: true,
+    };
+  }
+
+  const persisted = await prisma.message.findFirst({
+    where: { id: created.id },
+  });
+
+  if (!persisted) {
+    throw new Error('Unable to load message after creation');
+  }
+
   return {
-    message: mapMessage(created),
-    created: true,
+    message: mapPassthroughMessage(persisted),
+    wasCreated: true,
   };
 };
 
