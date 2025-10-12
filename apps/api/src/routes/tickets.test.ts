@@ -81,6 +81,9 @@ describe('Tickets routes', () => {
     const { server, url } = await startTestServer();
 
     try {
+      const contactId = '00000000-0000-4000-8000-000000000111';
+      const queueId = '00000000-0000-4000-8000-000000000222';
+
       const createResponse = await fetch(`${url}/api/tickets`, {
         method: 'POST',
         headers: {
@@ -88,8 +91,8 @@ describe('Tickets routes', () => {
           'x-tenant-id': 'tenant-123',
         },
         body: JSON.stringify({
-          contactId: '11111111-1111-1111-1111-111111111111',
-          queueId: '22222222-2222-2222-2222-222222222222',
+          contactId,
+          queueId,
           subject: 'Support request',
           channel: 'WHATSAPP',
           priority: 'HIGH',
@@ -103,8 +106,8 @@ describe('Tickets routes', () => {
       expect(createdBody.success).toBe(true);
       const createdTicket = createdBody.data;
       expect(createdTicket).toMatchObject({
-        contactId: '11111111-1111-1111-1111-111111111111',
-        queueId: '22222222-2222-2222-2222-222222222222',
+        contactId,
+        queueId,
         status: 'OPEN',
         priority: 'HIGH',
       });
@@ -206,10 +209,10 @@ describe('Tickets routes', () => {
       expect(emittedEvents).toContain('ticket.updated');
       expect(emittedEvents).toContain('ticket.assigned');
       expect(emittedEvents).toContain('ticket.message');
+      expect(emittedEvents).toContain('messages.new');
       expect(emittedEvents).toContain('ticket.closed');
     } finally {
       await stopTestServer(server);
     }
   });
 });
-

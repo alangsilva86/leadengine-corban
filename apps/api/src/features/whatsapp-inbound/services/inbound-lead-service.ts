@@ -470,21 +470,9 @@ const emitRealtimeUpdatesForInbound = async ({
   providerMessageId: string | null;
 }) => {
   try {
-    const ticket = await prisma.ticket.findUnique({
-      where: { id: ticketId },
-      select: {
-        id: true,
-        tenantId: true,
-        agreementId: true,
-        status: true,
-        queueId: true,
-        subject: true,
-        updatedAt: true,
-        metadata: true,
-      },
-    });
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
 
-    if (!ticket) {
+    if (!ticket || ticket.tenantId !== tenantId) {
       logger.warn('Inbound realtime event skipped: ticket not found', {
         tenantId,
         ticketId,
@@ -493,7 +481,7 @@ const emitRealtimeUpdatesForInbound = async ({
       return;
     }
 
-    const envelopeBase = {
+    const ticketPayload = {
       tenantId,
       ticketId,
       agreementId: ticket.agreementId ?? null,
@@ -502,21 +490,6 @@ const emitRealtimeUpdatesForInbound = async ({
       providerMessageId,
       ticketStatus: ticket.status,
       ticketUpdatedAt: ticket.updatedAt?.toISOString?.() ?? new Date().toISOString(),
-    };
-
-    const messagePayload = {
-      ...envelopeBase,
-      message,
-    };
-
-    emitToTicket(ticketId, 'messages.new', messagePayload);
-    emitToTenant(tenantId, 'messages.new', messagePayload);
-    if (ticket.agreementId) {
-      emitToAgreement(ticket.agreementId, 'messages.new', messagePayload);
-    }
-
-    const ticketPayload = {
-      ...envelopeBase,
       ticket,
     };
 
@@ -814,4 +787,3 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     }
   }
 };
-

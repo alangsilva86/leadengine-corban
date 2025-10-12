@@ -355,15 +355,71 @@ const emitTicketEvent = (
   }
 };
 
+type MessageRealtimeEnvelope = {
+  tenantId: string;
+  ticketId: string;
+  agreementId: string | null;
+  instanceId: string | null;
+  messageId: string;
+  providerMessageId: string | null;
+  ticketStatus: TicketStatus;
+  ticketUpdatedAt: string;
+  message: Message;
+};
+
+const buildMessageRealtimeEnvelope = ({
+  tenantId,
+  ticket,
+  message,
+  instanceId,
+  providerMessageId,
+}: {
+  tenantId: string;
+  ticket: Ticket;
+  message: Message;
+  instanceId?: string | null;
+  providerMessageId?: string | null;
+}): MessageRealtimeEnvelope => {
+  const updatedAtIso =
+    (ticket.updatedAt instanceof Date ? ticket.updatedAt : null)?.toISOString() ??
+    (message.updatedAt instanceof Date ? message.updatedAt.toISOString() : undefined) ??
+    new Date().toISOString();
+
+  return {
+    tenantId,
+    ticketId: ticket.id,
+    agreementId: ticket.agreementId ?? null,
+    instanceId: instanceId ?? resolveWhatsAppInstanceId(ticket) ?? null,
+    messageId: message.id,
+    providerMessageId: providerMessageId ?? null,
+    ticketStatus: ticket.status,
+    ticketUpdatedAt: updatedAtIso,
+    message,
+  };
+};
+
 const emitMessageCreatedEvents = (
   tenantId: string,
-  ticketId: string,
+  ticket: Ticket,
   message: Message,
-  userId?: string | null
+  options: {
+    userId?: string | null;
+    instanceId?: string | null;
+    providerMessageId?: string | null;
+  } = {}
 ) => {
-  emitTicketEvent(tenantId, ticketId, 'message:created', message, userId);
-  emitTicketEvent(tenantId, ticketId, 'ticket.message.created', message, userId);
-  emitTicketEvent(tenantId, ticketId, 'ticket.message', message, userId);
+  const envelope = buildMessageRealtimeEnvelope({
+    tenantId,
+    ticket,
+    message,
+    instanceId: options.instanceId ?? null,
+    providerMessageId: options.providerMessageId ?? null,
+  });
+
+  emitTicketEvent(tenantId, ticket.id, 'messages.new', envelope, options.userId);
+  emitTicketEvent(tenantId, ticket.id, 'message:created', message, options.userId);
+  emitTicketEvent(tenantId, ticket.id, 'ticket.message.created', message, options.userId);
+  emitTicketEvent(tenantId, ticket.id, 'ticket.message', message, options.userId);
 };
 
 const emitMessageUpdatedEvents = (
@@ -431,6 +487,27 @@ const normalizeBrokerStatus = (status: string | undefined): Message['status'] =>
     default:
       return 'SENT';
   }
+};
+
+const resolveProviderMessageId = (metadata: unknown): string | null => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  const broker = (metadata as Record<string, unknown>).broker;
+  if (!broker || typeof broker !== 'object') {
+    return null;
+  }
+
+  const messageId = (broker as Record<string, unknown>).messageId;
+  if (typeof messageId === 'string') {
+    const trimmed = messageId.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return null;
 };
 
 type ConversationComputation = {
@@ -1187,7 +1264,23 @@ export const sendMessage = async (
   let message = messageRecord;
   let statusChanged = false;
 
-  emitMessageCreatedEvents(tenantId, input.ticketId, message, userId ?? null);
+  const ticketSnapshot: Ticket = {
+    ...ticket,
+    updatedAt: message.updatedAt ?? ticket.updatedAt,
+    lastMessageAt: message.createdAt ?? ticket.lastMessageAt,
+    lastMessagePreview:
+      message.content && message.content.trim().length > 0
+        ? message.content.slice(0, 280)
+        : ticket.lastMessagePreview,
+  };
+
+  const providerMessageId = resolveProviderMessageId(message.metadata);
+
+  emitMessageCreatedEvents(tenantId, ticketSnapshot, message, {
+    userId: userId ?? null,
+    instanceId: effectiveInstanceId ?? null,
+    providerMessageId,
+  });
 
   const markAsFailed = async (errorDetails: {
     message: string;
