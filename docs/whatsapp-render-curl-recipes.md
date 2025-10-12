@@ -12,6 +12,7 @@ export API_URL="https://leadengine-corban.onrender.com"            # or the envi
 export WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)"  # adjust path if secrets differ
 export TENANT_ID="demo-tenant"                                     # tenant served by the MVP bypass
 export INSTANCE_ID="alan"                                          # WhatsApp instance bound to the tenant
+export WHATSAPP_INBOUND_SIMPLE_MODE="true"                         # optional: disables dedupe/CRM to focus on chat visibility
 # Optional: only needed if MVP auth bypass is disabled
 # export AUTH_TOKEN="<jwt-token>"
 ```
