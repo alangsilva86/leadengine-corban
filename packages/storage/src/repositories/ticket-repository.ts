@@ -1024,7 +1024,7 @@ export const findMessageByExternalId = async (
 
 export const findOrCreateOpenTicketByChat = async (
   input: FindOrCreateTicketByChatInput
-): Promise<{ ticket: Ticket; contact: Contact }> => {
+): Promise<{ ticket: Ticket; contact: Contact; wasCreated: boolean }> => {
   const prisma = getPrismaClient();
   const normalizedChatId = input.chatId.trim();
   const now = new Date();
@@ -1055,6 +1055,7 @@ export const findOrCreateOpenTicketByChat = async (
     },
   });
 
+  let wasCreated = false;
   let ticketRecord = await prisma.ticket.findFirst({
     where: {
       tenantId: input.tenantId,
@@ -1084,6 +1085,7 @@ export const findOrCreateOpenTicketByChat = async (
         },
       },
     });
+    wasCreated = true;
   } else {
     const existingMetadata =
       ticketRecord.metadata && typeof ticketRecord.metadata === 'object'
@@ -1108,6 +1110,7 @@ export const findOrCreateOpenTicketByChat = async (
   return {
     ticket: mapTicket(ticketRecord),
     contact: mapContact(contactRecord),
+    wasCreated,
   };
 };
 

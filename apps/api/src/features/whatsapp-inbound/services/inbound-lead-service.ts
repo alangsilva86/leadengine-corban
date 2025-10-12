@@ -11,7 +11,11 @@ import {
   leadLastContactGauge,
 } from '../../../lib/metrics';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
-import { findOrCreateOpenTicketByChat, upsertMessageByExternalId } from '@ticketz/storage';
+import {
+  findOrCreateOpenTicketByChat,
+  upsertMessageByExternalId,
+  type PassthroughMessage,
+} from '@ticketz/storage';
 import {
   emitToAgreement,
   emitToTenant,
@@ -398,6 +402,64 @@ export const shouldSkipByDedupe = (key: string, now: number): boolean => {
 
 const mapErrorForLog = (error: unknown) =>
   error instanceof Error ? { message: error.message, stack: error.stack } : error;
+
+const emitPassthroughRealtimeUpdates = async ({
+  tenantId,
+  ticketId,
+  instanceId,
+  message,
+  ticketWasCreated,
+}: {
+  tenantId: string;
+  ticketId: string;
+  instanceId: string | null;
+  message: PassthroughMessage;
+  ticketWasCreated: boolean;
+}) => {
+  try {
+    const ticketRecord = await prisma.ticket.findUnique({ where: { id: ticketId } });
+
+    if (!ticketRecord || ticketRecord.tenantId !== tenantId) {
+      logger.warn('passthrough: skipped realtime updates due to missing ticket', {
+        tenantId,
+        ticketId,
+      });
+      return;
+    }
+
+    const ticketPayload = {
+      tenantId,
+      ticketId: ticketRecord.id,
+      agreementId: ticketRecord.agreementId ?? null,
+      instanceId: instanceId ?? null,
+      messageId: message.id,
+      providerMessageId: message.externalId ?? null,
+      ticketStatus: ticketRecord.status,
+      ticketUpdatedAt: ticketRecord.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+      ticket: ticketRecord,
+    };
+
+    emitToTicket(ticketRecord.id, 'tickets.updated', ticketPayload);
+    emitToTenant(tenantId, 'tickets.updated', ticketPayload);
+    if (ticketRecord.agreementId) {
+      emitToAgreement(ticketRecord.agreementId, 'tickets.updated', ticketPayload);
+    }
+
+    if (ticketWasCreated) {
+      emitToTicket(ticketRecord.id, 'tickets.new', ticketPayload);
+      emitToTenant(tenantId, 'tickets.new', ticketPayload);
+      if (ticketRecord.agreementId) {
+        emitToAgreement(ticketRecord.agreementId, 'tickets.new', ticketPayload);
+      }
+    }
+  } catch (error) {
+    logger.error('passthrough: failed to emit ticket realtime events', {
+      error: mapErrorForLog(error),
+      tenantId,
+      ticketId,
+    });
+  }
+};
 
 const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string | null> => {
   try {
@@ -973,6 +1035,7 @@ export const __testing = {
   getDefaultQueueId,
   ensureTicketForContact,
   upsertLeadFromInbound,
+  emitPassthroughRealtimeUpdates,
 };
 
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
@@ -1333,7 +1396,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       phoneE164: normalizedPhone ?? readString(metadataContactRecord.phone) ?? null,
     };
 
-    const { ticket: passthroughTicket } = await findOrCreateOpenTicketByChat({
+    const { ticket: passthroughTicket, wasCreated: ticketWasCreated } = await findOrCreateOpenTicketByChat({
       tenantId,
       chatId: resolvedChatId,
       displayName: resolvedName,
@@ -1341,7 +1404,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
       instanceId,
     });
 
-    const { message: passthroughMessage, wasCreated } = await upsertMessageByExternalId({
+    const { message: passthroughMessage, wasCreated: messageWasCreated } = await upsertMessageByExternalId({
       tenantId,
       ticketId: passthroughTicket.id,
       chatId: resolvedChatId,
@@ -1365,10 +1428,19 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
         ticketId: passthroughTicket.id,
         direction: passthroughDirection,
         externalId: externalIdForUpsert,
-        wasCreated,
+        messageWasCreated,
+        ticketWasCreated,
       },
       'passthrough: persisted + emitted messages.new'
     );
+
+    await emitPassthroughRealtimeUpdates({
+      tenantId,
+      ticketId: passthroughTicket.id,
+      instanceId: instanceId ?? null,
+      message: passthroughMessage,
+      ticketWasCreated,
+    });
 
     return;
   }
