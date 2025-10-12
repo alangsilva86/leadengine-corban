@@ -119,6 +119,27 @@ curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
 
 The API replies with HTTP `202` when at least one message is normalized. Check the worker logs (`tail -n 200 -f logs/api/current | rg "raw_inbound_normalized"`) to confirm the fallback was triggered and the broker metadata was appended to the queue event.
 
+## Automated smoke test
+
+Need to validate the full webhook → socket → UI flow quickly? Use the bundled smoke runner:
+
+```bash
+API_URL="https://leadengine-corban.onrender.com" \
+WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)" \
+TENANT_ID="demo-tenant" \
+INSTANCE_ID="alan" \
+pnpm test:whatsapp
+```
+
+The script:
+
+- envia um inbound de texto com IDs únicos;
+- aguarda o evento `messages.new` no Socket.IO (`join-tenant`);
+- resolve automaticamente o ticket via `GET /api/tickets?search=<telefone>`; e
+- confirma que a mensagem aparece via `GET /api/tickets/:id/messages`.
+
+Se qualquer etapa falhar, o processo encerra com código ≠ 0 e imprime o motivo (webhook, socket ou persistência).
+
 ## Troubleshooting tips
 
 - **401 responses** usually mean the API key or auth token is missing. Double-check the headers exported above.
