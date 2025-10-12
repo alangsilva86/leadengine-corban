@@ -20,6 +20,9 @@ const MAX_DEDUPE_CACHE_SIZE = 10_000;
 const dedupeCache = new Map<string, number>();
 
 const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
+const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
+  'Fila criada automaticamente para mensagens inbound do WhatsApp.';
 
 type QueueCacheEntry = {
   id: string;
@@ -171,6 +174,48 @@ export const shouldSkipByDedupe = (key: string, now: number): boolean => {
 const mapErrorForLog = (error: unknown) =>
   error instanceof Error ? { message: error.message, stack: error.stack } : error;
 
+const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string | null> => {
+  try {
+    const queue = await prisma.queue.upsert({
+      where: {
+        tenantId_name: {
+          tenantId,
+          name: DEFAULT_QUEUE_FALLBACK_NAME,
+        },
+      },
+      update: {
+        description: DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
+        isActive: true,
+      },
+      create: {
+        tenantId,
+        name: DEFAULT_QUEUE_FALLBACK_NAME,
+        description: DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
+        color: '#2563EB',
+        orderIndex: 0,
+      },
+    });
+
+    queueCacheByTenant.set(tenantId, {
+      id: queue.id,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
+    });
+
+    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada automaticamente', {
+      tenantId,
+      queueId: queue.id,
+    });
+
+    return queue.id;
+  } catch (error) {
+    logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão', {
+      error: mapErrorForLog(error),
+      tenantId,
+    });
+    return null;
+  }
+};
+
 const isForeignKeyError = (error: unknown): boolean => {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
     return true;
@@ -243,7 +288,7 @@ const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
   });
 
   if (!queue) {
-    return null;
+    return provisionDefaultQueueForTenant(tenantId);
   }
 
   queueCacheByTenant.set(tenantId, {
@@ -491,9 +536,31 @@ const emitRealtimeUpdatesForInbound = async ({
     if (ticket.agreementId) {
       emitToAgreement(ticket.agreementId, 'tickets.updated', ticketPayload);
     }
+
+    const messageMetadata =
+      message.metadata && typeof message.metadata === 'object'
+        ? (message.metadata as Record<string, unknown>)
+        : {};
+    const eventMetadata =
+      messageMetadata.eventMetadata && typeof messageMetadata.eventMetadata === 'object'
+        ? (messageMetadata.eventMetadata as Record<string, unknown>)
+        : {};
+    const requestId =
+      typeof eventMetadata.requestId === 'string' && eventMetadata.requestId.trim().length > 0
+        ? eventMetadata.requestId
+        : null;
+
+    logger.info('🎯 LeadEngine • WhatsApp :: 🔔 Eventos realtime propagados', {
+      requestId,
+      tenantId,
+      ticketId,
+      messageId: message.id,
+      providerMessageId,
+      agreementId: ticket.agreementId ?? null,
+    });
   } catch (error) {
     logger.error('Failed to emit realtime updates for inbound WhatsApp message', {
-      error,
+      error: mapErrorForLog(error),
       tenantId,
       ticketId,
       messageId: message.id,
@@ -519,6 +586,23 @@ const upsertLeadFromInbound = async ({
   const lastContactAt =
     message.createdAt instanceof Date ? message.createdAt : new Date();
 
+  const messageMetadata =
+    message.metadata && typeof message.metadata === 'object'
+      ? (message.metadata as Record<string, unknown>)
+      : {};
+  const eventMetadata =
+    messageMetadata.eventMetadata && typeof messageMetadata.eventMetadata === 'object'
+      ? (messageMetadata.eventMetadata as Record<string, unknown>)
+      : {};
+  const messageRequestId =
+    typeof eventMetadata.requestId === 'string' && eventMetadata.requestId.trim().length > 0
+      ? eventMetadata.requestId
+      : null;
+  const preview =
+    typeof message.content === 'string' && message.content.trim().length > 0
+      ? message.content.trim().slice(0, 140)
+      : null;
+
   const lead = await prisma.lead.upsert({
     where: {
       tenantId_contactId: {
@@ -538,6 +622,11 @@ const upsertLeadFromInbound = async ({
     },
   });
 
+  leadLastContactGauge.set(
+    { tenantId, leadId: lead.id },
+    lastContactAt.getTime()
+  );
+
   const metadata: Record<string, unknown> = {
     ticketId,
     instanceId,
@@ -546,6 +635,36 @@ const upsertLeadFromInbound = async ({
     contactId,
     direction: message.direction,
   };
+
+  if (preview) {
+    metadata.preview = preview;
+  }
+
+  if (messageRequestId) {
+    metadata.requestId = messageRequestId;
+  }
+
+  const existingLeadActivity = await prisma.leadActivity.findFirst({
+    where: {
+      tenantId,
+      leadId: lead.id,
+      type: 'WHATSAPP_REPLIED',
+      metadata: {
+        path: ['messageId'],
+        equals: message.id,
+      },
+    },
+  });
+
+  if (existingLeadActivity) {
+    logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Lead activity reaproveitada', {
+      tenantId,
+      leadId: lead.id,
+      ticketId,
+      messageId: message.id,
+    });
+    return { lead, leadActivity: existingLeadActivity };
+  }
 
   const leadActivity = await prisma.leadActivity.create({
     data: {
@@ -557,11 +676,6 @@ const upsertLeadFromInbound = async ({
       occurredAt: lastContactAt,
     },
   });
-
-  leadLastContactGauge.set(
-    { tenantId, leadId: lead.id },
-    lastContactAt.getTime()
-  );
 
   const realtimeEnvelope = {
     tenantId,
@@ -659,6 +773,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   );
 
   logger.info('🎯 LeadEngine • WhatsApp :: ✉️ Processando mensagem inbound fresquinha', {
+    requestId,
     instanceId,
     messageId: message.id ?? null,
     timestamp,
@@ -670,6 +785,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   if (!instance) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Instância não encontrada — mensagem inbound estacionada', {
+      requestId,
       instanceId,
       messageId: message.id ?? null,
     });
@@ -688,6 +804,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   if (!campaigns.length) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
+      requestId,
       tenantId,
       instanceId,
       messageId: message.id ?? null,
@@ -700,7 +817,8 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   const queueId = await getDefaultQueueId(tenantId);
   if (!queueId) {
-    logger.warn('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente — configure uma fila em Configurações → Filas para liberar o atendimento.', {
+    logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente e fallback falhou', {
+      requestId,
       tenantId,
       instanceId,
     });
@@ -739,6 +857,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
   if (!ticketId) {
     logger.error('🎯 LeadEngine • WhatsApp :: 🚧 Não consegui garantir o ticket para a mensagem inbound', {
+      requestId,
       tenantId,
       instanceId,
       messageId: message.id ?? null,
@@ -751,9 +870,11 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const dedupeKey = `${tenantId}:${normalizedMessage.id}`;
   if (shouldSkipByDedupe(dedupeKey, now)) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
+      requestId,
       tenantId,
       ticketId,
       brokerMessageId: normalizedMessage.id,
+      dedupeKey,
     });
     return;
   }
@@ -811,7 +932,8 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     });
   } catch (error) {
     logger.error('🎯 LeadEngine • WhatsApp :: 💾 Falha ao salvar a mensagem inbound na timeline do ticket', {
-      error,
+      error: mapErrorForLog(error),
+      requestId,
       tenantId,
       ticketId,
       messageId: message.id ?? null,
@@ -842,6 +964,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     } catch (error) {
       logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao sincronizar lead inbound', {
         error: mapErrorForLog(error),
+        requestId,
         tenantId,
         ticketId,
         instanceId,
@@ -872,11 +995,13 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
       if (shouldSkipByDedupe(dedupeKey, now)) {
         logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
+          requestId,
           tenantId,
           campaignId: campaign.id,
           instanceId,
           messageId: message.id ?? null,
           phone: maskPhone(normalizedPhone ?? null),
+          dedupeKey,
         });
         continue;
       }

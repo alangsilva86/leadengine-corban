@@ -300,6 +300,8 @@ const buildInboundEvent = (
     messageIndex?: number;
     tenantId?: string;
     sessionId?: string;
+    requestId: string;
+    receivedAt?: string;
   }
 ): BrokerInboundEvent => {
   const { instanceId, timestamp, message, from, metadata } = parsed;
@@ -351,6 +353,19 @@ const buildInboundEvent = (
     return null;
   })();
 
+  const receivedAt = context.receivedAt ?? new Date().toISOString();
+  const metadataEnvelope = {
+    ...rawMetadata,
+    requestId:
+      typeof rawMetadata.requestId === 'string' && rawMetadata.requestId.trim().length > 0
+        ? rawMetadata.requestId
+        : context.requestId,
+    receivedAt:
+      typeof rawMetadata.receivedAt === 'string' && rawMetadata.receivedAt.trim().length > 0
+        ? rawMetadata.receivedAt
+        : receivedAt,
+  };
+
   return {
     id: messageId,
     type: 'MESSAGE_INBOUND',
@@ -364,7 +379,7 @@ const buildInboundEvent = (
       timestamp: normalizedTimestamp,
       contact,
       message: rawMessage,
-      metadata: rawMetadata,
+      metadata: metadataEnvelope,
     },
   };
 };
@@ -423,9 +438,18 @@ const readWebhookSecretFromHeaders = (req: Request): string | null => {
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const providedApiKey = readWebhookSecretFromHeaders(req) ?? '';
   const expectedApiKey = getWebhookApiKey();
+  const requestId = readString(req.header('x-request-id')) ?? randomUUID();
+
+  logger.info('📥 [Webhook] Requisição recebida', {
+    requestId,
+    ip: req.ip ?? null,
+    userAgent: req.header('user-agent') ?? null,
+    contentLength: req.header('content-length') ?? null,
+    route: req.originalUrl,
+  });
 
   if (!expectedApiKey || !safeCompare(providedApiKey, expectedApiKey)) {
-    logger.warn('WhatsApp webhook rejected due to invalid API key');
+    logger.warn('WhatsApp webhook rejected due to invalid API key', { requestId });
     whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_api_key' });
     res.status(401).json({ ok: false });
     return;
@@ -454,6 +478,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   }
 
   const payload = req.body ?? {};
+  const receivedAtIso = new Date().toISOString();
 
   const asArray = (input: unknown): Record<string, unknown>[] => {
     if (!input) return [];
@@ -614,6 +639,8 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
       messageIndex: candidate.messageIndex,
       tenantId: candidate.tenantId,
       sessionId: candidate.sessionId,
+      requestId,
+      receivedAt: receivedAtIso,
     })
   );
 
@@ -628,6 +655,7 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
 
   normalizedEvents.forEach((event) => {
     logger.info('📬 [Webhook] Evento inbound normalizado', {
+      requestId,
       eventId: event.id,
       instanceId: event.instanceId,
       hasMessage: Boolean(event.payload.message),
@@ -639,6 +667,8 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
     normalizedEvents.map((event) => ({
       id: event.id,
       type: event.type,
+      tenantId: event.tenantId,
+      sessionId: event.sessionId,
       instanceId: event.instanceId,
       timestamp: event.timestamp ?? undefined,
       payload: event.payload,
@@ -650,6 +680,7 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
   logger.info('WhatsApp webhook processed', {
     received: rawEvents.length,
     queued,
+    requestId,
     phones: normalizedEvents.map((event) => maskPhone(event.payload.contact.phone)),
     documents: normalizedEvents.map((event) => maskDocument(event.payload.contact.document ?? null)),
   });

@@ -137,7 +137,15 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
   );
 
   const handleQueueMissing = useCallback((payload) => {
-    setQueueAlerts((current) => [{ payload, timestamp: Date.now() }, ...current].slice(0, 5));
+    setQueueAlerts((current) => {
+      const timestamp = Date.now();
+      const filtered = current.filter(
+        (entry) =>
+          entry.payload?.instanceId !== payload?.instanceId &&
+          timestamp - entry.timestamp < 5 * 60 * 1000
+      );
+      return [{ payload, timestamp }, ...filtered].slice(0, 5);
+    });
   }, []);
 
   const realtime = useRealtimeTickets({
@@ -154,6 +162,18 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
   });
 
   const typingIndicator = useTypingIndicator({ socket: realtime.socket });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      setQueueAlerts((current) =>
+        current.filter((entry) => Date.now() - entry.timestamp < 5 * 60 * 1000)
+      );
+    }, 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const whatsAppLimits = useWhatsAppLimits({ enabled: Boolean(tenantId) });
 

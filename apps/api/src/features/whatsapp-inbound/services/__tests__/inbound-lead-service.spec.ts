@@ -4,8 +4,10 @@ import { NotFoundError } from '@ticketz/core';
 
 const findUniqueMock = vi.fn();
 const findFirstMock = vi.fn();
+const queueUpsertMock = vi.fn();
 const createTicketMock = vi.fn();
 const leadUpsertMock = vi.fn();
+const leadActivityFindFirstMock = vi.fn();
 const leadActivityCreateMock = vi.fn();
 const emitToTenantMock = vi.fn();
 const emitToTicketMock = vi.fn();
@@ -25,11 +27,13 @@ vi.mock('../../../../lib/prisma', () => ({
     queue: {
       findUnique: findUniqueMock,
       findFirst: findFirstMock,
+      upsert: queueUpsertMock,
     },
     lead: {
       upsert: leadUpsertMock,
     },
     leadActivity: {
+      findFirst: leadActivityFindFirstMock,
       create: leadActivityCreateMock,
     },
   },
@@ -64,6 +68,7 @@ describe('getDefaultQueueId', () => {
   beforeEach(() => {
     testing.queueCacheByTenant.clear();
     vi.resetAllMocks();
+    queueUpsertMock.mockReset();
   });
 
   it('returns cached queue id when entry is valid and queue exists', async () => {
@@ -79,6 +84,7 @@ describe('getDefaultQueueId', () => {
     expect(queueId).toBe('queue-1');
     expect(findUniqueMock).toHaveBeenCalledTimes(1);
     expect(findFirstMock).not.toHaveBeenCalled();
+    expect(queueUpsertMock).not.toHaveBeenCalled();
   });
 
   it('refetches queue when cached id is missing', async () => {
@@ -96,6 +102,34 @@ describe('getDefaultQueueId', () => {
     expect(findUniqueMock).toHaveBeenCalledWith({ where: { id: 'queue-old' } });
     expect(findFirstMock).toHaveBeenCalledTimes(1);
     expect(testing.queueCacheByTenant.get('tenant-2')).toMatchObject({ id: 'queue-new' });
+    expect(queueUpsertMock).not.toHaveBeenCalled();
+  });
+
+  it('provisions fallback queue when none is found', async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    queueUpsertMock.mockResolvedValueOnce({ id: 'queue-fallback' });
+
+    const queueId = await testing.getDefaultQueueId('tenant-3');
+
+    expect(queueId).toBe('queue-fallback');
+    expect(queueUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId_name: {
+            tenantId: 'tenant-3',
+            name: 'Atendimento Geral',
+          },
+        },
+        update: expect.objectContaining({
+          description: expect.stringContaining('WhatsApp'),
+        }),
+        create: expect.objectContaining({
+          tenantId: 'tenant-3',
+          name: 'Atendimento Geral',
+        }),
+      })
+    );
+    expect(testing.queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fallback' });
   });
 });
 
@@ -160,10 +194,13 @@ describe('upsertLeadFromInbound', () => {
     id: 'message-1',
     createdAt: new Date('2024-03-20T10:00:00.000Z'),
     direction: 'INBOUND',
+    content: 'Olá, mundo! Esta é uma mensagem de teste.',
   } as const;
 
   beforeEach(() => {
     leadUpsertMock.mockReset();
+    leadActivityFindFirstMock.mockReset();
+    leadActivityFindFirstMock.mockResolvedValue(null);
     leadActivityCreateMock.mockReset();
     emitToTenantMock.mockReset();
     emitToTicketMock.mockReset();
@@ -224,9 +261,15 @@ describe('upsertLeadFromInbound', () => {
             providerMessageId: 'provider-1',
             messageId: baseMessage.id,
             contactId: 'contact-1',
+            preview: 'Olá, mundo! Esta é uma mensagem de teste.',
           }),
         }),
       })
+    );
+
+    expect(leadLastContactGaugeSetMock).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', leadId: leadRecord.id },
+      baseMessage.createdAt.getTime()
     );
 
     expect(emitToTenantMock).toHaveBeenCalledWith(
@@ -265,6 +308,43 @@ describe('upsertLeadFromInbound', () => {
       { tenantId: 'tenant-1', leadId: leadRecord.id },
       baseMessage.createdAt.getTime()
     );
+  });
+
+  it('reuses existing lead activity when messageId matches', async () => {
+    const leadRecord = {
+      id: 'lead-2',
+      tenantId: 'tenant-1',
+      contactId: 'contact-1',
+      status: 'NEW',
+      source: 'WHATSAPP',
+      lastContactAt: baseMessage.createdAt,
+    };
+    const existingActivity = {
+      id: 'activity-existing',
+      tenantId: 'tenant-1',
+      leadId: leadRecord.id,
+      type: 'WHATSAPP_REPLIED',
+      occurredAt: baseMessage.createdAt,
+    };
+
+    leadUpsertMock.mockResolvedValueOnce(leadRecord);
+    leadActivityFindFirstMock.mockResolvedValueOnce(existingActivity);
+
+    const message = baseMessage as unknown as UpsertParams['message'];
+    const result = await testing.upsertLeadFromInbound({
+      tenantId: 'tenant-1',
+      contactId: 'contact-1',
+      ticketId: 'ticket-1',
+      instanceId: 'instance-1',
+      providerMessageId: 'provider-1',
+      message,
+    });
+
+    expect(result).toEqual({ lead: leadRecord, leadActivity: existingActivity });
+    expect(leadActivityCreateMock).not.toHaveBeenCalled();
+    expect(emitToTenantMock).not.toHaveBeenCalled();
+    expect(emitToTicketMock).not.toHaveBeenCalled();
+    expect(leadLastContactGaugeSetMock).toHaveBeenCalledTimes(1);
   });
 
   it('updates existing lead when already present', async () => {

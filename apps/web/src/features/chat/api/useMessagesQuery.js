@@ -6,7 +6,7 @@ const DEFAULT_PAGE_SIZE = 40;
 const buildPath = (ticketId, cursor, pageSize) => {
   const params = new URLSearchParams();
   params.set('limit', String(pageSize));
-  params.set('sortOrder', 'asc');
+  params.set('sortOrder', 'desc');
   if (cursor) {
     params.set('cursor', cursor);
   }
@@ -23,7 +23,6 @@ export const useMessagesQuery = ({
     queryKey: ['chat', 'messages', ticketId, pageSize],
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.cursors?.next ?? null,
-    getPreviousPageParam: (lastPage) => lastPage?.cursors?.prev ?? null,
     queryFn: async ({ pageParam }) => {
       if (!ticketId) {
         return null;

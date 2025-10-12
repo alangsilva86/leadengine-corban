@@ -50,9 +50,9 @@ export const ConversationArea = ({
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[26px] bg-slate-950/20 shadow-inner shadow-slate-950/40 ring-1 ring-white/5 backdrop-blur-xl">
         <MessageTimeline
           items={conversation.timeline}
-          loading={messagesQuery.isFetchingNextPage || messagesQuery.isFetchingPreviousPage}
-          hasMore={Boolean(messagesQuery.hasPreviousPage)}
-          onLoadMore={() => messagesQuery.fetchPreviousPage?.()}
+          loading={messagesQuery.isFetchingNextPage}
+          hasMore={Boolean(messagesQuery.hasNextPage)}
+          onLoadMore={() => messagesQuery.fetchNextPage?.()}
           typingAgents={typingIndicator?.agentsTyping ?? []}
         />
       </div>
