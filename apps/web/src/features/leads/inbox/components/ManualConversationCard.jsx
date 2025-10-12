@@ -20,7 +20,7 @@ const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting = false }, ref) => {
   const cardRef = useRef(null);
   const phoneInputRef = useRef(null);
-const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) => {
+
   const form = useForm({
     defaultValues: { phone: '', message: '' },
   });
@@ -60,11 +60,11 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
       await onSuccess?.(result, payload);
       form.reset({ phone: '', message: '' });
     } catch (error) {
-      const message =
+      const fallbackMessage =
         error instanceof Error
           ? error.message
           : 'Não foi possível iniciar a conversa. Tente novamente em instantes.';
-      form.setError('root', { type: 'manual', message });
+      form.setError('root', { type: 'manual', message: fallbackMessage });
     }
   });
 
@@ -89,8 +89,6 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
       id="manual-conversation-card"
       className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_36px_rgba(5,12,30,0.42)]"
     >
-  return (
-    <Card className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_36px_rgba(5,12,30,0.42)]">
       <CardHeader className="space-y-2 pb-2">
         <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
           Iniciar conversa manual
@@ -149,9 +147,7 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
               )}
             />
 
-            {rootError ? (
-              <p className="text-sm font-medium text-destructive">{rootError}</p>
-            ) : null}
+            {rootError ? <p className="text-sm font-medium text-destructive">{rootError}</p> : null}
 
             <Button
               type="submit"
@@ -168,6 +164,5 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
 });
 
 ManualConversationCard.displayName = 'ManualConversationCard';
-};
 
 export default ManualConversationCard;
