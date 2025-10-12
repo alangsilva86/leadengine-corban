@@ -36,6 +36,219 @@ export const resetInboundLeadServiceTestState = (): void => {
   dedupeCache.clear();
   queueCacheByTenant.clear();
 };
+
+const readString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const readNestedString = (source: Record<string, unknown>, path: string[]): string | null => {
+  let current: unknown = source;
+
+  for (const key of path) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      return null;
+    }
+
+    current = (current as Record<string, unknown>)[key];
+  }
+
+  return readString(current);
+};
+
+const pushUnique = (collection: string[], candidate: string | null): void => {
+  if (!candidate) {
+    return;
+  }
+
+  if (!collection.includes(candidate)) {
+    collection.push(candidate);
+  }
+};
+
+const resolveTenantIdentifiersFromMetadata = (metadata: Record<string, unknown>): string[] => {
+  const identifiers: string[] = [];
+
+  const directKeys = ['tenantId', 'tenant_id', 'tenantSlug', 'tenant'];
+  directKeys.forEach((key) => pushUnique(identifiers, readString(metadata[key])));
+
+  const nestedPaths: string[][] = [
+    ['tenant', 'id'],
+    ['tenant', 'tenantId'],
+    ['tenant', 'slug'],
+    ['tenant', 'code'],
+    ['tenant', 'slugId'],
+    ['context', 'tenantId'],
+    ['context', 'tenant', 'id'],
+    ['context', 'tenant', 'slug'],
+    ['context', 'tenant', 'tenantId'],
+    ['context', 'tenantSlug'],
+    ['broker', 'tenantId'],
+    ['integration', 'tenantId'],
+    ['integration', 'tenant', 'id'],
+    ['integration', 'tenant', 'slug'],
+    ['integration', 'tenant', 'tenantId'],
+    ['session', 'tenantId'],
+  ];
+
+  nestedPaths.forEach((path) => pushUnique(identifiers, readNestedString(metadata, path)));
+
+  return identifiers;
+};
+
+const resolveSessionIdFromMetadata = (metadata: Record<string, unknown>): string | null => {
+  const candidates: Array<string | null> = [
+    readString(metadata['sessionId']),
+    readString(metadata['session_id']),
+    readNestedString(metadata, ['session', 'id']),
+    readNestedString(metadata, ['session', 'sessionId']),
+    readNestedString(metadata, ['connection', 'sessionId']),
+    readNestedString(metadata, ['broker', 'sessionId']),
+  ];
+
+  return candidates.find((candidate) => Boolean(candidate)) ?? null;
+};
+
+const resolveBrokerIdFromMetadata = (metadata: Record<string, unknown>): string | null => {
+  const candidates: Array<string | null> = [
+    readString(metadata['brokerId']),
+    readString(metadata['broker_id']),
+    readNestedString(metadata, ['broker', 'id']),
+    readNestedString(metadata, ['broker', 'sessionId']),
+    resolveSessionIdFromMetadata(metadata),
+  ];
+
+  return candidates.find((candidate) => Boolean(candidate)) ?? null;
+};
+
+const resolveInstanceDisplayNameFromMetadata = (
+  metadata: Record<string, unknown>,
+  tenantName: string | null | undefined,
+  instanceId: string
+): string => {
+  const candidates: Array<string | null> = [
+    readString(metadata['instanceName']),
+    readString(metadata['instanceFriendlyName']),
+    readString(metadata['instanceDisplayName']),
+    readNestedString(metadata, ['instance', 'name']),
+    readNestedString(metadata, ['instance', 'displayName']),
+    readNestedString(metadata, ['instance', 'friendlyName']),
+    readNestedString(metadata, ['connection', 'name']),
+    readNestedString(metadata, ['session', 'name']),
+    readString(metadata['connectionName']),
+    tenantName ? `WhatsApp • ${tenantName}` : null,
+    `WhatsApp • ${instanceId}`,
+  ];
+
+  return candidates.find((candidate) => Boolean(candidate)) ?? `WhatsApp • ${instanceId}`;
+};
+
+type WhatsAppInstanceRecord = Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+const attemptAutoProvisionWhatsAppInstance = async ({
+  instanceId,
+  metadata,
+  requestId,
+  simpleMode,
+}: {
+  instanceId: string;
+  metadata: Record<string, unknown>;
+  requestId: string | null;
+  simpleMode: boolean;
+}): Promise<WhatsAppInstanceRecord | null> => {
+  if (!simpleMode) {
+    return null;
+  }
+
+  const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
+
+  if (tenantIdentifiers.length === 0) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Instância inbound sem tenant identificável', {
+      instanceId,
+      requestId,
+    });
+    return null;
+  }
+
+  const tenant = await prisma.tenant.findFirst({
+    where: {
+      OR: tenantIdentifiers.flatMap((identifier) => [
+        { id: identifier },
+        { slug: identifier },
+      ]),
+    },
+  });
+
+  if (!tenant) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Tenant não localizado para autoprov de instância', {
+      instanceId,
+      requestId,
+      tenantIdentifiers,
+    });
+    return null;
+  }
+
+  const brokerId = resolveBrokerIdFromMetadata(metadata) ?? instanceId;
+  const sessionId = resolveSessionIdFromMetadata(metadata);
+  const displayName = resolveInstanceDisplayNameFromMetadata(metadata, tenant.name, instanceId);
+
+  try {
+    const created = await prisma.whatsAppInstance.create({
+      data: {
+        id: instanceId,
+        tenantId: tenant.id,
+        name: displayName,
+        brokerId,
+        status: 'connected',
+        connected: true,
+        metadata: {
+          autopProvisionedAt: new Date().toISOString(),
+          autopProvisionSource: 'inbound-simple-mode',
+          autopProvisionRequestId: requestId ?? null,
+          autopProvisionTenantIdentifiers: tenantIdentifiers,
+          autopProvisionSessionId: sessionId ?? null,
+          autopProvisionBrokerId: brokerId,
+        },
+      },
+    });
+
+    logger.info('🎯 LeadEngine • WhatsApp :: 🆕 Instância provisionada automaticamente', {
+      instanceId,
+      tenantId: tenant.id,
+      brokerId,
+      requestId,
+    });
+
+    return created;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const existing = await prisma.whatsAppInstance.findFirst({ where: { brokerId } });
+      if (existing) {
+        logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente após colisão de broker', {
+          instanceId,
+          tenantId: existing.tenantId,
+          brokerId,
+          requestId,
+        });
+        return existing;
+      }
+    }
+
+    logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao autoprov instância', {
+      error: mapErrorForLog(error),
+      instanceId,
+      tenantId: tenant.id,
+      brokerId,
+      requestId,
+    });
+    return null;
+  }
+};
+
 const pruneDedupeCache = (now: number): void => {
   if (dedupeCache.size === 0) {
     return;
@@ -237,8 +450,25 @@ const isForeignKeyError = (error: unknown): boolean => {
   return false;
 };
 
-const isUniqueViolation = (error: unknown): boolean =>
-  error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+const isUniqueViolation = (error: unknown): boolean => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    return true;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (code === 'P2002') {
+      return true;
+    }
+
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause && cause !== error && isUniqueViolation(cause)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const isMissingQueueError = (error: unknown): boolean => {
   if (!error) {
@@ -723,6 +953,11 @@ export const __testing = {
   DEFAULT_QUEUE_CACHE_TTL_MS,
   dedupeCache,
   queueCacheByTenant,
+  resolveTenantIdentifiersFromMetadata,
+  resolveBrokerIdFromMetadata,
+  resolveSessionIdFromMetadata,
+  resolveInstanceDisplayNameFromMetadata,
+  attemptAutoProvisionWhatsAppInstance,
   pruneDedupeCache,
   getDefaultQueueId,
   ensureTicketForContact,
@@ -783,7 +1018,16 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     document: maskDocument(document),
   });
 
-  const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+  let instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+
+  if (!instance) {
+    instance = await attemptAutoProvisionWhatsAppInstance({
+      instanceId,
+      metadata: metadataRecord,
+      requestId,
+      simpleMode,
+    });
+  }
 
   if (!instance) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Instância não encontrada — mensagem inbound estacionada', {
