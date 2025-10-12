@@ -1,9 +1,9 @@
 import express, { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
+import { SendByInstanceSchema, normalizePayload } from '@ticketz/contracts';
 import { asyncHandler } from '../../middleware/error-handler';
 import { prisma } from '../../lib/prisma';
-import { SendByInstanceSchema, normalizePayload } from '../../dtos/message-schemas';
 import { sendAdHoc } from '../../services/ticket-service';
 import {
   WhatsAppBrokerError,

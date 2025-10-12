@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { ZodError } from 'zod';
 
+import { SendByTicketSchema, normalizePayload } from '@ticketz/contracts';
 import { asyncHandler } from '../middleware/error-handler';
-import { SendByTicketSchema, normalizePayload } from '../dtos/message-schemas';
 import { sendOnTicket } from '../services/ticket-service';
 
 const router: Router = Router();

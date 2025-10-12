@@ -1,0 +1,294 @@
+openapi: 3.1.0
+info:
+  title: Ticketz LeadEngine API Contracts
+  version: 1.0.0
+  description: >-
+    Especificação mínima das rotas responsáveis pelo envio de mensagens via
+    Ticketz LeadEngine API.
+  contact:
+    name: Ticketz LeadEngine Team
+    email: suporte@ticketz.local
+servers:
+  - url: https://api.ticketz.local
+tags:
+  - name: messages
+    description: Operações relacionadas ao envio de mensagens outbound.
+paths:
+  /tickets/{ticketId}/messages:
+    post:
+      operationId: createTicketMessage
+      summary: Enfileira uma nova mensagem para um ticket existente
+      description: Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
+      tags: [messages]
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageByTicketRequest'
+      responses:
+        '202':
+          description: Mensagem enfileirada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMessageResponse'
+        '404':
+          description: Ticket ou instância não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Instância desconectada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Erro de validação na requisição
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /contacts/{contactId}/messages:
+    post:
+      operationId: createContactMessage
+      summary: Enfileira uma nova mensagem para um contato específico
+      description: Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
+      tags: [messages]
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageByContactRequest'
+      responses:
+        '202':
+          description: Mensagem enfileirada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMessageResponse'
+        '404':
+          description: Contato ou instância não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Instância desconectada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Erro de validação na requisição
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /integrations/whatsapp/instances/{instanceId}/messages:
+    post:
+      operationId: createInstanceMessage
+      summary: Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
+      description: Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
+      tags: [messages]
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageByInstanceRequest'
+      responses:
+        '202':
+          description: Mensagem enfileirada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundMessageResponse'
+        '404':
+          description: Instância não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Instância desconectada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Erro de validação na requisição
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+components:
+  schemas:
+    MessagePayload:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text, image, document, audio, video]
+          default: text
+        text:
+          type: string
+          description: Conteúdo textual da mensagem
+          minLength: 1
+        mediaUrl:
+          type: string
+          format: uri
+        caption:
+          type: string
+        mimeType:
+          type: string
+        fileName:
+          type: string
+        previewUrl:
+          type: boolean
+      additionalProperties: false
+    SendMessageByTicketRequest:
+      type: object
+      required: [payload]
+      properties:
+        instanceId:
+          type: string
+          description: Identificador opcional da instância do WhatsApp
+        payload:
+          $ref: '#/components/schemas/MessagePayload'
+        idempotencyKey:
+          type: string
+          description: Chave utilizada para deduplicação de requisições
+      additionalProperties: false
+    SendMessageByContactRequest:
+      allOf:
+        - $ref: '#/components/schemas/SendMessageByTicketRequest'
+        - type: object
+          required: [to]
+          properties:
+            to:
+              type: string
+              description: Número de telefone do contato
+              minLength: 8
+              maxLength: 32
+          additionalProperties: false
+    SendMessageByInstanceRequest:
+      type: object
+      required: [to, payload]
+      properties:
+        to:
+          type: string
+          description: Número de telefone do destinatário
+          minLength: 8
+          maxLength: 32
+        payload:
+          $ref: '#/components/schemas/MessagePayload'
+        idempotencyKey:
+          type: string
+          description: Chave utilizada para deduplicação de requisições
+      additionalProperties: false
+    OutboundMessageError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+        status:
+          type: integer
+        requestId:
+          type: string
+      additionalProperties: false
+    OutboundMessageResponse:
+      type: object
+      required: [queued, ticketId, messageId, status, externalId, error]
+      properties:
+        queued:
+          type: boolean
+          const: true
+        ticketId:
+          type: string
+        messageId:
+          type: string
+        status:
+          type: string
+        externalId:
+          type: [string, 'null']
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/OutboundMessageError'
+            - type: 'null'
+      additionalProperties: false
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              description: Informações adicionais sobre o erro
+          additionalProperties: true
+      additionalProperties: false
+    ValidationErrorIssue:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+    ValidationErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            error:
+              type: object
+              required: [code, message, details]
+              properties:
+                code:
+                  type: string
+                  enum: [VALIDATION_ERROR]
+                message:
+                  type: string
+                details:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ValidationErrorIssue'
+              additionalProperties: false

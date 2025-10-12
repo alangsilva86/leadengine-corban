@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+import type { components } from './types.gen.js';
+
+type MessagePayloadContract = components['schemas']['MessagePayload'];
+type SendMessageByTicketContract = components['schemas']['SendMessageByTicketRequest'];
+type SendMessageByContactContract = components['schemas']['SendMessageByContactRequest'];
+type SendMessageByInstanceContract = components['schemas']['SendMessageByInstanceRequest'];
+type OutboundMessageResponseContract = components['schemas']['OutboundMessageResponse'];
+type OutboundMessageErrorContract = components['schemas']['OutboundMessageError'];
+
 const PHONE_MIN_DIGITS = 8;
 const PHONE_MAX_DIGITS = 15;
 
@@ -119,3 +128,17 @@ export const normalizePayload = (input: MessagePayloadInput): NormalizedMessageP
     previewUrl: input.previewUrl,
   } satisfies NormalizedMessagePayload;
 };
+
+export type SendMessageByTicketRequest = SendMessageByTicketContract;
+export type SendMessageByContactRequest = SendMessageByContactContract;
+export type SendMessageByInstanceRequest = SendMessageByInstanceContract;
+export type OutboundMessageResponse = OutboundMessageResponseContract;
+export type OutboundMessageError = OutboundMessageErrorContract;
+
+type EnsureExact<TExpected, TActual extends TExpected> =
+  TExpected extends TActual ? true : never;
+
+export type _EnsureMessagePayload = EnsureExact<MessagePayloadContract, MessagePayloadInput>;
+export type _EnsureSendByTicket = EnsureExact<SendMessageByTicketContract, SendByTicketInput>;
+export type _EnsureSendByContact = EnsureExact<SendMessageByContactContract, SendByContactInput>;
+export type _EnsureSendByInstance = EnsureExact<SendMessageByInstanceContract, SendByInstanceInput>;

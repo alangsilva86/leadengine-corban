@@ -1,0 +1,52 @@
+{
+  "name": "@ticketz/contracts",
+  "version": "1.0.0",
+  "description": "Contratos e esquemas compartilhados da API Ticketz-LeadEngine",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./openapi": {
+      "default": "./openapi.yaml"
+    },
+    "./types": {
+      "types": "./src/types.gen.ts",
+      "default": "./src/types.gen.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src/types.gen.ts",
+    "openapi.yaml"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:clean": "tsup --clean",
+    "generate": "openapi-typescript ./openapi.yaml --output ./src/types.gen.ts",
+    "lint": "pnpm run lint:openapi",
+    "lint:openapi": "spectral lint ./openapi.yaml"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^6.7.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.3.3",
+    "@stoplight/spectral-cli": "^6.11.1"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/*",
+        "src/*"
+      ]
+    }
+  }
+}
