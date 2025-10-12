@@ -2,24 +2,25 @@
   "name": "@ticketz/core",
   "version": "1.0.0",
   "description": "Domínio e casos de uso do sistema Ticketz-LeadEngine",
-  "main": "dist/index.js",
+  "main": "dist/index.mjs",
   "module": "dist/index.mjs",
   "types": "index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "default": "./dist/index.mjs"
     },
     "./tickets": {
       "types": "./tickets.d.ts",
       "import": "./dist/tickets/index.mjs",
-      "require": "./dist/tickets/index.js"
+      "default": "./dist/tickets/index.mjs"
     },
     "./leads": {
       "types": "./leads.d.ts",
       "import": "./dist/leads/index.mjs",
-      "require": "./dist/leads/index.js"
+      "default": "./dist/leads/index.mjs"
     }
   },
   "scripts": {

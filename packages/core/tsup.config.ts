@@ -1,6 +1,6 @@
 import { defineConfig } from "tsup";
 
-const { CI, TSUP_DTS, TSUP_SOURCEMAP, TSUP_MINIFY } = process.env;
+const { CI, TSUP_SOURCEMAP, TSUP_MINIFY } = process.env;
 
 const isCI = CI === "true" || CI === "1";
 
@@ -12,7 +12,6 @@ const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
   return value !== "false" && value !== "0";
 };
 
-const dts = parseBoolean(TSUP_DTS, !isCI);
 const sourcemap = parseBoolean(TSUP_SOURCEMAP, !isCI);
 const minify = parseBoolean(TSUP_MINIFY, false);
 
@@ -25,9 +24,12 @@ export default defineConfig({
   splitting: false,
   sourcemap,
   clean: true,
-  dts,
+  dts: true,
   minify,
-  format: ["cjs", "esm"],
+  format: ["esm"],
+  outExtension: () => ({
+    js: ".mjs"
+  }),
   target: "es2022",
   tsconfig: "./tsconfig.build.json"
 });
