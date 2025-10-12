@@ -20,7 +20,7 @@ export const ConversationArea = ({
   isSending,
   sendError,
 }) => {
-  const disabled = ticket?.window?.isOpen === false;
+  const disabled = false;
   const ai = useAiSuggestions();
 
   const timelineItems = useMemo(() => {
@@ -85,8 +85,7 @@ export const ConversationArea = ({
       </div>
 
       <Composer
-        disabled={disabled && !ticket?.window?.isOpen}
-        windowInfo={ticket?.window}
+        disabled={disabled}
         onSend={(payload) => onSendMessage?.(payload)}
         onTemplate={(template) => {
           if (!template) return;

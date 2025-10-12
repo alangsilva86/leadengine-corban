@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Brain, Paperclip, Smile, Send, FileText, Loader2, X } from 'lucide-react';
+import { Brain, Paperclip, Smile, Send, Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
@@ -30,7 +30,6 @@ const detectCommand = (value) => {
 
 export const Composer = ({
   disabled,
-  windowInfo,
   onSend,
   onTemplate,
   onCreateNote,
@@ -53,11 +52,8 @@ export const Composer = ({
     if (disabled) {
       return 'Envio desabilitado no momento';
     }
-    if (windowInfo?.isOpen === false) {
-      return 'Janela expirada — use um template para reabrir';
-    }
     return 'Escreva uma resposta...';
-  }, [disabled, windowInfo?.isOpen]);
+  }, [disabled]);
 
   useEffect(() => {
     const command = detectCommand(value);
@@ -231,7 +227,7 @@ export const Composer = ({
                 setTemplatePickerOpen(false);
               }
             }}
-            disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
+            disabled={disabled || isSending}
             placeholder={placeholder}
             className="min-h-[88px] flex-1 resize-none rounded-[22px] border-none bg-slate-950/35 px-4 py-3 text-slate-100 placeholder:text-slate-500 ring-1 ring-white/5"
           />
@@ -239,7 +235,7 @@ export const Composer = ({
             variant="default"
             size="icon"
             className="h-12 w-12 rounded-full bg-sky-500 text-white shadow-[0_18px_36px_-24px_rgba(14,165,233,0.7)] transition hover:bg-sky-400"
-            disabled={(disabled && windowInfo?.isOpen !== false) || isSending}
+            disabled={disabled || isSending}
             onClick={handleSend}
           >
             {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -247,13 +243,6 @@ export const Composer = ({
           </Button>
         </div>
       </div>
-
-      {windowInfo?.isOpen === false ? (
-        <div className="mt-2 flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
-          <FileText className="h-4 w-4" />
-          Janela de 24h expirada — envie um template aprovado para retomar a conversa.
-        </div>
-      ) : null}
 
       {sendError ? (
         <div className="mt-2 rounded-md bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
