@@ -30,7 +30,7 @@ curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
     "events": [
       {
         "id": "wamid-123",
-        "instanceId": "${TENANT_ID}",
+        "instanceId": "${INSTANCE_ID}",
         "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
         "type": "MESSAGE_INBOUND",
         "from": {
