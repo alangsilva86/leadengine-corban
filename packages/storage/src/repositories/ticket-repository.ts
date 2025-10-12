@@ -273,7 +273,7 @@ const coerceTimestamp = (value: UpsertPassthroughMessageInput['timestamp']): Dat
 };
 
 const normalizeMetadataRecord = (
-  current: Prisma.JsonValue | null | undefined
+  current: unknown
 ): Record<string, unknown> => {
   const record = asRecord(current);
   return record ? { ...record } : {};
