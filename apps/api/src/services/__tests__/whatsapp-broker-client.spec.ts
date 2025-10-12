@@ -133,6 +133,52 @@ describe('WhatsAppBrokerClient', () => {
     });
   });
 
+  it('lists instances via GET /instances with tenant filter applied', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          instances: [
+            {
+              id: 'inst-1',
+              name: 'Operação Principal',
+              tenantId: 'tenant-1',
+              status: { status: 'connected', connected: true },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      )
+    );
+
+    const result = await whatsappBrokerClient.listInstances('tenant-1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances?tenantId=tenant-1');
+    expect(init?.method ?? 'GET').toBe('GET');
+    expect(result).toEqual([
+      {
+        instance: expect.objectContaining({
+          id: 'inst-1',
+          tenantId: 'tenant-1',
+          name: 'Operação Principal',
+          status: 'connected',
+          connected: true,
+        }),
+        status: expect.objectContaining({
+          status: 'connected',
+          connected: true,
+        }),
+      },
+    ]);
+  });
+
   it('pairs instances via POST /instances/:id/pair', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
@@ -304,6 +350,62 @@ describe('WhatsAppBrokerClient', () => {
     expect(url).toBe('https://broker.test/instances/instance-1/metrics');
     expect(init?.method ?? 'GET').toBe('GET');
     expect(result).toEqual({ messages: { sent: 10 } });
+  });
+
+  it('creates polls via POST /instances/:id/send-poll', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 'poll-001',
+          status: 'sent',
+          ack: 'server',
+          rate: { latencyMs: 120 },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      )
+    );
+
+    const result = await whatsappBrokerClient.createPoll({
+      sessionId: 'instance-1',
+      to: '+5511999999999',
+      question: 'Qual opção prefere?',
+      options: ['Opção A', 'Opção B', 'Opção C'],
+      allowMultipleAnswers: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/instance-1/send-poll');
+    expect(init?.method).toBe('POST');
+
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({
+      sessionId: 'instance-1',
+      instanceId: 'instance-1',
+      to: '+5511999999999',
+      question: 'Qual opção prefere?',
+      options: ['Opção A', 'Opção B', 'Opção C'],
+      selectableCount: 3,
+    });
+
+    expect(result).toEqual({
+      id: 'poll-001',
+      status: 'sent',
+      ack: 'server',
+      rate: { latencyMs: 120 },
+      raw: {
+        id: 'poll-001',
+        status: 'sent',
+        ack: 'server',
+        rate: { latencyMs: 120 },
+      },
+    });
   });
 
   it('fetches events through /health returning envelope vazio', async () => {
