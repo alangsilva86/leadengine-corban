@@ -2,7 +2,6 @@ import { onWhatsAppBrokerEvent, type WhatsAppBrokerEvent } from '../queue/event-
 import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 import { logger } from '../../../config/logger';
 import { BrokerInboundEventSchema } from '../schemas/broker-contracts';
-import { isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
 import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 
 const PASSTHROUGH_TENANT_FALLBACK = 'demo-tenant';
@@ -92,8 +91,7 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       metadata.remoteJid = remoteJidCandidate;
     }
 
-    const passthroughMode = isWhatsappPassthroughModeEnabled();
-    const fallbackTenant = passthroughMode ? PASSTHROUGH_TENANT_FALLBACK : null;
+    const fallbackTenant = PASSTHROUGH_TENANT_FALLBACK;
     const effectiveTenantId = normalized.tenantId ?? event.tenantId ?? fallbackTenant;
     if (effectiveTenantId && !metadata.tenantId) {
       metadata.tenantId = effectiveTenantId;

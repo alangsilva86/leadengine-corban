@@ -11,7 +11,6 @@ import {
   normalizeUpsertEvent,
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
-import { resolveWhatsappInstanceByIdentifiers } from '../services/instance-resolver';
 import {
   BrokerInboundEvent,
   BrokerWebhookInboundSchema,
@@ -640,52 +639,32 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
       const entryRecord = entry as Record<string, unknown>;
       const payloadRecord = asRecord(entryRecord.payload) ?? {};
 
-      let resolvedInstance = await resolveWhatsappInstanceByIdentifiers([
-        entryRecord.instanceId,
-        entryRecord.iid,
-        payloadRecord?.instanceId,
-        payloadRecord?.iid,
-        payloadRecord?.brokerId,
-      ]);
-
-      if (!resolvedInstance && passthroughMode) {
-        const candidateInstanceId = readString(
+      const tenantForInstance = fallbackTenantId ?? PASSTHROUGH_TENANT_FALLBACK;
+      const candidateInstanceId =
+        readString(
           entryRecord.instanceId,
           entryRecord.iid,
           payloadRecord?.instanceId,
           payloadRecord?.iid,
           payloadRecord?.brokerId
-        );
-        const tenantForInstance = fallbackTenantId ?? PASSTHROUGH_TENANT_FALLBACK;
+        ) ?? 'baileys-autogen';
 
-        if (candidateInstanceId) {
-          try {
-            resolvedInstance = await ensurePassthroughInstance(tenantForInstance, candidateInstanceId);
-            logger.info('🎯 [Webhook] Instância Baileys autoprovicionada (passthrough)', {
-              requestId,
-              tenantId: tenantForInstance,
-              instanceId: candidateInstanceId,
-            });
-          } catch (error) {
-            logger.error('🛑 [Webhook] Falha ao autoprovicionar instância em modo passthrough', {
-              requestId,
-              tenantId: tenantForInstance,
-              instanceId: candidateInstanceId,
-              error,
-            });
-          }
-        }
-      }
-
-      if (!resolvedInstance) {
-        logger.warn('📭 [Webhook] Instância Baileys desconhecida — evento ignorado', {
-          index,
-          iid: entryRecord.iid ?? null,
-          instanceId: entryRecord.instanceId ?? null,
+      try {
+        await ensurePassthroughInstance(tenantForInstance, candidateInstanceId);
+      } catch (error) {
+        logger.error('🛑 [Webhook] Falha ao autoprovicionar instância em modo passthrough', {
+          requestId,
+          tenantId: tenantForInstance,
+          instanceId: candidateInstanceId,
+          error,
         });
-        whatsappWebhookEventsCounter.inc({ result: 'ignored', reason: 'unknown_instance' });
-        continue;
       }
+
+      const resolvedInstance = {
+        instanceId: candidateInstanceId,
+        tenantId: tenantForInstance,
+        brokerId: candidateInstanceId,
+      };
 
       const normalization = normalizeUpsertEvent(entry as RawBaileysUpsertEvent, {
         instanceId: resolvedInstance.instanceId,

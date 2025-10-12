@@ -23,7 +23,6 @@ import {
   getSocketServer,
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
-import { isWhatsappInboundSimpleModeEnabled, isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
@@ -34,6 +33,190 @@ const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
 const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
   'Fila criada automaticamente para mensagens inbound do WhatsApp.';
+
+const DEFAULT_TENANT_ID = (() => {
+  const envValue = process.env.AUTH_MVP_TENANT_ID;
+  if (typeof envValue === 'string' && envValue.trim().length > 0) {
+    return envValue.trim();
+  }
+  return 'demo-tenant';
+})();
+
+const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<void> => {
+  const toRecord = (value: unknown): Record<string, unknown> => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return { ...(value as Record<string, unknown>) };
+    }
+    return {};
+  };
+
+  const {
+    instanceId,
+    contact,
+    message,
+    timestamp,
+    direction,
+    chatId,
+    externalId,
+    tenantId: eventTenantId,
+  } = event;
+
+  const effectiveTenantId =
+    (typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null) ??
+    DEFAULT_TENANT_ID;
+  const metadataRecord = toRecord(event.metadata);
+  const metadataContact = toRecord(metadataRecord.contact);
+  const messageRecord = toRecord(message);
+
+  const normalizedPhone =
+    sanitizePhone(contact.phone) ??
+    sanitizePhone(metadataContact.phone) ??
+    sanitizePhone(metadataRecord.phone);
+  const document = sanitizeDocument(contact.document, normalizedPhone);
+
+  const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
+  const passthroughDirection =
+    typeof direction === 'string' && direction.toUpperCase() === 'OUTBOUND' ? 'outbound' : 'inbound';
+
+  const remoteJidCandidate =
+    readString(chatId) ??
+    readString(messageRecord.chatId) ??
+    readString(metadataRecord.chatId) ??
+    readString(metadataRecord.remoteJid) ??
+    readString(metadataContact.remoteJid) ??
+    readString(contact.phone);
+
+  const resolvedChatId =
+    remoteJidCandidate ??
+    normalizedPhone ??
+    document ??
+    readString(externalId) ??
+    normalizedMessage.id ??
+    event.id ??
+    randomUUID();
+
+  const externalIdForUpsert =
+    readString(externalId) ??
+    readString(messageRecord.id) ??
+    normalizedMessage.id ??
+    event.id ??
+    randomUUID();
+
+  const normalizedType = normalizedMessage.type;
+  let passthroughType: 'text' | 'media' | 'unknown' = 'unknown';
+  let passthroughText: string | null = null;
+  let passthroughMedia: {
+    mediaType: string;
+    url?: string | null;
+    mimeType?: string | null;
+    fileName?: string | null;
+    size?: number | null;
+    caption?: string | null;
+  } | null = null;
+
+  if (normalizedType === 'IMAGE' || normalizedType === 'VIDEO' || normalizedType === 'AUDIO' || normalizedType === 'DOCUMENT') {
+    passthroughType = 'media';
+    const mediaType = normalizedType.toLowerCase();
+    passthroughText = normalizedMessage.caption ?? normalizedMessage.text ?? null;
+    passthroughMedia = {
+      mediaType,
+      url: normalizedMessage.mediaUrl ?? undefined,
+      mimeType: normalizedMessage.mimetype ?? undefined,
+      size: normalizedMessage.fileSize ?? undefined,
+      caption: normalizedMessage.caption ?? undefined,
+    };
+  } else if (
+    normalizedType === 'TEXT' ||
+    normalizedType === 'TEMPLATE' ||
+    normalizedType === 'CONTACT' ||
+    normalizedType === 'LOCATION'
+  ) {
+    passthroughType = 'text';
+    passthroughText = normalizedMessage.text ?? null;
+  } else {
+    passthroughType = 'unknown';
+    passthroughText = normalizedMessage.text ?? null;
+  }
+
+  const instanceIdentifier =
+    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
+
+  const metadataForUpsert = {
+    ...metadataRecord,
+    tenantId: effectiveTenantId,
+    chatId: resolvedChatId,
+    direction: passthroughDirection,
+    sourceInstance: instanceIdentifier,
+    remoteJid: remoteJidCandidate ?? resolvedChatId,
+    phoneE164: normalizedPhone ?? null,
+  };
+
+  const displayName = pickPreferredName(
+    contact.name,
+    contact.pushName,
+    readString(metadataContact.pushName)
+  ) ?? 'Contato WhatsApp';
+
+  const { ticket: passthroughTicket, wasCreated: ticketWasCreated } = await findOrCreateOpenTicketByChat({
+    tenantId: effectiveTenantId,
+    chatId: resolvedChatId,
+    displayName,
+    phone: normalizedPhone ?? resolvedChatId,
+    instanceId: instanceIdentifier,
+  });
+
+  const { message: passthroughMessage, wasCreated: messageWasCreated } = await upsertMessageByExternalId({
+    tenantId: effectiveTenantId,
+    ticketId: passthroughTicket.id,
+    chatId: resolvedChatId,
+    direction: passthroughDirection,
+    externalId: externalIdForUpsert,
+    type: passthroughType,
+    text: passthroughText,
+    media: passthroughMedia,
+    metadata: metadataForUpsert,
+    timestamp: (() => {
+      if (typeof normalizedMessage.brokerMessageTimestamp === 'number') {
+        return normalizedMessage.brokerMessageTimestamp;
+      }
+      if (typeof timestamp === 'string') {
+        const parsed = Date.parse(timestamp);
+        if (!Number.isNaN(parsed)) {
+          return parsed;
+        }
+      }
+      return Date.now();
+    })(),
+  });
+
+  const socket = getSocketServer();
+  if (socket) {
+    socket.to(`tenant:${effectiveTenantId}`).emit('messages.new', passthroughMessage);
+    socket.to(`ticket:${passthroughTicket.id}`).emit('messages.new', passthroughMessage);
+  }
+
+  logger.info(
+    {
+      tenantId: effectiveTenantId,
+      ticketId: passthroughTicket.id,
+      direction: passthroughDirection,
+      externalId: externalIdForUpsert,
+      messageWasCreated,
+      ticketWasCreated,
+    },
+    'passthrough: persisted + emitted messages.new'
+  );
+
+  await emitPassthroughRealtimeUpdates({
+    tenantId: effectiveTenantId,
+    ticketId: passthroughTicket.id,
+    instanceId: instanceIdentifier,
+    message: passthroughMessage,
+    ticketWasCreated,
+  });
+
+  inboundMessagesProcessedCounter.inc({ tenantId: effectiveTenantId });
+};
 
 type QueueCacheEntry = {
   id: string;
@@ -79,6 +262,7 @@ const pushUnique = (collection: string[], candidate: string | null): void => {
     collection.push(candidate);
   }
 };
+*/
 
 const resolveTenantIdentifiersFromMetadata = (metadata: Record<string, unknown>): string[] => {
   const identifiers: string[] = [];
@@ -1039,49 +1223,10 @@ export const __testing = {
 };
 
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
-  const {
-    instanceId,
-    contact,
-    message,
-    timestamp,
-    direction,
-    chatId,
-    externalId,
-    tenantId: eventTenantId,
-    sessionId: eventSessionId,
-  } = event;
-  const normalizedPhone = sanitizePhone(contact.phone);
-  const document = sanitizeDocument(contact.document, normalizedPhone);
-  const now = Date.now();
-  const passthroughMode = isWhatsappPassthroughModeEnabled();
-  const simpleMode = passthroughMode || isWhatsappInboundSimpleModeEnabled();
-  const metadataRecord = (event.metadata && typeof event.metadata === 'object'
-    ? (event.metadata as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
-  const requestId =
-    typeof metadataRecord['requestId'] === 'string'
-      ? metadataRecord['requestId']
-      : null;
-  const metadataContact = (metadataRecord.contact && typeof metadataRecord.contact === 'object'
-    ? (metadataRecord.contact as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
-  const metadataPushName = (() => {
-    const direct = metadataContact['pushName'];
-    if (typeof direct === 'string') {
-      const trimmed = direct.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-    const fallback = metadataRecord['pushName'];
-    if (typeof fallback === 'string') {
-      const trimmed = fallback.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-    return null;
-  })();
+  await handlePassthroughIngest(event);
+};
+/* Legacy pipeline (campaign/lead synchronization) retained for reference but disabled.
+   The passthrough handler above short-circuits all validations. */
   const resolvedAvatar = [
     contact.avatarUrl,
     metadataContact.avatarUrl,

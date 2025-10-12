@@ -347,6 +347,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', leadEngineRouter);
+app.use('/api', debugMessagesRouter);
 
 // Rotas protegidas (com autenticação)
 app.use('/api/tickets', authMiddleware, ticketsRouter);
@@ -356,7 +357,6 @@ app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api', authMiddleware, ticketMessagesRouter);
 app.use('/api', authMiddleware, contactMessagesRouter);
 app.use('/api', authMiddleware, whatsappMessagesRouter);
-app.use('/api', authMiddleware, debugMessagesRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
