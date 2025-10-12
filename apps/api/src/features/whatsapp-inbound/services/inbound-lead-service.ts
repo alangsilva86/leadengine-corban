@@ -602,8 +602,8 @@ const emitPassthroughRealtimeUpdates = async ({
   try {
     const ticketRecord = await prisma.ticket.findUnique({ where: { id: ticketId } });
 
-    if (!ticketRecord || ticketRecord.tenantId !== tenantId) {
-      logger.warn('passthrough: skipped realtime updates due to missing ticket', {
+    if (!ticketRecord) {
+      logger.warn('passthrough: skipped realtime updates due to missing ticket record', {
         tenantId,
         ticketId,
       });
@@ -997,8 +997,8 @@ const emitRealtimeUpdatesForInbound = async ({
   try {
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
 
-    if (!ticket || ticket.tenantId !== tenantId) {
-      logger.warn('Inbound realtime event skipped: ticket not found', {
+    if (!ticket) {
+      logger.warn('Inbound realtime event skipped: ticket record missing', {
         tenantId,
         ticketId,
         messageId: message.id,
@@ -1219,6 +1219,7 @@ export const __testing = {
   ensureTicketForContact,
   upsertLeadFromInbound,
   emitPassthroughRealtimeUpdates,
+  emitRealtimeUpdatesForInbound,
 };
 
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
