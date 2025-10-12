@@ -50,6 +50,31 @@ const timeout = (ms, label) =>
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const resolveSocketIoClient = async () => {
+  try {
+    return await import('socket.io-client');
+  } catch (error) {
+    const { pathToFileURL } = await import('node:url');
+    const { resolve } = await import('node:path');
+    const candidatePaths = [
+      'node_modules/socket.io-client/build/esm/index.js',
+      'apps/web/node_modules/socket.io-client/build/esm/index.js',
+      'apps/web/node_modules/socket.io-client/dist/index.js',
+    ];
+
+    for (const candidate of candidatePaths) {
+      try {
+        const absolute = resolve(candidate);
+        return await import(pathToFileURL(absolute).href);
+      } catch {
+        // ignore and try next candidate
+      }
+    }
+
+    throw error;
+  }
+};
+
 const sanitizePhone = (phone) => phone.replace(/\D+/g, '');
 
 const sendInboundWebhook = async ({ messageId, requestId }) => {
@@ -153,7 +178,7 @@ const fetchMessageById = async ({ ticketId, messageId }) => {
 };
 
 const connectSocket = async () => {
-  const { io } = await import('socket.io-client');
+  const { io } = await resolveSocketIoClient();
 
   const socket = io(API_URL, {
     path: SOCKET_PATH,
@@ -218,12 +243,40 @@ const main = async () => {
 
   let ticket = null;
   const maxTicketPolls = 10;
-  for (let attempt = 1; attempt <= maxTicketPolls; attempt += 1) {
-    ticket = await fetchTicketByPhone();
-    if (ticket) {
-      break;
+
+  if (ticketIdFromRealtime) {
+    for (let attempt = 1; attempt <= maxTicketPolls; attempt += 1) {
+      try {
+        const response = await fetch(`${API_URL}/api/tickets/${ticketIdFromRealtime}`, {
+          headers: {
+            'content-type': 'application/json',
+            'x-tenant-id': TENANT_ID,
+          },
+        });
+
+        if (response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          if (payload?.data) {
+            ticket = payload.data;
+            break;
+          }
+        }
+      } catch {
+        // ignore retry
+      }
+
+      await wait(750);
     }
-    await wait(750);
+  }
+
+  if (!ticket) {
+    for (let attempt = 1; attempt <= maxTicketPolls; attempt += 1) {
+      ticket = await fetchTicketByPhone();
+      if (ticket) {
+        break;
+      }
+      await wait(750);
+    }
   }
 
   if (!ticket) {
