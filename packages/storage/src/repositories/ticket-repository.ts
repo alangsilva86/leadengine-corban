@@ -3,8 +3,11 @@ import {
   $Enums,
   type Message as PrismaMessage,
   type Ticket as PrismaTicket,
+  type Contact as PrismaContact,
+  type Queue as PrismaQueue,
 } from '@prisma/client';
 import {
+  type Contact,
   type CreateTicketDTO,
   type Message,
   type MessageFilters,
@@ -93,6 +96,23 @@ const mapTicket = (record: PrismaTicket): Ticket => ({
   updatedAt: record.updatedAt,
 });
 
+const mapContact = (record: PrismaContact): Contact => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  name: record.name,
+  phone: record.phone ?? undefined,
+  email: record.email ?? undefined,
+  document: record.document ?? undefined,
+  avatar: record.avatar ?? undefined,
+  isBlocked: record.isBlocked,
+  tags: [...record.tags],
+  customFields: (record.customFields as Record<string, unknown>) ?? {},
+  lastInteractionAt: record.lastInteractionAt ?? undefined,
+  notes: record.notes ?? undefined,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
 const mapMessage = (record: PrismaMessage): Message => ({
   id: record.id,
   tenantId: record.tenantId,
@@ -118,6 +138,62 @@ const mapMessage = (record: PrismaMessage): Message => ({
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
 });
+
+const PASSTHROUGH_QUEUE_NAME = 'WhatsApp • Passthrough';
+const PASSTHROUGH_QUEUE_DESCRIPTION =
+  'Fila criada automaticamente para ingestão de mensagens em modo passthrough.';
+
+const ensurePassthroughQueue = async (tenantId: string): Promise<PrismaQueue> => {
+  const prisma = getPrismaClient();
+
+  return prisma.queue.upsert({
+    where: {
+      tenantId_name: {
+        tenantId,
+        name: PASSTHROUGH_QUEUE_NAME,
+      },
+    },
+    update: {
+      isActive: true,
+    },
+    create: {
+      tenantId,
+      name: PASSTHROUGH_QUEUE_NAME,
+      description: PASSTHROUGH_QUEUE_DESCRIPTION,
+      color: '#22C55E',
+      orderIndex: 0,
+      settings: {
+        passthrough: true,
+      },
+    },
+  });
+};
+
+type FindOrCreateTicketByChatInput = {
+  tenantId: string;
+  chatId: string;
+  displayName?: string | null;
+  phone?: string | null;
+  instanceId?: string | null;
+};
+
+type UpsertMessageByExternalIdInput = {
+  tenantId: string;
+  ticketId: string;
+  contactId: string;
+  externalId: string;
+  direction: Message['direction'];
+  type: Message['type'];
+  content: string;
+  caption?: string | null;
+  mediaUrl?: string | null;
+  mediaFileName?: string | null;
+  mediaMimeType?: string | null;
+  metadata?: Record<string, unknown>;
+  instanceId?: string | null;
+  status?: Message['status'];
+  createdAt?: Date;
+};
 
 const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.TicketWhereInput => {
   const where: Prisma.TicketWhereInput = {
@@ -678,6 +754,161 @@ export const findMessageByExternalId = async (
   });
 
   return existing ? mapMessage(existing) : null;
+};
+
+export const findOrCreateOpenTicketByChat = async (
+  input: FindOrCreateTicketByChatInput
+): Promise<{ ticket: Ticket; contact: Contact }> => {
+  const prisma = getPrismaClient();
+  const normalizedChatId = input.chatId.trim();
+  const now = new Date();
+  const displayName = input.displayName && input.displayName.trim().length > 0 ? input.displayName.trim() : normalizedChatId;
+  const phone = input.phone && input.phone.trim().length > 0 ? input.phone.trim() : normalizedChatId;
+
+  const contactRecord = await prisma.contact.upsert({
+    where: {
+      tenantId_phone: {
+        tenantId: input.tenantId,
+        phone,
+      },
+    },
+    update: {
+      name: displayName,
+      phone,
+      lastInteractionAt: now,
+    },
+    create: {
+      tenantId: input.tenantId,
+      name: displayName,
+      phone,
+      tags: ['whatsapp', 'passthrough'],
+      lastInteractionAt: now,
+      customFields: {
+        passthroughChatId: normalizedChatId,
+      },
+    },
+  });
+
+  let ticketRecord = await prisma.ticket.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      contactId: contactRecord.id,
+      status: {
+        in: ['OPEN', 'PENDING', 'ASSIGNED'],
+      },
+    },
+    orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  if (!ticketRecord) {
+    const queue = await ensurePassthroughQueue(input.tenantId);
+    ticketRecord = await prisma.ticket.create({
+      data: {
+        tenantId: input.tenantId,
+        contactId: contactRecord.id,
+        queueId: queue.id,
+        channel: 'WHATSAPP',
+        priority: 'NORMAL',
+        status: 'OPEN',
+        subject: displayName,
+        metadata: {
+          chatId: normalizedChatId,
+          passthrough: true,
+          instanceId: input.instanceId ?? null,
+        },
+      },
+    });
+  } else {
+    const existingMetadata =
+      ticketRecord.metadata && typeof ticketRecord.metadata === 'object'
+        ? ({ ...(ticketRecord.metadata as Record<string, unknown>) } as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+
+    existingMetadata.chatId = existingMetadata.chatId ?? normalizedChatId;
+    existingMetadata.passthrough = true;
+    if (input.instanceId) {
+      existingMetadata.instanceId = input.instanceId;
+    }
+
+    ticketRecord = await prisma.ticket.update({
+      where: { id: ticketRecord.id },
+      data: {
+        metadata: existingMetadata as Prisma.InputJsonValue,
+        updatedAt: now,
+      },
+    });
+  }
+
+  return {
+    ticket: mapTicket(ticketRecord),
+    contact: mapContact(contactRecord),
+  };
+};
+
+export const upsertMessageByExternalId = async (
+  input: UpsertMessageByExternalIdInput
+): Promise<{ message: Message; created: boolean }> => {
+  const prisma = getPrismaClient();
+  const normalizedExternalId = input.externalId.trim();
+  const metadataRecord = input.metadata ?? {};
+  const createdAt = input.createdAt ?? new Date();
+
+  const existing = await prisma.message.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      externalId: normalizedExternalId,
+    },
+  });
+
+  if (existing) {
+    const updated = await prisma.message.update({
+      where: { id: existing.id },
+      data: {
+        content: input.content,
+        caption: input.caption ?? null,
+        mediaUrl: input.mediaUrl ?? null,
+        mediaFileName: input.mediaFileName ?? null,
+        mediaType: input.mediaMimeType ?? null,
+        metadata: mergeMessageMetadata(existing.metadata, metadataRecord),
+        instanceId: input.instanceId ?? existing.instanceId ?? null,
+        direction: input.direction,
+        type: normalizeMessageTypeForWrite(input.type),
+        updatedAt: createdAt,
+      },
+    });
+
+    return {
+      message: mapMessage(updated),
+      created: false,
+    };
+  }
+
+  const created = await prisma.message.create({
+    data: {
+      tenantId: input.tenantId,
+      ticketId: input.ticketId,
+      contactId: input.contactId,
+      userId: null,
+      instanceId: input.instanceId ?? null,
+      direction: input.direction,
+      type: normalizeMessageTypeForWrite(input.type),
+      content: input.content,
+      caption: input.caption ?? null,
+      mediaUrl: input.mediaUrl ?? null,
+      mediaFileName: input.mediaFileName ?? null,
+      mediaType: input.mediaMimeType ?? null,
+      status: input.status ?? 'SENT',
+      externalId: normalizedExternalId,
+      metadata: metadataRecord as Prisma.InputJsonValue,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  });
+
+  return {
+    message: mapMessage(created),
+    created: true,
+  };
 };
 
 export const createOutboundMessage = async (

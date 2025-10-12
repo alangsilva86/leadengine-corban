@@ -2,6 +2,9 @@ import { onWhatsAppBrokerEvent, type WhatsAppBrokerEvent } from '../queue/event-
 import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 import { logger } from '../../../config/logger';
 import { BrokerInboundEventSchema } from '../schemas/broker-contracts';
+import { isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
+
+const PASSTHROUGH_TENANT_FALLBACK = 'demo-tenant';
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -71,6 +74,13 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       metadata.cursor = event.cursor;
     }
 
+    const passthroughMode = isWhatsappPassthroughModeEnabled();
+    const fallbackTenant = passthroughMode ? PASSTHROUGH_TENANT_FALLBACK : null;
+    const effectiveTenantId = normalized.tenantId ?? event.tenantId ?? fallbackTenant;
+    if (effectiveTenantId && !metadata.tenantId) {
+      metadata.tenantId = effectiveTenantId;
+    }
+
     await ingestInboundWhatsAppMessage({
       id: normalized.id,
       instanceId: normalized.instanceId,
@@ -81,7 +91,7 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       contact: payload.contact ? { ...(payload.contact as Record<string, unknown>) } : {},
       message: messageRecord,
       metadata,
-      tenantId: normalized.tenantId ?? event.tenantId ?? null,
+      tenantId: effectiveTenantId,
       sessionId: normalized.sessionId ?? event.sessionId ?? null,
     });
   } catch (error) {

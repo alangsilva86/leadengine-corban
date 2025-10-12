@@ -29,16 +29,43 @@ export const MessageBubble = ({ message }) => {
     tone,
     outbound ? 'self-end rounded-tr-sm' : 'self-start rounded-tl-sm'
   );
-  const directionChip = outbound ? 'bg-sky-500/30 text-sky-100' : 'bg-slate-800/60 text-slate-200';
+  const metadata = (message.metadata && typeof message.metadata === 'object' ? message.metadata : {}) ?? {};
+  const brokerMetadata = metadata?.broker && typeof metadata.broker === 'object' ? metadata.broker : {};
+  const rawKeyMeta = metadata.rawKey && typeof metadata.rawKey === 'object' ? metadata.rawKey : {};
+  const sourceInstance = metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'baileys';
+  const remoteJid = metadata.remoteJid ?? metadata.chatId ?? rawKeyMeta.remoteJid ?? null;
+  const phoneLabel = metadata.phoneE164 ?? remoteJid ?? message.chatId ?? 'desconhecido';
+  const originChipTone = outbound
+    ? 'bg-sky-500/15 text-sky-100 border border-sky-400/40'
+    : 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/40';
+  const directionChipTone = outbound
+    ? 'bg-sky-500/40 text-sky-100'
+    : 'bg-emerald-500/40 text-emerald-100';
   const directionLabel = outbound ? 'OUT' : 'IN';
+  const timestamp = message.createdAt ? new Date(message.createdAt) : null;
+  const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
 
   const ack = STATUS_ICONS[message.status ?? 'SENT'] ?? STATUS_ICONS.SENT;
 
   return (
     <div className={cn('flex w-full flex-col gap-1', outbound ? 'items-end' : 'items-start')}>
       <div className={bubbleClass}>
-        <div className={cn('mb-2 flex text-[10px] font-semibold uppercase tracking-wide', outbound ? 'justify-end' : 'justify-start')}>
-          <span className={cn('rounded-full px-2 py-0.5', directionChip)}>{directionLabel}</span>
+        <div className={cn('mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide', outbound ? 'justify-end' : 'justify-start')}>
+          <span className={cn('rounded-full px-2 py-0.5', directionChipTone)}>{directionLabel}</span>
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <span className={cn('rounded-full px-2 py-0.5 lowercase normal-case', originChipTone)}>
+                {`via ${sourceInstance} • ${phoneLabel}`}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="space-y-1">
+              <p className="font-semibold">Instância: {sourceInstance}</p>
+              {remoteJid ? <p className="text-xs text-muted-foreground">remoteJid: {remoteJid}</p> : null}
+              {tooltipTimestamp ? (
+                <p className="text-xs text-muted-foreground">timestamp: {tooltipTimestamp}</p>
+              ) : null}
+            </TooltipContent>
+          </Tooltip>
         </div>
         <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
           {message.content}

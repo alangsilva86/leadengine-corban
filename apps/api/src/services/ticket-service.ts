@@ -51,6 +51,7 @@ import {
   rememberIdempotency,
 } from '../utils/idempotency';
 import type { NormalizedMessagePayload } from '../dtos/message-schemas';
+import { isWhatsappPassthroughModeEnabled } from '../config/feature-flags';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
@@ -1238,6 +1239,8 @@ export const sendMessage = async (
   let wasDuplicate = false;
   const direction = input.direction;
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
+  const passthroughMode = isWhatsappPassthroughModeEnabled();
+  const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
 
   try {
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
@@ -1249,12 +1252,17 @@ export const sendMessage = async (
       instanceId: effectiveInstanceId ?? undefined,
       idempotencyKey: input.idempotencyKey ?? undefined,
       externalId: input.externalId ?? undefined,
+      metadata: messageMetadata,
     });
   } catch (error) {
     if (isUniqueViolation(error) && input.externalId) {
       const existing = await storageFindMessageByExternalId(tenantId, input.externalId);
       if (existing) {
-        messageRecord = existing;
+        const merged = await storageUpdateMessage(tenantId, existing.id, {
+          metadata: messageMetadata,
+          instanceId: effectiveInstanceId ?? undefined,
+        });
+        messageRecord = merged ?? existing;
         wasDuplicate = true;
       } else {
         throw new ConflictError('Mensagem duplicada detectada para este ticket.', { cause: error });
@@ -1287,7 +1295,7 @@ export const sendMessage = async (
 
   const providerMessageId = resolveProviderMessageId(message.metadata);
 
-  if (!wasDuplicate) {
+  if (!wasDuplicate || passthroughMode) {
     emitMessageCreatedEvents(tenantId, ticketSnapshot, message, {
       userId: userId ?? null,
       instanceId: effectiveInstanceId ?? null,

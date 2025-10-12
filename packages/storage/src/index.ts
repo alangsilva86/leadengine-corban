@@ -40,6 +40,8 @@ export {
   createOutboundMessage,
   updateMessage,
   findMessageByExternalId,
+  findOrCreateOpenTicketByChat,
+  upsertMessageByExternalId,
   listMessages,
   applyBrokerAck,
 } from './repositories/ticket-repository';

@@ -6,7 +6,7 @@ import { logger } from '../../../config/logger';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { enqueueWhatsAppBrokerEvents } from '../queue/event-queue';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
-import { isWhatsappRawFallbackEnabled } from '../../../config/feature-flags';
+import { isWhatsappRawFallbackEnabled, isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
 import {
   normalizeUpsertEvent,
   type RawBaileysUpsertEvent,
@@ -17,9 +17,12 @@ import {
   BrokerWebhookInboundSchema,
   type BrokerWebhookInbound,
 } from '../schemas/broker-contracts';
+import { prisma } from '../../../lib/prisma';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
+
+const PASSTHROUGH_TENANT_FALLBACK = 'demo-tenant';
 
 const getWebhookApiKey = (): string => {
   const explicitKey = (process.env.WHATSAPP_WEBHOOK_API_KEY || '').trim();
@@ -140,6 +143,51 @@ const normalizeStringArray = (value: unknown): string[] | null => {
   });
 
   return normalized.length > 0 ? normalized : null;
+};
+
+const toE164Phone = (remoteJid: string | null): string | null => {
+  if (!remoteJid) {
+    return null;
+  }
+  const digits = remoteJid.replace(/[^0-9]/g, '');
+  if (digits.length < 8) {
+    return null;
+  }
+  const sanitized = digits.replace(/^0+/, '');
+  return sanitized.length > 0 ? `+${sanitized}` : null;
+};
+
+const ensurePassthroughInstance = async (
+  tenantId: string,
+  instanceId: string
+): Promise<{ instanceId: string; tenantId: string; brokerId: string }> => {
+  const effectiveTenant = tenantId?.trim().length ? tenantId.trim() : PASSTHROUGH_TENANT_FALLBACK;
+  const effectiveInstance = instanceId.trim();
+  const friendlyName = `Baileys ${effectiveInstance.slice(0, 8)}`;
+
+  const record = await prisma.whatsAppInstance.upsert({
+    where: { id: effectiveInstance },
+    update: {},
+    create: {
+      id: effectiveInstance,
+      tenantId: effectiveTenant,
+      name: friendlyName,
+      brokerId: effectiveInstance,
+      status: 'connected',
+      connected: true,
+      metadata: {
+        autoprov: true,
+        source: 'passthrough',
+        createdAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  return {
+    instanceId: record.id,
+    tenantId: record.tenantId,
+    brokerId: record.brokerId,
+  };
 };
 
 const toRegistrationsTuple = (
@@ -361,6 +409,22 @@ const buildInboundEvent = (
   })();
 
   const receivedAt = context.receivedAt ?? new Date().toISOString();
+  const rawMessageKey = asRecord(rawMessage.key);
+  const rawChatId = readString(
+    rawMessage.chatId,
+    rawMessage.chatID,
+    rawMessage.chat_id,
+    rawMessage.remoteJid,
+    rawMessageKey?.remoteJid,
+    rawMetadata.chatId
+  );
+  if (rawChatId && typeof rawMessage.chatId !== 'string') {
+    rawMessage.chatId = rawChatId;
+  }
+  const remoteJid = readString(rawMessageKey?.remoteJid, rawMessage.remoteJid, rawChatId);
+  const normalizedRemote = normalizeRemoteJid(remoteJid ?? undefined);
+  const phoneE164 = toE164Phone(normalizedRemote ?? remoteJid ?? null);
+
   const metadataEnvelope = {
     ...rawMetadata,
     direction,
@@ -390,6 +454,20 @@ const buildInboundEvent = (
       direction,
       instanceId,
     };
+  }
+
+  (metadataEnvelope as Record<string, unknown>).sourceInstance = instanceId;
+  if (rawChatId) {
+    (metadataEnvelope as Record<string, unknown>).chatId = rawChatId;
+  }
+  if (remoteJid) {
+    (metadataEnvelope as Record<string, unknown>).remoteJid = remoteJid;
+  }
+  if (phoneE164) {
+    (metadataEnvelope as Record<string, unknown>).phoneE164 = phoneE164;
+  }
+  if (displayName) {
+    (metadataEnvelope as Record<string, unknown>).displayName = displayName;
   }
 
   return {
@@ -466,6 +544,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const providedApiKey = readWebhookSecretFromHeaders(req) ?? '';
   const expectedApiKey = getWebhookApiKey();
   const requestId = readString(req.header('x-request-id')) ?? randomUUID();
+  const passthroughMode = isWhatsappPassthroughModeEnabled();
+  const headerTenantId = readString(req.header('x-tenant-id'));
+  const fallbackTenantId = headerTenantId ?? (passthroughMode ? PASSTHROUGH_TENANT_FALLBACK : undefined);
 
   logger.info('📥 [Webhook] Requisição recebida', {
     requestId,
@@ -549,7 +630,8 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
         iid: entry.iid ?? null,
       });
 
-      if (!isWhatsappRawFallbackEnabled()) {
+      const rawFallbackEnabled = passthroughMode || isWhatsappRawFallbackEnabled();
+      if (!rawFallbackEnabled) {
         whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'raw_baileys_event' });
         continue;
       }
@@ -557,13 +639,42 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
       const entryRecord = entry as Record<string, unknown>;
       const payloadRecord = asRecord(entryRecord.payload) ?? {};
 
-      const resolvedInstance = await resolveWhatsappInstanceByIdentifiers([
+      let resolvedInstance = await resolveWhatsappInstanceByIdentifiers([
         entryRecord.instanceId,
         entryRecord.iid,
         payloadRecord?.instanceId,
         payloadRecord?.iid,
         payloadRecord?.brokerId,
       ]);
+
+      if (!resolvedInstance && passthroughMode) {
+        const candidateInstanceId = readString(
+          entryRecord.instanceId,
+          entryRecord.iid,
+          payloadRecord?.instanceId,
+          payloadRecord?.iid,
+          payloadRecord?.brokerId
+        );
+        const tenantForInstance = fallbackTenantId ?? PASSTHROUGH_TENANT_FALLBACK;
+
+        if (candidateInstanceId) {
+          try {
+            resolvedInstance = await ensurePassthroughInstance(tenantForInstance, candidateInstanceId);
+            logger.info('🎯 [Webhook] Instância Baileys autoprovicionada (passthrough)', {
+              requestId,
+              tenantId: tenantForInstance,
+              instanceId: candidateInstanceId,
+            });
+          } catch (error) {
+            logger.error('🛑 [Webhook] Falha ao autoprovicionar instância em modo passthrough', {
+              requestId,
+              tenantId: tenantForInstance,
+              instanceId: candidateInstanceId,
+              error,
+            });
+          }
+        }
+      }
 
       if (!resolvedInstance) {
         logger.warn('📭 [Webhook] Instância Baileys desconhecida — evento ignorado', {
@@ -610,24 +721,28 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
       );
 
       normalization.normalized.forEach((normalized) => {
+        const effectiveTenantId =
+          normalized.tenantId ?? resolvedInstance?.tenantId ?? fallbackTenantId ?? null;
+        const effectiveSessionId = normalized.sessionId ?? resolvedInstance?.brokerId ?? null;
+        const messageDirection = normalized.data.direction === 'outbound' ? 'outbound' : 'inbound';
         logger.info('📬 [Webhook] Evento inbound derivado de Baileys normalizado', {
           index,
           messageIndex: normalized.messageIndex,
           messageId: normalized.messageId,
           messageType: normalized.messageType,
-          direction: 'inbound',
+          direction: messageDirection,
           instanceId: normalized.data.instanceId,
-          tenantId: (normalized.tenantId ?? resolvedInstance.tenantId) ?? null,
+          tenantId: effectiveTenantId,
           isGroup: normalized.isGroup,
-          brokerId: normalized.brokerId ?? resolvedInstance.brokerId ?? null,
+          brokerId: normalized.brokerId ?? resolvedInstance?.brokerId ?? null,
         });
 
         normalizedCandidates.push({
           data: normalized.data,
           sourceIndex: index,
           messageIndex: normalized.messageIndex,
-          tenantId: normalized.tenantId ?? resolvedInstance.tenantId,
-          sessionId: normalized.sessionId ?? resolvedInstance.brokerId,
+          tenantId: effectiveTenantId ?? undefined,
+          sessionId: effectiveSessionId ?? undefined,
         });
       });
 
@@ -636,7 +751,7 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
 
     const modern = tryParseModernWebhookEvent(entry, { index });
     if (modern) {
-      const tenantId =
+      const tenantIdHeader =
         typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
           ? entry.tenantId.trim()
           : undefined;
@@ -644,10 +759,25 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
         typeof entry.sessionId === 'string' && entry.sessionId.trim().length > 0
           ? entry.sessionId.trim()
           : undefined;
+      const effectiveTenantId = tenantIdHeader ?? fallbackTenantId ?? undefined;
+
+      if (passthroughMode) {
+        try {
+          await ensurePassthroughInstance(effectiveTenantId ?? PASSTHROUGH_TENANT_FALLBACK, modern.data.instanceId);
+        } catch (error) {
+          logger.error('🛑 [Webhook] Falha ao autoprovicionar instância para envelope MESSAGE_*', {
+            requestId,
+            tenantId: effectiveTenantId ?? null,
+            instanceId: modern.data.instanceId,
+            error,
+          });
+        }
+      }
+
       normalizedCandidates.push({
         data: modern.data,
         sourceIndex: index,
-        tenantId,
+        tenantId: effectiveTenantId,
         sessionId,
       });
       continue;
@@ -689,6 +819,38 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
       hasMessage: Boolean(event.payload.message),
       hasContact: Boolean(event.payload.contact?.phone || event.payload.contact?.name),
     });
+    const metadataRecord = asRecord(event.payload.metadata) ?? {};
+    const messageRecord = asRecord(event.payload.message) ?? {};
+    const messageId =
+      (typeof messageRecord.id === 'string' && messageRecord.id.trim().length > 0
+        ? messageRecord.id.trim()
+        : event.id) ?? null;
+    const chatId =
+      (typeof messageRecord.chatId === 'string' && messageRecord.chatId.trim().length > 0
+        ? messageRecord.chatId.trim()
+        : typeof metadataRecord.chatId === 'string'
+        ? metadataRecord.chatId
+        : null) ?? null;
+    const remoteJid =
+      (typeof metadataRecord.remoteJid === 'string' && metadataRecord.remoteJid.trim().length > 0
+        ? metadataRecord.remoteJid.trim()
+        : typeof messageRecord.remoteJid === 'string'
+        ? messageRecord.remoteJid.trim()
+        : null) ?? null;
+    const phone =
+      (typeof metadataRecord.phoneE164 === 'string' && metadataRecord.phoneE164.trim().length > 0
+        ? metadataRecord.phoneE164.trim()
+        : null) ?? null;
+
+    logger.info('🎯 [Webhook] WhatsApp mensagem enfileirada', {
+      tenantId: event.tenantId ?? fallbackTenantId ?? null,
+      iid: event.instanceId,
+      direction: event.payload.direction ?? null,
+      externalId: messageId,
+      chatId,
+      remoteJid,
+      phone,
+    });
   });
 
   enqueueWhatsAppBrokerEvents(
@@ -713,7 +875,7 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
     documents: normalizedEvents.map((event) => maskDocument(event.payload.contact.document ?? null)),
   });
 
-  res.status(202).json({ accepted: true, queued });
+  res.status(204).send();
 };
 
 webhookRouter.post('/whatsapp', asyncHandler(handleWhatsAppWebhook));

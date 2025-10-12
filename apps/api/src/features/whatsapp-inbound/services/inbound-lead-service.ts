@@ -11,9 +11,10 @@ import {
   leadLastContactGauge,
 } from '../../../lib/metrics';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
+import { findOrCreateOpenTicketByChat, upsertMessageByExternalId } from '@ticketz/storage';
 import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
-import { isWhatsappInboundSimpleModeEnabled } from '../../../config/feature-flags';
+import { isWhatsappInboundSimpleModeEnabled, isWhatsappPassthroughModeEnabled } from '../../../config/feature-flags';
 
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
@@ -984,7 +985,8 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const normalizedPhone = sanitizePhone(contact.phone);
   const document = sanitizeDocument(contact.document, normalizedPhone);
   const now = Date.now();
-  const simpleMode = isWhatsappInboundSimpleModeEnabled();
+  const passthroughMode = isWhatsappPassthroughModeEnabled();
+  const simpleMode = passthroughMode || isWhatsappInboundSimpleModeEnabled();
   const metadataRecord = (event.metadata && typeof event.metadata === 'object'
     ? (event.metadata as Record<string, unknown>)
     : {}) as Record<string, unknown>;
@@ -1098,7 +1100,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
           },
         });
 
-  if (!campaigns.length && !simpleMode) {
+  if (!campaigns.length && !simpleMode && !passthroughMode) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
       requestId,
       tenantId,
@@ -1239,7 +1241,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     event.id;
 
   const dedupeKey = `${tenantId}:${messageExternalId ?? normalizedMessage.id}`;
-  if (!simpleMode && direction === 'INBOUND' && shouldSkipByDedupe(dedupeKey, now)) {
+  if (!simpleMode && !passthroughMode && direction === 'INBOUND' && shouldSkipByDedupe(dedupeKey, now)) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       requestId,
       tenantId,
@@ -1326,7 +1328,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
 
     let inboundLeadId: string | null = null;
 
-    if (!simpleMode && direction === 'INBOUND') {
+    if (!simpleMode && !passthroughMode && direction === 'INBOUND') {
       try {
         const { lead } = await upsertLeadFromInbound({
           tenantId,
@@ -1372,7 +1374,7 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
     });
   }
 
-  if (!simpleMode && campaigns.length > 0) {
+  if (!simpleMode && !passthroughMode && campaigns.length > 0) {
     for (const campaign of campaigns) {
       const agreementId = campaign.agreementId || 'unknown';
       const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;
