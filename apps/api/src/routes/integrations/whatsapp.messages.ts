@@ -2,7 +2,6 @@ import express, { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
 import { asyncHandler } from '../../middleware/error-handler';
-import { requireTenant } from '../../middleware/auth';
 import { prisma } from '../../lib/prisma';
 import { SendByInstanceSchema, normalizePayload } from '../../dtos/message-schemas';
 import { sendAdHoc } from '../../services/ticket-service';
@@ -77,14 +76,11 @@ router.use(instrumentationMiddleware);
 
 router.post(
   '/integrations/whatsapp/instances/:instanceId/messages',
-  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const { instanceId } = req.params;
-    const tenantId = req.user!.tenantId;
-
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
-    if (!instance || instance.tenantId !== tenantId) {
+    if (!instance) {
       throw new NotFoundError('WhatsAppInstance', instanceId);
     }
 
@@ -120,8 +116,7 @@ router.post(
 
     try {
       const response = await sendAdHoc({
-        tenantId,
-        operatorId: req.user!.id,
+        operatorId: req.user?.id,
         instanceId: instance.id,
         to: parsed.to,
         payload,
