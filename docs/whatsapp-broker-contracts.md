@@ -39,6 +39,20 @@
 }
 ```
 
+### Baileys raw fallback
+
+When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHATSAPP_MESSAGES_UPSERT` events and converts each incoming message to the standard `MESSAGE_INBOUND` envelope before enqueueing. Key rules:
+
+- Messages flagged as `key.fromMe`, `protocolMessage`, `historySyncNotification` or `messageStubType` are ignored and counted under `whatsapp_webhook_events_total{result="ignored",reason="raw_inbound_ignored"}`.
+- Contact data is derived from the event: `remoteJid` → sanitized phone, `pushName`/`notifyName` → display name, `key.participant` kept in `metadata.contact.participantJid` for group conversations. Groups are flagged with `metadata.contact.isGroup = true`.
+- Message typing covers `text`, `image`, `video`, `audio`, `document`, `buttons_response`, `list_response`, `poll` and `poll_choice`. Media payloads retain `mimetype`, `fileLength`, `fileName`, `caption`.
+- Quotes populate `message.quotedMessageId`/`quotedText` when `contextInfo` is present.
+- Metadata always includes:
+  - `metadata.source = 'raw_normalized'`
+  - `metadata.broker = { type: 'baileys', direction: 'inbound', normalized: true, messageType, owner?, source? }`
+  - `metadata.rawKey = { remoteJid, participant, jid, participantJid }` for debugging without storing the full payload.
+- Normalized events increment `whatsapp_webhook_events_total{result="accepted",reason="raw_inbound_normalized"}` and flow through the existing queue → worker → socket pipeline, making the fallback transparent for downstream services.
+
 ## Outbound Contract
 
 - Requests validated with `BrokerOutboundMessageSchema` inside `whatsappBrokerClient.sendMessage`.

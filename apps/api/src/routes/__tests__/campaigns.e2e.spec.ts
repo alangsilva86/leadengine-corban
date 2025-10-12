@@ -12,6 +12,7 @@ const fetchLeadEngineCampaignsMock = vi.fn();
 const featureFlagsState = {
   useRealData: false,
   mvpAuthBypass: false,
+  whatsappRawFallbackEnabled: false,
 };
 
 const originalMvpTenantId = process.env.AUTH_MVP_TENANT_ID;
@@ -39,6 +40,7 @@ vi.mock('../../config/feature-flags', () => ({
   getFeatureFlags: () => ({ ...featureFlagsState }),
   getUseRealDataFlag: () => featureFlagsState.useRealData,
   isMvpAuthBypassEnabled: () => featureFlagsState.mvpAuthBypass,
+  isWhatsappRawFallbackEnabled: () => featureFlagsState.whatsappRawFallbackEnabled,
   refreshFeatureFlags: vi.fn(),
   getMvpBypassTenantId: () => process.env.AUTH_MVP_TENANT_ID ?? undefined,
 }));

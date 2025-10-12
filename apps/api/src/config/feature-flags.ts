@@ -3,6 +3,7 @@ import { logger } from './logger';
 type FeatureFlags = {
   useRealData: boolean;
   mvpAuthBypass: boolean;
+  whatsappRawFallbackEnabled: boolean;
 };
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
@@ -31,7 +32,13 @@ const computeFlags = (): FeatureFlags => {
   const rawUseRealData = process.env.USE_REAL_DATA;
   const useRealData = parseBoolean(rawUseRealData, false);
 
-  return { useRealData, mvpAuthBypass } satisfies FeatureFlags;
+  const rawFallback = process.env.WHATSAPP_RAW_FALLBACK_ENABLED;
+  const whatsappRawFallbackEnabled = parseBoolean(rawFallback, false);
+  if (whatsappRawFallbackEnabled) {
+    logger.info('[config] WhatsApp raw fallback normalizer habilitado');
+  }
+
+  return { useRealData, mvpAuthBypass, whatsappRawFallbackEnabled } satisfies FeatureFlags;
 };
 
 let cachedFlags: FeatureFlags = computeFlags();
@@ -42,15 +49,25 @@ export const getUseRealDataFlag = (): boolean => cachedFlags.useRealData;
 
 export const isMvpAuthBypassEnabled = (): boolean => cachedFlags.mvpAuthBypass;
 
+export const isWhatsappRawFallbackEnabled = (): boolean => cachedFlags.whatsappRawFallbackEnabled;
+
 export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureFlags => {
   const next = { ...computeFlags(), ...overrides } satisfies FeatureFlags;
-  if (next.useRealData !== cachedFlags.useRealData || next.mvpAuthBypass !== cachedFlags.mvpAuthBypass) {
+  const useRealDataChanged = next.useRealData !== cachedFlags.useRealData;
+  const mvpAuthBypassChanged = next.mvpAuthBypass !== cachedFlags.mvpAuthBypass;
+  const whatsappFallbackChanged = next.whatsappRawFallbackEnabled !== cachedFlags.whatsappRawFallbackEnabled;
+
+  if (useRealDataChanged || mvpAuthBypassChanged || whatsappFallbackChanged) {
     logger.info('[config] Feature flags atualizados', {
       useRealData: next.useRealData,
       mvpAuthBypass: next.mvpAuthBypass,
+      whatsappRawFallbackEnabled: next.whatsappRawFallbackEnabled,
     });
     if (next.mvpAuthBypass) {
       logger.warn('[config] MVP auth bypass habilitado (refresh)');
+    }
+    if (next.whatsappRawFallbackEnabled && !cachedFlags.whatsappRawFallbackEnabled) {
+      logger.info('[config] WhatsApp raw fallback normalizer habilitado (refresh)');
     }
   }
   cachedFlags = next;

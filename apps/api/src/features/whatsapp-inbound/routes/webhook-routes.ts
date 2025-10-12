@@ -6,6 +6,11 @@ import { logger } from '../../../config/logger';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import { enqueueWhatsAppBrokerEvents } from '../queue/event-queue';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
+import { isWhatsappRawFallbackEnabled } from '../../../config/feature-flags';
+import {
+  normalizeUpsertEvent,
+  type RawBaileysUpsertEvent,
+} from '../services/baileys-raw-normalizer';
 import {
   BrokerInboundEvent,
   BrokerWebhookInboundSchema,
@@ -437,8 +442,61 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
           event: entry.event,
           iid: entry.iid ?? null,
         });
-        whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'raw_baileys_event' });
-        return [];
+
+        if (!isWhatsappRawFallbackEnabled()) {
+          whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'raw_baileys_event' });
+          return [];
+        }
+
+        const normalization = normalizeUpsertEvent(entry as RawBaileysUpsertEvent);
+
+        if (normalization.ignored.length > 0) {
+          whatsappWebhookEventsCounter.inc(
+            { result: 'ignored', reason: 'raw_inbound_ignored' },
+            normalization.ignored.length
+          );
+          normalization.ignored.forEach((ignored) => {
+            logger.debug('📭 [Webhook] Mensagem Baileys ignorada pelo fallback', {
+              index,
+              messageIndex: ignored.messageIndex,
+              reason: ignored.reason,
+              details: ignored.details ?? null,
+            });
+          });
+        }
+
+        if (normalization.normalized.length === 0) {
+          logger.debug('📭 [Webhook] Nenhuma mensagem elegível após normalização Baileys', {
+            index,
+          });
+          return [];
+        }
+
+        whatsappWebhookEventsCounter.inc(
+          { result: 'accepted', reason: 'raw_inbound_normalized' },
+          normalization.normalized.length
+        );
+
+        normalization.normalized.forEach((normalized) => {
+          logger.info('📬 [Webhook] Evento inbound derivado de Baileys normalizado', {
+            index,
+            messageIndex: normalized.messageIndex,
+            messageId: normalized.messageId,
+            messageType: normalized.messageType,
+            direction: normalized.data.direction,
+            instanceId: normalized.data.instanceId,
+            tenantId: normalized.tenantId ?? null,
+            isGroup: normalized.isGroup,
+          });
+        });
+
+        return normalization.normalized.map((normalized) => ({
+          data: normalized.data,
+          sourceIndex: index,
+          messageIndex: normalized.messageIndex,
+          tenantId: normalized.tenantId,
+          sessionId: normalized.sessionId,
+        }));
       }
 
       const modern = tryParseModernWebhookEvent(entry, { index });
