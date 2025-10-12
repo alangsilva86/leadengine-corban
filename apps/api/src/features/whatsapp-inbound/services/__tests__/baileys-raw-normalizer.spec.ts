@@ -191,6 +191,42 @@ describe('normalizeUpsertEvent', () => {
     expect(Array.isArray((pollUpdate.vote as Record<string, unknown>).values)).toBe(true);
   });
 
+  it('overrides instance, tenant and broker identifiers when provided', () => {
+    const event = buildBaseEvent();
+    delete (event.payload as Record<string, unknown>).tenantId;
+    delete (event.payload as Record<string, unknown>).sessionId;
+    event.payload.messages.push({
+      key: {
+        id: 'wamid-override',
+        remoteJid: '5511999999999@s.whatsapp.net',
+        fromMe: false,
+      },
+      messageTimestamp: 1_700_000_600,
+      message: {
+        conversation: 'Mensagem override',
+      },
+    });
+
+    const result = normalizeUpsertEvent(event, {
+      instanceId: 'instance-alias',
+      tenantId: 'tenant-override',
+      brokerId: 'broker-uuid-1',
+    });
+
+    expect(result.normalized).toHaveLength(1);
+    const [normalized] = result.normalized;
+    expect(normalized.data.instanceId).toBe('instance-alias');
+    expect(normalized.tenantId).toBe('tenant-override');
+    expect(normalized.sessionId).toBe('broker-uuid-1');
+    expect(normalized.brokerId).toBe('broker-uuid-1');
+
+    const metadata = normalized.data.metadata as Record<string, unknown>;
+    const brokerMeta = metadata.broker as Record<string, unknown>;
+    expect(brokerMeta.instanceId).toBe('instance-alias');
+    expect(brokerMeta.sessionId).toBe('broker-uuid-1');
+    expect(brokerMeta.brokerId).toBe('broker-uuid-1');
+  });
+
   it('ignores messages sent from the instance itself', () => {
     const event = buildBaseEvent();
     event.payload.messages.push({

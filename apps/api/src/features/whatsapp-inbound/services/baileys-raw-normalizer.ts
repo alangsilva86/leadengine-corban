@@ -16,6 +16,7 @@ export interface NormalizedRawUpsertMessage {
   messageIndex: number;
   tenantId?: string;
   sessionId?: string;
+  brokerId?: string | null;
   messageId: string;
   messageType: string;
   isGroup: boolean;
@@ -30,6 +31,13 @@ export interface IgnoredRawUpsertMessage {
 export interface NormalizeUpsertResult {
   normalized: NormalizedRawUpsertMessage[];
   ignored: IgnoredRawUpsertMessage[];
+}
+
+export interface NormalizeUpsertOverrides {
+  instanceId?: string | null;
+  tenantId?: string | null;
+  sessionId?: string | null;
+  brokerId?: string | null;
 }
 
 const asRecord = (value: unknown): UnknownRecord | null => {
@@ -407,6 +415,8 @@ const buildBaseMetadata = (params: {
   isGroup: boolean;
   tenantId?: string;
   sessionId?: string;
+  brokerId?: string | null;
+  instanceId?: string | null;
 }): UnknownRecord => {
   return compactRecord({
     broker: compactRecord({
@@ -416,6 +426,9 @@ const buildBaseMetadata = (params: {
       source: params.source ?? 'raw_normalized',
       messageType: params.messageType,
       messageTimestamp: params.messageTimestamp ?? undefined,
+      instanceId: params.instanceId ?? undefined,
+      sessionId: params.sessionId ?? undefined,
+      brokerId: params.brokerId ?? undefined,
       normalized: true,
     }),
     source: 'raw_normalized',
@@ -472,6 +485,7 @@ const normalizeMessagePayload = (
     source: string | null;
     tenantId?: string;
     sessionId?: string;
+    brokerId?: string | null;
     fallbackTimestamp: number | null;
   }
 ): { normalized: NormalizedRawUpsertMessage; contentType: string } | { ignore: IgnoredRawUpsertMessage } => {
@@ -594,6 +608,8 @@ const normalizeMessagePayload = (
     isGroup,
     tenantId: context.tenantId,
     sessionId: context.sessionId,
+    brokerId: context.brokerId ?? null,
+    instanceId: context.instanceId,
   });
 
   metadata.contact = compactRecord({
@@ -603,6 +619,7 @@ const normalizeMessagePayload = (
     remoteJid,
     jid: rawRemoteJid ?? undefined,
     participantJid: rawParticipant ?? undefined,
+    registrations: null,
   });
 
   if (quoted) {
@@ -624,6 +641,7 @@ const normalizeMessagePayload = (
       phone: contactDetails.phone ?? undefined,
       name: contactDetails.name ?? undefined,
       pushName: contactDetails.pushName ?? undefined,
+      registrations: null,
     }),
     message: normalizedMessage,
     metadata,
@@ -635,6 +653,7 @@ const normalizeMessagePayload = (
       messageIndex,
       tenantId: context.tenantId,
       sessionId: context.sessionId,
+      brokerId: context.brokerId ?? undefined,
       messageId,
       messageType,
       isGroup,
@@ -643,7 +662,10 @@ const normalizeMessagePayload = (
   };
 };
 
-export const normalizeUpsertEvent = (rawEvent: RawBaileysUpsertEvent | null | undefined): NormalizeUpsertResult => {
+export const normalizeUpsertEvent = (
+  rawEvent: RawBaileysUpsertEvent | null | undefined,
+  overrides?: NormalizeUpsertOverrides
+): NormalizeUpsertResult => {
   const eventRecord = asRecord(rawEvent);
   if (!eventRecord) {
     return { normalized: [], ignored: [] };
@@ -656,17 +678,29 @@ export const normalizeUpsertEvent = (rawEvent: RawBaileysUpsertEvent | null | un
     return { normalized: [], ignored: [] };
   }
 
-  const instanceId =
-    readString(payload.instanceId, payload.iid, eventRecord.instanceId, eventRecord.iid) ?? null;
-  if (!instanceId) {
+  const resolvedInstanceId =
+    readString(
+      overrides?.instanceId,
+      payload.instanceId,
+      eventRecord.instanceId,
+      overrides?.brokerId,
+      payload.iid,
+      eventRecord.iid
+    ) ?? null;
+  if (!resolvedInstanceId) {
     return { normalized: [], ignored: [] };
   }
 
-  const tenantId = readString(payload.tenantId, eventRecord.tenantId) ?? undefined;
-  const sessionId = readString(payload.sessionId, eventRecord.sessionId) ?? undefined;
-  const owner = readString(payload.owner) ?? null;
-  const source = readString(payload.source) ?? null;
-  const fallbackTimestamp = readNumber(payload.timestamp) ?? null;
+  const tenantId =
+    readString(overrides?.tenantId, payload.tenantId, eventRecord.tenantId) ?? undefined;
+  const brokerId =
+    readString(overrides?.brokerId, payload.brokerId, eventRecord.brokerId, eventRecord.iid, payload.iid) ??
+    undefined;
+  const sessionId =
+    readString(overrides?.sessionId, payload.sessionId, eventRecord.sessionId) ?? brokerId ?? undefined;
+  const owner = readString(payload.owner, eventRecord.owner) ?? null;
+  const source = readString(payload.source, eventRecord.source) ?? null;
+  const fallbackTimestamp = readNumber(payload.timestamp, eventRecord.timestamp) ?? null;
 
   const messages = asArray(payload.messages);
 
@@ -683,11 +717,12 @@ export const normalizeUpsertEvent = (rawEvent: RawBaileysUpsertEvent | null | un
     }
 
     const normalizedMessage = normalizeMessagePayload(entry as UnknownRecord, index, {
-      instanceId,
+      instanceId: resolvedInstanceId,
       owner,
       source,
       tenantId,
       sessionId,
+      brokerId: brokerId ?? null,
       fallbackTimestamp,
     });
 

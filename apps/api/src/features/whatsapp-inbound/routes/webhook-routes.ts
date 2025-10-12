@@ -11,6 +11,7 @@ import {
   normalizeUpsertEvent,
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
+import { resolveWhatsappInstanceByIdentifiers } from '../services/instance-resolver';
 import {
   BrokerInboundEvent,
   BrokerWebhookInboundSchema,
@@ -434,106 +435,137 @@ const isRawBaileysEvent = (entry: Record<string, unknown>): boolean => {
   return event === 'WHATSAPP_MESSAGES_UPSERT' || event === 'WHATSAPP_MESSAGES_UPDATE';
 };
 
-  const normalizedEvents: BrokerInboundEvent[] = rawEvents
-    .flatMap<NormalizedCandidate>((entry, index) => {
-      if (isRawBaileysEvent(entry)) {
-        logger.info('📥 [Webhook] Evento Baileys bruto recebido', {
+  const normalizedCandidates: NormalizedCandidate[] = [];
+
+  for (let index = 0; index < rawEvents.length; index += 1) {
+    const entry = rawEvents[index];
+
+    if (isRawBaileysEvent(entry)) {
+      logger.info('📥 [Webhook] Evento Baileys bruto recebido', {
+        index,
+        event: entry.event,
+        iid: entry.iid ?? null,
+      });
+
+      if (!isWhatsappRawFallbackEnabled()) {
+        whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'raw_baileys_event' });
+        continue;
+      }
+
+      const entryRecord = entry as Record<string, unknown>;
+      const payloadRecord = asRecord(entryRecord.payload) ?? {};
+
+      const resolvedInstance = await resolveWhatsappInstanceByIdentifiers([
+        entryRecord.instanceId,
+        entryRecord.iid,
+        payloadRecord?.instanceId,
+        payloadRecord?.iid,
+        payloadRecord?.brokerId,
+      ]);
+
+      if (!resolvedInstance) {
+        logger.warn('📭 [Webhook] Instância Baileys desconhecida — evento ignorado', {
           index,
-          event: entry.event,
-          iid: entry.iid ?? null,
+          iid: entryRecord.iid ?? null,
+          instanceId: entryRecord.instanceId ?? null,
         });
+        whatsappWebhookEventsCounter.inc({ result: 'ignored', reason: 'unknown_instance' });
+        continue;
+      }
 
-        if (!isWhatsappRawFallbackEnabled()) {
-          whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'raw_baileys_event' });
-          return [];
-        }
+      const normalization = normalizeUpsertEvent(entry as RawBaileysUpsertEvent, {
+        instanceId: resolvedInstance.instanceId,
+        tenantId: resolvedInstance.tenantId,
+        brokerId: resolvedInstance.brokerId,
+        sessionId: resolvedInstance.brokerId,
+      });
 
-        const normalization = normalizeUpsertEvent(entry as RawBaileysUpsertEvent);
-
-        if (normalization.ignored.length > 0) {
-          whatsappWebhookEventsCounter.inc(
-            { result: 'ignored', reason: 'raw_inbound_ignored' },
-            normalization.ignored.length
-          );
-          normalization.ignored.forEach((ignored) => {
-            logger.debug('📭 [Webhook] Mensagem Baileys ignorada pelo fallback', {
-              index,
-              messageIndex: ignored.messageIndex,
-              reason: ignored.reason,
-              details: ignored.details ?? null,
-            });
-          });
-        }
-
-        if (normalization.normalized.length === 0) {
-          logger.debug('📭 [Webhook] Nenhuma mensagem elegível após normalização Baileys', {
-            index,
-          });
-          return [];
-        }
-
+      if (normalization.ignored.length > 0) {
         whatsappWebhookEventsCounter.inc(
-          { result: 'accepted', reason: 'raw_inbound_normalized' },
-          normalization.normalized.length
+          { result: 'ignored', reason: 'raw_inbound_ignored' },
+          normalization.ignored.length
         );
-
-        normalization.normalized.forEach((normalized) => {
-          logger.info('📬 [Webhook] Evento inbound derivado de Baileys normalizado', {
+        normalization.ignored.forEach((ignored) => {
+          logger.debug('📭 [Webhook] Mensagem Baileys ignorada pelo fallback', {
             index,
-            messageIndex: normalized.messageIndex,
-            messageId: normalized.messageId,
-            messageType: normalized.messageType,
-            direction: normalized.data.direction,
-            instanceId: normalized.data.instanceId,
-            tenantId: normalized.tenantId ?? null,
-            isGroup: normalized.isGroup,
+            messageIndex: ignored.messageIndex,
+            reason: ignored.reason,
+            details: ignored.details ?? null,
           });
         });
+      }
 
-        return normalization.normalized.map((normalized) => ({
+      if (normalization.normalized.length === 0) {
+        logger.debug('📭 [Webhook] Nenhuma mensagem elegível após normalização Baileys', {
+          index,
+        });
+        continue;
+      }
+
+      whatsappWebhookEventsCounter.inc(
+        { result: 'accepted', reason: 'raw_inbound_normalized' },
+        normalization.normalized.length
+      );
+
+      normalization.normalized.forEach((normalized) => {
+        logger.info('📬 [Webhook] Evento inbound derivado de Baileys normalizado', {
+          index,
+          messageIndex: normalized.messageIndex,
+          messageId: normalized.messageId,
+          messageType: normalized.messageType,
+          direction: 'inbound',
+          instanceId: normalized.data.instanceId,
+          tenantId: (normalized.tenantId ?? resolvedInstance.tenantId) ?? null,
+          isGroup: normalized.isGroup,
+          brokerId: normalized.brokerId ?? resolvedInstance.brokerId ?? null,
+        });
+
+        normalizedCandidates.push({
           data: normalized.data,
           sourceIndex: index,
           messageIndex: normalized.messageIndex,
-          tenantId: normalized.tenantId,
-          sessionId: normalized.sessionId,
-        }));
-      }
-
-      const modern = tryParseModernWebhookEvent(entry, { index });
-      if (modern) {
-        const tenantId =
-          typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
-            ? entry.tenantId.trim()
-            : undefined;
-        const sessionId =
-          typeof entry.sessionId === 'string' && entry.sessionId.trim().length > 0
-            ? entry.sessionId.trim()
-            : undefined;
-        return [
-          {
-            data: modern.data,
-            sourceIndex: index,
-            tenantId,
-            sessionId,
-          },
-        ];
-      }
-
-      const parseAttempt = BrokerWebhookInboundSchema.safeParse(entry);
-      logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
-        index,
-        issues: parseAttempt.success ? [] : parseAttempt.error.issues,
+          tenantId: normalized.tenantId ?? resolvedInstance.tenantId,
+          sessionId: normalized.sessionId ?? resolvedInstance.brokerId,
+        });
       });
-      return [];
+
+      continue;
+    }
+
+    const modern = tryParseModernWebhookEvent(entry, { index });
+    if (modern) {
+      const tenantId =
+        typeof entry.tenantId === 'string' && entry.tenantId.trim().length > 0
+          ? entry.tenantId.trim()
+          : undefined;
+      const sessionId =
+        typeof entry.sessionId === 'string' && entry.sessionId.trim().length > 0
+          ? entry.sessionId.trim()
+          : undefined;
+      normalizedCandidates.push({
+        data: modern.data,
+        sourceIndex: index,
+        tenantId,
+        sessionId,
+      });
+      continue;
+    }
+
+    const parseAttempt = BrokerWebhookInboundSchema.safeParse(entry);
+    logger.warn('🛑 [Webhook] Evento ignorado: payload inválido', {
+      index,
+      issues: parseAttempt.success ? [] : parseAttempt.error.issues,
+    });
+  }
+
+  const normalizedEvents: BrokerInboundEvent[] = normalizedCandidates.map((candidate) =>
+    buildInboundEvent(candidate.data, {
+      index: candidate.sourceIndex,
+      messageIndex: candidate.messageIndex,
+      tenantId: candidate.tenantId,
+      sessionId: candidate.sessionId,
     })
-    .map((candidate) =>
-      buildInboundEvent(candidate.data, {
-        index: candidate.sourceIndex,
-        messageIndex: candidate.messageIndex,
-        tenantId: candidate.tenantId,
-        sessionId: candidate.sessionId,
-      })
-    );
+  );
 
   const queued = normalizedEvents.length;
 
