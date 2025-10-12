@@ -3,6 +3,7 @@
 ## Inbound Contract
 
 - Event envelope validated via `BrokerInboundEventSchema` (queue) and `BrokerWebhookInboundSchema` (webhook).
+- Authentication headers: prefer `X-API-Key` with the broker secret; when absent the webhook accepts `Authorization: Bearer <token>` or the legacy `X-Authorization` header carrying the raw token value.
 - Required fields: `id`, `type='MESSAGE_INBOUND'`, `instanceId`, and payload with `contact`, `message`, `metadata`.
 - Timestamp handling: accepts ISO string or epoch (seconds/ms) and normalises to ISO before ingestion; cursor optional.
 - Contact attributes downstream: `phone`, `name`, `document`, `registrations`, `avatarUrl`, `pushName` (all nullable); additional keys preserved via metadata if broker expands payload.

@@ -369,9 +369,59 @@ const buildInboundEvent = (
   };
 };
 
+const normalizeHeaderSecret = (value: string | undefined | null): string | null => {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const readAuthorizationToken = (value: string | undefined | null): string | null => {
+  const normalized = normalizeHeaderSecret(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const bearerMatch = /^Bearer\s+(.+)$/iu.exec(normalized);
+  if (bearerMatch) {
+    const [, token] = bearerMatch;
+    const trimmedToken = token.trim();
+    return trimmedToken.length > 0 ? trimmedToken : null;
+  }
+
+  // Legacy integrations may send the token directly without the Bearer prefix.
+  if (!normalized.includes(' ')) {
+    return normalized;
+  }
+
+  return null;
+};
+
+const readWebhookSecretFromHeaders = (req: Request): string | null => {
+  const providedApiKey = normalizeHeaderSecret(req.header('x-api-key'));
+  if (providedApiKey) {
+    return providedApiKey;
+  }
+
+  const legacyAuthorizationHeaders: Array<string | undefined> = [
+    req.header('authorization'),
+    req.header('x-authorization'),
+  ];
+
+  for (const headerValue of legacyAuthorizationHeaders) {
+    const token = readAuthorizationToken(headerValue);
+    if (token) {
+      return token;
+    }
+  }
+
+  return null;
+};
+
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
-  const providedApiKeyHeader = req.header('x-api-key');
-  const providedApiKey = typeof providedApiKeyHeader === 'string' ? providedApiKeyHeader.trim() : '';
+  const providedApiKey = readWebhookSecretFromHeaders(req) ?? '';
   const expectedApiKey = getWebhookApiKey();
 
   if (!expectedApiKey || !safeCompare(providedApiKey, expectedApiKey)) {

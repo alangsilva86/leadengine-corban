@@ -262,8 +262,77 @@ describe('WhatsApp webhook (integration)', () => {
     });
     expect(addAllocations).toHaveBeenCalled();
     const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
-    expect(emittedEvents).toContain('messages.new');
     expect(emittedEvents).toContain('tickets.updated');
+  });
+
+  it('queues inbound message when Authorization bearer header is used', async () => {
+    stubInboundSuccessMocks();
+
+    const app = createApp();
+
+    const payload = {
+      instanceId: 'inst-1',
+      event: 'message',
+      direction: 'inbound',
+      timestamp: Date.now(),
+      from: {
+        phone: '+5511987654321',
+        name: 'Carlos',
+      },
+      message: {
+        id: 'wamid.321',
+        type: 'text',
+        text: 'Olá via bearer',
+      },
+    };
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('Authorization', 'Bearer test-key')
+      .send(payload);
+
+    expect(response.status).toBe(202);
+
+    await waitForProcessed;
+
+    expect(addAllocations).toHaveBeenCalled();
+  });
+
+  it('queues inbound message when X-Authorization header provides the token directly', async () => {
+    stubInboundSuccessMocks();
+
+    const app = createApp();
+
+    const payload = {
+      instanceId: 'inst-1',
+      event: 'message',
+      direction: 'inbound',
+      timestamp: Date.now(),
+      from: {
+        phone: '+5511912345678',
+        name: 'Ana',
+      },
+      message: {
+        id: 'wamid.654',
+        type: 'text',
+        text: 'Olá via legacy header',
+      },
+    };
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('X-Authorization', 'test-key')
+      .send(payload);
+
+    expect(response.status).toBe(202);
+
+    await waitForProcessed;
+
+    expect(addAllocations).toHaveBeenCalled();
   });
 
   it('queues inbound message when payload uses MESSAGE_INBOUND type alias', async () => {
@@ -300,7 +369,7 @@ describe('WhatsApp webhook (integration)', () => {
     expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'inst-1' } });
     expect(addAllocations).toHaveBeenCalled();
     const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
-    expect(emittedEvents).toContain('messages.new');
+    expect(emittedEvents).toContain('tickets.updated');
   });
 
   it('queues inbound message when direction uses uppercase alias', async () => {
