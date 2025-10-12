@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -16,6 +17,9 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 
+const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting = false }, ref) => {
+  const cardRef = useRef(null);
+  const phoneInputRef = useRef(null);
 const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) => {
   const form = useForm({
     defaultValues: { phone: '', message: '' },
@@ -66,6 +70,25 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
 
   const rootError = form.formState.errors.root?.message;
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        phoneInputRef.current?.focus?.();
+      },
+      scrollIntoView: (options) => {
+        cardRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start', ...options });
+      },
+    }),
+    []
+  );
+
+  return (
+    <Card
+      ref={cardRef}
+      id="manual-conversation-card"
+      className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_36px_rgba(5,12,30,0.42)]"
+    >
   return (
     <Card className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_36px_rgba(5,12,30,0.42)]">
       <CardHeader className="space-y-2 pb-2">
@@ -94,6 +117,10 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
                       inputMode="tel"
                       disabled={isProcessing}
                       {...field}
+                      ref={(node) => {
+                        field.ref(node);
+                        phoneInputRef.current = node;
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
@@ -138,6 +165,9 @@ const ManualConversationCard = ({ onSubmit, onSuccess, isSubmitting = false }) =
       </CardContent>
     </Card>
   );
+});
+
+ManualConversationCard.displayName = 'ManualConversationCard';
 };
 
 export default ManualConversationCard;
