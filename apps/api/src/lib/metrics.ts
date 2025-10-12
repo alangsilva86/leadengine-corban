@@ -18,6 +18,16 @@ const WS_EMIT_METRIC = 'ws_emit_total';
 const WS_EMIT_HELP = '# HELP ws_emit_total Contador de eventos emitidos via WebSocket/Socket.IO';
 const WS_EMIT_TYPE = '# TYPE ws_emit_total counter';
 
+const INBOUND_MESSAGES_METRIC = 'inbound_messages_processed_total';
+const INBOUND_MESSAGES_HELP =
+  '# HELP inbound_messages_processed_total Contador de mensagens inbound processadas por tenant';
+const INBOUND_MESSAGES_TYPE = '# TYPE inbound_messages_processed_total counter';
+
+const LEAD_LAST_CONTACT_METRIC = 'lead_last_contact_timestamp';
+const LEAD_LAST_CONTACT_HELP =
+  '# HELP lead_last_contact_timestamp Timestamp (epoch ms) do último contato inbound por lead';
+const LEAD_LAST_CONTACT_TYPE = '# TYPE lead_last_contact_timestamp gauge';
+
 type CounterLabels = Record<string, string | number | boolean | null | undefined>;
 
 const webhookCounterStore = new Map<string, number>();
@@ -25,6 +35,8 @@ const outboundTotalStore = new Map<string, number>();
 const outboundLatencyStore = new Map<string, { sum: number; count: number }>();
 const httpRequestCounterStore = new Map<string, number>();
 const wsEmitCounterStore = new Map<string, number>();
+const inboundMessagesCounterStore = new Map<string, number>();
+const leadLastContactGaugeStore = new Map<string, number>();
 
 const serializeLabels = (labels: CounterLabels = {}): string => {
   const entries = Object.entries(labels)
@@ -74,6 +86,25 @@ export const wsEmitCounter = {
     const key = serializeLabels(labels);
     const current = wsEmitCounterStore.get(key) ?? 0;
     wsEmitCounterStore.set(key, current + value);
+  },
+};
+
+export const inboundMessagesProcessedCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = serializeLabels(labels);
+    const current = inboundMessagesCounterStore.get(key) ?? 0;
+    inboundMessagesCounterStore.set(key, current + value);
+  },
+};
+
+export const leadLastContactGauge = {
+  set(labels: CounterLabels = {}, timestampMs: number): void {
+    if (!Number.isFinite(timestampMs)) {
+      return;
+    }
+
+    const key = serializeLabels(labels);
+    leadLastContactGaugeStore.set(key, timestampMs);
   },
 };
 
@@ -132,6 +163,26 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(INBOUND_MESSAGES_HELP, INBOUND_MESSAGES_TYPE);
+  if (inboundMessagesCounterStore.size === 0) {
+    lines.push(`${INBOUND_MESSAGES_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of inboundMessagesCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${INBOUND_MESSAGES_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(LEAD_LAST_CONTACT_HELP, LEAD_LAST_CONTACT_TYPE);
+  if (leadLastContactGaugeStore.size === 0) {
+    lines.push(`${LEAD_LAST_CONTACT_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of leadLastContactGaugeStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${LEAD_LAST_CONTACT_METRIC}${suffix} ${value}`);
+    }
+  }
+
   return `${lines.join('\n')}\n`;
 };
 
@@ -141,4 +192,6 @@ export const resetMetrics = (): void => {
   outboundLatencyStore.clear();
   httpRequestCounterStore.clear();
   wsEmitCounterStore.clear();
+  inboundMessagesCounterStore.clear();
+  leadLastContactGaugeStore.clear();
 };

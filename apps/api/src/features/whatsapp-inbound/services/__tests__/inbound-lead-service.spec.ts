@@ -5,6 +5,11 @@ import { NotFoundError } from '@ticketz/core';
 const findUniqueMock = vi.fn();
 const findFirstMock = vi.fn();
 const createTicketMock = vi.fn();
+const leadUpsertMock = vi.fn();
+const leadActivityCreateMock = vi.fn();
+const emitToTenantMock = vi.fn();
+const emitToTicketMock = vi.fn();
+const leadLastContactGaugeSetMock = vi.fn();
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -21,6 +26,12 @@ vi.mock('../../../../lib/prisma', () => ({
       findUnique: findUniqueMock,
       findFirst: findFirstMock,
     },
+    lead: {
+      upsert: leadUpsertMock,
+    },
+    leadActivity: {
+      create: leadActivityCreateMock,
+    },
   },
 }));
 
@@ -29,9 +40,21 @@ vi.mock('../../../../services/ticket-service', () => ({
   sendMessage: vi.fn(),
 }));
 
+vi.mock('../../../../lib/socket-registry', () => ({
+  emitToTenant: emitToTenantMock,
+  emitToTicket: emitToTicketMock,
+  emitToAgreement: vi.fn(),
+}));
+
+vi.mock('../../../../lib/metrics', () => ({
+  inboundMessagesProcessedCounter: { inc: vi.fn() },
+  leadLastContactGauge: { set: leadLastContactGaugeSetMock },
+}));
+
 type TestingHelpers = typeof import('../inbound-lead-service')['__testing'];
 
 let testing!: TestingHelpers;
+type UpsertParams = Parameters<TestingHelpers['upsertLeadFromInbound']>[0];
 
 beforeAll(async () => {
   testing = (await import('../inbound-lead-service')).__testing;
@@ -129,5 +152,154 @@ describe('ensureTicketForContact', () => {
       2,
       expect.objectContaining({ queueId: 'queue-recreated' })
     );
+  });
+});
+
+describe('upsertLeadFromInbound', () => {
+  const baseMessage = {
+    id: 'message-1',
+    createdAt: new Date('2024-03-20T10:00:00.000Z'),
+    direction: 'INBOUND',
+  } as const;
+
+  beforeEach(() => {
+    leadUpsertMock.mockReset();
+    leadActivityCreateMock.mockReset();
+    emitToTenantMock.mockReset();
+    emitToTicketMock.mockReset();
+    leadLastContactGaugeSetMock.mockReset();
+  });
+
+  it('creates a new lead, records activity and emits realtime events', async () => {
+    const leadRecord = {
+      id: 'lead-1',
+      tenantId: 'tenant-1',
+      contactId: 'contact-1',
+      status: 'NEW',
+      source: 'WHATSAPP',
+      lastContactAt: baseMessage.createdAt,
+    };
+    const activityRecord = {
+      id: 'activity-1',
+      tenantId: 'tenant-1',
+      leadId: leadRecord.id,
+      type: 'WHATSAPP_REPLIED',
+      occurredAt: baseMessage.createdAt,
+    };
+    leadUpsertMock.mockResolvedValueOnce(leadRecord);
+    leadActivityCreateMock.mockResolvedValueOnce(activityRecord);
+
+    const message = baseMessage as unknown as UpsertParams['message'];
+    await testing.upsertLeadFromInbound({
+      tenantId: 'tenant-1',
+      contactId: 'contact-1',
+      ticketId: 'ticket-1',
+      instanceId: 'instance-1',
+      providerMessageId: 'provider-1',
+      message,
+    });
+
+    expect(leadUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          tenantId: 'tenant-1',
+          contactId: 'contact-1',
+          status: 'NEW',
+          source: 'WHATSAPP',
+          lastContactAt: baseMessage.createdAt,
+        }),
+        update: expect.objectContaining({ lastContactAt: baseMessage.createdAt }),
+      })
+    );
+
+    expect(leadActivityCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          leadId: leadRecord.id,
+          type: 'WHATSAPP_REPLIED',
+          occurredAt: baseMessage.createdAt,
+          metadata: expect.objectContaining({
+            ticketId: 'ticket-1',
+            instanceId: 'instance-1',
+            providerMessageId: 'provider-1',
+            messageId: baseMessage.id,
+            contactId: 'contact-1',
+          }),
+        }),
+      })
+    );
+
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      'tenant-1',
+      'leads.updated',
+      expect.objectContaining({
+        lead: expect.objectContaining({ id: leadRecord.id }),
+        leadActivity: expect.objectContaining({ id: activityRecord.id }),
+      })
+    );
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      'tenant-1',
+      'leadActivities.new',
+      expect.objectContaining({
+        lead: expect.objectContaining({ id: leadRecord.id }),
+        leadActivity: expect.objectContaining({ id: activityRecord.id }),
+      })
+    );
+    expect(emitToTicketMock).toHaveBeenCalledWith(
+      'ticket-1',
+      'leads.updated',
+      expect.objectContaining({
+        lead: expect.objectContaining({ id: leadRecord.id }),
+        leadActivity: expect.objectContaining({ id: activityRecord.id }),
+      })
+    );
+    expect(emitToTicketMock).toHaveBeenCalledWith(
+      'ticket-1',
+      'leadActivities.new',
+      expect.objectContaining({
+        lead: expect.objectContaining({ id: leadRecord.id }),
+        leadActivity: expect.objectContaining({ id: activityRecord.id }),
+      })
+    );
+    expect(leadLastContactGaugeSetMock).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', leadId: leadRecord.id },
+      baseMessage.createdAt.getTime()
+    );
+  });
+
+  it('updates existing lead when already present', async () => {
+    const message = {
+      ...baseMessage,
+      createdAt: new Date('2024-03-22T15:30:00.000Z'),
+    } as unknown as UpsertParams['message'];
+    leadUpsertMock.mockResolvedValueOnce({
+      id: 'lead-existing',
+      tenantId: 'tenant-1',
+      contactId: 'contact-1',
+      status: 'CONTACTED',
+      source: 'WHATSAPP',
+      lastContactAt: message.createdAt,
+    });
+    leadActivityCreateMock.mockResolvedValueOnce({
+      id: 'activity-2',
+      tenantId: 'tenant-1',
+      leadId: 'lead-existing',
+      type: 'WHATSAPP_REPLIED',
+      occurredAt: message.createdAt,
+    });
+
+    await testing.upsertLeadFromInbound({
+      tenantId: 'tenant-1',
+      contactId: 'contact-1',
+      ticketId: 'ticket-1',
+      instanceId: 'instance-1',
+      providerMessageId: null,
+      message,
+    });
+
+    const call = leadUpsertMock.mock.calls.at(-1)?.[0];
+    expect(call?.update?.lastContactAt).toBe(message.createdAt);
+    expect(call?.create?.status).toBe('NEW');
+    expect(leadActivityCreateMock).toHaveBeenCalledTimes(1);
   });
 });

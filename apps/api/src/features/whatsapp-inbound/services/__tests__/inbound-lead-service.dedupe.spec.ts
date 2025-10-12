@@ -25,6 +25,13 @@ vi.mock('../../../services/ticket-service', () => ({
 
 vi.mock('../../../lib/socket-registry', () => ({
   emitToTenant: vi.fn(),
+  emitToTicket: vi.fn(),
+  emitToAgreement: vi.fn(),
+}));
+
+vi.mock('../../../lib/metrics', () => ({
+  inboundMessagesProcessedCounter: { inc: vi.fn() },
+  leadLastContactGauge: { set: vi.fn() },
 }));
 
 vi.mock('../utils/normalize', () => ({
