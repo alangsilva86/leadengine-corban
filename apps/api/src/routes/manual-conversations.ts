@@ -98,7 +98,7 @@ router.post(
       throw new ValidationError('Não foi possível localizar ou criar o contato.');
     }
 
-    const lead = await prisma.lead.create({
+    let lead = await prisma.lead.create({
       data: {
         tenantId,
         contactId: contact.id,
@@ -111,7 +111,54 @@ router.post(
         campaign: true,
         assignee: true,
       },
+    }).catch(async (error: unknown) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existingLead = await prisma.lead.findUnique({
+          where: {
+            tenantId_contactId: {
+              tenantId,
+              contactId: contact.id,
+            },
+          },
+          include: {
+            contact: true,
+            campaign: true,
+            assignee: true,
+          },
+        });
+
+        if (existingLead) {
+          const hasNotes = typeof existingLead.notes === 'string' && existingLead.notes.trim().length > 0;
+
+          if (!hasNotes) {
+            return prisma.lead.update({
+              where: {
+                tenantId_contactId: {
+                  tenantId,
+                  contactId: contact.id,
+                },
+              },
+              data: {
+                notes: message,
+              },
+              include: {
+                contact: true,
+                campaign: true,
+                assignee: true,
+              },
+            });
+          }
+
+          return existingLead;
+        }
+      }
+
+      throw error;
     });
+
+    if (!lead) {
+      throw new ValidationError('Não foi possível localizar ou criar o lead.');
+    }
 
     const queueId = await getDefaultQueueIdForTenant(tenantId);
 
