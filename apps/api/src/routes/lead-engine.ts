@@ -865,12 +865,12 @@ router.post(
     try {
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
 
-      if (!campaign || campaign.tenantId !== tenantId) {
+      if (!campaign) {
         res.status(404).json({
           success: false,
           error: {
             code: 'CAMPAIGN_NOT_FOUND',
-            message: 'Campanha não encontrada para este tenant.',
+            message: 'Campanha não encontrada.',
           },
         });
         return;

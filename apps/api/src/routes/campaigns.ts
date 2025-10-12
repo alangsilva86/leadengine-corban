@@ -14,7 +14,6 @@ import { getMvpBypassTenantId, getUseRealDataFlag } from '../config/feature-flag
 import type { CampaignDTO, CampaignWarning } from './campaigns.types';
 import { fetchLeadEngineCampaigns } from '../services/campaigns-upstream';
 import { mapPrismaError } from '../utils/prisma-error';
-import { ensureTenantRecord } from '../services/tenant-service';
 
 type CampaignMetadata = Record<string, unknown> | null | undefined;
 
@@ -139,7 +138,8 @@ const buildCampaignResponse = async (
   rawMetrics?: RawCampaignMetrics
 ): Promise<CampaignDTO> => {
   const base = buildCampaignBase(campaign);
-  const metricsSource = rawMetrics ?? (await getCampaignMetrics(campaign.tenantId, campaign.id));
+  const metricsSource =
+    rawMetrics ?? (campaign.tenantId ? await getCampaignMetrics(campaign.tenantId, campaign.id) : createEmptyRawMetrics());
   const metrics = computeCampaignMetrics(campaign, base.metadata, metricsSource);
 
   return {
@@ -371,23 +371,17 @@ router.post(
       return;
     }
 
-    const fallbackTenantId = resolvedAgreementId || requestedTenantId || 'demo-tenant';
+    const explicitTenantId =
+      typeof req.body?.tenantId === 'string' && req.body.tenantId.trim().length > 0
+        ? req.body.tenantId.trim()
+        : undefined;
     const baseLogContext = {
       requestedTenantId,
-      fallbackTenantId,
+      explicitTenantId: explicitTenantId ?? null,
       instanceId: resolvedInstanceId,
       requestedBrokerId: resolvedBrokerId,
       agreementId: resolvedAgreementId,
     };
-
-    const ensuredTenant = await ensureTenantRecord(fallbackTenantId, {
-      ...baseLogContext,
-      context: LOG_CONTEXT,
-    });
-
-    if (!ensuredTenant) {
-      throw new Error('Unable to ensure tenant for campaign creation');
-    }
 
     let instance: Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>> | null = null;
 
@@ -426,9 +420,12 @@ router.post(
     }
 
     if (!instance) {
+      const placeholderTenantId =
+        explicitTenantId || requestedTenantId || resolvedAgreementId || 'demo-tenant';
+
       logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
         ...baseLogContext,
-        tenantId: ensuredTenant.id,
+        tenantId: placeholderTenantId,
         identifierCandidates,
       });
 
@@ -438,7 +435,7 @@ router.post(
         instance = await prisma.whatsAppInstance.create({
           data: {
             id: resolvedInstanceId,
-            tenantId: ensuredTenant.id,
+            tenantId: placeholderTenantId,
             name: resolvedInstanceId,
             brokerId: brokerIdentifier,
             status: 'connected',
@@ -474,45 +471,15 @@ router.post(
       }
     }
 
-    let effectiveTenant = ensuredTenant;
-
-    if (instance.tenantId) {
-      effectiveTenant = await ensureTenantRecord(instance.tenantId, {
-        ...baseLogContext,
-        instanceTenantId: instance.tenantId,
-        context: LOG_CONTEXT,
-      });
-
-      if (effectiveTenant.id !== instance.tenantId) {
-        logger.warn('WhatsApp instance tenant normalized during campaign creation', {
-          ...baseLogContext,
-          previousTenantId: instance.tenantId,
-          normalizedTenantId: effectiveTenant.id,
-        });
-
-        instance = await prisma.whatsAppInstance.update({
-          where: { id: instance.id },
-          data: { tenantId: effectiveTenant.id },
-        });
-      }
-    } else if (instance.tenantId !== ensuredTenant.id) {
-      instance = await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
-        data: { tenantId: ensuredTenant.id },
-      });
-      effectiveTenant = ensuredTenant;
-    }
-
-    const tenantId = instance.tenantId ?? effectiveTenant.id;
+    const tenantId =
+      (typeof instance.tenantId === 'string' && instance.tenantId.trim().length > 0
+        ? instance.tenantId.trim()
+        : undefined) ||
+      explicitTenantId ||
+      requestedTenantId ||
+      (resolvedAgreementId || undefined) ||
+      'demo-tenant';
     const effectiveInstanceId = instance.id;
-
-    if (requestedTenantId && requestedTenantId !== tenantId) {
-      logger.warn('Campaign creation using tenant fallback', {
-        requestedTenantId,
-        effectiveTenantId: tenantId,
-        instanceTenantId: instance.tenantId,
-      });
-    }
 
     const actorId = req.user?.id ?? 'system';
     const normalizedName = resolvedName;
@@ -548,7 +515,7 @@ router.post(
 
     const existingCampaign = await prisma.campaign.findFirst({
       where: {
-        tenantId,
+        ...(tenantId ? { tenantId } : {}),
         whatsappInstanceId: instance.id,
         agreementId: resolvedAgreementId,
       },
@@ -1092,7 +1059,6 @@ router.patch(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
     const campaignId = req.params.id;
     const rawStatus = normalizeStatus(req.body?.status);
     const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
@@ -1100,8 +1066,8 @@ router.patch(
       typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : undefined;
     const actorId = req.user?.id ?? 'system';
 
-    const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, tenantId },
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
       include: {
         whatsappInstance: {
           select: {
@@ -1182,7 +1148,6 @@ router.patch(
       const nextInstance = await prisma.whatsAppInstance.findFirst({
         where: {
           id: requestedInstanceId,
-          tenantId,
         },
         select: {
           id: true,
@@ -1195,7 +1160,7 @@ router.patch(
           success: false,
           error: {
             code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada para este tenant.',
+            message: 'Instância WhatsApp não encontrada.',
           },
         });
         return;
@@ -1239,7 +1204,7 @@ router.patch(
     });
 
     logger.info('Campaign updated', {
-      tenantId,
+      tenantId: updated.tenantId,
       campaignId: campaign.id,
       status: updated.status,
       instanceId: updated.whatsappInstanceId,

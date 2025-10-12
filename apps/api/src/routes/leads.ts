@@ -178,7 +178,7 @@ router.post(
 
     const contact = await prisma.contact.findUnique({ where: { id: contactId } });
 
-    if (!contact || contact.tenantId !== tenantId) {
+    if (!contact) {
       throw new NotFoundError('Contact', contactId);
     }
 
