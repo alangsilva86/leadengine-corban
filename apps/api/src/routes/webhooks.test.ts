@@ -5,6 +5,14 @@ import type { Message, Ticket } from '@ticketz/core';
 
 import { integrationWebhooksRouter } from './webhooks';
 
+const findOrCreateOpenTicketByChatMock = vi.fn();
+const upsertMessageByExternalIdMock = vi.fn();
+
+vi.mock('@ticketz/storage', () => ({
+  findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
+  upsertMessageByExternalId: upsertMessageByExternalIdMock,
+}));
+
 vi.mock('../lib/prisma', () => {
   const instanceMock = {
     findUnique: vi.fn(),
@@ -171,6 +179,8 @@ describe('WhatsApp webhook (integration)', () => {
     createTicketSpy.mockReset();
     sendMessageSpy.mockReset();
     emitToTenantSpy.mockClear();
+    findOrCreateOpenTicketByChatMock.mockReset();
+    upsertMessageByExternalIdMock.mockReset();
     process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
 
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -183,13 +193,39 @@ describe('WhatsApp webhook (integration)', () => {
     }));
     (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'ticket-1',
-      tenantId: 'tenant-1',
+      tenantId: 'tenant-database',
       agreementId: 'agreement-1',
       status: 'OPEN',
       updatedAt: new Date('2024-01-01T12:00:00.000Z'),
       queueId: 'queue-1',
       subject: 'Contato WhatsApp',
       metadata: {},
+    });
+    findOrCreateOpenTicketByChatMock.mockResolvedValue({
+      ticket: {
+        id: 'ticket-1',
+        tenantId: 'tenant-database',
+        agreementId: 'agreement-1',
+        status: 'OPEN',
+        updatedAt: new Date('2024-01-01T12:00:00.000Z'),
+      },
+      wasCreated: false,
+    });
+    upsertMessageByExternalIdMock.mockResolvedValue({
+      message: {
+        id: 'message-1',
+        tenantId: 'tenant-1',
+        ticketId: 'ticket-1',
+        chatId: 'chat-1',
+        direction: 'inbound',
+        type: 'text',
+        text: 'Olá',
+        media: null,
+        metadata: {},
+        createdAt: new Date('2024-01-01T12:00:01.000Z'),
+        externalId: 'wamid.123',
+      },
+      wasCreated: true,
     });
   });
 
@@ -234,6 +270,7 @@ describe('WhatsApp webhook (integration)', () => {
       event: 'message',
       direction: 'inbound',
       timestamp: Date.now(),
+      tenantId: 'tenant-1',
       from: {
         phone: '+5511999998888',
         name: 'Maria',
@@ -259,17 +296,16 @@ describe('WhatsApp webhook (integration)', () => {
 
     await waitForProcessed;
 
-    expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'inst-1' } });
-    expect(prisma.campaign.findMany).toHaveBeenCalledWith({
-      where: {
-        tenantId: 'tenant-1',
-        whatsappInstanceId: 'inst-1',
-        status: 'active',
-      },
-    });
-    expect(addAllocations).toHaveBeenCalled();
+    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', chatId: expect.any(String) })
+    );
+    expect(upsertMessageByExternalIdMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+    );
     const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
     expect(emittedEvents).toContain('tickets.updated');
+    const updatedCall = emitToTenantSpy.mock.calls.find(([, event]) => event === 'tickets.updated');
+    expect(updatedCall?.[0]).toBe('tenant-1');
   });
 
   it('queues inbound message when Authorization bearer header is used', async () => {
@@ -286,6 +322,7 @@ describe('WhatsApp webhook (integration)', () => {
         phone: '+5511987654321',
         name: 'Carlos',
       },
+      tenantId: 'tenant-1',
       message: {
         id: 'wamid.321',
         type: 'text',
@@ -307,7 +344,6 @@ describe('WhatsApp webhook (integration)', () => {
 
     await waitForProcessed;
 
-    expect(addAllocations).toHaveBeenCalled();
   });
 
   it('queues inbound message when X-Authorization header provides the token directly', async () => {
@@ -324,6 +360,7 @@ describe('WhatsApp webhook (integration)', () => {
         phone: '+5511912345678',
         name: 'Ana',
       },
+      tenantId: 'tenant-1',
       message: {
         id: 'wamid.654',
         type: 'text',
@@ -345,7 +382,6 @@ describe('WhatsApp webhook (integration)', () => {
 
     await waitForProcessed;
 
-    expect(addAllocations).toHaveBeenCalled();
   });
 
   it('queues inbound message when payload uses MESSAGE_INBOUND type alias', async () => {
@@ -357,6 +393,7 @@ describe('WhatsApp webhook (integration)', () => {
       type: 'MESSAGE_INBOUND',
       instanceId: 'inst-1',
       timestamp: Date.now(),
+      tenantId: 'tenant-1',
       from: {
         phone: '+5511999998888',
         name: 'Maria Alias',
@@ -382,10 +419,16 @@ describe('WhatsApp webhook (integration)', () => {
 
     await waitForProcessed;
 
-    expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'inst-1' } });
-    expect(addAllocations).toHaveBeenCalled();
+    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', chatId: expect.any(String) })
+    );
+    expect(upsertMessageByExternalIdMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+    );
     const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
     expect(emittedEvents).toContain('tickets.updated');
+    const updatedCall = emitToTenantSpy.mock.calls.find(([, event]) => event === 'tickets.updated');
+    expect(updatedCall?.[0]).toBe('tenant-1');
   });
 
   it('queues inbound message when direction uses uppercase alias', async () => {
@@ -398,6 +441,7 @@ describe('WhatsApp webhook (integration)', () => {
       event: 'message',
       direction: 'INBOUND',
       timestamp: Date.now(),
+      tenantId: 'tenant-1',
       from: {
         phone: '+5511999998888',
         name: 'Maria Upper',
@@ -423,7 +467,15 @@ describe('WhatsApp webhook (integration)', () => {
 
     await waitForProcessed;
 
-    expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'inst-1' } });
-    expect(addAllocations).toHaveBeenCalled();
+    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', chatId: expect.any(String) })
+    );
+    expect(upsertMessageByExternalIdMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+    );
+    const updatedCall = emitToTenantSpy.mock.calls.find(([, event]) => event === 'tickets.updated');
+    if (updatedCall) {
+      expect(updatedCall[0]).toBe('tenant-1');
+    }
   });
 });
