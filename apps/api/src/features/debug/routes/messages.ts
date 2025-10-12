@@ -2,7 +2,6 @@ import { Router, type Request, type Response } from 'express';
 import { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../../../middleware/error-handler';
-import { requireTenant } from '../../../middleware/auth';
 import { prisma } from '../../../lib/prisma';
 import { mapPassthroughMessage } from '@ticketz/storage';
 
@@ -34,12 +33,14 @@ const normalizeQueryValue = (value: unknown): string | null => {
 };
 
 const buildWhereClause = (
-  tenantId: string,
+  tenantId: string | null,
   { chatId, direction }: { chatId: string | null; direction: 'INBOUND' | 'OUTBOUND' | null }
 ): Prisma.MessageWhereInput => {
-  const where: Prisma.MessageWhereInput = {
-    tenantId,
-  };
+  const where: Prisma.MessageWhereInput = {};
+
+  if (tenantId) {
+    where.tenantId = tenantId;
+  }
 
   if (direction) {
     where.direction = direction;
@@ -58,9 +59,7 @@ const buildWhereClause = (
 
 router.get(
   '/debug/messages',
-  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
     const rawLimit = normalizeQueryValue(req.query.limit);
     const limitCandidate = rawLimit ? Number(rawLimit) : NaN;
     let limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.floor(limitCandidate) : 50;
@@ -75,6 +74,7 @@ router.get(
           : null;
 
     const chatId = normalizeQueryValue(req.query.chatId);
+    const tenantId = normalizeQueryValue(req.query.tenantId);
 
     const where = buildWhereClause(tenantId, { chatId, direction: directionFilter });
 
@@ -95,9 +95,7 @@ router.get(
 
 router.get(
   '/debug/baileys-events',
-  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
     const rawLimit = normalizeQueryValue(req.query.limit);
     const limitCandidate = rawLimit ? Number(rawLimit) : NaN;
     let limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.floor(limitCandidate) : 50;
@@ -105,6 +103,7 @@ router.get(
 
     const chatIdFilter = normalizeQueryValue(req.query.chatId);
     const normalizedDirection = normalizeQueryValue(req.query.direction);
+    const tenantIdFilter = normalizeQueryValue(req.query.tenantId);
     const directionFilter =
       normalizedDirection && normalizedDirection.toLowerCase() === 'outbound'
         ? 'outbound'
@@ -143,7 +142,7 @@ router.get(
         };
       })
       .filter((entry) => {
-        if (entry.tenantId && entry.tenantId !== tenantId) {
+        if (tenantIdFilter && entry.tenantId && tenantIdFilter !== entry.tenantId) {
           return false;
         }
         if (directionFilter && entry.direction !== directionFilter) {

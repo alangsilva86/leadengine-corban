@@ -44,6 +44,7 @@ const stringifyJson = (value) => {
 const BaileysLogs = () => {
   const [limit, setLimit] = useState(50);
   const [direction, setDirection] = useState('all');
+  const [tenantId, setTenantId] = useState('');
   const [chatId, setChatId] = useState('');
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -55,11 +56,14 @@ const BaileysLogs = () => {
     if (direction !== 'all') {
       params.set('direction', direction);
     }
+    if (tenantId.trim().length > 0) {
+      params.set('tenantId', tenantId.trim());
+    }
     if (chatId.trim().length > 0) {
       params.set('chatId', chatId.trim());
     }
     return params.toString();
-  }, [chatId, direction, limit]);
+  }, [chatId, direction, limit, tenantId]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -93,6 +97,7 @@ const BaileysLogs = () => {
     const latest = logs[0];
     return {
       lastDirection: latest.direction ?? '—',
+      lastTenant: latest.tenantId ?? '—',
       lastInstance: latest.instanceId ?? '—',
       lastChatId: latest.chatId ?? '—',
       lastReceivedAt: formatDateTime(latest.createdAt),
@@ -114,7 +119,7 @@ const BaileysLogs = () => {
 
         <Card className="border border-border/60 bg-card/70 p-4 backdrop-blur">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="grid w-full max-w-4xl grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="grid w-full max-w-5xl grid-cols-1 gap-3 md:grid-cols-5">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium uppercase text-muted-foreground">
                   Limite
@@ -157,6 +162,18 @@ const BaileysLogs = () => {
                 </Select>
               </div>
 
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium uppercase text-muted-foreground">
+                  Tenant
+                </label>
+                <Input
+                  value={tenantId}
+                  onChange={(event) => setTenantId(event.target.value)}
+                  placeholder="Ex: demo-tenant"
+                  disabled={loading}
+                />
+              </div>
+
               <div className="flex flex-col gap-1.5 md:col-span-2">
                 <label className="text-xs font-medium uppercase text-muted-foreground">
                   Chat / remoteJid
@@ -174,7 +191,10 @@ const BaileysLogs = () => {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setChatId('')}
+                onClick={() => {
+                  setTenantId('');
+                  setChatId('');
+                }}
                 disabled={loading}
               >
                 Limpar
@@ -192,13 +212,21 @@ const BaileysLogs = () => {
           {summary ? (
             <>
               <Separator className="my-4" />
-              <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-4">
+              <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-5">
                 <div>
                   <span className="text-xs uppercase text-muted-foreground/70">
                     Última mensagem
                   </span>
                   <p className="font-medium text-foreground">
                     {summary.lastDirection}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs uppercase text-muted-foreground/70">
+                    Tenant
+                  </span>
+                  <p className="font-medium text-foreground">
+                    {summary.lastTenant}
                   </p>
                 </div>
                 <div>
@@ -253,13 +281,16 @@ const BaileysLogs = () => {
               className="border border-border/60 bg-card/80 p-4"
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge className={directionToneClass}>
-                    {entry.direction ?? '—'}
-                  </Badge>
-                  <Badge variant="outline">
-                    iid: {entry.instanceId ?? '—'}
-                  </Badge>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <Badge className={directionToneClass}>
+                  {entry.direction ?? '—'}
+                </Badge>
+                <Badge variant="outline">
+                  tenant: {entry.tenantId ?? '—'}
+                </Badge>
+                <Badge variant="outline">
+                  iid: {entry.instanceId ?? '—'}
+                </Badge>
                   <Badge variant="outline">
                     chat: {entry.chatId ?? '—'}
                   </Badge>
