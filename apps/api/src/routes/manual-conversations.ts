@@ -14,6 +14,7 @@ import {
   getDefaultQueueIdForTenant,
   sendMessage,
 } from '../services/ticket-service';
+import { ensureTenantRecord } from '../services/tenant-service';
 
 const router: Router = Router();
 
@@ -34,6 +35,12 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user!.tenantId;
     const userId = req.user!.id;
+
+    await ensureTenantRecord(tenantId, {
+      route: 'manual-conversations.create',
+      requestId: req.rid ?? null,
+      userId,
+    });
 
     const rawPhone = String(req.body.phone ?? '');
     const rawMessage = String(req.body.message ?? '');

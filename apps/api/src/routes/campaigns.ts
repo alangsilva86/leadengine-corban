@@ -14,6 +14,7 @@ import { getMvpBypassTenantId, getUseRealDataFlag } from '../config/feature-flag
 import type { CampaignDTO, CampaignWarning } from './campaigns.types';
 import { fetchLeadEngineCampaigns } from '../services/campaigns-upstream';
 import { mapPrismaError } from '../utils/prisma-error';
+import { ensureTenantRecord } from '../services/tenant-service';
 
 type CampaignMetadata = Record<string, unknown> | null | undefined;
 
@@ -171,61 +172,6 @@ const buildCampaignResponseSafely = async (
 const router = Router();
 const SAFE_MODE = process.env.SAFE_MODE === 'true';
 const IGNORE_TENANT_HEADER = process.env.TENANT_IGNORE_HEADER === 'true';
-
-const ensureTenantRecord = async (
-  tenantId: string,
-  logContext: Record<string, unknown>
-) => {
-  const slug = toSlug(tenantId, tenantId);
-
-  const existingTenant = await prisma.tenant.findFirst({
-    where: {
-      OR: [{ id: tenantId }, { slug }],
-    },
-  });
-
-  if (existingTenant) {
-    if (existingTenant.slug === slug && existingTenant.id !== tenantId) {
-      logger.info(`${LOG_CONTEXT} reusing tenant slug from different tenant id`, {
-        ...logContext,
-        requestedTenantId: tenantId,
-        effectiveTenantId: existingTenant.id,
-        slug,
-      });
-    }
-
-    return existingTenant;
-  }
-
-  try {
-    return await prisma.tenant.create({
-      data: {
-        id: tenantId,
-        name: tenantId,
-        slug,
-        settings: {},
-      },
-    });
-  } catch (tenantError) {
-    if (tenantError instanceof Prisma.PrismaClientKnownRequestError && tenantError.code === 'P2002') {
-      const conflictingTenant = await prisma.tenant.findFirst({
-        where: { slug },
-      });
-
-      if (conflictingTenant) {
-        logger.info(`${LOG_CONTEXT} tenant slug conflict resolved by reusing existing tenant`, {
-          ...logContext,
-          requestedTenantId: tenantId,
-          effectiveTenantId: conflictingTenant.id,
-          slug,
-        });
-        return conflictingTenant;
-      }
-    }
-
-    throw tenantError;
-  }
-};
 
 const normalizeStatus = (value: unknown): CampaignStatus | null => {
   if (typeof value !== 'string') {
@@ -434,7 +380,10 @@ router.post(
       agreementId: resolvedAgreementId,
     };
 
-    const ensuredTenant = await ensureTenantRecord(fallbackTenantId, baseLogContext);
+    const ensuredTenant = await ensureTenantRecord(fallbackTenantId, {
+      ...baseLogContext,
+      context: LOG_CONTEXT,
+    });
 
     if (!ensuredTenant) {
       throw new Error('Unable to ensure tenant for campaign creation');
@@ -531,6 +480,7 @@ router.post(
       effectiveTenant = await ensureTenantRecord(instance.tenantId, {
         ...baseLogContext,
         instanceTenantId: instance.tenantId,
+        context: LOG_CONTEXT,
       });
 
       if (effectiveTenant.id !== instance.tenantId) {
