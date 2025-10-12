@@ -12,7 +12,7 @@ export interface CampaignMetricsDTO {
 
 export interface CampaignDTO {
   id: string;
-  tenantId: string;
+  tenantId: string | null;
   agreementId: string | null;
   agreementName?: string | null;
   name: string;
