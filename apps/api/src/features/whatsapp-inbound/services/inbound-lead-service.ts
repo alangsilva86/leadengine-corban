@@ -6,6 +6,10 @@ import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
+import {
+  inboundMessagesProcessedCounter,
+  leadLastContactGauge,
+} from '../../../lib/metrics';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
 import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
@@ -445,17 +449,6 @@ const ensureTicketForContact = async (
   }
 };
 
-export const __testing = {
-  DEDUPE_WINDOW_MS,
-  MAX_DEDUPE_CACHE_SIZE,
-  DEFAULT_QUEUE_CACHE_TTL_MS,
-  dedupeCache,
-  queueCacheByTenant,
-  pruneDedupeCache,
-  getDefaultQueueId,
-  ensureTicketForContact,
-};
-
 const emitRealtimeUpdatesForInbound = async ({
   tenantId,
   ticketId,
@@ -508,6 +501,119 @@ const emitRealtimeUpdatesForInbound = async ({
   }
 };
 
+const upsertLeadFromInbound = async ({
+  tenantId,
+  contactId,
+  ticketId,
+  instanceId,
+  providerMessageId,
+  message,
+}: {
+  tenantId: string;
+  contactId: string;
+  ticketId: string;
+  instanceId: string;
+  providerMessageId: string | null;
+  message: Awaited<ReturnType<typeof sendMessageService>>;
+}) => {
+  const lastContactAt =
+    message.createdAt instanceof Date ? message.createdAt : new Date();
+
+  const lead = await prisma.lead.upsert({
+    where: {
+      tenantId_contactId: {
+        tenantId,
+        contactId,
+      },
+    },
+    create: {
+      tenantId,
+      contactId,
+      status: 'NEW',
+      source: 'WHATSAPP',
+      lastContactAt,
+    },
+    update: {
+      lastContactAt,
+    },
+  });
+
+  const metadata: Record<string, unknown> = {
+    ticketId,
+    instanceId,
+    providerMessageId,
+    messageId: message.id,
+    contactId,
+    direction: message.direction,
+  };
+
+  const leadActivity = await prisma.leadActivity.create({
+    data: {
+      tenantId,
+      leadId: lead.id,
+      type: 'WHATSAPP_REPLIED',
+      title: 'Mensagem recebida pelo WhatsApp',
+      metadata: metadata as Prisma.InputJsonValue,
+      occurredAt: lastContactAt,
+    },
+  });
+
+  leadLastContactGauge.set(
+    { tenantId, leadId: lead.id },
+    lastContactAt.getTime()
+  );
+
+  const realtimeEnvelope = {
+    tenantId,
+    ticketId,
+    instanceId,
+    providerMessageId,
+    message,
+    lead,
+    leadActivity,
+  };
+
+  try {
+    emitToTenant(tenantId, 'leads.updated', realtimeEnvelope);
+    emitToTicket(ticketId, 'leads.updated', realtimeEnvelope);
+  } catch (error) {
+    logger.error('Failed to emit lead realtime updates for inbound WhatsApp message', {
+      error: mapErrorForLog(error),
+      tenantId,
+      ticketId,
+      leadId: lead.id,
+      messageId: message.id,
+    });
+  }
+
+  try {
+    emitToTenant(tenantId, 'leadActivities.new', realtimeEnvelope);
+    emitToTicket(ticketId, 'leadActivities.new', realtimeEnvelope);
+  } catch (error) {
+    logger.error('Failed to emit lead activity realtime updates for inbound WhatsApp message', {
+      error: mapErrorForLog(error),
+      tenantId,
+      ticketId,
+      leadId: lead.id,
+      messageId: message.id,
+    });
+  }
+
+  return { lead, leadActivity };
+};
+
+export const __testing = {
+  DEDUPE_WINDOW_MS,
+  MAX_DEDUPE_CACHE_SIZE,
+  DEFAULT_QUEUE_CACHE_TTL_MS,
+  dedupeCache,
+  queueCacheByTenant,
+  pruneDedupeCache,
+  getDefaultQueueId,
+  ensureTicketForContact,
+  upsertLeadFromInbound,
+};
+
 export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
   const { instanceId, contact, message, timestamp } = event;
   const normalizedPhone = sanitizePhone(contact.phone);
@@ -516,6 +622,10 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   const metadataRecord = (event.metadata && typeof event.metadata === 'object'
     ? (event.metadata as Record<string, unknown>)
     : {}) as Record<string, unknown>;
+  const requestId =
+    typeof metadataRecord['requestId'] === 'string'
+      ? metadataRecord['requestId']
+      : null;
   const metadataContact = (metadataRecord.contact && typeof metadataRecord.contact === 'object'
     ? (metadataRecord.contact as Record<string, unknown>)
     : {}) as Record<string, unknown>;
@@ -709,12 +819,49 @@ export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) 
   }
 
   if (persistedMessage) {
+    const providerMessageId = normalizedMessage.id ?? null;
     await emitRealtimeUpdatesForInbound({
       tenantId,
       ticketId,
       instanceId,
       message: persistedMessage,
-      providerMessageId: normalizedMessage.id ?? null,
+      providerMessageId,
+    });
+
+    let inboundLeadId: string | null = null;
+    try {
+      const { lead } = await upsertLeadFromInbound({
+        tenantId,
+        contactId: contactRecord.id,
+        ticketId,
+        instanceId,
+        providerMessageId,
+        message: persistedMessage,
+      });
+      inboundLeadId = lead.id;
+    } catch (error) {
+      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao sincronizar lead inbound', {
+        error: mapErrorForLog(error),
+        tenantId,
+        ticketId,
+        instanceId,
+        contactId: contactRecord.id,
+        messageId: persistedMessage.id,
+        providerMessageId,
+      });
+    }
+
+    inboundMessagesProcessedCounter.inc({ tenantId });
+
+    logger.info('🎯 LeadEngine • WhatsApp :: ✅ Mensagem inbound processada', {
+      requestId,
+      tenantId,
+      ticketId,
+      contactId: contactRecord.id,
+      instanceId,
+      messageId: persistedMessage.id,
+      providerMessageId,
+      leadId: inboundLeadId,
     });
   }
 

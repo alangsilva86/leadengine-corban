@@ -222,6 +222,7 @@ model Lead {
   activities LeadActivity[]
 
   @@map("leads")
+  @@unique([tenantId, contactId], map: "leads_tenant_contact_unique")
 }
 
 model Campaign {
