@@ -46,7 +46,6 @@ services:
       USE_REAL_DATA: ${USE_REAL_DATA}
       LEAD_ENGINE_DEFAULT_START_DATE: ${LEAD_ENGINE_DEFAULT_START_DATE}
       LEAD_ENGINE_DEFAULT_END_DATE: ${LEAD_ENGINE_DEFAULT_END_DATE}
-      WHATSAPP_MODE: ${WHATSAPP_MODE}
       WHATSAPP_BROKER_URL: ${WHATSAPP_BROKER_URL}
       WHATSAPP_BROKER_API_KEY: ${WHATSAPP_BROKER_API_KEY}
       WHATSAPP_WEBHOOK_API_KEY: ${WHATSAPP_WEBHOOK_API_KEY:-}
@@ -57,8 +56,6 @@ services:
       WHATSAPP_SESSION_STORE_REDIS_TTL: ${WHATSAPP_SESSION_STORE_REDIS_TTL:-86400}
     ports:
       - "4000:4000"
-    volumes:
-      - whatsapp_sessions_data:/app/sessions
     depends_on:
       - postgres
       - redis
@@ -83,7 +80,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  whatsapp_sessions_data:
 
 networks:
   ticketz-network:
