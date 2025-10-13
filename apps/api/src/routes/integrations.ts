@@ -26,6 +26,7 @@ import { respondWithValidationError } from '../utils/http-validation';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import { whatsappHttpRequestsCounter } from '../lib/metrics';
 import { getMvpBypassTenantId } from '../config/feature-flags';
+import { getWhatsAppTransport } from '../features/whatsapp-transport';
 
 const normalizeQueryValue = (value: unknown): string | undefined => {
   if (Array.isArray(value)) {
@@ -3122,6 +3123,10 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+
       if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
         return;
@@ -3308,6 +3313,10 @@ router.post(
         },
       });
     } catch (error: unknown) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+
       if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
         return;
@@ -3615,6 +3624,15 @@ router.get(
         },
       });
     } catch (error: unknown) {
+      if (respondWhatsAppNotConfigured(res, error)) {
+        return;
+      }
+
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
@@ -3749,7 +3767,8 @@ router.post(
         return;
       }
 
-      const exists = await whatsappBrokerClient.checkRecipient({
+      const transport = getWhatsAppTransport();
+      const exists = await transport.checkRecipient({
         sessionId: instance.brokerId,
         instanceId: instance.id,
         to,
@@ -3797,7 +3816,8 @@ router.get(
         return;
       }
 
-      const groups = await whatsappBrokerClient.getGroups({
+      const transport = getWhatsAppTransport();
+      const groups = await transport.getGroups({
         sessionId: instance.brokerId,
         instanceId: instance.id,
       });
@@ -3943,7 +3963,8 @@ router.post(
     };
 
     try {
-      const poll = await whatsappBrokerClient.createPoll({
+      const transport = getWhatsAppTransport();
+      const poll = await transport.createPoll({
         sessionId: instance.id,
         instanceId: instance.id,
         to,

@@ -37,11 +37,11 @@ import {
 import { logger } from '../config/logger';
 import { whatsappOutboundMetrics } from '../lib/metrics';
 import {
-  whatsappBrokerClient,
   WhatsAppBrokerError,
   translateWhatsAppBrokerError,
   type NormalizedWhatsAppBrokerError,
 } from './whatsapp-broker-client';
+import { getWhatsAppTransport } from '../features/whatsapp-transport';
 import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import {
@@ -1376,17 +1376,23 @@ export const sendMessage = async (
         await markAsFailed({ message: 'contact_phone_missing' });
       } else {
         try {
-          const brokerResult = await whatsappBrokerClient.sendMessage(instanceId, {
-            to: phone,
-            content: input.content ?? input.caption ?? '',
-            caption: input.caption,
-            type: input.type,
-            externalId: message.id,
-            mediaUrl: input.mediaUrl,
-            mediaMimeType: input.mediaMimeType,
-            mediaFileName: input.mediaFileName,
-            previewUrl: Boolean(input.metadata?.previewUrl),
-          });
+          const transport = getWhatsAppTransport();
+          const brokerResult = await transport.sendMessage(
+            instanceId,
+            {
+              to: phone,
+              content: input.content ?? input.caption ?? '',
+              caption: input.caption,
+              type: input.type,
+              externalId: message.id,
+              mediaUrl: input.mediaUrl,
+              mediaMimeType: input.mediaMimeType,
+              mediaFileName: input.mediaFileName,
+              previewUrl: Boolean(input.metadata?.previewUrl),
+              metadata: input.metadata ?? undefined,
+            },
+            { idempotencyKey: message.id }
+          );
 
           const metadata = {
             ...(message.metadata ?? {}),
