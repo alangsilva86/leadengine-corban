@@ -122,7 +122,9 @@ const mapCampaign = (
 
 const mapAllocation = (allocation: LeadAllocationRecord): LeadAllocationDto => {
   const campaignInfo = mapCampaign(allocation.campaign);
-  return {
+  const payload = (allocation.payload as Record<string, unknown> | null) ?? null;
+
+  const result: LeadAllocationDto = {
     allocationId: allocation.id,
     leadId: allocation.leadId,
     tenantId: allocation.tenantId,
@@ -134,18 +136,40 @@ const mapAllocation = (allocation: LeadAllocationRecord): LeadAllocationDto => {
     status: allocation.status as LeadAllocationStatus,
     receivedAt: allocation.receivedAt.toISOString(),
     updatedAt: allocation.updatedAt.toISOString(),
-    notes: allocation.notes ?? undefined,
     fullName: allocation.lead.fullName,
     document: allocation.lead.document,
-    matricula: allocation.lead.matricula ?? undefined,
     registrations: [...allocation.lead.registrations],
-    phone: allocation.lead.phone ?? undefined,
-    margin: allocation.lead.margin ?? undefined,
-    netMargin: allocation.lead.netMargin ?? undefined,
-    score: allocation.lead.score ?? undefined,
     tags: [...allocation.lead.tags],
-    payload: (allocation.payload as Record<string, unknown> | null) ?? null,
+    payload,
   };
+
+  if (allocation.notes !== null && allocation.notes !== undefined) {
+    result.notes = allocation.notes;
+  }
+
+  const lead = allocation.lead;
+
+  if (lead.matricula !== null && lead.matricula !== undefined) {
+    result.matricula = lead.matricula;
+  }
+
+  if (lead.phone !== null && lead.phone !== undefined) {
+    result.phone = lead.phone;
+  }
+
+  if (lead.margin !== null && lead.margin !== undefined) {
+    result.margin = lead.margin;
+  }
+
+  if (lead.netMargin !== null && lead.netMargin !== undefined) {
+    result.netMargin = lead.netMargin;
+  }
+
+  if (lead.score !== null && lead.score !== undefined) {
+    result.score = lead.score;
+  }
+
+  return result;
 };
 
 const computeSummary = async (
