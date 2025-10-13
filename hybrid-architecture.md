@@ -27,7 +27,7 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔄 Interface de transporte WhatsApp unificada
 
-- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe apenas getters de credencial; o transporte está fixado em HTTP.
+- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe apenas getters de credencial; o transporte está fixado em HTTP mas mantém o bloco `runtime` (`rawMode`, `correlationSeed`, `sidecarSessionsPath`) para compatibilidade.
 - `apps/api/src/config/whatsapp.ts` distribui getters (`getBrokerBaseUrl`, `getWebhookApiKey`, `shouldBypassTenantGuards` etc.), removendo leituras diretas de `process.env`.
 - `/healthz` revela o transporte WhatsApp em execução (`http`) via `apps/api/src/health.ts`, expondo `whatsapp.runtime` (com `mode`, `transport`, `status`, `disabled`) para auditoria operacional.
 

@@ -62,6 +62,25 @@ describe('sidecar runtime', () => {
     expect(__testing.getBridgeCleanup()).toBeNull();
   });
 
+  it('resolves a custom sessions path from environment overrides', async () => {
+    process.env.WHATSAPP_SIDECAR_SESSIONS_PATH = './custom-sessions';
+
+    const { refreshWhatsAppEnv } = await import('../../../../config/whatsapp');
+    refreshWhatsAppEnv();
+
+    const module = await import('../sidecar-runtime');
+    const { ensureWhatsAppSidecarManager, __testing } = module;
+
+    const manager = ensureWhatsAppSidecarManager();
+
+    expect(manager).toBeInstanceOf(FakeWhatsAppInstanceManager);
+    expect(constructorSpy).toHaveBeenCalledWith('./custom-sessions');
+
+    __testing.reset();
+    delete process.env.WHATSAPP_SIDECAR_SESSIONS_PATH;
+    refreshWhatsAppEnv();
+  });
+
   it('accepts an external manager and forwards dedupe TTL options', async () => {
     const cleanupMock = vi.fn();
     registerMock.mockReturnValue(cleanupMock);

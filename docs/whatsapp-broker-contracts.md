@@ -2,7 +2,7 @@
 
 ## Runtime transport interface
 
-- `apps/api/src/config/whatsapp-config.ts` concentra variáveis de credencial e timeouts. O transporte foi simplificado para sempre usar HTTP, eliminando ramificações de modo.
+- `apps/api/src/config/whatsapp-config.ts` concentra variáveis de credencial e timeouts. O transporte segue fixo em HTTP, mas preserva o bloco `runtime` (`rawMode`, `correlationSeed`, `sidecarSessionsPath`) para compatibilidade com consumidores legados.
 - `/healthz` publica o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`) fixado em `http`.
 
 ## Inbound Contract
