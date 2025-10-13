@@ -30,7 +30,7 @@ const createDisabledClient = (): PrismaClient => {
     },
   };
 
-  const clientHandler: ProxyHandler<Record<string, unknown>> = {
+  const clientHandler: ProxyHandler<PrismaClient> = {
     get: (_target, property) => {
       if (typeof property !== 'string') {
         return undefined;
@@ -52,7 +52,7 @@ const createDisabledClient = (): PrismaClient => {
     },
   };
 
-  return new Proxy({}, clientHandler) as PrismaClient;
+  return new Proxy({} as PrismaClient, clientHandler);
 };
 
 export const setPrismaClient = (client: PrismaClient): void => {
