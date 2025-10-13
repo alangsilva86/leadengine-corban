@@ -24,11 +24,12 @@ export default defineConfig({
   clean: true,
   dts: true,
   minify,
+  platform: "node",
   format: ["esm"],
   outExtension: () => ({
     js: ".mjs"
   }),
   target: "es2022",
-  external: ["@ticketz/core"],
+  external: ["@ticketz/core", "@prisma/client"],
   tsconfig: "./tsconfig.build.json"
 });

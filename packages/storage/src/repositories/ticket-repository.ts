@@ -344,7 +344,7 @@ export const mapPassthroughMessage = (
       mimeType,
       fileName,
       size,
-      caption: caption ?? undefined,
+      caption,
     } satisfies PassthroughMessageMedia;
   })();
 
@@ -1203,20 +1203,22 @@ export const upsertMessageByExternalId = async (
     receivedAt: timestamp.getTime(),
   };
 
-  const created = await createMessage(input.tenantId, input.ticketId, {
-    ticketId: input.ticketId,
-    direction,
-    type: mediaEnabled ? storageType : 'TEXT',
-    content,
-    caption,
-    externalId: normalizedExternalId,
-    mediaUrl: mediaEnabled ? mediaUrl : undefined,
-    mediaFileName: mediaEnabled ? input.media?.fileName ?? undefined : undefined,
-    mediaMimeType: mediaEnabled ? input.media?.mimeType ?? undefined : undefined,
-    metadata: metadataWithTimestamps,
-    instanceId:
-      typeof metadataBase.sourceInstance === 'string' ? metadataBase.sourceInstance : undefined,
-  });
+    const instanceIdValue =
+      typeof metadataBase.sourceInstance === 'string' ? metadataBase.sourceInstance : undefined;
+
+    const created = await createMessage(input.tenantId, input.ticketId, {
+      ticketId: input.ticketId,
+      direction,
+      type: mediaEnabled ? storageType : 'TEXT',
+      content,
+      caption,
+      externalId: normalizedExternalId,
+      mediaUrl: mediaEnabled ? mediaUrl : undefined,
+      mediaFileName: mediaEnabled ? input.media?.fileName ?? undefined : undefined,
+      mediaMimeType: mediaEnabled ? input.media?.mimeType ?? undefined : undefined,
+      metadata: metadataWithTimestamps,
+      ...(instanceIdValue !== undefined ? { instanceId: instanceIdValue } : {}),
+    });
 
   if (!created) {
     const ticket = await prisma.ticket.findFirst({
@@ -1282,13 +1284,15 @@ export const createOutboundMessage = async (
     status?: Message['status'];
   }
 ): Promise<Message | null> => {
+  const { instanceId, idempotencyKey, userId, status, ...rest } = input;
+
   return createMessage(tenantId, ticketId, {
-    ...input,
-    userId: input.userId,
+    ...rest,
     direction: 'OUTBOUND',
-    status: input.status ?? 'PENDING',
-    instanceId: input.instanceId ?? undefined,
-    idempotencyKey: input.idempotencyKey ?? undefined,
+    ...(userId !== undefined ? { userId } : {}),
+    status: status ?? 'PENDING',
+    ...(instanceId !== undefined ? { instanceId } : {}),
+    ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
   });
 };
 
@@ -1305,11 +1309,11 @@ export const applyBrokerAck = async (
   }
 ): Promise<Message | null> => {
   return updateMessage(tenantId, messageId, {
-    status: ack.status,
-    externalId: ack.externalId,
-    metadata: ack.metadata ?? undefined,
-    deliveredAt: ack.deliveredAt ?? undefined,
-    readAt: ack.readAt ?? undefined,
-    instanceId: ack.instanceId ?? undefined,
+    ...(ack.status !== undefined ? { status: ack.status } : {}),
+    ...(ack.externalId !== undefined ? { externalId: ack.externalId ?? null } : {}),
+    ...(ack.metadata !== undefined ? { metadata: ack.metadata ?? null } : {}),
+    ...(ack.deliveredAt !== undefined ? { deliveredAt: ack.deliveredAt ?? null } : {}),
+    ...(ack.readAt !== undefined ? { readAt: ack.readAt ?? null } : {}),
+    ...(ack.instanceId !== undefined ? { instanceId: ack.instanceId ?? null } : {}),
   });
 };
