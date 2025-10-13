@@ -1,6 +1,15 @@
 # WhatsApp Broker Contracts & Delivery Plan
 
+## Runtime transport interface
+
+- `apps/api/src/config/whatsapp-config.ts` concentra variáveis, normaliza o modo ativo (`http`, `sidecar`, `dryrun`, `disabled`) e expõe utilitários como `getWhatsAppMode`/`getRawWhatsAppMode`.
+- `/healthz` publica o modo corrente e o status do poller via `apps/api/src/health.ts`, permitindo auditar quando o circuito está desativado (`mode=sidecar` ⇒ poller `inactive`).
+- O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` se `WHATSAPP_MODE` não permitir chamadas HTTP, evitando tráfego inválido.
+- Rollback sem rebuild: basta aplicar `WHATSAPP_MODE=http` e reiniciar o processo para voltar ao broker HTTP; o inverso (`sidecar`) segue a mesma dinâmica.
+
 ## Inbound Contract
+
+O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/whatsapp/webhook`, é normalizado e persiste imediatamente (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`), emitindo `messages.new` em tempo real.
 
 - Event envelope validated via `BrokerInboundEventSchema` (queue) and `BrokerWebhookInboundSchema` (webhook).
 - Authentication headers: prefer `X-API-Key` with the broker secret; when absent the webhook accepts `Authorization: Bearer <token>` or the legacy `X-Authorization` header carrying the raw token value.
@@ -39,6 +48,12 @@
   }
 }
 ```
+
+## Session store & poller fallback
+
+- A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para reprocessar eventos vindos do fallback ou de integrações legadas.
+- O poller (`apps/api/src/features/whatsapp-inbound/workers/event-poller.ts`) só executa quando `WHATSAPP_MODE=http` e serve como plano B monitorado; no `sidecar` ele fica `inactive` mas disponível para rollback.
+- As sessões Baileys precisam de armazenamento persistente — os manifests `docker-compose*.yml` mapeiam o volume `whatsapp_sessions_data` para manter o estado entre recriações de container.
 
 ### Baileys raw fallback
 

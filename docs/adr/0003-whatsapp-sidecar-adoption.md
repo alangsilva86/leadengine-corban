@@ -29,3 +29,5 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
   cada chamada individual, pois o modo ativo já está centralizado e versionado.
 - O rollback para `WHATSAPP_MODE=http` torna-se previsível: basta alterar a variável e
   reinicializar, já que nenhuma chamada depende de leitura direta de `process.env`.
+- O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) tornou-se o caminho principal, deixando o poller (`workers/event-poller.ts`) somente como fallback para brokers legados.
+- `/healthz` divulga `whatsappEventPoller.mode/status` (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.

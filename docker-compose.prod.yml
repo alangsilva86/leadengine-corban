@@ -92,7 +92,7 @@ services:
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
-      - ./sessions:/app/sessions
+      - whatsapp_sessions_data:/app/sessions
       - ./logs:/app/logs
       - ./uploads:/app/uploads
     depends_on:
@@ -155,6 +155,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  whatsapp_sessions_data:
     driver: local
 
 # ============================================================================

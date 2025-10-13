@@ -11,6 +11,7 @@
   "scripts": {
     "preinstall": "npx -y only-allow pnpm",
     "doctor": "node scripts/doctor.mjs",
+    "depcheck": "pnpm exec depcheck --skip-missing --ignores=prettier,eslint-config-prettier,eslint-plugin-prettier,@types/node,@typescript-eslint/eslint-plugin,@typescript-eslint/parser",
     "prebuild": "pnpm exec prisma generate --schema=prisma/schema.prisma",
     "start": "pnpm --filter web run start",
     "build": "pnpm run build:libs && pnpm run build:api && pnpm run build:web",
@@ -31,11 +32,12 @@
     "integrations:build": "pnpm --filter @ticketz/integrations build",
     "start:api": "pnpm --filter @ticketz/api start",
     "start:web": "pnpm --filter web run start",
-    "test:whatsapp": "node scripts/whatsapp-smoke-test.mjs"
+    "test:whatsapp": "node scripts/whatsapp-smoke-test.mjs",
+    "ts-prune": "pnpm exec ts-prune"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
-    "zod": "^3.23.8"
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -52,7 +54,9 @@
     "minimatch": "^10.0.3",
     "prettier": "^3.1.1",
     "prisma": "^5.7.1",
-    "tsup": "8.5.0",
+    "socket.io-client": "^4.8.1",
+    "depcheck": "^1.4.7",
+    "ts-prune": "^0.10.3",
     "typescript": "^5.3.3",
     "typescript-eslint": "^8.18.2"
   },
