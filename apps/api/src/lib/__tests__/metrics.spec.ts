@@ -18,7 +18,6 @@ describe('metrics collectors', () => {
   it('enforces cardinality limits for high churn labels', () => {
     for (let index = 0; index < 110; index += 1) {
       whatsappWebhookEventsCounter.inc({
-        transport: 'http',
         origin: 'webhook',
         tenantId: `tenant-${index}`,
         instanceId: 'inst-shared',
@@ -39,16 +38,15 @@ describe('metrics collectors', () => {
 
     const snapshot = renderMetrics();
     expect(snapshot).toContain(
-      'whatsapp_outbound_total{instanceId="unknown",origin="unknown",status="SENT",tenantId="unknown",transport="unknown"} 1'
+      'whatsapp_outbound_total{instanceId="unknown",origin="unknown",status="SENT",tenantId="unknown"} 1'
     );
     expect(snapshot).toContain(
-      'inbound_messages_processed_total{instanceId="unknown",origin="unknown",tenantId="unknown",transport="unknown"} 1'
+      'inbound_messages_processed_total{instanceId="unknown",origin="unknown",tenantId="unknown"} 1'
     );
   });
 
   it('exposes counters for delivery success and socket reconnections', () => {
     whatsappOutboundDeliverySuccessCounter.inc({
-      transport: 'http',
       origin: 'ticket-service',
       tenantId: 'tenant-metrics',
       instanceId: 'inst-42',
@@ -57,7 +55,6 @@ describe('metrics collectors', () => {
     });
 
     whatsappSocketReconnectsCounter.inc({
-      transport: 'http',
       origin: 'ticket-service',
       tenantId: 'tenant-metrics',
       instanceId: 'inst-42',
@@ -66,10 +63,10 @@ describe('metrics collectors', () => {
 
     const snapshot = renderMetrics();
     expect(snapshot).toContain(
-      'whatsapp_outbound_delivery_success_total{instanceId="inst-42",messageType="text",origin="ticket-service",status="DELIVERED",tenantId="tenant-metrics",transport="http"} 1'
+      'whatsapp_outbound_delivery_success_total{instanceId="inst-42",messageType="text",origin="ticket-service",status="DELIVERED",tenantId="tenant-metrics"} 1'
     );
     expect(snapshot).toContain(
-      'whatsapp_socket_reconnects_total{instanceId="inst-42",origin="ticket-service",reason="INSTANCE_NOT_CONNECTED",tenantId="tenant-metrics",transport="http"} 1'
+      'whatsapp_socket_reconnects_total{instanceId="inst-42",origin="ticket-service",reason="INSTANCE_NOT_CONNECTED",tenantId="tenant-metrics"} 1'
     );
   });
 });

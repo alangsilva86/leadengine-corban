@@ -48,7 +48,6 @@ type LabelConstraint = {
 type MetricConstraints = Record<string, LabelConstraint>;
 
 const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
-  transport: { limit: 5, defaultValue: 'unknown' },
   origin: { limit: 20, defaultValue: 'unknown' },
   tenantId: { limit: 100, defaultValue: 'unknown' },
   instanceId: { limit: 200, defaultValue: 'unknown' },
