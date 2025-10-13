@@ -33,6 +33,7 @@ import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
 import { manualConversationsRouter } from './routes/manual-conversations';
 import { debugMessagesRouter } from './features/debug/routes/messages';
+import { isWhatsAppEventPollerDisabled } from './config/whatsapp';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -429,7 +430,7 @@ server.listen(PORT, () => {
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
 
-  const pollerDisabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
+  const pollerDisabled = isWhatsAppEventPollerDisabled();
   const isTestEnv = NODE_ENV === 'test';
 
   if (pollerDisabled) {

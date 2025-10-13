@@ -3,6 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 
+import 'tsx/esm';
+
+const {
+  getWebhookReplayUrl,
+  getWebhookApiKey,
+  getBrokerApiKey,
+  getBrokerWebhookUrl,
+} = await import('../config/whatsapp.ts');
+
 const args = process.argv.slice(2);
 
 if (args.length === 0) {
@@ -14,8 +23,8 @@ const filePath = path.resolve(process.cwd(), args[0]);
 const extraArgs = args.slice(1);
 
 const options = {
-  url: process.env.WHATSAPP_WEBHOOK_REPLAY_URL || 'http://localhost:3000/api/integrations/whatsapp/webhook',
-  apiKey: process.env.WHATSAPP_WEBHOOK_API_KEY || process.env.WHATSAPP_BROKER_API_KEY || null,
+  url: getWebhookReplayUrl() || getBrokerWebhookUrl(),
+  apiKey: getWebhookApiKey() ?? getBrokerApiKey(),
 };
 
 for (const arg of extraArgs) {

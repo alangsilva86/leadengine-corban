@@ -22,17 +22,25 @@
 
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
+import 'tsx/esm';
 
-const requiredEnv = ['API_URL', 'WHATSAPP_WEBHOOK_API_KEY', 'TENANT_ID', 'INSTANCE_ID'];
+const { getWebhookApiKey, getBrokerApiKey } = await import('../config/whatsapp.ts');
+
+const requiredEnv = ['API_URL', 'TENANT_ID', 'INSTANCE_ID'];
 
 const missing = requiredEnv.filter((key) => !process.env[key] || process.env[key].trim().length === 0);
+const resolvedWebhookKey = getWebhookApiKey() ?? getBrokerApiKey();
+
+if (!resolvedWebhookKey) {
+  missing.push('WHATSAPP_WEBHOOK_API_KEY');
+}
 if (missing.length > 0) {
   console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
 
 const API_URL = process.env.API_URL.replace(/\/+$/, '');
-const WEBHOOK_KEY = process.env.WHATSAPP_WEBHOOK_API_KEY;
+const WEBHOOK_KEY = resolvedWebhookKey;
 const TENANT_ID = process.env.TENANT_ID;
 const INSTANCE_ID = process.env.INSTANCE_ID;
 const TEST_PHONE = process.env.TEST_PHONE ?? '+5511999999999';

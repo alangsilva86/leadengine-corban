@@ -5,12 +5,16 @@ import type { Message, Ticket } from '@ticketz/core';
 
 import { integrationWebhooksRouter } from './webhooks';
 
-const findOrCreateOpenTicketByChatMock = vi.fn();
-const upsertMessageByExternalIdMock = vi.fn();
+const storageMocks = vi.hoisted(() => ({
+  findOrCreateOpenTicketByChatMock: vi.fn(),
+  upsertMessageByExternalIdMock: vi.fn(),
+}));
+
+const { findOrCreateOpenTicketByChatMock, upsertMessageByExternalIdMock } = storageMocks;
 
 vi.mock('@ticketz/storage', () => ({
-  findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
-  upsertMessageByExternalId: upsertMessageByExternalIdMock,
+  findOrCreateOpenTicketByChat: storageMocks.findOrCreateOpenTicketByChatMock,
+  upsertMessageByExternalId: storageMocks.upsertMessageByExternalIdMock,
 }));
 
 vi.mock('../lib/prisma', () => {
@@ -62,6 +66,7 @@ await import('../features/whatsapp-inbound/workers/inbound-processor');
 const { whatsappEventQueueEmitter } = await import('../features/whatsapp-inbound/queue/event-queue');
 
 const { refreshFeatureFlags } = await import('../config/feature-flags');
+const whatsappConfigModule = await import('../config/whatsapp');
 
 const { prisma } = await import('../lib/prisma');
 const { addAllocations } = await import('../data/lead-allocation-store');
@@ -188,6 +193,7 @@ describe('WhatsApp webhook (integration)', () => {
     process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
     delete process.env.WHATSAPP_PASSTHROUGH_MODE;
     refreshFeatureFlags({ whatsappPassthroughMode: false });
+    whatsappConfigModule.refreshWhatsAppEnv();
 
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'queue-1',
@@ -238,7 +244,9 @@ describe('WhatsApp webhook (integration)', () => {
   afterEach(() => {
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
     delete process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET;
+    delete process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE;
     delete process.env.WHATSAPP_PASSTHROUGH_MODE;
+    whatsappConfigModule.refreshWhatsAppEnv();
     refreshFeatureFlags({ whatsappPassthroughMode: false });
   });
 
@@ -254,6 +262,7 @@ describe('WhatsApp webhook (integration)', () => {
 
   it('returns 400 when webhook payload is not valid JSON', async () => {
     process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
+    whatsappConfigModule.refreshWhatsAppEnv();
     const app = createApp();
 
     const response = await request(app)
@@ -271,6 +280,7 @@ describe('WhatsApp webhook (integration)', () => {
 
   it('rejects webhook with invalid signature in strict mode', async () => {
     process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET = 'signature-secret';
+    whatsappConfigModule.refreshWhatsAppEnv();
     const app = createApp();
 
     const response = await request(app)
@@ -280,6 +290,56 @@ describe('WhatsApp webhook (integration)', () => {
       .send({ ping: 'pong' });
 
     expect(response.status).toBe(401);
+  });
+
+  it('validates webhook credentials using the WhatsApp config accessors', async () => {
+    stubInboundSuccessMocks();
+
+    const getWebhookApiKeySpy = vi.spyOn(whatsappConfigModule, 'getWebhookApiKey');
+    const isWebhookSignatureRequiredSpy = vi.spyOn(
+      whatsappConfigModule,
+      'isWebhookSignatureRequired'
+    );
+    const getWebhookSignatureSecretSpy = vi.spyOn(
+      whatsappConfigModule,
+      'getWebhookSignatureSecret'
+    );
+
+    process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
+    process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET = 'signature-secret';
+    process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'true';
+    whatsappConfigModule.refreshWhatsAppEnv();
+
+    const app = createApp();
+
+    const payload = {
+      instanceId: 'inst-1',
+      event: 'message',
+      direction: 'inbound',
+      timestamp: Date.now(),
+      tenantId: 'tenant-1',
+      from: { phone: '+5511999998888', name: 'Maria' },
+      message: { id: 'wamid.123', type: 'text', text: 'Olá' },
+    };
+
+    const bodyText = JSON.stringify(payload);
+    const crypto = await import('node:crypto');
+    const signature = crypto.createHmac('sha256', 'signature-secret').update(bodyText).digest('hex');
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'test-key')
+      .set('x-signature-sha256', signature)
+      .send(payload);
+
+    expect(response.status).toBe(200);
+    await waitForProcessed;
+
+    expect(getWebhookApiKeySpy).toHaveBeenCalled();
+    expect(isWebhookSignatureRequiredSpy).toHaveBeenCalled();
+    expect(getWebhookSignatureSecretSpy).toHaveBeenCalled();
   });
 
   it('queues inbound message and creates allocation', async () => {

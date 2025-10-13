@@ -1,5 +1,3 @@
-apps/api/tsup.config.ts:3 - default
-apps/api/vitest.config.ts:8 - default
 apps/web/tailwind.config.ts:123 - default (used in module)
 packages/contracts/tsup.config.ts:19 - default
 packages/core/index.d.ts:18 - EntityId

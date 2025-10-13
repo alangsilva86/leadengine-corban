@@ -4,6 +4,8 @@ import { logger } from '../config/logger';
 import {
   getBrokerApiKey,
   getBrokerBaseUrl,
+  getBrokerTimeoutMs,
+  getBrokerWebhookUrl,
   getRawWhatsAppMode,
   getWebhookVerifyToken,
   getWhatsAppMode,
@@ -235,16 +237,12 @@ export interface WhatsAppMessageResult {
   timestamp?: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 15_000;
-
 type BrokerRequestOptions = {
   apiKey?: string;
   timeoutMs?: number;
   searchParams?: Record<string, string | number | undefined>;
   idempotencyKey?: string;
 };
-
-const trim = (value: string | null | undefined): string => (value ?? '').trim();
 
 type DeleteInstanceOptions = {
   instanceId?: string;
@@ -279,55 +277,21 @@ class WhatsAppBrokerClient {
   }
 
   private get baseUrl(): string {
-    const configured = getBrokerBaseUrl() ?? trim(process.env.BROKER_BASE_URL);
-    return configured ? configured.replace(/\/$/, '') : '';
+    const configured = getBrokerBaseUrl();
+    return configured ? configured : '';
   }
 
   private get brokerApiKey(): string {
-    const configured = getBrokerApiKey() ?? trim(process.env.BROKER_API_KEY);
-    return configured;
+    const configured = getBrokerApiKey();
+    return configured ?? '';
   }
 
   private get timeoutMs(): number {
-    const read = (value: string | undefined): number | null => {
-      if (!value) {
-        return null;
-      }
-
-      const parsed = Number.parseInt(value, 10);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        return parsed;
-      }
-
-      return null;
-    };
-
-    const candidates = [
-      process.env.WHATSAPP_BROKER_TIMEOUT_MS,
-      process.env.LEAD_ENGINE_TIMEOUT_MS,
-    ];
-
-    for (const candidate of candidates) {
-      const resolved = read(candidate);
-      if (resolved) {
-        return resolved;
-      }
-    }
-
-    return DEFAULT_TIMEOUT_MS;
+    return getBrokerTimeoutMs();
   }
 
   private get brokerWebhookUrl(): string {
-    const configured =
-      trim(process.env.WHATSAPP_BROKER_WEBHOOK_URL) ||
-      trim(process.env.WHATSAPP_WEBHOOK_URL) ||
-      trim(process.env.WEBHOOK_URL);
-
-    if (configured) {
-      return configured;
-    }
-
-    return 'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
+    return getBrokerWebhookUrl();
   }
 
   private get webhookVerifyToken(): string {

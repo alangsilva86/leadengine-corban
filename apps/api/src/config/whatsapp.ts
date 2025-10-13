@@ -1,33 +1,61 @@
-import { getWhatsAppConfig, refreshWhatsAppConfig, type WhatsAppTransportMode } from './whatsapp-config';
+import {
+  getBrokerApiKey as baseGetBrokerApiKey,
+  getBrokerBaseUrl as baseGetBrokerBaseUrl,
+  getBrokerTimeoutMs as baseGetBrokerTimeoutMs,
+  getBrokerWebhookUrl as baseGetBrokerWebhookUrl,
+  getDefaultInstanceId as baseGetDefaultInstanceId,
+  getDefaultTenantId as baseGetDefaultTenantId,
+  getRawWhatsAppMode as baseGetRawWhatsAppMode,
+  getWebhookApiKey as baseGetWebhookApiKey,
+  getWebhookReplayUrl as baseGetWebhookReplayUrl,
+  getWebhookSignatureSecret as baseGetWebhookSignatureSecret,
+  getWebhookVerifyToken as baseGetWebhookVerifyToken,
+  getWhatsAppConfig,
+  getWhatsAppCorrelationSeed as baseGetWhatsAppCorrelationSeed,
+  getWhatsAppMode as baseGetWhatsAppMode,
+  isWebhookSignatureRequired as baseIsWebhookSignatureRequired,
+  isWhatsAppEventPollerDisabled as baseIsWhatsAppEventPollerDisabled,
+  refreshWhatsAppEnv as baseRefreshWhatsAppEnv,
+  shouldBypassTenantGuards as baseShouldBypassTenantGuards,
+  type WhatsAppTransportMode,
+} from '../../../../config/whatsapp';
 import { isWhatsappBrokerStrictConfigEnabled } from './feature-flags';
 
-export const getBrokerBaseUrl = (): string | null => getWhatsAppConfig().broker.baseUrl;
+export const getBrokerBaseUrl = (): string | null => baseGetBrokerBaseUrl();
 
-export const getBrokerApiKey = (): string | null => getWhatsAppConfig().broker.apiKey;
+export const getBrokerApiKey = (): string | null => baseGetBrokerApiKey();
+
+export const getBrokerTimeoutMs = (): number => baseGetBrokerTimeoutMs();
+
+export const getBrokerWebhookUrl = (): string => baseGetBrokerWebhookUrl();
+
+export const getDefaultInstanceId = (): string | null => baseGetDefaultInstanceId();
+
+export const getDefaultTenantId = (): string => baseGetDefaultTenantId();
+
+export const getWebhookVerifyToken = (): string | null => baseGetWebhookVerifyToken();
+
+export const getWebhookApiKey = (): string | null => baseGetWebhookApiKey();
+
+export const getWebhookSignatureSecret = (): string | null => baseGetWebhookSignatureSecret();
+
+export const isWebhookSignatureRequired = (): boolean => baseIsWebhookSignatureRequired();
+
+export const shouldBypassTenantGuards = (): boolean => baseShouldBypassTenantGuards();
+
+export const getWhatsAppMode = (): WhatsAppTransportMode => baseGetWhatsAppMode();
+
+export const getWhatsAppCorrelationSeed = (): string => baseGetWhatsAppCorrelationSeed();
+
+export const getRawWhatsAppMode = (): string => baseGetRawWhatsAppMode();
+
+export const isWhatsAppEventPollerDisabled = (): boolean => baseIsWhatsAppEventPollerDisabled();
+
+export const getWebhookReplayUrl = (): string => baseGetWebhookReplayUrl();
 
 export const isStrictBrokerConfigEnabled = (): boolean =>
-  getWhatsAppConfig().broker.strictConfig || isWhatsappBrokerStrictConfigEnabled();
+  (getWhatsAppConfig().broker.strictConfig ?? false) || isWhatsappBrokerStrictConfigEnabled();
 
-export const getDefaultInstanceId = (): string | null => getWhatsAppConfig().defaults.instanceId;
+export const refreshWhatsAppEnv = () => baseRefreshWhatsAppEnv();
 
-export const getDefaultTenantId = (): string => getWhatsAppConfig().defaults.tenantId;
-
-export const getWebhookVerifyToken = (): string | null => getWhatsAppConfig().webhook.verifyToken;
-
-export const getWebhookApiKey = (): string | null => getWhatsAppConfig().webhook.apiKey;
-
-export const getWebhookSignatureSecret = (): string | null => getWhatsAppConfig().webhook.signatureSecret;
-
-export const isWebhookSignatureRequired = (): boolean => getWhatsAppConfig().webhook.enforceSignature;
-
-export const shouldBypassTenantGuards = (): boolean => getWhatsAppConfig().flags.passthroughMode;
-
-export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().runtime.mode;
-
-export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawMode;
-
-export const isWhatsAppEventPollerDisabled = (): boolean => getWhatsAppConfig().runtime.eventPollerDisabled;
-
-export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
-
-export type { WhatsAppTransportMode } from './whatsapp-config';
+export type { WhatsAppTransportMode };
