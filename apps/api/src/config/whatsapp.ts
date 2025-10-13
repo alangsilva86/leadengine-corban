@@ -32,6 +32,11 @@ export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawM
 
 export const isWhatsAppEventPollerDisabled = (): boolean => getWhatsAppConfig().runtime.eventPollerDisabled;
 
+export const getSidecarSessionsPath = (): string => getWhatsAppConfig().runtime.sidecarSessionsPath;
+
+export const hasCustomSidecarSessionsPath = (): boolean =>
+  getWhatsAppConfig().runtime.hasCustomSidecarSessionsPath;
+
 export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
 
 export type { WhatsAppTransportMode } from './whatsapp-config';
