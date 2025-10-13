@@ -58,7 +58,7 @@ services:
     ports:
       - "4000:4000"
     volumes:
-      - ./sessions:/app/sessions
+      - whatsapp_sessions_data:/app/sessions
     depends_on:
       - postgres
       - redis
@@ -83,6 +83,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  whatsapp_sessions_data:
 
 networks:
   ticketz-network:

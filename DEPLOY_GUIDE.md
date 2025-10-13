@@ -57,6 +57,18 @@ nano .env
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
 - `WHATSAPP_MODE`: Defina como `http` para habilitar a integração com o broker externo, juntamente com `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_API_KEY`
 
+> 💡 `WHATSAPP_MODE=sidecar` ativa o adaptador local. `WHATSAPP_MODE=http` continua disponível como rollback imediato: altere a variável e reinicie o container (sem rebuild) para voltar ao broker remoto.
+
+### 1.1. Persistir o session store do WhatsApp
+
+O sidecar Baileys requer um diretório persistente para manter as credenciais criptografadas. Garanta que o volume nomeado `whatsapp_sessions_data` exista antes do deploy:
+
+```bash
+docker volume create whatsapp_sessions_data
+```
+
+Ambos os manifests (`docker-compose.yml` e `docker-compose.prod.yml`) já montam esse volume em `/app/sessions`; nunca o remova durante rollouts, caso contrário o pareamento será perdido.
+
 ### 2. Configurar Domínio (Opcional)
 
 Se você tem um domínio, configure os DNS:
