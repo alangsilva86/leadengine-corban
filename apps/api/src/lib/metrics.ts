@@ -50,11 +50,18 @@ type MetricConstraints = Record<string, LabelConstraint>;
 const ORIGIN_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
 const TENANT_CONSTRAINT: LabelConstraint = { limit: 100, defaultValue: 'unknown' };
 const INSTANCE_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
+const TRANSPORT_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
 
 const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
   origin: ORIGIN_CONSTRAINT,
   tenantId: TENANT_CONSTRAINT,
   instanceId: INSTANCE_CONSTRAINT,
+};
+
+const LABEL_CONSTRAINTS_WITH_TRANSPORT: MetricConstraints = {
+  ...BASE_LABEL_CONSTRAINTS,
+  transport: TRANSPORT_CONSTRAINT,
+  transportMode: TRANSPORT_CONSTRAINT,
 };
 
 const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
