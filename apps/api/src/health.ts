@@ -9,11 +9,10 @@ export type HealthPayload = {
   storage: string;
   whatsapp: {
     runtime: {
-      status: 'running' | 'stopped' | 'disabled' | 'inactive' | 'error';
+      status: 'running' | 'disabled';
       mode: string;
-      transport: string;
+      transport: WhatsAppTransportMode;
       disabled: boolean;
-      metrics: WhatsAppEventPollerMetrics;
     };
     mode: string;
     transportMode: WhatsAppTransportMode;
@@ -43,10 +42,35 @@ const deriveStorageBackend = (): string => {
   return 'in-memory';
 };
 
+const deriveRuntimeInfo = (
+  transportMode: WhatsAppTransportMode,
+  rawMode: string | null
+): HealthPayload['whatsapp']['runtime'] => {
+  const normalizedRawMode = (rawMode ?? '').trim();
+  const effectiveMode = normalizedRawMode.length > 0 ? normalizedRawMode : transportMode;
+
+  if (transportMode === 'disabled') {
+    return {
+      status: 'disabled',
+      mode: effectiveMode,
+      transport: transportMode,
+      disabled: true,
+    };
+  }
+
+  return {
+    status: 'running',
+    mode: effectiveMode,
+    transport: transportMode,
+    disabled: false,
+  };
+};
+
 export const buildHealthPayload = ({ environment }: { environment: string }): HealthPayload => {
   const mode = getWhatsAppMode();
   const rawMode = getRawWhatsAppMode();
   const overallStatus = deriveOverallStatus(mode);
+  const runtime = deriveRuntimeInfo(mode, rawMode);
 
   return {
     status: overallStatus,
@@ -55,14 +79,8 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     environment,
     storage: deriveStorageBackend(),
     whatsapp: {
-      runtime: {
-        status: pollerStatus,
-        mode: rawMode || mode,
-        transport: mode,
-        disabled,
-        metrics,
-      },
-      mode: rawMode || mode,
+      runtime,
+      mode: runtime.mode,
       transportMode: mode,
     },
   };
@@ -71,4 +89,5 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
 export const __private = {
   deriveOverallStatus,
   deriveStorageBackend,
+  deriveRuntimeInfo,
 };
