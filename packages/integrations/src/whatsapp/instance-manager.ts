@@ -1,8 +1,29 @@
-import { BaileysWhatsAppProvider, WhatsAppConfig, ConnectionStatus } from './baileys-provider';
+import { BaileysWhatsAppProvider, type WhatsAppConfig, type ConnectionStatus } from './baileys-provider';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
 import path from 'path';
 import fs from 'fs/promises';
+import type { WhatsAppSessionStore } from './session-store';
+
+export interface WhatsAppInstanceManagerOptions {
+  sessionStore?: WhatsAppSessionStore;
+  sessionsPath?: string;
+  environment?: string;
+  reconnect?: Partial<ReconnectConfig>;
+}
+
+export interface ReconnectConfig {
+  initialDelayMs: number;
+  maxDelayMs: number;
+  multiplier: number;
+  maxAttempts: number;
+}
+
+export interface WhatsAppLifecycleObserver {
+  onConnected?(payload: { instance: WhatsAppInstance }): void | Promise<void>;
+  onDisconnected?(payload: { instance: WhatsAppInstance; error?: unknown }): void | Promise<void>;
+  onReconnectAttempt?(payload: { instance: WhatsAppInstance; attempt: number; delayMs: number }): void | Promise<void>;
+}
 
 export interface WhatsAppInstance {
   id: string;
@@ -23,11 +44,41 @@ export interface CreateInstanceRequest {
 export class WhatsAppInstanceManager extends EventEmitter {
   private instances = new Map<string, WhatsAppInstance>();
   private sessionsPath: string;
+  private sessionStore: WhatsAppSessionStore | undefined;
+  private environment: string;
+  private reconnectConfig: ReconnectConfig;
+  private reconnectState = new Map<
+    string,
+    { attempt: number; timer: NodeJS.Timeout | null }
+  >();
+  private lifecycleObservers = new Set<WhatsAppLifecycleObserver>();
+  private shuttingDown = false;
+  private manualDisconnecting = new Set<string>();
 
-  constructor(sessionsPath = './sessions') {
+  constructor(options: WhatsAppInstanceManagerOptions = {}) {
     super();
-    this.sessionsPath = sessionsPath;
-    this.ensureSessionsDirectory();
+    this.sessionStore = options.sessionStore;
+    this.sessionsPath = options.sessionsPath ?? './sessions';
+    this.environment = options.environment ?? process.env.NODE_ENV ?? 'development';
+    this.reconnectConfig = {
+      initialDelayMs: 2000,
+      multiplier: 2,
+      maxDelayMs: 60000,
+      maxAttempts: 10,
+      ...options.reconnect
+    };
+
+    if (!this.sessionStore && this.environment !== 'development') {
+      throw new Error('WhatsApp session store is required outside development environments');
+    }
+
+    if (this.shouldUseDiskStorage()) {
+      void this.ensureSessionsDirectory();
+    }
+  }
+
+  private shouldUseDiskStorage(): boolean {
+    return !this.sessionStore;
   }
 
   private async ensureSessionsDirectory(): Promise<void> {
@@ -38,18 +89,114 @@ export class WhatsAppInstanceManager extends EventEmitter {
     }
   }
 
+  private async resolveSessionConfig(
+    instanceId: string
+  ): Promise<Pick<WhatsAppConfig, 'sessionPath' | 'sessionStore'>> {
+    if (this.sessionStore) {
+      return { sessionStore: this.sessionStore };
+    }
+
+    if (!this.shouldUseDiskStorage()) {
+      throw new Error('No WhatsApp session storage configured');
+    }
+
+    const sessionPath = path.join(this.sessionsPath, instanceId);
+    try {
+      await fs.mkdir(sessionPath, { recursive: true });
+    } catch (error) {
+      logger.error(`Failed to prepare session path for instance ${instanceId}:`, error);
+    }
+
+    return { sessionPath };
+  }
+
+  registerLifecycleObserver(observer: WhatsAppLifecycleObserver): () => void {
+    this.lifecycleObservers.add(observer);
+    return () => {
+      this.lifecycleObservers.delete(observer);
+    };
+  }
+
+  private async notifyLifecycle<K extends keyof WhatsAppLifecycleObserver>(
+    method: K,
+    payload: Parameters<NonNullable<WhatsAppLifecycleObserver[K]>>[0]
+  ): Promise<void> {
+    await Promise.all(
+      Array.from(this.lifecycleObservers).map(async observer => {
+        const handler = observer[method];
+        if (handler) {
+          try {
+            await handler(payload as never);
+          } catch (error) {
+            logger.warn('WhatsApp lifecycle observer failed', { method, error });
+          }
+        }
+      })
+    );
+  }
+
+  private clearReconnectState(instanceId: string): void {
+    const state = this.reconnectState.get(instanceId);
+    if (state?.timer) {
+      clearTimeout(state.timer);
+    }
+    this.reconnectState.delete(instanceId);
+  }
+
+  private scheduleReconnect(instance: WhatsAppInstance, error?: unknown): void {
+    if (this.shuttingDown) return;
+
+    const current = this.reconnectState.get(instance.id) ?? { attempt: 0, timer: null };
+
+    if (current.attempt >= this.reconnectConfig.maxAttempts) {
+      logger.error('Max reconnect attempts reached', { instanceId: instance.id });
+      this.clearReconnectState(instance.id);
+      return;
+    }
+
+    const attempt = current.attempt + 1;
+    const delay = Math.min(
+      this.reconnectConfig.initialDelayMs * Math.pow(this.reconnectConfig.multiplier, attempt - 1),
+      this.reconnectConfig.maxDelayMs
+    );
+
+    logger.info('Scheduling WhatsApp reconnect', {
+      instanceId: instance.id,
+      attempt,
+      delay
+    });
+
+    void this.notifyLifecycle('onReconnectAttempt', { instance, attempt, delayMs: delay });
+    this.emit('instance.reconnect', { instance, attempt, delayMs: delay, error });
+
+    const timer = setTimeout(async () => {
+      try {
+        await instance.provider.initialize();
+      } catch (reconnectError) {
+        logger.error('WhatsApp reconnect attempt failed', {
+          instanceId: instance.id,
+          attempt,
+          error: reconnectError
+        });
+        this.scheduleReconnect(instance, reconnectError);
+      }
+    }, delay);
+
+    this.reconnectState.set(instance.id, { attempt, timer });
+  }
+
   async createInstance(request: CreateInstanceRequest): Promise<WhatsAppInstance> {
     const instanceId = this.generateInstanceId(request.tenantId);
-    
+
     if (this.instances.has(instanceId)) {
       throw new Error(`Instance ${instanceId} already exists`);
     }
 
-    const sessionPath = path.join(this.sessionsPath, instanceId);
-    
+    const sessionConfig = await this.resolveSessionConfig(instanceId);
+
     const config: WhatsAppConfig = {
       instanceId,
-      sessionPath,
+      ...sessionConfig,
       qrCodeCallback: (qr) => this.handleQRCode(instanceId, qr),
       statusCallback: (status) => this.handleStatusChange(instanceId, status)
     };
@@ -81,7 +228,7 @@ export class WhatsAppInstanceManager extends EventEmitter {
     });
 
     this.emit('instance.created', instance);
-    
+
     return instance;
   }
 
@@ -107,6 +254,8 @@ export class WhatsAppInstanceManager extends EventEmitter {
     }
 
     try {
+      this.manualDisconnecting.add(instanceId);
+      this.clearReconnectState(instanceId);
       await instance.provider.disconnect();
       instance.status = 'disconnected';
       logger.info(`Instance ${instanceId} stopped`);
@@ -114,6 +263,8 @@ export class WhatsAppInstanceManager extends EventEmitter {
     } catch (error) {
       logger.error(`Failed to stop instance ${instanceId}:`, error);
       throw error;
+    } finally {
+      this.manualDisconnecting.delete(instanceId);
     }
   }
 
@@ -128,16 +279,24 @@ export class WhatsAppInstanceManager extends EventEmitter {
       await this.stopInstance(instanceId);
     }
 
-    // Remove session files
-    try {
-      const sessionPath = path.join(this.sessionsPath, instanceId);
-      await fs.rm(sessionPath, { recursive: true, force: true });
-    } catch (error) {
-      logger.warn(`Failed to remove session files for ${instanceId}:`, error);
+    // Remove session data
+    if (this.sessionStore) {
+      try {
+        await this.sessionStore.delete(instanceId);
+      } catch (error) {
+        logger.warn(`Failed to delete session store for ${instanceId}:`, error);
+      }
+    } else {
+      try {
+        const sessionPath = path.join(this.sessionsPath, instanceId);
+        await fs.rm(sessionPath, { recursive: true, force: true });
+      } catch (error) {
+        logger.warn(`Failed to remove session files for ${instanceId}:`, error);
+      }
     }
 
     this.instances.delete(instanceId);
-    
+
     logger.info(`Instance ${instanceId} deleted`);
     this.emit('instance.deleted', { instanceId });
   }
@@ -230,12 +389,29 @@ export class WhatsAppInstanceManager extends EventEmitter {
 
     provider.on('connected', () => {
       instance.status = 'connected';
+      this.clearReconnectState(instance.id);
       this.emit('instance.connected', instance);
+      void this.notifyLifecycle('onConnected', { instance });
     });
 
     provider.on('disconnected', (error) => {
       instance.status = 'disconnected';
       this.emit('instance.disconnected', { instance, error });
+      void this.notifyLifecycle('onDisconnected', { instance, error });
+    });
+
+    provider.on('connection.closed', ({ error, shouldReconnect }) => {
+      if (this.manualDisconnecting.has(instance.id) || this.shuttingDown) {
+        this.manualDisconnecting.delete(instance.id);
+        this.clearReconnectState(instance.id);
+        return;
+      }
+
+      if (shouldReconnect) {
+        this.scheduleReconnect(instance, error);
+      } else {
+        this.clearReconnectState(instance.id);
+      }
     });
 
     provider.on('presence.update', (presence) => {
@@ -267,6 +443,27 @@ export class WhatsAppInstanceManager extends EventEmitter {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 8);
     return `${tenantId}_${timestamp}_${random}`;
+  }
+
+  async shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    const instanceIds = Array.from(this.instances.keys());
+
+    for (const instanceId of instanceIds) {
+      this.clearReconnectState(instanceId);
+    }
+
+    await Promise.all(
+      instanceIds.map(async instanceId => {
+        try {
+          await this.stopInstance(instanceId);
+        } catch (error) {
+          logger.error(`Failed to shutdown WhatsApp instance ${instanceId}:`, error);
+        }
+      })
+    );
+
+    this.shuttingDown = false;
   }
 
   // Health check methods
