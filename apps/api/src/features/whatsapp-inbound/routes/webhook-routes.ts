@@ -53,6 +53,17 @@ const readString = (...candidates: unknown[]): string | null => {
   return null;
 };
 
+const normalizeApiKey = (value: string | null): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const bearerMatch = /^bearer\s+(.+)$/i.exec(value);
+  const normalized = (bearerMatch?.[1] ?? value).trim();
+
+  return normalized.length > 0 ? normalized : null;
+};
+
 const normalizeChatId = (value: unknown): string | null => {
   const text = readString(value);
   if (!text) {
@@ -89,21 +100,38 @@ const toRawPreview = (value: unknown): string => {
 
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const requestId = readString(req.header('x-request-id')) ?? randomUUID();
-  const providedApiKey = readString(req.header('x-api-key'), req.header('authorization'));
+  const providedApiKey = normalizeApiKey(
+    readString(req.header('x-api-key'), req.header('authorization'), req.header('x-authorization'))
+  );
   const expectedApiKey = getWebhookApiKey();
   const signatureRequired = isWebhookSignatureRequired();
 
-  if (expectedApiKey && providedApiKey && providedApiKey !== expectedApiKey) {
-    logger.warn('WhatsApp webhook API key mismatch', { requestId });
-    whatsappWebhookEventsCounter.inc({
-      origin: 'webhook',
-      tenantId: 'unknown',
-      instanceId: 'unknown',
-      result: 'rejected',
-      reason: 'invalid_api_key',
-    });
-    res.status(401).json({ ok: false, code: 'INVALID_API_KEY' });
-    return;
+  if (expectedApiKey) {
+    if (!providedApiKey) {
+      logger.warn('WhatsApp webhook API key missing', { requestId });
+      whatsappWebhookEventsCounter.inc({
+        origin: 'webhook',
+        tenantId: 'unknown',
+        instanceId: 'unknown',
+        result: 'rejected',
+        reason: 'invalid_api_key',
+      });
+      res.status(401).json({ ok: false, code: 'INVALID_API_KEY' });
+      return;
+    }
+
+    if (providedApiKey !== expectedApiKey) {
+      logger.warn('WhatsApp webhook API key mismatch', { requestId });
+      whatsappWebhookEventsCounter.inc({
+        origin: 'webhook',
+        tenantId: 'unknown',
+        instanceId: 'unknown',
+        result: 'rejected',
+        reason: 'invalid_api_key',
+      });
+      res.status(401).json({ ok: false, code: 'INVALID_API_KEY' });
+      return;
+    }
   }
 
   if (signatureRequired) {
