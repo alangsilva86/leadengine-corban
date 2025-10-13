@@ -47,7 +47,6 @@ import {
   type NormalizedWhatsAppBrokerError,
 } from './whatsapp-broker-client';
 import { getWhatsAppTransport } from '../features/whatsapp-transport';
-import { whatsappOutboundMetrics } from '../lib/metrics';
 import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { resolveWhatsAppTransport, type WhatsAppTransport } from './whatsapp/transport/transport';
@@ -1617,15 +1616,6 @@ const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] 
   }
 };
 
-export const sendOnTicket = async ({
-  tenantId,
-  operatorId,
-  ticketId,
-  payload,
-  instanceId,
-  idempotencyKey,
-  rateLimitConsumed = false,
-}: SendOnTicketParams): Promise<OutboundMessageResponse> => {
 export const sendOnTicket = async (
   {
     tenantId,
@@ -1634,6 +1624,7 @@ export const sendOnTicket = async (
     payload,
     instanceId,
     idempotencyKey,
+    rateLimitConsumed = false,
   }: SendOnTicketParams,
   dependencies: WhatsAppTransportDependencies = {}
 ): Promise<OutboundMessageResponse> => {
@@ -1782,16 +1773,6 @@ type SendToContactParams = {
   rateLimitConsumed?: boolean;
 };
 
-export const sendToContact = async ({
-  tenantId,
-  operatorId,
-  contactId,
-  payload,
-  instanceId,
-  to,
-  idempotencyKey,
-  rateLimitConsumed = false,
-}: SendToContactParams): Promise<OutboundMessageResponse> => {
 export const sendToContact = async (
   {
     tenantId,
@@ -1801,6 +1782,7 @@ export const sendToContact = async (
     instanceId,
     to,
     idempotencyKey,
+    rateLimitConsumed = false,
   }: SendToContactParams,
   dependencies: WhatsAppTransportDependencies = {}
 ): Promise<OutboundMessageResponse> => {
@@ -1862,15 +1844,6 @@ export const sendToContact = async (
     });
   }
 
-  return sendOnTicket({
-    tenantId: resolvedTenantId,
-    operatorId,
-    ticketId: activeTicket.id,
-    payload,
-    instanceId,
-    idempotencyKey,
-    rateLimitConsumed,
-  });
   return sendOnTicket(
     {
       tenantId: resolvedTenantId,
@@ -1879,6 +1852,7 @@ export const sendToContact = async (
       payload,
       instanceId,
       idempotencyKey,
+      rateLimitConsumed,
     },
     dependencies
   );
@@ -1893,14 +1867,6 @@ type SendAdHocParams = {
   rateLimitConsumed?: boolean;
 };
 
-export const sendAdHoc = async ({
-  operatorId,
-  instanceId,
-  to,
-  payload,
-  idempotencyKey,
-  rateLimitConsumed = false,
-}: SendAdHocParams): Promise<OutboundMessageResponse> => {
 export const sendAdHoc = async (
   {
     operatorId,
@@ -1908,6 +1874,7 @@ export const sendAdHoc = async (
     to,
     payload,
     idempotencyKey,
+    rateLimitConsumed = false,
   }: SendAdHocParams,
   dependencies: WhatsAppTransportDependencies = {}
 ): Promise<OutboundMessageResponse> => {
@@ -1950,16 +1917,6 @@ export const sendAdHoc = async (
     });
   }
 
-  return sendToContact({
-    tenantId,
-    operatorId,
-    contactId: contact.id,
-    payload,
-    instanceId,
-    to: normalized.e164,
-    idempotencyKey,
-    rateLimitConsumed,
-  });
   return sendToContact(
     {
       tenantId,
@@ -1969,6 +1926,7 @@ export const sendAdHoc = async (
       instanceId,
       to: normalized.e164,
       idempotencyKey,
+      rateLimitConsumed,
     },
     dependencies
   );
