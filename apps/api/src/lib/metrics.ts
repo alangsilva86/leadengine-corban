@@ -61,6 +61,10 @@ const SHARED_LABEL_CONSTRAINTS: MetricConstraints = {
 const LABEL_CONSTRAINTS_WITH_TRANSPORT: MetricConstraints = {
   transport: TRANSPORT_CONSTRAINT,
   ...SHARED_LABEL_CONSTRAINTS,
+const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
+  origin: { limit: 20, defaultValue: 'unknown' },
+  tenantId: { limit: 100, defaultValue: 'unknown' },
+  instanceId: { limit: 200, defaultValue: 'unknown' },
 };
 
 const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {

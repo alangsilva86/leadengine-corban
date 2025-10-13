@@ -1976,7 +1976,6 @@ The passthrough handler above short-circuits all validations.
     }
 
     inboundMessagesProcessedCounter.inc({
-      transport: WHATSAPP_TRANSPORT_MODE,
       origin: 'passthrough',
       tenantId,
       instanceId: instanceId ?? 'unknown',

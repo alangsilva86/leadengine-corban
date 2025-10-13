@@ -267,7 +267,7 @@ describe('Outbound message routes', () => {
           externalId: `wamid-${counter.toString().padStart(3, '0')}`,
           status: 'SENT',
           timestamp: new Date().toISOString(),
-          raw: { payload, transport: 'http' },
+          raw: { payload },
         };
       })
       .mockName('sendMessage');
@@ -376,7 +376,7 @@ describe('Outbound message routes', () => {
 
     const metricsSnapshot = renderMetrics();
     expect(metricsSnapshot).toContain(
-      'whatsapp_outbound_total{instanceId="instance-001",origin="ticket-service",status="SENT",tenantId="tenant-123",transport="http"} 1'
+      'whatsapp_outbound_total{instanceId="instance-001",origin="ticket-service",status="SENT",tenantId="tenant-123"} 1'
     );
   });
 
