@@ -2,15 +2,8 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 
-import {
-  findOrCreateOpenTicketByChat,
-  upsertMessageByExternalId,
-  type PassthroughMessage,
-} from '@ticketz/storage';
-
 import { asyncHandler } from '../../../middleware/error-handler';
 import { logger } from '../../../config/logger';
-import { getSocketServer } from '../../../lib/socket-registry';
 import {
   getDefaultInstanceId,
   getDefaultTenantId,
@@ -24,6 +17,7 @@ import {
   normalizeUpsertEvent,
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
+import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -92,127 +86,6 @@ const toRawPreview = (value: unknown): string => {
       ? fallback.slice(0, MAX_RAW_PREVIEW_LENGTH)
       : fallback;
   }
-};
-
-const resolveMedia = (
-  message: Record<string, unknown> | null | undefined
-): { mediaType: string; caption?: string; mimeType?: string; fileName?: string; size?: number } | null => {
-  if (!message) {
-    return null;
-  }
-
-  const media = message.media as Record<string, unknown> | null | undefined;
-  if (!media) {
-    return null;
-  }
-
-  const mediaType = readString(media.mediaType) ?? 'file';
-  const caption = readString(media.caption) ?? undefined;
-  const mimeType = readString(media.mimetype ?? media.mimeType) ?? undefined;
-  const fileName = readString(media.fileName ?? media.filename) ?? undefined;
-  const sizeCandidate = media.fileLength ?? media.size;
-  const size = typeof sizeCandidate === 'number' && Number.isFinite(sizeCandidate)
-    ? sizeCandidate
-    : undefined;
-
-  return {
-    mediaType,
-    caption,
-    mimeType,
-    fileName,
-    size,
-  };
-};
-
-const emitRealtime = (tenantId: string, ticketId: string, message: PassthroughMessage) => {
-  const socket = getSocketServer();
-  if (!socket) {
-    return;
-  }
-
-  socket.to(`tenant:${tenantId}`).emit('messages.new', message);
-  socket.to(`ticket:${ticketId}`).emit('messages.new', message);
-};
-
-const persistInboundMessage = async (
-  tenantId: string,
-  chatId: string,
-  instanceId: string | null,
-  rawEvent: RawBaileysUpsertEvent,
-  payload: ReturnType<typeof normalizeUpsertEvent>['normalized'][number]
-): Promise<PassthroughMessage | null> => {
-  const data = payload.data;
-  const messageRecord = (data.message ?? {}) as Record<string, unknown>;
-  const messageKey = (messageRecord.key ?? {}) as Record<string, unknown>;
-
-  const externalId =
-    readString(messageRecord.id, messageKey.id, payload.messageId) ?? `IN-${Date.now()}-${Math.random()}`;
-  const direction = payload.data.direction === 'outbound' ? 'outbound' : 'inbound';
-  const typeRaw = readString(messageRecord.type);
-  const messageType: 'text' | 'media' | 'unknown' =
-    typeRaw === 'text' ? 'text' : typeRaw === 'media' ? 'media' : 'unknown';
-  const text = readString(messageRecord.text, messageRecord.conversation, messageRecord.caption);
-  const media = resolveMedia(messageRecord);
-  const timestamp = readString(data.timestamp) ?? undefined;
-
-  const remoteJid =
-    normalizeChatId(
-      messageKey.remoteJid ??
-        data.metadata?.contact?.jid ??
-        data.metadata?.contact?.remoteJid ??
-        (rawEvent as { payload?: { messages?: Array<{ key?: { remoteJid?: string } }> } })?.payload?.messages?.[
-          payload.messageIndex
-        ]?.key?.remoteJid
-    ) ?? chatId;
-
-  const ticketContext = await findOrCreateOpenTicketByChat({
-    tenantId,
-    chatId: remoteJid,
-    displayName: readString(data.from?.name, data.from?.pushName, data.from?.phone, remoteJid) ?? remoteJid,
-    phone: readString(data.from?.phone, remoteJid) ?? remoteJid,
-    instanceId,
-  });
-
-  const metadata: Record<string, unknown> = {
-    source: 'baileys',
-    raw: toRawPreview(rawEvent),
-    broker: {
-      instanceId,
-      sessionId: payload.sessionId ?? null,
-      brokerId: payload.brokerId ?? null,
-    },
-    remoteJid,
-  };
-
-  if (data.metadata) {
-    metadata.normalized = data.metadata;
-  }
-
-  const upserted = await upsertMessageByExternalId({
-    tenantId,
-    ticketId: ticketContext.ticket.id,
-    chatId: remoteJid,
-    direction,
-    externalId,
-    type: media ? 'media' : messageType,
-    text: text ?? null,
-    media: media
-      ? {
-          mediaType: media.mediaType,
-          caption: media.caption,
-          mimeType: media.mimeType ?? null,
-          fileName: media.fileName ?? null,
-          size: media.size ?? null,
-          url: null,
-        }
-      : null,
-    metadata,
-    timestamp,
-  });
-
-  emitRealtime(tenantId, ticketContext.ticket.id, upserted.message);
-
-  return upserted.message;
 };
 
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
@@ -291,8 +164,77 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       const chatId = chatIdCandidate ?? `${tenantId}@baileys`;
 
       try {
-        const message = await persistInboundMessage(tenantId, chatId, instanceId ?? null, eventRecord, normalized);
-        if (message) {
+        const data = normalized.data;
+        const messageRecord = (data.message ?? {}) as Record<string, unknown>;
+        const messageKey = (messageRecord.key ?? {}) as Record<string, unknown>;
+        const contactRecord = (data.contact ?? {}) as Record<string, unknown>;
+        const metadataBase =
+          data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+            ? { ...(data.metadata as Record<string, unknown>) }
+            : ({} as Record<string, unknown>);
+
+        const remoteJid =
+          normalizeChatId(
+            messageKey.remoteJid ??
+              data.metadata?.contact?.jid ??
+              data.metadata?.contact?.remoteJid ??
+              (eventRecord as { payload?: { messages?: Array<{ key?: { remoteJid?: string } }> } })?.payload?.messages?.[
+                normalized.messageIndex
+              ]?.key?.remoteJid
+          ) ?? chatId;
+
+        const direction = (data.direction ?? 'inbound').toString().toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';
+        const externalId = readString(messageRecord.id, messageKey.id, normalized.messageId);
+        const timestamp = readString(data.timestamp) ?? null;
+
+        const brokerMetadata =
+          metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
+            ? { ...(metadataBase.broker as Record<string, unknown>) }
+            : ({} as Record<string, unknown>);
+
+        brokerMetadata.instanceId = brokerMetadata.instanceId ?? instanceId ?? null;
+        brokerMetadata.sessionId = brokerMetadata.sessionId ?? normalized.sessionId ?? null;
+        brokerMetadata.brokerId = brokerMetadata.brokerId ?? normalized.brokerId ?? null;
+        brokerMetadata.origin = brokerMetadata.origin ?? 'webhook';
+
+        const metadata: Record<string, unknown> = {
+          ...metadataBase,
+          source: metadataBase.source ?? 'baileys:webhook',
+          direction,
+          remoteJid: metadataBase.remoteJid ?? remoteJid,
+          chatId: metadataBase.chatId ?? chatId,
+          tenantId: metadataBase.tenantId ?? tenantId,
+          instanceId: metadataBase.instanceId ?? instanceId ?? null,
+          sessionId: metadataBase.sessionId ?? normalized.sessionId ?? null,
+          normalizedIndex: normalized.messageIndex,
+          raw: metadataBase.raw ?? toRawPreview(eventRecord),
+          broker: brokerMetadata,
+        };
+
+        const processed = await ingestInboundWhatsAppMessage({
+          origin: 'webhook',
+          transport: 'whatsapp',
+          instanceId: instanceId ?? 'unknown-instance',
+          chatId,
+          tenantId,
+          message: {
+            kind: 'message',
+            id: normalized.messageId ?? null,
+            externalId,
+            brokerMessageId: normalized.messageId,
+            timestamp,
+            direction,
+            contact: contactRecord,
+            payload: messageRecord,
+            metadata,
+          },
+          raw: {
+            event: eventRecord,
+            normalizedIndex: normalized.messageIndex,
+          },
+        });
+
+        if (processed) {
           persisted += 1;
         }
       } catch (error) {
