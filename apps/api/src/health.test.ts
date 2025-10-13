@@ -40,6 +40,19 @@ describe('buildHealthPayload', () => {
 
     delete process.env.WHATSAPP_MODE;
     refreshWhatsAppEnv();
+
+    const { buildHealthPayload } = await import('./health');
+    const payload = buildHealthPayload({ environment: 'qa' });
+
+    expect(payload.status).toBe('ok');
+    expect(payload.whatsapp.mode).toBe('sidecar');
+    expect(payload.whatsapp.transportMode).toBe('http');
+    expect(payload.whatsapp.runtime).toEqual({
+      status: 'running',
+      mode: 'sidecar',
+      transport: 'http',
+      disabled: false,
+    });
   });
 
   it('detects prisma-backed storage from environment variables', async () => {

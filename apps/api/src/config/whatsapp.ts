@@ -28,6 +28,8 @@ export const shouldBypassTenantGuards = (): boolean => getWhatsAppConfig().flags
 
 export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().runtime.mode;
 
+export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawMode;
+
 export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
 
 export type { WhatsAppTransportMode } from './whatsapp-config';

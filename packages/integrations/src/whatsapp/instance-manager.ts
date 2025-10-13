@@ -5,6 +5,9 @@ import path from 'path';
 import fs from 'fs/promises';
 import type { WhatsAppSessionStore } from './session-store';
 
+/**
+ * @deprecated The WhatsApp sidecar runtime has been removed. This manager will be deleted in a future release.
+ */
 export interface WhatsAppInstanceManagerOptions {
   sessionStore?: WhatsAppSessionStore;
   sessionsPath?: string;
@@ -12,6 +15,9 @@ export interface WhatsAppInstanceManagerOptions {
   reconnect?: Partial<ReconnectConfig>;
 }
 
+/**
+ * @deprecated The WhatsApp sidecar runtime has been removed. This manager will be deleted in a future release.
+ */
 export interface ReconnectConfig {
   initialDelayMs: number;
   maxDelayMs: number;
@@ -19,12 +25,18 @@ export interface ReconnectConfig {
   maxAttempts: number;
 }
 
+/**
+ * @deprecated The WhatsApp sidecar runtime has been removed. This manager will be deleted in a future release.
+ */
 export interface WhatsAppLifecycleObserver {
   onConnected?(payload: { instance: WhatsAppInstance }): void | Promise<void>;
   onDisconnected?(payload: { instance: WhatsAppInstance; error?: unknown }): void | Promise<void>;
   onReconnectAttempt?(payload: { instance: WhatsAppInstance; attempt: number; delayMs: number }): void | Promise<void>;
 }
 
+/**
+ * @deprecated The WhatsApp sidecar runtime has been removed. This manager will be deleted in a future release.
+ */
 export interface WhatsAppInstance {
   id: string;
   tenantId: string;
@@ -35,12 +47,18 @@ export interface WhatsAppInstance {
   lastActivity?: Date;
 }
 
+/**
+ * @deprecated The WhatsApp sidecar runtime has been removed. This manager will be deleted in a future release.
+ */
 export interface CreateInstanceRequest {
   tenantId: string;
   name: string;
   webhookUrl?: string;
 }
 
+/**
+ * @deprecated The WhatsApp sidecar runtime has been removed. This manager will be deleted in a future release.
+ */
 export class WhatsAppInstanceManager extends EventEmitter {
   private instances = new Map<string, WhatsAppInstance>();
   private sessionsPath: string;

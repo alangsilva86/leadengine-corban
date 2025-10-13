@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 export type WhatsAppTransportMode = 'http';
+import { logger } from './logger';
+
+export type WhatsAppTransportMode = 'http' | 'dryrun' | 'disabled';
 
 type Booleanish = string | undefined | null;
 
@@ -94,6 +97,19 @@ const assertSingleTransportMode = (raw: string | undefined | null): void => {
   const normalized = normalizeString(raw);
   if (!normalized || normalized.toLowerCase() === 'http') {
     return;
+const parseMode = (raw: string | undefined | null): { mode: WhatsAppTransportMode; raw: string } => {
+  const normalized = normalizeString(raw)?.toLowerCase() ?? '';
+
+  if (normalized === 'sidecar' || normalized === 'baileys') {
+    logger.warn('Deprecated WhatsApp sidecar mode detected; falling back to HTTP transport', {
+      requestedMode: normalized,
+      fallbackMode: 'http',
+    });
+    return { mode: 'http', raw: normalized };
+  }
+
+  if (normalized === 'dryrun') {
+    return { mode: 'dryrun', raw: normalized };
   }
 
   throw new Error(

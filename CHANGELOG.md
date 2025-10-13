@@ -12,6 +12,13 @@
 
 ### Removed
 - Legacy sidecar runtime, dry-run transport and related feature flag plumbing have been deleted from the API codebase.
+## 2025-02-25
+
+### Changed
+- Removed support for the WhatsApp sidecar transport across docs and Docker manifests, standardising on the HTTP broker configuration.
+
+### Removed
+- Dropped the `whatsapp_sessions_data` volume and any sidecar-specific environment variables from local and production Compose files. Operators should delete the orphaned volume and decommission sidecar containers during the upgrade.
 
 ## 2025-02-14
 
