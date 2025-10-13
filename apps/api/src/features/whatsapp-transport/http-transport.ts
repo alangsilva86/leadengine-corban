@@ -12,6 +12,7 @@ import {
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
 } from '../../services/whatsapp-broker-client';
+import { logger } from '../../config/logger';
 import type {
   WhatsAppTransport,
   WhatsAppTransportSendMessagePayload,
@@ -32,6 +33,7 @@ const supportedDirectTypes = new Set([
   'template',
   'location',
 ]);
+const mediaDirectTypes = new Set(['image', 'video', 'document', 'audio']);
 
 export class HttpWhatsAppTransport implements WhatsAppTransport {
   readonly mode = 'http' as const;
@@ -43,13 +45,10 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
   private buildDirectMediaRequestPayload(
     normalizedPayload: BrokerOutboundMessage,
     rawPayload: WhatsAppTransportSendMessagePayload
-  ): Record<string, unknown> {
-    if (!['image', 'video', 'document', 'audio'].includes(normalizedPayload.type)) {
+  ): { caption?: string; mediaUrl?: string; mimetype?: string; fileName?: string } {
+    if (!mediaDirectTypes.has(normalizedPayload.type)) {
       return {};
     }
-
-    const rawMedia =
-      rawPayload.media && typeof rawPayload.media === 'object' ? rawPayload.media : undefined;
 
     const toTrimmedString = (value: unknown): string | undefined => {
       if (typeof value !== 'string') {
@@ -60,6 +59,7 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       return trimmed.length > 0 ? trimmed : undefined;
     };
 
+    const mediaRecord = normalizedPayload.media ?? null;
     const captionCandidate = (() => {
       const directCaption = toTrimmedString(rawPayload.caption);
       if (directCaption) {
@@ -74,25 +74,21 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       return undefined;
     })();
 
-    return compactObject({
+    return {
       mediaUrl:
         toTrimmedString(rawPayload.mediaUrl) ??
-        toTrimmedString(normalizedPayload.media?.url) ??
-        (rawMedia ? toTrimmedString(rawMedia['url']) : undefined),
-      mimeType:
+        toTrimmedString(mediaRecord?.url) ??
+        toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['mediaUrl']),
+      mimetype:
         toTrimmedString(rawPayload.mediaMimeType) ??
-        toTrimmedString(normalizedPayload.media?.mimetype) ??
-        (rawMedia
-          ? toTrimmedString(rawMedia['mimeType'] ?? rawMedia['mimetype'])
-          : undefined),
+        toTrimmedString(mediaRecord?.mimetype) ??
+        toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['mimeType']),
       fileName:
         toTrimmedString(rawPayload.mediaFileName) ??
-        toTrimmedString(normalizedPayload.media?.filename) ??
-        (rawMedia
-          ? toTrimmedString(rawMedia['fileName'] ?? rawMedia['filename'])
-          : undefined),
+        toTrimmedString(mediaRecord?.filename) ??
+        toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['fileName']),
       caption: captionCandidate,
-    });
+    };
   }
 
   private buildMessageResult(
@@ -137,9 +133,10 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
 
     const encodedInstanceId = encodeURIComponent(instanceId);
     const mediaPayload = this.buildDirectMediaRequestPayload(normalizedPayload, options.rawPayload);
+    const isMediaType = mediaDirectTypes.has(normalizedPayload.type);
 
-    if (['image', 'video', 'document', 'audio'].includes(normalizedPayload.type)) {
-      const mediaUrl = mediaPayload['mediaUrl'];
+    if (isMediaType) {
+      const mediaUrl = mediaPayload.mediaUrl;
       if (typeof mediaUrl !== 'string' || mediaUrl.length === 0) {
         throw new WhatsAppBrokerError(
           `Direct route for ${normalizedPayload.type} messages requires mediaUrl`,
@@ -153,8 +150,6 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       instanceId,
       to: normalizedPayload.to,
       type: normalizedPayload.type,
-      message: normalizedPayload.content,
-      text: normalizedPayload.type === 'text' ? normalizedPayload.content : undefined,
       previewUrl: normalizedPayload.previewUrl,
       externalId: normalizedPayload.externalId,
       template:
@@ -162,11 +157,59 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       location:
         normalizedPayload.type === 'location' ? (normalizedPayload.location as unknown) : undefined,
       metadata: normalizedPayload.metadata,
-      ...mediaPayload,
+      ...(isMediaType
+        ? (() => {
+            const mediaDescriptor: Record<string, string> = {};
+            if (typeof mediaPayload.mediaUrl === 'string' && mediaPayload.mediaUrl.length > 0) {
+              mediaDescriptor.url = mediaPayload.mediaUrl;
+            }
+            if (typeof mediaPayload.mimetype === 'string' && mediaPayload.mimetype.length > 0) {
+              mediaDescriptor.mimetype = mediaPayload.mimetype;
+            }
+            if (typeof mediaPayload.fileName === 'string' && mediaPayload.fileName.length > 0) {
+              mediaDescriptor.fileName = mediaPayload.fileName;
+            }
+
+            return {
+              caption: mediaPayload.caption,
+              message: mediaPayload.caption,
+              media: mediaDescriptor,
+            };
+          })()
+        : {
+            text: normalizedPayload.content,
+            message: normalizedPayload.content,
+          }),
+    });
+
+    const endpoint = isMediaType ? '/send-media' : '/send-text';
+    const routePath = `/instances/${encodedInstanceId}${endpoint}`;
+
+    const previewSnippet = (() => {
+      const text = normalizedPayload.content ?? '';
+      if (!text) {
+        return null;
+      }
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return null;
+      }
+      return trimmed.length > 64 ? `${trimmed.slice(0, 61)}...` : trimmed;
+    })();
+
+    logger.info('🧭 [WhatsApp Broker] Selecionando rota direta para envio', {
+      instanceId,
+      to: normalizedPayload.to,
+      messageType: normalizedPayload.type,
+      endpoint: routePath,
+      idempotencyKey: options.idempotencyKey ?? null,
+      hasMedia: isMediaType,
+      mediaHasCaption: Boolean(mediaPayload.caption),
+      previewSnippet,
     });
 
     const response = await performWhatsAppBrokerRequest<Record<string, unknown>>(
-      `/instances/${encodedInstanceId}/send-text`,
+      routePath,
       {
         method: 'POST',
         body: JSON.stringify(directRequestBody),
@@ -176,6 +219,16 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
     );
 
     const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+
+    logger.info('🎉 [WhatsApp Broker] Resposta recebida da rota direta', {
+      instanceId,
+      to: normalizedPayload.to,
+      messageType: normalizedPayload.type,
+      endpoint: routePath,
+      externalId: normalizedResponse.externalId,
+      status: normalizedResponse.status,
+    });
+
     return this.buildMessageResult(normalizedPayload, normalizedResponse);
   }
 

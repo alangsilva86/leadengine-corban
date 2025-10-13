@@ -72,6 +72,40 @@ describe('HttpWhatsAppTransport', () => {
     });
   });
 
+  it('dispatches media payloads via the send-media endpoint nesting the descriptor', async () => {
+    const { performRequest } = setupSpies();
+    performRequest.mockResolvedValueOnce({ id: 'wamid-789', status: 'sent' } as Record<string, unknown>);
+
+    const transport = new HttpWhatsAppTransport();
+    await transport.sendMessage('instance-2', {
+      to: '+5511999988877',
+      type: 'image',
+      content: 'Conteúdo ignorado',
+      caption: 'olha a foto',
+      mediaUrl: 'https://cdn.test/foto.jpg',
+      mediaMimeType: 'image/jpeg',
+      mediaFileName: 'foto.jpg',
+    });
+
+    expect(performRequest).toHaveBeenCalledTimes(1);
+    const [path, init] = performRequest.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/instances/instance-2/send-media');
+
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      sessionId: 'instance-2',
+      instanceId: 'instance-2',
+      type: 'image',
+      caption: 'olha a foto',
+      message: 'olha a foto',
+      media: {
+        url: 'https://cdn.test/foto.jpg',
+        mimetype: 'image/jpeg',
+        fileName: 'foto.jpg',
+      },
+    });
+  });
+
   it('derives idempotency key from metadata when option is missing', async () => {
     const { performRequest } = setupSpies();
     performRequest.mockResolvedValueOnce({ id: 'wamid-456', status: 'sent' } as Record<string, unknown>);
