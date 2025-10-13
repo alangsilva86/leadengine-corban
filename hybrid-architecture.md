@@ -27,9 +27,7 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔄 Interface de transporte WhatsApp unificada
 
-- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (sempre `http`).
-- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (`http`, `dryrun`, `disabled`; valores legados `sidecar` caem em `http`).
-- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()`, que permanece em `http` para todo o runtime.
+- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (fixo em `http`; valores legados como `sidecar` apenas geram aviso e convertem automaticamente).
 - `apps/api/src/config/whatsapp.ts` distribui getters (`getBrokerBaseUrl`, `getWebhookApiKey`, `shouldBypassTenantGuards` etc.), removendo leituras diretas de `process.env`.
 - `/healthz` revela o estado do transporte WhatsApp via `apps/api/src/health.ts`, expondo `whatsapp.runtime` (com `mode`, `transport`, `status`, `disabled`) para auditar a disponibilidade do broker HTTP.
 
@@ -66,5 +64,5 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 ## 🔁 Operação contínua
 
 Remova `WHATSAPP_MODE` de ambientes legados; `/healthz` confirma o transporte HTTP ativo.
-Alterar `WHATSAPP_MODE` para `http`, `dryrun` ou `disabled` e reiniciar o serviço é suficiente. Valores `sidecar` herdados apenas disparam aviso nos logs e operam em `http`; `/healthz` confirma o modo ativo antes/depois do rollback.
+Qualquer valor diferente de `http` gera erro de inicialização. Valores herdados como `sidecar` apenas disparam aviso e convertem automaticamente para HTTP, garantindo compatibilidade até a remoção definitiva da variável.
 Com apenas o transporte HTTP habilitado, não há fluxos de rollback entre modos. A operação se concentra em manter as credenciais e o endpoint do broker disponíveis; `/healthz` continua sendo a referência para confirmar o status durante deploys e incidentes.

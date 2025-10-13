@@ -35,7 +35,6 @@ import {
   type TicketNoteVisibility,
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
-import { getWhatsAppMode } from '../config/whatsapp';
 import {
   whatsappOutboundMetrics,
   whatsappOutboundDeliverySuccessCounter,
@@ -71,6 +70,8 @@ const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 type WhatsAppTransportDependencies = {
   transport?: WhatsAppTransport;
 };
+
+const WHATSAPP_TRANSPORT_MODE = 'http' as const;
 
 const OUTBOUND_TPS_DEFAULT = (() => {
   const raw = process.env.OUTBOUND_TPS_DEFAULT;
@@ -1238,7 +1239,7 @@ export const sendMessage = async (
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
   const passthroughMode = isWhatsappPassthroughModeEnabled();
   const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
-  const transportMode = getWhatsAppMode();
+  const transportMode = WHATSAPP_TRANSPORT_MODE;
 
   try {
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
@@ -1423,7 +1424,6 @@ export const sendMessage = async (
               status: dispatchResult.status,
               dispatchedAt: dispatchResult.timestamp,
               raw: dispatchResult.raw ?? undefined,
-              transportMode: transport.mode,
             },
           } as Record<string, unknown>;
 
@@ -1490,7 +1490,7 @@ export const sendMessage = async (
             ticketId: ticket.id,
             messageId: message.id,
             error: reason,
-            transportMode: transport.mode,
+            transport: transport.mode,
             transportErrorCode: code,
             transportStatus: status,
             transportRequestId: requestId,
@@ -1498,7 +1498,7 @@ export const sendMessage = async (
           });
           if (normalizedCode === 'INSTANCE_NOT_CONNECTED') {
             whatsappSocketReconnectsCounter.inc({
-              transport: transportMode,
+              transport: WHATSAPP_TRANSPORT_MODE,
               origin: 'ticket-service',
               tenantId,
               instanceId: instanceId ?? 'unknown',
@@ -1649,7 +1649,7 @@ export const sendOnTicket = async (
   }
 
   const tenantForOperations = resolvedTenantId;
-  const transportMode = getWhatsAppMode();
+  const transportMode = WHATSAPP_TRANSPORT_MODE;
 
   let payloadHash: string | null = null;
   if (idempotencyKey) {

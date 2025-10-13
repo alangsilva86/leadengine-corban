@@ -1,4 +1,8 @@
-import { getWhatsAppConfig, refreshWhatsAppConfig, type WhatsAppTransportMode } from './whatsapp-config';
+import {
+  getWhatsAppConfig,
+  refreshWhatsAppConfig,
+  type WhatsAppTransportMode,
+} from './whatsapp-config';
 import { isWhatsappBrokerStrictConfigEnabled } from './feature-flags';
 
 export const getBrokerBaseUrl = (): string | null => getWhatsAppConfig().broker.baseUrl;
@@ -27,8 +31,6 @@ export const isWebhookSignatureRequired = (): boolean => getWhatsAppConfig().web
 export const shouldBypassTenantGuards = (): boolean => getWhatsAppConfig().flags.passthroughMode;
 
 export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().runtime.mode;
-
-export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawMode;
 
 export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
 

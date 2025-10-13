@@ -10,8 +10,10 @@ import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
 } from '../../../lib/metrics';
-import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
-import { getWhatsAppMode } from '../../../config/whatsapp';
+import {
+  createTicket as createTicketService,
+  sendMessage as sendMessageService,
+} from '../../../services/ticket-service';
 import {
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
@@ -45,6 +47,8 @@ export const configureInboundDedupeBackend = (backend: InboundDedupeBackend | nu
   dedupeBackend = backend;
 };
 
+const WHATSAPP_TRANSPORT_MODE = 'http' as const;
+
 const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
 const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
@@ -66,7 +70,7 @@ const toRecord = (value: unknown): Record<string, unknown> => {
 };
 
 const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<void> => {
-  const transportMode = getWhatsAppMode();
+  const transportMode = WHATSAPP_TRANSPORT_MODE;
 
   const toRecord = (value: unknown): Record<string, unknown> => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -1984,7 +1988,7 @@ The passthrough handler above short-circuits all validations.
     }
 
     inboundMessagesProcessedCounter.inc({
-      transport: getWhatsAppMode(),
+      transport: WHATSAPP_TRANSPORT_MODE,
       origin: 'passthrough',
       tenantId,
       instanceId: instanceId ?? 'unknown',

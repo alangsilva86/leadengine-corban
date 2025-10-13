@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
-export type WhatsAppTransportMode = 'http';
 import { logger } from './logger';
 
-export type WhatsAppTransportMode = 'http' | 'dryrun' | 'disabled';
+export type WhatsAppTransportMode = 'http';
 
 type Booleanish = string | undefined | null;
 
@@ -93,33 +92,32 @@ const normalizePositiveInteger = (value: string | undefined | null): number | nu
 const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
 const DEFAULT_WEBHOOK_URL =
   'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
-const assertSingleTransportMode = (raw: string | undefined | null): void => {
-  const normalized = normalizeString(raw);
-  if (!normalized || normalized.toLowerCase() === 'http') {
-    return;
-const parseMode = (raw: string | undefined | null): { mode: WhatsAppTransportMode; raw: string } => {
-  const normalized = normalizeString(raw)?.toLowerCase() ?? '';
 
-  if (normalized === 'sidecar' || normalized === 'baileys') {
-    logger.warn('Deprecated WhatsApp sidecar mode detected; falling back to HTTP transport', {
-      requestedMode: normalized,
-      fallbackMode: 'http',
-    });
-    return { mode: 'http', raw: normalized };
+const parseMode = (raw: string | undefined | null): WhatsAppTransportMode => {
+  const normalized = normalizeString(raw);
+  if (!normalized) {
+    return 'http';
   }
 
-  if (normalized === 'dryrun') {
-    return { mode: 'dryrun', raw: normalized };
+  const lowered = normalized.toLowerCase();
+  if (lowered === 'http') {
+    return 'http';
+  }
+
+  if (lowered === 'sidecar' || lowered === 'baileys') {
+    logger.warn('Deprecated WhatsApp sidecar mode detected; falling back to HTTP transport', {
+      requestedMode: lowered,
+      fallbackMode: 'http',
+    });
+    return 'http';
   }
 
   throw new Error(
-    `Unsupported WHATSAPP_MODE value "${normalized}". HTTP is now the only supported transport mode; remove this environment variable or set it to "http".`
+    `Unsupported WHATSAPP_MODE value "${lowered}". HTTP is now the only supported transport mode; remove this environment variable or set it to "http".`
   );
 };
 
 const buildWhatsAppConfig = (): WhatsAppConfig => {
-  assertSingleTransportMode(process.env.WHATSAPP_MODE);
-
   const timeoutCandidates = [
     process.env.WHATSAPP_BROKER_TIMEOUT_MS,
     process.env.LEAD_ENGINE_TIMEOUT_MS,
@@ -169,7 +167,7 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
       tenantId: normalizeString(process.env.AUTH_MVP_TENANT_ID) ?? DEFAULT_TENANT_FALLBACK,
     },
     runtime: {
-      mode: 'http',
+      mode: parseMode(process.env.WHATSAPP_MODE),
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
     },
     flags: {
@@ -197,8 +195,8 @@ export const __private = {
   buildWhatsAppConfig,
   normalizeBoolean,
   normalizeString,
-  assertSingleTransportMode,
   normalizePositiveInteger,
+  parseMode,
 };
 
 export type { WhatsAppConfig };

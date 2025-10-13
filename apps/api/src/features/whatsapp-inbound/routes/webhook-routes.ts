@@ -10,7 +10,6 @@ import {
   getWebhookApiKey,
   getWebhookSignatureSecret,
   getWebhookVerifyToken,
-  getWhatsAppMode,
   isWebhookSignatureRequired,
 } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
@@ -25,6 +24,7 @@ const integrationWebhookRouter: Router = Router();
 
 const MAX_RAW_PREVIEW_LENGTH = 2_000;
 const DEFAULT_VERIFY_RESPONSE = 'LeadEngine WhatsApp webhook';
+const WHATSAPP_TRANSPORT_MODE = 'http' as const;
 
 const asArray = (value: unknown): unknown[] => {
   if (!value) {
@@ -95,7 +95,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const expectedApiKey = getWebhookApiKey();
   const signatureRequired = isWebhookSignatureRequired();
 
-  const transportMode = getWhatsAppMode();
+  const transportMode = WHATSAPP_TRANSPORT_MODE;
 
   if (expectedApiKey && providedApiKey && providedApiKey !== expectedApiKey) {
     logger.warn('WhatsApp webhook API key mismatch', { requestId });

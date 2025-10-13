@@ -22,7 +22,7 @@
 
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
-import { getWebhookApiKey, getWhatsAppMode, refreshWhatsAppEnv } from '../apps/api/src/config/whatsapp';
+import { getWebhookApiKey, refreshWhatsAppEnv } from '../apps/api/src/config/whatsapp';
 
 refreshWhatsAppEnv();
 
@@ -46,9 +46,15 @@ const MESSAGE_TEXT =
 
 const SOCKET_PATH = process.env.SOCKET_IO_PATH ?? '/socket.io';
 
-const CONFIGURED_WHATSAPP_MODE = getWhatsAppMode();
+const WHATSAPP_TRANSPORT_MODE = 'http' as const;
 const expectedModeOverride = (process.env.EXPECT_WHATSAPP_MODE ?? '').trim().toLowerCase();
-const EXPECTED_WHATSAPP_MODE = (expectedModeOverride || 'http') as 'http';
+if (expectedModeOverride && expectedModeOverride !== WHATSAPP_TRANSPORT_MODE) {
+  console.warn(
+    `Ignoring EXPECT_WHATSAPP_MODE="${expectedModeOverride}" because HTTP is the only supported transport`
+  );
+}
+const CONFIGURED_WHATSAPP_MODE = WHATSAPP_TRANSPORT_MODE;
+const EXPECTED_WHATSAPP_MODE = WHATSAPP_TRANSPORT_MODE;
 
 const timeout = (ms, label) =>
   new Promise((_, reject) => {
