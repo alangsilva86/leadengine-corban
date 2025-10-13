@@ -60,6 +60,11 @@ nano .env
 ### 1.1. Nota sobre o sidecar legado
 
 O runtime sidecar Baileys foi removido desta base. Não é mais necessário preparar volumes ou diretórios dedicados a sessões — qualquer configuração existente com `WHATSAPP_MODE=sidecar` continuará subindo, mas um aviso será emitido e o modo HTTP será utilizado.
+- Integração WhatsApp: configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` (se aplicável) e mantenha `WHATSAPP_MODE` ausente para utilizar o transporte HTTP padrão.
+
+### 1.1. Session store
+
+O session store padrão permanece nos bancos declarados via `WHATSAPP_SESSION_STORE_*` (Postgres/Redis/memória em desenvolvimento). Não há contêiner sidecar nem volume dedicado para sessões.
 
 ### 2. Configurar Domínio (Opcional)
 
@@ -204,7 +209,7 @@ curl http://localhost/health
 
 ### 3. Validar Integração WhatsApp
 
-Após configurar o broker HTTP (`WHATSAPP_MODE=http` e variáveis relacionadas) e finalizar o deploy, valide os fluxos principais:
+Após configurar o broker HTTP (variáveis `WHATSAPP_BROKER_*` e webhook) e finalizar o deploy, valide os fluxos principais:
 
 ```bash
 curl -H "x-tenant-id: <TENANT_ID>" http://localhost:4000/api/integrations/whatsapp/instances

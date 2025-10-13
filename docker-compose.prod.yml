@@ -81,7 +81,6 @@ services:
       LEAD_ENGINE_BASE_URL: ${LEAD_ENGINE_BASE_URL}
       LEAD_ENGINE_CREDIT_BASE_URL: ${LEAD_ENGINE_CREDIT_BASE_URL}
       LEAD_ENGINE_BASIC_TOKEN: ${LEAD_ENGINE_BASIC_TOKEN}
-      WHATSAPP_MODE: ${WHATSAPP_MODE}
       WHATSAPP_BROKER_URL: ${WHATSAPP_BROKER_URL}
       WHATSAPP_BROKER_API_KEY: ${WHATSAPP_BROKER_API_KEY}
       WHATSAPP_WEBHOOK_API_KEY: ${WHATSAPP_WEBHOOK_API_KEY:-}
@@ -95,7 +94,6 @@ services:
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
-      - whatsapp_sessions_data:/app/sessions
       - ./logs:/app/logs
       - ./uploads:/app/uploads
     depends_on:
@@ -158,8 +156,6 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  whatsapp_sessions_data:
     driver: local
 
 # ============================================================================

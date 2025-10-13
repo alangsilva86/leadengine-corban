@@ -14,11 +14,10 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
 1. Consolidar todas as variáveis de ambiente relacionadas ao WhatsApp em uma camada de
    configuração única (`apps/api/src/config/whatsapp-config.ts`), exportando utilitários
    memoizados para consumo em toda a aplicação.
-2. Expor uma API explícita para o modo de transporte (`getWhatsAppMode`) e para os
-   recursos críticos (broker, webhook, flags), permitindo alternar entre `http`,
-   `sidecar`, `dryrun` e `disabled` sem alterar chamadas diretas a `process.env`.
+2. Manter o transporte HTTP como modo único exposto por `getWhatsAppMode`, assegurando
+   que nenhuma alternância dinâmica entre sidecar e http aconteça em produção.
 3. Atualizar os pontos sensíveis (healthcheck e cliente do broker) para depender dessa camada,
-   estabelecendo a fundação para introduzir o adaptador sidecar em fases posteriores.
+   garantindo auditoria do transporte HTTP e preparando eventual expansão futura sem toggles operacionais.
 
 ## Consequências
 
@@ -26,9 +25,9 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
   risco de interferência entre suites.
 - Todas as validações de disponibilidade do broker utilizam a mesma fonte de verdade,
   simplificando o rollout de novas variáveis.
-- O passo seguinte (Fase 1 do plano) pode introduzir o `WhatsAppTransport` sem migrar
+- O passo seguinte (Fase 1 do plano) pode introduzir novos transportes sem migrar
   cada chamada individual, pois o modo ativo já está centralizado e versionado.
-- O rollback para `WHATSAPP_MODE=http` torna-se previsível: basta alterar a variável e
-  reinicializar, já que nenhuma chamada depende de leitura direta de `process.env`.
+- Operações deixam de executar rollback entre `http` e `sidecar`; o foco passa a ser
+  garantir que as credenciais HTTP estejam corretas antes de promover novas versões.
 - O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) tornou-se o caminho principal e exclusivo de ingestão.
 - `/healthz` divulga o modo ativo (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.

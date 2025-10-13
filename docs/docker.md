@@ -36,7 +36,6 @@ DATABASE_URL=postgresql://ticketz:ticketz123@postgres:5432/ticketz
 DATABASE_SSL=false
 REDIS_URL=redis://redis:6379
 JWT_SECRET=troque-por-uma-chave-forte
-WHATSAPP_MODE=http
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=<API_KEY>
 WHATSAPP_WEBHOOK_API_KEY=<API_KEY_WEBHOOK_SE_DIFERENTE>
@@ -51,7 +50,7 @@ RATE_LIMIT_MAX_REQUESTS=100 # opcional (padrão: 100 requisições)
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
 
-> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. Defina `WHATSAPP_MODE=http` para habilitar a integração com o broker HTTP e, se necessário, `WHATSAPP_WEBHOOK_API_KEY`/`WHATSAPP_WEBHOOK_HMAC_SECRET` para usar segredos distintos no webhook (API key e HMAC). Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esses valores nos cabeçalhos `x-api-key` e `x-signature-sha256`. Caso ative `WHATSAPP_PASSTHROUGH_MODE=true`, a API deixará de validar tanto o `x-api-key` quanto a assinatura HMAC; use apenas em pipelines em que o tráfego do webhook já esteja autenticado externamente.
+> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. O transporte HTTP é padrão — mantenha `WHATSAPP_MODE` ausente ou definido como `http` caso algum ambiente legado ainda injete a variável. Configure `WHATSAPP_WEBHOOK_API_KEY`/`WHATSAPP_WEBHOOK_HMAC_SECRET` para usar segredos distintos no webhook (API key e HMAC). Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esses valores nos cabeçalhos `x-api-key` e `x-signature-sha256`. Caso ative `WHATSAPP_PASSTHROUGH_MODE=true`, a API deixará de validar tanto o `x-api-key` quanto a assinatura HMAC; use apenas em pipelines em que o tráfego do webhook já esteja autenticado externamente.
 
 As variáveis `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` controlam o circuito de proteção de envios outbound, definindo quantas falhas consecutivas são toleradas, a janela considerada e o tempo de cooldown antes de liberar novos envios.
 
