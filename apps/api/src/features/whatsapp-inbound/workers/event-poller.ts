@@ -1,4 +1,5 @@
 import { logger } from '../../../config/logger';
+import { getWhatsAppMode, isWhatsAppEventPollerDisabled } from '../../../config/whatsapp';
 import {
   enqueueWhatsAppBrokerEvents,
   getWhatsAppEventQueueStats,
@@ -394,8 +395,8 @@ export class WhatsAppEventPoller {
       return;
     }
 
-    const pollerDisabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
-    const mode = (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
+    const pollerDisabled = isWhatsAppEventPollerDisabled();
+    const mode = getWhatsAppMode();
 
     this.metrics = {
       ...defaultMetrics,

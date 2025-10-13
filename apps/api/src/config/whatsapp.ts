@@ -1,80 +1,33 @@
+import { getWhatsAppConfig, refreshWhatsAppConfig, type WhatsAppTransportMode } from './whatsapp-config';
 import { isWhatsappBrokerStrictConfigEnabled } from './feature-flags';
 
-const DEFAULT_TENANT_FALLBACK = 'demo-tenant';
+export const getBrokerBaseUrl = (): string | null => getWhatsAppConfig().broker.baseUrl;
 
-const parseEnvBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
+export const getBrokerApiKey = (): string | null => getWhatsAppConfig().broker.apiKey;
 
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
+export const isStrictBrokerConfigEnabled = (): boolean =>
+  getWhatsAppConfig().broker.strictConfig || isWhatsappBrokerStrictConfigEnabled();
 
-  return defaultValue;
-};
+export const getDefaultInstanceId = (): string | null => getWhatsAppConfig().defaults.instanceId;
 
-export const getBrokerBaseUrl = (): string | null => {
-  const value = process.env.WHATSAPP_BROKER_URL?.trim();
-  return value && value.length > 0 ? value : null;
-};
+export const getDefaultTenantId = (): string => getWhatsAppConfig().defaults.tenantId;
 
-export const getBrokerApiKey = (): string | null => {
-  const value = process.env.WHATSAPP_BROKER_API_KEY?.trim();
-  return value && value.length > 0 ? value : null;
-};
+export const getWebhookVerifyToken = (): string | null => getWhatsAppConfig().webhook.verifyToken;
 
-export const isStrictBrokerConfigEnabled = (): boolean => isWhatsappBrokerStrictConfigEnabled();
+export const getWebhookApiKey = (): string | null => getWhatsAppConfig().webhook.apiKey;
 
-export const getDefaultInstanceId = (): string | null => {
-  const value = process.env.WHATSAPP_DEFAULT_INSTANCE_ID?.trim();
-  return value && value.length > 0 ? value : null;
-};
+export const getWebhookSignatureSecret = (): string | null => getWhatsAppConfig().webhook.signatureSecret;
 
-export const getDefaultTenantId = (): string => {
-  const value = process.env.AUTH_MVP_TENANT_ID?.trim();
-  if (value && value.length > 0) {
-    return value;
-  }
+export const isWebhookSignatureRequired = (): boolean => getWhatsAppConfig().webhook.enforceSignature;
 
-  return DEFAULT_TENANT_FALLBACK;
-};
+export const shouldBypassTenantGuards = (): boolean => getWhatsAppConfig().flags.passthroughMode;
 
-export const getWebhookVerifyToken = (): string | null => {
-  const value = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN?.trim();
-  if (value && value.length > 0) {
-    return value;
-  }
+export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().runtime.mode;
 
-  const fallback = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
-  return fallback && fallback.length > 0 ? fallback : null;
-};
+export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawMode;
 
-export const getWebhookApiKey = (): string | null => {
-  const explicit = process.env.WHATSAPP_WEBHOOK_API_KEY?.trim();
-  if (explicit && explicit.length > 0) {
-    return explicit;
-  }
-  return getBrokerApiKey();
-};
+export const isWhatsAppEventPollerDisabled = (): boolean => getWhatsAppConfig().runtime.eventPollerDisabled;
 
-export const getWebhookSignatureSecret = (): string | null => {
-  const explicit = process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET?.trim();
-  if (explicit && explicit.length > 0) {
-    return explicit;
-  }
+export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
 
-  const fallback = getWebhookApiKey();
-  return fallback && fallback.length > 0 ? fallback : null;
-};
-
-export const isWebhookSignatureRequired = (): boolean => {
-  const raw = process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE;
-  return parseEnvBoolean(raw, false);
-};
-
-export const shouldBypassTenantGuards = (): boolean => parseEnvBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, true);
+export type { WhatsAppTransportMode } from './whatsapp-config';

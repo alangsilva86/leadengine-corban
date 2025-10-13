@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { refreshWhatsAppEnv } from '../../config/whatsapp';
 import type { RequestInit, Headers } from 'undici';
 
 const fetchMock = vi.fn();
@@ -17,6 +18,7 @@ describe('WhatsAppBrokerClient', () => {
   afterEach(() => {
     fetchMock.mockReset();
     Object.assign(process.env, originalEnv);
+    refreshWhatsAppEnv();
   });
 
   beforeEach(() => {
@@ -27,6 +29,7 @@ describe('WhatsAppBrokerClient', () => {
     process.env.WHATSAPP_BROKER_API_KEY = 'test-key';
     process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = 'verify-token';
     process.env.WHATSAPP_BROKER_WEBHOOK_URL = 'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
+    refreshWhatsAppEnv();
   });
 
   it('sends text messages via the official send-text endpoint', async () => {

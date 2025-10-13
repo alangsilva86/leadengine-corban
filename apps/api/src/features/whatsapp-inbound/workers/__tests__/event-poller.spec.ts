@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
 
 const fetchEventsMock = vi.fn<(...args: any[]) => Promise<unknown>>();
 const loadCursorMock = vi.fn<() => Promise<string | null>>();
@@ -75,6 +76,7 @@ describe('WhatsApp broker event poller integration', () => {
     saveCursorMock.mockResolvedValue(undefined);
     delete process.env.WHATSAPP_EVENT_POLLER_DISABLED;
     process.env.WHATSAPP_MODE = 'http';
+    refreshWhatsAppEnv();
   });
 
   afterEach(() => {
@@ -84,6 +86,7 @@ describe('WhatsApp broker event poller integration', () => {
     saveCursorMock.mockReset();
     delete process.env.WHATSAPP_MODE;
     delete process.env.WHATSAPP_EVENT_POLLER_DISABLED;
+    refreshWhatsAppEnv();
   });
 
   it('persists cursors and stops cleanly on shutdown', async () => {

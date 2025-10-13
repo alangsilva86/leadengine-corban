@@ -4,6 +4,7 @@ import type { AddressInfo } from 'net';
 import type { Server } from 'http';
 import { Prisma } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { refreshWhatsAppEnv } from '../config/whatsapp';
 
 import { errorHandler } from '../middleware/error-handler';
 import { normalizePhoneNumber } from '../utils/phone';
@@ -139,6 +140,7 @@ afterEach(() => {
   resetPrismaMocks();
   emitToTenantMock.mockReset();
   sendAdHocMock.mockReset();
+  refreshWhatsAppEnv();
 });
 
 const startTestServer = async ({
@@ -154,6 +156,7 @@ const startTestServer = async ({
     delete process.env.WHATSAPP_BROKER_URL;
     delete process.env.WHATSAPP_BROKER_API_KEY;
   }
+  refreshWhatsAppEnv();
 
   const { integrationsRouter } = await import('./integrations');
   const { whatsappMessagesRouter } = await import('./integrations/whatsapp.messages');

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { refreshWhatsAppEnv } from './config/whatsapp';
 import type { WhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
 
 const baseMetrics: WhatsAppEventPollerMetrics = {
@@ -34,12 +35,14 @@ afterEach(() => {
   delete process.env.WHATSAPP_EVENT_POLLER_DISABLED;
   delete process.env.WHATSAPP_MODE;
   delete process.env.DATABASE_URL;
+  refreshWhatsAppEnv();
 });
 
 describe('buildHealthPayload', () => {
   it('marks poller as disabled when configuration disables the worker', async () => {
     process.env.WHATSAPP_EVENT_POLLER_DISABLED = 'true';
     process.env.WHATSAPP_MODE = 'http';
+    refreshWhatsAppEnv();
     mockPollerMetrics(withMetrics({ running: false }));
 
     const { buildHealthPayload } = await import('./health');
@@ -53,6 +56,7 @@ describe('buildHealthPayload', () => {
 
   it('reports running status when poller loop is active', async () => {
     process.env.WHATSAPP_MODE = 'http';
+    refreshWhatsAppEnv();
     mockPollerMetrics(
       withMetrics({ running: true, cursor: 'cursor-55', lastAckCursor: 'cursor-55', lastAckCount: 10 })
     );
@@ -67,6 +71,7 @@ describe('buildHealthPayload', () => {
 
   it('degrades health when poller has repeated failures', async () => {
     process.env.WHATSAPP_MODE = 'http';
+    refreshWhatsAppEnv();
     mockPollerMetrics(
       withMetrics({
         running: false,
@@ -86,6 +91,7 @@ describe('buildHealthPayload', () => {
 
   it('marks poller as inactive when WhatsApp mode is not HTTP', async () => {
     process.env.WHATSAPP_MODE = 'baileys';
+    refreshWhatsAppEnv();
     mockPollerMetrics(withMetrics({ running: false }));
 
     const { buildHealthPayload } = await import('./health');
@@ -99,6 +105,7 @@ describe('buildHealthPayload', () => {
   it('reports postgres storage when database url is configured', async () => {
     process.env.DATABASE_URL = 'postgresql://ticketz:password@localhost:5432/ticketz';
     process.env.WHATSAPP_MODE = 'http';
+    refreshWhatsAppEnv();
     mockPollerMetrics(withMetrics({ running: true }));
 
     const { buildHealthPayload } = await import('./health');
