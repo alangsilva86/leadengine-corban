@@ -5,7 +5,7 @@ import type {
   WhatsAppSessionStore
 } from '@ticketz/integrations';
 
-const prepareJsonValue = (data: WhatsAppSessionData): Prisma.JsonValue => {
+const prepareJsonValue = (data: WhatsAppSessionData): Prisma.InputJsonValue => {
   return JSON.parse(
     JSON.stringify(
       {
@@ -14,7 +14,7 @@ const prepareJsonValue = (data: WhatsAppSessionData): Prisma.JsonValue => {
       },
       BufferJSON.replacer
     )
-  );
+  ) as Prisma.InputJsonValue;
 };
 
 const parseSessionData = (raw: string | Prisma.JsonValue): WhatsAppSessionData => {
