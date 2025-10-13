@@ -11,6 +11,10 @@ Failed to load resource: net::ERR_FAILED
 
 Essas mensagens indicam que o navegador recebeu uma resposta sem o cabeçalho `Access-Control-Allow-Origin` esperado durante a requisição de *preflight* (HTTP `OPTIONS`). Sem esse cabeçalho o navegador bloqueia a chamada para a API e a aplicação passa a tratar o problema como uma falha de rede.
 
+Os navegadores modernos também adicionam links "**Understand this error**" ao lado dessas mensagens. Eles não trazem um diagnóstico adicional — apenas abrem a documentação genérica do Chrome/Firefox sobre CORS. Portanto, o erro real continua sendo a ausência do cabeçalho `Access-Control-Allow-Origin` na resposta da API.
+
+> **Dica:** Se ainda restarem filtros ou dependências antigas relacionados a `tenant` ou `campaign` (por exemplo, variáveis locais, extensões de navegador ou proxies alterando os cabeçalhos da requisição), remova-os. Eles não resolvem o problema de CORS e podem mascarar a análise do tráfego real entre frontend e API.
+
 ## Causa mais comum
 
 A instância `ticketzapi-production` da API precisa saber quais domínios estão autorizados a consumi-la. Isso é feito através das variáveis de ambiente `FRONTEND_URL` (origem principal) e `CORS_ALLOWED_ORIGINS` (lista extra de domínios). Quando o domínio de produção do frontend não aparece nessas variáveis a API responde ao *preflight* sem o cabeçalho de permissão, o que dispara o erro de CORS no navegador.
