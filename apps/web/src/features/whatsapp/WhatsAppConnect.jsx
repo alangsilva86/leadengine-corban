@@ -1116,6 +1116,7 @@ const WhatsAppConnect = ({
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
   const [sessionActive, setSessionActive] = useState(true);
   const [authDeferred, setAuthDeferred] = useState(false);
+  const [authTokenState, setAuthTokenState] = useState(() => getAuthToken());
   const [errorState, setErrorState] = useState(null);
   const [localStatus, setLocalStatus] = useState(status);
   const [qrPanelOpen, setQrPanelOpen] = useState(status !== 'connected');
@@ -1161,6 +1162,7 @@ const WhatsAppConnect = ({
       setQrData(null);
       setSecondsLeft(null);
       setInstancesReady(true);
+      setAuthTokenState(null);
     }
   };
 
@@ -1254,7 +1256,7 @@ const WhatsAppConnect = ({
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   const generatingQrRef = useRef(isGeneratingQrImage);
   const hasQr = Boolean(qrImageSrc);
-  const isAuthenticated = sessionActive && !authDeferred;
+  const isAuthenticated = sessionActive && !authDeferred && Boolean(authTokenState);
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
