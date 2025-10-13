@@ -43,6 +43,7 @@ describe('metrics collectors', () => {
     expect(snapshot).toContain(
       'inbound_messages_processed_total{instanceId="unknown",origin="unknown",tenantId="unknown"} 1'
     );
+    expect(snapshot).not.toContain('transport=');
   });
 
   it('exposes counters for delivery success and socket reconnections', () => {
@@ -68,5 +69,25 @@ describe('metrics collectors', () => {
     expect(snapshot).toContain(
       'whatsapp_socket_reconnects_total{instanceId="inst-42",origin="ticket-service",reason="INSTANCE_NOT_CONNECTED",tenantId="tenant-metrics"} 1'
     );
+  });
+
+  it('tracks outbound latency without including transport labels', () => {
+    whatsappOutboundMetrics.observeLatency(
+      {
+        origin: 'ticket-service',
+        tenantId: 'tenant-latency',
+        instanceId: 'inst-99',
+      },
+      123
+    );
+
+    const snapshot = renderMetrics();
+    expect(snapshot).toContain(
+      'whatsapp_outbound_latency_ms_sum{instanceId="inst-99",origin="ticket-service",tenantId="tenant-latency"} 123'
+    );
+    expect(snapshot).toContain(
+      'whatsapp_outbound_latency_ms_count{instanceId="inst-99",origin="ticket-service",tenantId="tenant-latency"} 1'
+    );
+    expect(snapshot).not.toContain('transport=');
   });
 });
