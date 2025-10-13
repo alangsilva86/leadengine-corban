@@ -2298,33 +2298,21 @@ router.get(
     const refreshRequested = hasRefreshParam
       ? normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes'
       : undefined;
-    const agreementQuery = req.query.agreementId;
-    const agreementIdCandidate = Array.isArray(agreementQuery) ? agreementQuery[0] : agreementQuery;
-    const agreementId =
-      typeof agreementIdCandidate === 'string' && agreementIdCandidate.trim().length > 0
-        ? agreementIdCandidate.trim()
-        : null;
 
     logger.info('🛰️ [WhatsApp] List instances requested', {
       tenantId,
       refreshRequested,
-      agreementId,
     });
 
-    const warnings: Array<{ code: string; message: string }> = [];
-    let filteredInstances: NormalizedInstance[] = [];
+    let instances: NormalizedInstance[] = [];
     let usedStorageFallback = false;
 
     const collectionOptions =
       refreshRequested === undefined ? {} : { refresh: refreshRequested };
 
     try {
-      const { instances } = await collectInstancesForTenant(tenantId, collectionOptions);
-
-      filteredInstances =
-        agreementId === null
-          ? instances
-          : instances.filter((instance) => instance.agreementId === agreementId);
+      const result = await collectInstancesForTenant(tenantId, collectionOptions);
+      instances = result.instances;
     } catch (error: unknown) {
       const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
 
@@ -2334,7 +2322,6 @@ router.get(
           '🎯 LeadEngine • WhatsApp :: 🧰 Banco de instâncias indisponível — consultando snapshot direto do broker',
           {
             tenantId,
-            agreementId,
             refreshRequested,
             prismaCode,
             error: describeErrorForLog(error),
@@ -2365,24 +2352,14 @@ router.get(
           fallbackSnapshots
         );
 
-        filteredInstances =
-          agreementId === null
-            ? fallbackInstances
-            : fallbackInstances.filter((instance) => instance.agreementId === agreementId);
-
-        warnings.push({
-          code: 'WHATSAPP_STORAGE_FALLBACK',
-          message:
-            'Base de instâncias WhatsApp indisponível. Exibindo snapshot direto do broker (somente leitura).',
-        });
+        instances = fallbackInstances;
 
         logger.info(
           '🎯 LeadEngine • WhatsApp :: 🛰️ Snapshot do broker entregue durante indisponibilidade do banco',
           {
             tenantId,
-            agreementId,
             refreshRequested,
-            instances: filteredInstances.length,
+            instances: instances.length,
             snapshots: fallbackSnapshots.length,
             prismaCode,
           }
@@ -2397,22 +2374,10 @@ router.get(
       }
     }
 
-    if (
-      agreementId &&
-      filteredInstances.length === 0 &&
-      !warnings.some((warning) => warning.code === 'NO_INSTANCES_FOR_AGREEMENT')
-    ) {
-      warnings.push({
-        code: 'NO_INSTANCES_FOR_AGREEMENT',
-        message: `Nenhuma instância WhatsApp encontrada para o convênio ${agreementId}.`,
-      });
-    }
-
     logger.info('🛰️ [WhatsApp] Returning instances to client', {
       tenantId,
-      count: filteredInstances.length,
+      count: instances.length,
       refreshRequested,
-      agreementId,
       storageFallback: usedStorageFallback,
     });
 
@@ -2420,20 +2385,18 @@ router.get(
       success: true;
       data: { instances: NormalizedInstance[] };
       meta?: {
-        warnings?: Array<{ code: string; message: string }>;
         storageFallback?: boolean;
       };
     } = {
       success: true,
       data: {
-        instances: filteredInstances,
+        instances,
       },
     };
 
-    if (warnings.length > 0 || usedStorageFallback) {
+    if (usedStorageFallback) {
       responsePayload.meta = {
-        ...(warnings.length > 0 ? { warnings } : {}),
-        ...(usedStorageFallback ? { storageFallback: true } : {}),
+        storageFallback: true,
       };
     }
 
