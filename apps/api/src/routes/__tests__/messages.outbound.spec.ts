@@ -2,6 +2,7 @@ import express, { type Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ticket } from '@ticketz/core';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 
 const {
   queueFindFirstMock,
@@ -19,6 +20,34 @@ const {
   contactCreateMock: vi.fn(),
   whatsAppInstanceFindUniqueMock: vi.fn(),
   ticketFindUniqueMock: vi.fn(),
+}));
+
+const {
+  transportMock,
+  resolveTransportMock,
+  resetTransportCacheMock,
+  buildTransportMock,
+} = vi.hoisted(() => {
+  const transport = {
+    mode: 'http' as const,
+    sendText: vi.fn(),
+    sendMedia: vi.fn(),
+    checkRecipient: vi.fn(),
+    getStatus: vi.fn(),
+  };
+
+  return {
+    transportMock: transport,
+    resolveTransportMock: vi.fn(() => transport),
+    resetTransportCacheMock: vi.fn(),
+    buildTransportMock: vi.fn(),
+  };
+});
+
+vi.mock('../../services/whatsapp/transport/transport', () => ({
+  resolveWhatsAppTransport: (...args: unknown[]) => resolveTransportMock(...args),
+  resetWhatsAppTransportCache: (...args: unknown[]) => resetTransportCacheMock(...args),
+  buildWhatsAppTransport: (...args: unknown[]) => buildTransportMock(...args),
 }));
 
 vi.mock('@ticketz/storage', () => import('../../test-utils/storage-mock'));
@@ -58,6 +87,8 @@ import { resetRateLimit } from '../../utils/rate-limit';
 import { WhatsAppBrokerError } from '../../services/whatsapp-broker-client';
 import type { WhatsAppTransport } from '../../features/whatsapp-transport';
 import * as transportModule from '../../features/whatsapp-transport';
+import { resetCircuitBreaker } from '../../utils/circuit-breaker';
+import { whatsappBrokerClient, WhatsAppBrokerError } from '../../services/whatsapp-broker-client';
 
 class MockSocketServer {
   public events: Array<{ room: string; event: string; payload: unknown }> = [];
@@ -106,7 +137,7 @@ const buildApp = (overrides: Partial<MockUser> = {}) => {
   return app;
 };
 
-const RATE_KEY = 'outbound:tenant-123:instance-001';
+const RATE_KEY = 'whatsapp:tenant-123:instance-001';
 
 type MockContact = {
   id: string;
@@ -132,6 +163,7 @@ describe('Outbound message routes', () => {
   let sendMessageMock: ReturnType<typeof vi.fn>;
   let transportMock: WhatsAppTransport;
   let getTransportSpy: ReturnType<typeof vi.spyOn>;
+  let sendTextMock: typeof transportMock.sendText;
 
   beforeEach(async () => {
     queueFindFirstMock.mockResolvedValue({
@@ -255,9 +287,17 @@ describe('Outbound message routes', () => {
     await resetTicketStore();
     resetMetrics();
     resetRateLimit(RATE_KEY);
+    resetCircuitBreaker();
 
+    transportMock.mode = 'http';
+    resolveTransportMock.mockReturnValue(transportMock);
+    transportMock.sendText.mockReset();
+    transportMock.sendMedia.mockReset();
+    transportMock.checkRecipient.mockReset();
+    transportMock.getStatus.mockReset();
     let counter = 0;
     sendMessageMock = vi.fn(async (_instanceId: string, payload: unknown) => {
+    sendTextMock = transportMock.sendText.mockImplementation(async (_input) => {
       counter += 1;
       return {
         externalId: `wamid-${counter.toString().padStart(3, '0')}`,
@@ -290,11 +330,31 @@ describe('Outbound message routes', () => {
     getTransportSpy = vi
       .spyOn(transportModule, 'getWhatsAppTransport')
       .mockReturnValue(transportMock);
+        raw: { counter },
+        transport: 'http',
+      };
+    });
+    transportMock.sendMedia.mockImplementation(async (_input) => {
+      counter += 1;
+      return {
+        externalId: `wamid-${counter.toString().padStart(3, '0')}`,
+        status: 'SENT',
+        timestamp: new Date().toISOString(),
+        raw: { counter, type: 'media' },
+        transport: 'http',
+      };
+    });
   });
 
   afterEach(() => {
     registerSocketServer(null);
     getTransportSpy.mockRestore();
+    transportMock.sendText.mockReset();
+    transportMock.sendMedia.mockReset();
+    resolveTransportMock.mockReset();
+    transportMock.checkRecipient.mockReset();
+    transportMock.getStatus.mockReset();
+    resetTransportCacheMock.mockReset();
     queueFindFirstMock.mockReset();
     queueUpsertMock.mockReset();
     contactFindUniqueMock.mockReset();
@@ -341,6 +401,15 @@ describe('Outbound message routes', () => {
       to: '+554499999999',
       type: 'TEXT',
     }));
+    expect(sendTextMock).toHaveBeenCalledTimes(1);
+    expect(sendTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'instance-001',
+        instanceId: 'instance-001',
+        to: '+554499999999',
+        message: 'Olá! Teste via ticket',
+      })
+    );
 
     const createdEvent = socket.events.find(
       (event) => event.event === 'message:created' && event.room.startsWith('tenant:')
@@ -355,7 +424,66 @@ describe('Outbound message routes', () => {
     expect((updatedEvent?.payload as { status?: string })?.status).toBe('SENT');
 
     const metricsSnapshot = renderMetrics();
-    expect(metricsSnapshot).toContain('whatsapp_outbound_total{instanceId="instance-001",status="SENT"} 1');
+    expect(metricsSnapshot).toContain(
+      'whatsapp_outbound_total{instanceId="instance-001",origin="ticket-service",status="SENT",tenantId="tenant-123",transport="http"} 1'
+    );
+  });
+
+  it('rejects ticket sends without Idempotency-Key header', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+    tickets.set(ticket.id, ticket);
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem sem cabeçalho',
+        },
+        idempotencyKey: 'no-header',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error?.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+  });
+
+  it('rejects ticket sends when idempotency key header mismatches body', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+    tickets.set(ticket.id, ticket);
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'header-key')
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem com chave divergente',
+        },
+        idempotencyKey: 'body-key',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error?.code).toBe('IDEMPOTENCY_KEY_MISMATCH');
   });
 
   it('surfaces detailed broker error information when dispatch fails', async () => {
@@ -372,6 +500,13 @@ describe('Outbound message routes', () => {
 
     sendMessageMock.mockRejectedValueOnce(
       new WhatsAppBrokerError('Request timed out', 'REQUEST_TIMEOUT', 408, 'req-123')
+    sendTextMock.mockRejectedValueOnce(
+      new WhatsAppTransportError('Request timed out', {
+        code: 'BROKER_TIMEOUT',
+        status: 408,
+        requestId: 'req-123',
+        transport: 'http',
+      })
     );
 
     const app = buildApp();
@@ -384,6 +519,7 @@ describe('Outbound message routes', () => {
           type: 'text',
           text: 'Mensagem que falhará',
         },
+        idempotencyKey: 'broker-fail-1',
       });
 
     expect(response.status).toBe(202);
@@ -413,17 +549,26 @@ describe('Outbound message routes', () => {
 
     sendMessageMock.mockRejectedValueOnce(
       new WhatsAppBrokerError('Session disconnected', 'SESSION_NOT_CONNECTED', 409, 'req-409')
+    sendTextMock.mockRejectedValueOnce(
+      new WhatsAppTransportError('Session disconnected', {
+        code: 'INSTANCE_NOT_CONNECTED',
+        status: 409,
+        requestId: 'req-409',
+        transport: 'http',
+      })
     );
 
     const app = buildApp();
     const response = await request(app)
       .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'instance-down')
       .send({
         instanceId: 'instance-001',
         payload: {
           type: 'text',
           text: 'Mensagem que falhará',
         },
+        idempotencyKey: 'instance-down',
       });
 
     expect(response.status).toBe(202);
@@ -452,17 +597,26 @@ describe('Outbound message routes', () => {
 
     sendMessageMock.mockRejectedValueOnce(
       new WhatsAppBrokerError('Invalid recipient number', 'INVALID_RECIPIENT', 400, 'req-400')
+    sendTextMock.mockRejectedValueOnce(
+      new WhatsAppTransportError('Invalid recipient number', {
+        code: 'INVALID_TO',
+        status: 400,
+        requestId: 'req-400',
+        transport: 'http',
+      })
     );
 
     const app = buildApp();
     const response = await request(app)
       .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'invalid-dest')
       .send({
         instanceId: 'instance-001',
         payload: {
           type: 'text',
           text: 'Mensagem inválida',
         },
+        idempotencyKey: 'invalid-dest',
       });
 
     expect(response.status).toBe(202);
@@ -491,17 +645,26 @@ describe('Outbound message routes', () => {
 
     sendMessageMock.mockRejectedValueOnce(
       new WhatsAppBrokerError('Rate limit reached', 'RATE_LIMIT_EXCEEDED', 429, 'req-429')
+    sendTextMock.mockRejectedValueOnce(
+      new WhatsAppTransportError('Rate limit reached', {
+        code: 'RATE_LIMITED',
+        status: 429,
+        requestId: 'req-429',
+        transport: 'http',
+      })
     );
 
     const app = buildApp();
     const response = await request(app)
       .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'timeout-429')
       .send({
         instanceId: 'instance-001',
         payload: {
           type: 'text',
           text: 'Mensagem bloqueada por rate limit',
         },
+        idempotencyKey: 'timeout-429',
       });
 
     expect(response.status).toBe(202);
@@ -545,6 +708,7 @@ describe('Outbound message routes', () => {
     const messageId = first.body.messageId;
 
     sendMessageMock.mockClear();
+    sendTextMock.mockClear();
 
     const second = await request(app)
       .post(`/api/tickets/${ticket.id}/messages`)
@@ -555,12 +719,14 @@ describe('Outbound message routes', () => {
           type: 'text',
           text: 'Mensagem idempotente',
         },
+        idempotencyKey: 'idem-123',
       });
 
     expect(second.status).toBe(202);
     expect(second.body.messageId).toBe(messageId);
     expect(second.body.status).toBe(first.body.status);
     expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
   });
 
   it('creates a fallback queue automatically when tenant has none', async () => {
@@ -615,6 +781,7 @@ describe('Outbound message routes', () => {
           type: 'text',
           text: 'Mensagem via fila automática',
         },
+        idempotencyKey: 'test-fallback-queue',
       });
 
     expect(response.status).toBe(202);
@@ -642,17 +809,35 @@ describe('Outbound message routes', () => {
   it('surfaces normalized broker errors for ad-hoc sends', async () => {
     sendMessageMock.mockRejectedValueOnce(
       new WhatsAppBrokerError('Invalid destination number', 'INVALID_DESTINATION', 400, 'adhoc-400')
+    expect(sendTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'instance-001',
+        to: contact.phone,
+      })
+    );
+  });
+
+  it('surfaces normalized broker errors for ad-hoc sends', async () => {
+    sendTextMock.mockRejectedValueOnce(
+      new WhatsAppTransportError('Invalid destination number', {
+        code: 'INVALID_TO',
+        status: 400,
+        requestId: 'adhoc-400',
+        transport: 'http',
+      })
     );
 
     const app = buildApp();
     const response = await request(app)
       .post('/api/integrations/whatsapp/instances/instance-001/messages')
+      .set('Idempotency-Key', 'adhoc-fail')
       .send({
         to: '+55 44 9999-9999',
         payload: {
           type: 'text',
           text: 'Falha controlada',
         },
+        idempotencyKey: 'adhoc-fail',
       });
 
     expect(response.status).toBe(202);
@@ -684,12 +869,14 @@ describe('Outbound message routes', () => {
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/instances/instance-001/messages')
+      .set('Idempotency-Key', 'adhoc-offline')
       .send({
         to: '+55 44 9999-9999',
         payload: {
           type: 'text',
           text: 'Mensagem com instância offline',
         },
+        idempotencyKey: 'adhoc-offline',
       });
 
     expect(response.status).toBe(409);
@@ -700,6 +887,7 @@ describe('Outbound message routes', () => {
       },
     });
     expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
   });
 
   it('enforces basic rate limiting per instance', async () => {
@@ -726,6 +914,7 @@ describe('Outbound message routes', () => {
             type: 'text',
             text: `Mensagem ${i}`,
           },
+          idempotencyKey: `rate-key-${i}`,
         });
 
       expect(result.status).toBe(202);
@@ -740,6 +929,7 @@ describe('Outbound message routes', () => {
           type: 'text',
           text: 'Mensagem adicional',
         },
+        idempotencyKey: 'rate-key-overflow',
       });
 
     expect(limited.status).toBe(429);
@@ -748,5 +938,57 @@ describe('Outbound message routes', () => {
         code: 'RATE_LIMITED',
       },
     });
+  });
+
+  it('opens circuit breaker after repeated broker failures', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+    tickets.set(ticket.id, ticket);
+
+    sendMessageSpy.mockImplementation(async () => {
+      throw new WhatsAppBrokerError('Broker unavailable', 'BROKER_DOWN', 502, 'req-circuit');
+    });
+
+    const app = buildApp();
+
+    for (let i = 0; i < 5; i += 1) {
+      const attempt = await request(app)
+        .post(`/api/tickets/${ticket.id}/messages`)
+        .set('Idempotency-Key', `circuit-${i}`)
+        .send({
+          instanceId: 'instance-001',
+          payload: {
+            type: 'text',
+            text: `Mensagem falha ${i}`,
+          },
+          idempotencyKey: `circuit-${i}`,
+        });
+
+      expect(attempt.status).toBe(202);
+      expect(attempt.body.status).toBe('FAILED');
+    }
+
+    const blocked = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'circuit-blocked')
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem bloqueada pelo circuito',
+        },
+        idempotencyKey: 'circuit-blocked',
+      });
+
+    expect(blocked.status).toBe(423);
+    expect(blocked.body.error).toMatchObject({ code: 'WHATSAPP_CIRCUIT_OPEN' });
+    expect(sendMessageSpy).toHaveBeenCalledTimes(5);
   });
 });

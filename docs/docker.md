@@ -40,6 +40,7 @@ WHATSAPP_MODE=http
 WHATSAPP_BROKER_URL=https://baileys-acessuswpp.onrender.com
 WHATSAPP_BROKER_API_KEY=<API_KEY>
 WHATSAPP_WEBHOOK_API_KEY=<API_KEY_WEBHOOK_SE_DIFERENTE>
+WHATSAPP_WEBHOOK_HMAC_SECRET=<SEGREDO_HMAC_WEBHOOK>
 WHATSAPP_BROKER_TIMEOUT_MS=15000
 WHATSAPP_VERIFY_TOKEN=<token_gerado_no_Meta>
 LEAD_ENGINE_BROKER_BASE_URL=https://lead-engine-production.up.railway.app
@@ -50,7 +51,9 @@ RATE_LIMIT_MAX_REQUESTS=100 # opcional (padrão: 100 requisições)
 
 > Em produção substitua os defaults por credenciais reais e, se necessário, habilite SSL do banco (`DATABASE_SSL=true`).
 
-> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. Defina `WHATSAPP_MODE=http` para habilitar a integração com o broker HTTP e, se necessário, `WHATSAPP_WEBHOOK_API_KEY` para usar um segredo distinto em webhooks. Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esse segredo no cabeçalho `x-api-key` ao chamar o broker. Caso ative `WHATSAPP_PASSTHROUGH_MODE=true`, a API deixará de validar tanto o `x-api-key` quanto a assinatura HMAC (`x-signature-sha256`); use apenas em pipelines em que o tráfego do webhook já esteja autenticado externamente.
+> **Importante:** o serviço `baileys-acessuswpp` na Render deve expor a variável `API_KEY` com o mesmo valor configurado aqui em `WHATSAPP_BROKER_API_KEY`. Defina `WHATSAPP_MODE=http` para habilitar a integração com o broker HTTP e, se necessário, `WHATSAPP_WEBHOOK_API_KEY`/`WHATSAPP_WEBHOOK_HMAC_SECRET` para usar segredos distintos no webhook (API key e HMAC). Toda integração (incluindo webhooks configurados via `WEBHOOK_URL`) precisa enviar esses valores nos cabeçalhos `x-api-key` e `x-signature-sha256`. Caso ative `WHATSAPP_PASSTHROUGH_MODE=true`, a API deixará de validar tanto o `x-api-key` quanto a assinatura HMAC; use apenas em pipelines em que o tráfego do webhook já esteja autenticado externamente.
+
+As variáveis `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` controlam o circuito de proteção de envios outbound, definindo quantas falhas consecutivas são toleradas, a janela considerada e o tempo de cooldown antes de liberar novos envios.
 
 As variáveis `RATE_LIMIT_WINDOW_MS` e `RATE_LIMIT_MAX_REQUESTS` permitem ajustar a janela e o número máximo de requisições por IP aplicados pelo middleware de rate limiting da API. Valores não numéricos ou inválidos são ignorados e os padrões (15 minutos / 100 requisições) são utilizados. Use `CORS_ALLOWED_ORIGINS` para informar uma lista (separada por vírgula) de domínios extras autorizados a consumir a API via navegador; quando ausente, a aplicação libera apenas os domínios padrão (`FRONTEND_URL`, ambientes locais e os domínios históricos do projeto).
 

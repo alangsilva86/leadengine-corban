@@ -2613,10 +2613,12 @@ describe('WhatsApp integration routes with configured broker', () => {
         headers: {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
+          'Idempotency-Key': 'itest-001',
         },
         body: JSON.stringify({
           to: '5511999999999',
           payload: { type: 'text', text: 'Olá instancia' },
+          idempotencyKey: 'itest-001',
         }),
       });
 
@@ -2630,6 +2632,7 @@ describe('WhatsApp integration routes with configured broker', () => {
         instanceId: 'inst-1',
         to: '5511999999999',
         payload: expect.objectContaining({ type: 'text', content: 'Olá instancia' }),
+        rateLimitConsumed: true,
       });
       expect(adHocArgs).not.toHaveProperty('tenantId');
       expect(body).toEqual({ success: true, data: { id: 'wamid-321' } });

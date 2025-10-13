@@ -10,6 +10,16 @@ const OUTBOUND_LATENCY_METRIC = 'whatsapp_outbound_latency_ms';
 const OUTBOUND_LATENCY_HELP = '# HELP whatsapp_outbound_latency_ms Latência de envio outbound em milissegundos';
 const OUTBOUND_LATENCY_TYPE = '# TYPE whatsapp_outbound_latency_ms summary';
 
+const OUTBOUND_DELIVERY_SUCCESS_METRIC = 'whatsapp_outbound_delivery_success_total';
+const OUTBOUND_DELIVERY_SUCCESS_HELP =
+  '# HELP whatsapp_outbound_delivery_success_total Contador de mensagens outbound com entrega confirmada por tipo';
+const OUTBOUND_DELIVERY_SUCCESS_TYPE = '# TYPE whatsapp_outbound_delivery_success_total counter';
+
+const SOCKET_RECONNECT_METRIC = 'whatsapp_socket_reconnects_total';
+const SOCKET_RECONNECT_HELP =
+  '# HELP whatsapp_socket_reconnects_total Contador de tentativas de reconexão do socket do WhatsApp';
+const SOCKET_RECONNECT_TYPE = '# TYPE whatsapp_socket_reconnects_total counter';
+
 const HTTP_REQUEST_METRIC = 'whatsapp_http_requests_total';
 const HTTP_REQUEST_HELP = '# HELP whatsapp_http_requests_total Contador de requisições HTTP para APIs de WhatsApp';
 const HTTP_REQUEST_TYPE = '# TYPE whatsapp_http_requests_total counter';
@@ -30,24 +40,151 @@ const LEAD_LAST_CONTACT_TYPE = '# TYPE lead_last_contact_timestamp gauge';
 
 type CounterLabels = Record<string, string | number | boolean | null | undefined>;
 
+type LabelConstraint = {
+  limit: number;
+  defaultValue?: string;
+};
+
+type MetricConstraints = Record<string, LabelConstraint>;
+
+const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
+  transport: { limit: 5, defaultValue: 'unknown' },
+  origin: { limit: 20, defaultValue: 'unknown' },
+  tenantId: { limit: 100, defaultValue: 'unknown' },
+  instanceId: { limit: 200, defaultValue: 'unknown' },
+};
+
+const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
+  [WEBHOOK_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [OUTBOUND_TOTAL_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [OUTBOUND_LATENCY_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [OUTBOUND_DELIVERY_SUCCESS_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [SOCKET_RECONNECT_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [INBOUND_MESSAGES_METRIC]: BASE_LABEL_CONSTRAINTS,
+};
+
+const labelValueTracker = new Map<string, Map<string, Set<string>>>();
+
 const webhookCounterStore = new Map<string, number>();
 const outboundTotalStore = new Map<string, number>();
 const outboundLatencyStore = new Map<string, { sum: number; count: number }>();
+const outboundDeliverySuccessStore = new Map<string, number>();
+const socketReconnectCounterStore = new Map<string, number>();
 const httpRequestCounterStore = new Map<string, number>();
 const wsEmitCounterStore = new Map<string, number>();
 const inboundMessagesCounterStore = new Map<string, number>();
 const leadLastContactGaugeStore = new Map<string, number>();
 
-const serializeLabels = (labels: CounterLabels = {}): string => {
-  const entries = Object.entries(labels)
-    .filter(([, value]) => value !== undefined && value !== null)
-    .map(([key, value]) => `${key}="${value}"`);
-  return entries.join(',');
+const toLabelString = (value: unknown): string | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : null;
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  const serialized = String(value);
+  return serialized.length > 0 ? serialized : null;
+};
+
+const getLabelValueSet = (metric: string, label: string): Set<string> => {
+  let registry = labelValueTracker.get(metric);
+  if (!registry) {
+    registry = new Map<string, Set<string>>();
+    labelValueTracker.set(metric, registry);
+  }
+
+  let values = registry.get(label);
+  if (!values) {
+    values = new Set<string>();
+    registry.set(label, values);
+  }
+
+  return values;
+};
+
+const enforceCardinalityLimit = (
+  metric: string,
+  label: string,
+  value: string,
+  constraint: LabelConstraint
+): string => {
+  const limit = Math.max(constraint.limit, 0);
+  if (limit === 0) {
+    return 'overflow';
+  }
+
+  const values = getLabelValueSet(metric, label);
+  if (values.has(value)) {
+    return value;
+  }
+
+  if (values.size >= limit) {
+    return 'overflow';
+  }
+
+  values.add(value);
+  return value;
+};
+
+const applyMetricConstraints = (metric: string, labels: CounterLabels = {}): Record<string, string> => {
+  const normalized: Record<string, string> = {};
+  const constraints = METRIC_CONSTRAINTS[metric];
+
+  if (constraints) {
+    for (const [label, constraint] of Object.entries(constraints)) {
+      const rawValue = labels[label];
+      const candidate = toLabelString(rawValue);
+      const fallback = constraint.defaultValue ?? 'unknown';
+      const prepared = enforceCardinalityLimit(metric, label, candidate ?? fallback, constraint);
+      normalized[label] = prepared;
+    }
+  }
+
+  for (const [key, value] of Object.entries(labels)) {
+    if (constraints && Object.prototype.hasOwnProperty.call(constraints, key)) {
+      continue;
+    }
+
+    const candidate = toLabelString(value);
+    if (candidate !== null) {
+      normalized[key] = candidate;
+    }
+  }
+
+  return normalized;
+};
+
+const serializeLabels = (labels: Record<string, string>): string => {
+  const entries = Object.entries(labels);
+  if (entries.length === 0) {
+    return '';
+  }
+
+  return entries
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}="${value}"`)
+    .join(',');
+};
+
+const buildLabelKey = (metric: string, labels: CounterLabels = {}): string => {
+  const normalized = applyMetricConstraints(metric, labels);
+  return serializeLabels(normalized);
 };
 
 export const whatsappWebhookEventsCounter = {
   inc(labels: CounterLabels = {}, value = 1): void {
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(WEBHOOK_METRIC, labels);
     const current = webhookCounterStore.get(key) ?? 0;
     webhookCounterStore.set(key, current + value);
   },
@@ -55,7 +192,7 @@ export const whatsappWebhookEventsCounter = {
 
 export const whatsappOutboundMetrics = {
   incTotal(labels: CounterLabels = {}, value = 1): void {
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(OUTBOUND_TOTAL_METRIC, labels);
     const current = outboundTotalStore.get(key) ?? 0;
     outboundTotalStore.set(key, current + value);
   },
@@ -64,7 +201,7 @@ export const whatsappOutboundMetrics = {
       return;
     }
 
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(OUTBOUND_LATENCY_METRIC, labels);
     const current = outboundLatencyStore.get(key) ?? { sum: 0, count: 0 };
     outboundLatencyStore.set(key, {
       sum: current.sum + latencyMs,
@@ -73,9 +210,25 @@ export const whatsappOutboundMetrics = {
   },
 };
 
+export const whatsappOutboundDeliverySuccessCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(OUTBOUND_DELIVERY_SUCCESS_METRIC, labels);
+    const current = outboundDeliverySuccessStore.get(key) ?? 0;
+    outboundDeliverySuccessStore.set(key, current + value);
+  },
+};
+
+export const whatsappSocketReconnectsCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(SOCKET_RECONNECT_METRIC, labels);
+    const current = socketReconnectCounterStore.get(key) ?? 0;
+    socketReconnectCounterStore.set(key, current + value);
+  },
+};
+
 export const whatsappHttpRequestsCounter = {
   inc(labels: CounterLabels = {}, value = 1): void {
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(HTTP_REQUEST_METRIC, labels);
     const current = httpRequestCounterStore.get(key) ?? 0;
     httpRequestCounterStore.set(key, current + value);
   },
@@ -83,7 +236,7 @@ export const whatsappHttpRequestsCounter = {
 
 export const wsEmitCounter = {
   inc(labels: CounterLabels = {}, value = 1): void {
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(WS_EMIT_METRIC, labels);
     const current = wsEmitCounterStore.get(key) ?? 0;
     wsEmitCounterStore.set(key, current + value);
   },
@@ -91,7 +244,7 @@ export const wsEmitCounter = {
 
 export const inboundMessagesProcessedCounter = {
   inc(labels: CounterLabels = {}, value = 1): void {
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(INBOUND_MESSAGES_METRIC, labels);
     const current = inboundMessagesCounterStore.get(key) ?? 0;
     inboundMessagesCounterStore.set(key, current + value);
   },
@@ -103,7 +256,7 @@ export const leadLastContactGauge = {
       return;
     }
 
-    const key = serializeLabels(labels);
+    const key = buildLabelKey(LEAD_LAST_CONTACT_METRIC, labels);
     leadLastContactGaugeStore.set(key, timestampMs);
   },
 };
@@ -140,6 +293,26 @@ export const renderMetrics = (): string => {
       const suffix = labelString ? `{${labelString}}` : '';
       lines.push(`${OUTBOUND_LATENCY_METRIC}_sum${suffix} ${stats.sum}`);
       lines.push(`${OUTBOUND_LATENCY_METRIC}_count${suffix} ${stats.count}`);
+    }
+  }
+
+  lines.push(OUTBOUND_DELIVERY_SUCCESS_HELP, OUTBOUND_DELIVERY_SUCCESS_TYPE);
+  if (outboundDeliverySuccessStore.size === 0) {
+    lines.push(`${OUTBOUND_DELIVERY_SUCCESS_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of outboundDeliverySuccessStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${OUTBOUND_DELIVERY_SUCCESS_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(SOCKET_RECONNECT_HELP, SOCKET_RECONNECT_TYPE);
+  if (socketReconnectCounterStore.size === 0) {
+    lines.push(`${SOCKET_RECONNECT_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of socketReconnectCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${SOCKET_RECONNECT_METRIC}${suffix} ${value}`);
     }
   }
 
@@ -190,8 +363,11 @@ export const resetMetrics = (): void => {
   webhookCounterStore.clear();
   outboundTotalStore.clear();
   outboundLatencyStore.clear();
+  outboundDeliverySuccessStore.clear();
+  socketReconnectCounterStore.clear();
   httpRequestCounterStore.clear();
   wsEmitCounterStore.clear();
   inboundMessagesCounterStore.clear();
   leadLastContactGaugeStore.clear();
+  labelValueTracker.clear();
 };

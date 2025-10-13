@@ -4,13 +4,14 @@
  *
  * Expects the following environment variables:
  *  - API_URL
- *  - WHATSAPP_WEBHOOK_API_KEY
  *  - TENANT_ID
  *  - INSTANCE_ID
  * Optional:
+ *  - WHATSAPP_WEBHOOK_API_KEY (obrigatório no modo http)
  *  - TEST_PHONE (defaults to +5511999999999)
  *  - TEST_NAME (defaults to "QA Bot")
  *  - MESSAGE_TEXT (custom text for the inbound payload)
+ *  - EXPECT_WHATSAPP_MODE / WHATSAPP_MODE (assert runtime transport)
  *
  * Usage:
  *   API_URL="https://ticketzapi-production.up.railway.app" \
@@ -23,7 +24,7 @@
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 
-const requiredEnv = ['API_URL', 'WHATSAPP_WEBHOOK_API_KEY', 'TENANT_ID', 'INSTANCE_ID'];
+const requiredEnv = ['API_URL', 'TENANT_ID', 'INSTANCE_ID'];
 
 const missing = requiredEnv.filter((key) => !process.env[key] || process.env[key].trim().length === 0);
 if (missing.length > 0) {
@@ -43,12 +44,53 @@ const MESSAGE_TEXT =
 
 const SOCKET_PATH = process.env.SOCKET_IO_PATH ?? '/socket.io';
 
+const EXPECTED_WHATSAPP_MODE =
+  (process.env.EXPECT_WHATSAPP_MODE ?? process.env.WHATSAPP_MODE ?? '').trim().toLowerCase() || null;
+
 const timeout = (ms, label) =>
   new Promise((_, reject) => {
     setTimeout(() => reject(new Error(label ?? `Timeout after ${ms}ms`)), ms);
   });
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWhatsAppRuntime = async () => {
+  try {
+    const response = await fetch(`${API_URL}/healthz`, {
+      headers: {
+        accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const poller = payload.whatsappEventPoller;
+    if (!poller || typeof poller !== 'object') {
+      return null;
+    }
+
+    const mode =
+      typeof poller.mode === 'string' && poller.mode.trim().length > 0
+        ? poller.mode.trim()
+        : null;
+    const status =
+      typeof poller.status === 'string' && poller.status.trim().length > 0
+        ? poller.status.trim()
+        : null;
+    const disabled = Boolean(poller.disabled);
+
+    return { mode, status, disabled };
+  } catch {
+    return null;
+  }
+};
 
 const resolveSocketIoClient = async () => {
   try {
@@ -107,8 +149,8 @@ const sendInboundWebhook = async ({ messageId, requestId }) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': WEBHOOK_KEY,
       'x-request-id': requestId,
+      ...(WEBHOOK_KEY ? { 'x-api-key': WEBHOOK_KEY } : {}),
     },
     body: JSON.stringify(payload),
   });
@@ -201,6 +243,30 @@ const connectSocket = async () => {
 
 const main = async () => {
   console.info('🚀 WhatsApp inbound smoke test started');
+
+  const runtime = await fetchWhatsAppRuntime();
+  if (runtime) {
+    const parts = [runtime.mode ?? 'unknown'];
+    if (runtime.status) {
+      parts.push(`poller=${runtime.status}${runtime.disabled ? ' (disabled flag)' : ''}`);
+    }
+    console.info(`🛰️ WhatsApp transport runtime: ${parts.join(' | ')}`);
+
+    if (EXPECTED_WHATSAPP_MODE) {
+      const normalized = (runtime.mode ?? '').toLowerCase();
+      if (normalized !== EXPECTED_WHATSAPP_MODE) {
+        throw new Error(
+          `Expected WhatsApp mode "${EXPECTED_WHATSAPP_MODE}" but runtime reported "${runtime.mode ?? 'unknown'}"`
+        );
+      }
+    }
+  } else {
+    console.warn('⚠️ Unable to resolve WhatsApp runtime mode from /healthz; continuing smoke test.');
+  }
+
+  if (!WEBHOOK_KEY) {
+    console.warn('⚠️ WHATSAPP_WEBHOOK_API_KEY not provided; assuming webhook passthrough mode is allowed.');
+  }
 
   const requestId = randomUUID();
   const inboundMessageId = `wamid-${randomUUID()}`;

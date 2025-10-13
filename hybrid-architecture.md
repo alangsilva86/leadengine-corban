@@ -2,123 +2,52 @@
 
 ## 🚀 Visão Geral
 
-Esta arquitetura combina as funcionalidades robustas do **Ticketz** com a estrutura moderna e escalável do **Lead Engine**, criando um sistema completo e flexível para gestão de tickets, leads e CRM.
+O LeadEngine consolida tickets, leads e a integração WhatsApp em um monorepo TypeScript. A API Express orquestra tickets/leads, expõe Socket.IO multi-tenant e absorve mensagens do WhatsApp. O frontend React consome os contratos compartilhados e mantém o chat em tempo real.
 
-## 🏗️ Estrutura do Monorepo
+## 🧭 Topologia do Monorepo
 
 ```
-ticketz-leadengine/
+leadengine-corban/
 ├── apps/
-│   ├── api/                    # API REST + GraphQL
-│   ├── web/                    # Frontend React/Next.js
-│   └── admin/                  # Painel administrativo
+│   ├── api/                  # Express + Socket.IO + Prisma
+│   └── web/                  # React 19 + Vite + design system shadcn
 ├── packages/
-│   ├── core/                   # Domínio e casos de uso
-│   ├── integrations/           # Integrações externas
-│   ├── shared/                 # Código compartilhado
-│   └── storage/                # Persistência de dados
-├── package.json                # Configurações do monorepo
-└── pnpm-workspace.yaml         # Configuração do pnpm
+│   ├── contracts/            # OpenAPI, zod e tipos gerados
+│   ├── core/                 # Domínio puro (tickets, leads, erros)
+│   ├── integrations/         # Adaptadores Baileys e helpers de sessão
+│   ├── shared/               # Logger/config, métricas e utilitários
+│   └── storage/              # Prisma Client e repositórios
+├── prisma/                   # schema.prisma, migrations, seed
+├── docs/                     # ADRs, decisões e guias operacionais
+├── scripts/                  # Automação (doctor, deploy, smoke tests)
+└── docker-compose*.yml       # Orquestração local/produção
 ```
 
-## 📦 Packages
+Todos os pacotes compartilham build com `tsup` e são publicados internamente via `workspace:*`.
 
-### **`packages/core`**
+## 🔄 Interface de transporte WhatsApp unificada
 
-O coração do sistema, contendo toda a lógica de negócio e regras de domínio, completamente isolado de frameworks e tecnologias externas.
+- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (`http`, `sidecar`, `dryrun`, `disabled`).
+- `apps/api/src/config/whatsapp.ts` distribui getters (`getBrokerBaseUrl`, `getWebhookApiKey`, `shouldBypassTenantGuards` etc.), removendo leituras diretas de `process.env`.
+- `/healthz` revela `whatsappEventPoller.mode` e status (`running`, `inactive`, `disabled`) via `apps/api/src/health.ts`, facilitando auditoria pós-switch.
 
-```
-core/
-├── tickets/           # Sistema de tickets
-├── leads/             # Gestão de leads
-├── contacts/          # CRM de contatos
-├── campaigns/         # Campanhas de marketing
-├── analytics/         # Métricas e relatórios
-└── integrations/      # Orquestração de integrações
-```
+## 📥 Pipeline inbound consolidado
 
-### **`packages/integrations`**
+1. Webhook único (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) normaliza eventos Baileys, persiste mensagens e aciona `messages.new` em Socket.IO.
+2. A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para reprocessamentos/passthrough, alimentando o logger de debug e mantendo compatibilidade com jobs herdados.
+3. O poller HTTP (`apps/api/src/features/whatsapp-inbound/workers/event-poller.ts`) virou fallback: só executa quando `WHATSAPP_MODE=http` e publica métricas para decidir rollback.
 
-Implementações concretas para serviços externos, como gateways de comunicação e APIs de terceiros.
+## 📊 Observabilidade e circuit breaker
 
-```
-integrations/
-├── whatsapp/         # WhatsApp (Baileys)
-├── email/            # Email marketing
-└── crm/              # CRMs externos
-```
+- Rotas de integrações invocam `respondWhatsAppNotConfigured` (`apps/api/src/routes/integrations.ts`), retornando `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está apto — o circuito é rearmado assim que `WHATSAPP_MODE` volta a permitir chamadas.
+- As métricas (`apps/api/src/lib/metrics.ts`) cobrem webhook (`whatsapp_webhook_events_total`), HTTP client (`whatsapp_http_requests_total`), outbound e eventos Socket.IO.
+- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO para os modos `http` e `sidecar`.
 
-### **`packages/shared`**
+## 🗄️ Persistência de sessão e deploy híbrido
 
-Código utilitário compartilhado entre todos os pacotes e aplicações, como loggers, event bus e configurações.
+- `docker-compose.yml` e `docker-compose.prod.yml` mapeiam o volume `whatsapp_sessions_data` para manter sessões Baileys estáveis em ambientes sidecar.
+- O guia `DEPLOY_GUIDE.md` orienta a manter Postgres/Redis gerenciados e reaproveitar o volume entre releases.
 
-```
-shared/
-├── events/           # Event bus (e.g., RabbitMQ, Redis)
-├── queue/            # Sistema de filas (e.g., BullMQ)
-├── auth/             # Autenticação e autorização
-├── validation/       # Schemas de validação (Zod)
-└── utils/            # Utilitários gerais
-```
+## 🔁 Rollback sem rebuild
 
-### **`packages/storage`**
-
-Responsável pela persistência de dados, incluindo repositórios, migrations e seeds.
-
-```
-storage/
-├── repositories/     # Repositórios (Prisma, Drizzle)
-├── migrations/       # Migrations de banco de dados
-└── seeds/            # Seeds para dados iniciais
-```
-
-## 📱 Aplicações (Apps)
-
-### **`apps/api`**
-
-- **API principal** que expõe os casos de uso do domínio.
-- **Tecnologias**: Express/Fastify, GraphQL (Apollo/Yoga), TypeScript.
-- **Responsabilidades**: Autenticação, roteamento, validação de entrada/saída, injeção de dependências.
-
-### **`apps/web`**
-
-- **Interface do usuário** principal para clientes e agentes.
-- **Tecnologias**: Next.js/React, Tailwind CSS, React Query.
-- **Responsabilidades**: Apresentação de dados, interação com o usuário, consumo da API.
-
-### **`apps/admin`**
-
-- **Painel administrativo** para configuração e monitoramento.
-- **Tecnologias**: React/Vite, Material-UI/Ant Design.
-- **Responsabilidades**: Gestão de tenants, usuários, configurações globais.
-
-## 🎯 Princípios de Design
-
-- **Domain-Driven Design (DDD)**: Foco no domínio de negócio.
-- **Clean Architecture**: Separação clara de responsabilidades.
-- **Event-Driven Architecture**: Comunicação assíncrona e escalável.
-- **API-First**: Contratos bem definidos entre frontend e backend.
-- **Test-Driven Development (TDD)**: Qualidade e confiabilidade desde o início.
-
-## 🔗 Fluxo de Dados (Exemplo: Novo Ticket via WhatsApp)
-
-1.  **`integrations/whatsapp`**: Recebe uma nova mensagem via webhook do Baileys.
-2.  **`integrations/whatsapp`**: Publica um evento `MessageReceivedEvent` no **`shared/events`** (Event Bus).
-3.  **`core/tickets`**: Um worker (ou handler) inscrito no evento `MessageReceivedEvent` processa a mensagem.
-4.  **`core/tickets`**: Utiliza o `ContactsService` para encontrar ou criar um contato.
-5.  **`core/tickets`**: Utiliza o `TicketsService` para criar um novo ticket ou adicionar a mensagem a um ticket existente.
-6.  **`core/tickets`**: Publica um evento `TicketCreatedEvent` ou `TicketUpdatedEvent`.
-7.  **`apps/api`**: Envia uma notificação em tempo real para a **`apps/web`** via WebSocket.
-8.  **`apps/web`**: A interface do usuário é atualizada em tempo real para exibir o novo ticket/mensagem.
-
-## ✅ Benefícios
-
-- **Manutenibilidade**: Código organizado e fácil de entender.
-- **Escalabilidade**: Componentes podem ser escalados independentemente.
-- **Flexibilidade**: Fácil de adicionar novas funcionalidades e integrações.
-- **Testabilidade**: Domínio isolado facilita testes unitários.
-- **Reutilização**: Código compartilhado entre múltiplas aplicações.
-
----
-
-**Próximo passo**: Implementar a estrutura base dos pacotes e configurar as ferramentas de desenvolvimento.
+Alterar `WHATSAPP_MODE` para `http` (ou de volta para `sidecar`) e reiniciar o serviço é suficiente. Como a configuração é cacheada via `getWhatsAppConfig`, nenhum rebuild é necessário; `/healthz` confirma o modo ativo antes/depois do rollback.

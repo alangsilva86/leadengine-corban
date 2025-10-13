@@ -107,6 +107,15 @@ O deploy do Ticketz LeadEngine foi executado com sucesso, incluindo todas as cor
 - ✅ Failover scenarios
 - ✅ Backup/restore
 
+## 🧹 Auditoria de dependências
+
+- `pnpm depcheck` executado após a limpeza de manifests → nenhum pacote órfão restante (peer deps do ESLint/Prettier ignorados explicitamente).【192277†L1-L2】【17ed1f†L1-L1】
+- `pnpm ts-prune` aponta exports gerados em `packages/core/*.d.ts` e fixtures de stores in-memory que permanecem sem uso direto e serão triados em revisão dedicada.【aed9e7†L1-L200】
+
+## 📦 Ajustes no workspace
+
+- Root workspace agora removeu `zod`/`tsup`, adicionou `bcryptjs`, `depcheck`, `ts-prune` e `socket.io-client` para cobrir seeders, auditoria e smoke tests multi-modo.【F:package.json†L15-L43】【F:package.json†L45-L71】
+
 ## 🚨 Monitoramento e Alertas
 
 ### Health Checks
