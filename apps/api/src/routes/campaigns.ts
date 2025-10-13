@@ -254,6 +254,79 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
 
 export const resolveTenantId = (_req: Request): string | undefined => DEFAULT_TENANT_ID;
 
+type StoreCampaignResult = {
+  items: CampaignDTO[];
+  warnings?: CampaignWarning[];
+};
+
+const loadCampaignsFromStore = async ({
+  tenantId,
+  agreementId,
+  instanceId,
+  statuses,
+  requestId,
+}: {
+  tenantId: string;
+  agreementId?: string;
+  instanceId?: string;
+  statuses: CampaignStatus[];
+  requestId: string;
+}): Promise<StoreCampaignResult> => {
+  const logContext = {
+    requestId,
+    tenantId,
+    agreementId: agreementId ?? null,
+    instanceId: instanceId ?? null,
+    statuses,
+  };
+
+  logger.info(`${LOG_CONTEXT} querying local store`, logContext);
+
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      tenantId,
+      ...(agreementId ? { agreementId } : {}),
+      ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
+      status: { in: statuses },
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      whatsappInstance: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    take: 100,
+  });
+
+  let warnings: CampaignWarning[] | undefined;
+
+  try {
+    const items = await Promise.all(campaigns.map((campaign) => buildCampaignResponse(campaign)));
+    logger.info(`${LOG_CONTEXT} returning campaigns from store`, {
+      ...logContext,
+      count: items.length,
+    });
+    return { items };
+  } catch (metricsError) {
+    logger.warn(`${LOG_CONTEXT} metrics enrichment failed, using empty metrics`, {
+      ...logContext,
+      error: toSafeError(metricsError),
+    });
+    warnings = [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }];
+    const items = await Promise.all(
+      campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()))
+    );
+    logger.info(`${LOG_CONTEXT} returning campaigns from store with fallback metrics`, {
+      ...logContext,
+      count: items.length,
+    });
+    return { items, warnings };
+  }
+};
+
 const respondNotFound = (res: Response): void => {
   res.status(404).json({
     success: false,
@@ -870,22 +943,38 @@ router.get(
       tenantId,
       agreementId: agreementId ?? null,
       instanceId: instanceId ?? null,
-      status: statuses,
+      statuses,
     };
 
+    logger.info(`${LOG_CONTEXT} list request received`, logContext);
+
     try {
+      let upstreamFailed = false;
+
       if (useRealData) {
+        logger.info(`${LOG_CONTEXT} attempting upstream sync`, {
+          ...logContext,
+          targetStatus: statuses.join(','),
+        });
+
         try {
           const items = await fetchLeadEngineCampaigns({
             tenantId,
             agreementId,
-            status: statuses[0],
+            status: statuses.join(','),
             requestId,
+          });
+
+          logger.info(`${LOG_CONTEXT} upstream responded successfully`, {
+            ...logContext,
+            source: 'upstream',
+            count: items.length,
           });
 
           res.json({ success: true, items, requestId });
           return;
         } catch (upstreamError) {
+          upstreamFailed = true;
           const upstreamStatus = (upstreamError as { status?: number }).status;
 
           if (upstreamStatus === 404) {
@@ -915,58 +1004,28 @@ router.get(
             ...logContext,
             error: toSafeError(upstreamError),
           });
-          res.status(500).json({
-            success: false,
-            error: {
-              code: 'UNEXPECTED_CAMPAIGNS_ERROR',
-              message: 'Falha inesperada ao listar campanhas.',
-            },
-            requestId,
+
+          logger.warn(`${LOG_CONTEXT} falling back to local store after upstream error`, {
+            ...logContext,
+            upstreamStatus: upstreamStatus ?? null,
           });
-          return;
         }
       }
 
-      const campaigns = await prisma.campaign.findMany({
-        where: {
-          tenantId,
-          ...(agreementId ? { agreementId } : {}),
-          ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
-          status: { in: statuses },
-        },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          whatsappInstance: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-        take: 100,
+      const { items, warnings } = await loadCampaignsFromStore({
+        tenantId,
+        agreementId,
+        instanceId,
+        statuses,
+        requestId,
       });
-
-      let items: CampaignDTO[];
-      let warnings: CampaignWarning[] | undefined;
-
-      try {
-        items = await Promise.all(campaigns.map((campaign) => buildCampaignResponse(campaign)));
-      } catch (metricsError) {
-        logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
-          ...logContext,
-          error: toSafeError(metricsError),
-        });
-        warnings = [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }];
-        items = await Promise.all(
-          campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()))
-        );
-      }
 
       const payload: {
         success: true;
         items: CampaignDTO[];
         requestId: string;
         warnings?: CampaignWarning[];
+        meta?: Record<string, unknown>;
       } = {
         success: true,
         items,
@@ -976,6 +1035,11 @@ router.get(
       if (warnings) {
         payload.warnings = warnings;
       }
+
+      payload.meta = {
+        source: upstreamFailed ? 'store-fallback' : 'store',
+        upstreamFallback: upstreamFailed,
+      };
 
       res.json(payload);
     } catch (error) {

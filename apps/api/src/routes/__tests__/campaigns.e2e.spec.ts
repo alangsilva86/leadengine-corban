@@ -290,22 +290,26 @@ describe('GET /api/campaigns', () => {
     });
   });
 
-  it('returns 502 when the upstream fails with 5xx and USE_REAL_DATA enabled', async () => {
+  it('falls back to Prisma when the upstream fails with 5xx and USE_REAL_DATA enabled', async () => {
     featureFlagsState.useRealData = true;
     fetchLeadEngineCampaignsMock.mockRejectedValueOnce({ status: 503, message: 'upstream down' });
+
+    campaignFindMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
     const response = await request(app).get('/api/campaigns');
 
     expect(fetchLeadEngineCampaignsMock).toHaveBeenCalled();
-    expect(campaignFindMany).not.toHaveBeenCalled();
-    expect(response.status).toBe(502);
+    expect(campaignFindMany).toHaveBeenCalled();
+    expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      success: false,
-      error: {
-        code: 'UPSTREAM_FAILURE',
-      },
+      success: true,
       requestId: expect.any(String),
+      items: [],
+      meta: {
+        source: 'store-fallback',
+        upstreamFallback: true,
+      },
     });
   });
 });
