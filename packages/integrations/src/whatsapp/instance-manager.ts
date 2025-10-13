@@ -50,10 +50,13 @@ export class WhatsAppInstanceManager extends EventEmitter {
     const config: WhatsAppConfig = {
       instanceId,
       sessionPath,
-      webhookUrl: request.webhookUrl,
       qrCodeCallback: (qr) => this.handleQRCode(instanceId, qr),
       statusCallback: (status) => this.handleStatusChange(instanceId, status)
     };
+
+    if (request.webhookUrl !== undefined) {
+      config.webhookUrl = request.webhookUrl;
+    }
 
     const provider = new BaileysWhatsAppProvider(config);
     
@@ -285,13 +288,26 @@ export class WhatsAppInstanceManager extends EventEmitter {
       totalInstances: instances.length,
       connectedInstances: instances.filter(i => i.status === 'connected').length,
       disconnectedInstances: instances.filter(i => i.status === 'disconnected').length,
-      instances: instances.map(i => ({
-        id: i.id,
-        tenantId: i.tenantId,
-        name: i.name,
-        status: i.status,
-        lastActivity: i.lastActivity
-      }))
+      instances: instances.map(i => {
+        const instanceInfo: {
+          id: string;
+          tenantId: string;
+          name: string;
+          status: ConnectionStatus;
+          lastActivity?: Date;
+        } = {
+          id: i.id,
+          tenantId: i.tenantId,
+          name: i.name,
+          status: i.status
+        };
+
+        if (i.lastActivity !== undefined) {
+          instanceInfo.lastActivity = i.lastActivity;
+        }
+
+        return instanceInfo;
+      })
     };
   }
 

@@ -29,12 +29,17 @@ export async function storeMedia(
   const storageId = randomUUID();
   const base64 = buffer.toString('base64');
 
-  return {
+  const storedMedia: StoredMedia = {
     url: `data:${mimeType};base64,${base64}`,
     mimeType,
-    fileName: options.fileName,
     size: buffer.length,
     expiresAt: null,
     storageId
   };
+
+  if (options.fileName !== undefined) {
+    storedMedia.fileName = options.fileName;
+  }
+
+  return storedMedia;
 }
