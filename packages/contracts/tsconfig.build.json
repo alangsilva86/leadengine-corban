@@ -8,6 +8,7 @@
     "declarationMap": false,
     "emitDeclarationOnly": false,
     "skipLibCheck": true,
+    "exactOptionalPropertyTypes": false,
     "rootDir": "src",
     "outDir": "dist",
     "types": ["node"]
