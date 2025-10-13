@@ -24,7 +24,7 @@ O **Ticketz LeadEngine** reúne o fluxo de tickets do ecossistema Ticketz, a orq
 
 - 🎫 **Gestão de tickets** com atribuição, histórico, filas e chat em tempo real via Socket.IO.
 - 👥 **Pipeline de leads** com qualificação, tags, campanhas e dashboards alimentados pela API oficial do LeadEngine.
-- 📱 **Integração WhatsApp** com interface de transporte única (`http`, `sidecar`, `dryrun`, `disabled`), ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) e fila interna para orquestrar o processamento com pipeline único.
+- 📱 **Integração WhatsApp** com transporte HTTP único, ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) e fila interna para orquestrar o processamento com pipeline único.
 - 🏢 **Multi-tenant completo**: cada requisição exige `tenantId`, há bypass controlado para demos e todas as entidades principais carregam isolamento lógico.
 - 🧱 **Arquitetura modular** com pacotes de domínio, storage, integrações e contratos compartilhados entre backend e frontend.
 
@@ -121,10 +121,10 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
 
 ### 4. Variáveis de ambiente
 - **Backend**: crie `apps/api/.env` (ou `.env.local`) baseado nas chaves usadas em produção.
-  - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_MODE=sidecar` (ou `http` para rollback imediato), `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
-  - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_MODE=http`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
+  - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
+  - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
   - Configure os limites de falha do circuito outbound via `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` para personalizar tolerância e cooldown de envio.
-  - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_MODE=http`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável), `WHATSAPP_SESSION_STORE_DRIVER`, `WHATSAPP_SESSION_STORE_URL`, `WHATSAPP_SESSION_STORE_REDIS_TTL`.
+  - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável), `WHATSAPP_SESSION_STORE_DRIVER`, `WHATSAPP_SESSION_STORE_URL`, `WHATSAPP_SESSION_STORE_REDIS_TTL`.
   - `WHATSAPP_SESSION_STORE_DRIVER` suporta `postgres` (persistência via Prisma), `redis` ou `memory` (apenas desenvolvimento). Use `WHATSAPP_SESSION_STORE_URL` para apontar para o banco/cluster e `WHATSAPP_SESSION_STORE_REDIS_TTL` para definir TTL opcional ao usar Redis.
   - Use `docs/environments/ticketzapi-production.env` como referência de produção.
 - **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000` e `VITE_WS_URL=ws://localhost:4000`.
@@ -188,7 +188,7 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - **utils/** e **lib/**: parse de telefone, normalização de slug, métricas Prometheus, registrador Socket.IO, Prisma singleton e helpers HTTP.
 
 ### Fluxo WhatsApp resumido
-1. Independentemente do modo (`http`, `sidecar`, `dryrun` ou `disabled`), os eventos inbound chegam por `/api/integrations/whatsapp/webhook`, são normalizados e persistidos de forma síncrona (`features/whatsapp-inbound/routes/webhook-routes.ts`) e geram `messages.new` via Socket.IO.
+1. Os eventos inbound chegam por `/api/integrations/whatsapp/webhook`, são normalizados e persistidos de forma síncrona (`features/whatsapp-inbound/routes/webhook-routes.ts`) e geram `messages.new` via Socket.IO.
 2. A fila interna (`features/whatsapp-inbound/queue/event-queue.ts`) continua disponível para reprocessamentos, com o worker `inbound-processor` convertendo eventos herdados em tickets/mensagens e alimentando o logger de debug (`features/whatsapp-inbound/workers/inbound-processor.ts`).
 3. O processamento assíncrono roda no worker `inbound-processor` (`features/whatsapp-inbound/workers/inbound-processor.ts`), que consome a fila, aplica dedupe e distribui eventos para tickets/mensagens sem caminhos alternativos paralelos.
 4. O router `/api/integrations/whatsapp` centraliza instâncias, QR, pareamento, envio de mensagens e circuit breaker de configuração (`routes/integrations.ts`), além de expor métricas/health específicas para observabilidade.
@@ -281,19 +281,19 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
   - `trace_whatsapp_inbound.sh` e `replay-baileys-log.mjs` – troubleshooting da fila WhatsApp.
   - `build-api-render.sh` / `build-web-render.sh` – builds prontos para hospedar na Render.
   - `deploy.sh` – pipeline automatizada (build + migrações + restart).
-  - `whatsapp-smoke-test.mjs` – valida inbound/webhook nos modos `http` e `sidecar`, escutando Socket.IO e REST.
-- **Circuit breaker & modo de transporte**: `/healthz` retorna o modo ativo do transporte WhatsApp via bloco `whatsapp.runtime` (modo, transport, status, disabled) (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está habilitado (`apps/api/src/routes/integrations.ts`).
+  - `whatsapp-smoke-test.mjs` – valida inbound/webhook no transporte HTTP, escutando Socket.IO e REST.
+- **Circuit breaker & modo de transporte**: `/healthz` retorna o status do transporte WhatsApp via bloco `whatsapp.runtime` (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando a configuração HTTP está incompleta (`apps/api/src/routes/integrations.ts`).
 
 ---
 
 ## Capítulo 9 – Docker, deploy e ambientes
 
-- `docker-compose.yml` sobe Postgres 15, Redis 7, API e Web. O volume nomeado `whatsapp_sessions_data` garante persistência das sessões WhatsApp mesmo após `docker compose down`.
+- `docker-compose.yml` sobe Postgres 15, Redis 7, API e Web com as variáveis necessárias para o broker HTTP.
 - `docker-compose.prod.yml` adiciona Nginx e ajustes de build multi-stage.
 - `apps/api/Dockerfile` e `apps/web/Dockerfile` usam multi-stage (builder → runner) com pnpm cache.
 - `apps/baileys-acessuswpp/render.yaml` descreve o deploy oficial do broker Baileys na Render (incluindo `API_KEY`).
 - Para Railway/Render: consultar `docs/docker.md`, `docs/whatsapp-broker-contracts.md` e `docs/whatsapp-railway-curl-recipes.md` para validar rotas e webhooks.
-- Rollback/feature flag: `WHATSAPP_MODE` pode alternar entre `sidecar`, `http`, `dryrun` e `disabled` sem rebuild — basta atualizar a variável e reiniciar o container; `/healthz` expõe o modo ativo para auditoria.
+- O transporte WhatsApp opera exclusivamente em modo HTTP; `/healthz` expõe o status atual para auditoria.
 
 ---
 

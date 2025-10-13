@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-export type WhatsAppTransportMode = 'http' | 'sidecar' | 'dryrun' | 'disabled';
+export type WhatsAppTransportMode = 'http';
 
 type Booleanish = string | undefined | null;
 
@@ -30,10 +30,7 @@ type WhatsAppFeatureFlags = {
 
 type WhatsAppRuntimeConfig = {
   mode: WhatsAppTransportMode;
-  rawMode: string;
   correlationSeed: string;
-  sidecarSessionsPath: string;
-  hasCustomSidecarSessionsPath: boolean;
 };
 
 type WhatsAppConfig = {
@@ -93,43 +90,19 @@ const normalizePositiveInteger = (value: string | undefined | null): number | nu
 const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
 const DEFAULT_WEBHOOK_URL =
   'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
-const DEFAULT_SIDECAR_SESSIONS_PATH = './tmp/whatsapp-sessions';
-
-const readSidecarSessionsPath = (): { path: string; isCustom: boolean } => {
-  const candidates = [
-    normalizeString(process.env.WHATSAPP_SIDECAR_SESSIONS_PATH),
-    normalizeString(process.env.WHATSAPP_SIDECAR_SESSIONS_DIR),
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate) {
-      return { path: candidate, isCustom: true };
-    }
+const assertSingleTransportMode = (raw: string | undefined | null): void => {
+  const normalized = normalizeString(raw);
+  if (!normalized || normalized.toLowerCase() === 'http') {
+    return;
   }
 
-  return { path: DEFAULT_SIDECAR_SESSIONS_PATH, isCustom: false };
-};
-
-const parseMode = (raw: string | undefined | null): { mode: WhatsAppTransportMode; raw: string } => {
-  const normalized = normalizeString(raw)?.toLowerCase() ?? '';
-
-  if (normalized === 'sidecar' || normalized === 'baileys') {
-    return { mode: 'sidecar', raw: normalized };
-  }
-
-  if (normalized === 'dryrun') {
-    return { mode: 'dryrun', raw: normalized };
-  }
-
-  if (normalized === 'disabled') {
-    return { mode: 'disabled', raw: normalized };
-  }
-
-  return { mode: 'http', raw: normalized || 'http' };
+  throw new Error(
+    `Unsupported WHATSAPP_MODE value "${normalized}". HTTP is now the only supported transport mode; remove this environment variable or set it to "http".`
+  );
 };
 
 const buildWhatsAppConfig = (): WhatsAppConfig => {
-  const mode = parseMode(process.env.WHATSAPP_MODE);
+  assertSingleTransportMode(process.env.WHATSAPP_MODE);
 
   const timeoutCandidates = [
     process.env.WHATSAPP_BROKER_TIMEOUT_MS,
@@ -152,8 +125,6 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     normalizeString(process.env.WHATSAPP_WEBHOOK_URL) ??
     normalizeString(process.env.WEBHOOK_URL) ??
     DEFAULT_WEBHOOK_URL;
-
-  const sidecarSessions = readSidecarSessionsPath();
 
   return {
     broker: {
@@ -182,11 +153,8 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
       tenantId: normalizeString(process.env.AUTH_MVP_TENANT_ID) ?? DEFAULT_TENANT_FALLBACK,
     },
     runtime: {
-      mode: mode.mode,
-      rawMode: mode.raw,
+      mode: 'http',
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
-      sidecarSessionsPath: sidecarSessions.path,
-      hasCustomSidecarSessionsPath: sidecarSessions.isCustom,
     },
     flags: {
       passthroughMode: normalizeBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, true),
@@ -213,7 +181,7 @@ export const __private = {
   buildWhatsAppConfig,
   normalizeBoolean,
   normalizeString,
-  parseMode,
+  assertSingleTransportMode,
   normalizePositiveInteger,
 };
 

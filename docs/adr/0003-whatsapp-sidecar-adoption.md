@@ -1,5 +1,7 @@
 # ADR 0003 — Adoção do Sidecar WhatsApp
 
+> ⚠️ **Atualização (2025-03-01):** o modo sidecar foi aposentado. A API agora opera exclusivamente com o transporte HTTP descrito nesta ADR; mantenha este registro apenas como histórico da decisão original.
+
 ## Contexto
 
 A integração atual com o WhatsApp depende de um broker HTTP externo. O modo sidecar já

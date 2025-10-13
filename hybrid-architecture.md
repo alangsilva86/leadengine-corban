@@ -27,7 +27,7 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔄 Interface de transporte WhatsApp unificada
 
-- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (`http`, `sidecar`, `dryrun`, `disabled`).
+- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (sempre `http`).
 - `apps/api/src/config/whatsapp.ts` distribui getters (`getBrokerBaseUrl`, `getWebhookApiKey`, `shouldBypassTenantGuards` etc.), removendo leituras diretas de `process.env`.
 - `/healthz` revela o modo de transporte WhatsApp (`running`, `inactive`, `disabled`) via `apps/api/src/health.ts`, expondo `whatsapp.runtime` (com `mode`, `transport`, `status`, `disabled`) para facilitar auditoria pós-switch.
 
@@ -39,15 +39,15 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 📊 Observabilidade e circuit breaker
 
-- Rotas de integrações invocam `respondWhatsAppNotConfigured` (`apps/api/src/routes/integrations.ts`), retornando `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está apto — o circuito é rearmado assim que `WHATSAPP_MODE` volta a permitir chamadas.
+- Rotas de integrações invocam `respondWhatsAppNotConfigured` (`apps/api/src/routes/integrations.ts`), retornando `503 WHATSAPP_NOT_CONFIGURED` sempre que a configuração HTTP estiver incompleta.
 - As métricas (`apps/api/src/lib/metrics.ts`) cobrem webhook (`whatsapp_webhook_events_total`), HTTP client (`whatsapp_http_requests_total`), outbound e eventos Socket.IO.
-- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO para os modos `http` e `sidecar`.
+- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO para o modo HTTP.
 
 ## 🗄️ Persistência de sessão e deploy híbrido
 
-- `docker-compose.yml` e `docker-compose.prod.yml` mapeiam o volume `whatsapp_sessions_data` para manter sessões Baileys estáveis em ambientes sidecar.
+- `docker-compose.yml` e `docker-compose.prod.yml` foram simplificados para operar somente com o broker HTTP.
 - O guia `DEPLOY_GUIDE.md` orienta a manter Postgres/Redis gerenciados e reaproveitar o volume entre releases.
 
 ## 🔁 Rollback sem rebuild
 
-Alterar `WHATSAPP_MODE` para `http` (ou de volta para `sidecar`) e reiniciar o serviço é suficiente. Como a configuração é cacheada via `getWhatsAppConfig`, nenhum rebuild é necessário; `/healthz` confirma o modo ativo antes/depois do rollback.
+Remova `WHATSAPP_MODE` de ambientes legados; `/healthz` confirma o transporte HTTP ativo.

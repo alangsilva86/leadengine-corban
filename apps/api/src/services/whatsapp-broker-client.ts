@@ -7,7 +7,6 @@ import {
   getBrokerTimeoutMs,
   getBrokerWebhookUrl,
   getWebhookVerifyToken,
-  getWhatsAppMode,
 } from '../config/whatsapp';
 import {
   BrokerOutboundMessageSchema,
@@ -226,15 +225,6 @@ export type WhatsAppBrokerResolvedConfig = {
 };
 
 export const resolveWhatsAppBrokerConfig = (): WhatsAppBrokerResolvedConfig => {
-  const mode = getWhatsAppMode();
-
-  if (mode !== 'http') {
-    const message = mode
-      ? 'WhatsApp broker only available when WHATSAPP_MODE is set to "http"'
-      : 'WhatsApp broker requires WHATSAPP_MODE=http to be enabled';
-    throw new WhatsAppBrokerNotConfiguredError(message);
-  }
-
   const baseUrl = getBrokerBaseUrl();
   if (!baseUrl) {
     throw new WhatsAppBrokerNotConfiguredError(
