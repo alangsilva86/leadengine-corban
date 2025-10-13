@@ -1,49 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { refreshWhatsAppEnv } from './config/whatsapp';
-import type { WhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
-
-const baseMetrics: WhatsAppEventPollerMetrics = {
-  running: false,
-  cursor: null,
-  pendingQueue: 0,
-  lastFetchAt: null,
-  lastFetchCount: 0,
-  lastAckAt: null,
-  lastAckCursor: null,
-  lastAckCount: 0,
-  consecutiveFailures: 0,
-  lastErrorAt: null,
-  lastErrorMessage: null,
-  backoffMs: 0,
-};
-
-const withMetrics = (overrides: Partial<WhatsAppEventPollerMetrics>): WhatsAppEventPollerMetrics => ({
-  ...baseMetrics,
-  ...overrides,
-});
-
-const mockPollerMetrics = (metrics: WhatsAppEventPollerMetrics) => {
-  vi.doMock('./features/whatsapp-inbound/workers/event-poller', () => ({
-    getWhatsAppEventPollerMetrics: () => metrics,
-  }));
-};
 
 afterEach(() => {
-  vi.resetModules();
-  vi.clearAllMocks();
-  vi.restoreAllMocks();
-  delete process.env.WHATSAPP_EVENT_POLLER_DISABLED;
   delete process.env.WHATSAPP_MODE;
   delete process.env.DATABASE_URL;
   refreshWhatsAppEnv();
 });
 
 describe('buildHealthPayload', () => {
-  it('marks poller as disabled when configuration disables the worker', async () => {
-    process.env.WHATSAPP_EVENT_POLLER_DISABLED = 'true';
+  it('returns base health information for the API', async () => {
     process.env.WHATSAPP_MODE = 'http';
     refreshWhatsAppEnv();
-    mockPollerMetrics(withMetrics({ running: false }));
 
     const { buildHealthPayload } = await import('./health');
     const payload = buildHealthPayload({ environment: 'test' });
@@ -51,15 +18,14 @@ describe('buildHealthPayload', () => {
     expect(payload.status).toBe('ok');
     expect(payload.whatsapp.runtime.status).toBe('disabled');
     expect(payload.whatsapp.runtime.disabled).toBe(true);
+    expect(payload.environment).toBe('test');
     expect(payload.storage).toBe('in-memory');
+    expect(payload.whatsapp).toEqual({ mode: 'http', transportMode: 'http' });
   });
 
-  it('reports running status when poller loop is active', async () => {
-    process.env.WHATSAPP_MODE = 'http';
+  it('marks status as degraded when WhatsApp transport is disabled', async () => {
+    process.env.WHATSAPP_MODE = 'disabled';
     refreshWhatsAppEnv();
-    mockPollerMetrics(
-      withMetrics({ running: true, cursor: 'cursor-55', lastAckCursor: 'cursor-55', lastAckCount: 10 })
-    );
 
     const { buildHealthPayload } = await import('./health');
     const payload = buildHealthPayload({ environment: 'production' });
@@ -102,18 +68,20 @@ describe('buildHealthPayload', () => {
     expect(payload.whatsapp.runtime.status).toBe('inactive');
     expect(payload.whatsapp.runtime.mode).toBe('baileys');
     expect(payload.whatsapp.runtime.transport).toBe('sidecar');
+    expect(payload.status).toBe('degraded');
+    expect(payload.whatsapp.transportMode).toBe('disabled');
+    expect(payload.whatsapp.mode).toBe('disabled');
   });
 
   it('reports postgres storage when database url is configured', async () => {
     process.env.DATABASE_URL = 'postgresql://ticketz:password@localhost:5432/ticketz';
-    process.env.WHATSAPP_MODE = 'http';
+    process.env.WHATSAPP_MODE = 'sidecar';
     refreshWhatsAppEnv();
-    mockPollerMetrics(withMetrics({ running: true }));
 
     const { buildHealthPayload } = await import('./health');
     const payload = buildHealthPayload({ environment: 'production' });
 
     expect(payload.storage).toBe('postgres/prisma');
-    expect(payload.status).toBe('ok');
+    expect(payload.whatsapp.transportMode).toBe('sidecar');
   });
 });

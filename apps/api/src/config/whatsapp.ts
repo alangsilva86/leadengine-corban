@@ -30,8 +30,6 @@ export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().
 
 export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawMode;
 
-export const isWhatsAppEventPollerDisabled = (): boolean => getWhatsAppConfig().runtime.eventPollerDisabled;
-
 export const getSidecarSessionsPath = (): string => getWhatsAppConfig().runtime.sidecarSessionsPath;
 
 export const hasCustomSidecarSessionsPath = (): boolean =>
