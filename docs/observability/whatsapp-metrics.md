@@ -30,6 +30,6 @@ Este documento descreve os painéis de Grafana e alertas de Prometheus recomenda
 
 ## Boas práticas
 
-* Sempre filtre por `transport` e `origin` para diferenciar o tráfego proveniente do sidecar, HTTP broker ou dry-run.
+* Sempre filtre por `transport` e `origin` para diferenciar o tráfego proveniente do broker HTTP (`transport="http"`) e cenários de teste (`transport="dryrun"`).
 * Aplique `tenantId` nos painéis quando investigar problemas específicos de clientes corporativos.
 * Utilize `instanceId="overflow"` como indicador de que a cardinalidade está acima do limite recomendado e revise a configuração do tenant/instância.
