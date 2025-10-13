@@ -6,6 +6,7 @@ type FeatureFlags = {
   whatsappRawFallbackEnabled: boolean;
   whatsappInboundSimpleMode: boolean;
   whatsappPassthroughMode: boolean;
+  whatsappBrokerStrictConfig: boolean;
 };
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
@@ -49,12 +50,18 @@ const computeFlags = (): FeatureFlags => {
     logger.warn('[config] WhatsApp passthrough habilitado — ingestão sem filtros');
   }
 
+  const whatsappBrokerStrictConfig = parseBoolean(process.env.WHATSAPP_BROKER_STRICT_CONFIG, false);
+  if (whatsappBrokerStrictConfig) {
+    logger.warn('[config] WhatsApp broker strict config habilitado — bloqueando se faltar URL/API key');
+  }
+
   return {
     useRealData,
     mvpAuthBypass,
     whatsappRawFallbackEnabled,
     whatsappInboundSimpleMode,
     whatsappPassthroughMode,
+    whatsappBrokerStrictConfig,
   } satisfies FeatureFlags;
 };
 
@@ -72,6 +79,8 @@ export const isWhatsappInboundSimpleModeEnabled = (): boolean => cachedFlags.wha
 
 export const isWhatsappPassthroughModeEnabled = (): boolean => cachedFlags.whatsappPassthroughMode;
 
+export const isWhatsappBrokerStrictConfigEnabled = (): boolean => cachedFlags.whatsappBrokerStrictConfig;
+
 export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureFlags => {
   const next = { ...computeFlags(), ...overrides } satisfies FeatureFlags;
   const useRealDataChanged = next.useRealData !== cachedFlags.useRealData;
@@ -79,14 +88,23 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
   const whatsappFallbackChanged = next.whatsappRawFallbackEnabled !== cachedFlags.whatsappRawFallbackEnabled;
   const whatsappSimpleChanged = next.whatsappInboundSimpleMode !== cachedFlags.whatsappInboundSimpleMode;
   const whatsappPassthroughChanged = next.whatsappPassthroughMode !== cachedFlags.whatsappPassthroughMode;
+  const whatsappStrictChanged = next.whatsappBrokerStrictConfig !== cachedFlags.whatsappBrokerStrictConfig;
 
-  if (useRealDataChanged || mvpAuthBypassChanged || whatsappFallbackChanged || whatsappSimpleChanged || whatsappPassthroughChanged) {
+  if (
+    useRealDataChanged ||
+    mvpAuthBypassChanged ||
+    whatsappFallbackChanged ||
+    whatsappSimpleChanged ||
+    whatsappPassthroughChanged ||
+    whatsappStrictChanged
+  ) {
     logger.info('[config] Feature flags atualizados', {
       useRealData: next.useRealData,
       mvpAuthBypass: next.mvpAuthBypass,
       whatsappRawFallbackEnabled: next.whatsappRawFallbackEnabled,
       whatsappInboundSimpleMode: next.whatsappInboundSimpleMode,
       whatsappPassthroughMode: next.whatsappPassthroughMode,
+      whatsappBrokerStrictConfig: next.whatsappBrokerStrictConfig,
     });
     if (next.mvpAuthBypass) {
       logger.warn('[config] MVP auth bypass habilitado (refresh)');
@@ -99,6 +117,9 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     }
     if (next.whatsappPassthroughMode && !cachedFlags.whatsappPassthroughMode) {
       logger.warn('[config] WhatsApp passthrough habilitado (refresh)');
+    }
+    if (next.whatsappBrokerStrictConfig && !cachedFlags.whatsappBrokerStrictConfig) {
+      logger.warn('[config] WhatsApp broker strict config habilitado (refresh)');
     }
   }
   cachedFlags = next;
