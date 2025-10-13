@@ -49,8 +49,8 @@ describe('buildHealthPayload', () => {
     const payload = buildHealthPayload({ environment: 'test' });
 
     expect(payload.status).toBe('ok');
-    expect(payload.whatsappEventPoller.status).toBe('disabled');
-    expect(payload.whatsappEventPoller.disabled).toBe(true);
+    expect(payload.whatsapp.runtime.status).toBe('disabled');
+    expect(payload.whatsapp.runtime.disabled).toBe(true);
     expect(payload.storage).toBe('in-memory');
   });
 
@@ -65,8 +65,9 @@ describe('buildHealthPayload', () => {
     const payload = buildHealthPayload({ environment: 'production' });
 
     expect(payload.status).toBe('ok');
-    expect(payload.whatsappEventPoller.status).toBe('running');
-    expect(payload.whatsappEventPoller.mode).toBe('http');
+    expect(payload.whatsapp.runtime.status).toBe('running');
+    expect(payload.whatsapp.runtime.mode).toBe('http');
+    expect(payload.whatsapp.runtime.transport).toBe('http');
   });
 
   it('degrades health when poller has repeated failures', async () => {
@@ -85,8 +86,8 @@ describe('buildHealthPayload', () => {
     const payload = buildHealthPayload({ environment: 'staging' });
 
     expect(payload.status).toBe('degraded');
-    expect(payload.whatsappEventPoller.status).toBe('error');
-    expect(payload.whatsappEventPoller.disabled).toBe(false);
+    expect(payload.whatsapp.runtime.status).toBe('error');
+    expect(payload.whatsapp.runtime.disabled).toBe(false);
   });
 
   it('marks poller as inactive when WhatsApp mode is not HTTP', async () => {
@@ -98,8 +99,9 @@ describe('buildHealthPayload', () => {
     const payload = buildHealthPayload({ environment: 'qa' });
 
     expect(payload.status).toBe('ok');
-    expect(payload.whatsappEventPoller.status).toBe('inactive');
-    expect(payload.whatsappEventPoller.mode).toBe('baileys');
+    expect(payload.whatsapp.runtime.status).toBe('inactive');
+    expect(payload.whatsapp.runtime.mode).toBe('baileys');
+    expect(payload.whatsapp.runtime.transport).toBe('sidecar');
   });
 
   it('reports postgres storage when database url is configured', async () => {

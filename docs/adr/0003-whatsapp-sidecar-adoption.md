@@ -15,9 +15,8 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
 2. Expor uma API explícita para o modo de transporte (`getWhatsAppMode`) e para os
    recursos críticos (broker, webhook, flags), permitindo alternar entre `http`,
    `sidecar`, `dryrun` e `disabled` sem alterar chamadas diretas a `process.env`.
-3. Atualizar os pontos sensíveis (healthcheck, poller de eventos e cliente do broker) para
-   depender dessa camada, estabelecendo a fundação para introduzir o adaptador sidecar em
-   fases posteriores.
+3. Atualizar os pontos sensíveis (healthcheck e cliente do broker) para depender dessa camada,
+   estabelecendo a fundação para introduzir o adaptador sidecar em fases posteriores.
 
 ## Consequências
 
@@ -29,5 +28,5 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
   cada chamada individual, pois o modo ativo já está centralizado e versionado.
 - O rollback para `WHATSAPP_MODE=http` torna-se previsível: basta alterar a variável e
   reinicializar, já que nenhuma chamada depende de leitura direta de `process.env`.
-- O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) tornou-se o caminho principal, deixando o poller (`workers/event-poller.ts`) somente como fallback para brokers legados.
-- `/healthz` divulga `whatsappEventPoller.mode/status` (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.
+- O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) tornou-se o caminho principal e exclusivo de ingestão.
+- `/healthz` divulga o modo ativo (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.

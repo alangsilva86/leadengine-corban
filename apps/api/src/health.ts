@@ -8,10 +8,14 @@ export type HealthPayload = {
   uptime: number;
   environment: string;
   storage: string;
-  whatsappEventPoller: WhatsAppEventPollerMetrics & {
-    status: 'running' | 'stopped' | 'disabled' | 'inactive' | 'error';
-    mode: string;
-    disabled: boolean;
+  whatsapp: {
+    runtime: {
+      status: 'running' | 'stopped' | 'disabled' | 'inactive' | 'error';
+      mode: string;
+      transport: string;
+      disabled: boolean;
+      metrics: WhatsAppEventPollerMetrics;
+    };
   };
 };
 
@@ -73,11 +77,14 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     uptime: process.uptime(),
     environment,
     storage: deriveStorageBackend(),
-    whatsappEventPoller: {
-      ...metrics,
-      status: pollerStatus,
-      mode: rawMode || mode,
-      disabled,
+    whatsapp: {
+      runtime: {
+        status: pollerStatus,
+        mode: rawMode || mode,
+        transport: mode,
+        disabled,
+        metrics,
+      },
     },
   };
 };

@@ -24,7 +24,7 @@ O **Ticketz LeadEngine** reúne o fluxo de tickets do ecossistema Ticketz, a orq
 
 - 🎫 **Gestão de tickets** com atribuição, histórico, filas e chat em tempo real via Socket.IO.
 - 👥 **Pipeline de leads** com qualificação, tags, campanhas e dashboards alimentados pela API oficial do LeadEngine.
-- 📱 **Integração WhatsApp** com interface de transporte única (`http`, `sidecar`, `dryrun`, `disabled`), ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) e poller HTTP mantido apenas como fallback monitorado.
+- 📱 **Integração WhatsApp** com interface de transporte única (`http`, `sidecar`, `dryrun`, `disabled`), ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) e fila interna para orquestrar o processamento com pipeline único.
 - 🏢 **Multi-tenant completo**: cada requisição exige `tenantId`, há bypass controlado para demos e todas as entidades principais carregam isolamento lógico.
 - 🧱 **Arquitetura modular** com pacotes de domínio, storage, integrações e contratos compartilhados entre backend e frontend.
 
@@ -183,14 +183,14 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - **data/**: seeds, fixtures e builders usados em testes.
 - **middleware/**: autenticação (`middleware/auth.ts`), auditoria de requisições, validação e tratamento de erros.
 - **routes/**: módulos independentes para auth, tickets, leads, contatos, campanhas, preferências, filas, conversas manuais, integrações e webhooks.
-- **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza e persiste eventos (`features/whatsapp-inbound/routes/webhook-routes.ts`), a fila interna expõe instrumentação (`features/whatsapp-inbound/queue/event-queue.ts`) e o poller HTTP permaneceu como fallback observável (`features/whatsapp-inbound/workers/event-poller.ts`).
+- **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza e persiste eventos (`features/whatsapp-inbound/routes/webhook-routes.ts`) e a fila interna expõe instrumentação/retentativas (`features/whatsapp-inbound/queue/event-queue.ts`).
 - **socket/**: handlers de conexão multi-tenant (`socket/connection-handlers.ts`).
 - **utils/** e **lib/**: parse de telefone, normalização de slug, métricas Prometheus, registrador Socket.IO, Prisma singleton e helpers HTTP.
 
 ### Fluxo WhatsApp resumido
 1. Independentemente do modo (`http`, `sidecar`, `dryrun` ou `disabled`), os eventos inbound chegam por `/api/integrations/whatsapp/webhook`, são normalizados e persistidos de forma síncrona (`features/whatsapp-inbound/routes/webhook-routes.ts`) e geram `messages.new` via Socket.IO.
 2. A fila interna (`features/whatsapp-inbound/queue/event-queue.ts`) continua disponível para reprocessamentos, com o worker `inbound-processor` convertendo eventos herdados em tickets/mensagens e alimentando o logger de debug (`features/whatsapp-inbound/workers/inbound-processor.ts`).
-3. O poller HTTP (`features/whatsapp-inbound/workers/event-poller.ts`) virou fallback: ele só ativa quando `WHATSAPP_MODE=http` e o circuito detecta backlog, garantindo compatibilidade com brokers legados sem competir com o pipeline principal.
+3. O processamento assíncrono roda no worker `inbound-processor` (`features/whatsapp-inbound/workers/inbound-processor.ts`), que consome a fila, aplica dedupe e distribui eventos para tickets/mensagens sem caminhos alternativos paralelos.
 4. O router `/api/integrations/whatsapp` centraliza instâncias, QR, pareamento, envio de mensagens e circuit breaker de configuração (`routes/integrations.ts`), além de expor métricas/health específicas para observabilidade.
 
 ### Health & métricas
@@ -282,7 +282,7 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
   - `build-api-render.sh` / `build-web-render.sh` – builds prontos para hospedar na Render.
   - `deploy.sh` – pipeline automatizada (build + migrações + restart).
   - `whatsapp-smoke-test.mjs` – valida inbound/webhook nos modos `http` e `sidecar`, escutando Socket.IO e REST.
-- **Circuit breaker & modo de transporte**: `/healthz` retorna o modo ativo e o status do poller (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está habilitado (`apps/api/src/routes/integrations.ts`).
+- **Circuit breaker & modo de transporte**: `/healthz` retorna o modo ativo do transporte WhatsApp via bloco `whatsapp.runtime` (modo, transport, status, disabled) (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está habilitado (`apps/api/src/routes/integrations.ts`).
 
 ---
 

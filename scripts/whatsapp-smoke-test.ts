@@ -79,22 +79,42 @@ const fetchWhatsAppRuntime = async () => {
       return null;
     }
 
-    const poller = payload.whatsappEventPoller;
-    if (!poller || typeof poller !== 'object') {
+    const runtimeSource = (() => {
+      const whatsapp = payload.whatsapp;
+      if (whatsapp && typeof whatsapp === 'object') {
+        if (whatsapp.runtime && typeof whatsapp.runtime === 'object') {
+          return whatsapp.runtime;
+        }
+
+        return whatsapp;
+      }
+
+      if (payload.whatsappRuntime && typeof payload.whatsappRuntime === 'object') {
+        return payload.whatsappRuntime;
+      }
+
+      return null;
+    })();
+
+    if (!runtimeSource) {
       return null;
     }
 
     const mode =
-      typeof poller.mode === 'string' && poller.mode.trim().length > 0
-        ? poller.mode.trim()
+      typeof runtimeSource.mode === 'string' && runtimeSource.mode.trim().length > 0
+        ? runtimeSource.mode.trim()
         : null;
     const status =
-      typeof poller.status === 'string' && poller.status.trim().length > 0
-        ? poller.status.trim()
+      typeof runtimeSource.status === 'string' && runtimeSource.status.trim().length > 0
+        ? runtimeSource.status.trim()
         : null;
-    const disabled = Boolean(poller.disabled);
+    const transport =
+      typeof runtimeSource.transport === 'string' && runtimeSource.transport.trim().length > 0
+        ? runtimeSource.transport.trim()
+        : null;
+    const disabled = Boolean(runtimeSource.disabled);
 
-    return { mode, status, disabled };
+    return { mode, status, transport, disabled };
   } catch {
     return null;
   }
@@ -256,8 +276,11 @@ const main = async () => {
   const runtime = await fetchWhatsAppRuntime();
   if (runtime) {
     const parts = [runtime.mode ?? 'unknown'];
+    if (runtime.transport && runtime.transport !== runtime.mode) {
+      parts.push(`transport=${runtime.transport}`);
+    }
     if (runtime.status) {
-      parts.push(`poller=${runtime.status}${runtime.disabled ? ' (disabled flag)' : ''}`);
+      parts.push(`status=${runtime.status}${runtime.disabled ? ' (disabled flag)' : ''}`);
     }
     console.info(`🛰️ WhatsApp transport runtime: ${parts.join(' | ')}`);
 
