@@ -35,7 +35,6 @@ import {
   type TicketNoteVisibility,
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
-import { getWhatsAppMode } from '../config/whatsapp';
 import {
   whatsappOutboundMetrics,
   whatsappOutboundDeliverySuccessCounter,
@@ -1238,7 +1237,7 @@ export const sendMessage = async (
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
   const passthroughMode = isWhatsappPassthroughModeEnabled();
   const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
-  const transportMode = getWhatsAppMode();
+  const transportMode = 'http' as const;
 
   try {
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
@@ -1423,7 +1422,6 @@ export const sendMessage = async (
               status: dispatchResult.status,
               dispatchedAt: dispatchResult.timestamp,
               raw: dispatchResult.raw ?? undefined,
-              transportMode: transport.mode,
             },
           } as Record<string, unknown>;
 
@@ -1490,7 +1488,7 @@ export const sendMessage = async (
             ticketId: ticket.id,
             messageId: message.id,
             error: reason,
-            transportMode: transport.mode,
+            transportMode: 'http',
             transportErrorCode: code,
             transportStatus: status,
             transportRequestId: requestId,
@@ -1515,13 +1513,13 @@ export const sendMessage = async (
               ? {
                   code: transportError.code,
                   message: error instanceof Error ? error.message : null,
-                  transport: transport.mode,
+                  transport: 'http',
                 }
               : brokerError
               ? {
                   code: brokerError.code ?? null,
                   message: error instanceof Error ? error.message : null,
-                  transport: transport.mode,
+                  transport: 'http',
                 }
               : undefined,
           });
@@ -1649,7 +1647,7 @@ export const sendOnTicket = async (
   }
 
   const tenantForOperations = resolvedTenantId;
-  const transportMode = getWhatsAppMode();
+  const transportMode = 'http' as const;
 
   let payloadHash: string | null = null;
   if (idempotencyKey) {

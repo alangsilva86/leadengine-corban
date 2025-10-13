@@ -2,10 +2,8 @@
 
 ## Runtime transport interface
 
-- `apps/api/src/config/whatsapp-config.ts` concentra variáveis, normaliza o modo ativo (`http`, `sidecar`, `dryrun`, `disabled`) e expõe utilitários como `getWhatsAppMode`/`getRawWhatsAppMode`.
-- `/healthz` publica o modo corrente e o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`) para auditar quando o circuito está desativado (`mode=sidecar` ⇒ runtime `inactive`).
-- O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` se `WHATSAPP_MODE` não permitir chamadas HTTP, evitando tráfego inválido.
-- Rollback sem rebuild: basta aplicar `WHATSAPP_MODE=http` e reiniciar o processo para voltar ao broker HTTP; o inverso (`sidecar`) segue a mesma dinâmica.
+- `apps/api/src/config/whatsapp-config.ts` concentra variáveis de credencial e timeouts. O transporte foi simplificado para sempre usar HTTP, eliminando ramificações de modo.
+- `/healthz` publica o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`) fixado em `http`.
 
 ## Inbound Contract
 

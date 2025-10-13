@@ -21,21 +21,13 @@ vi.mock('../../sidecar-bridge', () => ({
 }));
 
 describe('sidecar runtime', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.resetModules();
     registerMock.mockReset();
     constructorSpy.mockReset();
-    delete process.env.WHATSAPP_SIDECAR_SESSIONS_PATH;
-    delete process.env.WHATSAPP_SIDECAR_SESSIONS_DIR;
-    const { refreshWhatsAppEnv } = await import('../../../../config/whatsapp');
-    refreshWhatsAppEnv();
   });
 
-  it('initializes the manager with the configured sessions path and caches the instance', async () => {
-    process.env.WHATSAPP_SIDECAR_SESSIONS_PATH = '/tmp/sidecar-sessions';
-    const { refreshWhatsAppEnv } = await import('../../../../config/whatsapp');
-    refreshWhatsAppEnv();
-
+  it('initializes the manager with the default sessions path and caches the instance', async () => {
     const module = await import('../sidecar-runtime');
     const { ensureWhatsAppSidecarManager } = module;
 
@@ -45,7 +37,7 @@ describe('sidecar runtime', () => {
     expect(manager).toBeInstanceOf(FakeWhatsAppInstanceManager);
     expect(manager).toBe(sameManager);
     expect(constructorSpy).toHaveBeenCalledTimes(1);
-    expect(constructorSpy).toHaveBeenCalledWith('/tmp/sidecar-sessions');
+    expect(constructorSpy).toHaveBeenCalledWith('./tmp/whatsapp-sessions');
   });
 
   it('registers the bridge only once and stops it cleanly', async () => {

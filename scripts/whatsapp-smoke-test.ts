@@ -10,7 +10,7 @@
  *  - TEST_PHONE (defaults to +5511999999999)
  *  - TEST_NAME (defaults to "QA Bot")
  *  - MESSAGE_TEXT (custom text for the inbound payload)
- *  - EXPECT_WHATSAPP_MODE / WHATSAPP_MODE (assert runtime transport)
+ *  - EXPECT_WHATSAPP_MODE (override assertion for the runtime transport, defaults to http)
  *
  * Usage:
  *   API_URL="https://ticketzapi-production.up.railway.app" \
@@ -23,8 +23,7 @@
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import {
-  getWebhookApiKey,
-  getWhatsAppMode,
+ getWebhookApiKey,
   refreshWhatsAppEnv,
 } from '../apps/api/src/config/whatsapp';
 
@@ -50,7 +49,7 @@ const MESSAGE_TEXT =
 
 const SOCKET_PATH = process.env.SOCKET_IO_PATH ?? '/socket.io';
 
-const CONFIGURED_WHATSAPP_MODE = getWhatsAppMode();
+const CONFIGURED_WHATSAPP_MODE = 'http' as const;
 const expectedModeOverride = (process.env.EXPECT_WHATSAPP_MODE ?? '').trim().toLowerCase();
 const EXPECTED_WHATSAPP_MODE = expectedModeOverride || CONFIGURED_WHATSAPP_MODE;
 const SHOULD_ASSERT_RUNTIME = expectedModeOverride.length > 0;

@@ -1,8 +1,9 @@
 import { WhatsAppInstanceManager } from '@ticketz/integrations';
 
 import { logger } from '../../../config/logger';
-import { getSidecarSessionsPath, hasCustomSidecarSessionsPath } from '../../../config/whatsapp';
 import { registerWhatsAppSidecarBridge } from '../sidecar-bridge';
+
+const DEFAULT_SIDECAR_SESSIONS_PATH = './tmp/whatsapp-sessions';
 
 interface StartOptions {
   manager?: WhatsAppInstanceManager;
@@ -13,14 +14,7 @@ let activeManager: WhatsAppInstanceManager | null = null;
 let bridgeCleanup: (() => void) | null = null;
 
 const createManager = (): WhatsAppInstanceManager => {
-  const sessionsPath = getSidecarSessionsPath();
-  if (hasCustomSidecarSessionsPath()) {
-    logger.info('Initializing WhatsApp sidecar instance manager with custom sessions path', {
-      sessionsPath,
-    });
-    return new WhatsAppInstanceManager(sessionsPath);
-  }
-
+  const sessionsPath = DEFAULT_SIDECAR_SESSIONS_PATH;
   logger.info('Initializing WhatsApp sidecar instance manager with default sessions path');
   return new WhatsAppInstanceManager(sessionsPath);
 };

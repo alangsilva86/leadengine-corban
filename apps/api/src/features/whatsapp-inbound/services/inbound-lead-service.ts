@@ -11,7 +11,6 @@ import {
   leadLastContactGauge,
 } from '../../../lib/metrics';
 import { createTicket as createTicketService, sendMessage as sendMessageService } from '../../../services/ticket-service';
-import { getWhatsAppMode } from '../../../config/whatsapp';
 import {
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
@@ -66,7 +65,7 @@ const toRecord = (value: unknown): Record<string, unknown> => {
 };
 
 const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<void> => {
-  const transportMode = getWhatsAppMode();
+  const transportMode = 'http' as const;
 
   const toRecord = (value: unknown): Record<string, unknown> => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -1984,7 +1983,7 @@ The passthrough handler above short-circuits all validations.
     }
 
     inboundMessagesProcessedCounter.inc({
-      transport: getWhatsAppMode(),
+      transport: 'http',
       origin: 'passthrough',
       tenantId,
       instanceId: instanceId ?? 'unknown',

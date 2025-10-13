@@ -21,11 +21,7 @@ import { leadEngineRouter } from './routes/lead-engine';
 import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import './features/whatsapp-inbound/workers/inbound-processor';
-import {
-  startWhatsAppSidecarBridge,
-  stopWhatsAppSidecarBridge,
-} from './features/whatsapp-inbound/runtime/sidecar-runtime';
-import { getWhatsAppMode } from './config/whatsapp';
+import { stopWhatsAppSidecarBridge } from './features/whatsapp-inbound/runtime/sidecar-runtime';
 import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
 import { queuesRouter } from './routes/queues';
@@ -426,18 +422,7 @@ server.listen(PORT, () => {
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
 
-  const mode = getWhatsAppMode();
-  const isTestEnv = NODE_ENV === 'test';
-
-  if (mode === 'sidecar') {
-    if (isTestEnv) {
-      logger.info('WhatsApp sidecar bridge skipped in test environment');
-    } else {
-      startWhatsAppSidecarBridge();
-    }
-  } else {
-    stopWhatsAppSidecarBridge();
-  }
+  stopWhatsAppSidecarBridge();
 });
 
 // Graceful shutdown

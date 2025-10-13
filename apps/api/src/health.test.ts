@@ -31,24 +31,24 @@ describe('buildHealthPayload', () => {
     });
   });
 
-  it('marks status as degraded when WhatsApp transport is disabled', async () => {
+  it('ignores legacy WHATSAPP_MODE overrides and keeps reporting HTTP', async () => {
     process.env.WHATSAPP_MODE = 'disabled';
     refreshWhatsAppEnv();
 
     const { buildHealthPayload } = await import('./health');
     const payload = buildHealthPayload({ environment: 'production' });
 
-    expect(payload.status).toBe('degraded');
-    expect(payload.whatsapp.transportMode).toBe('disabled');
+    expect(payload.status).toBe('ok');
+    expect(payload.whatsapp.transportMode).toBe('http');
     expect(payload.whatsapp.runtime).toEqual({
-      status: 'disabled',
-      mode: 'disabled',
-      transport: 'disabled',
-      disabled: true,
+      status: 'running',
+      mode: 'http',
+      transport: 'http',
+      disabled: false,
     });
   });
 
-  it('uses the configured raw mode when available', async () => {
+  it('always reports the HTTP transport even when experimental modes are set', async () => {
     process.env.WHATSAPP_MODE = 'sidecar';
     refreshWhatsAppEnv();
 
@@ -56,12 +56,12 @@ describe('buildHealthPayload', () => {
     const payload = buildHealthPayload({ environment: 'qa' });
 
     expect(payload.status).toBe('ok');
-    expect(payload.whatsapp.mode).toBe('sidecar');
-    expect(payload.whatsapp.transportMode).toBe('sidecar');
+    expect(payload.whatsapp.mode).toBe('http');
+    expect(payload.whatsapp.transportMode).toBe('http');
     expect(payload.whatsapp.runtime).toEqual({
       status: 'running',
-      mode: 'sidecar',
-      transport: 'sidecar',
+      mode: 'http',
+      transport: 'http',
       disabled: false,
     });
   });
