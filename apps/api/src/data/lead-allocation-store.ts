@@ -54,6 +54,7 @@ const getErrorMessage = (error: unknown): string => {
 const STORAGE_INIT_ERROR_CODES = new Set([
   'STORAGE_NOT_INITIALIZED',
   'ERR_STORAGE_NOT_INITIALIZED',
+  'STORAGE_DATABASE_DISABLED',
 ]);
 
 const STORAGE_INIT_ERROR_MESSAGES = [

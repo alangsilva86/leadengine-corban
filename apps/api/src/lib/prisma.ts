@@ -1,47 +1,155 @@
 import { PrismaClient } from '@prisma/client';
-import { setPrismaClient as setStoragePrismaClient } from '@ticketz/storage';
 import { logger } from '../config/logger';
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+export interface DatabaseDisabledErrorContext {
+  model?: string;
+  operation?: string;
+}
+
+export class DatabaseDisabledError extends Error {
+  public readonly code = 'DATABASE_DISABLED';
+  public readonly status = 503;
+  public readonly context: DatabaseDisabledErrorContext;
+
+  constructor(context: DatabaseDisabledErrorContext = {}) {
+    super('Database access is disabled for this deployment.');
+    this.name = 'DatabaseDisabledError';
+    this.context = context;
+  }
+}
+
+class DisabledPrismaModelProxy {
+  private readonly modelName: string;
+
+  constructor(modelName: string) {
+    this.modelName = modelName;
+  }
+
+  private buildReadFallback(operation: string) {
+    const model = this.modelName;
+    if (operation === 'findMany') {
+      return async () => [];
+    }
+
+    if (operation === 'findFirst' || operation === 'findUnique') {
+      return async () => null;
+    }
+
+    if (operation === 'count') {
+      return async () => 0;
+    }
+
+    return async () => {
+      throw new DatabaseDisabledError({ model, operation });
+    };
+  }
+
+  public getProxy(): Record<string, unknown> {
+    return new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          if (typeof property !== 'string') {
+            return undefined;
+          }
+
+          return this.buildReadFallback(property);
+        },
+      }
+    );
+  }
+}
+
+const DISABLED_CLIENT_METHODS = new Set(['$connect', '$disconnect', '$on', '$use', '$transaction', '$extends']);
+
+const buildDisabledClient = (): PrismaClient => {
+  const disabledClient = new Proxy(
+    {},
+    {
+      get: (_target, property) => {
+        if (typeof property !== 'string') {
+          return undefined;
+        }
+
+        if (DISABLED_CLIENT_METHODS.has(property)) {
+          if (property === '$transaction') {
+            return async () => {
+              throw new DatabaseDisabledError({ operation: '$transaction' });
+            };
+          }
+
+          return async () => undefined;
+        }
+
+        return new DisabledPrismaModelProxy(property).getProxy();
+      },
+    }
+  );
+
+  return disabledClient as PrismaClient;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  log: [
-    {
-      emit: 'event',
-      level: 'query',
-    },
-    {
-      emit: 'event',
-      level: 'error',
-    },
-    {
-      emit: 'event',
-      level: 'info',
-    },
-    {
-      emit: 'event',
-      level: 'warn',
-    },
-  ],
-});
+const hasDatabaseUrl = Boolean(process.env.DATABASE_URL?.trim());
 
-setStoragePrismaClient(prisma);
+export const isDatabaseEnabled = hasDatabaseUrl;
 
-// Logs do Prisma são configurados via log array acima
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+};
 
-if (process.env.NODE_ENV !== 'production') {
+const createPrismaClient = (): PrismaClient => {
+  if (!isDatabaseEnabled) {
+    logger.warn('[Prisma] Database URL missing — running in demo mode with storage disabled.');
+    return buildDisabledClient();
+  }
+
+  const existingClient = globalForPrisma.prisma;
+  if (existingClient) {
+    void import('@ticketz/storage')
+      .then(({ setPrismaClient }) => {
+        setPrismaClient(existingClient);
+      })
+      .catch((error) => {
+        logger.warn('[Prisma] Failed to link storage client (reuse)', { error });
+      });
+    return existingClient;
+  }
+
+  const client = new PrismaClient({
+    log: [
+      { emit: 'event', level: 'query' },
+      { emit: 'event', level: 'error' },
+      { emit: 'event', level: 'info' },
+      { emit: 'event', level: 'warn' },
+    ],
+  });
+
+  void import('@ticketz/storage')
+    .then(({ setPrismaClient }) => {
+      setPrismaClient(client);
+    })
+    .catch((error) => {
+      logger.warn('[Prisma] Failed to link storage client', { error });
+    });
+
+  return client;
+};
+
+export const prisma = createPrismaClient();
+
+if (isDatabaseEnabled && process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-// Função para conectar ao banco
 export async function connectDatabase() {
+  if (!isDatabaseEnabled) {
+    logger.warn('[Prisma] Skipping database connection — DATABASE_URL not configured.');
+    return;
+  }
+
   try {
     await prisma.$connect();
     logger.info('[Prisma] ✅ Conectado ao banco de dados PostgreSQL');
-    
-    // Testar a conexão
     await prisma.$queryRaw`SELECT 1`;
     logger.info('[Prisma] ✅ Conexão testada com sucesso');
   } catch (error) {
@@ -50,8 +158,11 @@ export async function connectDatabase() {
   }
 }
 
-// Função para desconectar do banco
 export async function disconnectDatabase() {
+  if (!isDatabaseEnabled) {
+    return;
+  }
+
   try {
     await prisma.$disconnect();
     logger.info('[Prisma] 🔌 Desconectado do banco de dados');
@@ -60,7 +171,6 @@ export async function disconnectDatabase() {
   }
 }
 
-// Graceful shutdown
 process.on('beforeExit', async () => {
   await disconnectDatabase();
 });
