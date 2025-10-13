@@ -1,5 +1,13 @@
 import { Router, type Request, type Response } from 'express';
-import { authMiddleware, resolveDemoUser } from '../middleware/auth';
+import {
+  authMiddleware,
+  resolveDemoUser,
+  AUTH_MVP_BYPASS_TENANT_ID,
+  AUTH_MVP_BYPASS_USER_ID,
+  AUTH_MVP_BYPASS_USER_NAME,
+  AUTH_MVP_BYPASS_USER_EMAIL,
+  type AuthenticatedUser,
+} from '../middleware/auth';
 import { logger } from '../config/logger';
 import { isMvpAuthBypassEnabled } from '../config/feature-flags';
 
@@ -9,8 +17,48 @@ const MVP_BYPASS_TENANT_SLUG =
 
 const router: Router = Router();
 
+const ADMIN_FALLBACK_PERMISSIONS: string[] = [
+  'users:read',
+  'users:write',
+  'users:delete',
+  'tenants:read',
+  'tenants:write',
+  'tickets:read',
+  'tickets:write',
+  'tickets:delete',
+  'leads:read',
+  'leads:write',
+  'leads:delete',
+  'campaigns:read',
+  'campaigns:write',
+  'campaigns:delete',
+  'reports:read',
+  'settings:read',
+  'settings:write',
+];
+
+const resolveDemoUserOrFallback = (): { user: AuthenticatedUser; fallback: boolean } => {
+  try {
+    return { user: resolveDemoUser(), fallback: false };
+  } catch (error) {
+    logger.error('[Auth] Failed to resolve demo user, applying fallback profile', { error });
+    return {
+      user: {
+        id: AUTH_MVP_BYPASS_USER_ID,
+        tenantId: AUTH_MVP_BYPASS_TENANT_ID,
+        email: AUTH_MVP_BYPASS_USER_EMAIL,
+        name: AUTH_MVP_BYPASS_USER_NAME,
+        role: 'ADMIN',
+        isActive: true,
+        permissions: ADMIN_FALLBACK_PERMISSIONS,
+      },
+      fallback: true,
+    };
+  }
+};
+
 const buildDemoProfile = () => {
-  const user = resolveDemoUser();
+  const { user } = resolveDemoUserOrFallback();
   const nowIso = new Date().toISOString();
 
   return {
@@ -35,10 +83,10 @@ const buildDemoProfile = () => {
 };
 
 const sendDemoSession = (res: Response) => {
-  const user = resolveDemoUser();
-  logger.info('[Auth] Sessão demo utilizada');
+  const { user, fallback } = resolveDemoUserOrFallback();
+  logger.info('[Auth] Sessão demo utilizada', { fallback });
 
-  res.json({
+  const payload: Record<string, unknown> = {
     success: true,
     mode: 'demo',
     token: null,
@@ -55,7 +103,18 @@ const sendDemoSession = (res: Response) => {
       name: MVP_BYPASS_TENANT_NAME,
       slug: MVP_BYPASS_TENANT_SLUG,
     },
-  });
+  };
+
+  if (fallback) {
+    payload.warnings = [
+      {
+        code: 'DEMO_USER_FALLBACK',
+        message: 'Perfil demo carregado em modo de contingência.',
+      },
+    ];
+  }
+
+  res.json(payload);
 };
 
 /**
@@ -81,11 +140,42 @@ router.post('/register', (_req: Request, res: Response) => {
  */
 router.get('/me', authMiddleware, (_req: Request, res: Response) => {
   logger.info('[Auth] GET /me (modo demo)');
-  res.json({
+  const { user, fallback } = resolveDemoUserOrFallback();
+  const nowIso = new Date().toISOString();
+  const response: Record<string, unknown> = {
     success: true,
-    data: buildDemoProfile(),
+    data: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: null,
+      avatar: null,
+      role: user.role,
+      isActive: user.isActive,
+      settings: {},
+      lastLoginAt: nowIso,
+      createdAt: nowIso,
+      permissions: user.permissions,
+      tenant: {
+        id: user.tenantId,
+        name: MVP_BYPASS_TENANT_NAME,
+        slug: MVP_BYPASS_TENANT_SLUG,
+        settings: {},
+      },
+    },
     bypassEnabled: isMvpAuthBypassEnabled(),
-  });
+  };
+
+  if (fallback) {
+    response.warnings = [
+      {
+        code: 'DEMO_USER_FALLBACK',
+        message: 'Perfil demo carregado em modo de contingência.',
+      },
+    ];
+  }
+
+  res.json(response);
 });
 
 /**
