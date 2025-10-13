@@ -14,7 +14,7 @@ import type { MessageProvider } from '../types/message-provider';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
 import { storeMedia } from '../utils/media-storage';
-import type { StoredMedia } from '../utils/media-storage';
+import type { MediaStorageOptions, StoredMedia } from '../utils/media-storage';
 
 export interface WhatsAppConfig {
   instanceId: string;
@@ -255,19 +255,32 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
         mediaExpiresAt = storedMedia.expiresAt;
       }
 
-      return {
+      const whatsappMessage: WhatsAppMessage = {
         id: messageId,
         from,
         to: this.socket?.user?.id || '',
         content,
         type,
-        timestamp,
-        mediaUrl,
-        mediaType,
-        mediaFileName,
-        mediaSizeBytes,
-        mediaExpiresAt
+        timestamp
       };
+
+      if (mediaUrl !== undefined) {
+        whatsappMessage.mediaUrl = mediaUrl;
+      }
+      if (mediaType !== undefined) {
+        whatsappMessage.mediaType = mediaType;
+      }
+      if (mediaFileName !== undefined) {
+        whatsappMessage.mediaFileName = mediaFileName;
+      }
+      if (mediaSizeBytes !== undefined) {
+        whatsappMessage.mediaSizeBytes = mediaSizeBytes;
+      }
+      if (mediaExpiresAt !== undefined) {
+        whatsappMessage.mediaExpiresAt = mediaExpiresAt;
+      }
+
+      return whatsappMessage;
     } catch (error) {
       logger.error('Error parsing WhatsApp message:', error);
       return null;
@@ -284,11 +297,21 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
 
       const normalizedBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 
-      return await storeMedia(normalizedBuffer, {
-        mimeType,
-        fileName,
-        messageId: message.key.id ?? undefined
-      });
+      const storageOptions: MediaStorageOptions = {};
+
+      if (mimeType !== undefined) {
+        storageOptions.mimeType = mimeType;
+      }
+      if (fileName !== undefined) {
+        storageOptions.fileName = fileName;
+      }
+
+      const messageId = message.key.id;
+      if (typeof messageId === 'string') {
+        storageOptions.messageId = messageId;
+      }
+
+      return await storeMedia(normalizedBuffer, storageOptions);
     } catch (error) {
       logger.error('Failed to download or store media message:', error);
       return null;
@@ -400,7 +423,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
 
     try {
       const jid = this.formatJid(from);
-      await this.socket.readMessages([{ remoteJid: jid, id: messageId, participant: undefined }]);
+      await this.socket.readMessages([{ remoteJid: jid, id: messageId }]);
       
       logger.info('Message marked as read:', { messageId, from: jid });
     } catch (error) {
