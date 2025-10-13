@@ -396,6 +396,38 @@ export const performWhatsAppBrokerRequest = async <T>(
   }
 
   const { signal, cancel } = createBrokerTimeoutSignal(options.timeoutMs ?? config.timeoutMs);
+  const method = typeof init.method === 'string' ? init.method.toUpperCase() : 'GET';
+  const timeoutMsUsed = options.timeoutMs ?? config.timeoutMs;
+  const computeBodyLength = (): number | null => {
+    const body = init.body;
+    if (!body) {
+      return 0;
+    }
+    if (typeof body === 'string') {
+      return Buffer.byteLength(body);
+    }
+    if (Buffer.isBuffer(body)) {
+      return body.byteLength;
+    }
+    if (body instanceof Uint8Array) {
+      return body.byteLength;
+    }
+    return null;
+  };
+  const startedAt = Date.now();
+  const bodyLength = computeBodyLength();
+  const searchParamKeys = options.searchParams ? Object.keys(options.searchParams) : [];
+
+  logger.info('🛜 [WhatsApp Broker] Preparando expedição HTTP', {
+    method,
+    path,
+    url,
+    timeoutMs: timeoutMsUsed,
+    hasBody: Boolean(init.body),
+    bodyLength,
+    idempotencyKey: options.idempotencyKey ?? null,
+    searchParams: searchParamKeys,
+  });
 
   try {
     const response = await fetch(url, {
@@ -404,9 +436,32 @@ export const performWhatsAppBrokerRequest = async <T>(
       signal,
     });
 
+    const durationMs = Date.now() - startedAt;
+    const requestId = response.headers?.get?.('x-request-id') ?? null;
+    const responseContentType = response.headers?.get?.('content-type') ?? null;
+
     if (!response.ok) {
+      logger.warn('⚠️ [WhatsApp Broker] Resposta não OK recebida do broker', {
+        method,
+        path,
+        url,
+        status: response.status,
+        durationMs,
+        requestId,
+        contentType: responseContentType,
+      });
       await handleWhatsAppBrokerError(response);
     }
+
+    logger.info('📦 [WhatsApp Broker] Resposta do broker recebida com sucesso', {
+      method,
+      path,
+      url,
+      status: response.status,
+      durationMs,
+      requestId,
+      contentType: responseContentType,
+    });
 
     if (response.status === 204) {
       return undefined as T;
