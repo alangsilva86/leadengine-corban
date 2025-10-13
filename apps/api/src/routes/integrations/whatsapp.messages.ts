@@ -9,7 +9,7 @@ import {
   WhatsAppBrokerError,
   translateWhatsAppBrokerError,
 } from '../../services/whatsapp-broker-client';
-import { resolveWhatsAppTransport } from '../../services/whatsapp/transport/transport';
+import { getWhatsAppTransport } from '../../features/whatsapp-transport';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { NotFoundError } from '@ticketz/core';
 import { whatsappHttpRequestsCounter } from '../../lib/metrics';
@@ -154,7 +154,7 @@ router.post(
     const payload = normalizePayload(parsed.payload);
 
     try {
-      const transport = resolveWhatsAppTransport();
+      const transport = getWhatsAppTransport();
       const response = await sendAdHoc(
         {
           operatorId: req.user?.id,
