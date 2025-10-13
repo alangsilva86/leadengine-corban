@@ -47,8 +47,6 @@ export const configureInboundDedupeBackend = (backend: InboundDedupeBackend | nu
   dedupeBackend = backend;
 };
 
-const WHATSAPP_TRANSPORT_MODE = 'http' as const;
-
 const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
 const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
@@ -70,8 +68,6 @@ const toRecord = (value: unknown): Record<string, unknown> => {
 };
 
 const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<void> => {
-  const transportMode = WHATSAPP_TRANSPORT_MODE;
-
   const toRecord = (value: unknown): Record<string, unknown> => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       return { ...(value as Record<string, unknown>) };
@@ -245,7 +241,6 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
   });
 
   inboundMessagesProcessedCounter.inc({
-    transport: transportMode,
     origin: 'passthrough',
     tenantId: effectiveTenantId,
     instanceId: instanceIdentifier ?? 'unknown',
@@ -574,7 +569,6 @@ export interface InboundWhatsAppEvent {
 
 export interface InboundWhatsAppEnvelopeBase {
   origin: string;
-  transport: string;
   instanceId: string;
   chatId: string | null;
   tenantId: string | null;
@@ -1399,12 +1393,6 @@ const mergeEnvelopeMetadata = (
 ): Record<string, unknown> => {
   const base = toRecord(envelope.message.metadata);
 
-  if (!base.origin) {
-    base.origin = envelope.origin;
-  }
-  if (!base.transport) {
-    base.transport = envelope.transport;
-  }
   if (!base.chatId && chatId) {
     base.chatId = chatId;
   }
