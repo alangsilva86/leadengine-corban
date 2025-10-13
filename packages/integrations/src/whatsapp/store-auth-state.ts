@@ -1,22 +1,23 @@
-import { initAuthCreds, type AuthenticationState } from '@whiskeysockets/baileys';
+import type { AuthenticationState } from '@whiskeysockets/baileys';
+import { loadBaileysModule, type BaileysModule } from './baileys-loader';
 import type { WhatsAppSessionAuthState, WhatsAppSessionData, WhatsAppSessionKeyMap, WhatsAppSessionStore } from './session-store';
 
 type StoredSession = WhatsAppSessionData & { keys: WhatsAppSessionKeyMap };
 
-let protoModulePromise: Promise<typeof import('@whiskeysockets/baileys').proto> | null = null;
+let protoModulePromise: Promise<BaileysModule['proto']> | null = null;
 
-const loadProto = async () => {
+const loadProto = async (): Promise<BaileysModule['proto']> => {
   if (!protoModulePromise) {
-    protoModulePromise = import('@whiskeysockets/baileys').then(module => module.proto);
+    protoModulePromise = loadBaileysModule().then(module => module.proto);
   }
 
   return protoModulePromise;
 };
 
-const normalizeSession = (session: WhatsAppSessionData | null): StoredSession => {
+const normalizeSession = (session: WhatsAppSessionData | null, baileys: BaileysModule): StoredSession => {
   if (!session) {
     return {
-      creds: initAuthCreds(),
+      creds: baileys.initAuthCreds(),
       keys: {},
       updatedAt: new Date()
     };
@@ -33,8 +34,9 @@ export const useSessionStoreAuthState = async (
   instanceId: string,
   store: WhatsAppSessionStore
 ): Promise<WhatsAppSessionAuthState> => {
+  const baileys = await loadBaileysModule();
   const loaded = await store.load(instanceId);
-  const session = normalizeSession(loaded);
+  const session = normalizeSession(loaded, baileys);
 
   const persist = async () => {
     const payload: WhatsAppSessionData = {

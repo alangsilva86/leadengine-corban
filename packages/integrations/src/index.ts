@@ -5,6 +5,7 @@
 // WhatsApp Integration
 export { BaileysWhatsAppProvider } from './whatsapp/baileys-provider';
 export { WhatsAppInstanceManager } from './whatsapp/instance-manager';
+export { loadBaileysModule } from './whatsapp/baileys-loader';
 export type {
   WhatsAppConfig,
   ConnectionStatus,

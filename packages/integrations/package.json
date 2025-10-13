@@ -5,7 +5,9 @@
   "main": "dist/index.mjs",
   "module": "dist/index.mjs",
   "types": "index.d.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/whatsapp/libsignal-polyfill.ts"
+  ],
   "exports": {
     ".": {
       "types": "./index.d.ts",

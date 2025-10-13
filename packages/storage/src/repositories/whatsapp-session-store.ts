@@ -1,25 +1,37 @@
-import { BufferJSON } from '@whiskeysockets/baileys';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type {
   WhatsAppSessionData,
   WhatsAppSessionStore
 } from '@ticketz/integrations';
+import { loadBaileysModule } from '@ticketz/integrations';
 
-const prepareJsonValue = (data: WhatsAppSessionData): Prisma.InputJsonValue => {
+type BufferJson = typeof import('@whiskeysockets/baileys').BufferJSON;
+
+let bufferJsonPromise: Promise<BufferJson> | null = null;
+
+const getBufferJson = async (): Promise<BufferJson> => {
+  if (!bufferJsonPromise) {
+    bufferJsonPromise = loadBaileysModule().then(module => module.BufferJSON);
+  }
+
+  return bufferJsonPromise;
+};
+
+const prepareJsonValue = (data: WhatsAppSessionData, bufferJson: BufferJson): Prisma.InputJsonValue => {
   return JSON.parse(
     JSON.stringify(
       {
         ...data,
         updatedAt: data.updatedAt.toISOString()
       },
-      BufferJSON.replacer
+      bufferJson.replacer
     )
   ) as Prisma.InputJsonValue;
 };
 
-const parseSessionData = (raw: string | Prisma.JsonValue): WhatsAppSessionData => {
+const parseSessionData = (raw: string | Prisma.JsonValue, bufferJson: BufferJson): WhatsAppSessionData => {
   const stringified = typeof raw === 'string' ? raw : JSON.stringify(raw);
-  const parsed = JSON.parse(stringified, BufferJSON.reviver) as WhatsAppSessionData;
+  const parsed = JSON.parse(stringified, bufferJson.reviver) as WhatsAppSessionData;
   return {
     ...parsed,
     updatedAt: new Date(parsed.updatedAt)
@@ -28,6 +40,7 @@ const parseSessionData = (raw: string | Prisma.JsonValue): WhatsAppSessionData =
 
 export const createPrismaWhatsAppSessionStore = (client: PrismaClient): WhatsAppSessionStore => ({
   async load(instanceId) {
+    const bufferJson = await getBufferJson();
     const record = await client.whatsAppSession.findUnique({
       where: { instanceId }
     });
@@ -36,17 +49,18 @@ export const createPrismaWhatsAppSessionStore = (client: PrismaClient): WhatsApp
       return null;
     }
 
-    return parseSessionData(record.data);
+    return parseSessionData(record.data, bufferJson);
   },
   async save(instanceId, data) {
+    const bufferJson = await getBufferJson();
     await client.whatsAppSession.upsert({
       where: { instanceId },
       create: {
         instanceId,
-        data: prepareJsonValue(data)
+        data: prepareJsonValue(data, bufferJson)
       },
       update: {
-        data: prepareJsonValue(data)
+        data: prepareJsonValue(data, bufferJson)
       }
     });
   },
@@ -63,13 +77,13 @@ type RedisClient = {
   del(key: string): Promise<unknown>;
 };
 
-const prepareRedisValue = (data: WhatsAppSessionData): string => {
+const prepareRedisValue = (data: WhatsAppSessionData, bufferJson: BufferJson): string => {
   return JSON.stringify(
     {
       ...data,
       updatedAt: data.updatedAt.toISOString()
     },
-    BufferJSON.replacer
+    bufferJson.replacer
   );
 };
 
@@ -89,15 +103,17 @@ export const createRedisWhatsAppSessionStore = (
 
   return {
     async load(instanceId) {
+      const bufferJson = await getBufferJson();
       const raw = await client.get(buildKey(instanceId));
       if (!raw) {
         return null;
       }
 
-      return parseSessionData(raw);
+      return parseSessionData(raw, bufferJson);
     },
     async save(instanceId, data) {
-      const value = prepareRedisValue(data);
+      const bufferJson = await getBufferJson();
+      const value = prepareRedisValue(data, bufferJson);
       if (ttlSeconds && Number.isFinite(ttlSeconds)) {
         await client.set(buildKey(instanceId), value, { EX: ttlSeconds });
       } else {

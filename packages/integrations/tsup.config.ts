@@ -29,6 +29,6 @@ export default defineConfig({
     js: ".mjs"
   }),
   target: "es2022",
-  external: ["@whiskeysockets/baileys", "@hapi/boom"],
+  external: ["@whiskeysockets/baileys", "@hapi/boom", "libsignal/src/crypto.js"],
   tsconfig: "./tsconfig.build.json"
 });
