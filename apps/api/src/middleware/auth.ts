@@ -1,16 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import * as bcrypt from 'bcryptjs';
-import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { isMvpAuthBypassEnabled } from '../config/feature-flags';
-import { JWT_SECRET } from '../config/auth';
 
 type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
 
-// ============================================================================
+// =============================================================================
 // Types
-// ============================================================================
+// =============================================================================
 
 export interface AuthenticatedUser {
   id: string;
@@ -22,37 +18,6 @@ export interface AuthenticatedUser {
   permissions: string[];
 }
 
-export interface JWTPayload {
-  id: string;
-  tenantId?: string;
-  email?: string;
-  name?: string;
-  role?: string | UserRole;
-  permissions?: string[];
-  iat?: number;
-  exp?: number;
-  __verifiedWithDemoSecret?: boolean;
-}
-
-export interface LoginRequest {
-  email: string;
-  password: string;
-  tenantId?: string;
-}
-
-export interface LoginResponse {
-  success: boolean;
-  token: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    tenantId: string;
-  };
-  expiresIn: string;
-}
-
 // Estender o tipo Request para incluir user
 declare global {
   namespace Express {
@@ -62,12 +27,10 @@ declare global {
   }
 }
 
-// ============================================================================
+// =============================================================================
 // Utilities
-// ============================================================================
+// =============================================================================
 
-const DEMO_JWT_SECRET = process.env.DEMO_JWT_SECRET;
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const MVP_AUTH_BYPASS_ENABLED = isMvpAuthBypassEnabled();
 
 const DEFAULT_AUTH_MVP_USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -97,75 +60,6 @@ const AUTH_MVP_USER_NAME = process.env.AUTH_MVP_USER_NAME || 'MVP Anonymous';
 const AUTH_MVP_USER_EMAIL =
   process.env.AUTH_MVP_USER_EMAIL || 'mvp-anonymous@leadengine.local';
 const AUTH_MVP_ROLE = (process.env.AUTH_MVP_ROLE || 'ADMIN') as UserRole;
-
-/**
- * Gera hash da senha usando bcrypt
- */
-export async function hashPassword(password: string): Promise<string> {
-  const saltRounds = 10;
-  return bcrypt.hash(password, saltRounds);
-}
-
-/**
- * Verifica se a senha corresponde ao hash
- */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
-
-/**
- * Gera token JWT para o usuário
- */
-export function generateToken(user: {
-  id: string;
-  tenantId: string;
-  email: string;
-  name: string;
-  role: UserRole;
-}): string {
-  const payload: JWTPayload = {
-    id: user.id,
-    tenantId: user.tenantId,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  };
-
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
-}
-
-/**
- * Verifica e decodifica token JWT
- */
-export function verifyToken(token: string): JWTPayload {
-  const attemptedSecrets = [JWT_SECRET, DEMO_JWT_SECRET].filter(
-    (secret): secret is string => typeof secret === 'string' && secret.length > 0
-  );
-
-  let lastError: unknown;
-
-  for (const secret of attemptedSecrets) {
-    try {
-      const payload = jwt.verify(token, secret) as JWTPayload;
-      if (secret !== JWT_SECRET) {
-        logger.debug('[Auth] JWT verificado usando segredo alternativo');
-      }
-      if (secret === DEMO_JWT_SECRET) {
-        payload.__verifiedWithDemoSecret = true;
-      }
-      return payload;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-
-  // Em última instância, preserve o comportamento padrão para não mascarar erros
-  return jwt.verify(token, JWT_SECRET) as JWTPayload;
-}
 
 /**
  * Define permissões baseadas no papel do usuário
@@ -215,16 +109,6 @@ function getPermissionsByRole(role: UserRole): string[] {
 }
 
 const isProductionEnv = process.env.NODE_ENV === 'production';
-const allowJwtPayloadFallback =
-  process.env.AUTH_ALLOW_JWT_FALLBACK === 'true' || (!isProductionEnv && process.env.AUTH_ALLOW_JWT_FALLBACK !== 'false');
-
-const ensureArrayOfStrings = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
-};
 
 const normalizeRole = (role?: string | UserRole): UserRole => {
   const normalized = (role || '').toString().trim().toUpperCase();
@@ -252,164 +136,24 @@ export const AUTH_MVP_BYPASS_TENANT_ID = AUTH_MVP_TENANT_ID;
 export const AUTH_MVP_BYPASS_USER_EMAIL = AUTH_MVP_USER_EMAIL;
 export const AUTH_MVP_BYPASS_USER_NAME = AUTH_MVP_USER_NAME;
 
-const resolveTenantIdFromRequest = (req: Request, decoded: JWTPayload): string | undefined => {
-  const headerTenant = req.headers['x-tenant-id'];
-  if (typeof headerTenant === 'string' && headerTenant.trim().length > 0) {
-    return headerTenant.trim();
-  }
-  if (Array.isArray(headerTenant) && headerTenant.length > 0) {
-    return headerTenant[0];
-  }
+/**
+ * Resolve o usuário padrão utilizado no modo demonstração.
+ */
+export const resolveDemoUser = (): AuthenticatedUser => buildMvpBypassUser();
 
-  if (decoded.tenantId && decoded.tenantId.trim().length > 0) {
-    return decoded.tenantId.trim();
+const ensureUserContext = (req: Request): AuthenticatedUser => {
+  if (!req.user) {
+    req.user = resolveDemoUser();
   }
-
-  return undefined;
+  return req.user;
 };
 
-const buildUserFromToken = (req: Request, decoded: JWTPayload): AuthenticatedUser | null => {
-  if (!decoded.id) {
-    return null;
-  }
-
-  const tenantId = resolveTenantIdFromRequest(req, decoded) || 'demo-tenant';
-  const role = normalizeRole(decoded.role);
-  const tokenPermissions = ensureArrayOfStrings(decoded.permissions);
-  const basePermissions = getPermissionsByRole(role);
-  const mergedPermissions = Array.from(new Set([...basePermissions, ...tokenPermissions]));
-
-  return {
-    id: decoded.id,
-    tenantId,
-    email: decoded.email || `${decoded.id}@example.com`,
-    name: decoded.name || decoded.email || 'Authenticated User',
-    role,
-    isActive: true,
-    permissions: mergedPermissions,
-  };
-};
-
-// ============================================================================
-// Authentication Service
-// ============================================================================
-
-/**
- * Autentica usuário com email e senha
- */
-export async function authenticateUser(credentials: LoginRequest): Promise<LoginResponse> {
-  const { email, password, tenantId } = credentials;
-
-  logger.info('[Auth] Tentativa de login', { email, tenantId });
-
-  // Buscar usuário no banco
-  const user = await prisma.user.findFirst({
-    where: {
-      email: email.toLowerCase(),
-      isActive: true,
-      ...(tenantId && { tenantId }),
-    },
-    include: {
-      tenant: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          isActive: true,
-        },
-      },
-    },
-  });
-
-  if (!user) {
-    logger.warn('[Auth] Usuário não encontrado', { email, tenantId });
-    throw new Error('Credenciais inválidas');
-  }
-
-  if (!user.tenant.isActive) {
-    logger.warn('[Auth] Tenant inativo', { email, tenantId: user.tenantId });
-    throw new Error('Conta inativa');
-  }
-
-  // Verificar senha
-  const isPasswordValid = await verifyPassword(password, user.passwordHash);
-  if (!isPasswordValid) {
-    logger.warn('[Auth] Senha inválida', { email, userId: user.id });
-    throw new Error('Credenciais inválidas');
-  }
-
-  // Atualizar último login
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { lastLoginAt: new Date() },
-  });
-
-  // Gerar token
-  const token = generateToken({
-    id: user.id,
-    tenantId: user.tenantId,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  });
-
-  logger.info('[Auth] ✅ Login realizado com sucesso', {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-    tenantId: user.tenantId,
-  });
-
-  return {
-    success: true,
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId,
-    },
-    expiresIn: JWT_EXPIRES_IN,
-  };
-}
-
-/**
- * Busca usuário completo pelo ID
- */
-export async function getUserById(userId: string): Promise<AuthenticatedUser | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      tenant: {
-        select: {
-          isActive: true,
-        },
-      },
-    },
-  });
-
-  if (!user || !user.isActive || user.tenant?.isActive === false) {
-    return null;
-  }
-
-  return {
-    id: user.id,
-    tenantId: user.tenantId,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    isActive: user.isActive,
-    permissions: getPermissionsByRole(user.role),
-  };
-}
-
-// ============================================================================
+// =============================================================================
 // Middleware Functions
-// ============================================================================
+// =============================================================================
 
 /**
- * Middleware de autenticação JWT
+ * Middleware de autenticação (modo demo)
  */
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   if (req.method === 'OPTIONS') {
@@ -417,129 +161,18 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   }
 
   try {
-    if (MVP_AUTH_BYPASS_ENABLED) {
-      req.user = buildMvpBypassUser();
-      return next();
+    if (!MVP_AUTH_BYPASS_ENABLED && isProductionEnv) {
+      logger.debug(
+        '[Auth] MVP bypass desativado explicitamente, mas autenticação clássica foi removida. Aplicando usuário demo.'
+      );
     }
 
-    // Extrair token do header Authorization
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'MISSING_TOKEN',
-          message: 'Token de acesso requerido',
-        },
-      });
-    }
-
-    const token = authHeader.substring(7); // Remove "Bearer "
-
-    // Verificar e decodificar o token
-    let decoded: JWTPayload;
-    try {
-      decoded = verifyToken(token);
-    } catch (error) {
-      if (error instanceof jwt.TokenExpiredError) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'TOKEN_EXPIRED',
-            message: 'Token expirado',
-          },
-        });
-      }
-      
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'INVALID_TOKEN',
-          message: 'Token inválido',
-        },
-      });
-    }
-
-    // Buscar usuário completo no banco
-    const fallbackPermitted = allowJwtPayloadFallback || decoded.__verifiedWithDemoSecret === true;
-
-    let user: AuthenticatedUser | null = null;
-    if (decoded.id) {
-      try {
-        user = await getUserById(decoded.id);
-      } catch (lookupError) {
-        logger.error('[Auth] Falha ao buscar usuário no banco', {
-          userId: decoded.id,
-          error: lookupError,
-        });
-
-        if (!fallbackPermitted) {
-          return res.status(503).json({
-            success: false,
-            error: {
-              code: 'USER_LOOKUP_FAILED',
-              message: 'Serviço de autenticação temporariamente indisponível',
-            },
-          });
-        }
-
-        const fallbackUser = buildUserFromToken(req, decoded);
-        if (!fallbackUser) {
-          return res.status(401).json({
-            success: false,
-            error: {
-              code: 'USER_NOT_FOUND',
-              message: 'Usuário não encontrado ou inativo',
-            },
-          });
-        }
-
-        logger.warn('[Auth] Falha ao buscar usuário, utilizando dados do token JWT', {
-          userId: decoded.id,
-          tenantId: fallbackUser.tenantId,
-        });
-
-        req.user = fallbackUser;
-        return next();
-      }
-    }
-
-    if (!user) {
-      if (!fallbackPermitted) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'USER_NOT_FOUND',
-            message: 'Usuário não encontrado ou inativo',
-          },
-        });
-      }
-
-      const fallbackUser = buildUserFromToken(req, decoded);
-      if (!fallbackUser) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'USER_NOT_FOUND',
-            message: 'Usuário não encontrado ou inativo',
-          },
-        });
-      }
-
-      logger.warn('[Auth] Usuário não encontrado no banco, utilizando dados do token JWT', {
-        userId: decoded.id,
-        tenantId: fallbackUser.tenantId,
-      });
-
-      req.user = fallbackUser;
-      return next();
-    }
-
-    // Adicionar usuário ao request
-    req.user = user;
+    ensureUserContext(req);
     next();
   } catch (error) {
-    logger.error('[Auth] Erro no middleware de autenticação', { error });
+    logger.error('[Auth] Erro inesperado no middleware de autenticação', {
+      error,
+    });
     return res.status(500).json({
       success: false,
       error: {
@@ -554,25 +187,10 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
  * Middleware para verificar permissões específicas
  */
 export const requirePermission = (permission: string) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'NOT_AUTHENTICATED',
-          message: 'Usuário não autenticado',
-        },
-      });
-    }
-
-    if (!req.user.permissions.includes(permission) && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'INSUFFICIENT_PERMISSIONS',
-          message: `Permissão requerida: ${permission}`,
-        },
-      });
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const user = ensureUserContext(req);
+    if (!user.permissions.includes(permission) && user.role !== 'ADMIN') {
+      logger.warn('[Auth] Permissão ignorada no modo demo', { permission, userId: user.id });
     }
 
     next();
@@ -583,24 +201,14 @@ export const requirePermission = (permission: string) => {
  * Middleware para verificar papel específico
  */
 export const requireRole = (requiredRole: 'ADMIN' | 'SUPERVISOR') => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'NOT_AUTHENTICATED',
-          message: 'Usuário não autenticado',
-        },
-      });
-    }
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const user = ensureUserContext(req);
 
-    if (req.user.role !== requiredRole && req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'INSUFFICIENT_ROLE',
-          message: `Papel requerido: ${requiredRole}`,
-        },
+    if (user.role !== requiredRole && user.role !== 'ADMIN') {
+      logger.warn('[Auth] Papel requerido ignorado no modo demo', {
+        requiredRole,
+        userRole: user.role,
+        userId: user.id,
       });
     }
 
@@ -611,56 +219,19 @@ export const requireRole = (requiredRole: 'ADMIN' | 'SUPERVISOR') => {
 /**
  * Middleware para verificar se o usuário pertence ao tenant
  */
-export const requireTenant = (req: Request, res: Response, next: NextFunction) => {
+export const requireTenant = (req: Request, _res: Response, next: NextFunction) => {
   if (req.method === 'OPTIONS') {
     return next();
   }
 
-  if (MVP_AUTH_BYPASS_ENABLED) {
-    req.user = req.user ?? buildMvpBypassUser();
-    return next();
-  }
-
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      error: {
-        code: 'NOT_AUTHENTICATED',
-        message: 'Usuário não autenticado',
-      },
-    });
-  }
-
+  ensureUserContext(req);
   next();
 };
 
 /**
  * Middleware opcional de autenticação (não falha se não houver token)
  */
-export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
-  if (MVP_AUTH_BYPASS_ENABLED) {
-    req.user = buildMvpBypassUser();
-    return next();
-  }
-
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(); // Continua sem usuário
-  }
-
-  try {
-    const token = authHeader.substring(7);
-    const decoded = verifyToken(token);
-    const user = await getUserById(decoded.id);
-    
-    if (user) {
-      req.user = user;
-    }
-  } catch (error) {
-    // Ignora erros de token em auth opcional
-    logger.debug('[Auth] Token opcional inválido ignorado', { error });
-  }
-
+export const optionalAuth = async (req: Request, _res: Response, next: NextFunction) => {
+  ensureUserContext(req);
   next();
 };

@@ -1,9 +1,4 @@
-import {
-  getAuthToken,
-  getTenantId,
-  onAuthTokenChange,
-  onTenantIdChange,
-} from './auth.js';
+import { getTenantId, onTenantIdChange } from './auth.js';
 import { computeBackoffDelay, parseRetryAfterMs } from './rate-limit.js';
 import { getEnvVar } from './runtime-env.js';
 
@@ -79,29 +74,11 @@ export const API_BASE_URL = (() => {
   return normalizeBaseUrl(rawUrl);
 })();
 
-let persistedToken = getAuthToken();
 let persistedTenantId = getTenantId();
-
-onAuthTokenChange((nextToken) => {
-  persistedToken = nextToken;
-});
 
 onTenantIdChange((nextTenant) => {
   persistedTenantId = nextTenant;
 });
-
-const prepareAuthorization = (rawToken) => {
-  if (!rawToken) {
-    return undefined;
-  }
-
-  const trimmed = rawToken.trim();
-  if (/^(basic|bearer)\s+/i.test(trimmed)) {
-    return trimmed;
-  }
-
-  return `Bearer ${trimmed}`;
-};
 
 const baseHeaders = () => {
   const headers = {
@@ -125,13 +102,6 @@ const baseHeaders = () => {
   }
   if (tenantId) {
     headers['x-tenant-id'] = tenantId;
-  }
-
-  const tokenCandidate =
-    persistedToken || getEnvVar('VITE_API_AUTH_TOKEN') || getEnvVar('VITE_API_TOKEN');
-  const authHeader = prepareAuthorization(tokenCandidate);
-  if (authHeader) {
-    headers.Authorization = authHeader;
   }
 
   return headers;

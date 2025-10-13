@@ -35,8 +35,7 @@
     "ts-prune": "pnpm exec ts-prune"
   },
   "dependencies": {
-    "@prisma/client": "^5.7.1",
-    "bcryptjs": "^2.4.3"
+    "@prisma/client": "^5.7.1"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

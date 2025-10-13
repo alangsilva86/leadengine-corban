@@ -1,468 +1,134 @@
 import { Router, type Request, type Response } from 'express';
-import { body, validationResult } from 'express-validator';
-import { asyncHandler } from '../middleware/error-handler';
-import {
-  authenticateUser,
-  authMiddleware,
-  hashPassword,
-  AUTH_MVP_BYPASS_TENANT_ID,
-  AUTH_MVP_BYPASS_USER_ID,
-} from '../middleware/auth';
-import { prisma } from '../lib/prisma';
+import { authMiddleware, resolveDemoUser } from '../middleware/auth';
 import { logger } from '../config/logger';
 import { isMvpAuthBypassEnabled } from '../config/feature-flags';
 
 const MVP_BYPASS_TENANT_NAME = process.env.AUTH_MVP_TENANT_NAME?.trim() || 'Demo Tenant';
 const MVP_BYPASS_TENANT_SLUG =
-  process.env.AUTH_MVP_TENANT_SLUG?.trim() || AUTH_MVP_BYPASS_TENANT_ID;
+  process.env.AUTH_MVP_TENANT_SLUG?.trim() || process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
 
 const router: Router = Router();
 
-/**
- * POST /api/auth/login - Autenticar usuário
- */
-router.post(
-  '/login',
-  [
-    body('email').isEmail().normalizeEmail().withMessage('Email válido é obrigatório'),
-    body('password').isLength({ min: 6 }).withMessage('Senha deve ter pelo menos 6 caracteres'),
-    body('tenantId').optional().isString().withMessage('TenantId deve ser uma string'),
-  ],
-  asyncHandler(async (req: Request, res: Response) => {
-    // Verificar erros de validação
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Dados inválidos',
-          details: errors.array(),
-        },
-      });
-    }
+const buildDemoProfile = () => {
+  const user = resolveDemoUser();
+  const nowIso = new Date().toISOString();
 
-    const { email, password, tenantId } = req.body;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: null,
+    avatar: null,
+    role: user.role,
+    isActive: true,
+    settings: {},
+    lastLoginAt: nowIso,
+    createdAt: nowIso,
+    permissions: user.permissions,
+    tenant: {
+      id: user.tenantId,
+      name: MVP_BYPASS_TENANT_NAME,
+      slug: MVP_BYPASS_TENANT_SLUG,
+      settings: {},
+    },
+  };
+};
 
-    logger.info('[Auth] POST /login', { email, tenantId });
+const sendDemoSession = (res: Response) => {
+  const user = resolveDemoUser();
+  logger.info('[Auth] Sessão demo utilizada');
 
-    try {
-      const result = await authenticateUser({ email, password, tenantId });
-      
-      res.json(result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro interno';
-      
-      logger.warn('[Auth] Falha no login', { email, tenantId, error: message });
-      
-      res.status(401).json({
-        success: false,
-        error: {
-          code: 'LOGIN_FAILED',
-          message,
-        },
-      });
-    }
-  })
-);
-
-/**
- * POST /api/auth/register - Registrar novo usuário (apenas ADMIN)
- */
-router.post(
-  '/register',
-  authMiddleware,
-  [
-    body('name').isLength({ min: 2 }).withMessage('Nome deve ter pelo menos 2 caracteres'),
-    body('email').isEmail().normalizeEmail().withMessage('Email válido é obrigatório'),
-    body('password').isLength({ min: 6 }).withMessage('Senha deve ter pelo menos 6 caracteres'),
-    body('phone').optional().isMobilePhone('pt-BR').withMessage('Telefone inválido'),
-    body('role').isIn(['ADMIN', 'SUPERVISOR', 'AGENT']).withMessage('Papel inválido'),
-    body('tenantId').optional().isString().withMessage('TenantId deve ser uma string'),
-  ],
-  asyncHandler(async (req: Request, res: Response) => {
-    // Verificar se o usuário tem permissão para criar usuários
-    if (!req.user?.permissions.includes('users:write') && req.user?.role !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'INSUFFICIENT_PERMISSIONS',
-          message: 'Permissão insuficiente para criar usuários',
-        },
-      });
-    }
-
-    // Verificar erros de validação
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Dados inválidos',
-          details: errors.array(),
-        },
-      });
-    }
-
-    const { name, email, password, phone, role, tenantId } = req.body;
-    const targetTenantId = tenantId || req.user!.tenantId;
-
-    logger.info('[Auth] POST /register', { 
-      email, 
-      role, 
-      tenantId: targetTenantId,
-      createdBy: req.user!.id 
-    });
-
-    try {
-      // Verificar se o email já existe no tenant
-      const existingUser = await prisma.user.findFirst({
-        where: {
-          email: email.toLowerCase(),
-          tenantId: targetTenantId,
-        },
-      });
-
-      if (existingUser) {
-        return res.status(409).json({
-          success: false,
-          error: {
-            code: 'EMAIL_ALREADY_EXISTS',
-            message: 'Email já está em uso neste tenant',
-          },
-        });
-      }
-
-      // Hash da senha
-      const passwordHash = await hashPassword(password);
-
-      // Criar usuário
-      const newUser = await prisma.user.create({
-        data: {
-          tenantId: targetTenantId,
-          name,
-          email: email.toLowerCase(),
-          phone,
-          role,
-          passwordHash,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          tenant: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-        },
-      });
-
-      logger.info('[Auth] ✅ Usuário criado com sucesso', {
-        userId: newUser.id,
-        email: newUser.email,
-        role: newUser.role,
-        tenantId: targetTenantId,
-        createdBy: req.user!.id,
-      });
-
-      res.status(201).json({
-        success: true,
-        data: newUser,
-        message: 'Usuário criado com sucesso',
-      });
-    } catch (error) {
-      logger.error('[Auth] Erro ao criar usuário', { error, email, tenantId: targetTenantId });
-      
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'USER_CREATION_FAILED',
-          message: 'Falha ao criar usuário',
-        },
-      });
-    }
-  })
-);
+  res.json({
+    success: true,
+    mode: 'demo',
+    token: null,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+      permissions: user.permissions,
+    },
+    tenant: {
+      id: user.tenantId,
+      name: MVP_BYPASS_TENANT_NAME,
+      slug: MVP_BYPASS_TENANT_SLUG,
+    },
+  });
+};
 
 /**
- * GET /api/auth/me - Obter dados do usuário atual
+ * POST /api/auth/login - Autenticação fictícia para o modo demo
  */
-router.get(
-  '/me',
-  authMiddleware,
-  asyncHandler(async (req: Request, res: Response) => {
-    const user = req.user!;
-
-    logger.info('[Auth] GET /me', { userId: user.id });
-
-    const isBypassUser =
-      isMvpAuthBypassEnabled() && user.id === AUTH_MVP_BYPASS_USER_ID;
-
-    if (isBypassUser) {
-      const nowIso = new Date().toISOString();
-
-      res.json({
-        success: true,
-        data: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          phone: null,
-          avatar: null,
-          role: user.role,
-          isActive: true,
-          settings: {},
-          lastLoginAt: nowIso,
-          createdAt: nowIso,
-          tenant: {
-            id: user.tenantId || AUTH_MVP_BYPASS_TENANT_ID,
-            name: MVP_BYPASS_TENANT_NAME,
-            slug: MVP_BYPASS_TENANT_SLUG,
-            settings: {},
-          },
-          permissions: user.permissions,
-        },
-      });
-      return;
-    }
-
-    // Buscar dados completos do usuário
-    const userData = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        avatar: true,
-        role: true,
-        isActive: true,
-        settings: true,
-        lastLoginAt: true,
-        createdAt: true,
-        tenant: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            settings: true,
-          },
-        },
-      },
-    });
-
-    if (!userData) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'Usuário não encontrado',
-        },
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        ...userData,
-        permissions: user.permissions,
-      },
-    });
-  })
-);
+router.post('/login', (_req: Request, res: Response) => {
+  logger.info('[Auth] POST /login (modo demo)');
+  sendDemoSession(res);
+});
 
 /**
- * PUT /api/auth/profile - Atualizar perfil do usuário
+ * POST /api/auth/register - Desnecessário no modo demo
  */
-router.put(
-  '/profile',
-  authMiddleware,
-  [
-    body('name').optional().isLength({ min: 2 }).withMessage('Nome deve ter pelo menos 2 caracteres'),
-    body('phone').optional().isMobilePhone('pt-BR').withMessage('Telefone inválido'),
-    body('avatar').optional().isURL().withMessage('Avatar deve ser uma URL válida'),
-    body('settings').optional().isObject().withMessage('Settings deve ser um objeto'),
-  ],
-  asyncHandler(async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Dados inválidos',
-          details: errors.array(),
-        },
-      });
-    }
-
-    const { name, phone, avatar, settings } = req.body;
-    const userId = req.user!.id;
-
-    logger.info('[Auth] PUT /profile', { userId });
-
-    try {
-      const updatedUser = await prisma.user.update({
-        where: { id: userId },
-        data: {
-          ...(name && { name }),
-          ...(phone && { phone }),
-          ...(avatar && { avatar }),
-          ...(settings && { settings }),
-          updatedAt: new Date(),
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          avatar: true,
-          role: true,
-          settings: true,
-          updatedAt: true,
-        },
-      });
-
-      logger.info('[Auth] ✅ Perfil atualizado', { userId });
-
-      res.json({
-        success: true,
-        data: updatedUser,
-        message: 'Perfil atualizado com sucesso',
-      });
-    } catch (error) {
-      logger.error('[Auth] Erro ao atualizar perfil', { error, userId });
-      
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'PROFILE_UPDATE_FAILED',
-          message: 'Falha ao atualizar perfil',
-        },
-      });
-    }
-  })
-);
+router.post('/register', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Registro não é necessário no modo demonstração.',
+  });
+});
 
 /**
- * PUT /api/auth/password - Alterar senha
+ * GET /api/auth/me - Dados do usuário demo
  */
-router.put(
-  '/password',
-  authMiddleware,
-  [
-    body('currentPassword').isLength({ min: 1 }).withMessage('Senha atual é obrigatória'),
-    body('newPassword').isLength({ min: 6 }).withMessage('Nova senha deve ter pelo menos 6 caracteres'),
-  ],
-  asyncHandler(async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Dados inválidos',
-          details: errors.array(),
-        },
-      });
-    }
-
-    const { currentPassword, newPassword } = req.body;
-    const userId = req.user!.id;
-
-    logger.info('[Auth] PUT /password', { userId });
-
-    try {
-      // Buscar usuário com senha atual
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { passwordHash: true },
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: {
-            code: 'USER_NOT_FOUND',
-            message: 'Usuário não encontrado',
-          },
-        });
-      }
-
-      // Verificar senha atual
-      const { verifyPassword } = await import('../middleware/auth');
-      const isCurrentPasswordValid = await verifyPassword(currentPassword, user.passwordHash);
-      
-      if (!isCurrentPasswordValid) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_CURRENT_PASSWORD',
-            message: 'Senha atual incorreta',
-          },
-        });
-      }
-
-      // Hash da nova senha
-      const newPasswordHash = await hashPassword(newPassword);
-
-      // Atualizar senha
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          passwordHash: newPasswordHash,
-          updatedAt: new Date(),
-        },
-      });
-
-      logger.info('[Auth] ✅ Senha alterada', { userId });
-
-      res.json({
-        success: true,
-        message: 'Senha alterada com sucesso',
-      });
-    } catch (error) {
-      logger.error('[Auth] Erro ao alterar senha', { error, userId });
-      
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'PASSWORD_CHANGE_FAILED',
-          message: 'Falha ao alterar senha',
-        },
-      });
-    }
-  })
-);
+router.get('/me', authMiddleware, (_req: Request, res: Response) => {
+  logger.info('[Auth] GET /me (modo demo)');
+  res.json({
+    success: true,
+    data: buildDemoProfile(),
+    bypassEnabled: isMvpAuthBypassEnabled(),
+  });
+});
 
 /**
- * POST /api/auth/logout - Logout (placeholder para invalidação de token)
+ * PUT /api/auth/profile - Atualização superficial sem persistência
  */
-router.post(
-  '/logout',
-  authMiddleware,
-  asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user!.id;
+router.put('/profile', authMiddleware, (req: Request, res: Response) => {
+  logger.info('[Auth] PUT /profile (modo demo)');
 
-    logger.info('[Auth] POST /logout', { userId });
+  const currentProfile = buildDemoProfile();
+  const updates: Partial<typeof currentProfile> = {};
 
-    // Em uma implementação completa, aqui seria adicionado o token a uma blacklist
-    // Por enquanto, apenas retornamos sucesso
-    
-    res.json({
-      success: true,
-      message: 'Logout realizado com sucesso',
-    });
-  })
-);
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) {
+    updates.name = req.body.name.trim();
+  }
+  if (typeof req.body?.phone === 'string' && req.body.phone.trim()) {
+    updates.phone = req.body.phone.trim();
+  }
+  if (typeof req.body?.avatar === 'string' && req.body.avatar.trim()) {
+    updates.avatar = req.body.avatar.trim();
+  }
+  if (req.body?.settings && typeof req.body.settings === 'object') {
+    updates.settings = req.body.settings;
+  }
 
-export { router as authRouter };
+  res.json({
+    success: true,
+    data: {
+      ...currentProfile,
+      ...updates,
+    },
+    message: 'Perfil atualizado localmente (modo demonstração). Nenhuma alteração foi persistida.',
+  });
+});
+
+/**
+ * PUT /api/auth/password - Sem efeito no modo demo
+ */
+router.put('/password', authMiddleware, (_req: Request, res: Response) => {
+  logger.info('[Auth] PUT /password (modo demo)');
+  res.json({
+    success: true,
+    message: 'A alteração de senha é desnecessária no modo demonstração.',
+  });
+});
+
+export const authRouter = router;

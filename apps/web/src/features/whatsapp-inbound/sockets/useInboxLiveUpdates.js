@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { API_BASE_URL } from '@/lib/api.js';
-import { getAuthToken } from '@/lib/auth.js';
 
 const resolveSocketUrl = () => {
   if (API_BASE_URL) {
@@ -34,7 +33,6 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
           return;
         }
 
-        const token = getAuthToken();
         const initializeSocket = (transports) => {
           if (!isMounted) {
             return;
@@ -56,7 +54,6 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
           const socket = io(resolveSocketUrl(), {
             path: '/socket.io',
             transports,
-            auth: token ? { token } : undefined,
             withCredentials: true,
           });
 

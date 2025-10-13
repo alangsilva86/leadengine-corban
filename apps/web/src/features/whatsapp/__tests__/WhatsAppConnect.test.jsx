@@ -16,11 +16,6 @@ vi.mock('@/lib/api.js', () => ({
   apiDelete: (...args) => mockApiDelete(...args),
 }));
 
-vi.mock('@/lib/auth.js', () => ({
-  getAuthToken: vi.fn(() => 'token-123'),
-  onAuthTokenChange: vi.fn(() => () => {}),
-}));
-
 vi.mock('@/lib/session-storage.js', () => ({
   default: () => false,
 }));
@@ -47,10 +42,6 @@ vi.mock('../shared/usePlayfulLogger.js', () => ({
 
 vi.mock('./hooks/useInstanceLiveUpdates.js', () => ({
   default: () => ({ connected: false }),
-}));
-
-vi.mock('@/components/DemoAuthDialog.jsx', () => ({
-  default: () => null,
 }));
 
 vi.mock('@/components/ui/notice-banner.jsx', () => ({

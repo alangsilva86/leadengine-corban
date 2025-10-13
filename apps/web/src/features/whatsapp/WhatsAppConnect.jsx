@@ -31,9 +31,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
-import { getAuthToken, onAuthTokenChange } from '@/lib/auth.js';
 import { parseRetryAfterMs } from '@/lib/rate-limit.js';
-import DemoAuthDialog from '@/components/DemoAuthDialog.jsx';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import sessionStorageAvailable from '@/lib/session-storage.js';
@@ -1115,8 +1113,7 @@ const WhatsAppConnect = ({
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
-  const [authToken, setAuthTokenState] = useState(() => getAuthToken());
-  const [sessionActive, setSessionActive] = useState(() => Boolean(getAuthToken()));
+  const [sessionActive, setSessionActive] = useState(true);
   const [authDeferred, setAuthDeferred] = useState(false);
   const [errorState, setErrorState] = useState(null);
   const [localStatus, setLocalStatus] = useState(status);
@@ -1137,12 +1134,11 @@ const WhatsAppConnect = ({
   const loadInstancesRef = useRef(() => {});
   const loadCampaignsRef = useRef(() => {});
   const hasFetchedOnceRef = useRef(false);
-  const sessionActiveRef = useRef(sessionActive);
   const loadingInstancesRef = useRef(loadingInstances);
   const loadingQrRef = useRef(loadingQr);
 
   const requireAuthMessage =
-    'Para consultar as instâncias de WhatsApp, autentique-se usando o botão “Login demo” e gere um token ativo.';
+    'Não foi possível sincronizar as instâncias de WhatsApp no momento. Tente novamente em instantes.';
 
   const isAuthError = (error) => {
     const status = typeof error?.status === 'number' ? error.status : null;
@@ -1150,14 +1146,10 @@ const WhatsAppConnect = ({
   };
 
   const handleAuthFallback = ({ reset = false } = {}) => {
-    setSessionActive(false);
-    setAuthDeferred(true);
-    setAuthTokenState(null);
     setLoadingInstances(false);
     setLoadingQr(false);
     setErrorMessage(requireAuthMessage, {
-      requiresAuth: true,
-      title: 'Autenticação necessária',
+      title: 'Sincronização necessária',
     });
     if (reset) {
       setInstances([]);
@@ -1261,7 +1253,7 @@ const WhatsAppConnect = ({
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   const generatingQrRef = useRef(isGeneratingQrImage);
   const hasQr = Boolean(qrImageSrc);
-  const isAuthenticated = (sessionActive || Boolean(authToken)) && !authDeferred;
+  const isAuthenticated = sessionActive && !authDeferred;
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -1376,7 +1368,7 @@ const WhatsAppConnect = ({
 
   const { connected: realtimeConnected } = useInstanceLiveUpdates({
     tenantId: tenantRoomId,
-    enabled: Boolean(tenantRoomId) && !authDeferred,
+    enabled: Boolean(tenantRoomId),
     onEvent: handleRealtimeEvent,
   });
 
@@ -1453,10 +1445,6 @@ const WhatsAppConnect = ({
   useEffect(() => {
     setQrPanelOpen(localStatus !== 'connected');
   }, [localStatus]);
-
-  useEffect(() => {
-    sessionActiveRef.current = sessionActive;
-  }, [sessionActive]);
 
   useEffect(() => {
     setCampaign(activeCampaign || null);
@@ -1730,6 +1718,7 @@ const WhatsAppConnect = ({
     const resolvedPreferredInstanceId = hasExplicitPreference
       ? explicitPreferredInstanceId
       : preferredInstanceIdRef.current ?? null;
+    const agreementId = selectedAgreement?.id;
     const agreementId = selectedAgreement?.id ?? null;
     const token = getAuthToken();
     setAuthTokenState(token);
@@ -2005,24 +1994,6 @@ const WhatsAppConnect = ({
     }
   };
   loadCampaignsRef.current = loadCampaigns;
-
-  useEffect(() => {
-    const unsubscribe = onAuthTokenChange((token) => {
-      setAuthTokenState(token);
-      if (token) {
-        setSessionActive(true);
-        setAuthDeferred(false);
-        setErrorMessage(null);
-        void loadInstancesRef.current?.({ forceRefresh: true });
-      } else if (!sessionActiveRef.current) {
-        enforceAuthPrompt();
-      }
-    });
-    return () => {
-      unsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAgreement?.id]);
 
   useEffect(() => {
     if (!selectedAgreement?.id) {
@@ -3228,21 +3199,12 @@ const WhatsAppConnect = ({
                 <div className="flex-1 space-y-1">
                   <p className="font-medium">{errorState.title ?? 'Algo deu errado'}</p>
                   <p>{errorState.message}</p>
-                  {errorState.requiresAuth ? (
-                    <p className="text-[0.7rem] text-muted-foreground">
-                      O botão “Login demo” abre o DemoAuthDialog para gerar o token necessário.
-                    </p>
-                  ) : null}
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  {errorState.requiresAuth ? (
-                    <DemoAuthDialog />
-                  ) : null}
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => void loadInstances({ forceRefresh: true })}
-                    disabled={errorState.requiresAuth}
                   >
                     Tentar novamente
                   </Button>

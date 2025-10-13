@@ -38,7 +38,6 @@ import {
 } from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
-import DemoAuthDialog from './DemoAuthDialog.jsx';
 
 const NAVIGATION_ITEMS = [
   { id: 'dashboard', label: 'Visão Geral', icon: Home },
@@ -254,7 +253,6 @@ const LayoutShell = ({
               )}
               <span className="sr-only">Alternar tema</span>
             </Button>
-            <DemoAuthDialog />
             <TenantSelector />
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5" />

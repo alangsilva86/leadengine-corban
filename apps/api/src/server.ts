@@ -368,17 +368,10 @@ app.use('/api', authMiddleware, preferencesRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {
-  // Middleware de autenticação para WebSocket
-  const token = socket.handshake.auth?.token;
-  if (!token) {
-    logger.warn('Socket connection received without auth token; continuing in demo mode', {
-      socketId: socket.id,
-      address: socket.handshake.address,
-    });
-    return next();
-  }
-
-  // TODO: Validar token JWT
+  logger.debug('Socket connection established (modo demo)', {
+    socketId: socket.id,
+    address: socket.handshake.address,
+  });
   next();
 });
 

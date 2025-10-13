@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { API_BASE_URL } from '@/lib/api.js';
-import { getAuthToken } from '@/lib/auth.js';
 
 const resolveSocketUrl = () => {
   if (API_BASE_URL) {
@@ -39,13 +38,11 @@ const useInstanceLiveUpdates = ({ tenantId, enabled = true, onEvent }) => {
           return;
         }
 
-        const token = getAuthToken();
         const transports = ['websocket', 'polling'];
 
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
           transports,
-          auth: token ? { token } : undefined,
           withCredentials: true,
           reconnectionAttempts: 3,
           timeout: 8000,
