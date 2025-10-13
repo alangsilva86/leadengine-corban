@@ -1718,7 +1718,6 @@ const WhatsAppConnect = ({
     const resolvedPreferredInstanceId = hasExplicitPreference
       ? explicitPreferredInstanceId
       : preferredInstanceIdRef.current ?? null;
-    const agreementId = selectedAgreement?.id;
     const agreementId = selectedAgreement?.id ?? null;
     const token = getAuthToken();
     setAuthTokenState(token);
