@@ -4017,31 +4017,6 @@ router.post(
   })
 );
 
-// ============================================================================
-// Health Check Routes
-// ============================================================================
-
-// GET /api/integrations/health - Health check das integrações
-router.get(
-  '/health',
-  asyncHandler(async (_req: Request, res: Response) => {
-    // TODO: Implementar health checks reais
-    const health = {
-      whatsapp: {
-        status: 'healthy',
-        instances: 2,
-        connectedInstances: 1
-      },
-      timestamp: new Date()
-    };
-
-    res.json({
-      success: true,
-      data: health
-    });
-  })
-);
-
 export const __testing = {
   collectNumericFromSources,
   locateStatusCountsCandidate,
