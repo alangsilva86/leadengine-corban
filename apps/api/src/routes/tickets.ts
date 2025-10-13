@@ -2,9 +2,13 @@ import { Buffer } from 'node:buffer';
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import {
+  findOrCreateOpenTicketByChat,
+  upsertMessageByExternalId,
+  type PassthroughMessageMedia,
+} from '@ticketz/storage';
+import {
   CreateTicketDTO,
   UpdateTicketDTO,
-  SendMessageDTO,
   TicketFilters,
   Pagination,
   TicketStatus,
@@ -20,11 +24,13 @@ import {
   getTicketById,
   listMessages,
   listTickets,
-  sendMessage,
   updateTicket,
   type CreateTicketNoteInput,
   type TicketIncludeOption,
 } from '../services/ticket-service';
+import { getSocketServer } from '../lib/socket-registry';
+import { makeBaileysClient } from '../clients/baileys-client';
+import { getDefaultInstanceId, getDefaultTenantId } from '../config/whatsapp';
 
 const router: Router = Router();
 
@@ -80,6 +86,129 @@ const parseBooleanParam = (value: unknown): boolean | undefined => {
   }
 
   return undefined;
+};
+
+const normalizeString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const safeTruncate = (value: unknown, limit = 2000): string => {
+  if (typeof value === 'string') {
+    return value.length > limit ? value.slice(0, limit) : value;
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized) {
+      return '';
+    }
+    return serialized.length > limit ? serialized.slice(0, limit) : serialized;
+  } catch (error) {
+    const fallback = String(value);
+    return fallback.length > limit ? fallback.slice(0, limit) : fallback;
+  }
+};
+
+const serializeError = (error: unknown): Record<string, unknown> => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack ? safeTruncate(error.stack, 1000) : undefined,
+    } satisfies Record<string, unknown>;
+  }
+
+  return {
+    message: safeTruncate(error, 500),
+  } satisfies Record<string, unknown>;
+};
+
+const emitRealtimeMessage = (tenantId: string, ticketId: string, payload: unknown) => {
+  const socket = getSocketServer();
+  if (!socket) {
+    return;
+  }
+
+  socket.to(`tenant:${tenantId}`).emit('messages.new', payload);
+  socket.to(`ticket:${ticketId}`).emit('messages.new', payload);
+};
+
+const resolveExternalId = (response: unknown): string | null => {
+  if (!response || typeof response !== 'object') {
+    return null;
+  }
+
+  const record = response as Record<string, unknown>;
+
+  const direct = normalizeString(record.id) ?? normalizeString(record.messageId);
+  if (direct) {
+    return direct;
+  }
+
+  const keyRecord = record.key as Record<string, unknown> | undefined;
+  const keyId = keyRecord ? normalizeString(keyRecord.id) : null;
+  if (keyId) {
+    return keyId;
+  }
+
+  return null;
+};
+
+const normalizeOutboundMedia = (
+  value: unknown
+):
+  | {
+      broker: {
+        mediaType: 'image' | 'video' | 'audio' | 'document';
+        mimetype?: string;
+        base64?: string;
+        mediaUrl?: string;
+        fileName?: string;
+        caption?: string;
+      };
+      storage: PassthroughMessageMedia;
+    }
+  | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const mediaRecord = value as Record<string, unknown>;
+  const mediaType = normalizeString(mediaRecord.mediaType);
+  if (!mediaType || !allowedMediaTypes.has(mediaType)) {
+    return null;
+  }
+
+  const base64 = normalizeString(mediaRecord.base64);
+  const mediaUrl = normalizeString(mediaRecord.mediaUrl);
+  const mimetype = normalizeString(mediaRecord.mimetype ?? mediaRecord.mimeType);
+  const fileName = normalizeString(mediaRecord.fileName ?? mediaRecord.filename);
+  const caption = normalizeString(mediaRecord.caption);
+
+  const broker = {
+    mediaType: mediaType as 'image' | 'video' | 'audio' | 'document',
+    mimetype: mimetype ?? undefined,
+    base64: base64 ?? undefined,
+    mediaUrl: mediaUrl ?? undefined,
+    fileName: fileName ?? undefined,
+    caption: caption ?? undefined,
+  };
+
+  const storage: PassthroughMessageMedia = {
+    mediaType,
+    caption: caption ?? undefined,
+    mimeType: mimetype ?? undefined,
+    fileName: fileName ?? undefined,
+    url: mediaUrl ?? null,
+    size: null,
+  };
+
+  return { broker, storage };
 };
 
 const includeLookup: Record<string, TicketIncludeOption> = {
@@ -175,13 +304,34 @@ const updateTicketValidation = [
   body('closeReason').optional().isString().isLength({ max: 500 }),
 ];
 
+const allowedMediaTypes = new Set(['image', 'video', 'audio', 'document']);
+
 const sendMessageValidation = [
-  body('ticketId').custom(validateTicketId),
-  body('content').isString().isLength({ min: 1 }),
-  body('type').optional().isIn(['TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'LOCATION', 'CONTACT', 'TEMPLATE']),
-  body('mediaUrl').optional().isURL(),
-  body('quotedMessageId').optional().custom(validateTicketId),
-  body('metadata').optional().isObject(),
+  body('chatId').isString().trim().isLength({ min: 1 }).withMessage('chatId é obrigatório'),
+  body('iid').optional().isString().trim().isLength({ min: 1 }),
+  body().custom((value) => {
+    const hasText = typeof value?.text === 'string' && value.text.trim().length > 0;
+    const media = value?.media;
+    const hasMedia = media && typeof media === 'object';
+
+    if (!hasText && !hasMedia) {
+      throw new Error('Informe text ou media para enviar mensagem.');
+    }
+
+    if (hasMedia) {
+      const mediaType = normalizeString(media.mediaType);
+      if (!mediaType || !allowedMediaTypes.has(mediaType)) {
+        throw new Error('media.mediaType deve ser image, video, audio ou document');
+      }
+
+      const hasPayload = normalizeString(media.base64) || normalizeString(media.mediaUrl);
+      if (!hasPayload) {
+        throw new Error('media.base64 ou media.mediaUrl deve ser informado');
+      }
+    }
+
+    return true;
+  }),
 ];
 
 const updateStatusValidation = [
@@ -518,26 +668,98 @@ router.post(
   '/messages',
   sendMessageValidation,
   validateRequest,
-  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const sendMessageDTO: SendMessageDTO & { tenantId: string; userId: string } = {
-      ticketId: req.body.ticketId,
-      content: req.body.content,
-      type: req.body.type || 'TEXT',
-      direction: 'OUTBOUND',
-      mediaUrl: req.body.mediaUrl,
-      quotedMessageId: req.body.quotedMessageId,
-      metadata: req.body.metadata || {},
-      tenantId: req.user!.tenantId,
-      userId: req.user!.id,
-    };
+    const tenantId = normalizeString(req.header('x-tenant-id')) ?? getDefaultTenantId();
+    const chatId = normalizeString(req.body.chatId)!;
+    const text = normalizeString(req.body.text);
+    const iid = normalizeString(req.body.iid) ?? getDefaultInstanceId();
+    const mediaPayload = normalizeOutboundMedia(req.body.media);
+    const brokerClient = makeBaileysClient();
 
-    const message = await sendMessage(req.user!.tenantId, req.user!.id, sendMessageDTO);
+    if (!brokerClient) {
+      res.status(503).json({ code: 'BROKER_NOT_CONFIGURED' });
+      return;
+    }
 
-    res.status(201).json({
-      success: true,
-      data: message,
-    });
+    const instanceId = iid ?? getDefaultInstanceId();
+    if (!instanceId) {
+      res.status(400).json({ code: 'INSTANCE_REQUIRED', message: 'Informe iid ou configure WHATSAPP_DEFAULT_INSTANCE_ID.' });
+      return;
+    }
+
+    const contactLabel = normalizeString(req.body.contactName) ?? chatId;
+
+    try {
+      const brokerResponse = mediaPayload
+        ? await brokerClient.sendMedia(instanceId, chatId, mediaPayload.broker)
+        : await brokerClient.sendText(instanceId, chatId, text ?? '');
+
+      const externalId = resolveExternalId(brokerResponse) ?? `TEMP-${Date.now()}`;
+      const ticketContext = await findOrCreateOpenTicketByChat({
+        tenantId,
+        chatId,
+        displayName: contactLabel,
+        phone: chatId,
+        instanceId,
+      });
+
+      const { message } = await upsertMessageByExternalId({
+        tenantId,
+        ticketId: ticketContext.ticket.id,
+        chatId,
+        direction: 'outbound',
+        externalId,
+        type: mediaPayload ? 'media' : 'text',
+        text: text ?? mediaPayload?.storage.caption ?? null,
+        media: mediaPayload ? mediaPayload.storage : null,
+        metadata: {
+          source: 'baileys',
+          brokerResponse: safeTruncate(brokerResponse),
+          instanceId,
+        },
+        timestamp: Date.now(),
+      });
+
+      emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
+
+      res.status(200).json({
+        messageId: message.id,
+        externalId: message.externalId ?? externalId,
+      });
+    } catch (error) {
+      const ticketContext = await findOrCreateOpenTicketByChat({
+        tenantId,
+        chatId,
+        displayName: contactLabel,
+        phone: chatId,
+        instanceId,
+      });
+
+      const errorId = `ERR-${Date.now()}`;
+      const { message } = await upsertMessageByExternalId({
+        tenantId,
+        ticketId: ticketContext.ticket.id,
+        chatId,
+        direction: 'outbound',
+        externalId: errorId,
+        type: mediaPayload ? 'media' : 'text',
+        text: text ?? mediaPayload?.storage.caption ?? null,
+        media: mediaPayload ? mediaPayload.storage : null,
+        metadata: {
+          source: 'baileys',
+          brokerError: serializeError(error),
+          instanceId,
+        },
+        timestamp: Date.now(),
+      });
+
+      emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
+
+      res.status(502).json({
+        code: 'BROKER_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   })
 );
 
