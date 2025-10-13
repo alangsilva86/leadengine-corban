@@ -1,5 +1,7 @@
 # ADR 0003 — Adoção do Sidecar WhatsApp
 
+> ℹ️ **Atualização**: o runtime sidecar foi descontinuado em favor do transporte HTTP. Este ADR permanece apenas como registro histórico da decisão original.
+
 ## Contexto
 
 A integração atual com o WhatsApp depende de um broker HTTP externo. O modo sidecar já

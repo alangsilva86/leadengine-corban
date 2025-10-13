@@ -57,11 +57,11 @@ describe('buildHealthPayload', () => {
 
     expect(payload.status).toBe('ok');
     expect(payload.whatsapp.mode).toBe('sidecar');
-    expect(payload.whatsapp.transportMode).toBe('sidecar');
+    expect(payload.whatsapp.transportMode).toBe('http');
     expect(payload.whatsapp.runtime).toEqual({
       status: 'running',
       mode: 'sidecar',
-      transport: 'sidecar',
+      transport: 'http',
       disabled: false,
     });
   });
