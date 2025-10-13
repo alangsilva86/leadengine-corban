@@ -8,6 +8,7 @@ import {
 } from '@ticketz/storage';
 import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
+import { AUTH_MVP_BYPASS_TENANT_ID } from '../middleware/auth';
 import { leadEngineClient } from '../services/lead-engine-client';
 import { logger } from '../config/logger';
 import {
@@ -35,24 +36,19 @@ const extractTenantId = (req: Request): string | null => {
   return 'demo-tenant'; // Fallback para desenvolvimento
 };
 
-const ensureTenantContext = (req: Request, res: Response): string | null => {
+const ensureTenantContext = (req: Request): string => {
   const tenantId = extractTenantId(req);
-  if (!tenantId) {
-    logger.warn('[LeadEngine] 🚫 Tenant ausente', {
-      method: req.method,
-      path: req.originalUrl,
-    });
-    res.status(400).json({
-      success: false,
-      error: {
-        code: 'TENANT_ID_REQUIRED',
-        message: 'Informe o tenant via header x-tenant-id ou autentique-se.',
-      },
-    });
-    return null;
+  if (tenantId) {
+    return tenantId;
   }
 
-  return tenantId;
+  const fallbackTenant = req.user?.tenantId?.trim() || AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
+  logger.debug('[LeadEngine] Tenant ausente na requisição — aplicando fallback demo', {
+    method: req.method,
+    path: req.originalUrl,
+    fallbackTenant,
+  });
+  return fallbackTenant;
 };
 
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
@@ -184,8 +180,7 @@ const buildAllocationSummary = (
 router.get(
   '/agreements',
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     logger.info('[LeadEngine] GET /agreements', { tenantId });
 
@@ -243,8 +238,7 @@ router.get(
     }),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const rawStatus = req.query.status as string[] | undefined;
@@ -311,8 +305,7 @@ router.get(
   query('documentNumber').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const {
       startDate,
@@ -375,8 +368,7 @@ router.get(
   query('take').optional().isInt({ min: 1, max: 100 }),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const { agreementId } = req.params;
     const take = parseInt(req.query.take as string) || 25;
@@ -430,8 +422,7 @@ router.post(
   body('leads.*.registrations.*.agreementCode').isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const { leads } = req.body;
 
@@ -504,8 +495,7 @@ router.post(
     }),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const { agreementId, instanceId } = req.body as {
       agreementId: string;
@@ -580,8 +570,7 @@ router.post(
   body('leads.*.Document').isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const { agreement } = req.params;
     const { leads } = req.body;
@@ -630,8 +619,7 @@ router.post(
 router.get(
   '/agreements/available',
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     logger.info('[LeadEngine] GET /agreements/available', { tenantId });
 
@@ -656,8 +644,7 @@ router.get(
 router.get(
   '/dashboard',
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     logger.info('[LeadEngine] GET /dashboard', { tenantId });
 
@@ -710,8 +697,7 @@ router.get(
   query('statuses').optional(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
@@ -845,8 +831,7 @@ router.post(
   body('take').optional().isInt({ min: 1, max: 100 }),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const { campaignId, agreementId } = req.body as {
       campaignId: string;
@@ -982,8 +967,7 @@ router.patch(
   body('notes').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const allocationId = req.params.allocationId;
     const status = typeof req.body.status === 'string' ? (req.body.status.toLowerCase() as LeadAllocationStatus) : undefined;
@@ -1046,8 +1030,7 @@ router.get(
   query('to').optional().isISO8601(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req, res);
-    if (!tenantId) return;
+    const tenantId = ensureTenantContext(req);
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
