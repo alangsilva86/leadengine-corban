@@ -22,34 +22,9 @@ import { prisma } from '../lib/prisma';
 
 const router: Router = Router();
 
-const extractTenantId = (req: Request): string | null => {
-  if (req.user?.tenantId?.trim()) {
-    return req.user.tenantId.trim();
-  }
+const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
 
-  const headerValue = req.headers['x-tenant-id'];
-  const headerTenant = Array.isArray(headerValue) ? headerValue[0] : headerValue;
-  if (typeof headerTenant === 'string' && headerTenant.trim().length > 0) {
-    return headerTenant.trim();
-  }
-
-  return 'demo-tenant'; // Fallback para desenvolvimento
-};
-
-const ensureTenantContext = (req: Request): string => {
-  const tenantId = extractTenantId(req);
-  if (tenantId) {
-    return tenantId;
-  }
-
-  const fallbackTenant = req.user?.tenantId?.trim() || AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
-  logger.debug('[LeadEngine] Tenant ausente na requisição — aplicando fallback demo', {
-    method: req.method,
-    path: req.originalUrl,
-    fallbackTenant,
-  });
-  return fallbackTenant;
-};
+const ensureTenantContext = (_req: Request): string => DEFAULT_TENANT_ID;
 
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
 

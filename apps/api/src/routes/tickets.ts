@@ -14,7 +14,7 @@ import {
   TicketStatus,
 } from '@ticketz/core';
 import { asyncHandler } from '../middleware/error-handler';
-import { requireTenant } from '../middleware/auth';
+import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import {
   addTicketNote,
@@ -409,7 +409,7 @@ router.get(
       options.includeMetrics = true;
     }
 
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const result = await listTickets(tenantId, filters, pagination, options);
 
     res.json({
@@ -433,7 +433,8 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
     const include = sanitizeIncludeOptions(parseListParam(req.query.include));
-    const ticket = await getTicketById(req.user!.tenantId, ticketId, {
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const ticket = await getTicketById(tenantId, ticketId, {
       include,
     });
 
@@ -448,8 +449,9 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const createTicketDTO: CreateTicketDTO = {
-      tenantId: req.user!.tenantId,
+      tenantId,
       contactId: req.body.contactId,
       queueId: req.body.queueId,
       subject: req.body.subject,
@@ -476,6 +478,7 @@ router.put(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
 
     const updateData: UpdateTicketDTO = {
       status: req.body.status,
@@ -488,7 +491,7 @@ router.put(
       closeReason: req.body.closeReason,
     };
 
-    const ticket = await updateTicket(req.user!.tenantId, ticketId, updateData);
+    const ticket = await updateTicket(tenantId, ticketId, updateData);
 
     res.json({
       success: true,
@@ -507,13 +510,14 @@ router.post(
     const ticketId = req.params.id;
     const status = req.body.status as TicketStatus;
     const reason = typeof req.body.reason === 'string' ? req.body.reason : undefined;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
 
     const updateData: UpdateTicketDTO = {
       status,
       closeReason: reason,
     };
 
-    const ticket = await updateTicket(req.user!.tenantId, ticketId, updateData);
+    const ticket = await updateTicket(tenantId, ticketId, updateData);
 
     res.json({
       success: true,
@@ -533,7 +537,8 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
     const userId = req.body.userId as string;
-    const ticket = await assignTicket(req.user!.tenantId, ticketId, userId);
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const ticket = await assignTicket(tenantId, ticketId, userId);
 
     res.json({
       success: true,
@@ -559,7 +564,7 @@ router.post(
     };
 
     const note = await addTicketNote(
-      req.user!.tenantId,
+      req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID,
       ticketId,
       {
         id: req.user!.id,
@@ -586,7 +591,8 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = req.params.id;
     const reason = req.body.reason as string | undefined;
-    const ticket = await closeTicket(req.user!.tenantId, ticketId, reason, req.user!.id);
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const ticket = await closeTicket(tenantId, ticketId, reason, req.user!.id);
 
     res.json({
       success: true,
@@ -623,7 +629,8 @@ router.get(
       sortOrder,
     };
 
-    const result = await listMessages(req.user!.tenantId, ticketId, pagination);
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const result = await listMessages(tenantId, ticketId, pagination);
 
     const nextCursor = result.hasNext ? encodeCursor(result.page + 1) : null;
     const prevCursor = result.hasPrev ? encodeCursor(Math.max(1, result.page - 1)) : null;
@@ -633,7 +640,7 @@ router.get(
       success: true,
       data: {
         ...result,
-        tenantId: req.user!.tenantId,
+        tenantId,
         ticketId,
         pagination,
         cursor: rawCursor ?? currentCursor,

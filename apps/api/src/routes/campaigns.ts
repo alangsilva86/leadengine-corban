@@ -4,13 +4,13 @@ import { body, param, query } from 'express-validator';
 import { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../middleware/error-handler';
-import { requireTenant } from '../middleware/auth';
+import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
 import { getCampaignMetrics } from '@ticketz/storage';
-import { getMvpBypassTenantId, getUseRealDataFlag } from '../config/feature-flags';
+import { getUseRealDataFlag } from '../config/feature-flags';
 import type { CampaignDTO, CampaignWarning } from './campaigns.types';
 import { fetchLeadEngineCampaigns } from '../services/campaigns-upstream';
 import { mapPrismaError } from '../utils/prisma-error';
@@ -171,7 +171,8 @@ const buildCampaignResponseSafely = async (
 
 const router = Router();
 const SAFE_MODE = process.env.SAFE_MODE === 'true';
-const IGNORE_TENANT_HEADER = process.env.TENANT_IGNORE_HEADER === 'true';
+
+const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
 
 const normalizeStatus = (value: unknown): CampaignStatus | null => {
   if (typeof value !== 'string') {
@@ -251,24 +252,7 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
   } satisfies CampaignQueryFilters;
 };
 
-export const resolveTenantId = (req: Request): string | undefined => {
-  const queryTenant = normalizeQueryValue(req.query.tenantId);
-  if (queryTenant) {
-    return queryTenant;
-  }
-
-  const headerTenant = req.header('x-tenant-id');
-  if (headerTenant && headerTenant.trim().length > 0) {
-    return headerTenant.trim();
-  }
-
-  const userTenant = req.user?.tenantId?.trim();
-  if (userTenant) {
-    return userTenant;
-  }
-
-  return getMvpBypassTenantId();
-};
+export const resolveTenantId = (_req: Request): string | undefined => DEFAULT_TENANT_ID;
 
 const respondNotFound = (res: Response): void => {
   res.status(404).json({
@@ -307,17 +291,12 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const requestedTenantId = req.user?.tenantId;
-    const tenantHeaderValue = IGNORE_TENANT_HEADER ? undefined : req.headers['x-tenant-id'];
-    const tenantHeaderCandidate = Array.isArray(tenantHeaderValue)
-      ? tenantHeaderValue[0]
-      : tenantHeaderValue;
-    const tenantFromHeader = typeof tenantHeaderCandidate === 'string' ? tenantHeaderCandidate.trim() : '';
+    const requestedTenantId = req.user?.tenantId ?? DEFAULT_TENANT_ID;
     const rawAgreementId = typeof req.body?.agreementId === 'string' ? req.body.agreementId.trim() : '';
-    const resolvedAgreementId = rawAgreementId || tenantFromHeader || 'demo-tenant';
+    const resolvedAgreementId = rawAgreementId || DEFAULT_TENANT_ID;
     const rawAgreementName = typeof req.body?.agreementName === 'string' ? req.body.agreementName.trim() : '';
     const resolvedAgreementName =
-      rawAgreementName || (resolvedAgreementId === 'demo-tenant' ? 'DEMO' : rawAgreementName);
+      rawAgreementName || (resolvedAgreementId === DEFAULT_TENANT_ID ? 'DEMO' : rawAgreementName);
     const rawInstanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const resolvedInstanceId = rawInstanceId || 'alan';
     const rawBrokerIdInput = typeof req.body?.brokerId === 'string' ? req.body.brokerId.trim() : '';
@@ -420,8 +399,7 @@ router.post(
     }
 
     if (!instance) {
-      const placeholderTenantId =
-        explicitTenantId || requestedTenantId || resolvedAgreementId || 'demo-tenant';
+      const placeholderTenantId = explicitTenantId || requestedTenantId || resolvedAgreementId || DEFAULT_TENANT_ID;
 
       logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
         ...baseLogContext,
@@ -478,7 +456,7 @@ router.post(
       explicitTenantId ||
       requestedTenantId ||
       (resolvedAgreementId || undefined) ||
-      'demo-tenant';
+      DEFAULT_TENANT_ID;
     const effectiveInstanceId = instance.id;
 
     const actorId = req.user?.id ?? 'system';
@@ -1226,7 +1204,7 @@ router.delete(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? DEFAULT_TENANT_ID;
     const campaignId = req.params.id;
     const actorId = req.user?.id ?? 'system';
 
