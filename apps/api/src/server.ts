@@ -22,6 +22,11 @@ import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import { whatsappEventPoller } from './features/whatsapp-inbound/workers/event-poller';
 import './features/whatsapp-inbound/workers/inbound-processor';
+import {
+  startWhatsAppSidecarBridge,
+  stopWhatsAppSidecarBridge,
+} from './features/whatsapp-inbound/runtime/sidecar-runtime';
+import { getWhatsAppMode, isWhatsAppEventPollerDisabled } from './config/whatsapp';
 import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
 import { queuesRouter } from './routes/queues';
@@ -429,22 +434,36 @@ server.listen(PORT, () => {
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
 
-  const pollerDisabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
+  const pollerDisabled = isWhatsAppEventPollerDisabled();
+  const mode = getWhatsAppMode();
   const isTestEnv = NODE_ENV === 'test';
 
   if (pollerDisabled) {
     logger.info('WhatsApp event poller is disabled via configuration');
+  } else if (mode !== 'http') {
+    logger.info(`WhatsApp event poller skipped because transport mode is "${mode}"`);
   } else if (isTestEnv) {
     logger.info('WhatsApp event poller skipped in test environment');
   } else {
     whatsappEventPoller.start();
     logger.info('WhatsApp event poller started');
   }
+
+  if (mode === 'sidecar') {
+    if (isTestEnv) {
+      logger.info('WhatsApp sidecar bridge skipped in test environment');
+    } else {
+      startWhatsAppSidecarBridge();
+    }
+  } else {
+    stopWhatsAppSidecarBridge();
+  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  stopWhatsAppSidecarBridge();
   whatsappEventPoller.stop().catch((error) => {
     logger.warn('Failed to stop WhatsApp event poller on SIGTERM', { error });
   });
@@ -456,6 +475,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully');
+  stopWhatsAppSidecarBridge();
   whatsappEventPoller.stop().catch((error) => {
     logger.warn('Failed to stop WhatsApp event poller on SIGINT', { error });
   });

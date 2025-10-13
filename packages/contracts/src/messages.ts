@@ -82,7 +82,7 @@ const PhoneSchema = z
 export const SendByTicketSchema = z.object({
   instanceId: OptionalTrimmed,
   payload: MessagePayloadSchema,
-  idempotencyKey: OptionalTrimmed,
+  idempotencyKey: trimmedString,
 });
 
 export type SendByTicketInput = z.infer<typeof SendByTicketSchema>;
@@ -99,7 +99,7 @@ export type SendByContactInput = z.infer<typeof SendByContactSchema>;
 export const SendByInstanceSchema = z.object({
   to: PhoneSchema,
   payload: MessagePayloadSchema,
-  idempotencyKey: OptionalTrimmed,
+  idempotencyKey: trimmedString,
 });
 
 export type SendByInstanceInput = z.infer<typeof SendByInstanceSchema>;

@@ -53,3 +53,9 @@ export type {
 } from './repositories/ticket-repository';
 
 export { resetTicketStore } from './repositories/ticket-repository';
+
+export {
+  createPrismaWhatsAppSessionStore,
+  createRedisWhatsAppSessionStore,
+  type RedisSessionStoreOptions,
+} from './repositories/whatsapp-session-store';

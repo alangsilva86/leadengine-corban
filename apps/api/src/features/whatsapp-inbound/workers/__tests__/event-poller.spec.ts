@@ -176,4 +176,32 @@ describe('WhatsApp broker event poller integration', () => {
     expect(processedIds).toContain('webhook-1');
     expect(saveCursorMock).toHaveBeenCalledWith('cursor-2');
   });
+
+  it('does not start when mode is sidecar', async () => {
+    process.env.WHATSAPP_MODE = 'sidecar';
+    refreshWhatsAppEnv();
+
+    const { WhatsAppEventPoller } = await import('../event-poller');
+    const poller = new WhatsAppEventPoller();
+
+    await poller.start();
+    await flushAsync();
+
+    expect(fetchEventsMock).not.toHaveBeenCalled();
+    expect(poller.getMetrics().running).toBe(false);
+  });
+
+  it('does not start when runtime flag disables the event poller', async () => {
+    process.env.WHATSAPP_EVENT_POLLER_DISABLED = 'true';
+    refreshWhatsAppEnv();
+
+    const { WhatsAppEventPoller } = await import('../event-poller');
+    const poller = new WhatsAppEventPoller();
+
+    await poller.start();
+    await flushAsync();
+
+    expect(fetchEventsMock).not.toHaveBeenCalled();
+    expect(poller.getMetrics().running).toBe(false);
+  });
 });

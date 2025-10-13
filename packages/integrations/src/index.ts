@@ -13,7 +13,15 @@ export type {
 export type {
   WhatsAppInstance,
   CreateInstanceRequest,
+  WhatsAppInstanceManagerOptions,
+  ReconnectConfig,
+  WhatsAppLifecycleObserver,
 } from './whatsapp/instance-manager';
+export type {
+  WhatsAppSessionStore,
+  WhatsAppSessionData,
+  WhatsAppSessionKeyMap,
+} from './whatsapp/session-store';
 
 // Utilities
 export { logger } from './utils/logger';
