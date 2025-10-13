@@ -24,7 +24,9 @@ import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import 'tsx/esm';
 
-const { getWebhookApiKey, getBrokerApiKey } = await import('../config/whatsapp.ts');
+const { getWebhookApiKey, getBrokerApiKey, refreshWhatsAppEnv } = await import('../config/whatsapp.ts');
+
+refreshWhatsAppEnv();
 
 const requiredEnv = ['API_URL', 'TENANT_ID', 'INSTANCE_ID'];
 

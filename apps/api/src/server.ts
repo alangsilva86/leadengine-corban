@@ -33,11 +33,13 @@ import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
 import { manualConversationsRouter } from './routes/manual-conversations';
 import { debugMessagesRouter } from './features/debug/routes/messages';
-import { isWhatsAppEventPollerDisabled } from './config/whatsapp';
+import { isWhatsAppEventPollerDisabled, refreshWhatsAppEnv } from './config/whatsapp';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
 }
+
+refreshWhatsAppEnv();
 
 const app: Application = express();
 const server = createServer(app);

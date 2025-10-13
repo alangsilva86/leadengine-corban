@@ -1,3 +1,8 @@
+config/whatsapp.ts:216 - refreshWhatsAppConfig (used in module)
+config/whatsapp.ts:256 - __private
+config/whatsapp.ts:268 - WhatsAppConfig (used in module)
+apps/api/tsup.config.ts:3 - default
+apps/api/vitest.config.ts:8 - default
 apps/web/tailwind.config.ts:123 - default (used in module)
 packages/contracts/tsup.config.ts:19 - default
 packages/core/index.d.ts:18 - EntityId
@@ -267,11 +272,10 @@ packages/storage/index.d.ts:24 - findCampaignById
 packages/storage/index.d.ts:25 - findActiveCampaign
 packages/storage/index.d.ts:40 - createOutboundMessage
 packages/storage/index.d.ts:47 - applyBrokerAck
-packages/storage/index.d.ts:52 - PassthroughMessageMedia
 packages/storage/tsup.config.ts:18 - default
-apps/api/src/health.ts:4 - HealthPayload (used in module)
-apps/api/src/health.ts:83 - __private
-apps/api/src/server.ts:469 - io (used in module)
+apps/api/src/health.ts:5 - HealthPayload (used in module)
+apps/api/src/health.ts:85 - __private
+apps/api/src/server.ts:470 - io (used in module)
 packages/contracts/src/index.ts:2 - components
 packages/contracts/src/index.ts:2 - paths
 packages/contracts/src/index.ts:28 - MessagePayloadSchema
@@ -297,11 +301,17 @@ packages/contracts/src/types.gen.ts:22 - webhooks
 packages/contracts/src/types.gen.ts:107 - $defs
 packages/contracts/src/types.gen.ts:109 - external
 packages/contracts/src/types.gen.ts:111 - operations (used in module)
+apps/api/src/clients/baileys-client.ts:6 - BaileysClient (used in module)
 apps/api/src/config/auth.ts:16 - getJwtSecret (used in module)
-apps/api/src/config/feature-flags.ts:63 - getFeatureFlags
-apps/api/src/config/feature-flags.ts:71 - isWhatsappInboundSimpleModeEnabled
-apps/api/src/config/feature-flags.ts:75 - refreshFeatureFlags
+apps/api/src/config/feature-flags.ts:70 - getFeatureFlags
+apps/api/src/config/feature-flags.ts:76 - isWhatsappRawFallbackEnabled
+apps/api/src/config/feature-flags.ts:78 - isWhatsappInboundSimpleModeEnabled
+apps/api/src/config/feature-flags.ts:84 - refreshFeatureFlags
 apps/api/src/config/logger.ts:53 - loggerStream
+apps/api/src/config/whatsapp.ts:44 - shouldBypassTenantGuards (used in module)
+apps/api/src/config/whatsapp.ts:48 - getWhatsAppCorrelationSeed (used in module)
+apps/api/src/config/whatsapp.ts:54 - getWebhookReplayUrl (used in module)
+apps/api/src/config/whatsapp.ts:61 - WhatsAppTransportMode (used in module)
 apps/api/src/data/lead-allocation-store.ts:12 - LeadAllocationStatus (used in module)
 apps/api/src/data/lead-allocation-store.ts:14 - LeadAllocation (used in module)
 apps/api/src/data/lead-allocation-store.ts:16 - AllocationResult (used in module)
@@ -346,10 +356,10 @@ apps/api/src/services/ticket-service.ts:281 - TicketHydrated (used in module)
 apps/api/src/services/ticket-service.ts:291 - InboxHealthMetrics (used in module)
 apps/api/src/services/ticket-service.ts:307 - TicketListResult (used in module)
 apps/api/src/services/ticket-service.ts:917 - ListTicketsOptions (used in module)
-apps/api/src/services/whatsapp-broker-client.ts:18 - WhatsAppBrokerErrorOptions (used in module)
-apps/api/src/services/whatsapp-broker-client.ts:80 - NormalizedWhatsAppBrokerErrorCode (used in module)
-apps/api/src/services/whatsapp-broker-client.ts:202 - WhatsAppQrCode (used in module)
-apps/api/src/services/whatsapp-broker-client.ts:225 - WhatsAppMessageResult (used in module)
+apps/api/src/services/whatsapp-broker-client.ts:27 - WhatsAppBrokerErrorOptions (used in module)
+apps/api/src/services/whatsapp-broker-client.ts:89 - NormalizedWhatsAppBrokerErrorCode (used in module)
+apps/api/src/services/whatsapp-broker-client.ts:211 - WhatsAppQrCode (used in module)
+apps/api/src/services/whatsapp-broker-client.ts:234 - WhatsAppMessageResult (used in module)
 apps/api/src/test-utils/storage-mock.ts:15 - STORAGE_VERSION
 apps/api/src/test-utils/storage-mock.ts:19 - setPrismaClient
 apps/api/src/test-utils/storage-mock.ts:23 - getPrismaClient
@@ -396,14 +406,12 @@ apps/api/src/utils/phone.ts:63 - isValidPhoneNumber
 apps/api/src/utils/prisma-error.ts:5 - PrismaHttpError (used in module)
 apps/api/src/utils/prisma-error.ts:12 - PrismaErrorMappingOptions (used in module)
 apps/api/src/utils/prisma-error.ts:121 - isPrismaConnectivityError
-packages/integrations/src/utils/media-storage.ts:3 - MediaStorageOptions (used in module)
 packages/storage/src/repositories/campaign-repository.ts:25 - CreateCampaignInput (used in module)
 packages/storage/src/repositories/campaign-repository.ts:35 - CampaignFilters (used in module)
 packages/storage/src/repositories/lead-allocation-repository.ts:15 - BrokerLeadInput (used in module)
 packages/storage/src/repositories/lead-allocation-repository.ts:29 - AllocationFilters (used in module)
 apps/api/src/features/whatsapp-inbound/queue/event-queue.ts:6 - WhatsAppBrokerEventType (used in module)
 apps/api/src/features/whatsapp-inbound/queue/event-queue.ts:174 - whatsappEventQueueEmitter
-apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts:929 - __testing
 apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:55 - BrokerInboundContactSchema (used in module)
 apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:77 - BrokerInboundContact (used in module)
 apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:79 - BrokerInboundMessageSchema (used in module)
@@ -412,6 +420,7 @@ apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:82 - BrokerIn
 apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:83 - BrokerInboundMetadata (used in module)
 apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:85 - BrokerInboundEventPayloadSchema (used in module)
 apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:113 - BrokerInboundEventPayload
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:150 - BrokerInboundEvent
 apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:14 - NormalizedRawUpsertMessage (used in module)
 apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:25 - IgnoredRawUpsertMessage (used in module)
 apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:31 - NormalizeUpsertResult (used in module)
@@ -425,4 +434,4 @@ apps/api/src/features/whatsapp-inbound/utils/normalize.ts:13 - NormalizedInbound
 apps/api/src/features/whatsapp-inbound/workers/event-normalizer.ts:3 - BrokerEventEnvelope (used in module)
 apps/api/src/features/whatsapp-inbound/workers/event-normalizer.ts:321 - __private
 apps/api/src/features/whatsapp-inbound/workers/event-poller-state.ts:56 - __private
-apps/api/src/features/whatsapp-inbound/workers/event-poller.ts:187 - WhatsAppEventPoller (used in module)
+apps/api/src/features/whatsapp-inbound/workers/event-poller.ts:188 - WhatsAppEventPoller (used in module)
