@@ -29,13 +29,13 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 - `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (`http`, `sidecar`, `dryrun`, `disabled`).
 - `apps/api/src/config/whatsapp.ts` distribui getters (`getBrokerBaseUrl`, `getWebhookApiKey`, `shouldBypassTenantGuards` etc.), removendo leituras diretas de `process.env`.
-- `/healthz` revela `whatsappEventPoller.mode` e status (`running`, `inactive`, `disabled`) via `apps/api/src/health.ts`, facilitando auditoria pós-switch.
+- `/healthz` revela o modo de transporte WhatsApp (`running`, `inactive`, `disabled`) via `apps/api/src/health.ts`, expondo `whatsapp.runtime` (com `mode`, `transport`, `status`, `disabled`) para facilitar auditoria pós-switch.
 
 ## 📥 Pipeline inbound consolidado
 
 1. Webhook único (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) normaliza eventos Baileys, persiste mensagens e aciona `messages.new` em Socket.IO.
 2. A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para reprocessamentos/passthrough, alimentando o logger de debug e mantendo compatibilidade com jobs herdados.
-3. O poller HTTP (`apps/api/src/features/whatsapp-inbound/workers/event-poller.ts`) virou fallback: só executa quando `WHATSAPP_MODE=http` e publica métricas para decidir rollback.
+3. O processamento assíncrono é centralizado no worker `inbound-processor` (`apps/api/src/features/whatsapp-inbound/workers/inbound-processor.ts`), que consome a fila, aplica dedupe e mantém o pipeline consistente sem caminhos paralelos.
 
 ## 📊 Observabilidade e circuit breaker
 

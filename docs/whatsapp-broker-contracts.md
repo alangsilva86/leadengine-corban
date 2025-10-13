@@ -3,7 +3,7 @@
 ## Runtime transport interface
 
 - `apps/api/src/config/whatsapp-config.ts` concentra variáveis, normaliza o modo ativo (`http`, `sidecar`, `dryrun`, `disabled`) e expõe utilitários como `getWhatsAppMode`/`getRawWhatsAppMode`.
-- `/healthz` publica o modo corrente e o status do poller via `apps/api/src/health.ts`, permitindo auditar quando o circuito está desativado (`mode=sidecar` ⇒ poller `inactive`).
+- `/healthz` publica o modo corrente e o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`) para auditar quando o circuito está desativado (`mode=sidecar` ⇒ runtime `inactive`).
 - O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` se `WHATSAPP_MODE` não permitir chamadas HTTP, evitando tráfego inválido.
 - Rollback sem rebuild: basta aplicar `WHATSAPP_MODE=http` e reiniciar o processo para voltar ao broker HTTP; o inverso (`sidecar`) segue a mesma dinâmica.
 
@@ -49,10 +49,10 @@ O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/wha
 }
 ```
 
-## Session store & poller fallback
+## Session store & inbound queue
 
-- A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para reprocessar eventos vindos do fallback ou de integrações legadas.
-- O poller (`apps/api/src/features/whatsapp-inbound/workers/event-poller.ts`) só executa quando `WHATSAPP_MODE=http` e serve como plano B monitorado; no `sidecar` ele fica `inactive` mas disponível para rollback.
+- A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para desacoplar o webhook e garantir reprocessamentos idempotentes.
+- Não há caminhos paralelos de ingestão: todo evento chega pelo webhook, segue para a fila e é processado pelo worker. Em caso de falhas, o próprio worker agenda retentativas baseadas em backoff controlado.
 - As sessões Baileys precisam de armazenamento persistente — os manifests `docker-compose*.yml` mapeiam o volume `whatsapp_sessions_data` para manter o estado entre recriações de container.
 
 ### Baileys raw fallback
@@ -96,7 +96,7 @@ When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHAT
 ## Timeline Reconciliacao (Semana 2)
 
 1. **Persist timeline snapshot:** use `ticket.metadata.timeline` (filled by storage layer when messages are created) to recompute conversation stats without scanning history.
-2. **Broker parity:** store broker timestamps (`metadata.brokerMessageTimestamp` && `normalizedTimestamp`) and reconcile with ticket timeline on poller replay to avoid duplicates.
+2. **Broker parity:** store broker timestamps (`metadata.brokerMessageTimestamp` && `normalizedTimestamp`) and reconcile with ticket timeline during queue replays to avoid duplicates.
 3. **Backfill job:** schedule worker to iterate recent tickets and rebuild `timeline` metadata using stored message timestamps for legacy data.
 4. **Socket payload:** extend `ticket.updated`/`ticket.message` events to embed `timeline` deltas so web inbox can update `firstInboundAt/lastInboundAt` without full refetch.
 

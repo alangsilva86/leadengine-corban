@@ -10,6 +10,7 @@ Cliente → POST /api/webhooks/whatsapp → [routes/webhook-routes]
 
 - **routes/** cuida da validação de assinatura e da normalização dos eventos recebidos via webhook.
 - **queue/** concentra a fila interna utilizada para desacoplar o webhook do restante do pipeline.
+- **workers/** mantém o *processor* que transforma eventos em leads e coordena retentativas da fila.
 - **workers/** concentra o *processor* que transforma eventos em leads.
 - **services/** contém regras de negócio (normalização, dedupe, criação de allocations).
 

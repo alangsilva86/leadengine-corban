@@ -8,6 +8,13 @@ export type HealthPayload = {
   environment: string;
   storage: string;
   whatsapp: {
+    runtime: {
+      status: 'running' | 'stopped' | 'disabled' | 'inactive' | 'error';
+      mode: string;
+      transport: string;
+      disabled: boolean;
+      metrics: WhatsAppEventPollerMetrics;
+    };
     mode: string;
     transportMode: WhatsAppTransportMode;
   };
@@ -48,6 +55,13 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     environment,
     storage: deriveStorageBackend(),
     whatsapp: {
+      runtime: {
+        status: pollerStatus,
+        mode: rawMode || mode,
+        transport: mode,
+        disabled,
+        metrics,
+      },
       mode: rawMode || mode,
       transportMode: mode,
     },
