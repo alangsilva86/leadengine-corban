@@ -52,16 +52,14 @@ import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
 
-const getInstancesCacheKey = (agreementId) =>
-  agreementId ? `leadengine:whatsapp:instances:${agreementId}` : null;
+const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
 
-const readInstancesCache = (agreementId) => {
-  const key = getInstancesCacheKey(agreementId);
-  if (!key || !sessionStorageAvailable()) {
+const readInstancesCache = () => {
+  if (!sessionStorageAvailable()) {
     return null;
   }
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = sessionStorage.getItem(INSTANCES_CACHE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch (error) {
     console.warn('Não foi possível ler o cache de instâncias WhatsApp', error);
@@ -69,14 +67,13 @@ const readInstancesCache = (agreementId) => {
   }
 };
 
-const persistInstancesCache = (agreementId, list, currentId) => {
-  const key = getInstancesCacheKey(agreementId);
-  if (!key || !sessionStorageAvailable()) {
+const persistInstancesCache = (list, currentId) => {
+  if (!sessionStorageAvailable()) {
     return;
   }
   try {
     sessionStorage.setItem(
-      key,
+      INSTANCES_CACHE_KEY,
       JSON.stringify({
         list,
         currentId,
@@ -88,12 +85,11 @@ const persistInstancesCache = (agreementId, list, currentId) => {
   }
 };
 
-const clearInstancesCache = (agreementId) => {
-  const key = getInstancesCacheKey(agreementId);
-  if (!key || !sessionStorageAvailable()) {
+const clearInstancesCache = () => {
+  if (!sessionStorageAvailable()) {
     return;
   }
-  sessionStorage.removeItem(key);
+  sessionStorage.removeItem(INSTANCES_CACHE_KEY);
 };
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
@@ -1166,7 +1162,7 @@ const WhatsAppConnect = ({
     if (reset) {
       setInstances([]);
       setInstance(null);
-      clearInstancesCache(selectedAgreement?.id);
+      clearInstancesCache();
       preferredInstanceIdRef.current = null;
       setLocalStatus('disconnected');
       setQrData(null);
@@ -1217,16 +1213,7 @@ const WhatsAppConnect = ({
   };
 
   useEffect(() => {
-    const agreementId = selectedAgreement?.id;
-    if (!agreementId) {
-      setInstances([]);
-      setInstance(null);
-      setInstancesReady(true);
-      preferredInstanceIdRef.current = null;
-      return;
-    }
-
-    const cached = readInstancesCache(agreementId);
+    const cached = readInstancesCache();
     if (!cached) {
       setInstancesReady(false);
       preferredInstanceIdRef.current = null;
@@ -1446,7 +1433,7 @@ const WhatsAppConnect = ({
   }, []);
 
   useEffect(() => {
-    if (!selectedAgreement?.id) {
+    if (!isAuthenticated) {
       return;
     }
     void loadInstances({ forceRefresh: true });
@@ -1743,7 +1730,7 @@ const WhatsAppConnect = ({
     const resolvedPreferredInstanceId = hasExplicitPreference
       ? explicitPreferredInstanceId
       : preferredInstanceIdRef.current ?? null;
-    const agreementId = selectedAgreement?.id;
+    const agreementId = selectedAgreement?.id ?? null;
     const token = getAuthToken();
     setAuthTokenState(token);
     if (!hasFetchedOnceRef.current) {
@@ -1764,11 +1751,7 @@ const WhatsAppConnect = ({
         forceRefresh: shouldForceBrokerSync,
         hasFetchedOnce: hasFetchedOnceRef.current,
       });
-      const instancesUrl = agreementId
-        ? `/api/integrations/whatsapp/instances?agreementId=${encodeURIComponent(
-            agreementId
-          )}&refresh=1`
-        : '/api/integrations/whatsapp/instances?refresh=1';
+      const instancesUrl = '/api/integrations/whatsapp/instances?refresh=1';
       const response = await apiGet(instancesUrl);
       const parsedResponse = parseInstancesPayload(response);
       setSessionActive(true);
@@ -1870,12 +1853,12 @@ const WhatsAppConnect = ({
         setInstances(list);
         setInstance(current);
         preferredInstanceIdRef.current = current?.id ?? null;
-        persistInstancesCache(agreementId, list, current?.id ?? null);
+        persistInstancesCache(list, current?.id ?? null);
       } else if (hasServerList) {
         setInstances([]);
         setInstance(null);
         preferredInstanceIdRef.current = null;
-        clearInstancesCache(agreementId);
+        clearInstancesCache();
       } else {
         warn('Servidor não retornou instâncias; reutilizando cache local', {
           agreementId,
@@ -2465,7 +2448,7 @@ const WhatsAppConnect = ({
       } else {
         await apiDelete(url);
       }
-      clearInstancesCache(agreementId);
+      clearInstancesCache();
       if (instance?.id === target.id) {
         setInstance(null);
         preferredInstanceIdRef.current = null;
@@ -2517,13 +2500,13 @@ const WhatsAppConnect = ({
           statusCode,
           errorCode,
         });
-        clearInstancesCache(agreementId);
+        clearInstancesCache();
         setInstances((prev) => {
           const nextList = Array.isArray(prev)
             ? prev.filter((item) => item && item.id !== target.id)
             : [];
           preferredInstanceIdRef.current = nextCurrentId;
-          persistInstancesCache(agreementId, nextList, nextCurrentId);
+          persistInstancesCache(nextList, nextCurrentId);
           return nextList;
         });
         if (instance?.id === target.id) {
@@ -2593,7 +2576,7 @@ const WhatsAppConnect = ({
 
     setInstance(matched);
     preferredInstanceIdRef.current = matched.id ?? null;
-    persistInstancesCache(selectedAgreement?.id ?? null, instances, matched.id ?? null);
+    persistInstancesCache(instances, matched.id ?? null);
     const statusFromInstance = matched.status || 'disconnected';
     setLocalStatus(statusFromInstance);
     onStatusChange?.(statusFromInstance);
@@ -2794,7 +2777,7 @@ const WhatsAppConnect = ({
     setInstance(inst);
     const nextInstanceId = inst?.id ?? null;
     preferredInstanceIdRef.current = nextInstanceId;
-    persistInstancesCache(selectedAgreement?.id ?? null, instances, nextInstanceId);
+    persistInstancesCache(instances, nextInstanceId);
     const statusFromInstance = inst.status || 'disconnected';
     setLocalStatus(statusFromInstance);
     onStatusChange?.(statusFromInstance);
