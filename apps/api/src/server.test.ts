@@ -28,8 +28,6 @@ vi.mock('./middleware/error-handler', () => ({
 }));
 
 import { app } from './server';
-import { refreshWhatsAppEnv } from './config/whatsapp';
-
 const startServer = () =>
   new Promise<{ server: Server; url: string }>((resolve) => {
     const server = app.listen(0, () => {
@@ -86,10 +84,7 @@ describe('root availability handlers', () => {
     }
   });
 
-  it('exposes HTTP transport mode via the health endpoint even when legacy flags are set', async () => {
-    process.env.WHATSAPP_MODE = 'sidecar';
-    refreshWhatsAppEnv();
-
+  it('exposes HTTP transport mode via the health endpoint', async () => {
     const { server, url } = await startServer();
 
     try {
@@ -106,8 +101,6 @@ describe('root availability handlers', () => {
       });
     } finally {
       await stopServer(server);
-      delete process.env.WHATSAPP_MODE;
-      refreshWhatsAppEnv();
     }
   });
 });

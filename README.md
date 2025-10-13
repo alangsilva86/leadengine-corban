@@ -124,7 +124,7 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
   - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
   - Configure os limites de falha do circuito outbound via `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` para personalizar tolerância e cooldown de envio.
   - `WHATSAPP_SESSION_STORE_DRIVER` suporta `postgres` (persistência via Prisma), `redis` ou `memory` (apenas desenvolvimento). Use `WHATSAPP_SESSION_STORE_URL` para apontar para o banco/cluster e `WHATSAPP_SESSION_STORE_REDIS_TTL` para definir TTL opcional ao usar Redis.
-  - O modo HTTP é o único suporte: nenhuma variável de alternância (`WHATSAPP_MODE`) é necessária — omita-a ou defina como `http` apenas para compatibilizar ambientes legados.
+  - O modo HTTP é fixo: a variável legada `WHATSAPP_MODE` foi removida e a API aborta a inicialização caso ela esteja definida.
   - Use `docs/environments/ticketzapi-production.env` como referência de produção.
 - **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000` e `VITE_WS_URL=ws://localhost:4000`.
 - **Broker**: quando for hospedar o Baileys externo, alinhe chaves com `apps/baileys-acessuswpp/render.yaml`.
@@ -298,7 +298,7 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
 - `apps/baileys-acessuswpp/render.yaml` descreve o deploy oficial do broker Baileys na Render (incluindo `API_KEY`).
 - Para Railway/Render: consultar `docs/docker.md`, `docs/whatsapp-broker-contracts.md` e `docs/whatsapp-railway-curl-recipes.md` para validar rotas e webhooks.
 - O transporte WhatsApp opera exclusivamente em modo HTTP; `/healthz` expõe o status atual para auditoria.
-- Rollback/feature flag: `WHATSAPP_MODE` foi descontinuado; mantenha a variável ausente ou defina `http` em ambientes legados. Qualquer outro valor gera erro de inicialização, e `/healthz` expõe o modo ativo (sempre HTTP) para auditoria.
+- Rollback/feature flag: `WHATSAPP_MODE` foi removido; qualquer definição interrompe o boot. Um rollback para sidecar exige reverter a release para uma tag anterior que ainda aceitava o modo legado.
 - O transporte HTTP é fixo; utilize `/healthz` para confirmar a disponibilidade do broker remoto durante o deploy.
 
 ---

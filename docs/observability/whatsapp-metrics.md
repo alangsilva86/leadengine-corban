@@ -33,3 +33,4 @@ Este documento descreve os painéis de Grafana e alertas de Prometheus recomenda
 * Sempre filtre por `origin` para diferenciar tráfego de broker, webhook e serviços internos.
 * Aplique `tenantId` nos painéis quando investigar problemas específicos de clientes corporativos.
 * Utilize `instanceId="overflow"` como indicador de que a cardinalidade está acima do limite recomendado e revise a configuração do tenant/instância.
+* Remova filtros/legendas que dependiam de `transport="sidecar"` ou `mode="sidecar"`; o único valor esperado é `http`. Configure alertas para disparar se `/healthz` reportar qualquer modo diferente de `http`.

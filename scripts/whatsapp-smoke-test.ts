@@ -10,7 +10,6 @@
  *  - TEST_PHONE (defaults to +5511999999999)
  *  - TEST_NAME (defaults to "QA Bot")
  *  - MESSAGE_TEXT (custom text for the inbound payload)
- *  - EXPECT_WHATSAPP_MODE (overrides the expected runtime mode; defaults to http)
  *
  * Usage:
  *   API_URL="https://ticketzapi-production.up.railway.app" \
@@ -47,12 +46,6 @@ const MESSAGE_TEXT =
 const SOCKET_PATH = process.env.SOCKET_IO_PATH ?? '/socket.io';
 
 const WHATSAPP_TRANSPORT_MODE = 'http' as const;
-const expectedModeOverride = (process.env.EXPECT_WHATSAPP_MODE ?? '').trim().toLowerCase();
-if (expectedModeOverride && expectedModeOverride !== WHATSAPP_TRANSPORT_MODE) {
-  console.warn(
-    `Ignoring EXPECT_WHATSAPP_MODE="${expectedModeOverride}" because HTTP is the only supported transport`
-  );
-}
 const CONFIGURED_WHATSAPP_MODE = WHATSAPP_TRANSPORT_MODE;
 const EXPECTED_WHATSAPP_MODE = WHATSAPP_TRANSPORT_MODE;
 

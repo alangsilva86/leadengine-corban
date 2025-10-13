@@ -31,11 +31,11 @@ describe('buildHealthPayload', () => {
     });
   });
 
-  it('throws when an unsupported WhatsApp mode is configured', async () => {
-    process.env.WHATSAPP_MODE = 'disabled';
+  it('throws when WHATSAPP_MODE is defined', async () => {
+    process.env.WHATSAPP_MODE = 'http';
 
     expect(() => refreshWhatsAppEnv()).toThrow(
-      'Unsupported WHATSAPP_MODE value "disabled". HTTP is now the only supported transport mode; remove this environment variable or set it to "http".'
+      'WHATSAPP_MODE has been removed. Remove the environment variable; HTTP transport is always active.'
     );
 
     delete process.env.WHATSAPP_MODE;
@@ -53,18 +53,6 @@ describe('buildHealthPayload', () => {
       transport: 'http',
       disabled: false,
     });
-  });
-
-  it('falls back to HTTP mode when legacy sidecar is configured', async () => {
-    process.env.WHATSAPP_MODE = 'sidecar';
-    refreshWhatsAppEnv();
-
-    const { buildHealthPayload } = await import('./health');
-    const payload = buildHealthPayload({ environment: 'legacy' });
-
-    expect(payload.whatsapp.mode).toBe('http');
-    expect(payload.whatsapp.transportMode).toBe('http');
-    expect(payload.whatsapp.runtime.mode).toBe('http');
   });
 
   it('detects prisma-backed storage from environment variables', async () => {
