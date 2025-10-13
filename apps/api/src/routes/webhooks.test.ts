@@ -5,8 +5,10 @@ import type { Message, Ticket } from '@ticketz/core';
 
 import { integrationWebhooksRouter } from './webhooks';
 
-const findOrCreateOpenTicketByChatMock = vi.fn();
-const upsertMessageByExternalIdMock = vi.fn();
+const { findOrCreateOpenTicketByChatMock, upsertMessageByExternalIdMock } = vi.hoisted(() => ({
+  findOrCreateOpenTicketByChatMock: vi.fn(),
+  upsertMessageByExternalIdMock: vi.fn(),
+}));
 
 vi.mock('@ticketz/storage', () => ({
   findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
@@ -242,7 +244,7 @@ describe('WhatsApp webhook (integration)', () => {
     refreshFeatureFlags({ whatsappPassthroughMode: false });
   });
 
-  it('rejects webhook with invalid API key', async () => {
+  it('rejects webhook without API key when it is required', async () => {
     const app = createApp();
 
     const response = await request(app)
@@ -250,6 +252,31 @@ describe('WhatsApp webhook (integration)', () => {
       .send({});
 
     expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ ok: false, code: 'INVALID_API_KEY' });
+  });
+
+  it('rejects webhook with invalid API key value', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'wrong-key')
+      .send({});
+
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ ok: false, code: 'INVALID_API_KEY' });
+  });
+
+  it('accepts webhook when API key is provided via bearer authorization header', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('authorization', 'Bearer test-key')
+      .send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ ok: true, received: expect.any(Number) });
   });
 
   it('returns 400 when webhook payload is not valid JSON', async () => {
