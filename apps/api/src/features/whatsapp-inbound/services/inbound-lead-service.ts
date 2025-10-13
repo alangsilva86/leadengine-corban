@@ -93,11 +93,14 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
   const metadataContact = toRecord(metadataRecord.contact);
   const messageRecord = toRecord(message);
 
+  const contactPhone = readString(contact.phone);
+  const metadataContactPhone = readString(metadataContact.phone);
+  const metadataRecordPhone = readString(metadataRecord.phone);
   const normalizedPhone =
-    sanitizePhone(contact.phone) ??
-    sanitizePhone(metadataContact.phone) ??
-    sanitizePhone(metadataRecord.phone);
-  const document = sanitizeDocument(contact.document, normalizedPhone);
+    sanitizePhone(contactPhone) ??
+    sanitizePhone(metadataContactPhone) ??
+    sanitizePhone(metadataRecordPhone);
+  const document = sanitizeDocument(readString(contact.document), normalizedPhone);
 
   const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
   const passthroughDirection =
@@ -145,10 +148,10 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     passthroughText = normalizedMessage.caption ?? normalizedMessage.text ?? null;
     passthroughMedia = {
       mediaType,
-      url: normalizedMessage.mediaUrl ?? undefined,
-      mimeType: normalizedMessage.mimetype ?? undefined,
-      size: normalizedMessage.fileSize ?? undefined,
-      caption: normalizedMessage.caption ?? undefined,
+      url: normalizedMessage.mediaUrl ?? null,
+      mimeType: normalizedMessage.mimetype ?? null,
+      size: normalizedMessage.fileSize ?? null,
+      caption: normalizedMessage.caption ?? null,
     };
   } else if (
     normalizedType === 'TEXT' ||
@@ -220,17 +223,14 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     socket.to(`ticket:${passthroughTicket.id}`).emit('messages.new', passthroughMessage);
   }
 
-  logger.info(
-    {
-      tenantId: effectiveTenantId,
-      ticketId: passthroughTicket.id,
-      direction: passthroughDirection,
-      externalId: externalIdForUpsert,
-      messageWasCreated,
-      ticketWasCreated,
-    },
-    'passthrough: persisted + emitted messages.new'
-  );
+  logger.info('passthrough: persisted + emitted messages.new', {
+    tenantId: effectiveTenantId,
+    ticketId: passthroughTicket.id,
+    direction: passthroughDirection,
+    externalId: externalIdForUpsert,
+    messageWasCreated,
+    ticketWasCreated,
+  });
 
   await emitPassthroughRealtimeUpdates({
     tenantId: effectiveTenantId,
@@ -282,6 +282,30 @@ const readNestedString = (source: Record<string, unknown>, path: string[]): stri
   }
 
   return readString(current);
+};
+
+const resolveTicketAgreementId = (ticket: unknown): string | null => {
+  if (!ticket || typeof ticket !== 'object') {
+    return null;
+  }
+
+  const ticketRecord = ticket as Record<string, unknown> & {
+    metadata?: Prisma.JsonValue | null;
+  };
+
+  const directAgreement = readString(ticketRecord['agreementId']);
+  if (directAgreement) {
+    return directAgreement;
+  }
+
+  const metadataRecord = toRecord(ticketRecord.metadata);
+  return (
+    readString(metadataRecord.agreementId) ??
+    readString(metadataRecord.agreement_id) ??
+    readNestedString(metadataRecord, ['agreement', 'id']) ??
+    readNestedString(metadataRecord, ['agreement', 'agreementId']) ??
+    null
+  );
 };
 
 const pushUnique = (collection: string[], candidate: string | null): void => {
@@ -580,6 +604,10 @@ export interface InboundWhatsAppEnvelopeUpdate extends InboundWhatsAppEnvelopeBa
 
 export type InboundWhatsAppEnvelope = InboundWhatsAppEnvelopeMessage | InboundWhatsAppEnvelopeUpdate;
 
+const isMessageEnvelope = (
+  envelope: InboundWhatsAppEnvelope
+): envelope is InboundWhatsAppEnvelopeMessage => envelope.message.kind === 'message';
+
 const sanitizePhone = (value?: string | null): string | undefined => {
   if (!value) {
     return undefined;
@@ -706,10 +734,12 @@ const emitPassthroughRealtimeUpdates = async ({
       return;
     }
 
+    const agreementId = resolveTicketAgreementId(ticketRecord);
+
     const ticketPayload = {
       tenantId,
       ticketId: ticketRecord.id,
-      agreementId: ticketRecord.agreementId ?? null,
+      agreementId,
       instanceId: instanceId ?? null,
       messageId: message.id,
       providerMessageId: message.externalId ?? null,
@@ -720,15 +750,15 @@ const emitPassthroughRealtimeUpdates = async ({
 
     emitToTicket(ticketRecord.id, 'tickets.updated', ticketPayload);
     emitToTenant(tenantId, 'tickets.updated', ticketPayload);
-    if (ticketRecord.agreementId) {
-      emitToAgreement(ticketRecord.agreementId, 'tickets.updated', ticketPayload);
+    if (agreementId) {
+      emitToAgreement(agreementId, 'tickets.updated', ticketPayload);
     }
 
     if (ticketWasCreated) {
       emitToTicket(ticketRecord.id, 'tickets.new', ticketPayload);
       emitToTenant(tenantId, 'tickets.new', ticketPayload);
-      if (ticketRecord.agreementId) {
-        emitToAgreement(ticketRecord.agreementId, 'tickets.new', ticketPayload);
+      if (agreementId) {
+        emitToAgreement(agreementId, 'tickets.new', ticketPayload);
       }
     }
   } catch (error) {
@@ -1102,10 +1132,12 @@ const emitRealtimeUpdatesForInbound = async ({
       return;
     }
 
+    const agreementId = resolveTicketAgreementId(ticket);
+
     const ticketPayload = {
       tenantId,
       ticketId,
-      agreementId: ticket.agreementId ?? null,
+      agreementId,
       instanceId,
       messageId: message.id,
       providerMessageId,
@@ -1116,8 +1148,8 @@ const emitRealtimeUpdatesForInbound = async ({
 
     emitToTicket(ticketId, 'tickets.updated', ticketPayload);
     emitToTenant(tenantId, 'tickets.updated', ticketPayload);
-    if (ticket.agreementId) {
-      emitToAgreement(ticket.agreementId, 'tickets.updated', ticketPayload);
+    if (agreementId) {
+      emitToAgreement(agreementId, 'tickets.updated', ticketPayload);
     }
 
     const messageMetadata =
@@ -1139,7 +1171,7 @@ const emitRealtimeUpdatesForInbound = async ({
       ticketId,
       messageId: message.id,
       providerMessageId,
-      agreementId: ticket.agreementId ?? null,
+      agreementId,
     });
   } catch (error) {
     logger.error('Failed to emit realtime updates for inbound WhatsApp message', {
@@ -1186,24 +1218,27 @@ const upsertLeadFromInbound = async ({
       ? message.content.trim().slice(0, 140)
       : null;
 
-  const lead = await prisma.lead.upsert({
+  const existingLead = await prisma.lead.findFirst({
     where: {
-      tenantId_contactId: {
-        tenantId,
-        contactId,
-      },
-    },
-    create: {
       tenantId,
       contactId,
-      status: 'NEW',
-      source: 'WHATSAPP',
-      lastContactAt,
-    },
-    update: {
-      lastContactAt,
     },
   });
+
+  const lead = existingLead
+    ? await prisma.lead.update({
+        where: { id: existingLead.id },
+        data: { lastContactAt },
+      })
+    : await prisma.lead.create({
+        data: {
+          tenantId,
+          contactId,
+          status: 'NEW',
+          source: 'WHATSAPP',
+          lastContactAt,
+        },
+      });
 
   leadLastContactGauge.set(
     { tenantId, leadId: lead.id },
@@ -1385,7 +1420,7 @@ const mergeEnvelopeMetadata = (
 export const ingestInboundWhatsAppMessage = async (
   envelope: InboundWhatsAppEnvelope
 ): Promise<boolean> => {
-  if (envelope.message.kind !== 'message') {
+  if (!isMessageEnvelope(envelope)) {
     logger.debug('whatsappInbound.ingest.skipUpdateEvent', {
       origin: envelope.origin,
       instanceId: envelope.instanceId,
@@ -1394,18 +1429,20 @@ export const ingestInboundWhatsAppMessage = async (
     return false;
   }
 
-  const tenantId = envelope.tenantId ?? DEFAULT_TENANT_ID;
-  const chatId = resolveEnvelopeChatId(envelope);
-  const messageId = resolveEnvelopeMessageId(envelope) ?? randomUUID();
+  const messageEnvelope: InboundWhatsAppEnvelopeMessage = envelope;
+
+  const tenantId = messageEnvelope.tenantId ?? DEFAULT_TENANT_ID;
+  const chatId = resolveEnvelopeChatId(messageEnvelope);
+  const messageId = resolveEnvelopeMessageId(messageEnvelope) ?? randomUUID();
   const now = Date.now();
-  const dedupeTtlMs = envelope.dedupeTtlMs ?? DEFAULT_DEDUPE_TTL_MS;
+  const dedupeTtlMs = messageEnvelope.dedupeTtlMs ?? DEFAULT_DEDUPE_TTL_MS;
   const keyChatId = chatId ?? '__unknown__';
-  const dedupeKey = `${tenantId}:${envelope.instanceId}:${keyChatId}:${messageId}`;
+  const dedupeKey = `${tenantId}:${messageEnvelope.instanceId}:${keyChatId}:${messageId}`;
 
   if (await shouldSkipByDedupe(dedupeKey, now, dedupeTtlMs)) {
     logger.info('whatsappInbound.ingest.dedupeSkip', {
-      origin: envelope.origin,
-      instanceId: envelope.instanceId,
+      origin: messageEnvelope.origin,
+      instanceId: messageEnvelope.instanceId,
       tenantId,
       chatId: keyChatId,
       messageId,
@@ -1415,17 +1452,17 @@ export const ingestInboundWhatsAppMessage = async (
     return false;
   }
 
-  const metadata = mergeEnvelopeMetadata(envelope, chatId);
+  const metadata = mergeEnvelopeMetadata(messageEnvelope, chatId);
 
   const event: InboundWhatsAppEvent = {
-    id: envelope.message.id ?? messageId,
-    instanceId: envelope.instanceId,
-    direction: envelope.message.direction,
+    id: messageEnvelope.message.id ?? messageId,
+    instanceId: messageEnvelope.instanceId,
+    direction: messageEnvelope.message.direction,
     chatId,
-    externalId: envelope.message.externalId ?? messageId,
-    timestamp: envelope.message.timestamp ?? null,
-    contact: envelope.message.contact ?? {},
-    message: envelope.message.payload,
+    externalId: messageEnvelope.message.externalId ?? messageId,
+    timestamp: messageEnvelope.message.timestamp ?? null,
+    contact: messageEnvelope.message.contact ?? {},
+    message: messageEnvelope.message.payload,
     metadata,
     tenantId,
     sessionId: readString(metadata.sessionId),
@@ -1691,7 +1728,12 @@ The passthrough handler above short-circuits all validations.
   })();
 
   const dedupeKey = `${tenantId}:${messageExternalId ?? normalizedMessage.id}`;
-  if (!simpleMode && !passthroughMode && direction === 'INBOUND' && shouldSkipByDedupe(dedupeKey, now)) {
+  if (
+    !simpleMode &&
+    !passthroughMode &&
+    direction === 'INBOUND' &&
+    (await shouldSkipByDedupe(dedupeKey, now))
+  ) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       requestId,
       tenantId,
@@ -1741,10 +1783,10 @@ The passthrough handler above short-circuits all validations.
       passthroughText = normalizedMessage.caption ?? normalizedMessage.text ?? null;
       passthroughMedia = {
         mediaType,
-        url: normalizedMessage.mediaUrl ?? undefined,
-        mimeType: normalizedMessage.mimetype ?? undefined,
-        size: normalizedMessage.fileSize ?? undefined,
-        caption: normalizedMessage.caption ?? undefined,
+        url: normalizedMessage.mediaUrl ?? null,
+        mimeType: normalizedMessage.mimetype ?? null,
+        size: normalizedMessage.fileSize ?? null,
+        caption: normalizedMessage.caption ?? null,
       };
     } else if (
       normalizedType === 'TEXT' ||
@@ -1965,7 +2007,7 @@ The passthrough handler above short-circuits all validations.
       const agreementId = campaign.agreementId || 'unknown';
       const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;
 
-      if (shouldSkipByDedupe(dedupeKey, now)) {
+      if (await shouldSkipByDedupe(dedupeKey, now)) {
         logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
           requestId,
           tenantId,
