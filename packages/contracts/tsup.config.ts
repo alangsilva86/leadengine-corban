@@ -26,6 +26,11 @@ export default defineConfig({
   dts,
   minify,
   format: ['cjs', 'esm'],
+  outExtension({ format }) {
+    return {
+      js: format === 'esm' ? '.mjs' : '.cjs',
+    };
+  },
   target: 'es2022',
   tsconfig: './tsconfig.build.json',
 });
