@@ -7,9 +7,76 @@ import {
 import { computeBackoffDelay, parseRetryAfterMs } from './rate-limit.js';
 import { getEnvVar } from './runtime-env.js';
 
+const DEFAULT_SAME_ORIGIN_HOSTS = ['leadengine-corban.up.railway.app'];
+
+const parseHosts = (value) => {
+  if (typeof value !== 'string') {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const configuredSameOriginHosts = parseHosts(getEnvVar('VITE_API_SAME_ORIGIN_HOSTS', ''));
+
+const sameOriginHosts = new Set([...DEFAULT_SAME_ORIGIN_HOSTS, ...configuredSameOriginHosts]);
+
+const shouldUseSameOriginBase = (rawValue) => {
+  const normalizedValue = typeof rawValue === 'string' ? rawValue.trim().toLowerCase() : '';
+
+  if (
+    normalizedValue === '' ||
+    normalizedValue === '/' ||
+    normalizedValue === '@auto' ||
+    normalizedValue === 'auto' ||
+    normalizedValue === '@proxy' ||
+    normalizedValue === 'proxy' ||
+    normalizedValue === '@same-origin' ||
+    normalizedValue === 'same-origin'
+  ) {
+    return true;
+  }
+
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const currentHost = window.location?.hostname?.toLowerCase() ?? '';
+  if (currentHost && sameOriginHosts.has(currentHost)) {
+    return true;
+  }
+
+  return false;
+};
+
+const normalizeBaseUrl = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') {
+    return '';
+  }
+
+  if (trimmed.startsWith('/')) {
+    return trimmed.replace(/\/$/, '');
+  }
+
+  return trimmed.replace(/\/$/, '');
+};
+
 export const API_BASE_URL = (() => {
   const rawUrl = getEnvVar('VITE_API_URL', '');
-  return typeof rawUrl === 'string' ? rawUrl.replace(/\/$/, '') : '';
+
+  if (shouldUseSameOriginBase(rawUrl)) {
+    return '';
+  }
+
+  return normalizeBaseUrl(rawUrl);
 })();
 
 let persistedToken = getAuthToken();
