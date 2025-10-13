@@ -1,3 +1,4 @@
+import { getRawWhatsAppMode, getWhatsAppMode, isWhatsAppEventPollerDisabled } from './config/whatsapp';
 import { getWhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
 import type { WhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
 
@@ -59,8 +60,9 @@ const deriveStorageBackend = (): string => {
 
 export const buildHealthPayload = ({ environment }: { environment: string }): HealthPayload => {
   const metrics = getWhatsAppEventPollerMetrics();
-  const disabled = process.env.WHATSAPP_EVENT_POLLER_DISABLED === 'true';
-  const mode = (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
+  const disabled = isWhatsAppEventPollerDisabled();
+  const mode = getWhatsAppMode();
+  const rawMode = getRawWhatsAppMode();
   const pollerStatus = derivePollerStatus(metrics, { disabled, mode });
 
   const overallStatus: HealthPayload['status'] = pollerStatus === 'error' ? 'degraded' : 'ok';
@@ -74,7 +76,7 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     whatsappEventPoller: {
       ...metrics,
       status: pollerStatus,
-      mode,
+      mode: rawMode || mode,
       disabled,
     },
   };

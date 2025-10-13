@@ -2,6 +2,13 @@ import { Buffer } from 'node:buffer';
 import { fetch, type RequestInit, type Response as UndiciResponse } from 'undici';
 import { logger } from '../config/logger';
 import {
+  getBrokerApiKey,
+  getBrokerBaseUrl,
+  getRawWhatsAppMode,
+  getWebhookVerifyToken,
+  getWhatsAppMode,
+} from '../config/whatsapp';
+import {
   BrokerOutboundMessageSchema,
   BrokerOutboundResponseSchema,
   type BrokerOutboundMessage,
@@ -237,6 +244,8 @@ type BrokerRequestOptions = {
   idempotencyKey?: string;
 };
 
+const trim = (value: string | null | undefined): string => (value ?? '').trim();
+
 type DeleteInstanceOptions = {
   instanceId?: string;
   wipe?: boolean;
@@ -266,16 +275,16 @@ type SendMessagePayload = {
 
 class WhatsAppBrokerClient {
   private get mode(): string {
-    return (process.env.WHATSAPP_MODE || '').trim().toLowerCase();
+    return getRawWhatsAppMode();
   }
 
   private get baseUrl(): string {
-    const configured = (process.env.BROKER_BASE_URL || process.env.WHATSAPP_BROKER_URL || '').trim();
+    const configured = getBrokerBaseUrl() ?? trim(process.env.BROKER_BASE_URL);
     return configured ? configured.replace(/\/$/, '') : '';
   }
 
   private get brokerApiKey(): string {
-    const configured = (process.env.BROKER_API_KEY || process.env.WHATSAPP_BROKER_API_KEY || '').trim();
+    const configured = getBrokerApiKey() ?? trim(process.env.BROKER_API_KEY);
     return configured;
   }
 
@@ -310,10 +319,9 @@ class WhatsAppBrokerClient {
 
   private get brokerWebhookUrl(): string {
     const configured =
-      (process.env.WHATSAPP_BROKER_WEBHOOK_URL ||
-        process.env.WHATSAPP_WEBHOOK_URL ||
-        process.env.WEBHOOK_URL ||
-        '').trim();
+      trim(process.env.WHATSAPP_BROKER_WEBHOOK_URL) ||
+      trim(process.env.WHATSAPP_WEBHOOK_URL) ||
+      trim(process.env.WEBHOOK_URL);
 
     if (configured) {
       return configured;
@@ -323,7 +331,7 @@ class WhatsAppBrokerClient {
   }
 
   private get webhookVerifyToken(): string {
-    return (process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '').trim();
+    return getWebhookVerifyToken() ?? '';
   }
 
   private ensureConfigured(): void {
@@ -1789,7 +1797,7 @@ class WhatsAppBrokerClient {
     payload: SendMessagePayload,
     idempotencyKey?: string
   ): Promise<WhatsAppMessageResult & { raw?: Record<string, unknown> | null }> {
-    if (process.env.WHATSAPP_MODE === 'dryrun') {
+    if (getWhatsAppMode() === 'dryrun') {
       const now = new Date();
       const externalId = (() => {
         if (typeof payload.externalId === 'string' && payload.externalId.trim().length > 0) {
