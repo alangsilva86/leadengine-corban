@@ -95,12 +95,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const expectedApiKey = getWebhookApiKey();
   const signatureRequired = isWebhookSignatureRequired();
 
-  const transportMode = WHATSAPP_TRANSPORT_MODE;
-
   if (expectedApiKey && providedApiKey && providedApiKey !== expectedApiKey) {
     logger.warn('WhatsApp webhook API key mismatch', { requestId });
     whatsappWebhookEventsCounter.inc({
-      transport: transportMode,
       origin: 'webhook',
       tenantId: 'unknown',
       instanceId: 'unknown',
@@ -146,7 +143,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const events = asArray(req.body);
   if (events.length === 0) {
     whatsappWebhookEventsCounter.inc({
-      transport: transportMode,
       origin: 'webhook',
       tenantId: 'unknown',
       instanceId: 'unknown',
@@ -266,7 +262,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         if (processed) {
           persisted += 1;
           whatsappWebhookEventsCounter.inc({
-            transport: transportMode,
             origin: 'webhook',
             tenantId: tenantId ?? 'unknown',
             instanceId: instanceId ?? 'unknown',
@@ -283,7 +278,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           error,
         });
         whatsappWebhookEventsCounter.inc({
-          transport: transportMode,
           origin: 'webhook',
           tenantId: tenantId ?? 'unknown',
           instanceId: instanceId ?? 'unknown',

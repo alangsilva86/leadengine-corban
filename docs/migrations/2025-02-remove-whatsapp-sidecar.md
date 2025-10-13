@@ -29,12 +29,12 @@ A partir da release de 25/02/2025, o Ticketz LeadEngine opera exclusivamente com
 4. **Limpar pipelines CI/CD**
    - Ajuste jobs que criavam o volume ou implantavam o contêiner sidecar (Render, Railway, Kubernetes, etc.).
    - Remova scripts de rollback que alteravam `WHATSAPP_MODE` para `sidecar`.
-   - Atualize dashboards e alertas que monitoravam o `transport="sidecar"` para focar apenas em `transport="http"`.
+   - Atualize dashboards e alertas que monitoravam o `transport="sidecar"`; as métricas agora não possuem label de transporte.
 
 5. **Verificações pós-migração**
    - Rode `curl -H "X-API-Key: $WHATSAPP_BROKER_API_KEY" $API_URL/healthz | jq '.whatsapp.runtime'` para confirmar `mode="http"` e `status="running"`.
    - Execute `scripts/whatsapp-smoke-test.mjs` e valide sucesso no envio/recepção via broker HTTP.
-   - Confirme que métricas `whatsapp_webhook_events_total{transport="http"}` continuam incrementando.
+   - Confirme que métricas `whatsapp_webhook_events_total` continuam incrementando após a remoção do label `transport`.
 
 ## Rollback
 

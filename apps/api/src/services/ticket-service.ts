@@ -71,8 +71,6 @@ type WhatsAppTransportDependencies = {
   transport?: WhatsAppTransport;
 };
 
-const WHATSAPP_TRANSPORT_MODE = 'http' as const;
-
 const OUTBOUND_TPS_DEFAULT = (() => {
   const raw = process.env.OUTBOUND_TPS_DEFAULT;
   const parsed = Number.parseInt(raw ?? '', 10);
@@ -716,7 +714,7 @@ const safeResolveContacts = async (
       })
     );
   } catch (error) {
-    logger.warn('[ticket-service] Failed to resolve contacts for tickets', {
+    logger.warn('ticketService.resolveContacts.failed', {
       tenantId,
       contactIds,
       error,
@@ -770,7 +768,7 @@ const safeResolveLeads = async (
 
     return leadByContact;
   } catch (error) {
-    logger.warn('[ticket-service] Failed to resolve leads for tickets', {
+    logger.warn('ticketService.resolveLeads.failed', {
       tenantId,
       contactIds,
       error,
@@ -1239,7 +1237,6 @@ export const sendMessage = async (
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
   const passthroughMode = isWhatsappPassthroughModeEnabled();
   const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
-  const transportMode = WHATSAPP_TRANSPORT_MODE;
 
   try {
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
@@ -1379,7 +1376,7 @@ export const sendMessage = async (
     const instanceId = effectiveInstanceId;
 
     if (!instanceId) {
-      logger.warn('Unable to send WhatsApp message: instanceId missing from ticket metadata', {
+      logger.warn('whatsapp.outbound.instanceIdMissing', {
         tenantId,
         ticketId: ticket.id,
       });
@@ -1389,7 +1386,7 @@ export const sendMessage = async (
       const phone = (contact?.phone ?? '').trim();
 
       if (!phone) {
-        logger.warn('Unable to send WhatsApp message: contact phone missing', {
+        logger.warn('whatsapp.outbound.contactPhoneMissing', {
           tenantId,
           ticketId: ticket.id,
           contactId: ticket.contactId,
@@ -1452,7 +1449,7 @@ export const sendMessage = async (
           if (circuitKey) {
             const wasOpen = recordCircuitSuccess(circuitKey);
             if (wasOpen) {
-              logger.info('WhatsApp outbound circuit breaker closed after successful dispatch', {
+              logger.info('whatsapp.outbound.circuit.closed', {
                 tenantId,
                 ticketId: ticket.id,
                 instanceId,
@@ -1485,20 +1482,18 @@ export const sendMessage = async (
           const requestId = transportError?.requestId ?? brokerError?.requestId;
           const normalizedCode = typeof code === 'string' ? code.toUpperCase() : null;
 
-          logger.error('Failed to dispatch WhatsApp message via transport', {
+          logger.error('whatsapp.outbound.dispatch.failed', {
             tenantId,
             ticketId: ticket.id,
             messageId: message.id,
             error: reason,
-            transport: transport.mode,
-            transportErrorCode: code,
-            transportStatus: status,
-            transportRequestId: requestId,
-            transportRawErrorCode: rawErrorCode,
+            errorCode: code,
+            status,
+            requestId,
+            rawErrorCode,
           });
           if (normalizedCode === 'INSTANCE_NOT_CONNECTED') {
             whatsappSocketReconnectsCounter.inc({
-              transport: WHATSAPP_TRANSPORT_MODE,
               origin: 'ticket-service',
               tenantId,
               instanceId: instanceId ?? 'unknown',
@@ -1515,13 +1510,11 @@ export const sendMessage = async (
               ? {
                   code: transportError.code,
                   message: error instanceof Error ? error.message : null,
-                  transport: transport.mode,
                 }
               : brokerError
               ? {
                   code: brokerError.code ?? null,
                   message: error instanceof Error ? error.message : null,
-                  transport: transport.mode,
                 }
               : undefined,
           });
@@ -1530,7 +1523,7 @@ export const sendMessage = async (
             const result = recordCircuitFailure(circuitKey);
             if (result.opened) {
               const retryAtIso = result.retryAt ? new Date(result.retryAt).toISOString() : null;
-              logger.warn('WhatsApp outbound circuit breaker opened after consecutive failures', {
+              logger.warn('whatsapp.outbound.circuit.opened', {
                 tenantId,
                 ticketId: ticket.id,
                 instanceId,
@@ -1649,8 +1642,6 @@ export const sendOnTicket = async (
   }
 
   const tenantForOperations = resolvedTenantId;
-  const transportMode = WHATSAPP_TRANSPORT_MODE;
-
   let payloadHash: string | null = null;
   if (idempotencyKey) {
     payloadHash = hashIdempotentPayload({
@@ -1701,7 +1692,6 @@ export const sendOnTicket = async (
   const latencyMs = Date.now() - startedAt;
   const metricsInstanceId = (message.instanceId ?? targetInstanceId) ?? 'unknown';
   const outboundMetricBase = {
-    transport: transportMode,
     origin: 'ticket-service',
     tenantId: tenantForOperations,
     instanceId: metricsInstanceId,
