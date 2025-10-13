@@ -4,15 +4,19 @@ import { randomUUID } from 'node:crypto';
 import { SendByInstanceSchema, normalizePayload } from '@ticketz/contracts';
 import { asyncHandler } from '../../middleware/error-handler';
 import { prisma } from '../../lib/prisma';
-import { sendAdHoc } from '../../services/ticket-service';
+import { rateKeyForInstance, resolveInstanceRateLimit, sendAdHoc } from '../../services/ticket-service';
 import {
   WhatsAppBrokerError,
   translateWhatsAppBrokerError,
 } from '../../services/whatsapp-broker-client';
+import { sendAdHoc } from '../../services/ticket-service';
+import { resolveWhatsAppTransport } from '../../services/whatsapp/transport/transport';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { NotFoundError } from '@ticketz/core';
 import { whatsappHttpRequestsCounter } from '../../lib/metrics';
 import { logger } from '../../config/logger';
 import { respondWithValidationError } from '../../utils/http-validation';
+import { assertWithinRateLimit, RateLimitError } from '../../utils/rate-limit';
 
 const instrumentationMiddleware: express.RequestHandler = (req, res, next) => {
   const startedAt = Date.now();
@@ -111,7 +115,43 @@ router.post(
 
     const parsed = parsedResult.data;
 
-    const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
+    const headerIdempotency = (req.get('Idempotency-Key') || '').trim();
+    if (!headerIdempotency) {
+      res.locals.errorCode = 'IDEMPOTENCY_KEY_REQUIRED';
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDEMPOTENCY_KEY_REQUIRED',
+          message: 'Informe o cabeçalho Idempotency-Key para envios via API.',
+        },
+      });
+      return;
+    }
+
+    if (headerIdempotency !== parsed.idempotencyKey) {
+      res.locals.errorCode = 'IDEMPOTENCY_KEY_MISMATCH';
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDEMPOTENCY_KEY_MISMATCH',
+          message: 'O Idempotency-Key do cabeçalho deve coincidir com o corpo da requisição.',
+        },
+      });
+      return;
+    }
+
+    const rateLimitKey = rateKeyForInstance(instance.tenantId, instance.id);
+    const rateLimit = resolveInstanceRateLimit(instance.id);
+    try {
+      assertWithinRateLimit(rateLimitKey, rateLimit);
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        res.locals.errorCode = 'RATE_LIMITED';
+      }
+      throw error;
+    }
+
+    const idempotencyKey = parsed.idempotencyKey;
     const payload = normalizePayload(parsed.payload);
 
     try {
@@ -121,31 +161,46 @@ router.post(
         to: parsed.to,
         payload,
         idempotencyKey,
+        rateLimitConsumed: true,
       });
+      const transport = resolveWhatsAppTransport();
+      const response = await sendAdHoc(
+        {
+          operatorId: req.user?.id,
+          instanceId: instance.id,
+          to: parsed.to,
+          payload,
+          idempotencyKey,
+        },
+        { transport }
+      );
 
       res.status(202).json(response);
     } catch (error) {
-      if (error instanceof WhatsAppBrokerError) {
-        const normalized = translateWhatsAppBrokerError(error);
-        const resolvedCode = normalized?.code ?? error.code ?? 'BROKER_ERROR';
-        const resolvedMessage = normalized?.message ?? error.message ?? 'Falha ao enviar mensagem.';
+      if (error instanceof WhatsAppTransportError) {
+        const canonical = error.canonical;
+        const resolvedCode = canonical?.code ?? error.code ?? 'TRANSPORT_ERROR';
+        const resolvedMessage = canonical?.message ?? error.message ?? 'Falha ao enviar mensagem.';
         const status = (() => {
-          if (normalized?.code === 'RATE_LIMITED') {
-            return 429;
+          switch (canonical?.code) {
+            case 'RATE_LIMITED':
+              return 429;
+            case 'BROKER_TIMEOUT':
+              return error.status === 504 ? 504 : 408;
+            case 'INVALID_TO':
+              return 422;
+            case 'INSTANCE_NOT_CONNECTED':
+              return 409;
+            case 'TRANSPORT_NOT_CONFIGURED':
+              return 503;
+            case 'UNSUPPORTED_OPERATION':
+              return 400;
+            default:
+              if (typeof error.status === 'number' && error.status >= 400 && error.status < 600) {
+                return error.status;
+              }
+              return 502;
           }
-          if (normalized?.code === 'BROKER_TIMEOUT') {
-            return error.brokerStatus === 504 ? 504 : 408;
-          }
-          if (normalized?.code === 'INVALID_TO') {
-            return 422;
-          }
-          if (normalized?.code === 'INSTANCE_NOT_CONNECTED') {
-            return 409;
-          }
-          if (typeof error.brokerStatus === 'number' && error.brokerStatus >= 400 && error.brokerStatus < 600) {
-            return error.brokerStatus;
-          }
-          return 502;
         })();
 
         res.locals.errorCode = resolvedCode;

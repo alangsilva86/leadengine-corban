@@ -25,10 +25,25 @@ import {
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 
-const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
 
-const dedupeCache = new Map<string, number>();
+type DedupeCacheEntry = {
+  expiresAt: number;
+};
+
+const dedupeCache = new Map<string, DedupeCacheEntry>();
+
+export interface InboundDedupeBackend {
+  has(key: string): Promise<boolean>;
+  set(key: string, ttlMs: number): Promise<void>;
+}
+
+let dedupeBackend: InboundDedupeBackend | null = null;
+
+export const configureInboundDedupeBackend = (backend: InboundDedupeBackend | null): void => {
+  dedupeBackend = backend;
+};
 
 const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
@@ -42,6 +57,13 @@ const DEFAULT_TENANT_ID = (() => {
   }
   return 'demo-tenant';
 })();
+
+const toRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+};
 
 const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<void> => {
   const transportMode = getWhatsAppMode();
@@ -236,6 +258,7 @@ const queueCacheByTenant = new Map<string, QueueCacheEntry>();
 export const resetInboundLeadServiceTestState = (): void => {
   dedupeCache.clear();
   queueCacheByTenant.clear();
+  dedupeBackend = null;
 };
 
 const readString = (value: unknown): string | null => {
@@ -458,7 +481,7 @@ const pruneDedupeCache = (now: number): void => {
   let removedExpiredEntries = 0;
 
   for (const [key, storedAt] of dedupeCache.entries()) {
-    if (now - storedAt >= DEDUPE_WINDOW_MS) {
+    if (storedAt.expiresAt <= now) {
       dedupeCache.delete(key);
       removedExpiredEntries += 1;
     }
@@ -521,6 +544,42 @@ export interface InboundWhatsAppEvent {
   sessionId?: string | null;
 }
 
+export interface InboundWhatsAppEnvelopeBase {
+  origin: string;
+  transport: string;
+  instanceId: string;
+  chatId: string | null;
+  tenantId: string | null;
+  dedupeTtlMs?: number;
+  raw?: Record<string, unknown> | null;
+}
+
+export interface InboundWhatsAppEnvelopeMessage extends InboundWhatsAppEnvelopeBase {
+  message: {
+    kind: 'message';
+    id: string | null;
+    externalId?: string | null;
+    brokerMessageId?: string | null;
+    timestamp: string | null;
+    direction: 'INBOUND' | 'OUTBOUND';
+    contact: InboundContactDetails;
+    payload: InboundMessageDetails;
+    metadata?: Record<string, unknown> | null;
+  };
+}
+
+export interface InboundWhatsAppEnvelopeUpdate extends InboundWhatsAppEnvelopeBase {
+  message: {
+    kind: 'update';
+    id: string;
+    status?: string | null;
+    timestamp?: string | null;
+    metadata?: Record<string, unknown> | null;
+  };
+}
+
+export type InboundWhatsAppEnvelope = InboundWhatsAppEnvelopeMessage | InboundWhatsAppEnvelopeUpdate;
+
 const sanitizePhone = (value?: string | null): string | undefined => {
   if (!value) {
     return undefined;
@@ -580,15 +639,44 @@ const pickPreferredName = (...values: Array<unknown>): string | null => {
   return null;
 };
 
-export const shouldSkipByDedupe = (key: string, now: number): boolean => {
+const shouldSkipByLocalDedupe = (key: string, now: number, ttlMs: number): boolean => {
   pruneDedupeCache(now);
 
-  const lastSeen = dedupeCache.get(key);
-  if (typeof lastSeen === 'number' && now - lastSeen < DEDUPE_WINDOW_MS) {
+  const entry = dedupeCache.get(key);
+  if (entry && entry.expiresAt > now) {
     return true;
   }
-  dedupeCache.set(key, now);
+
+  const expiresAt = now + ttlMs;
+  dedupeCache.set(key, { expiresAt });
   return false;
+};
+
+export const shouldSkipByDedupe = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<boolean> => {
+  if (ttlMs <= 0) {
+    return false;
+  }
+
+  if (dedupeBackend) {
+    if (await dedupeBackend.has(key)) {
+      return true;
+    }
+
+    try {
+      await dedupeBackend.set(key, ttlMs);
+    } catch (error) {
+      logger.warn('whatsappInbound.dedupeCache.redisFallback', {
+        key,
+        ttlMs,
+        error: mapErrorForLog(error),
+      });
+      return shouldSkipByLocalDedupe(key, now, ttlMs);
+    }
+
+    return false;
+  }
+
+  return shouldSkipByLocalDedupe(key, now, ttlMs);
 };
 
 const mapErrorForLog = (error: unknown) =>
@@ -1212,10 +1300,11 @@ const upsertLeadFromInbound = async ({
 };
 
 export const __testing = {
-  DEDUPE_WINDOW_MS,
+  DEFAULT_DEDUPE_TTL_MS,
   MAX_DEDUPE_CACHE_SIZE,
   DEFAULT_QUEUE_CACHE_TTL_MS,
   dedupeCache,
+  configureInboundDedupeBackend,
   queueCacheByTenant,
   resolveTenantIdentifiersFromMetadata,
   resolveBrokerIdFromMetadata,
@@ -1230,8 +1319,120 @@ export const __testing = {
   emitRealtimeUpdatesForInbound,
 };
 
-export const ingestInboundWhatsAppMessage = async (event: InboundWhatsAppEvent) => {
+const resolveEnvelopeChatId = (
+  envelope: InboundWhatsAppEnvelopeMessage
+): string | null => {
+  const provided = readString(envelope.chatId);
+  if (provided) {
+    return provided;
+  }
+
+  const payloadRecord = toRecord(envelope.message.payload);
+  if (payloadRecord.chatId) {
+    const candidate = readString(payloadRecord.chatId);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const keyRecord = toRecord(payloadRecord.key);
+  return readString(keyRecord.remoteJid) ?? readString(keyRecord.jid) ?? null;
+};
+
+const resolveEnvelopeMessageId = (
+  envelope: InboundWhatsAppEnvelopeMessage
+): string | null => {
+  const payloadRecord = toRecord(envelope.message.payload);
+  const keyRecord = toRecord(payloadRecord.key);
+
+  return (
+    readString(envelope.message.externalId) ??
+    readString(envelope.message.brokerMessageId) ??
+    readString(envelope.message.id) ??
+    readString(payloadRecord.id) ??
+    readString(keyRecord.id)
+  );
+};
+
+const mergeEnvelopeMetadata = (
+  envelope: InboundWhatsAppEnvelopeMessage,
+  chatId: string | null
+): Record<string, unknown> => {
+  const base = toRecord(envelope.message.metadata);
+
+  if (!base.origin) {
+    base.origin = envelope.origin;
+  }
+  if (!base.transport) {
+    base.transport = envelope.transport;
+  }
+  if (!base.chatId && chatId) {
+    base.chatId = chatId;
+  }
+  if (!base.tenantId && envelope.tenantId) {
+    base.tenantId = envelope.tenantId;
+  }
+  if (!base.instanceId) {
+    base.instanceId = envelope.instanceId;
+  }
+  if (envelope.raw && !base.rawEnvelope) {
+    base.rawEnvelope = envelope.raw;
+  }
+
+  return base;
+};
+
+export const ingestInboundWhatsAppMessage = async (
+  envelope: InboundWhatsAppEnvelope
+): Promise<boolean> => {
+  if (envelope.message.kind !== 'message') {
+    logger.debug('whatsappInbound.ingest.skipUpdateEvent', {
+      origin: envelope.origin,
+      instanceId: envelope.instanceId,
+      updateId: envelope.message.id,
+    });
+    return false;
+  }
+
+  const tenantId = envelope.tenantId ?? DEFAULT_TENANT_ID;
+  const chatId = resolveEnvelopeChatId(envelope);
+  const messageId = resolveEnvelopeMessageId(envelope) ?? randomUUID();
+  const now = Date.now();
+  const dedupeTtlMs = envelope.dedupeTtlMs ?? DEFAULT_DEDUPE_TTL_MS;
+  const keyChatId = chatId ?? '__unknown__';
+  const dedupeKey = `${tenantId}:${envelope.instanceId}:${keyChatId}:${messageId}`;
+
+  if (await shouldSkipByDedupe(dedupeKey, now, dedupeTtlMs)) {
+    logger.info('whatsappInbound.ingest.dedupeSkip', {
+      origin: envelope.origin,
+      instanceId: envelope.instanceId,
+      tenantId,
+      chatId: keyChatId,
+      messageId,
+      dedupeKey,
+      dedupeTtlMs,
+    });
+    return false;
+  }
+
+  const metadata = mergeEnvelopeMetadata(envelope, chatId);
+
+  const event: InboundWhatsAppEvent = {
+    id: envelope.message.id ?? messageId,
+    instanceId: envelope.instanceId,
+    direction: envelope.message.direction,
+    chatId,
+    externalId: envelope.message.externalId ?? messageId,
+    timestamp: envelope.message.timestamp ?? null,
+    contact: envelope.message.contact ?? {},
+    message: envelope.message.payload,
+    metadata,
+    tenantId,
+    sessionId: readString(metadata.sessionId),
+  };
+
   await handlePassthroughIngest(event);
+  return true;
 };
 /*
 Legacy pipeline (campaign/lead synchronization) retained for reference but disabled.

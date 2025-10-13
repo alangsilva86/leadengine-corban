@@ -11,6 +11,7 @@ import {
 import { logger } from '../config/logger';
 import { WhatsAppBrokerError } from '../services/whatsapp-broker-client';
 import { RateLimitError } from '../utils/rate-limit';
+import { CircuitBreakerOpenError } from '../utils/circuit-breaker';
 import { PhoneNormalizationError } from '../utils/phone';
 
 const readErrorDetails = (err: unknown): unknown => {
@@ -149,6 +150,13 @@ export const errorHandler = (
       message: error.message,
       details: { retryAfterMs: error.retryAfterMs },
     };
+  } else if (error instanceof CircuitBreakerOpenError) {
+    apiError = {
+      status: 423,
+      code: 'WHATSAPP_CIRCUIT_OPEN',
+      message: 'Envios temporariamente bloqueados para esta instância.',
+      details: error.retryAt ? { retryAt: error.retryAt } : undefined,
+    };
   } else if (error instanceof PhoneNormalizationError) {
     apiError = {
       status: 400,
@@ -213,6 +221,8 @@ export const errorHandler = (
   }
 
   // Log do erro
+  res.locals.errorCode = apiError.code;
+
   const logLevel = apiError.status >= 500 ? 'error' : 'warn';
   const logPayload = (() => {
     if (brokerError) {

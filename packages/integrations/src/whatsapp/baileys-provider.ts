@@ -15,10 +15,13 @@ import { EventEmitter } from 'events';
 import { logger } from '../utils/logger';
 import { storeMedia } from '../utils/media-storage';
 import type { MediaStorageOptions, StoredMedia } from '../utils/media-storage';
+import type { WhatsAppSessionStore, WhatsAppSessionAuthState } from './session-store';
+import { useSessionStoreAuthState } from './store-auth-state';
 
 export interface WhatsAppConfig {
   instanceId: string;
-  sessionPath: string;
+  sessionPath?: string;
+  sessionStore?: WhatsAppSessionStore;
   webhookUrl?: string;
   qrCodeCallback?: (qr: string) => void;
   statusCallback?: (status: ConnectionStatus) => void;
@@ -50,8 +53,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
   private socket: WASocket | null = null;
   private config: WhatsAppConfig;
   private connectionStatus: ConnectionStatus = 'disconnected';
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private authState: WhatsAppSessionAuthState | null = null;
 
   constructor(config: WhatsAppConfig) {
     super();
@@ -61,8 +63,8 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
   async initialize(): Promise<void> {
     try {
       logger.info(`Initializing WhatsApp instance: ${this.config.instanceId}`);
-      
-      const { state, saveCreds } = await useMultiFileAuthState(this.config.sessionPath);
+
+      const { state, saveCreds } = await this.resolveAuthState();
 
       this.socket = makeWASocket({
         auth: {
@@ -77,12 +79,27 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
       });
 
       this.setupEventHandlers(saveCreds);
-      
+
     } catch (error) {
       logger.error('Failed to initialize WhatsApp provider:', error);
       this.setStatus('error');
       throw error;
     }
+  }
+
+  private async resolveAuthState(): Promise<{ state: WhatsAppSessionAuthState['state']; saveCreds: () => Promise<void> }> {
+    if (this.config.sessionStore) {
+      this.authState = await useSessionStoreAuthState(this.config.instanceId, this.config.sessionStore);
+      return { state: this.authState.state, saveCreds: this.authState.saveCreds };
+    }
+
+    if (!this.config.sessionPath) {
+      throw new Error('WhatsApp session configuration requires a sessionPath or sessionStore');
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(this.config.sessionPath);
+    this.authState = { state, saveCreds, clear: async () => {} };
+    return { state, saveCreds };
   }
 
   private setupEventHandlers(saveCreds: () => Promise<void>): void {
@@ -132,24 +149,25 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     if (connection === 'close') {
       const shouldReconnect =
         (lastDisconnect?.error as BoomError)?.output?.statusCode !== DisconnectReason.loggedOut;
-      
+
       logger.info('WhatsApp connection closed:', {
         shouldReconnect,
         statusCode: (lastDisconnect?.error as BoomError)?.output?.statusCode,
         reason: lastDisconnect?.error?.message
       });
 
-      if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        this.setStatus('connecting');
-        setTimeout(() => this.initialize(), 3000);
-      } else {
-        this.setStatus('disconnected');
-        this.emit('disconnected', lastDisconnect?.error);
+      if (!shouldReconnect) {
+        void this.authState?.clear();
       }
+
+      this.setStatus('disconnected');
+      this.emit('connection.closed', {
+        error: lastDisconnect?.error,
+        shouldReconnect
+      });
+      this.emit('disconnected', lastDisconnect?.error);
     } else if (connection === 'open') {
       logger.info('WhatsApp connection established successfully');
-      this.reconnectAttempts = 0;
       this.setStatus('connected');
       this.emit('connected');
     } else if (connection === 'connecting') {

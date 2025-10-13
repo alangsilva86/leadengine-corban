@@ -30,7 +30,32 @@ router.post(
       throw error;
     }
 
-    const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
+    const headerIdempotency = (req.get('Idempotency-Key') || '').trim();
+    if (!headerIdempotency) {
+      res.locals.errorCode = 'IDEMPOTENCY_KEY_REQUIRED';
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDEMPOTENCY_KEY_REQUIRED',
+          message: 'Informe o cabeçalho Idempotency-Key para envios via ticket.',
+        },
+      });
+      return;
+    }
+
+    if (headerIdempotency !== parsed.idempotencyKey) {
+      res.locals.errorCode = 'IDEMPOTENCY_KEY_MISMATCH';
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDEMPOTENCY_KEY_MISMATCH',
+          message: 'O Idempotency-Key do cabeçalho deve coincidir com o corpo da requisição.',
+        },
+      });
+      return;
+    }
+
+    const idempotencyKey = parsed.idempotencyKey;
     const payload = normalizePayload(parsed.payload);
     const result = await sendOnTicket({
       operatorId: req.user?.id,
