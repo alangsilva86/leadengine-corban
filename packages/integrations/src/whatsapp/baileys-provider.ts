@@ -1,13 +1,4 @@
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState,
-  makeCacheableSignalKeyStore,
-  type WAMessage,
-  type WAMessageUpdate,
-  type WASocket,
-  type ConnectionState,
-  downloadMediaMessage
-} from '@whiskeysockets/baileys';
+import type { WAMessage, WAMessageUpdate, WASocket, ConnectionState } from '@whiskeysockets/baileys';
 import Boom from '@hapi/boom';
 import type { Boom as BoomError } from '@hapi/boom';
 import type { MessageProvider } from '../types/message-provider';
@@ -17,6 +8,7 @@ import { storeMedia } from '../utils/media-storage';
 import type { MediaStorageOptions, StoredMedia } from '../utils/media-storage';
 import type { WhatsAppSessionStore, WhatsAppSessionAuthState } from './session-store';
 import { useSessionStoreAuthState } from './store-auth-state';
+import { loadBaileysModule, type BaileysModule } from './baileys-loader';
 
 export interface WhatsAppConfig {
   instanceId: string;
@@ -54,6 +46,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
   private config: WhatsAppConfig;
   private connectionStatus: ConnectionStatus = 'disconnected';
   private authState: WhatsAppSessionAuthState | null = null;
+  private baileys: BaileysModule | null = null;
 
   constructor(config: WhatsAppConfig) {
     super();
@@ -64,12 +57,13 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     try {
       logger.info(`Initializing WhatsApp instance: ${this.config.instanceId}`);
 
-      const { state, saveCreds } = await this.resolveAuthState();
+      const baileys = await this.getBaileys();
+      const { state, saveCreds } = await this.resolveAuthState(baileys);
 
-      this.socket = makeWASocket({
+      this.socket = baileys.default({
         auth: {
           creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, logger as any)
+          keys: baileys.makeCacheableSignalKeyStore(state.keys, logger as any)
         },
         printQRInTerminal: false,
         logger: logger as any,
@@ -78,7 +72,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
         markOnlineOnConnect: true,
       });
 
-      this.setupEventHandlers(saveCreds);
+      this.setupEventHandlers(saveCreds, baileys);
 
     } catch (error) {
       logger.error('Failed to initialize WhatsApp provider:', error);
@@ -87,7 +81,15 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     }
   }
 
-  private async resolveAuthState(): Promise<{ state: WhatsAppSessionAuthState['state']; saveCreds: () => Promise<void> }> {
+  private async getBaileys(): Promise<BaileysModule> {
+    if (!this.baileys) {
+      this.baileys = await loadBaileysModule();
+    }
+
+    return this.baileys;
+  }
+
+  private async resolveAuthState(baileys: BaileysModule): Promise<{ state: WhatsAppSessionAuthState['state']; saveCreds: () => Promise<void> }> {
     if (this.config.sessionStore) {
       this.authState = await useSessionStoreAuthState(this.config.instanceId, this.config.sessionStore);
       return { state: this.authState.state, saveCreds: this.authState.saveCreds };
@@ -97,17 +99,17 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
       throw new Error('WhatsApp session configuration requires a sessionPath or sessionStore');
     }
 
-    const { state, saveCreds } = await useMultiFileAuthState(this.config.sessionPath);
+    const { state, saveCreds } = await baileys.useMultiFileAuthState(this.config.sessionPath);
     this.authState = { state, saveCreds, clear: async () => {} };
     return { state, saveCreds };
   }
 
-  private setupEventHandlers(saveCreds: () => Promise<void>): void {
+  private setupEventHandlers(saveCreds: () => Promise<void>, baileys: BaileysModule): void {
     if (!this.socket) return;
 
     // Connection updates
     this.socket.ev.on('connection.update', (update: Partial<ConnectionState>) => {
-      this.handleConnectionUpdate(update);
+      this.handleConnectionUpdate(update, baileys);
     });
 
     // Credentials update
@@ -136,7 +138,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     });
   }
 
-  private handleConnectionUpdate(update: Partial<ConnectionState>): void {
+  private handleConnectionUpdate(update: Partial<ConnectionState>, baileys: BaileysModule): void {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -148,7 +150,7 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
 
     if (connection === 'close') {
       const shouldReconnect =
-        (lastDisconnect?.error as BoomError)?.output?.statusCode !== DisconnectReason.loggedOut;
+        (lastDisconnect?.error as BoomError)?.output?.statusCode !== baileys.DisconnectReason.loggedOut;
 
       logger.info('WhatsApp connection closed:', {
         shouldReconnect,
@@ -311,7 +313,8 @@ export class BaileysWhatsAppProvider extends EventEmitter implements MessageProv
     fileName?: string
   ): Promise<StoredMedia | null> {
     try {
-      const buffer = (await downloadMediaMessage(message, 'buffer', {})) as Buffer | Uint8Array;
+      const baileys = await this.getBaileys();
+      const buffer = (await baileys.downloadMediaMessage(message, 'buffer', {})) as Buffer | Uint8Array;
 
       const normalizedBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 
