@@ -4,6 +4,11 @@ import { randomUUID } from 'node:crypto';
 import { SendByInstanceSchema, normalizePayload } from '@ticketz/contracts';
 import { asyncHandler } from '../../middleware/error-handler';
 import { prisma } from '../../lib/prisma';
+import { rateKeyForInstance, resolveInstanceRateLimit, sendAdHoc } from '../../services/ticket-service';
+import {
+  WhatsAppBrokerError,
+  translateWhatsAppBrokerError,
+} from '../../services/whatsapp-broker-client';
 import { sendAdHoc } from '../../services/ticket-service';
 import { resolveWhatsAppTransport } from '../../services/whatsapp/transport/transport';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
@@ -11,6 +16,7 @@ import { NotFoundError } from '@ticketz/core';
 import { whatsappHttpRequestsCounter } from '../../lib/metrics';
 import { logger } from '../../config/logger';
 import { respondWithValidationError } from '../../utils/http-validation';
+import { assertWithinRateLimit, RateLimitError } from '../../utils/rate-limit';
 
 const instrumentationMiddleware: express.RequestHandler = (req, res, next) => {
   const startedAt = Date.now();
@@ -109,10 +115,54 @@ router.post(
 
     const parsed = parsedResult.data;
 
-    const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
+    const headerIdempotency = (req.get('Idempotency-Key') || '').trim();
+    if (!headerIdempotency) {
+      res.locals.errorCode = 'IDEMPOTENCY_KEY_REQUIRED';
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDEMPOTENCY_KEY_REQUIRED',
+          message: 'Informe o cabeçalho Idempotency-Key para envios via API.',
+        },
+      });
+      return;
+    }
+
+    if (headerIdempotency !== parsed.idempotencyKey) {
+      res.locals.errorCode = 'IDEMPOTENCY_KEY_MISMATCH';
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'IDEMPOTENCY_KEY_MISMATCH',
+          message: 'O Idempotency-Key do cabeçalho deve coincidir com o corpo da requisição.',
+        },
+      });
+      return;
+    }
+
+    const rateLimitKey = rateKeyForInstance(instance.tenantId, instance.id);
+    const rateLimit = resolveInstanceRateLimit(instance.id);
+    try {
+      assertWithinRateLimit(rateLimitKey, rateLimit);
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        res.locals.errorCode = 'RATE_LIMITED';
+      }
+      throw error;
+    }
+
+    const idempotencyKey = parsed.idempotencyKey;
     const payload = normalizePayload(parsed.payload);
 
     try {
+      const response = await sendAdHoc({
+        operatorId: req.user?.id,
+        instanceId: instance.id,
+        to: parsed.to,
+        payload,
+        idempotencyKey,
+        rateLimitConsumed: true,
+      });
       const transport = resolveWhatsAppTransport();
       const response = await sendAdHoc(
         {

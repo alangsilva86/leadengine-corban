@@ -46,6 +46,13 @@ import {
   hashIdempotentPayload,
   rememberIdempotency,
 } from '../utils/idempotency';
+import {
+  assertCircuitClosed,
+  buildCircuitBreakerKey,
+  getCircuitBreakerConfig,
+  recordCircuitFailure,
+  recordCircuitSuccess,
+} from '../utils/circuit-breaker';
 import type {
   NormalizedMessagePayload,
   OutboundMessageError,
@@ -93,7 +100,7 @@ const IDEMPOTENCY_TTL_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 24 * 60 * 60 * 1000;
 })();
 
-const resolveInstanceRateLimit = (instanceId: string | null | undefined): number => {
+export const resolveInstanceRateLimit = (instanceId: string | null | undefined): number => {
   if (!instanceId) {
     return OUTBOUND_TPS_DEFAULT;
   }
@@ -101,7 +108,8 @@ const resolveInstanceRateLimit = (instanceId: string | null | undefined): number
   return OUTBOUND_TPS_OVERRIDES.get(instanceId) ?? OUTBOUND_TPS_DEFAULT;
 };
 
-const rateKeyForInstance = (tenantId: string, instanceId: string): string => `outbound:${tenantId}:${instanceId}`;
+export const rateKeyForInstance = (tenantId: string, instanceId: string): string =>
+  `whatsapp:${tenantId}:${instanceId}`;
 
 const defaultQueueCache = new Map<string, string>();
 
@@ -1214,6 +1222,9 @@ export const sendMessage = async (
 
   const inferredInstanceId = resolveWhatsAppInstanceId(ticket);
   const effectiveInstanceId = input.instanceId ?? inferredInstanceId;
+  const circuitKey =
+    effectiveInstanceId && tenantId ? buildCircuitBreakerKey(tenantId, effectiveInstanceId) : null;
+  const circuitConfig = getCircuitBreakerConfig();
 
   let messageRecord: Message | null;
   let wasDuplicate = false;
@@ -1452,6 +1463,21 @@ export const sendMessage = async (
             message = updated;
             statusChanged = true;
           }
+
+          if (circuitKey) {
+            const wasOpen = recordCircuitSuccess(circuitKey);
+            if (wasOpen) {
+              logger.info('WhatsApp outbound circuit breaker closed after successful dispatch', {
+                tenantId,
+                ticketId: ticket.id,
+                instanceId,
+              });
+              emitToTenant(tenantId, 'whatsapp.circuit_breaker.closed', {
+                instanceId,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          }
         } catch (error) {
           const transportError = error instanceof WhatsAppTransportError ? error : null;
           const normalizedTransportError = transportError?.canonical ?? null;
@@ -1486,6 +1512,27 @@ export const sendMessage = async (
                 }
               : undefined,
           });
+
+          if (circuitKey) {
+            const result = recordCircuitFailure(circuitKey);
+            if (result.opened) {
+              const retryAtIso = result.retryAt ? new Date(result.retryAt).toISOString() : null;
+              logger.warn('WhatsApp outbound circuit breaker opened after consecutive failures', {
+                tenantId,
+                ticketId: ticket.id,
+                instanceId,
+                failureCount: result.failureCount,
+                retryAt: retryAtIso,
+              });
+              emitToTenant(tenantId, 'whatsapp.circuit_breaker.open', {
+                instanceId,
+                failureCount: result.failureCount,
+                windowMs: circuitConfig.windowMs,
+                cooldownMs: circuitConfig.cooldownMs,
+                retryAt: retryAtIso,
+              });
+            }
+          }
         }
       }
     }
@@ -1510,6 +1557,7 @@ type SendOnTicketParams = {
   payload: NormalizedMessagePayload;
   instanceId?: string;
   idempotencyKey?: string;
+  rateLimitConsumed?: boolean;
 };
 
 const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] => {
@@ -1527,6 +1575,15 @@ const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] 
   }
 };
 
+export const sendOnTicket = async ({
+  tenantId,
+  operatorId,
+  ticketId,
+  payload,
+  instanceId,
+  idempotencyKey,
+  rateLimitConsumed = false,
+}: SendOnTicketParams): Promise<OutboundMessageResponse> => {
 export const sendOnTicket = async (
   {
     tenantId,
@@ -1603,8 +1660,13 @@ export const sendOnTicket = async (
     }
   }
 
-  const rateLimit = resolveInstanceRateLimit(targetInstanceId);
-  assertWithinRateLimit(rateKeyForInstance(tenantForOperations, targetInstanceId), rateLimit);
+  const circuitKey = buildCircuitBreakerKey(tenantForOperations, targetInstanceId);
+  assertCircuitClosed(circuitKey);
+
+  if (!rateLimitConsumed) {
+    const rateLimit = resolveInstanceRateLimit(targetInstanceId);
+    assertWithinRateLimit(rateKeyForInstance(tenantForOperations, targetInstanceId), rateLimit);
+  }
 
   const metadata: Record<string, unknown> = {};
   if (typeof payload.previewUrl === 'boolean') {
@@ -1659,8 +1721,19 @@ type SendToContactParams = {
   instanceId?: string;
   to?: string;
   idempotencyKey?: string;
+  rateLimitConsumed?: boolean;
 };
 
+export const sendToContact = async ({
+  tenantId,
+  operatorId,
+  contactId,
+  payload,
+  instanceId,
+  to,
+  idempotencyKey,
+  rateLimitConsumed = false,
+}: SendToContactParams): Promise<OutboundMessageResponse> => {
 export const sendToContact = async (
   {
     tenantId,
@@ -1731,6 +1804,15 @@ export const sendToContact = async (
     });
   }
 
+  return sendOnTicket({
+    tenantId: resolvedTenantId,
+    operatorId,
+    ticketId: activeTicket.id,
+    payload,
+    instanceId,
+    idempotencyKey,
+    rateLimitConsumed,
+  });
   return sendOnTicket(
     {
       tenantId: resolvedTenantId,
@@ -1750,8 +1832,17 @@ type SendAdHocParams = {
   to: string;
   payload: NormalizedMessagePayload;
   idempotencyKey?: string;
+  rateLimitConsumed?: boolean;
 };
 
+export const sendAdHoc = async ({
+  operatorId,
+  instanceId,
+  to,
+  payload,
+  idempotencyKey,
+  rateLimitConsumed = false,
+}: SendAdHocParams): Promise<OutboundMessageResponse> => {
 export const sendAdHoc = async (
   {
     operatorId,
@@ -1801,6 +1892,16 @@ export const sendAdHoc = async (
     });
   }
 
+  return sendToContact({
+    tenantId,
+    operatorId,
+    contactId: contact.id,
+    payload,
+    instanceId,
+    to: normalized.e164,
+    idempotencyKey,
+    rateLimitConsumed,
+  });
   return sendToContact(
     {
       tenantId,
