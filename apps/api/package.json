@@ -21,6 +21,7 @@
     "@ticketz/contracts": "workspace:*",
     "@ticketz/core": "workspace:*",
     "@ticketz/integrations": "workspace:*",
+    "@ticketz/wa-contracts": "workspace:*",
     "@ticketz/shared": "workspace:*",
     "@ticketz/storage": "workspace:*",
     "bcryptjs": "^2.4.3",

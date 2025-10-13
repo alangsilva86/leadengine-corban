@@ -36,12 +36,9 @@ import {
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
 import { whatsappOutboundMetrics } from '../lib/metrics';
-import {
-  whatsappBrokerClient,
-  WhatsAppBrokerError,
-  translateWhatsAppBrokerError,
-  type NormalizedWhatsAppBrokerError,
-} from './whatsapp-broker-client';
+import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts';
+import { resolveWhatsAppTransport, type WhatsAppTransport } from './whatsapp/transport/transport';
 import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import {
@@ -57,6 +54,10 @@ import type {
 import { isWhatsappPassthroughModeEnabled } from '../config/feature-flags';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
+
+type WhatsAppTransportDependencies = {
+  transport?: WhatsAppTransport;
+};
 
 const OUTBOUND_TPS_DEFAULT = (() => {
   const raw = process.env.OUTBOUND_TPS_DEFAULT;
@@ -1202,7 +1203,8 @@ export const listMessages = async (
 export const sendMessage = async (
   tenantId: string,
   userId: string | undefined,
-  input: SendMessageDTO
+  input: SendMessageDTO,
+  dependencies: WhatsAppTransportDependencies = {}
 ): Promise<Message> => {
   const ticket = await storageFindTicketById(tenantId, input.ticketId);
 
@@ -1286,7 +1288,7 @@ export const sendMessage = async (
     code?: string;
     status?: number;
     requestId?: string;
-    normalized?: NormalizedWhatsAppBrokerError | null;
+    normalized?: WhatsAppCanonicalError | null;
     raw?: { code?: string | null; message?: string | null };
   }) => {
     const currentMetadata = (message.metadata ?? {}) as Record<string, unknown>;
@@ -1375,28 +1377,57 @@ export const sendMessage = async (
         });
         await markAsFailed({ message: 'contact_phone_missing' });
       } else {
+        const transport = dependencies.transport ?? resolveWhatsAppTransport();
+        const normalizedType = (input.type ?? 'TEXT').toString().toLowerCase();
+        const isTextMessage = normalizedType === 'text';
+        const resolvedMediaType = (() => {
+          switch (normalizedType) {
+            case 'image':
+            case 'video':
+            case 'audio':
+            case 'document':
+              return normalizedType;
+            default:
+              return 'image';
+          }
+        })();
         try {
-          const brokerResult = await whatsappBrokerClient.sendMessage(instanceId, {
-            to: phone,
-            content: input.content ?? input.caption ?? '',
-            caption: input.caption,
-            type: input.type,
-            externalId: message.id,
-            mediaUrl: input.mediaUrl,
-            mediaMimeType: input.mediaMimeType,
-            mediaFileName: input.mediaFileName,
-            previewUrl: Boolean(input.metadata?.previewUrl),
-          });
+          const sendResult =
+            isTextMessage
+              ? await transport.sendText({
+                  sessionId: instanceId,
+                  instanceId,
+                  to: phone,
+                  message: input.content ?? input.caption ?? '',
+                  previewUrl: Boolean(input.metadata?.previewUrl),
+                  externalId: message.id,
+                  metadata: messageMetadata,
+                  idempotencyKey: input.idempotencyKey ?? undefined,
+                })
+              : await transport.sendMedia({
+                  sessionId: instanceId,
+                  instanceId,
+                  to: phone,
+                  mediaUrl: input.mediaUrl ?? '',
+                  mediaMimeType: input.mediaMimeType ?? undefined,
+                  mediaFileName: input.mediaFileName ?? undefined,
+                  caption: input.caption,
+                  mediaType: resolvedMediaType,
+                  externalId: message.id,
+                  metadata: messageMetadata,
+                  idempotencyKey: input.idempotencyKey ?? undefined,
+                });
 
           const metadata = {
             ...(message.metadata ?? {}),
             broker: {
               provider: 'whatsapp',
               instanceId,
-              externalId: brokerResult.externalId,
-              status: brokerResult.status,
-              dispatchedAt: brokerResult.timestamp,
-              raw: brokerResult.raw ?? undefined,
+              externalId: sendResult.externalId,
+              status: sendResult.status,
+              dispatchedAt: sendResult.timestamp,
+              raw: sendResult.raw ?? undefined,
+              transportMode: transport.mode,
             },
           } as Record<string, unknown>;
 
@@ -1404,8 +1435,8 @@ export const sendMessage = async (
 
           try {
             updated = await storageUpdateMessage(tenantId, message.id, {
-              status: normalizeBrokerStatus(brokerResult.status),
-              externalId: brokerResult.externalId,
+              status: normalizeBrokerStatus(sendResult.status),
+              externalId: sendResult.externalId,
               metadata,
               instanceId,
             });
@@ -1422,36 +1453,37 @@ export const sendMessage = async (
             statusChanged = true;
           }
         } catch (error) {
-          const brokerError = error instanceof WhatsAppBrokerError ? error : null;
-          const normalizedBrokerError = brokerError
-            ? translateWhatsAppBrokerError(brokerError)
-            : null;
-          const reason = normalizedBrokerError?.message
+          const transportError = error instanceof WhatsAppTransportError ? error : null;
+          const normalizedTransportError = transportError?.canonical ?? null;
+          const reason = normalizedTransportError?.message
             ?? (error instanceof Error ? error.message : 'unknown_error');
-          const brokerStatus =
-            typeof brokerError?.brokerStatus === 'number'
-              ? brokerError.brokerStatus
-              : typeof brokerError?.status === 'number'
-                ? brokerError.status
-                : undefined;
+          const status =
+            typeof transportError?.status === 'number'
+              ? transportError.status
+              : undefined;
 
-          logger.error('Failed to dispatch WhatsApp message via broker', {
+          logger.error('Failed to dispatch WhatsApp message via transport', {
             tenantId,
             ticketId: ticket.id,
             messageId: message.id,
             error: reason,
-            brokerErrorCode: brokerError?.code,
-            brokerErrorStatus: brokerStatus,
-            brokerRequestId: brokerError?.requestId,
+            transportMode: transport.mode,
+            transportErrorCode: transportError?.code,
+            transportStatus: status,
+            transportRequestId: transportError?.requestId,
           });
           await markAsFailed({
             message: reason,
-            code: normalizedBrokerError?.code ?? brokerError?.code,
-            status: brokerStatus,
-            requestId: brokerError?.requestId,
-            normalized: normalizedBrokerError,
-            raw: brokerError
-              ? { code: brokerError.code, message: error instanceof Error ? error.message : null }
+            code: transportError?.code,
+            status,
+            requestId: transportError?.requestId,
+            normalized: normalizedTransportError,
+            raw: transportError
+              ? {
+                  code: transportError.code,
+                  message: error instanceof Error ? error.message : null,
+                  transport: transport.mode,
+                }
               : undefined,
           });
         }
@@ -1495,14 +1527,17 @@ const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] 
   }
 };
 
-export const sendOnTicket = async ({
-  tenantId,
-  operatorId,
-  ticketId,
-  payload,
-  instanceId,
-  idempotencyKey,
-}: SendOnTicketParams): Promise<OutboundMessageResponse> => {
+export const sendOnTicket = async (
+  {
+    tenantId,
+    operatorId,
+    ticketId,
+    payload,
+    instanceId,
+    idempotencyKey,
+  }: SendOnTicketParams,
+  dependencies: WhatsAppTransportDependencies = {}
+): Promise<OutboundMessageResponse> => {
   let resolvedTenantId = tenantId ?? null;
   let ticket: Ticket | null = null;
 
@@ -1594,7 +1629,7 @@ export const sendOnTicket = async ({
   };
 
   const startedAt = Date.now();
-  const message = await sendMessage(tenantForOperations, operatorId, messageInput);
+  const message = await sendMessage(tenantForOperations, operatorId, messageInput, dependencies);
   const latencyMs = Date.now() - startedAt;
   const metricsInstanceId = message.instanceId ?? targetInstanceId;
 
@@ -1626,15 +1661,18 @@ type SendToContactParams = {
   idempotencyKey?: string;
 };
 
-export const sendToContact = async ({
-  tenantId,
-  operatorId,
-  contactId,
-  payload,
-  instanceId,
-  to,
-  idempotencyKey,
-}: SendToContactParams): Promise<OutboundMessageResponse> => {
+export const sendToContact = async (
+  {
+    tenantId,
+    operatorId,
+    contactId,
+    payload,
+    instanceId,
+    to,
+    idempotencyKey,
+  }: SendToContactParams,
+  dependencies: WhatsAppTransportDependencies = {}
+): Promise<OutboundMessageResponse> => {
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
 
   if (!contact) {
@@ -1693,14 +1731,17 @@ export const sendToContact = async ({
     });
   }
 
-  return sendOnTicket({
-    tenantId: resolvedTenantId,
-    operatorId,
-    ticketId: activeTicket.id,
-    payload,
-    instanceId,
-    idempotencyKey,
-  });
+  return sendOnTicket(
+    {
+      tenantId: resolvedTenantId,
+      operatorId,
+      ticketId: activeTicket.id,
+      payload,
+      instanceId,
+      idempotencyKey,
+    },
+    dependencies
+  );
 };
 
 type SendAdHocParams = {
@@ -1711,13 +1752,16 @@ type SendAdHocParams = {
   idempotencyKey?: string;
 };
 
-export const sendAdHoc = async ({
-  operatorId,
-  instanceId,
-  to,
-  payload,
-  idempotencyKey,
-}: SendAdHocParams): Promise<OutboundMessageResponse> => {
+export const sendAdHoc = async (
+  {
+    operatorId,
+    instanceId,
+    to,
+    payload,
+    idempotencyKey,
+  }: SendAdHocParams,
+  dependencies: WhatsAppTransportDependencies = {}
+): Promise<OutboundMessageResponse> => {
   const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
   if (!instance) {
@@ -1757,15 +1801,18 @@ export const sendAdHoc = async ({
     });
   }
 
-  return sendToContact({
-    tenantId,
-    operatorId,
-    contactId: contact.id,
-    payload,
-    instanceId,
-    to: normalized.e164,
-    idempotencyKey,
-  });
+  return sendToContact(
+    {
+      tenantId,
+      operatorId,
+      contactId: contact.id,
+      payload,
+      instanceId,
+      to: normalized.e164,
+      idempotencyKey,
+    },
+    dependencies
+  );
 };
 
 export const addTicketNote = async (
