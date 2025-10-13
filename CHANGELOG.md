@@ -1,5 +1,18 @@
 # Changelog
 
+## 2025-03-28
+
+### Breaking
+- `WHATSAPP_MODE` is no longer tolerated in any environment. The configuration layer aborts application startup when the variable is present, ensuring that all deployments rely solely on the HTTP broker configuration.
+
+### Changed
+- Updated health checks, smoke tests and documentation to reflect the HTTP-only transport, clarifying the minimal environment variables required (`WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, optional HMAC secret) and the removal of sidecar/dry-run toggles.
+- Refreshed deployment, Docker and architecture guides with migration steps for removing the legacy flag and emphasised observability dashboards that monitor the single transport mode.
+
+### Operations
+- Release validation now requires `pnpm run test`, `pnpm run lint`, `pnpm run typecheck` and the WhatsApp smoke test hitting `/healthz` to confirm the HTTP transport.
+- Follow-up action: schedule ts-prune/unused export sweeps after rollout to ensure no dormant sidecar code remains.
+
 ## 2025-03-01
 
 ### Breaking

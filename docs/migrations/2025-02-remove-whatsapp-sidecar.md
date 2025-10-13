@@ -8,12 +8,12 @@ A partir da release de 25/02/2025, o Ticketz LeadEngine opera exclusivamente com
 
 - Clusters Docker Compose (dev, staging, produção) que utilizavam o sidecar local.
 - Pipelines GitOps/CI que criavam o volume `whatsapp_sessions_data` ou aplicavam manifests com o contêiner sidecar.
-- Playbooks de rollback que alternavam `WHATSAPP_MODE` entre `http` e `sidecar`.
+- Playbooks de rollback que alternavam `WHATSAPP_MODE` entre `http` e `sidecar` (a variável agora provoca falha imediata ao inicializar a API).
 
 ## Passo a passo
 
 1. **Atualizar variáveis de ambiente**
-   - Remova `WHATSAPP_MODE` das `.env`/secrets. A API assume `http` por padrão.
+   - Remova `WHATSAPP_MODE` das `.env`/secrets. A API opera apenas em HTTP e aborta o processo se a variável estiver definida.
    - Revise segredos relacionados ao broker (`WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`) garantindo que apontem para o serviço HTTP definitivo.
 
 2. **Atualizar orquestração Docker**
@@ -28,7 +28,7 @@ A partir da release de 25/02/2025, o Ticketz LeadEngine opera exclusivamente com
 
 4. **Limpar pipelines CI/CD**
    - Ajuste jobs que criavam o volume ou implantavam o contêiner sidecar (Render, Railway, Kubernetes, etc.).
-   - Remova scripts de rollback que alteravam `WHATSAPP_MODE` para `sidecar`.
+   - Remova scripts de rollback que alteravam `WHATSAPP_MODE` para `sidecar`; a variável agora é considerada inválida.
    - Atualize dashboards e alertas que monitoravam o `transport="sidecar"`; as métricas agora não possuem label de transporte.
 
 5. **Verificações pós-migração**

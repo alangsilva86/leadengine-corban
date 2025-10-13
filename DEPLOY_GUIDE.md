@@ -55,12 +55,12 @@ nano .env
 - `FRONTEND_URL`: Seu domínio real
 - `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
-- Remova qualquer variável `WHATSAPP_MODE` legada; o transporte HTTP é o único modo disponível. Configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_HMAC_SECRET`. Caso algum ambiente ainda injete `WHATSAPP_MODE`, fixe em `http` para evitar erros de inicialização.
+- Remova qualquer variável `WHATSAPP_MODE` legada; o transporte HTTP é o único modo disponível e a aplicação aborta o boot se detectar a variável. Configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_HMAC_SECRET`.
 
 ### 1.1. Nota sobre o sidecar legado
 
-O runtime sidecar Baileys foi removido desta base. Não é mais necessário preparar volumes ou diretórios dedicados a sessões — qualquer configuração existente com `WHATSAPP_MODE=sidecar` continuará subindo, mas um aviso será emitido e o modo HTTP será utilizado.
-- Integração WhatsApp: configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` (se aplicável) e mantenha `WHATSAPP_MODE` ausente para utilizar o transporte HTTP padrão.
+O runtime sidecar Baileys foi removido desta base. Não é mais necessário preparar volumes ou diretórios dedicados a sessões — qualquer configuração existente com `WHATSAPP_MODE=sidecar` agora falha na inicialização até que a variável seja removida do ambiente.
+- Integração WhatsApp: configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` (se aplicável) e mantenha `WHATSAPP_MODE` ausente; qualquer definição interrompe a aplicação.
 
 ### 1.1. Session store
 

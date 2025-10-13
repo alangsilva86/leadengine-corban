@@ -5,7 +5,7 @@
 - `apps/api/src/config/whatsapp-config.ts` concentra variáveis do broker e garante transporte exclusivamente HTTP via `getWhatsAppMode`.
 - `/healthz` publica o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`).
 - O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` quando credenciais obrigatórias estão ausentes, evitando tráfego inválido.
-- `WHATSAPP_MODE` foi descontinuado; remover a variável do ambiente evita falhas de inicialização.
+- `WHATSAPP_MODE` foi removido: se a variável ainda estiver presente no ambiente a API aborta o boot para evitar regressões.
 - `/healthz` publica o estado do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`) para auditar disponibilidade e métricas do broker HTTP.
 - O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` quando a configuração HTTP está incompleta ou inválida, evitando tráfego indevido.
 - Não há alternância entre modos: a aplicação opera exclusivamente com o broker HTTP e exige apenas a revisão das credenciais/URLs em caso de incidente.

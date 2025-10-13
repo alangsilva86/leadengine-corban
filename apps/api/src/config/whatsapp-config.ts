@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-import { logger } from './logger';
-
 export type WhatsAppTransportMode = 'http';
 
 type Booleanish = string | undefined | null;
@@ -93,27 +91,14 @@ const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
 const DEFAULT_WEBHOOK_URL =
   'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
 
-const parseMode = (raw: string | undefined | null): WhatsAppTransportMode => {
-  const normalized = normalizeString(raw);
+const assertWhatsAppModeUnset = () => {
+  const normalized = normalizeString(process.env.WHATSAPP_MODE);
   if (!normalized) {
-    return 'http';
-  }
-
-  const lowered = normalized.toLowerCase();
-  if (lowered === 'http') {
-    return 'http';
-  }
-
-  if (lowered === 'sidecar' || lowered === 'baileys') {
-    logger.warn('Deprecated WhatsApp sidecar mode detected; falling back to HTTP transport', {
-      requestedMode: lowered,
-      fallbackMode: 'http',
-    });
-    return 'http';
+    return;
   }
 
   throw new Error(
-    `Unsupported WHATSAPP_MODE value "${lowered}". HTTP is now the only supported transport mode; remove this environment variable or set it to "http".`
+    'WHATSAPP_MODE has been removed. Remove the environment variable; HTTP transport is always active.'
   );
 };
 
@@ -139,6 +124,8 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     normalizeString(process.env.WHATSAPP_WEBHOOK_URL) ??
     normalizeString(process.env.WEBHOOK_URL) ??
     DEFAULT_WEBHOOK_URL;
+
+  assertWhatsAppModeUnset();
 
   return {
     broker: {
@@ -167,7 +154,7 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
       tenantId: normalizeString(process.env.AUTH_MVP_TENANT_ID) ?? DEFAULT_TENANT_FALLBACK,
     },
     runtime: {
-      mode: parseMode(process.env.WHATSAPP_MODE),
+      mode: 'http',
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
     },
     flags: {
@@ -196,7 +183,7 @@ export const __private = {
   normalizeBoolean,
   normalizeString,
   normalizePositiveInteger,
-  parseMode,
+  assertWhatsAppModeUnset,
 };
 
 export type { WhatsAppConfig };
