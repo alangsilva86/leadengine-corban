@@ -35,7 +35,12 @@ import {
   type TicketNoteVisibility,
 } from '../data/ticket-note-store';
 import { logger } from '../config/logger';
-import { whatsappOutboundMetrics } from '../lib/metrics';
+import { getWhatsAppMode } from '../config/whatsapp';
+import {
+  whatsappOutboundMetrics,
+  whatsappOutboundDeliverySuccessCounter,
+  whatsappSocketReconnectsCounter,
+} from '../lib/metrics';
 import {
   whatsappBrokerClient,
   WhatsAppBrokerError,
@@ -1219,6 +1224,7 @@ export const sendMessage = async (
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
   const passthroughMode = isWhatsappPassthroughModeEnabled();
   const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
+  const transportMode = getWhatsAppMode();
 
   try {
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
@@ -1444,6 +1450,18 @@ export const sendMessage = async (
             brokerErrorStatus: brokerStatus,
             brokerRequestId: brokerError?.requestId,
           });
+          if (
+            normalizedBrokerError?.code === 'INSTANCE_NOT_CONNECTED' ||
+            brokerError?.code === 'INSTANCE_NOT_CONNECTED'
+          ) {
+            whatsappSocketReconnectsCounter.inc({
+              transport: transportMode,
+              origin: 'ticket-service',
+              tenantId,
+              instanceId: instanceId ?? 'unknown',
+              reason: 'INSTANCE_NOT_CONNECTED',
+            });
+          }
           await markAsFailed({
             message: reason,
             code: normalizedBrokerError?.code ?? brokerError?.code,
@@ -1552,6 +1570,7 @@ export const sendOnTicket = async ({
   }
 
   const tenantForOperations = resolvedTenantId;
+  const transportMode = getWhatsAppMode();
 
   let payloadHash: string | null = null;
   if (idempotencyKey) {
@@ -1596,16 +1615,31 @@ export const sendOnTicket = async ({
   const startedAt = Date.now();
   const message = await sendMessage(tenantForOperations, operatorId, messageInput);
   const latencyMs = Date.now() - startedAt;
-  const metricsInstanceId = message.instanceId ?? targetInstanceId;
+  const metricsInstanceId = (message.instanceId ?? targetInstanceId) ?? 'unknown';
+  const outboundMetricBase = {
+    transport: transportMode,
+    origin: 'ticket-service',
+    tenantId: tenantForOperations,
+    instanceId: metricsInstanceId,
+  } as const;
 
-  whatsappOutboundMetrics.incTotal(
-    {
-      instanceId: metricsInstanceId,
+  whatsappOutboundMetrics.incTotal({
+    ...outboundMetricBase,
+    status: message.status,
+  });
+  whatsappOutboundMetrics.observeLatency(outboundMetricBase, latencyMs);
+
+  if (message.status === 'DELIVERED' || message.status === 'READ') {
+    const normalizedType =
+      typeof message.type === 'string' && message.type.trim().length > 0
+        ? message.type.trim().toLowerCase()
+        : 'unknown';
+    whatsappOutboundDeliverySuccessCounter.inc({
+      ...outboundMetricBase,
       status: message.status,
-    },
-    1
-  );
-  whatsappOutboundMetrics.observeLatency({ instanceId: metricsInstanceId }, latencyMs);
+      messageType: normalizedType,
+    });
+  }
 
   const response = buildOutboundResponse(message);
 
