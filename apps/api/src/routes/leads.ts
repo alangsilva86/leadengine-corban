@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query, body } from 'express-validator';
 import { LeadSource, LeadStatus } from '@prisma/client';
 import { asyncHandler } from '../middleware/error-handler';
-import { requireTenant } from '../middleware/auth';
+import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { ValidationError, NotFoundError } from '@ticketz/core';
@@ -114,7 +114,7 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, status } = req.query as Partial<{
       page: number;
       limit: number;
@@ -173,7 +173,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const contactId = req.body.contactId as string;
 
     const contact = await prisma.contact.findUnique({ where: { id: contactId } });

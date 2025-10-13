@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, query } from 'express-validator';
 import { asyncHandler } from '../middleware/error-handler';
-import { requireTenant } from '../middleware/auth';
+import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { ConflictError, ValidationError } from '@ticketz/core';
@@ -51,7 +51,7 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search, phone } = req.query as Partial<{
       page: number;
       limit: number;
@@ -139,7 +139,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const tags = parseTags(req.body.tags);
 
     try {

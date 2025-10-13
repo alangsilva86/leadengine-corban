@@ -5,7 +5,7 @@ import { ConflictError, ValidationError } from '@ticketz/core';
 
 import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
-import { requireTenant } from '../middleware/auth';
+import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { prisma } from '../lib/prisma';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import {
@@ -33,7 +33,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
+    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const userId = req.user!.id;
 
     await ensureTenantRecord(tenantId, {
