@@ -24,8 +24,6 @@ const integrationWebhookRouter: Router = Router();
 
 const MAX_RAW_PREVIEW_LENGTH = 2_000;
 const DEFAULT_VERIFY_RESPONSE = 'LeadEngine WhatsApp webhook';
-const WHATSAPP_TRANSPORT_MODE = 'http' as const;
-
 const asArray = (value: unknown): unknown[] => {
   if (!value) {
     return [];
@@ -238,7 +236,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
         const processed = await ingestInboundWhatsAppMessage({
           origin: 'webhook',
-          transport: 'whatsapp',
           instanceId: instanceId ?? 'unknown-instance',
           chatId,
           tenantId,

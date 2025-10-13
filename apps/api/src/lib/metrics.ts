@@ -47,6 +47,20 @@ type LabelConstraint = {
 
 type MetricConstraints = Record<string, LabelConstraint>;
 
+const TRANSPORT_CONSTRAINT: LabelConstraint = { limit: 5, defaultValue: 'unknown' };
+const ORIGIN_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
+const TENANT_CONSTRAINT: LabelConstraint = { limit: 100, defaultValue: 'unknown' };
+const INSTANCE_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
+
+const SHARED_LABEL_CONSTRAINTS: MetricConstraints = {
+  origin: ORIGIN_CONSTRAINT,
+  tenantId: TENANT_CONSTRAINT,
+  instanceId: INSTANCE_CONSTRAINT,
+};
+
+const LABEL_CONSTRAINTS_WITH_TRANSPORT: MetricConstraints = {
+  transport: TRANSPORT_CONSTRAINT,
+  ...SHARED_LABEL_CONSTRAINTS,
 const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
   origin: { limit: 20, defaultValue: 'unknown' },
   tenantId: { limit: 100, defaultValue: 'unknown' },
@@ -54,12 +68,12 @@ const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
 };
 
 const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
-  [WEBHOOK_METRIC]: BASE_LABEL_CONSTRAINTS,
-  [OUTBOUND_TOTAL_METRIC]: BASE_LABEL_CONSTRAINTS,
-  [OUTBOUND_LATENCY_METRIC]: BASE_LABEL_CONSTRAINTS,
-  [OUTBOUND_DELIVERY_SUCCESS_METRIC]: BASE_LABEL_CONSTRAINTS,
-  [SOCKET_RECONNECT_METRIC]: BASE_LABEL_CONSTRAINTS,
-  [INBOUND_MESSAGES_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [WEBHOOK_METRIC]: SHARED_LABEL_CONSTRAINTS,
+  [OUTBOUND_TOTAL_METRIC]: LABEL_CONSTRAINTS_WITH_TRANSPORT,
+  [OUTBOUND_LATENCY_METRIC]: LABEL_CONSTRAINTS_WITH_TRANSPORT,
+  [OUTBOUND_DELIVERY_SUCCESS_METRIC]: LABEL_CONSTRAINTS_WITH_TRANSPORT,
+  [SOCKET_RECONNECT_METRIC]: LABEL_CONSTRAINTS_WITH_TRANSPORT,
+  [INBOUND_MESSAGES_METRIC]: SHARED_LABEL_CONSTRAINTS,
 };
 
 const labelValueTracker = new Map<string, Map<string, Set<string>>>();

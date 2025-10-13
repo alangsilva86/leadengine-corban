@@ -569,7 +569,6 @@ export interface InboundWhatsAppEvent {
 
 export interface InboundWhatsAppEnvelopeBase {
   origin: string;
-  transport: string;
   instanceId: string;
   chatId: string | null;
   tenantId: string | null;
@@ -1394,12 +1393,6 @@ const mergeEnvelopeMetadata = (
 ): Record<string, unknown> => {
   const base = toRecord(envelope.message.metadata);
 
-  if (!base.origin) {
-    base.origin = envelope.origin;
-  }
-  if (!base.transport) {
-    base.transport = envelope.transport;
-  }
   if (!base.chatId && chatId) {
     base.chatId = chatId;
   }

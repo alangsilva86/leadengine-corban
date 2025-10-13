@@ -133,7 +133,6 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
 
     await ingestInboundWhatsAppMessage({
       origin: 'broker',
-      transport: 'whatsapp',
       instanceId: normalized.instanceId,
       chatId,
       tenantId: effectiveTenantId,
