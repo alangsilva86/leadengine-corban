@@ -233,18 +233,30 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const secret = getWebhookSignatureSecret();
     if (!signature || !secret) {
       logger.warn('WhatsApp webhook missing signature while required', { requestId });
-      res.status(401).json({ ok: false, code: 'MISSING_SIGNATURE' });
+      whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
+      res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
       return;
     }
-    // Best effort verification; if it fails we still continue to avoid blocking messages.
     try {
       const crypto = await import('node:crypto');
-      const expected = crypto.createHmac('sha256', secret).update(req.rawBody ?? '').digest('hex');
-      if (expected !== signature) {
+      const expectedBuffer = crypto.createHmac('sha256', secret).update(req.rawBody ?? '').digest();
+      const providedBuffer = Buffer.from(signature, 'hex');
+
+      const matches =
+        providedBuffer.length === expectedBuffer.length &&
+        crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+
+      if (!matches) {
         logger.warn('WhatsApp webhook signature mismatch', { requestId });
+        whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
+        res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
+        return;
       }
     } catch (error) {
       logger.warn('Failed to verify WhatsApp webhook signature', { requestId, error });
+      whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
+      res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
+      return;
     }
   }
 

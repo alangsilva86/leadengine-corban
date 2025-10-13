@@ -49,6 +49,13 @@ import {
   hashIdempotentPayload,
   rememberIdempotency,
 } from '../utils/idempotency';
+import {
+  assertCircuitClosed,
+  buildCircuitBreakerKey,
+  getCircuitBreakerConfig,
+  recordCircuitFailure,
+  recordCircuitSuccess,
+} from '../utils/circuit-breaker';
 import type {
   NormalizedMessagePayload,
   OutboundMessageError,
@@ -92,7 +99,7 @@ const IDEMPOTENCY_TTL_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 24 * 60 * 60 * 1000;
 })();
 
-const resolveInstanceRateLimit = (instanceId: string | null | undefined): number => {
+export const resolveInstanceRateLimit = (instanceId: string | null | undefined): number => {
   if (!instanceId) {
     return OUTBOUND_TPS_DEFAULT;
   }
@@ -100,7 +107,8 @@ const resolveInstanceRateLimit = (instanceId: string | null | undefined): number
   return OUTBOUND_TPS_OVERRIDES.get(instanceId) ?? OUTBOUND_TPS_DEFAULT;
 };
 
-const rateKeyForInstance = (tenantId: string, instanceId: string): string => `outbound:${tenantId}:${instanceId}`;
+export const rateKeyForInstance = (tenantId: string, instanceId: string): string =>
+  `whatsapp:${tenantId}:${instanceId}`;
 
 const defaultQueueCache = new Map<string, string>();
 
@@ -1212,6 +1220,9 @@ export const sendMessage = async (
 
   const inferredInstanceId = resolveWhatsAppInstanceId(ticket);
   const effectiveInstanceId = input.instanceId ?? inferredInstanceId;
+  const circuitKey =
+    effectiveInstanceId && tenantId ? buildCircuitBreakerKey(tenantId, effectiveInstanceId) : null;
+  const circuitConfig = getCircuitBreakerConfig();
 
   let messageRecord: Message | null;
   let wasDuplicate = false;
@@ -1421,6 +1432,21 @@ export const sendMessage = async (
             message = updated;
             statusChanged = true;
           }
+
+          if (circuitKey) {
+            const wasOpen = recordCircuitSuccess(circuitKey);
+            if (wasOpen) {
+              logger.info('WhatsApp outbound circuit breaker closed after successful dispatch', {
+                tenantId,
+                ticketId: ticket.id,
+                instanceId,
+              });
+              emitToTenant(tenantId, 'whatsapp.circuit_breaker.closed', {
+                instanceId,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          }
         } catch (error) {
           const brokerError = error instanceof WhatsAppBrokerError ? error : null;
           const normalizedBrokerError = brokerError
@@ -1454,6 +1480,27 @@ export const sendMessage = async (
               ? { code: brokerError.code, message: error instanceof Error ? error.message : null }
               : undefined,
           });
+
+          if (circuitKey) {
+            const result = recordCircuitFailure(circuitKey);
+            if (result.opened) {
+              const retryAtIso = result.retryAt ? new Date(result.retryAt).toISOString() : null;
+              logger.warn('WhatsApp outbound circuit breaker opened after consecutive failures', {
+                tenantId,
+                ticketId: ticket.id,
+                instanceId,
+                failureCount: result.failureCount,
+                retryAt: retryAtIso,
+              });
+              emitToTenant(tenantId, 'whatsapp.circuit_breaker.open', {
+                instanceId,
+                failureCount: result.failureCount,
+                windowMs: circuitConfig.windowMs,
+                cooldownMs: circuitConfig.cooldownMs,
+                retryAt: retryAtIso,
+              });
+            }
+          }
         }
       }
     }
@@ -1478,6 +1525,7 @@ type SendOnTicketParams = {
   payload: NormalizedMessagePayload;
   instanceId?: string;
   idempotencyKey?: string;
+  rateLimitConsumed?: boolean;
 };
 
 const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] => {
@@ -1502,6 +1550,7 @@ export const sendOnTicket = async ({
   payload,
   instanceId,
   idempotencyKey,
+  rateLimitConsumed = false,
 }: SendOnTicketParams): Promise<OutboundMessageResponse> => {
   let resolvedTenantId = tenantId ?? null;
   let ticket: Ticket | null = null;
@@ -1568,8 +1617,13 @@ export const sendOnTicket = async ({
     }
   }
 
-  const rateLimit = resolveInstanceRateLimit(targetInstanceId);
-  assertWithinRateLimit(rateKeyForInstance(tenantForOperations, targetInstanceId), rateLimit);
+  const circuitKey = buildCircuitBreakerKey(tenantForOperations, targetInstanceId);
+  assertCircuitClosed(circuitKey);
+
+  if (!rateLimitConsumed) {
+    const rateLimit = resolveInstanceRateLimit(targetInstanceId);
+    assertWithinRateLimit(rateKeyForInstance(tenantForOperations, targetInstanceId), rateLimit);
+  }
 
   const metadata: Record<string, unknown> = {};
   if (typeof payload.previewUrl === 'boolean') {
@@ -1624,6 +1678,7 @@ type SendToContactParams = {
   instanceId?: string;
   to?: string;
   idempotencyKey?: string;
+  rateLimitConsumed?: boolean;
 };
 
 export const sendToContact = async ({
@@ -1634,6 +1689,7 @@ export const sendToContact = async ({
   instanceId,
   to,
   idempotencyKey,
+  rateLimitConsumed = false,
 }: SendToContactParams): Promise<OutboundMessageResponse> => {
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
 
@@ -1700,6 +1756,7 @@ export const sendToContact = async ({
     payload,
     instanceId,
     idempotencyKey,
+    rateLimitConsumed,
   });
 };
 
@@ -1709,6 +1766,7 @@ type SendAdHocParams = {
   to: string;
   payload: NormalizedMessagePayload;
   idempotencyKey?: string;
+  rateLimitConsumed?: boolean;
 };
 
 export const sendAdHoc = async ({
@@ -1717,6 +1775,7 @@ export const sendAdHoc = async ({
   to,
   payload,
   idempotencyKey,
+  rateLimitConsumed = false,
 }: SendAdHocParams): Promise<OutboundMessageResponse> => {
   const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
@@ -1765,6 +1824,7 @@ export const sendAdHoc = async ({
     instanceId,
     to: normalized.e164,
     idempotencyKey,
+    rateLimitConsumed,
   });
 };
 
