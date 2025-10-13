@@ -13,6 +13,7 @@ import { WhatsAppBrokerError } from '../services/whatsapp-broker-client';
 import { RateLimitError } from '../utils/rate-limit';
 import { CircuitBreakerOpenError } from '../utils/circuit-breaker';
 import { PhoneNormalizationError } from '../utils/phone';
+import { DatabaseDisabledError } from '../lib/prisma';
 
 const readErrorDetails = (err: unknown): unknown => {
   if (typeof err === 'object' && err !== null && 'details' in err) {
@@ -156,6 +157,20 @@ export const errorHandler = (
       code: 'WHATSAPP_CIRCUIT_OPEN',
       message: 'Envios temporariamente bloqueados para esta instância.',
       details: error.retryAt ? { retryAt: error.retryAt } : undefined,
+    };
+  } else if (error instanceof DatabaseDisabledError || hasErrorName(error, 'DatabaseDisabledError')) {
+    const context = error instanceof DatabaseDisabledError ? error.context : {};
+    apiError = {
+      status: 503,
+      code: 'DATABASE_DISABLED',
+      message: 'Database access is disabled in this environment.',
+      details: context && Object.keys(context).length > 0 ? context : undefined,
+    };
+  } else if (readErrorCode(error) === 'STORAGE_DATABASE_DISABLED') {
+    apiError = {
+      status: 503,
+      code: 'DATABASE_DISABLED',
+      message: 'Database access is disabled in this environment.',
     };
   } else if (error instanceof PhoneNormalizationError) {
     apiError = {
