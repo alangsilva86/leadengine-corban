@@ -2,6 +2,10 @@
 
 ## Runtime transport interface
 
+- `apps/api/src/config/whatsapp-config.ts` concentra variáveis do broker e garante transporte exclusivamente HTTP via `getWhatsAppMode`.
+- `/healthz` publica o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`).
+- O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` quando credenciais obrigatórias estão ausentes, evitando tráfego inválido.
+- `WHATSAPP_MODE` foi descontinuado; remover a variável do ambiente evita falhas de inicialização.
 - `apps/api/src/config/whatsapp-config.ts` concentra variáveis, normaliza o modo ativo (`http`, `dryrun`, `disabled` — entradas legadas `sidecar` caem em `http`) e expõe utilitários como `getWhatsAppMode`/`getRawWhatsAppMode`.
 - `/healthz` publica o modo corrente e o status do transporte WhatsApp via `apps/api/src/health.ts`, expondo o bloco `whatsapp.runtime` (campos `mode`, `transport`, `status`, `disabled`, `metrics`) para auditar quando o circuito está desativado. O campo `mode` segue mostrando o valor bruto para dar visibilidade sobre envs antigos.
 - O circuito de configuração em `apps/api/src/routes/integrations.ts` retorna `503 WHATSAPP_NOT_CONFIGURED` se `WHATSAPP_MODE` não permitir chamadas HTTP, evitando tráfego inválido.
@@ -57,6 +61,7 @@ O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/wha
 
 - A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para desacoplar o webhook e garantir reprocessamentos idempotentes.
 - Não há caminhos paralelos de ingestão: todo evento chega pelo webhook, segue para a fila e é processado pelo worker. Em caso de falhas, o próprio worker agenda retentativas baseadas em backoff controlado.
+- O armazenamento de sessões Baileys foi removido junto com o modo sidecar; apenas o broker HTTP permanece ativo.
 - O runtime sidecar foi aposentado; não há mais dependência de volumes persistentes específicos para sessões Baileys dentro da API.
 - As sessões Baileys precisam de armazenamento persistente — utilize os drivers configurados via `WHATSAPP_SESSION_STORE_*` (Postgres/Redis/memória em desenvolvimento) para manter o estado entre recriações de container, sem volumes Docker dedicados.
 

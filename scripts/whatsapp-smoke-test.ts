@@ -10,7 +10,7 @@
  *  - TEST_PHONE (defaults to +5511999999999)
  *  - TEST_NAME (defaults to "QA Bot")
  *  - MESSAGE_TEXT (custom text for the inbound payload)
- *  - EXPECT_WHATSAPP_MODE / WHATSAPP_MODE (assert runtime transport)
+ *  - EXPECT_WHATSAPP_MODE (overrides the expected runtime mode; defaults to http)
  *
  * Usage:
  *   API_URL="https://ticketzapi-production.up.railway.app" \
@@ -22,11 +22,7 @@
 
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
-import {
-  getWebhookApiKey,
-  getWhatsAppMode,
-  refreshWhatsAppEnv,
-} from '../apps/api/src/config/whatsapp';
+import { getWebhookApiKey, getWhatsAppMode, refreshWhatsAppEnv } from '../apps/api/src/config/whatsapp';
 
 refreshWhatsAppEnv();
 
@@ -52,8 +48,7 @@ const SOCKET_PATH = process.env.SOCKET_IO_PATH ?? '/socket.io';
 
 const CONFIGURED_WHATSAPP_MODE = getWhatsAppMode();
 const expectedModeOverride = (process.env.EXPECT_WHATSAPP_MODE ?? '').trim().toLowerCase();
-const EXPECTED_WHATSAPP_MODE = expectedModeOverride || CONFIGURED_WHATSAPP_MODE;
-const SHOULD_ASSERT_RUNTIME = expectedModeOverride.length > 0;
+const EXPECTED_WHATSAPP_MODE = (expectedModeOverride || 'http') as 'http';
 
 const timeout = (ms, label) =>
   new Promise((_, reject) => {
@@ -284,13 +279,11 @@ const main = async () => {
     }
     console.info(`🛰️ WhatsApp transport runtime: ${parts.join(' | ')}`);
 
-    if (SHOULD_ASSERT_RUNTIME) {
-      const normalized = (runtime.mode ?? '').toLowerCase();
-      if (normalized !== EXPECTED_WHATSAPP_MODE) {
-        throw new Error(
-          `Expected WhatsApp mode "${EXPECTED_WHATSAPP_MODE}" but runtime reported "${runtime.mode ?? 'unknown'}"`
-        );
-      }
+    const normalized = (runtime.mode ?? '').toLowerCase();
+    if (normalized !== EXPECTED_WHATSAPP_MODE) {
+      throw new Error(
+        `Expected WhatsApp mode "${EXPECTED_WHATSAPP_MODE}" but runtime reported "${runtime.mode ?? 'unknown'}"`
+      );
     }
   } else {
     console.warn('⚠️ Unable to resolve WhatsApp runtime mode from /healthz; continuing smoke test.');

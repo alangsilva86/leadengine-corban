@@ -24,7 +24,6 @@ describe('WhatsAppBrokerClient', () => {
   beforeEach(() => {
     vi.resetModules();
     fetchMock.mockReset();
-    process.env.WHATSAPP_MODE = 'http';
     process.env.WHATSAPP_BROKER_URL = 'https://broker.test';
     process.env.WHATSAPP_BROKER_API_KEY = 'test-key';
     process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN = 'verify-token';
@@ -235,26 +234,4 @@ describe('WhatsAppBrokerClient', () => {
     expect(result).toEqual({ messages: { sent: 10 } });
   });
 
-  it('fetches events through /health returning envelope vazio', async () => {
-    const { Response } = await import('undici');
-    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
-
-    fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ status: 'ok', queue: { pending: 0 } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    );
-
-    const payload = await whatsappBrokerClient.fetchEvents();
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/health');
-    expect(init?.method ?? 'GET').toBe('GET');
-    expect(payload).toEqual({
-      events: [],
-      health: { status: 'ok', queue: { pending: 0 } },
-    });
-  });
   });

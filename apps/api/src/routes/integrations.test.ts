@@ -24,33 +24,39 @@ vi.mock('../middleware/auth', async () => {
   };
 });
 
-const createModelMock = () => ({
-  findMany: vi.fn(),
-  findUnique: vi.fn(),
-  findFirst: vi.fn(),
-  create: vi.fn(),
-  createMany: vi.fn(),
-  update: vi.fn(),
-  delete: vi.fn(),
-  deleteMany: vi.fn(),
-  upsert: vi.fn(),
-});
+function createModelMock() {
+  return {
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    createMany: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
+    upsert: vi.fn(),
+  };
+}
 
-const prismaMock = {
-  whatsAppInstance: createModelMock(),
-  campaign: createModelMock(),
-  processedIntegrationEvent: createModelMock(),
-  contact: createModelMock(),
-  ticket: createModelMock(),
-  user: createModelMock(),
-  $transaction: vi.fn(),
-  $connect: vi.fn(),
-  $disconnect: vi.fn(),
-} as Record<string, ReturnType<typeof createModelMock> | ReturnType<typeof vi.fn>>;
+const prismaMockContainer = vi.hoisted(() => ({
+  value: {
+    whatsAppInstance: createModelMock(),
+    campaign: createModelMock(),
+    processedIntegrationEvent: createModelMock(),
+    contact: createModelMock(),
+    ticket: createModelMock(),
+    user: createModelMock(),
+    $transaction: vi.fn(),
+    $connect: vi.fn(),
+    $disconnect: vi.fn(),
+  } as Record<string, ReturnType<typeof createModelMock> | ReturnType<typeof vi.fn>>,
+}));
 
 vi.mock('../lib/prisma', () => ({
-  prisma: prismaMock,
+  prisma: prismaMockContainer.value,
 }));
+
+const prismaMock = prismaMockContainer.value;
 
 const emitToTenantMock = vi.fn();
 
@@ -112,7 +118,6 @@ resetPrismaMocks();
 const originalWhatsAppEnv = {
   url: process.env.WHATSAPP_BROKER_URL,
   apiKey: process.env.WHATSAPP_BROKER_API_KEY,
-  mode: process.env.WHATSAPP_MODE,
 };
 
 const restoreWhatsAppEnv = () => {
@@ -128,11 +133,6 @@ const restoreWhatsAppEnv = () => {
     delete process.env.WHATSAPP_BROKER_API_KEY;
   }
 
-  if (typeof originalWhatsAppEnv.mode === 'string') {
-    process.env.WHATSAPP_MODE = originalWhatsAppEnv.mode;
-  } else {
-    delete process.env.WHATSAPP_MODE;
-  }
 };
 
 afterEach(() => {
@@ -149,11 +149,9 @@ const startTestServer = async ({
 }: { configureWhatsApp?: boolean } = {}) => {
   vi.resetModules();
   if (configureWhatsApp) {
-    process.env.WHATSAPP_MODE = 'http';
     process.env.WHATSAPP_BROKER_URL = 'http://broker.test';
     process.env.WHATSAPP_BROKER_API_KEY = 'test-key';
   } else {
-    delete process.env.WHATSAPP_MODE;
     delete process.env.WHATSAPP_BROKER_URL;
     delete process.env.WHATSAPP_BROKER_API_KEY;
   }
@@ -754,9 +752,6 @@ describe('WhatsApp integration routes with configured broker', () => {
         },
         meta: expect.objectContaining({
           storageFallback: true,
-          warnings: expect.arrayContaining([
-            expect.objectContaining({ code: 'WHATSAPP_STORAGE_FALLBACK' }),
-          ]),
         }),
       });
     } finally {

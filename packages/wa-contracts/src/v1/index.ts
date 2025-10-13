@@ -33,7 +33,7 @@ export const SendResultSchema = z.object({
   status: z.string().min(1),
   timestamp: z.string().optional().nullable(),
   raw: metadataSchema.nullish(),
-  transport: z.enum(['http', 'sidecar', 'dryrun']).optional()
+  transport: z.literal('http').optional()
 });
 
 export type SendResult = z.infer<typeof SendResultSchema>;
@@ -137,7 +137,7 @@ export type WhatsAppTransportErrorOptions = {
   code?: string;
   status?: number;
   requestId?: string;
-  transport?: 'http' | 'sidecar' | 'dryrun';
+  transport?: 'http';
   canonical?: WhatsAppCanonicalError | null;
   details?: Record<string, unknown> | null;
   cause?: unknown;
@@ -147,7 +147,7 @@ export class WhatsAppTransportError extends Error {
   public readonly code: string;
   public readonly status: number | undefined;
   public readonly requestId: string | undefined;
-  public readonly transport: 'http' | 'sidecar' | 'dryrun' | undefined;
+  public readonly transport: 'http' | undefined;
   public readonly canonical: WhatsAppCanonicalError | null;
   public readonly details?: Record<string, unknown> | null;
 

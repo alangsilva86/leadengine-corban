@@ -55,6 +55,7 @@ nano .env
 - `FRONTEND_URL`: Seu domínio real
 - `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
+- Remova qualquer variável `WHATSAPP_MODE` legada; o transporte HTTP é o único modo disponível. Configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_API_KEY`.
 - `WHATSAPP_MODE`: Defina como `http` para habilitar a integração com o broker externo, juntamente com `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_API_KEY`. Valores legados como `sidecar` apenas registram um aviso nos logs e passam a operar em modo HTTP automaticamente.
 
 ### 1.1. Nota sobre o sidecar legado
@@ -209,6 +210,7 @@ curl http://localhost/health
 
 ### 3. Validar Integração WhatsApp
 
+Após configurar o broker HTTP (URL, API key e variáveis relacionadas) e finalizar o deploy, valide os fluxos principais:
 Após configurar o broker HTTP (variáveis `WHATSAPP_BROKER_*` e webhook) e finalizar o deploy, valide os fluxos principais:
 
 ```bash
