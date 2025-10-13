@@ -19,11 +19,14 @@
     "build:clean": "tsup --clean"
   },
   "dependencies": {
-    "@ticketz/core": "workspace:*"
+    "@ticketz/core": "workspace:*",
+    "@ticketz/integrations": "workspace:*",
+    "@whiskeysockets/baileys": "^6.7.20"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.6.1"
   },
   "typesVersions": {
     "*": {

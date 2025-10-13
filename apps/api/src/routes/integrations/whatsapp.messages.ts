@@ -9,6 +9,9 @@ import {
   WhatsAppBrokerError,
   translateWhatsAppBrokerError,
 } from '../../services/whatsapp-broker-client';
+import { sendAdHoc } from '../../services/ticket-service';
+import { resolveWhatsAppTransport } from '../../services/whatsapp/transport/transport';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { NotFoundError } from '@ticketz/core';
 import { whatsappHttpRequestsCounter } from '../../lib/metrics';
 import { logger } from '../../config/logger';
@@ -160,30 +163,44 @@ router.post(
         idempotencyKey,
         rateLimitConsumed: true,
       });
+      const transport = resolveWhatsAppTransport();
+      const response = await sendAdHoc(
+        {
+          operatorId: req.user?.id,
+          instanceId: instance.id,
+          to: parsed.to,
+          payload,
+          idempotencyKey,
+        },
+        { transport }
+      );
 
       res.status(202).json(response);
     } catch (error) {
-      if (error instanceof WhatsAppBrokerError) {
-        const normalized = translateWhatsAppBrokerError(error);
-        const resolvedCode = normalized?.code ?? error.code ?? 'BROKER_ERROR';
-        const resolvedMessage = normalized?.message ?? error.message ?? 'Falha ao enviar mensagem.';
+      if (error instanceof WhatsAppTransportError) {
+        const canonical = error.canonical;
+        const resolvedCode = canonical?.code ?? error.code ?? 'TRANSPORT_ERROR';
+        const resolvedMessage = canonical?.message ?? error.message ?? 'Falha ao enviar mensagem.';
         const status = (() => {
-          if (normalized?.code === 'RATE_LIMITED') {
-            return 429;
+          switch (canonical?.code) {
+            case 'RATE_LIMITED':
+              return 429;
+            case 'BROKER_TIMEOUT':
+              return error.status === 504 ? 504 : 408;
+            case 'INVALID_TO':
+              return 422;
+            case 'INSTANCE_NOT_CONNECTED':
+              return 409;
+            case 'TRANSPORT_NOT_CONFIGURED':
+              return 503;
+            case 'UNSUPPORTED_OPERATION':
+              return 400;
+            default:
+              if (typeof error.status === 'number' && error.status >= 400 && error.status < 600) {
+                return error.status;
+              }
+              return 502;
           }
-          if (normalized?.code === 'BROKER_TIMEOUT') {
-            return error.brokerStatus === 504 ? 504 : 408;
-          }
-          if (normalized?.code === 'INVALID_TO') {
-            return 422;
-          }
-          if (normalized?.code === 'INSTANCE_NOT_CONNECTED') {
-            return 409;
-          }
-          if (typeof error.brokerStatus === 'number' && error.brokerStatus >= 400 && error.brokerStatus < 600) {
-            return error.brokerStatus;
-          }
-          return 502;
         })();
 
         res.locals.errorCode = resolvedCode;

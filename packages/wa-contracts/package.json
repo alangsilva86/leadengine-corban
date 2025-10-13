@@ -1,0 +1,39 @@
+{
+  "name": "@ticketz/wa-contracts",
+  "version": "1.0.0",
+  "description": "Contratos canônicos para transporte WhatsApp",
+  "main": "dist/index.mjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:clean": "tsup --clean",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.3.3"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/*",
+        "src/*"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ]
+}

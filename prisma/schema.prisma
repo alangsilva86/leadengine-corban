@@ -368,6 +368,15 @@ model WhatsAppInstance {
   @@map("whatsapp_instances")
 }
 
+model WhatsAppSession {
+  instanceId String   @id
+  data       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("whatsapp_sessions")
+}
+
 // ============================================================================
 // Enums
 // ============================================================================
