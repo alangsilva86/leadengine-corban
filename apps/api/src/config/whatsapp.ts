@@ -8,6 +8,10 @@ export const getBrokerApiKey = (): string | null => getWhatsAppConfig().broker.a
 export const isStrictBrokerConfigEnabled = (): boolean =>
   getWhatsAppConfig().broker.strictConfig || isWhatsappBrokerStrictConfigEnabled();
 
+export const getBrokerTimeoutMs = (): number => getWhatsAppConfig().broker.timeoutMs;
+
+export const getBrokerWebhookUrl = (): string => getWhatsAppConfig().broker.webhookUrl;
+
 export const getDefaultInstanceId = (): string | null => getWhatsAppConfig().defaults.instanceId;
 
 export const getDefaultTenantId = (): string => getWhatsAppConfig().defaults.tenantId;

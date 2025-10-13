@@ -84,6 +84,9 @@ import { registerSocketServer, type SocketServerAdapter } from '../../lib/socket
 import { resetMetrics, renderMetrics } from '../../lib/metrics';
 import { resetTicketStore, createTicket } from '@ticketz/storage';
 import { resetRateLimit } from '../../utils/rate-limit';
+import { WhatsAppBrokerError } from '../../services/whatsapp-broker-client';
+import type { WhatsAppTransport } from '../../features/whatsapp-transport';
+import * as transportModule from '../../features/whatsapp-transport';
 import { resetCircuitBreaker } from '../../utils/circuit-breaker';
 import { whatsappBrokerClient, WhatsAppBrokerError } from '../../services/whatsapp-broker-client';
 
@@ -157,6 +160,9 @@ const tickets = new Map<string, Ticket>();
 
 describe('Outbound message routes', () => {
   let socket: MockSocketServer;
+  let sendMessageMock: ReturnType<typeof vi.fn>;
+  let transportMock: WhatsAppTransport;
+  let getTransportSpy: ReturnType<typeof vi.spyOn>;
   let sendTextMock: typeof transportMock.sendText;
 
   beforeEach(async () => {
@@ -290,12 +296,40 @@ describe('Outbound message routes', () => {
     transportMock.checkRecipient.mockReset();
     transportMock.getStatus.mockReset();
     let counter = 0;
+    sendMessageMock = vi.fn(async (_instanceId: string, payload: unknown) => {
     sendTextMock = transportMock.sendText.mockImplementation(async (_input) => {
       counter += 1;
       return {
         externalId: `wamid-${counter.toString().padStart(3, '0')}`,
         status: 'SENT',
         timestamp: new Date().toISOString(),
+        raw: { payload },
+      };
+    });
+
+    transportMock = {
+      mode: 'http',
+      sendMessage: sendMessageMock as unknown as WhatsAppTransport['sendMessage'],
+      checkRecipient: vi
+        .fn(async () => ({}))
+        .mockName('checkRecipient') as unknown as WhatsAppTransport['checkRecipient'],
+      getGroups: vi
+        .fn(async () => ({}))
+        .mockName('getGroups') as unknown as WhatsAppTransport['getGroups'],
+      createPoll: vi
+        .fn(async () => ({
+          id: 'poll-mock',
+          status: 'sent',
+          ack: null,
+          rate: null,
+          raw: null,
+        }))
+        .mockName('createPoll') as unknown as WhatsAppTransport['createPoll'],
+    };
+
+    getTransportSpy = vi
+      .spyOn(transportModule, 'getWhatsAppTransport')
+      .mockReturnValue(transportMock);
         raw: { counter },
         transport: 'http',
       };
@@ -314,6 +348,7 @@ describe('Outbound message routes', () => {
 
   afterEach(() => {
     registerSocketServer(null);
+    getTransportSpy.mockRestore();
     transportMock.sendText.mockReset();
     transportMock.sendMedia.mockReset();
     resolveTransportMock.mockReset();
@@ -361,6 +396,11 @@ describe('Outbound message routes', () => {
       error: null,
     });
 
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageMock).toHaveBeenCalledWith('instance-001', expect.objectContaining({
+      to: '+554499999999',
+      type: 'TEXT',
+    }));
     expect(sendTextMock).toHaveBeenCalledTimes(1);
     expect(sendTextMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -458,6 +498,8 @@ describe('Outbound message routes', () => {
     });
     tickets.set(ticket.id, ticket);
 
+    sendMessageMock.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Request timed out', 'REQUEST_TIMEOUT', 408, 'req-123')
     sendTextMock.mockRejectedValueOnce(
       new WhatsAppTransportError('Request timed out', {
         code: 'BROKER_TIMEOUT',
@@ -505,6 +547,8 @@ describe('Outbound message routes', () => {
     });
     tickets.set(ticket.id, ticket);
 
+    sendMessageMock.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Session disconnected', 'SESSION_NOT_CONNECTED', 409, 'req-409')
     sendTextMock.mockRejectedValueOnce(
       new WhatsAppTransportError('Session disconnected', {
         code: 'INSTANCE_NOT_CONNECTED',
@@ -551,6 +595,8 @@ describe('Outbound message routes', () => {
     });
     tickets.set(ticket.id, ticket);
 
+    sendMessageMock.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Invalid recipient number', 'INVALID_RECIPIENT', 400, 'req-400')
     sendTextMock.mockRejectedValueOnce(
       new WhatsAppTransportError('Invalid recipient number', {
         code: 'INVALID_TO',
@@ -597,6 +643,8 @@ describe('Outbound message routes', () => {
     });
     tickets.set(ticket.id, ticket);
 
+    sendMessageMock.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Rate limit reached', 'RATE_LIMIT_EXCEEDED', 429, 'req-429')
     sendTextMock.mockRejectedValueOnce(
       new WhatsAppTransportError('Rate limit reached', {
         code: 'RATE_LIMITED',
@@ -659,6 +707,7 @@ describe('Outbound message routes', () => {
     expect(first.status).toBe(202);
     const messageId = first.body.messageId;
 
+    sendMessageMock.mockClear();
     sendTextMock.mockClear();
 
     const second = await request(app)
@@ -676,6 +725,7 @@ describe('Outbound message routes', () => {
     expect(second.status).toBe(202);
     expect(second.body.messageId).toBe(messageId);
     expect(second.body.status).toBe(first.body.status);
+    expect(sendMessageMock).not.toHaveBeenCalled();
     expect(sendTextMock).not.toHaveBeenCalled();
   });
 
@@ -751,6 +801,14 @@ describe('Outbound message routes', () => {
     });
     expect(response.body.queued).toBe(true);
     expect(response.body.ticketId).toBeTruthy();
+    expect(sendMessageMock).toHaveBeenCalledWith('instance-001', expect.objectContaining({
+      to: contact.phone,
+    }));
+  });
+
+  it('surfaces normalized broker errors for ad-hoc sends', async () => {
+    sendMessageMock.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Invalid destination number', 'INVALID_DESTINATION', 400, 'adhoc-400')
     expect(sendTextMock).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'instance-001',
@@ -828,6 +886,7 @@ describe('Outbound message routes', () => {
         code: 'INSTANCE_DISCONNECTED',
       },
     });
+    expect(sendMessageMock).not.toHaveBeenCalled();
     expect(sendTextMock).not.toHaveBeenCalled();
   });
 

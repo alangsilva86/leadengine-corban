@@ -8,6 +8,8 @@ type WhatsAppBrokerConfig = {
   baseUrl: string | null;
   apiKey: string | null;
   strictConfig: boolean;
+  timeoutMs: number;
+  webhookUrl: string;
 };
 
 type WhatsAppWebhookConfig = {
@@ -69,6 +71,28 @@ const normalizeString = (value: string | undefined | null): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizePositiveInteger = (value: string | undefined | null): number | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
+const DEFAULT_WEBHOOK_URL =
+  'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
+
 const parseMode = (raw: string | undefined | null): { mode: WhatsAppTransportMode; raw: string } => {
   const normalized = normalizeString(raw)?.toLowerCase() ?? '';
 
@@ -90,11 +114,35 @@ const parseMode = (raw: string | undefined | null): { mode: WhatsAppTransportMod
 const buildWhatsAppConfig = (): WhatsAppConfig => {
   const mode = parseMode(process.env.WHATSAPP_MODE);
 
+  const timeoutCandidates = [
+    process.env.WHATSAPP_BROKER_TIMEOUT_MS,
+    process.env.LEAD_ENGINE_TIMEOUT_MS,
+  ];
+
+  const timeoutMs = (() => {
+    for (const candidate of timeoutCandidates) {
+      const normalized = normalizePositiveInteger(candidate);
+      if (normalized !== null) {
+        return normalized;
+      }
+    }
+
+    return DEFAULT_BROKER_TIMEOUT_MS;
+  })();
+
+  const webhookUrl =
+    normalizeString(process.env.WHATSAPP_BROKER_WEBHOOK_URL) ??
+    normalizeString(process.env.WHATSAPP_WEBHOOK_URL) ??
+    normalizeString(process.env.WEBHOOK_URL) ??
+    DEFAULT_WEBHOOK_URL;
+
   return {
     broker: {
       baseUrl: normalizeString(process.env.WHATSAPP_BROKER_URL),
       apiKey: normalizeString(process.env.WHATSAPP_BROKER_API_KEY),
       strictConfig: normalizeBoolean(process.env.WHATSAPP_BROKER_STRICT_CONFIG, false),
+      timeoutMs,
+      webhookUrl,
     },
     webhook: {
       verifyToken:
@@ -146,6 +194,7 @@ export const __private = {
   normalizeBoolean,
   normalizeString,
   parseMode,
+  normalizePositiveInteger,
 };
 
 export type { WhatsAppConfig };

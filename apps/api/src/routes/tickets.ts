@@ -29,8 +29,12 @@ import {
   type TicketIncludeOption,
 } from '../services/ticket-service';
 import { getSocketServer } from '../lib/socket-registry';
-import { makeBaileysClient } from '../clients/baileys-client';
 import { getDefaultInstanceId, getDefaultTenantId } from '../config/whatsapp';
+import { WhatsAppBrokerNotConfiguredError } from '../services/whatsapp-broker-client';
+import {
+  getWhatsAppTransport,
+  type WhatsAppTransportSendMessagePayload,
+} from '../features/whatsapp-transport';
 
 const router: Router = Router();
 
@@ -136,27 +140,6 @@ const emitRealtimeMessage = (tenantId: string, ticketId: string, payload: unknow
 
   socket.to(`tenant:${tenantId}`).emit('messages.new', payload);
   socket.to(`ticket:${ticketId}`).emit('messages.new', payload);
-};
-
-const resolveExternalId = (response: unknown): string | null => {
-  if (!response || typeof response !== 'object') {
-    return null;
-  }
-
-  const record = response as Record<string, unknown>;
-
-  const direct = normalizeString(record.id) ?? normalizeString(record.messageId);
-  if (direct) {
-    return direct;
-  }
-
-  const keyRecord = record.key as Record<string, unknown> | undefined;
-  const keyId = keyRecord ? normalizeString(keyRecord.id) : null;
-  if (keyId) {
-    return keyId;
-  }
-
-  return null;
 };
 
 const normalizeOutboundMedia = (
@@ -674,12 +657,7 @@ router.post(
     const text = normalizeString(req.body.text);
     const iid = normalizeString(req.body.iid) ?? getDefaultInstanceId();
     const mediaPayload = normalizeOutboundMedia(req.body.media);
-    const brokerClient = makeBaileysClient();
-
-    if (!brokerClient) {
-      res.status(503).json({ code: 'BROKER_NOT_CONFIGURED' });
-      return;
-    }
+    const transport = getWhatsAppTransport();
 
     const instanceId = iid ?? getDefaultInstanceId();
     if (!instanceId) {
@@ -690,11 +668,21 @@ router.post(
     const contactLabel = normalizeString(req.body.contactName) ?? chatId;
 
     try {
-      const brokerResponse = mediaPayload
-        ? await brokerClient.sendMedia(instanceId, chatId, mediaPayload.broker)
-        : await brokerClient.sendText(instanceId, chatId, text ?? '');
+      const messagePayload: WhatsAppTransportSendMessagePayload = {
+        to: chatId,
+        content: text ?? mediaPayload?.broker.caption ?? '',
+        caption: mediaPayload?.broker.caption,
+        type: mediaPayload ? mediaPayload.broker.mediaType : 'text',
+        media: mediaPayload ? (mediaPayload.broker as Record<string, unknown>) : undefined,
+        mediaUrl: mediaPayload?.broker.mediaUrl,
+        mediaMimeType: mediaPayload?.broker.mimetype,
+        mediaFileName: mediaPayload?.broker.fileName,
+        previewUrl: Boolean(req.body?.previewUrl),
+      };
 
-      const externalId = resolveExternalId(brokerResponse) ?? `TEMP-${Date.now()}`;
+      const brokerResponse = await transport.sendMessage(instanceId, messagePayload);
+
+      const externalId = brokerResponse.externalId ?? `TEMP-${Date.now()}`;
       const ticketContext = await findOrCreateOpenTicketByChat({
         tenantId,
         chatId,
@@ -727,6 +715,11 @@ router.post(
         externalId: message.externalId ?? externalId,
       });
     } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        res.status(503).json({ code: 'BROKER_NOT_CONFIGURED' });
+        return;
+      }
+
       const ticketContext = await findOrCreateOpenTicketByChat({
         tenantId,
         chatId,

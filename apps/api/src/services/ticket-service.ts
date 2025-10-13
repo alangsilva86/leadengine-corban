@@ -42,11 +42,11 @@ import {
   whatsappSocketReconnectsCounter,
 } from '../lib/metrics';
 import {
-  whatsappBrokerClient,
   WhatsAppBrokerError,
   translateWhatsAppBrokerError,
   type NormalizedWhatsAppBrokerError,
 } from './whatsapp-broker-client';
+import { getWhatsAppTransport } from '../features/whatsapp-transport';
 import { whatsappOutboundMetrics } from '../lib/metrics';
 import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
@@ -1416,6 +1416,23 @@ export const sendMessage = async (
           }
         })();
         try {
+          const transport = getWhatsAppTransport();
+          const brokerResult = await transport.sendMessage(
+            instanceId,
+            {
+              to: phone,
+              content: input.content ?? input.caption ?? '',
+              caption: input.caption,
+              type: input.type,
+              externalId: message.id,
+              mediaUrl: input.mediaUrl,
+              mediaMimeType: input.mediaMimeType,
+              mediaFileName: input.mediaFileName,
+              previewUrl: Boolean(input.metadata?.previewUrl),
+              metadata: input.metadata ?? undefined,
+            },
+            { idempotencyKey: message.id }
+          );
           const sendResult =
             isTextMessage
               ? await transport.sendText({

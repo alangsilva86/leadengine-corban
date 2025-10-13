@@ -5,6 +5,7 @@ import type { Server } from 'http';
 import { Prisma } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { refreshWhatsAppEnv } from '../config/whatsapp';
+import type { WhatsAppTransport } from '../features/whatsapp-transport';
 
 import { errorHandler } from '../middleware/error-handler';
 import { normalizePhoneNumber } from '../utils/phone';
@@ -2421,8 +2422,17 @@ describe('WhatsApp integration routes with configured broker', () => {
 
   it('proxies contact existence checks to the broker', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
-    const brokerModule = await import('../services/whatsapp-broker-client');
-    const { whatsappBrokerClient } = brokerModule;
+    const transportModule = await import('../features/whatsapp-transport');
+    const transportMock = {
+      mode: 'http',
+      sendMessage: vi.fn(),
+      checkRecipient: vi.fn().mockResolvedValue({ exists: true }),
+      getGroups: vi.fn(),
+      createPoll: vi.fn(),
+    } as const;
+    const getTransportSpy = vi
+      .spyOn(transportModule, 'getWhatsAppTransport')
+      .mockReturnValue(transportMock as unknown as WhatsAppTransport);
     const { prisma } = await import('../lib/prisma');
 
     const instance = {
@@ -2431,10 +2441,6 @@ describe('WhatsApp integration routes with configured broker', () => {
       brokerId: 'broker-123',
     } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
     prisma.whatsAppInstance.findUnique.mockResolvedValue(instance);
-
-    const existsSpy = vi
-      .spyOn(whatsappBrokerClient, 'checkRecipient')
-      .mockResolvedValue({ exists: true });
 
     try {
       const response = await fetch(
@@ -2451,7 +2457,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(existsSpy).toHaveBeenCalledWith({
+      expect(transportMock.checkRecipient).toHaveBeenCalledWith({
         sessionId: 'broker-123',
         instanceId: 'inst-exists',
         to: '+5511988887777',
@@ -2459,14 +2465,24 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(response.status).toBe(200);
       expect(body).toEqual({ success: true, data: { exists: true } });
     } finally {
+      getTransportSpy.mockRestore();
       await stopTestServer(server);
     }
   });
 
   it('proxies group listing to the broker', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
-    const brokerModule = await import('../services/whatsapp-broker-client');
-    const { whatsappBrokerClient } = brokerModule;
+    const transportModule = await import('../features/whatsapp-transport');
+    const transportMock = {
+      mode: 'http',
+      sendMessage: vi.fn(),
+      checkRecipient: vi.fn(),
+      getGroups: vi.fn().mockResolvedValue({ groups: [{ id: 'grp-1', subject: 'Equipe' }] }),
+      createPoll: vi.fn(),
+    } as const;
+    const getTransportSpy = vi
+      .spyOn(transportModule, 'getWhatsAppTransport')
+      .mockReturnValue(transportMock as unknown as WhatsAppTransport);
     const { prisma } = await import('../lib/prisma');
 
     const instance = {
@@ -2475,10 +2491,6 @@ describe('WhatsApp integration routes with configured broker', () => {
       brokerId: 'broker-groups',
     } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
     prisma.whatsAppInstance.findUnique.mockResolvedValue(instance);
-
-    const groupsSpy = vi
-      .spyOn(whatsappBrokerClient, 'getGroups')
-      .mockResolvedValue({ groups: [{ id: 'grp-1', subject: 'Equipe' }] });
 
     try {
       const response = await fetch(
@@ -2493,13 +2505,14 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(groupsSpy).toHaveBeenCalledWith({
+      expect(transportMock.getGroups).toHaveBeenCalledWith({
         sessionId: 'broker-groups',
         instanceId: 'inst-groups',
       });
       expect(response.status).toBe(200);
       expect(body).toEqual({ success: true, data: { groups: [{ id: 'grp-1', subject: 'Equipe' }] } });
     } finally {
+      getTransportSpy.mockRestore();
       await stopTestServer(server);
     }
   });
@@ -2667,8 +2680,23 @@ describe('WhatsApp integration routes with configured broker', () => {
 
   it('returns ack payload when creating WhatsApp polls', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
-    const brokerModule = await import('../services/whatsapp-broker-client');
-    const { whatsappBrokerClient } = brokerModule;
+    const transportModule = await import('../features/whatsapp-transport');
+    const transportMock = {
+      mode: 'http',
+      sendMessage: vi.fn(),
+      checkRecipient: vi.fn(),
+      getGroups: vi.fn(),
+      createPoll: vi.fn().mockResolvedValue({
+        id: 'poll-123',
+        status: 'PENDING',
+        ack: 0,
+        rate: { limit: 5, remaining: 4, resetAt: '2024-05-06T12:00:00.000Z' },
+        raw: { selectableCount: 1 },
+      }),
+    } as const;
+    const getTransportSpy = vi
+      .spyOn(transportModule, 'getWhatsAppTransport')
+      .mockReturnValue(transportMock as unknown as WhatsAppTransport);
     const { prisma } = await import('../lib/prisma');
 
     (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -2676,14 +2704,6 @@ describe('WhatsApp integration routes with configured broker', () => {
       tenantId: 'tenant-123',
       status: 'connected',
       connected: true,
-    });
-
-    const pollSpy = vi.spyOn(whatsappBrokerClient, 'createPoll').mockResolvedValue({
-      id: 'poll-123',
-      status: 'PENDING',
-      ack: 0,
-      rate: { limit: 5, remaining: 4, resetAt: '2024-05-06T12:00:00.000Z' },
-      raw: { selectableCount: 1 },
     });
 
     try {
@@ -2705,7 +2725,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(pollSpy).toHaveBeenCalledWith(
+      expect(transportMock.createPoll).toHaveBeenCalledWith(
         expect.objectContaining({
           sessionId: 'inst-poll-1',
           instanceId: 'inst-poll-1',
@@ -2730,14 +2750,30 @@ describe('WhatsApp integration routes with configured broker', () => {
         },
       });
     } finally {
+      getTransportSpy.mockRestore();
       await stopTestServer(server);
     }
   });
 
   it('propagates Baileys poll failures via error payload', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
-    const brokerModule = await import('../services/whatsapp-broker-client');
-    const { whatsappBrokerClient } = brokerModule;
+    const transportModule = await import('../features/whatsapp-transport');
+    const transportMock = {
+      mode: 'http',
+      sendMessage: vi.fn(),
+      checkRecipient: vi.fn(),
+      getGroups: vi.fn(),
+      createPoll: vi.fn().mockResolvedValue({
+        id: 'poll-failed-1',
+        status: 'FAILED',
+        ack: 'failed',
+        rate: null,
+        raw: null,
+      }),
+    } as const;
+    const getTransportSpy = vi
+      .spyOn(transportModule, 'getWhatsAppTransport')
+      .mockReturnValue(transportMock as unknown as WhatsAppTransport);
     const { prisma } = await import('../lib/prisma');
 
     (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -2745,12 +2781,6 @@ describe('WhatsApp integration routes with configured broker', () => {
       tenantId: 'tenant-123',
       status: 'connected',
       connected: true,
-    });
-
-    const pollSpy = vi.spyOn(whatsappBrokerClient, 'createPoll').mockResolvedValue({
-      id: 'poll-failed-1',
-      status: 'FAILED',
-      ack: 'failed',
     });
 
     try {
@@ -2772,7 +2802,7 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(pollSpy).toHaveBeenCalledOnce();
+      expect(transportMock.createPoll).toHaveBeenCalledOnce();
       expect(response.status).toBe(502);
       expect(body).toMatchObject({
         success: false,
@@ -2782,6 +2812,7 @@ describe('WhatsApp integration routes with configured broker', () => {
         },
       });
     } finally {
+      getTransportSpy.mockRestore();
       await stopTestServer(server);
     }
   });
