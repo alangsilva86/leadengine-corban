@@ -10,6 +10,7 @@ import {
   getWebhookApiKey,
   getWebhookSignatureSecret,
   getWebhookVerifyToken,
+  getWhatsAppMode,
   isWebhookSignatureRequired,
 } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
@@ -94,9 +95,18 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const expectedApiKey = getWebhookApiKey();
   const signatureRequired = isWebhookSignatureRequired();
 
+  const transportMode = getWhatsAppMode();
+
   if (expectedApiKey && providedApiKey && providedApiKey !== expectedApiKey) {
     logger.warn('WhatsApp webhook API key mismatch', { requestId });
-    whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_api_key' });
+    whatsappWebhookEventsCounter.inc({
+      transport: transportMode,
+      origin: 'webhook',
+      tenantId: 'unknown',
+      instanceId: 'unknown',
+      result: 'rejected',
+      reason: 'invalid_api_key',
+    });
     res.status(401).json({ ok: false, code: 'INVALID_API_KEY' });
     return;
   }
@@ -135,7 +145,14 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   const events = asArray(req.body);
   if (events.length === 0) {
-    whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'empty' });
+    whatsappWebhookEventsCounter.inc({
+      transport: transportMode,
+      origin: 'webhook',
+      tenantId: 'unknown',
+      instanceId: 'unknown',
+      result: 'accepted',
+      reason: 'empty',
+    });
     res.status(200).json({ ok: true, received: 0, persisted: 0 });
     return;
   }
@@ -248,6 +265,14 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
         if (processed) {
           persisted += 1;
+          whatsappWebhookEventsCounter.inc({
+            transport: transportMode,
+            origin: 'webhook',
+            tenantId: tenantId ?? 'unknown',
+            instanceId: instanceId ?? 'unknown',
+            result: 'accepted',
+            reason: 'ok',
+          });
         }
       } catch (error) {
         failures += 1;
@@ -257,11 +282,17 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           chatId,
           error,
         });
+        whatsappWebhookEventsCounter.inc({
+          transport: transportMode,
+          origin: 'webhook',
+          tenantId: tenantId ?? 'unknown',
+          instanceId: instanceId ?? 'unknown',
+          result: 'failed',
+          reason: 'persist_error',
+        });
       }
     }
   }
-
-  whatsappWebhookEventsCounter.inc({ result: 'accepted', reason: 'ok' }, persisted);
 
   res.status(200).json({
     ok: true,
