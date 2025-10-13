@@ -33,6 +33,8 @@ type WhatsAppRuntimeConfig = {
   rawMode: string;
   eventPollerDisabled: boolean;
   correlationSeed: string;
+  sidecarSessionsPath: string;
+  hasCustomSidecarSessionsPath: boolean;
 };
 
 type WhatsAppConfig = {
@@ -92,6 +94,22 @@ const normalizePositiveInteger = (value: string | undefined | null): number | nu
 const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
 const DEFAULT_WEBHOOK_URL =
   'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
+const DEFAULT_SIDECAR_SESSIONS_PATH = './tmp/whatsapp-sessions';
+
+const readSidecarSessionsPath = (): { path: string; isCustom: boolean } => {
+  const candidates = [
+    normalizeString(process.env.WHATSAPP_SIDECAR_SESSIONS_PATH),
+    normalizeString(process.env.WHATSAPP_SIDECAR_SESSIONS_DIR),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate) {
+      return { path: candidate, isCustom: true };
+    }
+  }
+
+  return { path: DEFAULT_SIDECAR_SESSIONS_PATH, isCustom: false };
+};
 
 const parseMode = (raw: string | undefined | null): { mode: WhatsAppTransportMode; raw: string } => {
   const normalized = normalizeString(raw)?.toLowerCase() ?? '';
@@ -136,6 +154,8 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     normalizeString(process.env.WEBHOOK_URL) ??
     DEFAULT_WEBHOOK_URL;
 
+  const sidecarSessions = readSidecarSessionsPath();
+
   return {
     broker: {
       baseUrl: normalizeString(process.env.WHATSAPP_BROKER_URL),
@@ -167,6 +187,8 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
       rawMode: mode.raw,
       eventPollerDisabled: normalizeBoolean(process.env.WHATSAPP_EVENT_POLLER_DISABLED, false),
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
+      sidecarSessionsPath: sidecarSessions.path,
+      hasCustomSidecarSessionsPath: sidecarSessions.isCustom,
     },
     flags: {
       passthroughMode: normalizeBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, true),

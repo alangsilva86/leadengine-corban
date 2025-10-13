@@ -1,6 +1,7 @@
 import { WhatsAppInstanceManager } from '@ticketz/integrations';
 
 import { logger } from '../../../config/logger';
+import { getSidecarSessionsPath, hasCustomSidecarSessionsPath } from '../../../config/whatsapp';
 import { registerWhatsAppSidecarBridge } from '../sidecar-bridge';
 
 interface StartOptions {
@@ -11,28 +12,9 @@ interface StartOptions {
 let activeManager: WhatsAppInstanceManager | null = null;
 let bridgeCleanup: (() => void) | null = null;
 
-const readSessionsPath = (): string | null => {
-  const candidates = [
-    typeof process.env.WHATSAPP_SIDECAR_SESSIONS_PATH === 'string'
-      ? process.env.WHATSAPP_SIDECAR_SESSIONS_PATH.trim()
-      : '',
-    typeof process.env.WHATSAPP_SIDECAR_SESSIONS_DIR === 'string'
-      ? process.env.WHATSAPP_SIDECAR_SESSIONS_DIR.trim()
-      : '',
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate.length > 0) {
-      return candidate;
-    }
-  }
-
-  return null;
-};
-
 const createManager = (): WhatsAppInstanceManager => {
-  const sessionsPath = readSessionsPath();
-  if (sessionsPath) {
+  const sessionsPath = getSidecarSessionsPath();
+  if (hasCustomSidecarSessionsPath()) {
     logger.info('Initializing WhatsApp sidecar instance manager with custom sessions path', {
       sessionsPath,
     });
@@ -40,7 +22,7 @@ const createManager = (): WhatsAppInstanceManager => {
   }
 
   logger.info('Initializing WhatsApp sidecar instance manager with default sessions path');
-  return new WhatsAppInstanceManager();
+  return new WhatsAppInstanceManager(sessionsPath);
 };
 
 export const ensureWhatsAppSidecarManager = (): WhatsAppInstanceManager => {
@@ -86,5 +68,4 @@ export const __testing = {
   reset: resetWhatsAppSidecarRuntime,
   getActiveManager: () => activeManager,
   getBridgeCleanup: () => bridgeCleanup,
-  readSessionsPath,
 };

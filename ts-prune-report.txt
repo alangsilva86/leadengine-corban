@@ -1,0 +1,461 @@
+apps/api/tsup.config.ts:3 - default
+apps/api/vitest.config.ts:8 - default
+apps/web/tailwind.config.ts:123 - default (used in module)
+packages/contracts/tsup.config.ts:19 - default
+packages/core/index.d.ts:18 - EntityId
+packages/core/index.d.ts:19 - TenantId
+packages/core/index.d.ts:20 - BaseEntity
+packages/core/index.d.ts:21 - Result
+packages/core/index.d.ts:24 - DomainEvent
+packages/core/index.d.ts:32 - Queue
+packages/core/index.d.ts:33 - User
+packages/core/index.d.ts:35 - MessageStatus
+packages/core/index.d.ts:36 - TicketPriority
+packages/core/index.d.ts:40 - CreateContactDTO
+packages/core/index.d.ts:48 - LeadStatus
+packages/core/index.d.ts:49 - LeadSource
+packages/core/index.d.ts:50 - Campaign
+packages/core/index.d.ts:51 - CampaignType
+packages/core/index.d.ts:52 - CampaignStatus
+packages/core/index.d.ts:53 - LeadActivity
+packages/core/index.d.ts:54 - Attribution
+packages/core/index.d.ts:55 - Touchpoint
+packages/core/index.d.ts:56 - CreateLeadDTO
+packages/core/index.d.ts:57 - UpdateLeadDTO
+packages/core/index.d.ts:58 - CreateCampaignDTO
+packages/core/index.d.ts:59 - LeadFilters
+packages/core/index.d.ts:60 - CampaignFilters
+packages/core/index.d.ts:65 - CreateTicketUseCase
+packages/core/index.d.ts:66 - AssignTicketUseCase
+packages/core/index.d.ts:67 - UpdateTicketStatusUseCase
+packages/core/index.d.ts:68 - SendMessageUseCase
+packages/core/index.d.ts:69 - CreateContactUseCase
+packages/core/index.d.ts:70 - GetTicketsQuery
+packages/core/index.d.ts:71 - GetMessagesQuery
+packages/core/index.d.ts:72 - GetTicketByIdQuery
+packages/core/index.d.ts:76 - success
+packages/core/index.d.ts:76 - failure
+packages/core/index.d.ts:7 - EntityIdSchema
+packages/core/index.d.ts:10 - TenantIdSchema
+packages/core/index.d.ts:13 - TimestampSchema
+packages/core/index.d.ts:14 - Timestamp
+packages/core/index.d.ts:20 - BaseEntitySchema
+packages/core/index.d.ts:44 - DomainEventSchema
+packages/core/index.d.ts:62 - PaginationSchema
+packages/core/index.d.ts:71 - PaginatedResultSchema
+packages/core/index.d.ts:96 - PhoneNumberSchema
+packages/core/index.d.ts:97 - PhoneNumber
+packages/core/index.d.ts:99 - EmailSchema
+packages/core/index.d.ts:100 - Email
+packages/core/index.d.ts:102 - DocumentSchema
+packages/core/index.d.ts:103 - Document
+packages/core/index.d.ts:109 - ChannelTypeSchema
+packages/core/index.d.ts:118 - ChannelType
+packages/core/index.d.ts:124 - MessageTypeSchema
+packages/core/index.d.ts:135 - MessageType
+packages/core/index.d.ts:137 - MessageDirectionSchema
+packages/core/index.d.ts:138 - MessageDirection
+packages/core/index.d.ts:144 - GenericStatusSchema
+packages/core/index.d.ts:152 - GenericStatus
+packages/core/index.d.ts:208 - Optional
+packages/core/index.d.ts:209 - RequiredFields
+packages/core/index.d.ts:215 - Repository
+packages/core/index.d.ts:227 - EventBus
+packages/core/index.d.ts:237 - UseCase
+packages/core/index.d.ts:241 - Query
+packages/core/index.d.ts:245 - Command
+packages/core/index.d.ts:18 - TicketStatusSchema
+packages/core/index.d.ts:32 - TicketPrioritySchema
+packages/core/index.d.ts:45 - QueueSchema
+packages/core/index.d.ts:60 - TicketSchema
+packages/core/index.d.ts:83 - MessageStatusSchema
+packages/core/index.d.ts:93 - MessageSchema
+packages/core/index.d.ts:121 - ContactSchema
+packages/core/index.d.ts:140 - UserRoleSchema
+packages/core/index.d.ts:146 - UserRole
+packages/core/index.d.ts:148 - UserSchema
+packages/core/index.d.ts:166 - CreateTicketDTOSchema
+packages/core/index.d.ts:179 - UpdateTicketDTOSchema
+packages/core/index.d.ts:192 - SendMessageDTOSchema
+packages/core/index.d.ts:231 - CreateContactDTOSchema
+packages/core/index.d.ts:248 - TicketFiltersSchema
+packages/core/index.d.ts:262 - MessageFiltersSchema
+packages/core/index.d.ts:280 - TicketCreatedEventSchema
+packages/core/index.d.ts:288 - TicketAssignedEventSchema
+packages/core/index.d.ts:295 - TicketStatusChangedEventSchema
+packages/core/index.d.ts:303 - MessageReceivedEventSchema
+packages/core/index.d.ts:312 - MessageSentEventSchema
+packages/core/index.d.ts:321 - TicketCreatedEvent
+packages/core/index.d.ts:322 - TicketAssignedEvent
+packages/core/index.d.ts:323 - TicketStatusChangedEvent
+packages/core/index.d.ts:324 - MessageReceivedEvent
+packages/core/index.d.ts:325 - MessageSentEvent
+packages/core/index.d.ts:327 - TicketDomainEvent
+packages/core/index.d.ts:41 - TicketRepository
+packages/core/index.d.ts:52 - MessageRepository
+packages/core/index.d.ts:60 - ContactRepository
+packages/core/index.d.ts:69 - QueueRepository
+packages/core/index.d.ts:74 - UserRepository
+packages/core/index.d.ts:84 - MessageProvider
+packages/core/index.d.ts:14 - LeadStatusSchema
+packages/core/index.d.ts:32 - LeadSourceSchema
+packages/core/index.d.ts:53 - LeadScoreSchema
+packages/core/index.d.ts:62 - LeadScore
+packages/core/index.d.ts:68 - CampaignTypeSchema
+packages/core/index.d.ts:80 - CampaignStatusSchema
+packages/core/index.d.ts:91 - CampaignSchema
+packages/core/index.d.ts:111 - LeadSchema
+packages/core/index.d.ts:136 - LeadActivityTypeSchema
+packages/core/index.d.ts:159 - LeadActivityType
+packages/core/index.d.ts:161 - LeadActivitySchema
+packages/core/index.d.ts:177 - AttributionModelSchema
+packages/core/index.d.ts:186 - AttributionModel
+packages/core/index.d.ts:188 - TouchpointSchema
+packages/core/index.d.ts:205 - AttributionSchema
+packages/core/index.d.ts:219 - CreateLeadDTOSchema
+packages/core/index.d.ts:234 - UpdateLeadDTOSchema
+packages/core/index.d.ts:249 - CreateCampaignDTOSchema
+packages/core/index.d.ts:264 - AddLeadActivityDTOSchema
+packages/core/index.d.ts:274 - AddLeadActivityDTO
+packages/core/index.d.ts:280 - LeadFiltersSchema
+packages/core/index.d.ts:301 - CampaignFiltersSchema
+packages/core/index.d.ts:317 - LeadCreatedEventSchema
+packages/core/index.d.ts:325 - LeadStatusChangedEventSchema
+packages/core/index.d.ts:333 - LeadAssignedEventSchema
+packages/core/index.d.ts:340 - LeadConvertedEventSchema
+packages/core/index.d.ts:347 - LeadLostEventSchema
+packages/core/index.d.ts:354 - LeadScoreUpdatedEventSchema
+packages/core/index.d.ts:361 - CampaignStartedEventSchema
+packages/core/index.d.ts:367 - CampaignCompletedEventSchema
+packages/core/index.d.ts:373 - LeadCreatedEvent
+packages/core/index.d.ts:374 - LeadStatusChangedEvent
+packages/core/index.d.ts:375 - LeadAssignedEvent
+packages/core/index.d.ts:376 - LeadConvertedEvent
+packages/core/index.d.ts:377 - LeadLostEvent
+packages/core/index.d.ts:378 - LeadScoreUpdatedEvent
+packages/core/index.d.ts:379 - CampaignStartedEvent
+packages/core/index.d.ts:380 - CampaignCompletedEvent
+packages/core/index.d.ts:382 - LeadDomainEvent
+packages/core/leads.d.ts:10 - Lead
+packages/core/leads.d.ts:11 - LeadStatus
+packages/core/leads.d.ts:12 - LeadSource
+packages/core/leads.d.ts:13 - LeadScore
+packages/core/leads.d.ts:14 - Campaign
+packages/core/leads.d.ts:15 - CampaignType
+packages/core/leads.d.ts:16 - CampaignStatus
+packages/core/leads.d.ts:17 - LeadActivity
+packages/core/leads.d.ts:18 - LeadActivityType
+packages/core/leads.d.ts:19 - Attribution
+packages/core/leads.d.ts:20 - AttributionModel
+packages/core/leads.d.ts:21 - Touchpoint
+packages/core/leads.d.ts:22 - CreateLeadDTO
+packages/core/leads.d.ts:23 - UpdateLeadDTO
+packages/core/leads.d.ts:24 - CreateCampaignDTO
+packages/core/leads.d.ts:25 - AddLeadActivityDTO
+packages/core/leads.d.ts:26 - LeadFilters
+packages/core/leads.d.ts:27 - CampaignFilters
+packages/core/leads.d.ts:28 - LeadCreatedEvent
+packages/core/leads.d.ts:29 - LeadStatusChangedEvent
+packages/core/leads.d.ts:30 - LeadAssignedEvent
+packages/core/leads.d.ts:31 - LeadConvertedEvent
+packages/core/leads.d.ts:32 - LeadLostEvent
+packages/core/leads.d.ts:33 - LeadScoreUpdatedEvent
+packages/core/leads.d.ts:34 - CampaignStartedEvent
+packages/core/leads.d.ts:35 - CampaignCompletedEvent
+packages/core/leads.d.ts:36 - LeadDomainEvent
+packages/core/leads.d.ts:14 - LeadStatusSchema
+packages/core/leads.d.ts:32 - LeadSourceSchema
+packages/core/leads.d.ts:53 - LeadScoreSchema
+packages/core/leads.d.ts:68 - CampaignTypeSchema
+packages/core/leads.d.ts:80 - CampaignStatusSchema
+packages/core/leads.d.ts:91 - CampaignSchema
+packages/core/leads.d.ts:111 - LeadSchema
+packages/core/leads.d.ts:136 - LeadActivityTypeSchema
+packages/core/leads.d.ts:161 - LeadActivitySchema
+packages/core/leads.d.ts:177 - AttributionModelSchema
+packages/core/leads.d.ts:188 - TouchpointSchema
+packages/core/leads.d.ts:205 - AttributionSchema
+packages/core/leads.d.ts:219 - CreateLeadDTOSchema
+packages/core/leads.d.ts:234 - UpdateLeadDTOSchema
+packages/core/leads.d.ts:249 - CreateCampaignDTOSchema
+packages/core/leads.d.ts:264 - AddLeadActivityDTOSchema
+packages/core/leads.d.ts:280 - LeadFiltersSchema
+packages/core/leads.d.ts:301 - CampaignFiltersSchema
+packages/core/leads.d.ts:317 - LeadCreatedEventSchema
+packages/core/leads.d.ts:325 - LeadStatusChangedEventSchema
+packages/core/leads.d.ts:333 - LeadAssignedEventSchema
+packages/core/leads.d.ts:340 - LeadConvertedEventSchema
+packages/core/leads.d.ts:347 - LeadLostEventSchema
+packages/core/leads.d.ts:354 - LeadScoreUpdatedEventSchema
+packages/core/leads.d.ts:361 - CampaignStartedEventSchema
+packages/core/leads.d.ts:367 - CampaignCompletedEventSchema
+packages/core/tickets.d.ts:13 - Ticket
+packages/core/tickets.d.ts:14 - Message
+packages/core/tickets.d.ts:15 - Contact
+packages/core/tickets.d.ts:16 - Queue
+packages/core/tickets.d.ts:17 - User
+packages/core/tickets.d.ts:18 - TicketStatus
+packages/core/tickets.d.ts:19 - MessageStatus
+packages/core/tickets.d.ts:20 - TicketPriority
+packages/core/tickets.d.ts:22 - UserRole
+packages/core/tickets.d.ts:23 - CreateTicketDTO
+packages/core/tickets.d.ts:24 - UpdateTicketDTO
+packages/core/tickets.d.ts:25 - SendMessageDTO
+packages/core/tickets.d.ts:26 - CreateContactDTO
+packages/core/tickets.d.ts:27 - TicketFilters
+packages/core/tickets.d.ts:28 - MessageFilters
+packages/core/tickets.d.ts:29 - TicketCreatedEvent
+packages/core/tickets.d.ts:30 - TicketAssignedEvent
+packages/core/tickets.d.ts:31 - TicketStatusChangedEvent
+packages/core/tickets.d.ts:32 - MessageReceivedEvent
+packages/core/tickets.d.ts:33 - MessageSentEvent
+packages/core/tickets.d.ts:34 - TicketDomainEvent
+packages/core/tickets.d.ts:39 - CreateTicketUseCase
+packages/core/tickets.d.ts:40 - AssignTicketUseCase
+packages/core/tickets.d.ts:41 - UpdateTicketStatusUseCase
+packages/core/tickets.d.ts:42 - SendMessageUseCase
+packages/core/tickets.d.ts:43 - CreateContactUseCase
+packages/core/tickets.d.ts:44 - GetTicketsQuery
+packages/core/tickets.d.ts:45 - GetMessagesQuery
+packages/core/tickets.d.ts:46 - GetTicketByIdQuery
+packages/core/tickets.d.ts:51 - TicketRepository
+packages/core/tickets.d.ts:52 - MessageRepository
+packages/core/tickets.d.ts:53 - ContactRepository
+packages/core/tickets.d.ts:54 - QueueRepository
+packages/core/tickets.d.ts:55 - UserRepository
+packages/core/tickets.d.ts:56 - MessageProvider
+packages/core/tickets.d.ts:18 - TicketStatusSchema
+packages/core/tickets.d.ts:32 - TicketPrioritySchema
+packages/core/tickets.d.ts:45 - QueueSchema
+packages/core/tickets.d.ts:60 - TicketSchema
+packages/core/tickets.d.ts:83 - MessageStatusSchema
+packages/core/tickets.d.ts:93 - MessageSchema
+packages/core/tickets.d.ts:121 - ContactSchema
+packages/core/tickets.d.ts:140 - UserRoleSchema
+packages/core/tickets.d.ts:148 - UserSchema
+packages/core/tickets.d.ts:166 - CreateTicketDTOSchema
+packages/core/tickets.d.ts:179 - UpdateTicketDTOSchema
+packages/core/tickets.d.ts:192 - SendMessageDTOSchema
+packages/core/tickets.d.ts:231 - CreateContactDTOSchema
+packages/core/tickets.d.ts:248 - TicketFiltersSchema
+packages/core/tickets.d.ts:262 - MessageFiltersSchema
+packages/core/tickets.d.ts:280 - TicketCreatedEventSchema
+packages/core/tickets.d.ts:288 - TicketAssignedEventSchema
+packages/core/tickets.d.ts:295 - TicketStatusChangedEventSchema
+packages/core/tickets.d.ts:303 - MessageReceivedEventSchema
+packages/core/tickets.d.ts:312 - MessageSentEventSchema
+packages/core/tsup.config.ts:18 - default
+packages/integrations/tsup.config.ts:18 - default
+packages/shared/index.d.ts:15 - SHARED_VERSION
+packages/shared/index.d.ts:1 - createLogger
+packages/shared/index.d.ts:1 - CONFIG_VERSION
+packages/shared/index.d.ts:1 - UTILS_VERSION
+packages/shared/tsup.config.ts:18 - default
+packages/storage/index.d.ts:1 - STORAGE_VERSION
+packages/storage/index.d.ts:3 - getPrismaClient
+packages/storage/index.d.ts:6 - Campaign
+packages/storage/index.d.ts:16 - CampaignMetrics
+packages/storage/index.d.ts:23 - updateCampaignStatus
+packages/storage/index.d.ts:24 - findCampaignById
+packages/storage/index.d.ts:25 - findActiveCampaign
+packages/storage/index.d.ts:40 - createOutboundMessage
+packages/storage/index.d.ts:47 - applyBrokerAck
+packages/storage/index.d.ts:58 - createPrismaWhatsAppSessionStore
+packages/storage/index.d.ts:59 - createRedisWhatsAppSessionStore
+packages/storage/index.d.ts:60 - RedisSessionStoreOptions
+packages/storage/tsup.config.ts:18 - default
+packages/wa-contracts/tsup.config.ts:18 - default
+apps/api/src/health.ts:5 - HealthPayload (used in module)
+apps/api/src/health.ts:85 - __private
+apps/api/src/server.ts:489 - io (used in module)
+packages/contracts/src/index.ts:2 - components
+packages/contracts/src/index.ts:2 - paths
+packages/contracts/src/index.ts:28 - MessagePayloadSchema
+packages/contracts/src/index.ts:60 - MessagePayloadInput
+packages/contracts/src/index.ts:82 - SendByTicketSchema
+packages/contracts/src/index.ts:88 - SendByTicketInput
+packages/contracts/src/index.ts:90 - SendByContactSchema
+packages/contracts/src/index.ts:97 - SendByContactInput
+packages/contracts/src/index.ts:99 - SendByInstanceSchema
+packages/contracts/src/index.ts:105 - SendByInstanceInput
+packages/contracts/src/index.ts:107 - NormalizedMessagePayload
+packages/contracts/src/index.ts:117 - normalizePayload
+packages/contracts/src/index.ts:132 - SendMessageByTicketRequest
+packages/contracts/src/index.ts:133 - SendMessageByContactRequest
+packages/contracts/src/index.ts:134 - SendMessageByInstanceRequest
+packages/contracts/src/index.ts:135 - OutboundMessageResponse
+packages/contracts/src/index.ts:136 - OutboundMessageError
+packages/contracts/src/index.ts:141 - _EnsureMessagePayload
+packages/contracts/src/index.ts:142 - _EnsureSendByTicket
+packages/contracts/src/index.ts:143 - _EnsureSendByContact
+packages/contracts/src/index.ts:144 - _EnsureSendByInstance
+packages/contracts/src/types.gen.ts:22 - webhooks
+packages/contracts/src/types.gen.ts:107 - $defs
+packages/contracts/src/types.gen.ts:109 - external
+packages/contracts/src/types.gen.ts:111 - operations (used in module)
+packages/wa-contracts/src/index.ts:2 - v1
+packages/wa-contracts/src/index.ts:14 - SendTextInputSchema
+packages/wa-contracts/src/index.ts:19 - SendTextInput
+packages/wa-contracts/src/index.ts:21 - SendMediaInputSchema
+packages/wa-contracts/src/index.ts:29 - SendMediaInput
+packages/wa-contracts/src/index.ts:31 - SendResultSchema
+packages/wa-contracts/src/index.ts:39 - SendResult
+packages/wa-contracts/src/index.ts:41 - ExistsResultSchema
+packages/wa-contracts/src/index.ts:48 - ExistsResult
+packages/wa-contracts/src/index.ts:50 - StatusResultSchema
+packages/wa-contracts/src/index.ts:65 - StatusResult
+packages/wa-contracts/src/index.ts:67 - WhatsAppCanonicalErrorCodeSchema
+packages/wa-contracts/src/index.ts:77 - WhatsAppCanonicalErrorCode
+packages/wa-contracts/src/index.ts:79 - WhatsAppCanonicalErrorSchema
+packages/wa-contracts/src/index.ts:85 - WhatsAppCanonicalError
+packages/wa-contracts/src/index.ts:87 - CANONICAL_ERRORS
+packages/wa-contracts/src/index.ts:125 - resolveCanonicalError
+packages/wa-contracts/src/index.ts:136 - WhatsAppTransportErrorOptions
+packages/wa-contracts/src/index.ts:146 - WhatsAppTransportError
+packages/wa-contracts/src/index.ts:185 - SendTextInputV1
+packages/wa-contracts/src/index.ts:186 - SendMediaInputV1
+packages/wa-contracts/src/index.ts:187 - SendResultV1
+packages/wa-contracts/src/index.ts:188 - ExistsResultV1
+packages/wa-contracts/src/index.ts:189 - StatusResultV1
+packages/wa-contracts/src/index.ts:190 - WhatsAppCanonicalErrorV1
+packages/wa-contracts/src/index.ts:191 - WhatsAppCanonicalErrorCodeV1
+apps/api/src/config/auth.ts:16 - getJwtSecret (used in module)
+apps/api/src/config/feature-flags.ts:70 - getFeatureFlags
+apps/api/src/config/feature-flags.ts:76 - isWhatsappRawFallbackEnabled
+apps/api/src/config/feature-flags.ts:78 - isWhatsappInboundSimpleModeEnabled
+apps/api/src/config/feature-flags.ts:84 - refreshFeatureFlags
+apps/api/src/config/logger.ts:53 - loggerStream
+apps/api/src/config/whatsapp-config.ts:214 - __private
+apps/api/src/config/whatsapp-config.ts:222 - WhatsAppConfig (used in module)
+apps/api/src/config/whatsapp.ts:8 - isStrictBrokerConfigEnabled
+apps/api/src/config/whatsapp.ts:27 - shouldBypassTenantGuards
+apps/api/src/data/lead-allocation-store.ts:12 - LeadAllocationStatus (used in module)
+apps/api/src/data/lead-allocation-store.ts:14 - LeadAllocation (used in module)
+apps/api/src/data/lead-allocation-store.ts:16 - AllocationResult (used in module)
+apps/api/src/data/ticket-note-store.ts:77 - resetTicketNotes
+apps/api/src/data/user-preferences-store.ts:1 - InboxListPosition (used in module)
+apps/api/src/data/user-preferences-store.ts:3 - UserPreferencesRecord (used in module)
+apps/api/src/data/user-preferences-store.ts:73 - resetUserPreferencesStore
+apps/api/src/data/user-preferences-store.ts:77 - getAllUserPreferences
+apps/api/src/lib/pii.ts:9 - maskString
+apps/api/src/lib/prisma.ts:39 - connectDatabase
+apps/api/src/lib/prisma.ts:54 - disconnectDatabase (used in module)
+apps/api/src/lib/slug.ts:17 - isValidSlug (used in module)
+apps/api/src/middleware/auth.ts:112 - verifyPassword (used in module)
+apps/api/src/middleware/auth.ts:119 - generateToken (used in module)
+apps/api/src/middleware/auth.ts:140 - verifyToken (used in module)
+apps/api/src/middleware/auth.ts:380 - getUserById (used in module)
+apps/api/src/middleware/auth.ts:25 - JWTPayload (used in module)
+apps/api/src/middleware/auth.ts:37 - LoginRequest (used in module)
+apps/api/src/middleware/auth.ts:43 - LoginResponse (used in module)
+apps/api/src/middleware/auth.ts:252 - AUTH_MVP_BYPASS_USER_EMAIL
+apps/api/src/middleware/auth.ts:253 - AUTH_MVP_BYPASS_USER_NAME
+apps/api/src/middleware/auth.ts:556 - requirePermission
+apps/api/src/middleware/auth.ts:585 - requireRole
+apps/api/src/middleware/auth.ts:640 - optionalAuth
+apps/api/src/middleware/error-handler.ts:61 - ApiError (used in module)
+apps/api/src/routes/campaigns.ts:237 - CampaignQueryFilters (used in module)
+apps/api/src/routes/campaigns.types.ts:1 - CampaignMetricsDTO (used in module)
+apps/api/src/services/campaigns-upstream.ts:4 - LeadEngineCampaignFilters (used in module)
+apps/api/src/services/campaigns-upstream.ts:11 - LeadEngineUpstreamError
+apps/api/src/services/lead-engine-client.ts:14 - LeadEngineError (used in module)
+apps/api/src/services/lead-engine-client.ts:45 - IngestLeadRequest (used in module)
+apps/api/src/services/lead-engine-client.ts:53 - CreditLeadRequest (used in module)
+apps/api/src/services/lead-engine-client.ts:58 - LeadResponse (used in module)
+apps/api/src/services/lead-engine-client.ts:73 - BrokerLeadRecord (used in module)
+apps/api/src/services/lead-engine-client.ts:79 - AgreementSummary (used in module)
+apps/api/src/services/tenant-service.ts:7 - TenantLogContext (used in module)
+apps/api/src/services/ticket-service.ts:268 - TicketContactSummary (used in module)
+apps/api/src/services/ticket-service.ts:276 - TicketLeadSummary (used in module)
+apps/api/src/services/ticket-service.ts:283 - TicketWindowSnapshot (used in module)
+apps/api/src/services/ticket-service.ts:289 - TicketTimelineSnapshot (used in module)
+apps/api/src/services/ticket-service.ts:302 - TicketHydrated (used in module)
+apps/api/src/services/ticket-service.ts:312 - InboxHealthMetrics (used in module)
+apps/api/src/services/ticket-service.ts:328 - TicketListResult (used in module)
+apps/api/src/services/ticket-service.ts:938 - ListTicketsOptions (used in module)
+apps/api/src/test-utils/storage-mock.ts:15 - STORAGE_VERSION
+apps/api/src/test-utils/storage-mock.ts:19 - setPrismaClient
+apps/api/src/test-utils/storage-mock.ts:23 - getPrismaClient
+apps/api/src/test-utils/storage-mock.ts:33 - CampaignStatus (used in module)
+apps/api/src/test-utils/storage-mock.ts:40 - Campaign (used in module)
+apps/api/src/test-utils/storage-mock.ts:53 - CreateCampaignInput (used in module)
+apps/api/src/test-utils/storage-mock.ts:63 - CampaignFilters (used in module)
+apps/api/src/test-utils/storage-mock.ts:94 - createOrActivateCampaign
+apps/api/src/test-utils/storage-mock.ts:126 - updateCampaignStatus
+apps/api/src/test-utils/storage-mock.ts:152 - findCampaignById (used in module)
+apps/api/src/test-utils/storage-mock.ts:161 - findActiveCampaign
+apps/api/src/test-utils/storage-mock.ts:189 - listCampaigns
+apps/api/src/test-utils/storage-mock.ts:224 - resetCampaignStore
+apps/api/src/test-utils/storage-mock.ts:228 - LeadAllocationStatus (used in module)
+apps/api/src/test-utils/storage-mock.ts:230 - BrokerLeadInput (used in module)
+apps/api/src/test-utils/storage-mock.ts:244 - AllocationFilters (used in module)
+apps/api/src/test-utils/storage-mock.ts:251 - AllocationSummary (used in module)
+apps/api/src/test-utils/storage-mock.ts:258 - CampaignMetrics (used in module)
+apps/api/src/test-utils/storage-mock.ts:267 - LeadAllocationDto (used in module)
+apps/api/src/test-utils/storage-mock.ts:442 - listAllocations
+apps/api/src/test-utils/storage-mock.ts:478 - allocateBrokerLeads
+apps/api/src/test-utils/storage-mock.ts:587 - updateAllocation
+apps/api/src/test-utils/storage-mock.ts:615 - resetAllocationStore
+apps/api/src/test-utils/storage-mock.ts:623 - getCampaignMetrics
+apps/api/src/test-utils/storage-mock.ts:870 - resetTicketStore
+apps/api/src/test-utils/storage-mock.ts:875 - findTicketById
+apps/api/src/test-utils/storage-mock.ts:881 - findTicketsByContact
+apps/api/src/test-utils/storage-mock.ts:888 - createTicket
+apps/api/src/test-utils/storage-mock.ts:916 - updateTicket (used in module)
+apps/api/src/test-utils/storage-mock.ts:985 - assignTicket
+apps/api/src/test-utils/storage-mock.ts:994 - closeTicket
+apps/api/src/test-utils/storage-mock.ts:1010 - listTickets
+apps/api/src/test-utils/storage-mock.ts:1037 - createMessage (used in module)
+apps/api/src/test-utils/storage-mock.ts:1168 - listMessages
+apps/api/src/test-utils/storage-mock.ts:1195 - updateMessage (used in module)
+apps/api/src/test-utils/storage-mock.ts:1250 - createOutboundMessage
+apps/api/src/test-utils/storage-mock.ts:1270 - applyBrokerAck
+apps/api/src/utils/http-validation.ts:4 - ValidationErrorDetail (used in module)
+apps/api/src/utils/http-validation.ts:9 - formatZodIssues (used in module)
+apps/api/src/utils/idempotency.ts:1 - IdempotencyEntry (used in module)
+apps/api/src/utils/idempotency.ts:45 - purgeIdempotency
+apps/api/src/utils/phone.ts:44 - NormalizedPhone (used in module)
+apps/api/src/utils/phone.ts:63 - isValidPhoneNumber
+apps/api/src/utils/prisma-error.ts:5 - PrismaHttpError (used in module)
+apps/api/src/utils/prisma-error.ts:12 - PrismaErrorMappingOptions (used in module)
+apps/api/src/utils/prisma-error.ts:121 - isPrismaConnectivityError
+packages/storage/src/repositories/campaign-repository.ts:25 - CreateCampaignInput (used in module)
+packages/storage/src/repositories/campaign-repository.ts:35 - CampaignFilters (used in module)
+packages/storage/src/repositories/lead-allocation-repository.ts:15 - BrokerLeadInput (used in module)
+packages/storage/src/repositories/lead-allocation-repository.ts:29 - AllocationFilters (used in module)
+apps/api/src/features/whatsapp-inbound/queue/event-queue.ts:6 - WhatsAppBrokerEventType (used in module)
+apps/api/src/features/whatsapp-inbound/queue/event-queue.ts:174 - whatsappEventQueueEmitter
+apps/api/src/features/whatsapp-inbound/runtime/sidecar-runtime.ts:28 - ensureWhatsAppSidecarManager (used in module)
+apps/api/src/features/whatsapp-inbound/runtime/sidecar-runtime.ts:67 - __testing
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:55 - BrokerInboundContactSchema (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:77 - BrokerInboundContact (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:79 - BrokerInboundMessageSchema (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:80 - BrokerInboundMessage (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:82 - BrokerInboundMetadataSchema (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:83 - BrokerInboundMetadata (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:85 - BrokerInboundEventPayloadSchema (used in module)
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:113 - BrokerInboundEventPayload
+apps/api/src/features/whatsapp-inbound/schemas/broker-contracts.ts:150 - BrokerInboundEvent
+apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:14 - NormalizedRawUpsertMessage (used in module)
+apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:25 - IgnoredRawUpsertMessage (used in module)
+apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:31 - NormalizeUpsertResult (used in module)
+apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:36 - NormalizeUpsertOverrides (used in module)
+apps/api/src/features/whatsapp-inbound/services/baileys-raw-normalizer.ts:786 - __testing
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:37 - InboundDedupeBackend (used in module)
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:44 - configureInboundDedupeBackend (used in module)
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:533 - InboundWhatsAppEvent (used in module)
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:547 - InboundWhatsAppEnvelopeBase (used in module)
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:557 - InboundWhatsAppEnvelopeMessage (used in module)
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:571 - InboundWhatsAppEnvelopeUpdate (used in module)
+apps/api/src/features/whatsapp-inbound/services/inbound-lead-service.ts:655 - shouldSkipByDedupe (used in module)
+apps/api/src/features/whatsapp-inbound/utils/baileys-event-logger.ts:7 - sanitizeJsonPayload (used in module)
+apps/api/src/features/whatsapp-inbound/utils/normalize.ts:3 - NormalizedMessageType (used in module)
+apps/api/src/features/whatsapp-inbound/utils/normalize.ts:13 - NormalizedInboundMessage (used in module)
+apps/api/src/features/whatsapp-inbound/workers/event-normalizer.ts:3 - BrokerEventEnvelope (used in module)
+apps/api/src/features/whatsapp-inbound/workers/event-normalizer.ts:321 - __private
+apps/api/src/features/whatsapp-inbound/workers/event-poller-state.ts:56 - __private
+apps/api/src/features/whatsapp-inbound/workers/event-poller.ts:188 - WhatsAppEventPoller (used in module)
+apps/api/src/services/whatsapp/transport/http-broker-transport.ts:167 - HttpBrokerTransportMode
+apps/api/src/services/whatsapp/transport/transport.ts:27 - WhatsAppTransportFactoryOptions (used in module)
+apps/api/src/services/whatsapp/transport/transport.ts:52 - buildWhatsAppTransport (used in module)
+apps/api/src/services/whatsapp/transport/transport.ts:95 - resetWhatsAppTransportCache

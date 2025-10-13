@@ -11,7 +11,7 @@ import {
 } from '@ticketz/wa-contracts';
 import { WhatsAppInstanceManager } from '@ticketz/integrations';
 
-import { getWhatsAppMode, type WhatsAppTransportMode } from '../../../config/whatsapp';
+import { getSidecarSessionsPath, getWhatsAppMode, type WhatsAppTransportMode } from '../../../config/whatsapp';
 import { HttpBrokerTransport } from './http-broker-transport';
 import { SidecarTransport } from './sidecar-transport';
 import { DryRunTransport } from './dryrun-transport';
@@ -32,7 +32,7 @@ export type WhatsAppTransportFactoryOptions = {
 };
 
 const createSidecarManager = (): WhatsAppInstanceManager => {
-  const sessionsPath = process.env.WHATSAPP_SIDECAR_SESSIONS_PATH ?? './tmp/whatsapp-sessions';
+  const sessionsPath = getSidecarSessionsPath();
   return new WhatsAppInstanceManager(sessionsPath);
 };
 

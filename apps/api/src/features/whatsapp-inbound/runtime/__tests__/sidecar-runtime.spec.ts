@@ -21,16 +21,20 @@ vi.mock('../../sidecar-bridge', () => ({
 }));
 
 describe('sidecar runtime', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     registerMock.mockReset();
     constructorSpy.mockReset();
     delete process.env.WHATSAPP_SIDECAR_SESSIONS_PATH;
     delete process.env.WHATSAPP_SIDECAR_SESSIONS_DIR;
+    const { refreshWhatsAppEnv } = await import('../../../../config/whatsapp');
+    refreshWhatsAppEnv();
   });
 
   it('initializes the manager with the configured sessions path and caches the instance', async () => {
     process.env.WHATSAPP_SIDECAR_SESSIONS_PATH = '/tmp/sidecar-sessions';
+    const { refreshWhatsAppEnv } = await import('../../../../config/whatsapp');
+    refreshWhatsAppEnv();
 
     const module = await import('../sidecar-runtime');
     const { ensureWhatsAppSidecarManager } = module;

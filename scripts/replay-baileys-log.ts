@@ -1,21 +1,31 @@
-#!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import process from 'node:process';
+import {
+  getBrokerWebhookUrl,
+  getWebhookApiKey,
+  refreshWhatsAppEnv,
+} from '../apps/api/src/config/whatsapp';
 
 const args = process.argv.slice(2);
 
 if (args.length === 0) {
-  console.error('Usage: node scripts/replay-baileys-log.mjs <log-file> [--url=http://localhost:3000/api/integrations/whatsapp/webhook]');
+  console.error(
+    'Usage: pnpm exec tsx scripts/replay-baileys-log.ts <log-file> [--url=http://localhost:3000/api/integrations/whatsapp/webhook]'
+  );
   process.exit(1);
 }
 
 const filePath = path.resolve(process.cwd(), args[0]);
 const extraArgs = args.slice(1);
 
-const options = {
-  url: process.env.WHATSAPP_WEBHOOK_REPLAY_URL || 'http://localhost:3000/api/integrations/whatsapp/webhook',
-  apiKey: process.env.WHATSAPP_WEBHOOK_API_KEY || process.env.WHATSAPP_BROKER_API_KEY || null,
+refreshWhatsAppEnv();
+
+const options: { url: string; apiKey: string | null } = {
+  url: process.env.WHATSAPP_WEBHOOK_REPLAY_URL || getBrokerWebhookUrl() ||
+    'http://localhost:3000/api/integrations/whatsapp/webhook',
+  apiKey: getWebhookApiKey(),
 };
 
 for (const arg of extraArgs) {

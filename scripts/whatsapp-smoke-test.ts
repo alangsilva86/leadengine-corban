@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * WhatsApp inbound smoke test.
  *
@@ -18,11 +17,18 @@
  *   WHATSAPP_WEBHOOK_API_KEY="..." \
  *   TENANT_ID="demo-tenant" \
  *   INSTANCE_ID="alan" \
- *   node scripts/whatsapp-smoke-test.mjs
+ *   pnpm exec tsx scripts/whatsapp-smoke-test.ts
  */
 
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
+import {
+  getWebhookApiKey,
+  getWhatsAppMode,
+  refreshWhatsAppEnv,
+} from '../apps/api/src/config/whatsapp';
+
+refreshWhatsAppEnv();
 
 const requiredEnv = ['API_URL', 'TENANT_ID', 'INSTANCE_ID'];
 
@@ -33,7 +39,7 @@ if (missing.length > 0) {
 }
 
 const API_URL = process.env.API_URL.replace(/\/+$/, '');
-const WEBHOOK_KEY = process.env.WHATSAPP_WEBHOOK_API_KEY;
+const WEBHOOK_KEY = getWebhookApiKey();
 const TENANT_ID = process.env.TENANT_ID;
 const INSTANCE_ID = process.env.INSTANCE_ID;
 const TEST_PHONE = process.env.TEST_PHONE ?? '+5511999999999';
@@ -44,8 +50,10 @@ const MESSAGE_TEXT =
 
 const SOCKET_PATH = process.env.SOCKET_IO_PATH ?? '/socket.io';
 
-const EXPECTED_WHATSAPP_MODE =
-  (process.env.EXPECT_WHATSAPP_MODE ?? process.env.WHATSAPP_MODE ?? '').trim().toLowerCase() || null;
+const CONFIGURED_WHATSAPP_MODE = getWhatsAppMode();
+const expectedModeOverride = (process.env.EXPECT_WHATSAPP_MODE ?? '').trim().toLowerCase();
+const EXPECTED_WHATSAPP_MODE = expectedModeOverride || CONFIGURED_WHATSAPP_MODE;
+const SHOULD_ASSERT_RUNTIME = expectedModeOverride.length > 0;
 
 const timeout = (ms, label) =>
   new Promise((_, reject) => {
@@ -243,6 +251,7 @@ const connectSocket = async () => {
 
 const main = async () => {
   console.info('🚀 WhatsApp inbound smoke test started');
+  console.info(`⚙️ Configured WhatsApp transport: ${CONFIGURED_WHATSAPP_MODE}`);
 
   const runtime = await fetchWhatsAppRuntime();
   if (runtime) {
@@ -252,7 +261,7 @@ const main = async () => {
     }
     console.info(`🛰️ WhatsApp transport runtime: ${parts.join(' | ')}`);
 
-    if (EXPECTED_WHATSAPP_MODE) {
+    if (SHOULD_ASSERT_RUNTIME) {
       const normalized = (runtime.mode ?? '').toLowerCase();
       if (normalized !== EXPECTED_WHATSAPP_MODE) {
         throw new Error(
@@ -265,7 +274,7 @@ const main = async () => {
   }
 
   if (!WEBHOOK_KEY) {
-    console.warn('⚠️ WHATSAPP_WEBHOOK_API_KEY not provided; assuming webhook passthrough mode is allowed.');
+    console.warn('⚠️ WhatsApp webhook API key not configured; assuming passthrough mode is allowed.');
   }
 
   const requestId = randomUUID();
