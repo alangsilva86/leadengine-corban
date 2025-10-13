@@ -5,6 +5,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/storage" },
     { "path": "./packages/integrations" },
+    { "path": "./packages/wa-contracts" },
     { "path": "./apps/api" },
     { "path": "./apps/web" }
   ]

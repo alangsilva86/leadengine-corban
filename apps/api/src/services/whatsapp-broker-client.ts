@@ -14,6 +14,10 @@ import {
   type BrokerOutboundMessage,
   type BrokerOutboundResponse,
 } from '../features/whatsapp-inbound/schemas/broker-contracts';
+import {
+  CANONICAL_ERRORS,
+  type WhatsAppCanonicalError,
+} from '@ticketz/wa-contracts';
 
 export class WhatsAppBrokerNotConfiguredError extends Error {
   constructor(message = 'WhatsApp broker not configured') {
@@ -84,36 +88,6 @@ export class WhatsAppBrokerError extends Error {
   }
 }
 
-export type NormalizedWhatsAppBrokerErrorCode =
-  | 'INSTANCE_NOT_CONNECTED'
-  | 'INVALID_TO'
-  | 'RATE_LIMITED'
-  | 'BROKER_TIMEOUT';
-
-export type NormalizedWhatsAppBrokerError = {
-  code: NormalizedWhatsAppBrokerErrorCode;
-  message: string;
-};
-
-const NORMALIZED_ERROR_COPY: Record<NormalizedWhatsAppBrokerErrorCode, NormalizedWhatsAppBrokerError> = {
-  INSTANCE_NOT_CONNECTED: {
-    code: 'INSTANCE_NOT_CONNECTED',
-    message: 'Instância de WhatsApp desconectada. Reabra a sessão para continuar.',
-  },
-  INVALID_TO: {
-    code: 'INVALID_TO',
-    message: 'Número de destino inválido ou indisponível para receber mensagens.',
-  },
-  RATE_LIMITED: {
-    code: 'RATE_LIMITED',
-    message: 'Limite de envio do WhatsApp atingido. Aguarde alguns instantes e tente novamente.',
-  },
-  BROKER_TIMEOUT: {
-    code: 'BROKER_TIMEOUT',
-    message: 'Tempo limite ao contatar o broker do WhatsApp. Tente reenviar em instantes.',
-  },
-};
-
 const normalizeErrorCode = (value: unknown): string =>
   typeof value === 'string' ? value.trim().toUpperCase() : '';
 
@@ -145,7 +119,7 @@ const INVALID_TO_CODES = new Set([
 
 export const translateWhatsAppBrokerError = (
   error: WhatsAppBrokerError | null | undefined
-): NormalizedWhatsAppBrokerError | null => {
+): WhatsAppCanonicalError | null => {
   if (!error) {
     return null;
   }
@@ -157,11 +131,11 @@ export const translateWhatsAppBrokerError = (
   const message = typeof error.message === 'string' ? error.message : '';
 
   if (status === 429 || RATE_LIMIT_CODES.has(code)) {
-    return NORMALIZED_ERROR_COPY.RATE_LIMITED;
+    return CANONICAL_ERRORS.RATE_LIMITED;
   }
 
   if (status === 408 || status === 504 || BROKER_TIMEOUT_CODES.has(code) || includesKeyword(message, ['timeout', 'timed out'])) {
-    return NORMALIZED_ERROR_COPY.BROKER_TIMEOUT;
+    return CANONICAL_ERRORS.BROKER_TIMEOUT;
   }
 
   if (
@@ -175,7 +149,7 @@ export const translateWhatsAppBrokerError = (
       'socket indispon',
     ])
   ) {
-    return NORMALIZED_ERROR_COPY.INSTANCE_NOT_CONNECTED;
+    return CANONICAL_ERRORS.INSTANCE_NOT_CONNECTED;
   }
 
   if (
@@ -184,7 +158,7 @@ export const translateWhatsAppBrokerError = (
     INVALID_TO_CODES.has(code) ||
     includesKeyword(message, ['invalid recipient', 'invalid to', 'destinat', 'recipient'])
   ) {
-    return NORMALIZED_ERROR_COPY.INVALID_TO;
+    return CANONICAL_ERRORS.INVALID_TO;
   }
 
   return null;
