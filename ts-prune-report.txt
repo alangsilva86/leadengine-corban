@@ -455,7 +455,3 @@ apps/api/src/features/whatsapp-inbound/workers/event-normalizer.ts:3 - BrokerEve
 apps/api/src/features/whatsapp-inbound/workers/event-normalizer.ts:321 - __private
 apps/api/src/features/whatsapp-inbound/workers/event-poller-state.ts:56 - __private
 apps/api/src/features/whatsapp-inbound/workers/event-poller.ts:188 - WhatsAppEventPoller (used in module)
-apps/api/src/services/whatsapp/transport/http-broker-transport.ts:167 - HttpBrokerTransportMode
-apps/api/src/services/whatsapp/transport/transport.ts:27 - WhatsAppTransportFactoryOptions (used in module)
-apps/api/src/services/whatsapp/transport/transport.ts:52 - buildWhatsAppTransport (used in module)
-apps/api/src/services/whatsapp/transport/transport.ts:95 - resetWhatsAppTransportCache

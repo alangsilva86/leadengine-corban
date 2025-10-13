@@ -1,7 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WhatsAppTransport } from '../../services/whatsapp/transport/transport';
+import type { WhatsAppTransport } from '../../features/whatsapp-transport';
 
 const sendAdHocMock = vi.fn();
 const rateKeyForInstanceMock = vi.fn();
@@ -9,14 +9,14 @@ const resolveRateLimitMock = vi.fn();
 
 const transportMock: WhatsAppTransport = {
   mode: 'http',
-  sendText: vi.fn(),
-  sendMedia: vi.fn(),
+  sendMessage: vi.fn(),
   checkRecipient: vi.fn(),
-  getStatus: vi.fn(),
+  getGroups: vi.fn(),
+  createPoll: vi.fn(),
 };
 
-vi.mock('../../services/whatsapp/transport/transport', () => ({
-  resolveWhatsAppTransport: vi.fn(() => transportMock),
+vi.mock('../../features/whatsapp-transport', () => ({
+  getWhatsAppTransport: vi.fn(() => transportMock),
 }));
 
 vi.mock('../../lib/prisma', () => ({
