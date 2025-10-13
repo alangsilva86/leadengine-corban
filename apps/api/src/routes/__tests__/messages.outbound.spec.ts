@@ -358,9 +358,11 @@ describe('Outbound message routes', () => {
     const [, payloadArg] = sendMessageMock.mock.calls[0] ?? [];
     expect(payloadArg).toMatchObject({
       content: 'Olá! Teste via ticket',
-      metadata: expect.objectContaining({}),
       previewUrl: false,
     });
+    expect(payloadArg.metadata).toEqual({ idempotencyKey: 'test-ticket-send' });
+    expect(payloadArg.metadata).not.toHaveProperty('transport');
+    expect(payloadArg.metadata).not.toHaveProperty('transportMode');
 
     const createdEvent = socket.events.find(
       (event) => event.event === 'message:created' && event.room.startsWith('tenant:')
@@ -378,6 +380,7 @@ describe('Outbound message routes', () => {
     expect(metricsSnapshot).toContain(
       'whatsapp_outbound_total{instanceId="instance-001",origin="ticket-service",status="SENT",tenantId="tenant-123"} 1'
     );
+    expect(metricsSnapshot).not.toContain('transport=');
   });
 
   it('rejects ticket sends without Idempotency-Key header', async () => {

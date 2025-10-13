@@ -8,6 +8,7 @@ import {
   type WhatsAppBrokerResolvedConfig,
 } from '../../../services/whatsapp-broker-client';
 import * as brokerClient from '../../../services/whatsapp-broker-client';
+import { logger } from '../../../config/logger';
 
 const buildConfig = (): WhatsAppBrokerResolvedConfig => ({
   baseUrl: 'https://broker.test',
@@ -70,6 +71,52 @@ describe('HttpWhatsAppTransport', () => {
       timestamp: '2024-01-01T00:00:00.000Z',
       raw: { foo: 'bar' },
     });
+  });
+
+  it('logs structured direct dispatch metadata instead of legacy sidecar messaging', async () => {
+    const { performRequest } = setupSpies();
+    performRequest.mockResolvedValueOnce({
+      id: 'wamid-log',
+      status: 'sent',
+      timestamp: '2024-02-02T02:02:02.000Z',
+    } as Record<string, unknown>);
+
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+
+    const transport = new HttpWhatsAppTransport();
+    await transport.sendMessage(
+      'instance-log',
+      {
+        to: '+5511999912121',
+        content: 'Mensagens estruturadas',
+      },
+      { idempotencyKey: 'log-key' }
+    );
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      '🧭 [WhatsApp Broker] Selecionando rota direta para envio',
+      expect.objectContaining({
+        endpoint: '/instances/instance-log/send-text',
+        hasMedia: false,
+        idempotencyKey: 'log-key',
+        instanceId: 'instance-log',
+        mediaHasCaption: false,
+        messageType: 'text',
+        previewSnippet: 'Mensagens estruturadas',
+        to: '+5511999912121',
+      })
+    );
+    expect(infoSpy).toHaveBeenCalledWith(
+      '🎉 [WhatsApp Broker] Resposta recebida da rota direta',
+      expect.objectContaining({
+        endpoint: '/instances/instance-log/send-text',
+        externalId: 'wamid-log',
+        instanceId: 'instance-log',
+        messageType: 'text',
+        status: 'sent',
+        to: '+5511999912121',
+      })
+    );
   });
 
   it('dispatches media payloads via the send-media endpoint nesting the descriptor', async () => {

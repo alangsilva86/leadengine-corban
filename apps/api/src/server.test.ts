@@ -16,6 +16,7 @@ vi.mock('./routes/lead-engine', () => ({ leadEngineRouter: express.Router() }));
 vi.mock('./middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
+  AUTH_MVP_BYPASS_TENANT_ID: 'demo-tenant',
 }));
 vi.mock('./middleware/error-handler', () => ({
   errorHandler: (_err: unknown, _req: unknown, _res: unknown, next: () => void) => next(),
@@ -27,6 +28,7 @@ vi.mock('./middleware/error-handler', () => ({
 }));
 
 import { app } from './server';
+import { refreshWhatsAppEnv } from './config/whatsapp';
 
 const startServer = () =>
   new Promise<{ server: Server; url: string }>((resolve) => {
@@ -81,6 +83,31 @@ describe('root availability handlers', () => {
       expect(response.headers.get('content-type')).toContain('application/json');
     } finally {
       await stopServer(server);
+    }
+  });
+
+  it('exposes HTTP transport mode via the health endpoint even when legacy flags are set', async () => {
+    process.env.WHATSAPP_MODE = 'sidecar';
+    refreshWhatsAppEnv();
+
+    const { server, url } = await startServer();
+
+    try {
+      const response = await fetch(`${url}/healthz`, { method: 'GET' });
+      expect(response.status).toBe(200);
+
+      const payload = await response.json();
+      expect(payload.whatsapp.mode).toBe('http');
+      expect(payload.whatsapp.transportMode).toBe('http');
+      expect(payload.whatsapp.runtime).toMatchObject({
+        mode: 'http',
+        transport: 'http',
+        disabled: false,
+      });
+    } finally {
+      await stopServer(server);
+      delete process.env.WHATSAPP_MODE;
+      refreshWhatsAppEnv();
     }
   });
 });
