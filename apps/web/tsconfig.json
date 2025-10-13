@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "types": ["node"],
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": [
+    "src",
+    "scripts",
+    "vite.config.ts",
+    "vite.config.js",
+    "vite.build.ci.mjs",
+    "server.mjs",
+    "tailwind.config.ts",
+    "tailwind.tokens.js"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

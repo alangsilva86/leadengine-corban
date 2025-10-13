@@ -12,7 +12,10 @@ import { logger } from '../config/logger';
 import { getCampaignMetrics } from '@ticketz/storage';
 import { getUseRealDataFlag } from '../config/feature-flags';
 import type { CampaignDTO, CampaignWarning } from './campaigns.types';
-import { fetchLeadEngineCampaigns } from '../services/campaigns-upstream';
+import {
+  fetchLeadEngineCampaigns,
+  type LeadEngineCampaignFilters,
+} from '../services/campaigns-upstream';
 import { mapPrismaError } from '../utils/prisma-error';
 
 type CampaignMetadata = Record<string, unknown> | null | undefined;
@@ -245,11 +248,19 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
   const agreementId = normalizeQueryValue(query.agreementId);
   const instanceId = normalizeQueryValue(query.instanceId);
   const statuses = extractStatuses(query.status);
-  return {
-    agreementId,
-    instanceId,
+  const filters: CampaignQueryFilters = {
     statuses: statuses.length > 0 ? statuses : [DEFAULT_STATUS],
-  } satisfies CampaignQueryFilters;
+  };
+
+  if (agreementId) {
+    filters.agreementId = agreementId;
+  }
+
+  if (instanceId) {
+    filters.instanceId = instanceId;
+  }
+
+  return filters;
 };
 
 export const resolveTenantId = (_req: Request): string | undefined => DEFAULT_TENANT_ID;
@@ -509,9 +520,10 @@ router.post(
             { brokerId: candidate },
           ]);
 
-          instance = await prisma.whatsAppInstance.findFirst({
-            where: orConditions.length > 0 ? { OR: orConditions } : undefined,
-          });
+          const findArgs =
+            orConditions.length > 0 ? ({ where: { OR: orConditions } } as const) : ({} as const);
+
+          instance = await prisma.whatsAppInstance.findFirst(findArgs);
 
           if (!instance) {
             throw creationError;
@@ -752,7 +764,10 @@ router.post(
             ...logContext,
             campaignId: conflictingCampaign.id,
           };
-          const { data, warnings } = buildCampaignResponseSafely(conflictingCampaign as CampaignWithInstance, responseLogContext);
+          const { data, warnings } = await buildCampaignResponseSafely(
+            conflictingCampaign as CampaignWithInstance,
+            responseLogContext
+          );
 
           const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
             success: true,
@@ -958,12 +973,17 @@ router.get(
         });
 
         try {
-          const items = await fetchLeadEngineCampaigns({
+          const upstreamFilters: LeadEngineCampaignFilters = {
             tenantId,
-            agreementId,
             status: statuses.join(','),
             requestId,
-          });
+          };
+
+          if (agreementId) {
+            upstreamFilters.agreementId = agreementId;
+          }
+
+          const items = await fetchLeadEngineCampaigns(upstreamFilters);
 
           logger.info(`${LOG_CONTEXT} upstream responded successfully`, {
             ...logContext,
@@ -1012,13 +1032,21 @@ router.get(
         }
       }
 
-      const { items, warnings } = await loadCampaignsFromStore({
+      const storeFilters: Parameters<typeof loadCampaignsFromStore>[0] = {
         tenantId,
-        agreementId,
-        instanceId,
         statuses,
         requestId,
-      });
+      };
+
+      if (agreementId) {
+        storeFilters.agreementId = agreementId;
+      }
+
+      if (instanceId) {
+        storeFilters.instanceId = instanceId;
+      }
+
+      const { items, warnings } = await loadCampaignsFromStore(storeFilters);
 
       const payload: {
         success: true;
@@ -1101,7 +1129,19 @@ router.patch(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const campaignId = req.params.id;
+    const campaignIdRaw = req.params.id;
+    const campaignId = typeof campaignIdRaw === 'string' ? campaignIdRaw.trim() : '';
+
+    if (!campaignId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'CAMPAIGN_ID_REQUIRED',
+          message: 'Campaign id is required.',
+        },
+      });
+      return;
+    }
     const rawStatus = normalizeStatus(req.body?.status);
     const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
     const requestedInstanceId =
