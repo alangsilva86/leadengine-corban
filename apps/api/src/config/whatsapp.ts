@@ -30,11 +30,6 @@ export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().
 
 export const getRawWhatsAppMode = (): string => getWhatsAppConfig().runtime.rawMode;
 
-export const getSidecarSessionsPath = (): string => getWhatsAppConfig().runtime.sidecarSessionsPath;
-
-export const hasCustomSidecarSessionsPath = (): boolean =>
-  getWhatsAppConfig().runtime.hasCustomSidecarSessionsPath;
-
 export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
 
 export type { WhatsAppTransportMode } from './whatsapp-config';

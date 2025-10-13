@@ -55,6 +55,11 @@ nano .env
 - `FRONTEND_URL`: Seu domínio real
 - `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula
 - `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
+- `WHATSAPP_MODE`: Defina como `http` para habilitar a integração com o broker externo, juntamente com `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_API_KEY`. Valores legados como `sidecar` apenas registram um aviso nos logs e passam a operar em modo HTTP automaticamente.
+
+### 1.1. Nota sobre o sidecar legado
+
+O runtime sidecar Baileys foi removido desta base. Não é mais necessário preparar volumes ou diretórios dedicados a sessões — qualquer configuração existente com `WHATSAPP_MODE=sidecar` continuará subindo, mas um aviso será emitido e o modo HTTP será utilizado.
 - Integração WhatsApp: configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` (se aplicável) e mantenha `WHATSAPP_MODE` ausente para utilizar o transporte HTTP padrão.
 
 ### 1.1. Session store

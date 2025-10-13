@@ -27,6 +27,7 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔄 Interface de transporte WhatsApp unificada
 
+- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (`http`, `dryrun`, `disabled`; valores legados `sidecar` caem em `http`).
 - `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()`, que permanece em `http` para todo o runtime.
 - `apps/api/src/config/whatsapp.ts` distribui getters (`getBrokerBaseUrl`, `getWebhookApiKey`, `shouldBypassTenantGuards` etc.), removendo leituras diretas de `process.env`.
 - `/healthz` revela o estado do transporte WhatsApp via `apps/api/src/health.ts`, expondo `whatsapp.runtime` (com `mode`, `transport`, `status`, `disabled`) para auditar a disponibilidade do broker HTTP.
@@ -41,6 +42,12 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 - Rotas de integrações invocam `respondWhatsAppNotConfigured` (`apps/api/src/routes/integrations.ts`), retornando `503 WHATSAPP_NOT_CONFIGURED` quando o transporte HTTP não está apto — o circuito permanece fechado até que as variáveis do broker sejam restauradas.
 - As métricas (`apps/api/src/lib/metrics.ts`) cobrem webhook (`whatsapp_webhook_events_total`), HTTP client (`whatsapp_http_requests_total`), outbound e eventos Socket.IO.
+- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO no modo `http` (o antigo caminho `sidecar` agora reutiliza o mesmo fluxo).
+
+## 🗄️ Persistência de sessão e deploy híbrido
+
+- O runtime sidecar foi aposentado — os manifests `docker-compose*.yml` seguem válidos, mas o volume `whatsapp_sessions_data` deixou de ser pré-requisito para subir a API.
+- O guia `DEPLOY_GUIDE.md` orienta a manter Postgres/Redis gerenciados e reaproveitar o volume entre releases.
 - `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO garantindo a integridade do pipeline HTTP.
 
 ## 🗄️ Persistência de sessão e deploy híbrido
@@ -50,4 +57,5 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔁 Operação contínua
 
+Alterar `WHATSAPP_MODE` para `http`, `dryrun` ou `disabled` e reiniciar o serviço é suficiente. Valores `sidecar` herdados apenas disparam aviso nos logs e operam em `http`; `/healthz` confirma o modo ativo antes/depois do rollback.
 Com apenas o transporte HTTP habilitado, não há fluxos de rollback entre modos. A operação se concentra em manter as credenciais e o endpoint do broker disponíveis; `/healthz` continua sendo a referência para confirmar o status durante deploys e incidentes.
