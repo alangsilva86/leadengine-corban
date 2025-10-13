@@ -132,17 +132,30 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
     }
 
     await ingestInboundWhatsAppMessage({
-      id: normalized.id,
+      origin: 'broker',
+      transport: 'whatsapp',
       instanceId: normalized.instanceId,
-      direction,
       chatId,
-      externalId,
-      timestamp: payload.timestamp ?? null,
-      contact: payload.contact ? { ...(payload.contact as Record<string, unknown>) } : {},
-      message: messageRecord,
-      metadata,
       tenantId: effectiveTenantId,
-      sessionId: normalized.sessionId ?? event.sessionId ?? null,
+      message: {
+        kind: 'message',
+        id: normalized.id,
+        externalId,
+        brokerMessageId: normalized.id,
+        timestamp: payload.timestamp ?? null,
+        direction: direction === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND',
+        contact: payload.contact ? { ...(payload.contact as Record<string, unknown>) } : {},
+        payload: messageRecord,
+        metadata: {
+          ...metadata,
+          sessionId: normalized.sessionId ?? event.sessionId ?? null,
+        },
+      },
+      raw: {
+        queueCursor: event.cursor ?? null,
+        brokerEventId: event.id,
+        brokerType: event.type,
+      },
     });
   } catch (error) {
     logger.error('Failed to process WhatsApp message event', {

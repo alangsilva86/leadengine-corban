@@ -336,6 +336,23 @@ export class WhatsAppEventPoller {
     let cursor = initialCursor ?? null;
 
     while (!this.stopRequested) {
+      const pollerDisabled = isWhatsAppEventPollerDisabled();
+      const mode = getWhatsAppMode();
+
+      if (pollerDisabled || mode !== 'http') {
+        logger.info('WhatsApp broker event poller shutting down due to runtime configuration', {
+          pollerDisabled,
+          mode,
+        });
+        this.metrics = {
+          ...this.metrics,
+          running: false,
+          backoffMs: 0,
+        };
+        this.stopRequested = true;
+        break;
+      }
+
       try {
         this.metrics.pendingQueue = getWhatsAppEventQueueStats().pending;
         const fetchStartedAt = new Date();
@@ -388,6 +405,17 @@ export class WhatsAppEventPoller {
         await this.handleIterationError(error);
       }
     }
+
+    this.started = false;
+    this.stopRequested = false;
+    this.cancelWait();
+
+    this.metrics = {
+      ...this.metrics,
+      running: false,
+      pendingQueue: getWhatsAppEventQueueStats().pending,
+      backoffMs: 0,
+    };
   }
 
   async start(): Promise<void> {

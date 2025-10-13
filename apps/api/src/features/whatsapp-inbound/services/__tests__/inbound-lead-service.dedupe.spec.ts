@@ -38,7 +38,7 @@ vi.mock('../utils/normalize', () => ({
   normalizeInboundMessage: vi.fn(),
 }));
 
-let shouldSkipByDedupe: (key: string, now: number) => boolean;
+let shouldSkipByDedupe: (key: string, now: number) => Promise<boolean>;
 let testing: typeof import('../inbound-lead-service')['__testing'];
 
 beforeAll(async () => {
@@ -50,27 +50,46 @@ beforeAll(async () => {
 describe('shouldSkipByDedupe', () => {
   beforeEach(() => {
     testing.dedupeCache.clear();
+    testing.configureInboundDedupeBackend(null);
   });
 
-  it('removes expired entries from the cache', () => {
+  it('removes expired entries from the cache', async () => {
     const key = 'tenant:lead';
     const now = Date.now();
 
-    expect(shouldSkipByDedupe(key, now)).toBe(false);
+    await expect(shouldSkipByDedupe(key, now)).resolves.toBe(false);
 
-    const outsideWindow = now + testing.DEDUPE_WINDOW_MS;
-    expect(shouldSkipByDedupe(key, outsideWindow)).toBe(false);
-    expect(testing.dedupeCache.get(key)).toBe(outsideWindow);
+    const outsideWindow = now + testing.DEFAULT_DEDUPE_TTL_MS;
+    await expect(shouldSkipByDedupe(key, outsideWindow)).resolves.toBe(false);
+    expect(testing.dedupeCache.get(key)?.expiresAt).toBe(outsideWindow + testing.DEFAULT_DEDUPE_TTL_MS);
   });
 
-  it('keeps entries inside the dedupe window', () => {
+  it('keeps entries inside the dedupe window', async () => {
     const key = 'tenant:lead';
     const now = Date.now();
 
-    expect(shouldSkipByDedupe(key, now)).toBe(false);
+    await expect(shouldSkipByDedupe(key, now)).resolves.toBe(false);
 
-    const insideWindow = now + testing.DEDUPE_WINDOW_MS - 1;
-    expect(shouldSkipByDedupe(key, insideWindow)).toBe(true);
-    expect(testing.dedupeCache.get(key)).toBe(now);
+    const insideWindow = now + testing.DEFAULT_DEDUPE_TTL_MS - 1;
+    await expect(shouldSkipByDedupe(key, insideWindow)).resolves.toBe(true);
+    expect(testing.dedupeCache.get(key)?.expiresAt).toBe(now + testing.DEFAULT_DEDUPE_TTL_MS);
+  });
+
+  it('delegates to external backend when configured', async () => {
+    const key = 'tenant:lead';
+    const now = Date.now();
+    const hasMock = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const setMock = vi.fn().mockResolvedValue(undefined);
+
+    testing.configureInboundDedupeBackend({
+      has: hasMock,
+      set: setMock,
+    });
+
+    await expect(shouldSkipByDedupe(key, now)).resolves.toBe(false);
+    expect(hasMock).toHaveBeenCalledWith(key);
+    expect(setMock).toHaveBeenCalledWith(key, testing.DEFAULT_DEDUPE_TTL_MS);
+
+    await expect(shouldSkipByDedupe(key, now + 1)).resolves.toBe(true);
   });
 });
