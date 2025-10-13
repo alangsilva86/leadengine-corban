@@ -31,7 +31,6 @@ type WhatsAppFeatureFlags = {
 type WhatsAppRuntimeConfig = {
   mode: WhatsAppTransportMode;
   rawMode: string;
-  eventPollerDisabled: boolean;
   correlationSeed: string;
   sidecarSessionsPath: string;
   hasCustomSidecarSessionsPath: boolean;
@@ -185,7 +184,6 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     runtime: {
       mode: mode.mode,
       rawMode: mode.raw,
-      eventPollerDisabled: normalizeBoolean(process.env.WHATSAPP_EVENT_POLLER_DISABLED, false),
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
       sidecarSessionsPath: sidecarSessions.path,
       hasCustomSidecarSessionsPath: sidecarSessions.isCustom,

@@ -481,20 +481,6 @@ class WhatsAppBrokerClient {
     return performWhatsAppBrokerRequest<T>(path, init, options);
   }
 
-  async fetchEvents(_options: { cursor?: string | null; limit?: number } = {}): Promise<unknown> {
-    // The refreshed broker API delivers inbound events exclusivamente via webhooks.
-    // Para manter compatibilidade com o poller, consultamos apenas /health para
-    // coletar métricas e retornamos um envelope vazio de eventos.
-    const healthSnapshot = await this.request<Record<string, unknown>>('/health', {
-      method: 'GET',
-    });
-
-    return {
-      events: [],
-      health: healthSnapshot ?? {},
-    };
-  }
-
   async connectSession(
     sessionId: string,
     payload: { instanceId?: string; code?: string; phoneNumber?: string } = {}

@@ -1,6 +1,5 @@
-import { getRawWhatsAppMode, getWhatsAppMode, isWhatsAppEventPollerDisabled } from './config/whatsapp';
-import { getWhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
-import type { WhatsAppEventPollerMetrics } from './features/whatsapp-inbound/workers/event-poller';
+import { getRawWhatsAppMode, getWhatsAppMode } from './config/whatsapp';
+import type { WhatsAppTransportMode } from './config/whatsapp';
 
 export type HealthPayload = {
   status: 'ok' | 'degraded';
@@ -8,35 +7,14 @@ export type HealthPayload = {
   uptime: number;
   environment: string;
   storage: string;
-  whatsappEventPoller: WhatsAppEventPollerMetrics & {
-    status: 'running' | 'stopped' | 'disabled' | 'inactive' | 'error';
+  whatsapp: {
     mode: string;
-    disabled: boolean;
+    transportMode: WhatsAppTransportMode;
   };
 };
 
-const derivePollerStatus = (
-  metrics: WhatsAppEventPollerMetrics,
-  { disabled, mode }: { disabled: boolean; mode: string }
-): 'running' | 'stopped' | 'disabled' | 'inactive' | 'error' => {
-  if (disabled) {
-    return 'disabled';
-  }
-
-  if (mode !== 'http') {
-    return 'inactive';
-  }
-
-  if (metrics.running) {
-    return 'running';
-  }
-
-  if (metrics.consecutiveFailures > 0) {
-    return 'error';
-  }
-
-  return 'stopped';
-};
+const deriveOverallStatus = (mode: WhatsAppTransportMode): HealthPayload['status'] =>
+  mode === 'disabled' ? 'degraded' : 'ok';
 
 const deriveStorageBackend = (): string => {
   const storageFlag = (process.env.STORAGE_BACKEND || '').trim().toLowerCase();
@@ -59,13 +37,9 @@ const deriveStorageBackend = (): string => {
 };
 
 export const buildHealthPayload = ({ environment }: { environment: string }): HealthPayload => {
-  const metrics = getWhatsAppEventPollerMetrics();
-  const disabled = isWhatsAppEventPollerDisabled();
   const mode = getWhatsAppMode();
   const rawMode = getRawWhatsAppMode();
-  const pollerStatus = derivePollerStatus(metrics, { disabled, mode });
-
-  const overallStatus: HealthPayload['status'] = pollerStatus === 'error' ? 'degraded' : 'ok';
+  const overallStatus = deriveOverallStatus(mode);
 
   return {
     status: overallStatus,
@@ -73,16 +47,14 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     uptime: process.uptime(),
     environment,
     storage: deriveStorageBackend(),
-    whatsappEventPoller: {
-      ...metrics,
-      status: pollerStatus,
+    whatsapp: {
       mode: rawMode || mode,
-      disabled,
+      transportMode: mode,
     },
   };
 };
 
 export const __private = {
-  derivePollerStatus,
+  deriveOverallStatus,
   deriveStorageBackend,
 };
