@@ -450,6 +450,24 @@ const attemptAutoProvisionWhatsAppInstance = async ({
   const sessionId = resolveSessionIdFromMetadata(metadata);
   const displayName = resolveInstanceDisplayNameFromMetadata(metadata, tenant.name, instanceId);
 
+  const brokerLookupWhere: Prisma.WhatsAppInstanceWhereInput = { brokerId };
+
+  if (tenant.id) {
+    brokerLookupWhere.tenantId = tenant.id;
+  }
+
+  const existingByBroker = await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere });
+
+  if (existingByBroker) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente localizada por broker', {
+      instanceId,
+      tenantId: existingByBroker.tenantId,
+      brokerId,
+      requestId,
+    });
+    return existingByBroker;
+  }
+
   try {
     const created = await prisma.whatsAppInstance.create({
       data: {
@@ -480,7 +498,18 @@ const attemptAutoProvisionWhatsAppInstance = async ({
     return created;
   } catch (error) {
     if (isUniqueViolation(error)) {
-      const existing = await prisma.whatsAppInstance.findFirst({ where: { brokerId } });
+      const existingById = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+      if (existingById) {
+        logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente após colisão de id', {
+          instanceId,
+          tenantId: existingById.tenantId,
+          brokerId,
+          requestId,
+        });
+        return existingById;
+      }
+
+      const existing = await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere });
       if (existing) {
         logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente após colisão de broker', {
           instanceId,
@@ -1560,6 +1589,7 @@ const processStandardInboundEvent = async (
   const document = sanitizeDocument(contact.document, normalizedPhone);
   const metadataRecord = toRecord(event.metadata);
   const requestId = readString(metadataRecord['requestId']);
+  const resolvedBrokerId = resolveBrokerIdFromMetadata(metadataRecord);
   const metadataContact = toRecord(metadataRecord.contact);
   const metadataPushName = readString(metadataContact['pushName']) ?? readString(metadataRecord['pushName']);
   const resolvedAvatar = [
@@ -1573,6 +1603,11 @@ const processStandardInboundEvent = async (
     contact.pushName,
     metadataPushName
   );
+
+  const normalizedEventTenantId =
+    typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null;
+  const metadataTenantId = readString(metadataRecord['tenantId']);
+  const tenantIdForBrokerLookup = normalizedEventTenantId ?? metadataTenantId ?? null;
 
   metadataRecord.direction = direction;
   if (chatId && !metadataRecord.chatId) {
@@ -1609,7 +1644,21 @@ const processStandardInboundEvent = async (
     document: maskDocument(document),
   });
 
-  let instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+  let instance: WhatsAppInstanceRecord | null = null;
+
+  if (resolvedBrokerId) {
+    const brokerLookupWhere: Prisma.WhatsAppInstanceWhereInput = { brokerId: resolvedBrokerId };
+
+    if (tenantIdForBrokerLookup) {
+      brokerLookupWhere.tenantId = tenantIdForBrokerLookup;
+    }
+
+    instance = await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere });
+  }
+
+  if (!instance) {
+    instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
+  }
 
   if (!instance) {
     instance = await attemptAutoProvisionWhatsAppInstance({

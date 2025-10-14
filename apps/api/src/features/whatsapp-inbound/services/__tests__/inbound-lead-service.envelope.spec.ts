@@ -12,7 +12,7 @@ const isWhatsappPassthroughModeEnabledMock = vi.fn();
 const isWhatsappInboundSimpleModeEnabledMock = vi.fn();
 
 const prismaMock = {
-  whatsAppInstance: { findUnique: vi.fn() },
+  whatsAppInstance: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
   tenant: { findFirst: vi.fn() },
   campaign: { findMany: vi.fn(), upsert: vi.fn() },
   queue: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn() },
@@ -269,6 +269,7 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     beforeEach(() => {
       isWhatsappPassthroughModeEnabledMock.mockReturnValue(false);
 
+      prismaMock.whatsAppInstance.findFirst.mockResolvedValue(null);
       prismaMock.whatsAppInstance.findUnique.mockResolvedValue({
         id: 'instance-1',
         tenantId: 'tenant-1',
@@ -351,6 +352,26 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
         tenantId: 'tenant-1',
         instanceId: 'instance-1',
       });
+    });
+
+    it('reuses instance resolved via broker identifier matching the envelope instance id', async () => {
+      const envelope = buildEnvelope();
+      envelope.message.metadata = {
+        ...(envelope.message.metadata as Record<string, unknown>),
+        brokerId: envelope.instanceId,
+      };
+
+      const instanceRecord = { id: 'instance-1', tenantId: 'tenant-1' };
+      prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(instanceRecord);
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
+
+      expect(processed).toBe(true);
+      expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledWith({
+        where: { brokerId: 'instance-1', tenantId: 'tenant-1' },
+      });
+      expect(prismaMock.whatsAppInstance.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
     });
   });
 });
