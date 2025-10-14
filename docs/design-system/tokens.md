@@ -5,7 +5,7 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 ## Como aplicar tokens semânticos no Tailwind
 
 1. **Localize o propósito visual.** Use as tabelas abaixo para descobrir se o elemento representa conteúdo, superfície, borda, feedback etc. Prefira sempre o token cuja descrição melhor traduz a intenção de design.
-2. **Mapeie para uma utility semântica.** O arquivo `apps/web/tailwind.config.js` gera classes como `textForeground`, `bgSurface`, `borderSurfaceGlassBorder` e `bgSurfaceOverlayQuiet` diretamente a partir dos tokens. Combine-as com utilidades padrão do Tailwind (`rounded-lg`, `flex`, `gap-4`...) para montar o layout.
+2. **Mapeie para uma utility semântica.** O arquivo `apps/web/tailwind.config.ts` gera classes como `textForeground`, `bgSurface`, `borderSurfaceGlassBorder` e `bgSurfaceOverlayQuiet` diretamente a partir dos tokens. Combine-as com utilidades padrão do Tailwind (`rounded-lg`, `flex`, `gap-4`...) para montar o layout.
 3. **Falhou ao encontrar o token certo?** Consulte `docs/design-system/color-inventory.md` para exemplos visuais e abra uma issue em `#design-system` antes de recorrer a valores arbitrários.
 4. **Valide com o lint.** `pnpm lint` executa a regra `no-forbidden-tailwind-colors`, que bloqueia classes `text-slate-*`, `bg-white/[...]` e `border-white/...`. Ajuste a implementação até o lint passar sem precisar de exceções.
 
