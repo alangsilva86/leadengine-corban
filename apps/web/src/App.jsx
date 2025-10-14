@@ -144,12 +144,12 @@ function App() {
   }, [me]);
 
   const computeNextSetupPage = () => {
-    if (!selectedAgreement) {
-      return 'agreements';
-    }
-
     if (whatsappStatus !== 'connected' || !activeCampaign) {
       return 'whatsapp';
+    }
+
+    if (!selectedAgreement) {
+      return 'agreements';
     }
 
     return 'inbox';
