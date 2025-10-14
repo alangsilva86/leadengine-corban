@@ -364,6 +364,7 @@ model WhatsAppInstance {
 
   @@index([tenantId])
   @@unique([tenantId, id])
+  @@unique([tenantId, brokerId])
   @@unique([brokerId])
   @@map("whatsapp_instances")
 }

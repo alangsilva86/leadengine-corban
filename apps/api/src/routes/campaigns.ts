@@ -500,6 +500,14 @@ router.post(
       agreementId: resolvedAgreementId,
     };
 
+    const tenantIdentifierCandidates = Array.from(
+      new Set(
+        [explicitTenantId, requestedTenantId, resolvedAgreementId].filter(
+          (value): value is string => typeof value === 'string' && value.length > 0
+        )
+      )
+    );
+
     let instance: Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>> | null = null;
 
     for (const candidateId of identifierCandidates) {
@@ -518,20 +526,45 @@ router.post(
     }
 
     if (!instance) {
-      for (const candidateBrokerId of identifierCandidates) {
-        instance = await prisma.whatsAppInstance.findUnique({
-          where: { brokerId: candidateBrokerId },
-        });
+      brokerLookup: for (const candidateBrokerId of identifierCandidates) {
+        if (tenantIdentifierCandidates.length > 0) {
+          for (const tenantCandidate of tenantIdentifierCandidates) {
+            instance = await prisma.whatsAppInstance.findUnique({
+              where: {
+                tenantId_brokerId: {
+                  tenantId: tenantCandidate,
+                  brokerId: candidateBrokerId,
+                },
+              },
+            });
 
-        if (instance) {
-          logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
-            ...baseLogContext,
-            requestedInstanceId: resolvedInstanceId,
-            matchedBrokerId: candidateBrokerId,
-            resolvedInstanceId: instance.id,
-            resolvedBrokerId: instance.brokerId,
+            if (instance) {
+              logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
+                ...baseLogContext,
+                requestedInstanceId: resolvedInstanceId,
+                matchedBrokerId: candidateBrokerId,
+                matchedTenantId: tenantCandidate,
+                resolvedInstanceId: instance.id,
+                resolvedBrokerId: instance.brokerId,
+              });
+              break brokerLookup;
+            }
+          }
+        } else {
+          instance = await prisma.whatsAppInstance.findUnique({
+            where: { brokerId: candidateBrokerId },
           });
-          break;
+
+          if (instance) {
+            logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
+              ...baseLogContext,
+              requestedInstanceId: resolvedInstanceId,
+              matchedBrokerId: candidateBrokerId,
+              resolvedInstanceId: instance.id,
+              resolvedBrokerId: instance.brokerId,
+            });
+            break;
+          }
         }
       }
     }
@@ -569,10 +602,19 @@ router.post(
             identifierCandidates,
           });
 
-          const orConditions = identifierCandidates.flatMap((candidate) => [
-            { id: candidate },
-            { brokerId: candidate },
-          ]);
+          const orConditions = identifierCandidates.flatMap((candidate) => {
+            const conditions = [
+              { id: candidate },
+              ...(tenantIdentifierCandidates.length > 0
+                ? tenantIdentifierCandidates.map((tenantCandidate) => ({
+                    AND: [{ tenantId: tenantCandidate }, { brokerId: candidate }],
+                  }))
+                : []),
+              { brokerId: candidate },
+            ];
+
+            return conditions;
+          });
 
           const findArgs =
             orConditions.length > 0 ? ({ where: { OR: orConditions } } as const) : ({} as const);
