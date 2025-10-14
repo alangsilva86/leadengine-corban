@@ -100,7 +100,12 @@ const buildProxyTarget = (url) => {
   if (!proxyBaseUrl) return null
 
   try {
-    return new URL(url, proxyBaseUrl).toString()
+    const base = new URL(proxyBaseUrl.toString())
+    base.pathname = '/'
+    base.search = ''
+    base.hash = ''
+
+    return new URL(url, base).toString()
   } catch (error) {
     console.warn('⚠️  Failed to resolve proxy URL', { url, reason: error?.message })
     return null

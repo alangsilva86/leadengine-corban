@@ -107,16 +107,76 @@ const baseHeaders = () => {
   return headers;
 };
 
-const buildUrl = (path) => {
+const isAbsoluteUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value);
+
+export const buildUrl = (path) => {
   if (!path) {
     return API_BASE_URL;
   }
 
-  if (API_BASE_URL) {
-    return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  if (isAbsoluteUrl(path)) {
+    return path;
   }
 
-  return path;
+  const rawPath = String(path);
+  const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+
+  if (!API_BASE_URL) {
+    return normalizedPath;
+  }
+
+  const attemptBuild = (base, { stripOrigin = false, useNormalized = false } = {}) => {
+    if (!base) {
+      return null;
+    }
+
+    try {
+      const candidateBase = base instanceof URL ? new URL(base.toString()) : new URL(base);
+      if (candidateBase.pathname && !candidateBase.pathname.endsWith('/')) {
+        candidateBase.pathname = `${candidateBase.pathname}/`;
+      }
+
+      const target = new URL(useNormalized ? normalizedPath : rawPath, candidateBase);
+      if (stripOrigin) {
+        return `${target.pathname}${target.search}${target.hash}`;
+      }
+      return target.toString();
+    } catch {
+      return null;
+    }
+  };
+
+  if (isAbsoluteUrl(API_BASE_URL)) {
+    const absoluteResult = attemptBuild(new URL(API_BASE_URL));
+    if (absoluteResult) {
+      return absoluteResult;
+    }
+  } else {
+    const windowResult =
+      typeof window !== 'undefined' && window?.location?.origin
+        ? attemptBuild(new URL(API_BASE_URL, window.location.origin))
+        : null;
+
+    if (windowResult) {
+      return windowResult;
+    }
+
+    const relativeBase = new URL(API_BASE_URL, 'http://localhost');
+    const relativeResult =
+      attemptBuild(relativeBase, { stripOrigin: true }) ??
+      attemptBuild(relativeBase, { stripOrigin: true, useNormalized: true });
+
+    if (relativeResult) {
+      return relativeResult;
+    }
+  }
+
+  const trimmedBase = API_BASE_URL.replace(/\/$/, '');
+  if (normalizedPath.startsWith(trimmedBase)) {
+    return normalizedPath;
+  }
+
+  return `${trimmedBase}${normalizedPath}`;
 };
 
 const handleResponse = async (response) => {
