@@ -1299,7 +1299,7 @@ const WhatsAppConnect = ({
   const hasQr = Boolean(qrImageSrc);
   const canSynchronize = sessionActive && !authDeferred;
   const isAuthenticated = canSynchronize && Boolean(authTokenState);
-  const canContinue = localStatus === 'connected' && instance && hasAgreement;
+  const canContinue = localStatus === 'connected' && Boolean(instance);
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || requestingPairingCode;
@@ -1311,8 +1311,8 @@ const WhatsAppConnect = ({
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
   const onboardingDescription = hasAgreement
-    ? 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Após a conexão, o Lead Engine entrega automaticamente os leads do convênio selecionado.'
-    : 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Você poderá vincular um convênio e campanhas em seguida.';
+    ? 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Após a conexão, o Lead Engine entrega automaticamente os leads do convênio selecionado. Campanhas são opcionais e podem ser configuradas quando precisar de roteamento avançado.'
+    : 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Você pode vincular um convênio quando for conveniente e criar campanhas opcionais apenas se precisar de roteamento avançado.';
   const nextInstanceOrdinal = instances.length + 1;
   const defaultInstanceName = hasAgreement && agreementName
     ? `${agreementName} • WhatsApp ${nextInstanceOrdinal}`
@@ -2917,11 +2917,10 @@ const WhatsAppConnect = ({
   };
 
   const handleConfirm = () => {
-    if (hasCampaign) {
-      onContinue?.();
+    if (!canContinue) {
       return;
     }
-    setCreateCampaignOpen(true);
+    onContinue?.();
   };
 
   const removalTargetLabel =
@@ -2960,7 +2959,7 @@ const WhatsAppConnect = ({
               </span>
               {!hasAgreement ? (
                 <span className="text-[0.7rem] text-muted-foreground/80">
-                  Se preferir, escolha um convênio antes de ativar campanhas.
+                  Convênios e campanhas podem ser definidos depois — avance quando estiver pronto.
                 </span>
               ) : null}
             </div>
@@ -2985,7 +2984,7 @@ const WhatsAppConnect = ({
         <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
           <p>{persistentWarning}</p>
           <p className="text-xs text-amber-200/80">
-            Assim que uma campanha ativa for vinculada à instância, os próximos leads inbound serão processados automaticamente.
+            Os leads continuam chegando normalmente; campanhas ajudam apenas no roteamento avançado e podem ser criadas quando achar necessário.
           </p>
         </NoticeBanner>
       ) : null}
@@ -2997,8 +2996,8 @@ const WhatsAppConnect = ({
               <CardTitle>Painel de instâncias</CardTitle>
               <CardDescription>
                 {hasAgreement
-                  ? `Vincule o número certo ao convênio e confirme para avançar para ${nextStage}.`
-                  : 'Conecte um número do WhatsApp e, quando estiver pronto, vincule campanhas para liberar a distribuição de leads.'}
+                  ? `Vincule o número certo ao convênio e confirme para avançar para ${nextStage}. Campanhas permanecem opcionais para quem precisa de regras avançadas.`
+                  : 'Conecte um número do WhatsApp e avance. Se quiser regras de roteamento, crie campanhas opcionais quando fizer sentido.'}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
