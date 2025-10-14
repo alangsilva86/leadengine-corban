@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import {
@@ -99,6 +99,7 @@ const BaileysLogs = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [degradedMode, setDegradedMode] = useState(false);
+  const controllerRef = useRef(null);
 
   const buildQuery = useCallback(() => {
     const params = new URLSearchParams();
@@ -115,12 +116,18 @@ const BaileysLogs = () => {
     return params.toString();
   }, [chatId, direction, limit, tenantId]);
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (signal) => {
+    if (signal?.aborted) {
+      return;
+    }
+
     setLoading(true);
 
     try {
       const query = buildQuery();
-      const response = await apiGet(`/api/debug/baileys-events?${query}`);
+      const response = await apiGet(`/api/debug/baileys-events?${query}`, {
+        signal,
+      });
       const items = Array.isArray(response?.data) ? response.data : [];
       setLogs(items);
       setError(null);
@@ -128,16 +135,39 @@ const BaileysLogs = () => {
     } catch (err) {
       setError((previous) => buildErrorState(err, previous));
       setDegradedMode(true);
+      if (!signal?.aborted) {
+        setLogs(items);
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
+      const message =
+        err?.message ?? 'Não foi possível carregar os logs do Baileys.';
+      setError(message);
       console.error('BaileysLogs: fetch failed', err);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, [buildQuery]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchLogs();
-    return () => controller.abort();
+    controllerRef.current?.abort();
+    controllerRef.current = controller;
+    void fetchLogs(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [fetchLogs]);
+
+  const handleManualRefresh = useCallback(() => {
+    const controller = new AbortController();
+    controllerRef.current?.abort();
+    controllerRef.current = controller;
+    void fetchLogs(controller.signal);
   }, [fetchLogs]);
 
   const summary = useMemo(() => {
@@ -251,7 +281,7 @@ const BaileysLogs = () => {
               </Button>
               <Button
                 type="button"
-                onClick={fetchLogs}
+                onClick={handleManualRefresh}
                 disabled={loading}
               >
                 {loading ? 'Atualizando…' : 'Atualizar'}
