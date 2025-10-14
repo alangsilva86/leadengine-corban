@@ -241,17 +241,25 @@ describe('WhatsAppConnect', () => {
 
     await waitFor(() => {
       expect(
-        capturedCalls.some((entry) =>
-          entry.includes('/api/campaigns?status=active,paused,draft,ended')
-        )
+        capturedCalls.some((entry) => {
+          const url = new URL(entry, 'https://example.test');
+          return (
+            url.pathname === '/api/campaigns' &&
+            url.searchParams.get('status') === 'active,paused,draft,ended'
+          );
+        })
       ).toBe(true);
     });
 
-    const globalCall = capturedCalls.find((entry) =>
-      entry.includes('/api/campaigns?status=active,paused,draft,ended')
-    );
+    const globalCall = capturedCalls
+      .map((entry) => new URL(entry, 'https://example.test'))
+      .find(
+        (url) =>
+          url.pathname === '/api/campaigns' &&
+          url.searchParams.get('status') === 'active,paused,draft,ended'
+      );
     expect(globalCall).toBeDefined();
-    expect(globalCall).not.toContain('agreementId=');
+    expect(globalCall?.searchParams.has('agreementId')).toBe(false);
   });
 
   it('hides disconnected broker sessions by default but allows showing all', async () => {
@@ -524,5 +532,37 @@ describe('WhatsAppConnect', () => {
     await waitFor(() => {
       expect(mockApiGet).toHaveBeenCalledWith('/api/integrations/whatsapp/instances?refresh=1');
     });
+  });
+
+  it('permite avançar quando há sessão conectada mesmo sem campanha vinculada', async () => {
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              { id: 'inst-1', name: 'Instância Principal', status: 'connected', connected: true },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    const onContinue = vi.fn();
+
+    await renderComponent({ status: 'connected', onContinue });
+
+    const continueButton = await screen.findByRole('button', { name: /ir para a inbox de leads/i });
+
+    await waitFor(() => {
+      expect(continueButton).not.toHaveAttribute('disabled');
+    });
+
+    await userEvent.setup().click(continueButton);
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
   });
 });
