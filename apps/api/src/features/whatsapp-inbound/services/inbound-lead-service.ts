@@ -373,6 +373,11 @@ const resolveBrokerIdFromMetadata = (metadata: Record<string, unknown>): string 
     readString(metadata['broker_id']),
     readNestedString(metadata, ['broker', 'id']),
     readNestedString(metadata, ['broker', 'sessionId']),
+    readString(metadata['instanceId']),
+    readString(metadata['instance_id']),
+    readNestedString(metadata, ['broker', 'instanceId']),
+    readNestedString(metadata, ['instance', 'id']),
+    readNestedString(metadata, ['instance', 'instanceId']),
     resolveSessionIdFromMetadata(metadata),
   ];
 
@@ -2144,4 +2149,3 @@ const processStandardInboundEvent = async (
     }
   }
 };
-
