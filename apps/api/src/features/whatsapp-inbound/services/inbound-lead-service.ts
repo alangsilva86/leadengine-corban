@@ -480,7 +480,16 @@ const attemptAutoProvisionWhatsAppInstance = async ({
     return created;
   } catch (error) {
     if (isUniqueViolation(error)) {
-      const existing = await prisma.whatsAppInstance.findFirst({ where: { brokerId } });
+      const existing =
+        (await prisma.whatsAppInstance.findUnique({
+          where: {
+            tenantId_brokerId: {
+              tenantId: tenant.id,
+              brokerId,
+            },
+          },
+        })) ??
+        (await prisma.whatsAppInstance.findUnique({ where: { brokerId } }));
       if (existing) {
         logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente após colisão de broker', {
           instanceId,
