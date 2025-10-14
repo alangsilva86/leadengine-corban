@@ -565,4 +565,38 @@ describe('WhatsAppConnect', () => {
 
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
+
+  it('dispara onContinue quando a instância está conectada mesmo sem token de autenticação', async () => {
+    mockGetAuthToken.mockReturnValue(null);
+
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              { id: 'inst-2', name: 'Instância Secundária', status: 'connected', connected: true },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    const onContinue = vi.fn();
+
+    await renderComponent({ status: 'connected', onContinue });
+
+    const continueButton = await screen.findByRole('button', { name: /ir para a inbox de leads/i });
+
+    await waitFor(() => {
+      expect(continueButton).not.toHaveAttribute('disabled');
+    });
+
+    await userEvent.setup().click(continueButton);
+
+    expect(onContinue).toHaveBeenCalledTimes(1);
+  });
 });

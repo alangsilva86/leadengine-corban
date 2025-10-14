@@ -315,6 +315,7 @@ describe('metadata helpers', () => {
       whatsappInstanceCreateMock.mockRejectedValueOnce({ code: 'P2002' });
       whatsappInstanceFindUniqueMock.mockResolvedValueOnce(null);
       whatsappInstanceFindFirstMock.mockResolvedValueOnce(existingRecord);
+      whatsappInstanceFindUniqueMock.mockResolvedValueOnce(existingRecord);
 
       const result = await testing.attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
@@ -330,6 +331,15 @@ describe('metadata helpers', () => {
         where: { brokerId: 'session-1', tenantId: tenantRecord.id },
       });
       expect(whatsappInstanceFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'wa-auto' } });
+      expect(whatsappInstanceFindUniqueMock).toHaveBeenCalledWith({
+        where: {
+          tenantId_brokerId: {
+            tenantId: tenantRecord.id,
+            brokerId: 'session-1',
+          },
+        },
+      });
+      expect(whatsappInstanceFindUniqueMock).toHaveBeenCalledTimes(1);
       expect(result).toBe(existingRecord);
     });
   });
