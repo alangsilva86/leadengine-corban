@@ -1302,7 +1302,7 @@ const WhatsAppConnect = ({
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || requestingPairingCode;
-  const confirmLabel = hasCampaign ? 'Ir para a inbox de leads' : 'Configurar campanha';
+  const confirmLabel = 'Ir para a inbox de leads';
   const confirmDisabled = !isAuthenticated || !canContinue || isBusy;
   const qrStatusMessage = localStatus === 'connected'
     ? 'Conexão ativa — QR oculto.'
@@ -2094,7 +2094,7 @@ const WhatsAppConnect = ({
         setCampaign(null);
       }
       const warningMessage =
-        'Nenhuma campanha cadastrada para este convênio. As mensagens inbound serão ignoradas até configurar uma campanha ativa.';
+        'Nenhuma campanha cadastrada para este convênio. Os leads continuarão chegando pela instância conectada; vincule uma campanha apenas se precisar de roteamento avançado.';
       setPersistentWarning(warningMessage);
       return;
     }
@@ -2104,10 +2104,10 @@ const WhatsAppConnect = ({
 
     if (activeForAgreement.length === 0) {
       warningMessage =
-        'Nenhuma campanha ativa para este convênio. Leads inbound serão descartados até ativar ou criar uma campanha.';
+        'Nenhuma campanha ativa para este convênio. Os leads seguirão para a inbox, mas ative ou crie uma campanha se quiser roteamento avançado.';
     } else if (instance?.id && !activeForAgreement.some((entry) => entry.instanceId === instance.id)) {
       warningMessage =
-        'A instância selecionada não possui campanhas ativas. Se uma mensagem chegar, ela será ignorada até que alguma campanha seja reativada ou criada para este número.';
+        'A instância selecionada não possui campanhas ativas. Os leads continuarão sendo entregues; vincule uma campanha para direcionar filas ou regras específicas.';
     }
 
     setPersistentWarning(warningMessage);

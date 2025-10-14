@@ -22,6 +22,7 @@ vi.mock('../lib/prisma', () => {
   };
   const campaignMock = {
     findMany: vi.fn(),
+    upsert: vi.fn(),
   };
   const queueMock = {
     findFirst: vi.fn(),
@@ -52,8 +53,30 @@ vi.mock('../lib/prisma', () => {
   };
 });
 
+const buildDefaultAllocationResult = () => ({
+  newlyAllocated: [
+    {
+      allocationId: 'alloc-1',
+      leadId: 'lead-1',
+      tenantId: 'tenant-1',
+      campaignId: 'camp-1',
+      campaignName: 'Campanha Primária',
+      agreementId: 'agreement-1',
+      instanceId: 'inst-1',
+      status: 'allocated',
+      receivedAt: new Date('2024-01-01T12:00:00.000Z').toISOString(),
+      updatedAt: new Date('2024-01-01T12:00:00.000Z').toISOString(),
+      fullName: 'Maria',
+      document: '12345678901',
+      registrations: [],
+      tags: [],
+    },
+  ],
+  summary: { total: 1, contacted: 0, won: 0, lost: 0 },
+});
+
 vi.mock('../data/lead-allocation-store', () => ({
-  addAllocations: vi.fn(async () => ({ newlyAllocated: [{ allocationId: 'alloc-1' }], summary: { total: 1, contacted: 0, won: 0, lost: 0 } })),
+  addAllocations: vi.fn(async () => buildDefaultAllocationResult()),
   listAllocations: vi.fn(),
   updateAllocation: vi.fn(),
 }));
@@ -174,6 +197,7 @@ describe('WhatsApp webhook (integration)', () => {
     (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.whatsAppInstance.upsert as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.campaign.findMany as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prisma.campaign.upsert as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.queue.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.contact.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
@@ -182,6 +206,9 @@ describe('WhatsApp webhook (integration)', () => {
     (prisma.contact.create as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
     (addAllocations as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (addAllocations as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () =>
+      buildDefaultAllocationResult()
+    );
     createTicketSpy.mockReset();
     sendMessageSpy.mockReset();
     emitToTenantSpy.mockClear();
@@ -355,6 +382,98 @@ describe('WhatsApp webhook (integration)', () => {
     expect(emittedEvents).toContain('tickets.updated');
     const updatedCall = emitToTenantSpy.mock.calls.find(([, event]) => event === 'tickets.updated');
     expect(updatedCall?.[0]).toBe('tenant-1');
+  });
+
+  it('provisions fallback campaign when no active campaign exists', async () => {
+    stubInboundSuccessMocks();
+
+    (prisma.campaign.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    (prisma.campaign.upsert as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'fallback-camp',
+      tenantId: 'tenant-1',
+      agreementId: 'whatsapp-instance-fallback:inst-1',
+      agreementName: 'WhatsApp • Inbound',
+      name: 'WhatsApp • Inbound',
+      whatsappInstanceId: 'inst-1',
+      status: 'active',
+    });
+
+    (addAllocations as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      newlyAllocated: [
+        {
+          allocationId: 'alloc-fallback',
+          leadId: 'lead-fallback',
+          tenantId: 'tenant-1',
+          campaignId: 'fallback-camp',
+          campaignName: 'WhatsApp • Inbound',
+          agreementId: 'whatsapp-instance-fallback:inst-1',
+          instanceId: 'inst-1',
+          status: 'allocated',
+          receivedAt: new Date('2024-02-02T12:00:00.000Z').toISOString(),
+          updatedAt: new Date('2024-02-02T12:00:00.000Z').toISOString(),
+          fullName: 'Fallback Contact',
+          document: '98765432100',
+          registrations: [],
+          tags: [],
+        },
+      ],
+      summary: { total: 1, contacted: 0, won: 0, lost: 0 },
+    });
+
+    const app = createApp();
+
+    const payload = {
+      instanceId: 'inst-1',
+      event: 'message',
+      direction: 'inbound',
+      timestamp: Date.now(),
+      tenantId: 'tenant-1',
+      from: {
+        phone: '+5511999997777',
+        name: 'Fallback User',
+      },
+      message: {
+        id: 'wamid.fallback',
+        type: 'text',
+        text: 'Olá',
+      },
+    };
+
+    const waitForProcessed = waitForNextProcessedEvent();
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'test-key')
+      .send(payload);
+
+    expect(response.status).toBe(200);
+
+    await waitForProcessed;
+
+    expect(prisma.campaign.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId_agreementId_whatsappInstanceId: {
+            tenantId: 'tenant-1',
+            agreementId: expect.stringContaining('whatsapp-instance-fallback:inst-1'),
+            whatsappInstanceId: 'inst-1',
+          },
+        },
+      })
+    );
+
+    expect(addAllocations).toHaveBeenCalledWith(
+      'tenant-1',
+      { campaignId: 'fallback-camp', instanceId: 'inst-1' },
+      expect.any(Array)
+    );
+
+    const allocationEvent = emitToTenantSpy.mock.calls.find(([, event]) => event === 'leadAllocations.new');
+    expect(allocationEvent?.[2]).toMatchObject({
+      instanceId: 'inst-1',
+      campaignId: 'fallback-camp',
+      allocation: expect.objectContaining({ campaignId: 'fallback-camp' }),
+    });
   });
 
   it('queues inbound message when Authorization bearer header is used', async () => {

@@ -153,6 +153,15 @@ function App() {
     }
 
     return 'inbox';
+    if (whatsappStatus === 'connected') {
+      return 'inbox';
+    }
+
+    if (!selectedAgreement) {
+      return 'agreements';
+    }
+
+    return 'whatsapp';
   };
 
   const renderPage = () => {

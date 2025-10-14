@@ -108,6 +108,7 @@ export const listAllocations = async (
   options: {
     agreementId?: string;
     campaignId?: string;
+    instanceId?: string;
     statuses?: LeadAllocationStatus[];
   } = {}
 ): Promise<LeadAllocation[]> => {
@@ -116,6 +117,7 @@ export const listAllocations = async (
       tenantId,
       agreementId: options.agreementId,
       campaignId: options.campaignId,
+      instanceId: options.instanceId,
       statuses: options.statuses,
     });
   } catch (error) {
@@ -136,12 +138,17 @@ export const listAllocations = async (
 
 export const addAllocations = async (
   tenantId: string,
-  campaignId: string,
+  target: { campaignId?: string; instanceId?: string },
   leads: BrokerLeadRecord[]
 ): Promise<AllocationResult> => {
+  if (!target.campaignId && !target.instanceId) {
+    throw new Error('campaignId or instanceId must be provided to add allocations');
+  }
+
   return allocateBrokerLeads({
     tenantId,
-    campaignId,
+    campaignId: target.campaignId,
+    instanceId: target.instanceId,
     leads: leads.map((lead) => ({
       ...lead,
     })),

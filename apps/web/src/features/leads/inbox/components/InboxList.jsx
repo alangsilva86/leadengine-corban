@@ -110,8 +110,6 @@ export const InboxList = forwardRef(
     if (allocations.length === 0) {
       return (
         <EmptyInboxState
-          agreement={selectedAgreement}
-          campaign={campaign}
           onBackToWhatsApp={onBackToWhatsApp}
           onSelectAgreement={onSelectAgreement}
         />
