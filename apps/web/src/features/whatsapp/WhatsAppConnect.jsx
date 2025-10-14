@@ -1170,6 +1170,7 @@ const WhatsAppConnect = ({
   const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
   const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
   const [pendingReassign, setPendingReassign] = useState(null);
+  const [reassignIntent, setReassignIntent] = useState('reassign');
   const [persistentWarning, setPersistentWarning] = useState(null);
   const loadInstancesRef = useRef(() => {});
   const loadCampaignsRef = useRef(() => {});
@@ -1608,16 +1609,15 @@ const WhatsAppConnect = ({
 
     const hydrateCampaign = async () => {
       try {
-        const response = await apiGet(
-          `/api/campaigns?agreementId=${selectedAgreement.id}&status=active`
-        );
+        const response = await apiGet('/api/campaigns?status=active');
         if (cancelled) return;
         const campaigns = Array.isArray(response?.items)
           ? response.items
           : Array.isArray(response?.data)
           ? response.data
           : [];
-        const existing = campaigns.length > 0 ? campaigns[0] : null;
+        const existing =
+          campaigns.find((entry) => entry.agreementId === selectedAgreement.id) ?? null;
         if (existing) {
           setCampaign(existing);
           onCampaignReady?.(existing);
@@ -1978,66 +1978,81 @@ const WhatsAppConnect = ({
   loadInstancesRef.current = loadInstances;
 
   const loadCampaigns = async () => {
-    if (!selectedAgreement?.id) {
-      setCampaigns([]);
-      if (campaign) {
-        setCampaign(null);
-      }
-      return { success: true, items: [] };
-    }
-
     setCampaignsLoading(true);
     setCampaignError(null);
 
     try {
-      const response = await apiGet(
-        `/api/campaigns?agreementId=${encodeURIComponent(selectedAgreement.id)}&status=active,paused,draft,ended`
-      );
-      const list = (Array.isArray(response?.items)
+      const params = new URLSearchParams();
+      params.set('status', 'active,paused,draft,ended');
+
+      const response = await apiGet(`/api/campaigns?${params.toString()}`);
+      const entries = Array.isArray(response?.items)
         ? response.items
         : Array.isArray(response?.data)
         ? response.data
-        : []
-      ).filter((entry) => entry?.status !== 'ended');
+        : [];
+      const list = entries.filter((entry) => entry?.status !== 'ended');
 
       setCampaigns(list);
 
-      const preferred = (() => {
-        if (campaign?.id) {
-          const match = list.find((entry) => entry.id === campaign.id);
-          if (match) {
-            return match;
+      const scopedList = (() => {
+        if (selectedAgreement?.id) {
+          const matches = list.filter((entry) => entry.agreementId === selectedAgreement.id);
+          if (matches.length > 0) {
+            return matches;
           }
         }
-
-        if (instance?.id) {
-          const activeMatch = list.find(
-            (entry) => entry.instanceId === instance.id && entry.status === 'active'
-          );
-          if (activeMatch) {
-            return activeMatch;
-          }
-
-          const instanceMatch = list.find((entry) => entry.instanceId === instance.id);
-          if (instanceMatch) {
-            return instanceMatch;
-          }
-        }
-
-        const firstActive = list.find((entry) => entry.status === 'active');
-        return firstActive ?? list[0] ?? null;
+        return list;
       })();
+      const selectionPool = scopedList.length > 0 ? scopedList : list;
+
+      const findByInstance = (collection) => {
+        if (!instance?.id || !Array.isArray(collection) || collection.length === 0) {
+          return null;
+        }
+        return (
+          collection.find(
+            (entry) => entry.instanceId === instance.id && entry.status === 'active'
+          ) ??
+          collection.find((entry) => entry.instanceId === instance.id) ??
+          null
+        );
+      };
+
+      let preferred = null;
+
+      if (campaign?.id) {
+        preferred = list.find((entry) => entry.id === campaign.id) ?? null;
+      }
+
+      if (!preferred) {
+        preferred = findByInstance(selectionPool) ?? findByInstance(list);
+      }
+
+      if (!preferred) {
+        preferred =
+          selectionPool.find((entry) => entry.status === 'active') ??
+          selectionPool[0] ??
+          list.find((entry) => entry.status === 'active') ??
+          list[0] ??
+          null;
+      }
+
+      const resolvedPreferred =
+        selectedAgreement?.id && preferred && preferred.agreementId !== selectedAgreement.id
+          ? null
+          : preferred;
 
       const previousId = campaign?.id ?? null;
-      const nextId = preferred?.id ?? null;
+      const nextId = resolvedPreferred?.id ?? null;
 
       if (nextId !== previousId) {
-        setCampaign(preferred ?? null);
-        if (preferred) {
-          onCampaignReady?.(preferred);
+        setCampaign(resolvedPreferred ?? null);
+        if (resolvedPreferred) {
+          onCampaignReady?.(resolvedPreferred);
         }
-      } else if (preferred) {
-        onCampaignReady?.(preferred);
+      } else if (resolvedPreferred) {
+        onCampaignReady?.(resolvedPreferred);
       }
 
       return { success: true, items: list };
@@ -2057,13 +2072,6 @@ const WhatsAppConnect = ({
   loadCampaignsRef.current = loadCampaigns;
 
   useEffect(() => {
-    if (!selectedAgreement?.id) {
-      setCampaigns([]);
-      setCampaign(null);
-      setPersistentWarning(null);
-      return undefined;
-    }
-
     let cancelled = false;
 
     const fetchCampaigns = async () => {
@@ -2089,8 +2097,12 @@ const WhatsAppConnect = ({
       return;
     }
 
-    if (!campaigns.length) {
-      if (campaign) {
+    const scopedCampaigns = campaigns.filter(
+      (entry) => entry.agreementId === selectedAgreement.id
+    );
+
+    if (!scopedCampaigns.length) {
+      if (campaign?.agreementId === selectedAgreement.id) {
         setCampaign(null);
       }
       const warningMessage =
@@ -2099,13 +2111,20 @@ const WhatsAppConnect = ({
       return;
     }
 
-    const activeForAgreement = campaigns.filter((entry) => entry.status === 'active');
+    if (campaign && campaign.agreementId !== selectedAgreement.id) {
+      setCampaign(null);
+    }
+
+    const activeForAgreement = scopedCampaigns.filter((entry) => entry.status === 'active');
     let warningMessage = null;
 
     if (activeForAgreement.length === 0) {
       warningMessage =
         'Nenhuma campanha ativa para este convênio. Os leads seguirão para a inbox, mas ative ou crie uma campanha se quiser roteamento avançado.';
-    } else if (instance?.id && !activeForAgreement.some((entry) => entry.instanceId === instance.id)) {
+    } else if (
+      instance?.id &&
+      !activeForAgreement.some((entry) => entry.instanceId === instance.id)
+    ) {
       warningMessage =
         'A instância selecionada não possui campanhas ativas. Os leads continuarão sendo entregues; vincule uma campanha para direcionar filas ou regras específicas.';
     }
@@ -2113,7 +2132,7 @@ const WhatsAppConnect = ({
     setPersistentWarning(warningMessage);
 
     if (instance?.id) {
-      const activeMatch = campaigns.find(
+      const activeMatch = scopedCampaigns.find(
         (entry) => entry.instanceId === instance.id && entry.status === 'active'
       );
       if (activeMatch && activeMatch.id !== (campaign?.id ?? null)) {
@@ -2122,7 +2141,9 @@ const WhatsAppConnect = ({
         return;
       }
 
-      const instanceMatch = campaigns.find((entry) => entry.instanceId === instance.id);
+      const instanceMatch = scopedCampaigns.find(
+        (entry) => entry.instanceId === instance.id
+      );
       if (instanceMatch && instanceMatch.id !== (campaign?.id ?? null)) {
         setCampaign(instanceMatch);
         onCampaignReady?.(instanceMatch);
@@ -2130,9 +2151,11 @@ const WhatsAppConnect = ({
       }
     }
 
-    if (!campaign) {
+    if (!campaign || campaign.agreementId !== selectedAgreement.id) {
       const fallback =
-        campaigns.find((entry) => entry.status === 'active') ?? campaigns[0] ?? null;
+        scopedCampaigns.find((entry) => entry.status === 'active') ??
+        scopedCampaigns[0] ??
+        null;
       if (fallback) {
         setCampaign(fallback);
         onCampaignReady?.(fallback);
@@ -2393,8 +2416,21 @@ const WhatsAppConnect = ({
     if (!target?.id) {
       return;
     }
-    if (!nextInstanceId) {
-      const error = new Error('Selecione a nova instância para prosseguir.');
+
+    const normalizedNext =
+      typeof nextInstanceId === 'string'
+        ? nextInstanceId.trim()
+        : nextInstanceId === null
+        ? null
+        : undefined;
+    const requestedInstanceId =
+      normalizedNext === undefined ? null : normalizedNext === '' ? null : normalizedNext;
+    const currentInstanceId = target.instanceId ?? null;
+
+    if ((requestedInstanceId ?? null) === (currentInstanceId ?? null)) {
+      const error = new Error(
+        'Selecione uma opção diferente para concluir ou escolha desvincular a campanha.'
+      );
       setCampaignError(error.message);
       throw error;
     }
@@ -2404,11 +2440,15 @@ const WhatsAppConnect = ({
 
     try {
       await apiPatch(`/api/campaigns/${encodeURIComponent(target.id)}`, {
-        instanceId: nextInstanceId,
+        instanceId: requestedInstanceId ?? null,
       });
 
       await loadCampaignsRef.current?.();
-      toast.success('Campanha reatribuída com sucesso.');
+      toast.success(
+        requestedInstanceId
+          ? 'Campanha reatribuída com sucesso.'
+          : 'Campanha desvinculada da instância.'
+      );
     } catch (err) {
       if (isAuthError(err)) {
         handleAuthFallback();
@@ -3328,10 +3368,18 @@ const WhatsAppConnect = ({
           onPause={(entry) => void updateCampaignStatus(entry, 'paused')}
           onActivate={(entry) => void updateCampaignStatus(entry, 'active')}
           onDelete={(entry) => void deleteCampaign(entry)}
-          onReassign={(entry) => setPendingReassign(entry)}
+          onReassign={(entry) => {
+            setReassignIntent('reassign');
+            setPendingReassign(entry);
+          }}
+          onDisconnect={(entry) => {
+            setReassignIntent('disconnect');
+            setPendingReassign(entry);
+          }}
           actionState={campaignAction}
           selectedInstanceId={instance?.id ?? null}
           canCreateCampaigns={hasAgreement}
+          selectedAgreementId={selectedAgreement?.id ?? null}
         />
         <Card className={cn(SURFACE_COLOR_UTILS.qrInstructionsPanel)}>
           <Collapsible open={qrPanelOpen} onOpenChange={setQrPanelOpen}>
@@ -3555,9 +3603,11 @@ const WhatsAppConnect = ({
         open={Boolean(pendingReassign)}
         campaign={pendingReassign}
         instances={instances}
+        intent={reassignIntent}
         onClose={(open) => {
           if (!open) {
             setPendingReassign(null);
+            setReassignIntent('reassign');
           }
         }}
         onSubmit={async ({ instanceId }) => {
@@ -3566,6 +3616,7 @@ const WhatsAppConnect = ({
           }
           await reassignCampaign(pendingReassign, instanceId);
           setPendingReassign(null);
+          setReassignIntent('reassign');
         }}
         fetchImpact={fetchCampaignImpact}
       />

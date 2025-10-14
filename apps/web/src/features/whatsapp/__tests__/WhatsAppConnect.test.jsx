@@ -210,6 +210,50 @@ describe('WhatsAppConnect', () => {
     expect(instanceLabels.length).toBeGreaterThan(0);
   });
 
+  it('fetches campaigns globalmente sem aplicar o convênio por padrão', async () => {
+    const capturedCalls = [];
+
+    mockApiGet.mockImplementation((url) => {
+      capturedCalls.push(url);
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({ data: { instances: [] } });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'camp-1',
+              agreementId: 'agreement-2',
+              agreementName: 'Convênio 2',
+              name: 'Campanha 1',
+              status: 'active',
+              instanceId: null,
+              updatedAt: new Date().toISOString(),
+              metrics: {},
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(
+        capturedCalls.some((entry) =>
+          entry.includes('/api/campaigns?status=active,paused,draft,ended')
+        )
+      ).toBe(true);
+    });
+
+    const globalCall = capturedCalls.find((entry) =>
+      entry.includes('/api/campaigns?status=active,paused,draft,ended')
+    );
+    expect(globalCall).toBeDefined();
+    expect(globalCall).not.toContain('agreementId=');
+  });
+
   it('hides disconnected broker sessions by default but allows showing all', async () => {
     mockApiGet.mockImplementation((url) => {
       if (url.startsWith('/api/integrations/whatsapp/instances')) {

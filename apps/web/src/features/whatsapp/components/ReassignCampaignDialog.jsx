@@ -32,6 +32,8 @@ const statusMeta = {
   ended: { label: 'Encerrada', variant: 'secondary' },
 };
 
+const DISCONNECT_VALUE = '__disconnect__';
+
 const ReassignCampaignDialog = ({
   open,
   campaign,
@@ -39,8 +41,9 @@ const ReassignCampaignDialog = ({
   onClose,
   onSubmit,
   fetchImpact,
+  intent = 'reassign',
 }) => {
-  const [selectedInstanceId, setSelectedInstanceId] = useState('');
+  const [selectedInstanceId, setSelectedInstanceId] = useState(DISCONNECT_VALUE);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [impactSummary, setImpactSummary] = useState(null);
@@ -60,7 +63,11 @@ const ReassignCampaignDialog = ({
       return;
     }
 
-    setSelectedInstanceId(campaign?.instanceId ?? '');
+    const baseSelection =
+      campaign?.instanceId && campaign.instanceId.trim().length > 0
+        ? campaign.instanceId
+        : DISCONNECT_VALUE;
+    setSelectedInstanceId(intent === 'disconnect' ? DISCONNECT_VALUE : baseSelection);
     setError(null);
     setSubmitting(false);
     setImpactSummary(null);
@@ -83,17 +90,18 @@ const ReassignCampaignDialog = ({
       .finally(() => {
         setImpactLoading(false);
       });
-  }, [campaign?.id, campaign?.instanceId, fetchImpact, open]);
+  }, [campaign?.id, campaign?.instanceId, fetchImpact, intent, open]);
 
-  const canSubmit =
-    Boolean(selectedInstanceId) &&
-    selectedInstanceId !== (campaign?.instanceId ?? null) &&
-    !submitting;
+  const normalizedSelection =
+    selectedInstanceId === DISCONNECT_VALUE ? null : selectedInstanceId;
+  const currentInstance = campaign?.instanceId ?? null;
+  const hasChanged = (normalizedSelection ?? null) !== (currentInstance ?? null);
+  const canSubmit = hasChanged && !submitting;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canSubmit) {
-      setError('Selecione uma instância diferente para concluir a reatribuição.');
+      setError('Selecione uma instância diferente ou escolha desvincular a campanha.');
       return;
     }
 
@@ -101,7 +109,7 @@ const ReassignCampaignDialog = ({
     setError(null);
 
     try {
-      await onSubmit?.({ instanceId: selectedInstanceId });
+      await onSubmit?.({ instanceId: normalizedSelection });
       onClose?.(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Não foi possível reatribuir a campanha.';
@@ -111,15 +119,19 @@ const ReassignCampaignDialog = ({
     }
   };
 
-  const statusInfo = statusMeta[campaign?.status] ?? { label: campaign?.status ?? '—', variant: 'secondary' };
+  const statusInfo =
+    statusMeta[campaign?.status] ?? { label: campaign?.status ?? '—', variant: 'secondary' };
+  const agreementLabel = campaign?.agreementName || campaign?.agreementId || '—';
+  const currentInstanceLabel =
+    campaign?.instanceName || campaign?.instanceId || 'Sem instância vinculada';
 
   return (
     <Dialog open={open} onOpenChange={(value) => (!submitting ? onClose?.(value) : null)}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Reatribuir campanha</DialogTitle>
+          <DialogTitle>Atualizar vínculo da campanha</DialogTitle>
           <DialogDescription>
-            Redirecione a campanha para outra instância conectada. Mensagens inbound passarão a buscar campanhas ativas na nova instância selecionada.
+            Escolha qualquer instância conectada ou deixe a campanha aguardando vínculo para pausar temporariamente o roteamento automático.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -131,14 +143,15 @@ const ReassignCampaignDialog = ({
               </div>
               <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Instância atual: {campaign?.instanceName || campaign?.instanceId || '—'}
+            <p className="mt-3 text-xs text-muted-foreground">Convênio: {agreementLabel}</p>
+            <p className="text-xs text-muted-foreground">
+              Instância atual: {currentInstanceLabel}
             </p>
           </div>
 
           <NoticeBanner tone="warning" icon={<AlertCircle className="h-4 w-4" />}>
             <p>
-              Antes de confirmar, revise o impacto abaixo. Todos os tickets e leads futuros passarão a ser associados à instância escolhida.
+              Revise o impacto antes de confirmar. Ao desvincular, novos leads ficarão aguardando vínculo; ao reatribuir, eles serão direcionados imediatamente para a instância escolhida.
             </p>
           </NoticeBanner>
 
@@ -183,12 +196,13 @@ const ReassignCampaignDialog = ({
                 setSelectedInstanceId(value);
                 setError(null);
               }}
-              disabled={submitting || sortedInstances.length === 0}
+              disabled={submitting}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione a instância" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={DISCONNECT_VALUE}>Sem instância (aguardando vínculo)</SelectItem>
                 {sortedInstances.map((entry) => (
                   <SelectItem key={entry.id} value={entry.id}>
                     {entry.name || entry.id}
@@ -197,7 +211,7 @@ const ReassignCampaignDialog = ({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              A campanha permanecerá ativa, mas buscará dados na nova instância após a confirmação.
+              Selecione uma instância conectada ou escolha &quot;Sem instância&quot; para deixar a campanha aguardando vínculo.
             </p>
           </div>
 
@@ -213,7 +227,7 @@ const ReassignCampaignDialog = ({
               Cancelar
             </Button>
             <Button type="submit" disabled={!canSubmit}>
-              {submitting ? 'Reatribuindo…' : 'Confirmar reatribuição'}
+              {submitting ? 'Salvando…' : 'Aplicar alterações'}
             </Button>
           </DialogFooter>
         </form>

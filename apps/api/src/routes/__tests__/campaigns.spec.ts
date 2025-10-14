@@ -14,7 +14,41 @@ const { getCampaignMetricsMock } = vi.hoisted(() => ({
   })),
 }));
 
+const {
+  campaignModel,
+  tenantModel,
+  whatsAppInstanceModel,
+} = vi.hoisted(() => ({
+  campaignModel: {
+    findMany: vi.fn(),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  tenantModel: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+  },
+  whatsAppInstanceModel: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+}));
+
+vi.mock('../../lib/prisma', () => ({
+  prisma: {
+    campaign: campaignModel,
+    tenant: tenantModel,
+    whatsAppInstance: whatsAppInstanceModel,
+  },
+}));
+
 vi.mock('../../middleware/auth', () => ({
+  AUTH_MVP_BYPASS_TENANT_ID: undefined,
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
@@ -51,6 +85,9 @@ const buildApp = () => {
 describe('GET /campaigns', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    Object.values(campaignModel).forEach((fn) => fn.mockReset());
+    Object.values(tenantModel).forEach((fn) => fn.mockReset());
+    Object.values(whatsAppInstanceModel).forEach((fn) => fn.mockReset());
     getCampaignMetricsMock.mockReset();
     getCampaignMetricsMock.mockResolvedValue({
       total: 5,
@@ -194,6 +231,9 @@ describe('POST /campaigns', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    Object.values(campaignModel).forEach((fn) => fn.mockReset());
+    Object.values(tenantModel).forEach((fn) => fn.mockReset());
+    Object.values(whatsAppInstanceModel).forEach((fn) => fn.mockReset());
     getCampaignMetricsMock.mockReset();
     getCampaignMetricsMock.mockResolvedValue({ ...defaultMetrics });
   });
@@ -764,9 +804,177 @@ describe('POST /campaigns', () => {
   });
 });
 
+describe('PATCH /campaigns/:id', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    Object.values(campaignModel).forEach((fn) => fn.mockReset());
+    Object.values(tenantModel).forEach((fn) => fn.mockReset());
+    Object.values(whatsAppInstanceModel).forEach((fn) => fn.mockReset());
+    getCampaignMetricsMock.mockReset();
+    getCampaignMetricsMock.mockResolvedValue({
+      total: 3,
+      allocated: 3,
+      contacted: 2,
+      won: 1,
+      lost: 0,
+      averageResponseSeconds: 90,
+    });
+  });
+
+  it('desvincula a instância quando instanceId é null', async () => {
+    const existingCampaign = {
+      id: 'campaign-1',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      name: 'Campaign 1',
+      status: 'active',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-02T00:00:00.000Z'),
+      whatsappInstanceId: 'instance-1',
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    };
+
+    const findUniqueSpy = vi
+      .spyOn(prisma.campaign, 'findUnique')
+      .mockResolvedValue(existingCampaign as never);
+
+    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockImplementation(async (args) => ({
+      ...existingCampaign,
+      whatsappInstanceId: null,
+      whatsappInstance: null,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      updatedAt: new Date('2024-04-01T00:00:00.000Z'),
+    }));
+
+    const app = buildApp();
+    const response = await request(app).patch(`/${existingCampaign.id}`).send({ instanceId: null });
+
+    expect(response.status).toBe(200);
+    expect(findUniqueSpy).toHaveBeenCalledWith({
+      where: { id: existingCampaign.id },
+      include: {
+        whatsappInstance: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: existingCampaign.id },
+        data: expect.objectContaining({
+          whatsappInstance: { disconnect: true },
+          whatsappInstanceId: null,
+        }),
+      })
+    );
+
+    const metadata = updateSpy.mock.calls[0]?.[0]?.data?.metadata as Prisma.JsonObject;
+    const history = Array.isArray((metadata?.history ?? []) as unknown[])
+      ? ((metadata?.history ?? []) as unknown[])
+      : [];
+    const disconnectEntry = history.find(
+      (entry) => typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).disconnect === true
+    ) as Record<string, unknown> | undefined;
+
+    expect(disconnectEntry).toMatchObject({
+      action: 'instance-reassigned',
+      from: 'instance-1',
+      to: null,
+      disconnect: true,
+    });
+
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        id: existingCampaign.id,
+        instanceId: null,
+        whatsappInstanceId: null,
+      }),
+    });
+  });
+
+  it('reatribui para outra instância quando instanceId muda', async () => {
+    const existingCampaign = {
+      id: 'campaign-2',
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      agreementName: 'Agreement 1',
+      name: 'Campaign 1',
+      status: 'active',
+      metadata: { history: [] } as Prisma.JsonValue,
+      createdAt: new Date('2024-01-05T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-06T00:00:00.000Z'),
+      whatsappInstanceId: 'instance-1',
+      whatsappInstance: {
+        id: 'instance-1',
+        name: 'Instance One',
+      },
+    };
+
+    const newInstance = {
+      id: 'instance-2',
+      name: 'Instance Two',
+    };
+
+    const findUniqueSpy = vi
+      .spyOn(prisma.campaign, 'findUnique')
+      .mockResolvedValue(existingCampaign as never);
+    const findInstanceSpy = vi
+      .spyOn(prisma.whatsAppInstance, 'findFirst')
+      .mockResolvedValue(newInstance as never);
+
+    const updateSpy = vi.spyOn(prisma.campaign, 'update').mockImplementation(async (args) => ({
+      ...existingCampaign,
+      whatsappInstanceId: newInstance.id,
+      whatsappInstance: newInstance,
+      metadata: args.data.metadata as Prisma.JsonValue,
+      updatedAt: new Date('2024-04-05T00:00:00.000Z'),
+    }));
+
+    const app = buildApp();
+    const response = await request(app)
+      .patch(`/${existingCampaign.id}`)
+      .send({ instanceId: newInstance.id });
+
+    expect(response.status).toBe(200);
+    expect(findUniqueSpy).toHaveBeenCalled();
+    expect(findInstanceSpy).toHaveBeenCalledWith({
+      where: { id: newInstance.id },
+      select: { id: true, name: true },
+    });
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          whatsappInstance: { connect: { id: newInstance.id } },
+        }),
+      })
+    );
+
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        id: existingCampaign.id,
+        instanceId: newInstance.id,
+        instanceName: newInstance.name,
+      }),
+    });
+  });
+});
+
 describe('DELETE /campaigns/:id', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    Object.values(campaignModel).forEach((fn) => fn.mockReset());
+    Object.values(tenantModel).forEach((fn) => fn.mockReset());
+    Object.values(whatsAppInstanceModel).forEach((fn) => fn.mockReset());
   });
 
   it('marks the campaign as ended and detaches the WhatsApp instance', async () => {

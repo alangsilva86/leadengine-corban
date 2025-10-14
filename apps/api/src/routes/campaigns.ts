@@ -1170,7 +1170,7 @@ router.patch(
   param('id').isString().trim().isLength({ min: 1 }),
   body('name').optional().isString().trim().isLength({ min: 1 }),
   body('status').optional().isString().trim().isLength({ min: 1 }),
-  body('instanceId').optional().isString().trim().isLength({ min: 1 }),
+  body('instanceId').optional({ nullable: true }).isString().trim(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1189,8 +1189,13 @@ router.patch(
     }
     const rawStatus = normalizeStatus(req.body?.status);
     const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
-    const requestedInstanceId =
-      typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : undefined;
+    const rawInstanceId = req.body?.instanceId;
+    const requestedInstanceId: string | null | undefined =
+      typeof rawInstanceId === 'string'
+        ? rawInstanceId.trim() || null
+        : rawInstanceId === null
+        ? null
+        : undefined;
     const actorId = req.user?.id ?? 'system';
 
     const campaign = await prisma.campaign.findUnique({
@@ -1271,40 +1276,67 @@ router.patch(
       }
     }
 
-    if (requestedInstanceId && requestedInstanceId !== campaign.whatsappInstanceId) {
-      const nextInstance = await prisma.whatsAppInstance.findFirst({
-        where: {
-          id: requestedInstanceId,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
-      });
+    if (requestedInstanceId !== undefined) {
+      const normalizedRequested =
+        typeof requestedInstanceId === 'string' && requestedInstanceId.trim().length > 0
+          ? requestedInstanceId.trim()
+          : null;
+      const currentInstanceId = campaign.whatsappInstanceId ?? null;
 
-      if (!nextInstance) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
+      if ((normalizedRequested ?? null) !== (currentInstanceId ?? null)) {
+        if (normalizedRequested) {
+          const nextInstance = await prisma.whatsAppInstance.findFirst({
+            where: {
+              id: normalizedRequested,
+            },
+            select: {
+              id: true,
+              name: true,
+            },
+          });
+
+          if (!nextInstance) {
+            res.status(404).json({
+              success: false,
+              error: {
+                code: 'INSTANCE_NOT_FOUND',
+                message: 'Instância WhatsApp não encontrada.',
+              },
+            });
+            return;
+          }
+
+          updates.whatsappInstance = { connect: { id: nextInstance.id } };
+          instanceReassigned = true;
+          updateMetadata((base) => {
+            base.reassignedAt = new Date().toISOString();
+            base.previousInstanceId = campaign.whatsappInstanceId ?? null;
+          });
+          appendHistoryEntry(
+            buildCampaignHistoryEntry('instance-reassigned', actorId, {
+              from: campaign.whatsappInstanceId ?? null,
+              to: nextInstance.id,
+            })
+          );
+        } else {
+          const timestamp = new Date().toISOString();
+          updates.whatsappInstance = { disconnect: true };
+          updates.whatsappInstanceId = null;
+          instanceReassigned = true;
+          updateMetadata((base) => {
+            base.reassignedAt = timestamp;
+            base.previousInstanceId = campaign.whatsappInstanceId ?? null;
+            base.unlinkedAt = timestamp;
+          });
+          appendHistoryEntry(
+            buildCampaignHistoryEntry('instance-reassigned', actorId, {
+              from: campaign.whatsappInstanceId ?? null,
+              to: null,
+              disconnect: true,
+            })
+          );
+        }
       }
-
-      updates.whatsappInstance = { connect: { id: nextInstance.id } };
-      instanceReassigned = true;
-      updateMetadata((base) => {
-        base.reassignedAt = new Date().toISOString();
-        base.previousInstanceId = campaign.whatsappInstanceId ?? null;
-      });
-      appendHistoryEntry(
-        buildCampaignHistoryEntry('instance-reassigned', actorId, {
-          from: campaign.whatsappInstanceId ?? null,
-          to: nextInstance.id,
-        })
-      );
     }
 
     if (metadataDirty) {
