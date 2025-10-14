@@ -575,4 +575,46 @@ describe('WhatsApp webhook (integration)', () => {
 
     expect(prisma.whatsAppInstance.upsert).toHaveBeenCalled();
   });
+
+  it('acknowledges WhatsApp message status updates without processing payload', async () => {
+    const app = createApp();
+
+    const payload = {
+      event: 'WHATSAPP_MESSAGES_UPDATE',
+      instanceId: 'inst-status',
+      body: {
+        event: 'WHATSAPP_MESSAGES_UPDATE',
+        instanceId: 'inst-status',
+        payload: {
+          iid: 'inst-status',
+          raw: {
+            updates: [
+              {
+                key: {
+                  remoteJid: '554499110140@s.whatsapp.net',
+                  id: 'wamid-status-1',
+                  fromMe: true,
+                },
+                update: {
+                  status: 4,
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/webhook')
+      .set('x-api-key', 'test-key')
+      .send(payload);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({ ok: true, received: 1, persisted: 0, failures: 0 })
+    );
+    expect(findOrCreateOpenTicketByChatMock).not.toHaveBeenCalled();
+    expect(upsertMessageByExternalIdMock).not.toHaveBeenCalled();
+  });
 });
