@@ -2,7 +2,7 @@ import express from 'express';
 import type { Request } from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
-import { Prisma } from '@prisma/client';
+import { Prisma, type WhatsAppInstance as PrismaWhatsAppInstance } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { refreshWhatsAppEnv } from '../config/whatsapp';
 import type { WhatsAppTransport } from '../features/whatsapp-transport';
@@ -205,6 +205,62 @@ const stopTestServer = (server: Server) =>
       resolve();
     });
   });
+
+describe('syncInstancesFromBroker heuristics', () => {
+  it('keeps stored nickname when broker suggests a different name', async () => {
+    const {
+      __testing: { syncInstancesFromBroker },
+    } = await import('./integrations');
+
+    const existingInstance: PrismaWhatsAppInstance = {
+      id: 'custom-slug',
+      tenantId: 'tenant-123',
+      name: 'Minha Loja',
+      brokerId: 'custom-slug',
+      phoneNumber: null,
+      status: 'connected',
+      connected: true,
+      lastSeenAt: null,
+      createdAt: new Date('2023-12-01T00:00:00.000Z'),
+      updatedAt: new Date('2023-12-01T00:00:00.000Z'),
+      metadata: {
+        displayName: 'Minha Loja',
+        label: 'Minha Loja',
+      } as Prisma.JsonValue,
+    };
+
+    (prismaMock.whatsAppInstance.update as ReturnType<typeof vi.fn>).mockResolvedValue(existingInstance);
+
+    const snapshot: WhatsAppBrokerInstanceSnapshot = {
+      instance: {
+        id: 'custom-slug',
+        tenantId: 'tenant-123',
+        name: 'Loja do Broker',
+        status: 'connected',
+        connected: true,
+        lastActivity: null,
+      },
+      status: {
+        status: 'connected',
+        connected: true,
+        qr: null,
+        qrCode: null,
+        expiresAt: null,
+        qrExpiresAt: null,
+      },
+    };
+
+    await syncInstancesFromBroker('tenant-123', [existingInstance], [snapshot]);
+
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
+    const updatePayload = (prismaMock.whatsAppInstance.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(updatePayload.data).not.toHaveProperty('name');
+
+    const metadata = updatePayload.data.metadata as Record<string, unknown>;
+    expect(metadata.displayName).toBe('Minha Loja');
+    expect(metadata.label).toBe('Minha Loja');
+  });
+});
 
 describe('WhatsApp integration routes when broker is not configured', () => {
   it('returns empty list when broker is disabled and no instances are stored', async () => {
