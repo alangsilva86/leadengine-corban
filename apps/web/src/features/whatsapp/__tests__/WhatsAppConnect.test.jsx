@@ -25,6 +25,10 @@ vi.mock('@/lib/session-storage.js', () => ({
   default: () => false,
 }));
 
+vi.mock('@/lib/auth.js', () => ({
+  getAuthToken: () => 'test-token',
+}));
+
 vi.mock('qrcode', () => ({
   toDataURL: vi.fn(() => Promise.resolve('data:image/png;base64,ZmFrZQ==')),
 }));
@@ -195,6 +199,9 @@ describe('WhatsAppConnect', () => {
     await renderComponent();
 
     await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith(
+        expect.stringContaining('/api/integrations/whatsapp/instances?refresh=1')
+      );
       expect(mockApiGet).toHaveBeenCalledWith('/api/integrations/whatsapp/instances?refresh=1');
     });
 
@@ -202,7 +209,7 @@ describe('WhatsAppConnect', () => {
     expect(instanceLabels.length).toBeGreaterThan(0);
   });
 
-  it('keeps disconnected broker sessions visible for recovery actions', async () => {
+  it('hides disconnected broker sessions by default but allows showing all', async () => {
     mockApiGet.mockImplementation((url) => {
       if (url.startsWith('/api/integrations/whatsapp/instances')) {
         return Promise.resolve({
@@ -227,8 +234,37 @@ describe('WhatsAppConnect', () => {
 
     await renderComponent();
 
+    expect(screen.queryByText('WhatsApp Broker Desconectado')).not.toBeInTheDocument();
+
+    const showAllButtons = await screen.findAllByRole('button', { name: /mostrar todas/i });
+    await userEvent.setup().click(showAllButtons[showAllButtons.length - 1]);
+
     const brokerInstance = await screen.findAllByText('WhatsApp Broker Desconectado');
     expect(brokerInstance.length).toBeGreaterThan(0);
+    expect(await screen.findByRole('button', { name: /ocultar desconectadas/i })).toBeInTheDocument();
+  });
+
+  it('keeps connecting sessions visible even when not fully connected', async () => {
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              { id: 'inst-2', name: 'Instância em Provisionamento', status: 'connecting', connected: false },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    const connectingInstance = await screen.findAllByText('Instância em Provisionamento');
+    expect(connectingInstance.length).toBeGreaterThan(0);
   });
 
   it('creates an instance and keeps the friendly name', async () => {
@@ -330,6 +366,9 @@ describe('WhatsAppConnect', () => {
     });
 
     await renderComponent();
+
+    const showAllButton = await screen.findByRole('button', { name: /mostrar todas/i });
+    await userEvent.setup().click(showAllButton);
 
     const qrButtons = await screen.findAllByRole('button', { name: /ver qr/i });
     await userEvent.setup().click(qrButtons[0]);

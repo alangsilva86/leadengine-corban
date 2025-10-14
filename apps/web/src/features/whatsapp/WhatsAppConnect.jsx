@@ -147,6 +147,43 @@ const statusCodeMeta = [
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
+const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
+
+const resolveInstanceStatus = (instance) => {
+  if (!instance || typeof instance !== 'object') {
+    return null;
+  }
+
+  const directStatus = instance.status;
+  if (typeof directStatus === 'string') {
+    return directStatus;
+  }
+
+  if (directStatus && typeof directStatus === 'object') {
+    if (typeof directStatus.current === 'string') {
+      return directStatus.current;
+    }
+    if (typeof directStatus.status === 'string') {
+      return directStatus.status;
+    }
+  }
+
+  return null;
+};
+
+const shouldDisplayInstance = (instance) => {
+  if (!instance || typeof instance !== 'object') {
+    return false;
+  }
+
+  if (instance.connected === true) {
+    return true;
+  }
+
+  const status = resolveInstanceStatus(instance);
+  return status ? VISIBLE_INSTANCE_STATUSES.has(status) : false;
+};
+
 const normalizeKeyName = (value) => `${value}`.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const pickMetric = (source, keys) => {
@@ -1106,6 +1143,7 @@ const WhatsAppConnect = ({
   const [instances, setInstances] = useState([]);
   const [instance, setInstance] = useState(null);
   const [instancesReady, setInstancesReady] = useState(false);
+  const [showAllInstances, setShowAllInstances] = useState(false);
   const preferredInstanceIdRef = useRef(null);
   const [qrData, setQrData] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
@@ -1269,8 +1307,18 @@ const WhatsAppConnect = ({
     : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
-  const instanceCount = instances.length;
-  const instancesCountLabel = instancesReady ? `${instanceCount} ativa(s)` : 'Sincronizando…';
+  const visibleInstances = useMemo(() => instances.filter(shouldDisplayInstance), [instances]);
+  const totalInstanceCount = instances.length;
+  const visibleInstanceCount = visibleInstances.length;
+  const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
+  const renderInstances = showAllInstances ? instances : visibleInstances;
+  const instancesCountLabel = instancesReady
+    ? showAllInstances
+      ? `${totalInstanceCount} instância(s)`
+      : `${visibleInstanceCount} ativa(s)`
+    : 'Sincronizando…';
+  const hasRenderableInstances = renderInstances.length > 0;
+  const showFilterNotice = instancesReady && hasHiddenInstances && !showAllInstances;
 
   const handleRealtimeEvent = useCallback((event) => {
     if (!event || typeof event !== 'object' || !event.payload) {
@@ -2985,8 +3033,26 @@ const WhatsAppConnect = ({
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
                 <span>Instâncias disponíveis</span>
-                <span>{instancesCountLabel}</span>
+                <div className="flex items-center gap-2">
+                  {instancesReady && hasHiddenInstances && hasRenderableInstances ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="link"
+                      className="h-auto px-0 text-[0.65rem] uppercase"
+                      onClick={() => setShowAllInstances((current) => !current)}
+                    >
+                      {showAllInstances ? 'Ocultar desconectadas' : 'Mostrar todas'}
+                    </Button>
+                  ) : null}
+                  <span>{instancesCountLabel}</span>
+                </div>
               </div>
+              {showFilterNotice ? (
+                <p className="text-[0.7rem] text-muted-foreground">
+                  Mostrando apenas instâncias conectadas. Use “Mostrar todas” para acessar sessões desconectadas.
+                </p>
+              ) : null}
               {!instancesReady ? (
                 <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
                   {Array.from({ length: 2 }).map((_, index) => (
@@ -3008,9 +3074,9 @@ const WhatsAppConnect = ({
                     </div>
                   ))}
                 </div>
-              ) : instanceCount > 0 ? (
+              ) : hasRenderableInstances ? (
                 <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                  {instances.map((item, index) => {
+                  {renderInstances.map((item, index) => {
                     const isCurrent = instance?.id === item.id;
                     const statusInfo = getStatusInfo(item);
                     const metrics = getInstanceMetrics(item);
@@ -3171,6 +3237,23 @@ const WhatsAppConnect = ({
                       </div>
                     );
                   })}
+                </div>
+              ) : hasHiddenInstances ? (
+                <div
+                  className={cn(
+                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
+                    SURFACE_COLOR_UTILS.glassTileDashed
+                  )}
+                >
+                  <p>Nenhuma instância conectada no momento. Mostre todas para gerenciar sessões desconectadas.</p>
+                  <Button
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => setShowAllInstances(true)}
+                    disabled={isBusy}
+                  >
+                    Mostrar todas
+                  </Button>
                 </div>
               ) : (
                 <div
