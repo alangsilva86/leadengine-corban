@@ -47,7 +47,9 @@ const computeFlags = (): FeatureFlags => {
 
   const whatsappPassthroughMode = parseBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, false);
   if (whatsappPassthroughMode) {
-    logger.warn('[config] WhatsApp passthrough habilitado — ingestão sem filtros');
+    logger.warn(
+      '[config] WhatsApp passthrough habilitado (WHATSAPP_PASSTHROUGH_MODE=true) — ingestão sem filtros'
+    );
   }
 
   const whatsappBrokerStrictConfig = parseBoolean(process.env.WHATSAPP_BROKER_STRICT_CONFIG, false);
@@ -116,7 +118,9 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
       logger.warn('[config] WhatsApp inbound simples habilitado (refresh)');
     }
     if (next.whatsappPassthroughMode && !cachedFlags.whatsappPassthroughMode) {
-      logger.warn('[config] WhatsApp passthrough habilitado (refresh)');
+      logger.warn(
+        '[config] WhatsApp passthrough habilitado (refresh, WHATSAPP_PASSTHROUGH_MODE=true)'
+      );
     }
     if (next.whatsappBrokerStrictConfig && !cachedFlags.whatsappBrokerStrictConfig) {
       logger.warn('[config] WhatsApp broker strict config habilitado (refresh)');

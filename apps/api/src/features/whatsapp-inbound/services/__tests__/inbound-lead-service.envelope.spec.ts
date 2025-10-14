@@ -1,3 +1,4 @@
+
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const findOrCreateOpenTicketByChatMock = vi.fn();
@@ -6,6 +7,27 @@ const normalizeInboundMessageMock = vi.fn();
 const inboundMessagesCounterIncMock = vi.fn();
 const socketEmitMock = vi.fn();
 const socketToMock = vi.fn(() => ({ emit: socketEmitMock }));
+
+const isWhatsappPassthroughModeEnabledMock = vi.fn();
+const isWhatsappInboundSimpleModeEnabledMock = vi.fn();
+
+const prismaMock = {
+  whatsAppInstance: { findUnique: vi.fn() },
+  tenant: { findFirst: vi.fn() },
+  campaign: { findMany: vi.fn(), upsert: vi.fn() },
+  queue: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn() },
+  contact: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  ticket: { findFirst: vi.fn(), findUnique: vi.fn() },
+  lead: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+  leadActivity: { findFirst: vi.fn(), create: vi.fn() },
+};
+
+const addAllocationsMock = vi.fn();
+const emitToTenantMock = vi.fn();
+const emitToTicketMock = vi.fn();
+const emitToAgreementMock = vi.fn();
+const createTicketMock = vi.fn();
+const sendMessageMock = vi.fn();
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -16,26 +38,31 @@ vi.mock('../../../../config/logger', () => ({
   },
 }));
 
+vi.mock('../../../../config/feature-flags', () => ({
+  isWhatsappPassthroughModeEnabled: isWhatsappPassthroughModeEnabledMock,
+  isWhatsappInboundSimpleModeEnabled: isWhatsappInboundSimpleModeEnabledMock,
+}));
+
 vi.mock('../../../../lib/prisma', () => ({
-  prisma: {},
+  prisma: prismaMock,
 }));
 
 vi.mock('../../../../data/lead-allocation-store', () => ({
-  addAllocations: vi.fn(),
+  addAllocations: addAllocationsMock,
 }));
 
 vi.mock('../../../../lib/socket-registry', () => ({
-  emitToTenant: vi.fn(),
-  emitToTicket: vi.fn(),
-  emitToAgreement: vi.fn(),
+  emitToTenant: emitToTenantMock,
+  emitToTicket: emitToTicketMock,
+  emitToAgreement: emitToAgreementMock,
   getSocketServer: vi.fn(() => ({
     to: socketToMock,
   })),
 }));
 
 vi.mock('../../../../services/ticket-service', () => ({
-  createTicket: vi.fn(),
-  sendMessage: vi.fn(),
+  createTicket: createTicketMock,
+  sendMessage: sendMessageMock,
 }));
 
 vi.mock('../../../../lib/metrics', () => ({
@@ -62,6 +89,14 @@ beforeAll(async () => {
   ingestInboundWhatsAppMessage = module.ingestInboundWhatsAppMessage;
   resetInboundLeadServiceTestState = module.resetInboundLeadServiceTestState;
 });
+
+const resetPrismaMocks = () => {
+  for (const model of Object.values(prismaMock)) {
+    for (const fn of Object.values(model)) {
+      fn.mockReset();
+    }
+  }
+};
 
 describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
   const baseEnvelope = {
@@ -114,8 +149,21 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     upsertMessageByExternalIdMock.mockReset();
     normalizeInboundMessageMock.mockReset();
     inboundMessagesCounterIncMock.mockReset();
-    socketEmitMock.mockClear();
-    socketToMock.mockClear();
+    socketEmitMock.mockReset();
+    socketToMock.mockReset();
+    socketToMock.mockImplementation(() => ({ emit: socketEmitMock }));
+    isWhatsappPassthroughModeEnabledMock.mockReset();
+    isWhatsappInboundSimpleModeEnabledMock.mockReset();
+    resetPrismaMocks();
+    addAllocationsMock.mockReset();
+    emitToTenantMock.mockReset();
+    emitToTicketMock.mockReset();
+    emitToAgreementMock.mockReset();
+    createTicketMock.mockReset();
+    sendMessageMock.mockReset();
+
+    isWhatsappPassthroughModeEnabledMock.mockReturnValue(true);
+    isWhatsappInboundSimpleModeEnabledMock.mockReturnValue(false);
 
     findOrCreateOpenTicketByChatMock.mockResolvedValue({
       ticket: {
@@ -150,55 +198,159 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       mimetype: null,
       fileSize: null,
       brokerMessageTimestamp: 1715342400000,
+      id: 'wamid.123',
+      clientMessageId: 'client-123',
+      conversationId: 'conversation-123',
+      latitude: null,
+      longitude: null,
+      locationName: null,
+      contacts: null,
+      raw: {},
+      receivedAt: '2024-05-10T12:00:00.000Z',
     });
   });
 
-  it('persists passthrough artifacts without transport metadata', async () => {
-    const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+  describe('when passthrough mode is enabled', () => {
+    beforeEach(() => {
+      isWhatsappPassthroughModeEnabledMock.mockReturnValue(true);
+    });
 
-    expect(processed).toBe(true);
+    it('persists passthrough artifacts without transport metadata', async () => {
+      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
 
-    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
-      expect.objectContaining({
+      expect(processed).toBe(true);
+
+      expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          chatId: '5511999999999@s.whatsapp.net',
+          instanceId: 'instance-1',
+        })
+      );
+
+      expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
+      const upsertPayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
+      expect(upsertPayload).toBeTruthy();
+      expect(upsertPayload.metadata).not.toHaveProperty('transport');
+      expect(upsertPayload.metadata).not.toHaveProperty('origin');
+      expect(upsertPayload.metadata).toMatchObject({
         tenantId: 'tenant-1',
         chatId: '5511999999999@s.whatsapp.net',
         instanceId: 'instance-1',
-      })
-    );
+        direction: 'inbound',
+        sourceInstance: 'instance-1',
+      });
 
-    expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
-    const upsertPayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
-    expect(upsertPayload).toBeTruthy();
-    expect(upsertPayload.metadata).not.toHaveProperty('transport');
-    expect(upsertPayload.metadata).not.toHaveProperty('origin');
-    expect(upsertPayload.metadata).toMatchObject({
-      tenantId: 'tenant-1',
-      chatId: '5511999999999@s.whatsapp.net',
-      instanceId: 'instance-1',
-      direction: 'inbound',
-      sourceInstance: 'instance-1',
+      expect(inboundMessagesCounterIncMock).toHaveBeenCalledWith({
+        origin: 'passthrough',
+        tenantId: 'tenant-1',
+        instanceId: 'instance-1',
+      });
+
+      expect(socketToMock).toHaveBeenCalledWith('tenant:tenant-1');
+      expect(socketToMock).toHaveBeenCalledWith('ticket:ticket-1');
+      expect(socketEmitMock).toHaveBeenCalled();
     });
 
-    expect(inboundMessagesCounterIncMock).toHaveBeenCalledWith({
-      origin: 'passthrough',
-      tenantId: 'tenant-1',
-      instanceId: 'instance-1',
-    });
+    it('skips duplicates across tenant/instance/chat identifiers', async () => {
+      const processedFirst = await ingestInboundWhatsAppMessage(buildEnvelope());
+      const processedSecond = await ingestInboundWhatsAppMessage(buildEnvelope());
 
-    expect(socketToMock).toHaveBeenCalledWith('tenant:tenant-1');
-    expect(socketToMock).toHaveBeenCalledWith('ticket:ticket-1');
-    expect(socketEmitMock).toHaveBeenCalled();
+      expect(processedFirst).toBe(true);
+      expect(processedSecond).toBe(false);
+
+      expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledTimes(1);
+      expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
+      expect(inboundMessagesCounterIncMock).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('skips duplicates across tenant/instance/chat identifiers', async () => {
-    const processedFirst = await ingestInboundWhatsAppMessage(buildEnvelope());
-    const processedSecond = await ingestInboundWhatsAppMessage(buildEnvelope());
+  describe('when passthrough mode is disabled', () => {
+    beforeEach(() => {
+      isWhatsappPassthroughModeEnabledMock.mockReturnValue(false);
 
-    expect(processedFirst).toBe(true);
-    expect(processedSecond).toBe(false);
+      prismaMock.whatsAppInstance.findUnique.mockResolvedValue({
+        id: 'instance-1',
+        tenantId: 'tenant-1',
+      });
+      prismaMock.campaign.findMany.mockResolvedValue([]);
+      prismaMock.campaign.upsert.mockRejectedValue(new Error('no fallback'));
+      prismaMock.queue.findUnique.mockResolvedValue(null);
+      prismaMock.queue.findFirst.mockResolvedValue({ id: 'queue-1' });
+      prismaMock.contact.findUnique.mockResolvedValue(null);
+      prismaMock.contact.findFirst.mockResolvedValue(null);
+      prismaMock.contact.create.mockResolvedValue({
+        id: 'contact-1',
+        name: 'Contato WhatsApp',
+        phone: '+5511999999999',
+        tags: ['whatsapp', 'inbound'],
+        customFields: {},
+      });
+      prismaMock.ticket.findFirst.mockResolvedValue(null);
+      prismaMock.ticket.findUnique.mockResolvedValue({
+        id: 'ticket-1',
+        status: 'OPEN',
+        updatedAt: new Date('2024-05-10T12:00:05.000Z'),
+      });
+      prismaMock.lead.findFirst.mockResolvedValue(null);
+      prismaMock.lead.create.mockResolvedValue({
+        id: 'lead-1',
+        tenantId: 'tenant-1',
+      });
+      prismaMock.leadActivity.findFirst.mockResolvedValue(null);
+      prismaMock.leadActivity.create.mockResolvedValue({
+        id: 'activity-1',
+        tenantId: 'tenant-1',
+      });
 
-    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledTimes(1);
-    expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
-    expect(inboundMessagesCounterIncMock).toHaveBeenCalledTimes(1);
+      createTicketMock.mockResolvedValue({ id: 'ticket-1' });
+      sendMessageMock.mockResolvedValue({
+        id: 'timeline-1',
+        tenantId: 'tenant-1',
+        content: 'Olá',
+        direction: 'INBOUND',
+        metadata: { eventMetadata: {} },
+        createdAt: new Date('2024-05-10T12:00:01.000Z'),
+      });
+
+      addAllocationsMock.mockResolvedValue({
+        newlyAllocated: [
+          {
+            allocationId: 'alloc-1',
+            leadId: 'lead-1',
+            campaignId: null,
+            agreementId: null,
+            instanceId: 'instance-1',
+          },
+        ],
+        summary: { total: 1, contacted: 0, won: 0, lost: 0 },
+      });
+    });
+
+    it('allocates leads indexed by instance when no campaigns exist', async () => {
+      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+
+      expect(processed).toBe(true);
+      expect(addAllocationsMock).toHaveBeenCalledWith(
+        'tenant-1',
+        { instanceId: 'instance-1' },
+        expect.any(Array)
+      );
+
+      expect(emitToTenantMock).toHaveBeenCalledWith(
+        'tenant-1',
+        'leadAllocations.new',
+        expect.objectContaining({
+          instanceId: 'instance-1',
+          campaignId: null,
+        })
+      );
+
+      expect(inboundMessagesCounterIncMock).toHaveBeenCalledWith({
+        origin: 'legacy',
+        tenantId: 'tenant-1',
+        instanceId: 'instance-1',
+      });
+    });
   });
 });
