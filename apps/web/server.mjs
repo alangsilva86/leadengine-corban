@@ -3,6 +3,8 @@ import handler from 'serve-handler'
 import { URL } from 'node:url'
 import httpProxy from 'http-proxy'
 
+import { createProxyPathNormalizer } from './server.proxy-helpers.mjs'
+
 const parsedTimeout = Number(process.env.API_PROXY_HEALTH_TIMEOUT_MS ?? 5000)
 const HEALTH_TIMEOUT_MS = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : 5000
 
@@ -74,6 +76,8 @@ const parseProxyTarget = (value) => {
 }
 
 const proxyBaseUrl = parseProxyTarget(rawProxyTarget)
+const proxyPathNormalizer = proxyBaseUrl ? createProxyPathNormalizer(proxyBaseUrl) : null
+const proxyTargetOrigin = proxyPathNormalizer?.origin ?? null
 
 const isHealthRequest = (url) => {
   if (typeof url !== 'string') return false
@@ -97,15 +101,10 @@ const resolveShouldProxy = (url) => {
 }
 
 const buildProxyTarget = (url) => {
-  if (!proxyBaseUrl) return null
+  if (!proxyPathNormalizer) return null
 
   try {
-    const base = new URL(proxyBaseUrl.toString())
-    base.pathname = '/'
-    base.search = ''
-    base.hash = ''
-
-    return new URL(url, base).toString()
+    return proxyPathNormalizer.buildTargetUrl(url)
   } catch (error) {
     console.warn('⚠️  Failed to resolve proxy URL', { url, reason: error?.message })
     return null
@@ -259,10 +258,11 @@ const server = http.createServer((req, res) => {
       return
     }
 
-    if (proxyServer && resolveShouldProxy(req.url ?? '')) {
-      const target = buildProxyTarget(req.url ?? '')
-      if (target) {
-        proxyServer.web(req, res, { target })
+    if (proxyServer && proxyPathNormalizer && resolveShouldProxy(req.url ?? '')) {
+      const normalizedUrl = proxyPathNormalizer.normalizeRequestUrl(req.url ?? '')
+      if (normalizedUrl && proxyTargetOrigin) {
+        req.url = normalizedUrl
+        proxyServer.web(req, res, { target: proxyTargetOrigin, prependPath: false })
         return
       }
     }
@@ -287,20 +287,21 @@ const server = http.createServer((req, res) => {
   })
 })
 
-if (proxyServer) {
+if (proxyServer && proxyPathNormalizer) {
   server.on('upgrade', (req, socket, head) => {
     if (!resolveShouldProxy(req.url ?? '')) {
       socket.destroy()
       return
     }
 
-    const target = buildProxyTarget(req.url ?? '')
-    if (!target) {
+    const normalizedUrl = proxyPathNormalizer.normalizeRequestUrl(req.url ?? '')
+    if (!normalizedUrl || !proxyTargetOrigin) {
       socket.destroy()
       return
     }
 
-    proxyServer.ws(req, socket, head, { target })
+    req.url = normalizedUrl
+    proxyServer.ws(req, socket, head, { target: proxyTargetOrigin, prependPath: false })
   })
 }
 
