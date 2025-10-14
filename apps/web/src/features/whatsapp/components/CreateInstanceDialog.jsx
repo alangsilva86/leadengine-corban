@@ -13,18 +13,6 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { AlertCircle } from 'lucide-react';
 
-const slugify = (value) => {
-  if (!value) {
-    return '';
-  }
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-')
-    .slice(0, 40);
-};
-
 const CreateInstanceDialog = ({
   open,
   onOpenChange,
@@ -34,7 +22,6 @@ const CreateInstanceDialog = ({
   const suggestedName = defaultName || 'Nova instância';
   const [name, setName] = useState(suggestedName);
   const [identifier, setIdentifier] = useState('');
-  const [identifierDirty, setIdentifierDirty] = useState(false);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -44,17 +31,8 @@ const CreateInstanceDialog = ({
     }
     setName(suggestedName);
     setIdentifier('');
-    setIdentifierDirty(false);
     setError(null);
   }, [open, suggestedName]);
-
-  useEffect(() => {
-    if (!open || identifierDirty) {
-      return;
-    }
-    const nextSlug = slugify(name);
-    setIdentifier(nextSlug);
-  }, [identifierDirty, name, open]);
 
   const canSubmit = useMemo(() => {
     return name.trim().length > 0;
@@ -79,7 +57,7 @@ const CreateInstanceDialog = ({
     try {
       await onSubmit?.({
         name: name.trim(),
-        id: identifier.trim() ? identifier.trim() : undefined,
+        id: identifier ? identifier : undefined,
       });
       onOpenChange?.(false);
     } catch (err) {
@@ -122,13 +100,12 @@ const CreateInstanceDialog = ({
               value={identifier}
               onChange={(event) => {
                 setIdentifier(event.target.value);
-                setIdentifierDirty(true);
               }}
-              placeholder="whatsapp-principal"
+              placeholder="Identificador personalizado"
               disabled={submitting}
             />
             <p className="text-xs text-muted-foreground">
-              Usaremos esse identificador como slug na API. Utilize apenas letras minúsculas, números e hífens.
+              Esse identificador será enviado para as integrações exatamente como você digitar.
             </p>
           </div>
 

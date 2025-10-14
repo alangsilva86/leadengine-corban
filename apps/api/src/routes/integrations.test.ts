@@ -827,15 +827,15 @@ describe('WhatsApp integration routes with configured broker', () => {
   it('creates a WhatsApp instance', async () => {
   });
 
-  it('creates a WhatsApp instance preserving the friendly name', async () => {
+  it('creates a WhatsApp instance preservando o identificador literal', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
     const friendlyName = 'WhatsApp Principal';
-    const slug = 'whatsapp-principal';
+    const identifier = 'WhatsApp Principal';
     const brokerInstance = {
-      id: slug,
+      id: identifier,
       tenantId: 'tenant-123',
       name: friendlyName,
       status: 'connecting' as const,
@@ -849,17 +849,17 @@ describe('WhatsApp integration routes with configured broker', () => {
 
     prisma.whatsAppInstance.create.mockImplementation(async ({ data }) => {
       expect(data).toMatchObject({
-        id: slug,
+        id: identifier,
         tenantId: 'tenant-123',
         name: friendlyName,
-        brokerId: slug,
+        brokerId: identifier,
         status: 'connecting',
         connected: false,
         phoneNumber: '+5511987654321',
         metadata: expect.objectContaining({
-          displayId: slug,
-          slug,
-          brokerId: slug,
+          displayId: identifier,
+          slug: identifier,
+          brokerId: identifier,
           displayName: friendlyName,
           label: friendlyName,
         }),
@@ -892,28 +892,28 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(prisma.whatsAppInstance.findFirst).toHaveBeenCalledWith({
-        where: { tenantId: 'tenant-123', id: slug },
+      expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({
+        where: { tenantId_id: { tenantId: 'tenant-123', id: identifier } },
         select: { id: true },
       });
       expect(createInstanceSpy).toHaveBeenCalledWith({
         tenantId: 'tenant-123',
         name: friendlyName,
-        instanceId: slug,
+        instanceId: identifier,
       });
       expect(prisma.whatsAppInstance.create).toHaveBeenCalledWith({
         data: {
-          id: slug,
+          id: identifier,
           tenantId: 'tenant-123',
           name: friendlyName,
-          brokerId: slug,
+          brokerId: identifier,
           status: 'connecting',
           connected: false,
           phoneNumber: '+5511987654321',
           metadata: expect.objectContaining({
-            displayId: slug,
-            slug,
-            brokerId: slug,
+            displayId: identifier,
+            slug: identifier,
+            brokerId: identifier,
             displayName: friendlyName,
             label: friendlyName,
             history: expect.arrayContaining([
@@ -926,7 +926,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(body).toMatchObject({
         success: true,
         data: {
-          id: slug,
+          id: identifier,
           name: friendlyName,
           status: 'connecting',
           connected: false,
@@ -937,9 +937,45 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
-  it('rejects WhatsApp instance identifiers that contain invalid characters', async () => {
+  it('permite identificadores com maiúsculas e espaços', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const friendlyName = 'WhatsApp Principal';
+    const identifier = 'Minha Loja X';
+
+    const createInstanceSpy = vi
+      .spyOn(whatsappBrokerClient, 'createInstance')
+      .mockResolvedValue({
+        id: identifier,
+        tenantId: 'tenant-123',
+        name: friendlyName,
+        status: 'connecting',
+        connected: false,
+      });
+
+    prisma.whatsAppInstance.create.mockImplementation(async ({ data }) => {
+      expect(data.id).toBe(identifier);
+      expect(data.metadata).toMatchObject({
+        displayId: identifier,
+        slug: identifier,
+      });
+
+      return {
+        id: data.id,
+        tenantId: data.tenantId,
+        name: data.name,
+        brokerId: data.brokerId,
+        phoneNumber: data.phoneNumber ?? null,
+        status: data.status,
+        connected: data.connected,
+        lastSeenAt: null,
+        createdAt: new Date('2024-01-05T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-05T00:00:00.000Z'),
+        metadata: data.metadata,
+      } as Awaited<ReturnType<typeof prisma.whatsAppInstance.create>>;
+    });
 
     try {
       const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
@@ -948,17 +984,22 @@ describe('WhatsApp integration routes with configured broker', () => {
           'content-type': 'application/json',
           'x-tenant-id': 'tenant-123',
         },
-        body: JSON.stringify({ name: 'WhatsApp Principal', id: 'Invalid Slug' }),
+        body: JSON.stringify({ name: friendlyName, id: identifier }),
       });
 
       const body = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(body).toMatchObject({
-        success: false,
-        error: { code: 'INVALID_INSTANCE_ID' },
+      expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({
+        where: { tenantId_id: { tenantId: 'tenant-123', id: identifier } },
+        select: { id: true },
       });
-      expect(prisma.whatsAppInstance.create).not.toHaveBeenCalled();
+      expect(createInstanceSpy).toHaveBeenCalledWith({
+        tenantId: 'tenant-123',
+        name: friendlyName,
+        instanceId: identifier,
+      });
+      expect(response.status).toBe(201);
+      expect(body).toMatchObject({ success: true });
     } finally {
       await stopTestServer(server);
     }
@@ -999,56 +1040,16 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
-  it('creates a WhatsApp instance with a sequential identifier when the slug already exists', async () => {
+  it('retorna conflito quando o identificador já está em uso', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { prisma } = await import('../lib/prisma');
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
 
-    (prisma.whatsAppInstance.findFirst as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ id: 'whatsapp-principal' })
-      .mockResolvedValueOnce(null);
-
     const friendlyName = 'WhatsApp Principal';
-    const createInstanceSpy = vi
-      .spyOn(whatsappBrokerClient, 'createInstance')
-      .mockImplementation(async ({ tenantId, name, instanceId }) => {
-        expect(instanceId).toBe('whatsapp-principal-2');
-        expect(name).toBe(friendlyName);
-        return {
-          id: `${tenantId}--${instanceId}`,
-          tenantId,
-          name,
-          status: 'connecting',
-          connected: false,
-        };
-      });
+    vi.spyOn(whatsappBrokerClient, 'createInstance');
 
-    prisma.whatsAppInstance.create.mockImplementation(async ({ data }) => {
-      expect(data).toMatchObject({
-        id: 'whatsapp-principal-2',
-        brokerId: 'tenant-123--whatsapp-principal-2',
-        status: 'connecting',
-        connected: false,
-        metadata: expect.objectContaining({
-          brokerId: 'tenant-123--whatsapp-principal-2',
-          displayName: friendlyName,
-          label: friendlyName,
-        }),
-      });
-
-      return {
-        id: data.id,
-        tenantId: data.tenantId,
-        name: data.name,
-        brokerId: data.brokerId,
-        phoneNumber: data.phoneNumber ?? null,
-        status: data.status,
-        connected: data.connected,
-        lastSeenAt: null,
-        createdAt: new Date('2024-01-05T00:00:00.000Z'),
-        updatedAt: new Date('2024-01-05T00:00:00.000Z'),
-        metadata: data.metadata,
-      } as Awaited<ReturnType<typeof prisma.whatsAppInstance.create>>;
+    (prisma.whatsAppInstance.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: friendlyName,
     });
 
     try {
@@ -1063,44 +1064,16 @@ describe('WhatsApp integration routes with configured broker', () => {
 
       const body = await response.json();
 
-      expect(prisma.whatsAppInstance.findFirst).toHaveBeenNthCalledWith(1, {
-        where: { tenantId: 'tenant-123', id: 'whatsapp-principal' },
+      expect(prisma.whatsAppInstance.findUnique).toHaveBeenCalledWith({
+        where: { tenantId_id: { tenantId: 'tenant-123', id: friendlyName } },
         select: { id: true },
       });
-      expect(prisma.whatsAppInstance.findFirst).toHaveBeenNthCalledWith(2, {
-        where: { tenantId: 'tenant-123', id: 'whatsapp-principal-2' },
-        select: { id: true },
-      });
-      expect(prisma.whatsAppInstance.create).toHaveBeenCalledWith({
-        data: {
-          id: 'whatsapp-principal-2',
-          tenantId: 'tenant-123',
-          name: friendlyName,
-          brokerId: 'tenant-123--whatsapp-principal-2',
-          status: 'connecting',
-          connected: false,
-          phoneNumber: null,
-          metadata: expect.objectContaining({
-            displayId: 'whatsapp-principal-2',
-            slug: 'whatsapp-principal',
-            brokerId: 'tenant-123--whatsapp-principal-2',
-            displayName: friendlyName,
-            label: friendlyName,
-            history: expect.arrayContaining([
-              expect.objectContaining({ action: 'created', by: 'user-1' }),
-            ]),
-          }),
-        },
-      });
-      expect(createInstanceSpy).toHaveBeenCalledWith({
-        tenantId: 'tenant-123',
-        name: friendlyName,
-        instanceId: 'whatsapp-principal-2',
-      });
-      expect(response.status).toBe(201);
+      expect(prisma.whatsAppInstance.create).not.toHaveBeenCalled();
+      expect(whatsappBrokerClient.createInstance).not.toHaveBeenCalled();
+      expect(response.status).toBe(409);
       expect(body).toMatchObject({
-        success: true,
-        data: expect.objectContaining({ id: 'whatsapp-principal-2' }),
+        success: false,
+        error: { code: 'INSTANCE_ALREADY_EXISTS' },
       });
     } finally {
       await stopTestServer(server);
@@ -1116,7 +1089,7 @@ describe('WhatsApp integration routes with configured broker', () => {
       clientVersion: '5.0.0',
     });
 
-    (prisma.whatsAppInstance.findFirst as ReturnType<typeof vi.fn>).mockRejectedValueOnce(prismaError);
+    (prisma.whatsAppInstance.findUnique as ReturnType<typeof vi.fn>).mockRejectedValueOnce(prismaError);
 
     try {
       const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {

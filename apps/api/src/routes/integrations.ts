@@ -21,7 +21,6 @@ import {
 import { emitToTenant } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
-import { assertValidSlug, toSlug } from '../lib/slug';
 import { respondWithValidationError } from '../utils/http-validation';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
 import { whatsappHttpRequestsCounter } from '../lib/metrics';
@@ -662,27 +661,6 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
     metadata,
     lastError: readLastErrorFromMetadata(metadata),
   };
-};
-
-const ensureUniqueInstanceId = async (tenantId: string, base: string): Promise<string> => {
-  const normalizedBase = toSlug(base, 'instance');
-
-  for (let attempt = 0; attempt < 1000; attempt += 1) {
-    const candidate = attempt === 0 ? normalizedBase : `${normalizedBase}-${attempt + 1}`;
-    const existing = await prisma.whatsAppInstance.findFirst({
-      where: {
-        tenantId,
-        id: candidate,
-      },
-      select: { id: true },
-    });
-
-    if (!existing) {
-      return candidate;
-    }
-  }
-
-  throw new Error('Unable to allocate unique WhatsApp instance id');
 };
 
 type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>>;
@@ -2596,57 +2574,52 @@ router.post(
       return;
     }
 
-    const providedId = typeof id === 'string' ? id.trim() : '';
-    const hasProvidedId = providedId.length > 0;
-    const requestedIdSourceRaw = hasProvidedId ? providedId : normalizedName;
-    const requestedIdSlug = toSlug(requestedIdSourceRaw, 'instance');
+    const providedId = typeof id === 'string' ? id : undefined;
+    const requestedIdSource =
+      typeof providedId === 'string' && providedId.length > 0 ? providedId : normalizedName;
 
-    if (!requestedIdSlug) {
+    if (!requestedIdSource || requestedIdSource.length === 0) {
       res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_INSTANCE_ID',
-          message: 'Informe um identificador válido utilizando letras minúsculas, números ou hífens.',
-        },
-      });
-      return;
-    }
-
-    if (hasProvidedId && requestedIdSlug !== providedId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: 'Informe um identificador válido utilizando letras minúsculas, números ou hífens.',
-        },
-      });
-      return;
-    }
-
-    try {
-      assertValidSlug(requestedIdSlug, 'identificador');
-    } catch (validationError) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message:
-            validationError instanceof Error
-              ? validationError.message
-              : 'Identificador inválido para instância.',
+          message: 'Informe um identificador válido para a instância WhatsApp.',
         },
       });
       return;
     }
 
     const validatedName = normalizedName;
-    const requestedIdSource = requestedIdSlug;
     const normalizedAgreementId =
       typeof agreementId === 'string' && agreementId.trim().length > 0
         ? agreementId.trim()
         : null;
     try {
-      const normalizedId = await ensureUniqueInstanceId(tenantId, requestedIdSource);
+      try {
+        const existingInstance = await prisma.whatsAppInstance.findUnique({
+          where: { tenantId_id: { tenantId, id: requestedIdSource } },
+          select: { id: true },
+        });
+
+        if (existingInstance) {
+          res.status(409).json({
+            success: false,
+            error: {
+              code: 'INSTANCE_ALREADY_EXISTS',
+              message: 'Já existe uma instância WhatsApp com este identificador.',
+            },
+          });
+          return;
+        }
+      } catch (lookupError) {
+        if (respondWhatsAppStorageUnavailable(res, lookupError)) {
+          return;
+        }
+
+        throw lookupError;
+      }
+
+      const normalizedId = requestedIdSource;
       let brokerInstance: BrokerWhatsAppInstance | null = null;
 
       try {
@@ -2710,7 +2683,7 @@ router.post(
       const metadata = appendInstanceHistory(
         compactRecord({
           displayId: normalizedId,
-          slug: requestedIdSlug,
+          slug: normalizedId,
           brokerId: resolvedBrokerId,
           displayName: validatedName,
           label: validatedName,
