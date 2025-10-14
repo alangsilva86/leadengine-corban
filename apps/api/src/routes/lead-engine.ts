@@ -11,6 +11,8 @@ import { validateRequest } from '../middleware/validation';
 import { AUTH_MVP_BYPASS_TENANT_ID } from '../middleware/auth';
 import { leadEngineClient } from '../services/lead-engine-client';
 import { logger } from '../config/logger';
+import { agreementDefinitions } from '../config/lead-engine';
+import type { AgreementSummary } from '../services/lead-engine-client';
 import {
   addAllocations,
   listAllocations as listTenantAllocations,
@@ -27,6 +29,21 @@ const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
 const ensureTenantContext = (_req: Request): string => DEFAULT_TENANT_ID;
 
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
+
+const buildAgreementFallbackSummaries = (): AgreementSummary[] => {
+  return agreementDefinitions.map((definition) => {
+    const fallbackLeads = leadEngineClient.getFallbackLeadsForAgreement(definition.id, 100);
+    const availableLeads = fallbackLeads.length;
+    const hotLeads = Math.min(availableLeads, 5);
+
+    return {
+      ...definition,
+      availableLeads,
+      hotLeads,
+      lastSyncAt: null,
+    };
+  });
+};
 
 const toErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof Error && typeof error.message === 'string' && error.message.trim().length > 0) {
@@ -168,22 +185,35 @@ router.get(
         warnings: warnings.length > 0 ? warnings : undefined,
       });
 
-      logger.info('[LeadEngine] ✅ Agreements delivered', {
-        tenantId,
-        count: summaries.length,
-        warnings: warnings.length,
-      });
-    } catch (error) {
-      logger.error('[LeadEngine] ❌ Failed to get agreements', { tenantId, error });
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'AGREEMENTS_FETCH_FAILED',
-          message: 'Falha ao buscar convênios',
+    logger.info('[LeadEngine] ✅ Agreements delivered', {
+      tenantId,
+      count: summaries.length,
+      warnings: warnings.length,
+    });
+  } catch (error) {
+    logger.error('[LeadEngine] ❌ Failed to get agreements', { tenantId, error });
+    const fallbackSummaries = buildAgreementFallbackSummaries();
+
+    logger.warn('[LeadEngine] ⚠️ Returning fallback agreements', {
+      tenantId,
+      count: fallbackSummaries.length,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: fallbackSummaries,
+      warnings: [
+        {
+          code: 'LEAD_ENGINE_FALLBACK',
+          message: 'Lead Engine indisponível. Retornando convênios simulados.',
         },
-      });
-    }
-  })
+      ],
+      meta: {
+        fallback: true,
+      },
+    });
+  }
+})
 );
 
 /**
@@ -625,17 +655,17 @@ router.get(
 
     try {
       const { summaries } = await leadEngineClient.getAgreementSummaries();
-      
+
       const totalLeads = summaries.reduce((sum, agreement) => sum + agreement.availableLeads, 0);
       const totalHotLeads = summaries.reduce((sum, agreement) => sum + agreement.hotLeads, 0);
-      const activeAgreements = summaries.filter(agreement => agreement.availableLeads > 0).length;
+      const activeAgreements = summaries.filter((agreement) => agreement.availableLeads > 0).length;
 
       const dashboard = {
         totalLeads,
         totalHotLeads,
         activeAgreements,
         totalAgreements: summaries.length,
-        conversionRate: totalLeads > 0 ? (totalHotLeads / totalLeads * 100).toFixed(2) : '0.00',
+        conversionRate: totalLeads > 0 ? ((totalHotLeads / totalLeads) * 100).toFixed(2) : '0.00',
         lastUpdate: new Date().toISOString(),
         agreements: summaries,
       };
@@ -653,15 +683,41 @@ router.get(
       });
     } catch (error) {
       logger.error('[LeadEngine] ❌ Failed to get dashboard data', { tenantId, error });
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'DASHBOARD_FETCH_FAILED',
-          message: 'Falha ao buscar dados do dashboard',
+      const fallbackSummaries = buildAgreementFallbackSummaries();
+      const totalLeads = fallbackSummaries.reduce((sum, agreement) => sum + agreement.availableLeads, 0);
+      const totalHotLeads = fallbackSummaries.reduce((sum, agreement) => sum + agreement.hotLeads, 0);
+      const activeAgreements = fallbackSummaries.filter((agreement) => agreement.availableLeads > 0).length;
+
+      logger.warn('[LeadEngine] ⚠️ Returning fallback dashboard data', {
+        tenantId,
+        totalLeads,
+        totalHotLeads,
+        activeAgreements,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          totalLeads,
+          totalHotLeads,
+          activeAgreements,
+          totalAgreements: fallbackSummaries.length,
+          conversionRate: totalLeads > 0 ? ((totalHotLeads / totalLeads) * 100).toFixed(2) : '0.00',
+          lastUpdate: new Date().toISOString(),
+          agreements: fallbackSummaries,
+        },
+        warnings: [
+          {
+            code: 'LEAD_ENGINE_FALLBACK',
+            message: 'Lead Engine indisponível. Dashboard em modo demonstrativo.',
+          },
+        ],
+        meta: {
+          fallback: true,
         },
       });
     }
-  })
+})
 );
 
 router.get(
