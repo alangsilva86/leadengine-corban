@@ -15,6 +15,55 @@ import { apiGet } from '@/lib/api.js';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 
 const LIMIT_OPTIONS = [20, 50, 100, 150];
+const STATUS_PAGE_URL = 'https://status.leadengine.com.br';
+
+const extractStatusCode = (error) => {
+  if (!error || typeof error !== 'object') return null;
+  if (typeof error.status === 'number') return error.status;
+  if (typeof error.response?.status === 'number') return error.response.status;
+  if (typeof error.statusCode === 'number') return error.statusCode;
+  if (typeof error.response?.statusCode === 'number') {
+    return error.response.statusCode;
+  }
+  return null;
+};
+
+const getActionableStatusMessage = (status) => {
+  switch (status) {
+    case 401:
+    case 403:
+      return 'Sessão expirada (Fase 1) – faça login novamente.';
+    case 429:
+      return 'Muitas requisições (Fase 2) – aguarde um instante e tente novamente.';
+    case 500:
+      return 'Erro interno do conector (Fase 3) – tente novamente em alguns instantes ou acione o time responsável.';
+    case 502:
+    case 503:
+    case 504:
+      return 'Conector de debug indisponível (Fase 3) – tente novamente em alguns minutos.';
+    default:
+      return null;
+  }
+};
+
+const buildErrorState = (error, previousState) => {
+  const status = extractStatusCode(error);
+  const fallbackMessage =
+    (error instanceof Error && error.message) ||
+    (typeof error?.message === 'string' ? error.message : null) ||
+    'Não foi possível carregar os logs do Baileys.';
+  const message = getActionableStatusMessage(status) ?? fallbackMessage;
+  const payload =
+    error?.response?.data ?? error?.data ?? previousState?.payload ?? null;
+
+  return {
+    message,
+    status,
+    fallbackMessage,
+    payload,
+    timestamp: new Date().toISOString(),
+  };
+};
 
 const formatDateTime = (value) => {
   if (!value) return '—';
@@ -49,6 +98,7 @@ const BaileysLogs = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [degradedMode, setDegradedMode] = useState(false);
   const controllerRef = useRef(null);
 
   const buildQuery = useCallback(() => {
@@ -72,7 +122,6 @@ const BaileysLogs = () => {
     }
 
     setLoading(true);
-    setError(null);
 
     try {
       const query = buildQuery();
@@ -80,6 +129,12 @@ const BaileysLogs = () => {
         signal,
       });
       const items = Array.isArray(response?.data) ? response.data : [];
+      setLogs(items);
+      setError(null);
+      setDegradedMode(false);
+    } catch (err) {
+      setError((previous) => buildErrorState(err, previous));
+      setDegradedMode(true);
       if (!signal?.aborted) {
         setLogs(items);
       }
@@ -130,7 +185,7 @@ const BaileysLogs = () => {
   }, [logs]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-degraded-mode={degradedMode ? 'true' : 'false'}>
       <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -285,8 +340,58 @@ const BaileysLogs = () => {
       </div>
 
       {error ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
+        <div className="space-y-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-900 dark:border-amber-300/40 dark:bg-amber-400/10 dark:text-amber-100">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                <Badge
+                  variant="outline"
+                  className="border-amber-500 bg-amber-500/10 text-amber-900 dark:border-amber-200 dark:bg-amber-200/10 dark:text-amber-50"
+                >
+                  Modo degradado ativo
+                </Badge>
+                {typeof error.status === 'number' ? (
+                  <span className="text-amber-800/80 dark:text-amber-100/80">
+                    Código {error.status}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-base font-medium text-amber-900 dark:text-amber-100">
+                {error.message}
+              </p>
+              {error.fallbackMessage && error.fallbackMessage !== error.message ? (
+                <p className="text-xs text-amber-800/70 dark:text-amber-100/70">
+                  Detalhes técnicos: {error.fallbackMessage}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={fetchLogs} disabled={loading}>
+                {loading ? 'Recarregando…' : 'Tentar novamente'}
+              </Button>
+              <Button asChild variant="outline">
+                <a
+                  href={STATUS_PAGE_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir status page
+                </a>
+              </Button>
+            </div>
+          </div>
+
+          {error.payload ? (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-900 dark:border-amber-200/30 dark:bg-amber-200/5 dark:text-amber-50">
+              <p className="mb-2 font-semibold uppercase tracking-wide">
+                Último payload recebido
+              </p>
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed">
+                {stringifyJson(error.payload)}
+              </pre>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
