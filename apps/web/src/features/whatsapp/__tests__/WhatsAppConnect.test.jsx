@@ -8,12 +8,17 @@ const mockApiGet = vi.fn();
 const mockApiPost = vi.fn();
 const mockApiPatch = vi.fn();
 const mockApiDelete = vi.fn();
+const mockGetAuthToken = vi.fn(() => null);
 
 vi.mock('@/lib/api.js', () => ({
   apiGet: (...args) => mockApiGet(...args),
   apiPost: (...args) => mockApiPost(...args),
   apiPatch: (...args) => mockApiPatch(...args),
   apiDelete: (...args) => mockApiDelete(...args),
+}));
+
+vi.mock('@/lib/auth.js', () => ({
+  getAuthToken: (...args) => mockGetAuthToken(...args),
 }));
 
 vi.mock('@/lib/session-storage.js', () => ({
@@ -165,6 +170,8 @@ beforeEach(() => {
   mockApiPost.mockReset();
   mockApiPatch.mockReset();
   mockApiDelete.mockReset();
+  mockGetAuthToken.mockReset();
+  mockGetAuthToken.mockReturnValue(null);
 });
 
 afterEach(() => {
@@ -195,6 +202,7 @@ describe('WhatsAppConnect', () => {
       expect(mockApiGet).toHaveBeenCalledWith(
         expect.stringContaining('/api/integrations/whatsapp/instances?refresh=1')
       );
+      expect(mockApiGet).toHaveBeenCalledWith('/api/integrations/whatsapp/instances?refresh=1');
     });
 
     const instanceLabels = await screen.findAllByText('Instância Demo');
@@ -368,5 +376,25 @@ describe('WhatsAppConnect', () => {
     const qrImage = await screen.findAllByAltText('QR Code do WhatsApp');
     expect(qrImage.length).toBeGreaterThan(0);
     expect(screen.getAllByText(/QR necessário/i)[0]).toBeInTheDocument();
+  });
+
+  it('attempts to sync instances on mount even without an auth token', async () => {
+    mockGetAuthToken.mockReturnValue(null);
+
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/api/integrations/whatsapp/instances?refresh=1');
+    });
   });
 });

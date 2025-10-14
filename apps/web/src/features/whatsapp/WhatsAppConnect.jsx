@@ -1294,7 +1294,8 @@ const WhatsAppConnect = ({
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   const generatingQrRef = useRef(isGeneratingQrImage);
   const hasQr = Boolean(qrImageSrc);
-  const isAuthenticated = sessionActive && !authDeferred && Boolean(authTokenState);
+  const canSynchronize = sessionActive && !authDeferred;
+  const isAuthenticated = canSynchronize && Boolean(authTokenState);
   const canContinue = localStatus === 'connected' && instance && hasAgreement;
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -1476,18 +1477,19 @@ const WhatsAppConnect = ({
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!canSynchronize) {
+      setInstancesReady(true);
       return;
     }
     void loadInstances({ forceRefresh: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, selectedAgreement?.id]);
+  }, [canSynchronize, selectedAgreement?.id]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!canSynchronize) {
       setInstancesReady(true);
     }
-  }, [isAuthenticated]);
+  }, [canSynchronize]);
 
   useEffect(() => {
     setLocalStatus(status);

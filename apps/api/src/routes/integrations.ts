@@ -217,6 +217,97 @@ const BROKER_NOT_FOUND_CODES = new Set([
   'INSTANCE_NOT_FOUND',
 ]);
 
+type WhatsAppDisconnectRetryJob = {
+  instanceId: string;
+  tenantId: string;
+  requestedAt: string;
+  status: number | null;
+  requestId: string | null;
+  wipe: boolean;
+};
+
+type WhatsAppDisconnectRetryState = {
+  jobs: WhatsAppDisconnectRetryJob[];
+};
+
+const WHATSAPP_DISCONNECT_RETRY_KEY_PREFIX = 'whatsapp:disconnect:retry:tenant:';
+const MAX_DISCONNECT_RETRY_JOBS = 20;
+
+const readDisconnectRetryState = (value: unknown): WhatsAppDisconnectRetryState | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const source = value as { jobs?: unknown };
+  const jobsSource = Array.isArray(source.jobs) ? source.jobs : [];
+  const jobs: WhatsAppDisconnectRetryJob[] = [];
+
+  for (const entry of jobsSource) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const instanceId = typeof record.instanceId === 'string' ? record.instanceId.trim() : '';
+    const tenantId = typeof record.tenantId === 'string' ? record.tenantId.trim() : '';
+    const requestedAt = typeof record.requestedAt === 'string' ? record.requestedAt : '';
+    const status = typeof record.status === 'number' ? record.status : null;
+    const requestId = typeof record.requestId === 'string' ? record.requestId.trim() : null;
+    const wipe = typeof record.wipe === 'boolean' ? record.wipe : false;
+
+    if (!instanceId || !tenantId || !requestedAt) {
+      continue;
+    }
+
+    jobs.push({ instanceId, tenantId, requestedAt, status, requestId, wipe });
+  }
+
+  return { jobs };
+};
+
+const scheduleWhatsAppDisconnectRetry = async (
+  tenantId: string,
+  job: Omit<WhatsAppDisconnectRetryJob, 'tenantId'>
+): Promise<void> => {
+  const key = `${WHATSAPP_DISCONNECT_RETRY_KEY_PREFIX}${tenantId}`;
+  const normalizedJob: WhatsAppDisconnectRetryJob = {
+    tenantId,
+    instanceId: job.instanceId,
+    status: Number.isFinite(job.status) ? (job.status as number) : null,
+    requestId: job.requestId ?? null,
+    wipe: Boolean(job.wipe),
+    requestedAt:
+      typeof job.requestedAt === 'string' && job.requestedAt.trim().length > 0
+        ? job.requestedAt
+        : new Date().toISOString(),
+  };
+
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.integrationState.findUnique({ where: { key } });
+    const currentState = readDisconnectRetryState(existing?.value) ?? { jobs: [] };
+    const nextJobs = currentState.jobs.filter((entry) => entry.instanceId !== normalizedJob.instanceId);
+    nextJobs.push(normalizedJob);
+
+    const trimmedJobs = nextJobs.slice(-MAX_DISCONNECT_RETRY_JOBS);
+    const value = { jobs: trimmedJobs } as WhatsAppDisconnectRetryState;
+
+    if (existing) {
+      await tx.integrationState.update({
+        where: { key },
+        data: { value: value as unknown as Prisma.JsonValue },
+      });
+      return;
+    }
+
+    await tx.integrationState.create({
+      data: {
+        key,
+        value: value as unknown as Prisma.JsonValue,
+      },
+    });
+  });
+};
+
 const readBrokerErrorStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object') {
     return null;
@@ -3393,6 +3484,49 @@ router.post(
             },
           });
           return;
+        }
+
+        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+          const brokerError = error as WhatsAppBrokerError;
+          const brokerStatus = readBrokerErrorStatus(brokerError);
+
+          if (brokerStatus !== null && brokerStatus >= 500) {
+            logger.warn('whatsapp.instance.disconnect.retryScheduled', {
+              tenantId,
+              instanceId,
+              status: brokerStatus,
+              code: brokerError.code,
+              requestId: brokerError.requestId,
+              wipe: Boolean(wipe),
+            });
+
+            const scheduledAt = new Date().toISOString();
+
+            await scheduleWhatsAppDisconnectRetry(tenantId, {
+              instanceId,
+              status: brokerStatus,
+              requestId: brokerError.requestId ?? null,
+              wipe: Boolean(wipe),
+              requestedAt: scheduledAt,
+            });
+
+            res.status(202).json({
+              success: true,
+              data: {
+                instanceId,
+                disconnected: false,
+                pending: true,
+                existed: true,
+                connected: null,
+                retry: {
+                  scheduledAt,
+                  status: brokerStatus,
+                  requestId: brokerError.requestId ?? null,
+                },
+              },
+            });
+            return;
+          }
         }
 
         if (handleWhatsAppIntegrationError(res, error)) {
