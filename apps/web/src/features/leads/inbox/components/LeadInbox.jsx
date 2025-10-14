@@ -333,12 +333,21 @@ const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 export const LeadInbox = ({
   selectedAgreement,
   campaign,
+  instanceId: instanceIdProp,
   onboarding,
   onSelectAgreement,
   onBackToWhatsApp,
 }) => {
   const agreementId = selectedAgreement?.id;
   const campaignId = campaign?.id;
+  const resolvedInstanceId =
+    instanceIdProp ??
+    campaign?.instanceId ??
+    onboarding?.activeCampaign?.instanceId ??
+    onboarding?.instanceId ??
+    null;
+  const resolvedTenantId =
+    selectedAgreement?.tenantId ?? campaign?.tenantId ?? onboarding?.tenantId ?? null;
 
   const initialFilters = useMemo(() => loadStoredFilters(), []);
   const initialViews = useMemo(() => loadStoredViews(), []);
@@ -372,11 +381,11 @@ export const LeadInbox = ({
     updateAllocationStatus,
     lastUpdatedAt,
     nextRefreshAt,
-  } = useLeadAllocations({ agreementId, campaignId, instanceId: campaign?.instanceId });
+  } = useLeadAllocations({ agreementId, campaignId, instanceId: resolvedInstanceId });
 
   const { connected: realtimeConnected, connectionError } = useInboxLiveUpdates({
-    tenantId: selectedAgreement?.tenantId ?? campaign?.tenantId ?? null,
-    enabled: Boolean(agreementId || campaignId),
+    tenantId: resolvedTenantId,
+    enabled: Boolean(agreementId || campaignId || resolvedInstanceId),
     onLead: () => {
       refresh();
     },
@@ -441,6 +450,7 @@ export const LeadInbox = ({
   const previousContextRef = useRef({
     agreementId: agreementId ?? null,
     campaignId: campaignId ?? null,
+    instanceId: resolvedInstanceId ?? null,
   });
   const firstActiveSelectionRef = useRef(true);
   const inboxListRef = useRef(null);
@@ -464,18 +474,24 @@ export const LeadInbox = ({
     const current = {
       agreementId: agreementId ?? null,
       campaignId: campaignId ?? null,
+      instanceId: resolvedInstanceId ?? null,
     };
 
     const hasChanged =
-      previous.agreementId !== current.agreementId || previous.campaignId !== current.campaignId;
+      previous.agreementId !== current.agreementId ||
+      previous.campaignId !== current.campaignId ||
+      previous.instanceId !== current.instanceId;
 
-    if (hasChanged && (previous.agreementId !== null || previous.campaignId !== null)) {
+    if (
+      hasChanged &&
+      (previous.agreementId !== null || previous.campaignId !== null || previous.instanceId !== null)
+    ) {
       setFilters({ ...defaultFilters });
       setActiveViewId(null);
     }
 
     previousContextRef.current = current;
-  }, [agreementId, campaignId]);
+  }, [agreementId, campaignId, resolvedInstanceId]);
 
   const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'inbox') ?? onboarding?.activeStep ?? 3;
   const totalStages = onboarding?.stages?.length ?? 0;
@@ -875,11 +891,11 @@ export const LeadInbox = ({
     if (filters.status !== 'all') {
       params.set('status', filters.status);
     }
-    if (campaign?.instanceId) {
-      params.set('instanceId', campaign.instanceId);
+    if (resolvedInstanceId) {
+      params.set('instanceId', resolvedInstanceId);
     }
     window.open(`/api/lead-engine/allocations/export?${params.toString()}`, '_blank');
-  }, [agreementId, campaign?.instanceId, campaignId, filters.status]);
+  }, [agreementId, campaignId, filters.status, resolvedInstanceId]);
 
   const showRealtimeConnecting = !realtimeConnected && !connectionError;
   const showRealtimeError = Boolean(connectionError);
