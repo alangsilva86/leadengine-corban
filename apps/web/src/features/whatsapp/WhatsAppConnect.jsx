@@ -1186,12 +1186,24 @@ const WhatsAppConnect = ({
     return status === 401 || status === 403;
   };
 
-  const handleAuthFallback = ({ reset = false } = {}) => {
+  const handleAuthFallback = ({ reset = false, error: errorCandidate = null } = {}) => {
     setLoadingInstances(false);
     setLoadingQr(false);
-    setErrorMessage(requireAuthMessage, {
-      title: 'Sincronização necessária',
-    });
+    const status =
+      typeof errorCandidate?.status === 'number'
+        ? errorCandidate.status
+        : typeof errorCandidate?.response?.status === 'number'
+          ? errorCandidate.response.status
+          : null;
+    const shouldDisplayWarning = status === 401 || status === 403;
+
+    if (shouldDisplayWarning || reset) {
+      setErrorMessage(requireAuthMessage, {
+        title: 'Sincronização necessária',
+      });
+    } else if (!authTokenState) {
+      setErrorMessage(null);
+    }
     if (reset) {
       setInstances([]);
       setInstance(null);
@@ -1304,7 +1316,7 @@ const WhatsAppConnect = ({
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || requestingPairingCode;
   const confirmLabel = 'Ir para a inbox de leads';
-  const confirmDisabled = !isAuthenticated || !canContinue || isBusy;
+  const confirmDisabled = !canContinue || isBusy;
   const qrStatusMessage = localStatus === 'connected'
     ? 'Conexão ativa — QR oculto.'
     : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
@@ -1954,7 +1966,7 @@ const WhatsAppConnect = ({
       const isMissingInstanceError = status === 404 || errorCode === 'INSTANCE_NOT_FOUND';
 
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
       } else if (!isMissingInstanceError) {
         applyErrorMessageFromError(
           err,
@@ -2058,7 +2070,7 @@ const WhatsAppConnect = ({
       return { success: true, items: list };
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
       } else {
         setCampaignError(
           err instanceof Error ? err.message : 'Não foi possível carregar campanhas'
@@ -2269,7 +2281,7 @@ const WhatsAppConnect = ({
       return { instanceId: createdInstanceId ?? normalizedName };
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         throw err;
       }
 
@@ -2328,7 +2340,7 @@ const WhatsAppConnect = ({
       return createdCampaign;
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         throw err;
       }
 
@@ -2363,7 +2375,7 @@ const WhatsAppConnect = ({
       );
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         throw err;
       }
 
@@ -2396,7 +2408,7 @@ const WhatsAppConnect = ({
       toast.success('Campanha encerrada com sucesso.');
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         throw err;
       }
 
@@ -2451,7 +2463,7 @@ const WhatsAppConnect = ({
       );
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         throw err;
       }
 
@@ -2480,7 +2492,7 @@ const WhatsAppConnect = ({
       return { summary, items: Array.isArray(response?.data) ? response.data : [] };
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
       }
       throw err instanceof Error ? err : new Error('Falha ao carregar impacto da campanha');
     }
@@ -2532,6 +2544,9 @@ const WhatsAppConnect = ({
         err,
         'Não foi possível remover a instância'
       );
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+      }
       const encodedId = encodeURIComponent(target.id);
       const isJid = looksLikeWhatsAppJid(target.id);
       const url = isJid
@@ -2749,7 +2764,7 @@ const WhatsAppConnect = ({
           setAuthDeferred(false);
         } catch (error) {
           if (isAuthError(error)) {
-            handleAuthFallback();
+            handleAuthFallback({ error });
             return;
           }
         }
@@ -2772,7 +2787,7 @@ const WhatsAppConnect = ({
       setQrData(received);
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
       } else {
         applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
       }
@@ -2815,7 +2830,7 @@ const WhatsAppConnect = ({
       );
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         return;
       }
 
@@ -2904,7 +2919,7 @@ const WhatsAppConnect = ({
       }
     } catch (err) {
       if (isAuthError(err)) {
-        handleAuthFallback();
+        handleAuthFallback({ error: err });
         return;
       }
       // Continua em modo otimista caso a rota não exista
