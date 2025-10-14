@@ -133,18 +133,12 @@ const BaileysLogs = () => {
       setError(null);
       setDegradedMode(false);
     } catch (err) {
-      setError((previous) => buildErrorState(err, previous));
-      setDegradedMode(true);
-      if (!signal?.aborted) {
-        setLogs(items);
-      }
-    } catch (err) {
       if (err?.name === 'AbortError') {
         return;
       }
-      const message =
-        err?.message ?? 'Não foi possível carregar os logs do Baileys.';
-      setError(message);
+
+      setError((previous) => buildErrorState(err, previous));
+      setDegradedMode(true);
       console.error('BaileysLogs: fetch failed', err);
     } finally {
       if (!signal?.aborted) {
