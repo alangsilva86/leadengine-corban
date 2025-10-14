@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 const isCI = Boolean(process.env.CI);
 const cliArgs = ['build'];
 
+// Allow maintainers to pass through additional Vite CLI options, e.g.
+// `pnpm -F web run build -- --analyze`
+cliArgs.push(...process.argv.slice(2));
+
 if (isCI) {
   cliArgs.push('--config', 'vite.build.ci.mjs');
 }
