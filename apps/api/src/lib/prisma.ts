@@ -141,23 +141,6 @@ if (isDatabaseEnabled && process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-export async function connectDatabase() {
-  if (!isDatabaseEnabled) {
-    logger.warn('[Prisma] Skipping database connection — DATABASE_URL not configured.');
-    return;
-  }
-
-  try {
-    await prisma.$connect();
-    logger.info('[Prisma] ✅ Conectado ao banco de dados PostgreSQL');
-    await prisma.$queryRaw`SELECT 1`;
-    logger.info('[Prisma] ✅ Conexão testada com sucesso');
-  } catch (error) {
-    logger.error('[Prisma] ❌ Falha ao conectar ao banco de dados', { error });
-    throw error;
-  }
-}
-
 export async function disconnectDatabase() {
   if (!isDatabaseEnabled) {
     return;

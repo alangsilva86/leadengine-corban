@@ -42,10 +42,6 @@ export const rememberIdempotency = <T>(
   return entry;
 };
 
-export const purgeIdempotency = (tenantId: string, idempotencyKey: string): void => {
-  registry.delete(compoundKey(tenantId, idempotencyKey));
-};
-
 const stableStringify = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableStringify(item)).join(',')}]`;

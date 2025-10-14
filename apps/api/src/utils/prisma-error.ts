@@ -118,10 +118,3 @@ export const mapPrismaError = (
   return null;
 };
 
-export const isPrismaConnectivityError = (error: unknown): boolean => {
-  if (isKnownRequestError(error)) {
-    return CONNECTIVITY_ERROR_CODES.has(error.code);
-  }
-
-  return isInitializationError(error) || isRustPanicError(error);
-};

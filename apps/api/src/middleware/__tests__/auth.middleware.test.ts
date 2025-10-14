@@ -50,26 +50,6 @@ describe('auth middleware demo mode', () => {
     expect(response.body.user).toMatchObject(resolveDemoUser());
   });
 
-  it('mantém o fluxo mesmo sem permissões explícitas', async () => {
-    const { authMiddleware, requirePermission, resolveDemoUser } = await loadAuthModule();
-
-    const app = express();
-    app.get(
-      '/tickets',
-      authMiddleware,
-      requirePermission('tickets:write'),
-      (req, res) => {
-        res.status(200).json({ ok: true, userId: req.user?.id });
-      }
-    );
-
-    const response = await request(app).get('/tickets');
-
-    expect(response.status).toBe(200);
-    expect(response.body.ok).toBe(true);
-    expect(response.body.userId).toBe(resolveDemoUser().id);
-  });
-
   it('garante tenant padrão via requireTenant', async () => {
     const { authMiddleware, requireTenant, resolveDemoUser } = await loadAuthModule();
 

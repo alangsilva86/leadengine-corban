@@ -49,9 +49,3 @@ if (process.env.NODE_ENV !== 'production') {
   );
 }
 
-// Stream para o Morgan (request logger)
-export const loggerStream = {
-  write: (message: string) => {
-    logger.info(message.trim());
-  },
-};
