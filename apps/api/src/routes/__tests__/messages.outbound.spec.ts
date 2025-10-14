@@ -348,7 +348,7 @@ describe('Outbound message routes', () => {
 
     expect(sendMessageMock).toHaveBeenCalledTimes(1);
     expect(sendMessageMock).toHaveBeenCalledWith(
-      'instance-001',
+      'broker-1',
       expect.objectContaining({
         to: '+554499999999',
         type: 'TEXT',
@@ -727,7 +727,7 @@ describe('Outbound message routes', () => {
     expect(response.body.queued).toBe(true);
     expect(response.body.ticketId).toBeTruthy();
     expect(sendMessageMock).toHaveBeenCalledWith(
-      'instance-001',
+      'broker-fallback',
       expect.objectContaining({
         to: contact.phone,
       }),

@@ -71,6 +71,36 @@ type WhatsAppTransportDependencies = {
   transport?: WhatsAppTransport;
 };
 
+type WhatsAppInstanceForDispatch = {
+  id: string;
+  brokerId: string | null;
+};
+
+export const resolveDispatchInstanceId = async (
+  instanceId: string | null | undefined,
+  instance?: WhatsAppInstanceForDispatch | null
+): Promise<string | null> => {
+  if (!instanceId) {
+    return null;
+  }
+
+  const record =
+    instance ??
+    (await prisma.whatsAppInstance.findUnique({
+      where: { id: instanceId },
+      select: {
+        id: true,
+        brokerId: true,
+      },
+    }));
+
+  if (!record) {
+    throw new NotFoundError('WhatsAppInstance', instanceId);
+  }
+
+  return record.brokerId ?? record.id;
+};
+
 const OUTBOUND_TPS_DEFAULT = (() => {
   const raw = process.env.OUTBOUND_TPS_DEFAULT;
   const parsed = Number.parseInt(raw ?? '', 10);
@@ -1395,8 +1425,12 @@ export const sendMessage = async (
       } else {
         const transport = dependencies.transport ?? getWhatsAppTransport();
         try {
+          const dispatchInstanceId = await resolveDispatchInstanceId(instanceId);
+          if (!dispatchInstanceId) {
+            throw new NotFoundError('WhatsAppInstance', instanceId ?? 'unknown');
+          }
           const dispatchResult = await transport.sendMessage(
-            instanceId,
+            dispatchInstanceId,
             {
               to: phone,
               content: input.content ?? input.caption ?? '',
@@ -1761,11 +1795,7 @@ export const sendToContact = async (
   }
 
   if (instanceId) {
-    const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-    if (!instance) {
-      throw new NotFoundError('WhatsAppInstance', instanceId);
-    }
+    await resolveDispatchInstanceId(instanceId);
   }
 
   let normalizedPhone = contact.phone?.trim() ?? undefined;
@@ -1845,6 +1875,8 @@ export const sendAdHoc = async (
   if (!instance) {
     throw new NotFoundError('WhatsAppInstance', instanceId);
   }
+
+  await resolveDispatchInstanceId(instanceId, instance);
 
   const tenantId = instance.tenantId;
 
