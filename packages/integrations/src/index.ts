@@ -4,21 +4,12 @@
 
 // WhatsApp Integration
 export { BaileysWhatsAppProvider } from './whatsapp/baileys-provider';
-// Deprecated: retained temporarily for backwards compatibility with the former sidecar runtime.
-export { WhatsAppInstanceManager } from './whatsapp/instance-manager';
 export { loadBaileysModule } from './whatsapp/baileys-loader';
 export type {
   WhatsAppConfig,
   ConnectionStatus,
   WhatsAppMessage,
 } from './whatsapp/baileys-provider';
-export type {
-  WhatsAppInstance,
-  CreateInstanceRequest,
-  WhatsAppInstanceManagerOptions,
-  ReconnectConfig,
-  WhatsAppLifecycleObserver,
-} from './whatsapp/instance-manager';
 export type {
   WhatsAppSessionStore,
   WhatsAppSessionData,
