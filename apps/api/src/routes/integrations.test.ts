@@ -2073,6 +2073,91 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('schedules a retry when stored instance disconnect fails with a server error', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const { prisma } = await import('../lib/prisma');
+
+    const storedInstance = {
+      id: 'instance-retry',
+      tenantId: 'tenant-123',
+      name: 'Instance Retry',
+      brokerId: 'broker-retry',
+      phoneNumber: '+5511999999999',
+      status: 'connected',
+      connected: true,
+      lastSeenAt: new Date('2024-01-09T00:00:00.000Z'),
+      createdAt: new Date('2024-01-08T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-08T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockResolvedValue([storedInstance]);
+    const disconnectError = new WhatsAppBrokerError('Broker unavailable', 'BROKER_UNAVAILABLE', 502, 'req-stored-502');
+    const disconnectSpy = vi
+      .spyOn(whatsappBrokerClient, 'disconnectInstance')
+      .mockRejectedValue(disconnectError);
+
+    prisma.integrationState.findUnique.mockResolvedValue(null);
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${encodeURIComponent(storedInstance.id)}/disconnect`,
+        {
+          method: 'POST',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(disconnectSpy).toHaveBeenCalledWith('broker-retry', { instanceId: 'instance-retry' });
+      expect(response.status).toBe(202);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          instanceId: 'instance-retry',
+          disconnected: false,
+          pending: true,
+          existed: true,
+          connected: null,
+          retry: {
+            status: 502,
+            requestId: 'req-stored-502',
+          },
+        },
+      });
+
+      const createArgs = prisma.integrationState.create.mock.calls[0]?.[0];
+      expect(prisma.integrationState.create).toHaveBeenCalledTimes(1);
+      expect(prisma.integrationState.update).not.toHaveBeenCalled();
+      expect(createArgs).toMatchObject({
+        data: {
+          key: 'whatsapp:disconnect:retry:tenant:tenant-123',
+          value: {
+            jobs: [
+              expect.objectContaining({
+                instanceId: 'instance-retry',
+                tenantId: 'tenant-123',
+                status: 502,
+                requestId: 'req-stored-502',
+                wipe: false,
+                requestedAt: expect.any(String),
+              }),
+            ],
+          },
+        },
+      });
+
+      expect(prisma.whatsAppInstance.update).not.toHaveBeenCalled();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('fetches a WhatsApp instance QR code', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');

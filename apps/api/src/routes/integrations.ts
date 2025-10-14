@@ -2212,12 +2212,19 @@ const resolveInstanceOperationContext = async (
   };
 };
 
+type DisconnectStoredInstanceResult =
+  | { outcome: 'success'; context: InstanceOperationContext }
+  | {
+      outcome: 'retry';
+      retry: { scheduledAt: string; status: number; requestId: string | null };
+    };
+
 const disconnectStoredInstance = async (
   tenantId: string,
   stored: StoredInstance,
   actorId: string,
   options: { wipe?: boolean } = {}
-): Promise<InstanceOperationContext> => {
+): Promise<DisconnectStoredInstanceResult> => {
   const disconnectOptions = options.wipe === undefined ? undefined : { wipe: options.wipe };
   let cachedContext: InstanceOperationContext | null = null;
 
@@ -2244,6 +2251,35 @@ const disconnectStoredInstance = async (
           requestId: brokerError.requestId,
         });
         cachedContext = await resolveInstanceOperationContext(tenantId, stored, { refresh: true });
+      } else if (brokerStatus !== null && brokerStatus >= 500) {
+        const scheduledAt = new Date().toISOString();
+
+        logger.warn('whatsapp.instances.disconnect.retryScheduled', {
+          tenantId,
+          instanceId: stored.id,
+          brokerId: stored.brokerId,
+          status: brokerStatus,
+          code: brokerError.code,
+          requestId: brokerError.requestId,
+          wipe: Boolean(options.wipe),
+        });
+
+        await scheduleWhatsAppDisconnectRetry(tenantId, {
+          instanceId: stored.id,
+          status: brokerStatus,
+          requestId: brokerError.requestId ?? null,
+          wipe: Boolean(options.wipe),
+          requestedAt: scheduledAt,
+        });
+
+        return {
+          outcome: 'retry',
+          retry: {
+            scheduledAt,
+            status: brokerStatus,
+            requestId: brokerError.requestId ?? null,
+          },
+        };
       } else {
         throw brokerError;
       }
@@ -2282,7 +2318,7 @@ const disconnectStoredInstance = async (
     },
   });
 
-  return context;
+  return { outcome: 'success', context };
 };
 
 const parseNumber = (input: unknown): number | null => {
@@ -3369,12 +3405,33 @@ router.post(
         return;
       }
 
-      const context = await disconnectStoredInstance(
+      const result = await disconnectStoredInstance(
         tenantId,
         instance as StoredInstance,
         req.user?.id ?? 'system',
         wipe === undefined ? {} : { wipe }
       );
+
+      if (result.outcome === 'retry') {
+        res.status(202).json({
+          success: true,
+          data: {
+            instanceId: instance.id,
+            disconnected: false,
+            existed: true,
+            connected: null,
+            pending: true,
+            retry: {
+              scheduledAt: result.retry.scheduledAt,
+              status: result.retry.status,
+              requestId: result.retry.requestId,
+            },
+          },
+        });
+        return;
+      }
+
+      const context = result.context;
 
       res.json({
         success: true,
@@ -3428,12 +3485,33 @@ router.post(
       }
 
       if (storedInstance) {
-        const context = await disconnectStoredInstance(
+        const result = await disconnectStoredInstance(
           tenantId,
           storedInstance as StoredInstance,
           actorId,
           wipe === undefined ? {} : { wipe }
         );
+
+        if (result.outcome === 'retry') {
+          res.status(202).json({
+            success: true,
+            data: {
+              instanceId: storedInstance.id,
+              disconnected: false,
+              existed: true,
+              connected: null,
+              pending: true,
+              retry: {
+                scheduledAt: result.retry.scheduledAt,
+                status: result.retry.status,
+                requestId: result.retry.requestId,
+              },
+            },
+          });
+          return;
+        }
+
+        const context = result.context;
 
         res.json({
           success: true,
