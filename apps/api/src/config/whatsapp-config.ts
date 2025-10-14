@@ -158,7 +158,7 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
     },
     flags: {
-      passthroughMode: normalizeBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, true),
+      passthroughMode: normalizeBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, false),
     },
   };
 };

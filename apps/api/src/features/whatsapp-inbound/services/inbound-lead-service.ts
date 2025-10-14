@@ -7,6 +7,10 @@ import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import {
+  isWhatsappInboundSimpleModeEnabled,
+  isWhatsappPassthroughModeEnabled,
+} from '../../../config/feature-flags';
+import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
 } from '../../../lib/metrics';
@@ -1517,12 +1521,47 @@ export const ingestInboundWhatsAppMessage = async (
     sessionId: readString(metadata.sessionId),
   };
 
-  await handlePassthroughIngest(event);
+  const passthroughMode = isWhatsappPassthroughModeEnabled();
+  const simpleMode = passthroughMode || isWhatsappInboundSimpleModeEnabled();
+
+  if (passthroughMode) {
+    await handlePassthroughIngest(event);
+    return true;
+  }
+
+  await processStandardInboundEvent(event, now, { passthroughMode, simpleMode });
   return true;
 };
-/*
-Legacy pipeline (campaign/lead synchronization) retained for reference but disabled.
-The passthrough handler above short-circuits all validations.
+
+const processStandardInboundEvent = async (
+  event: InboundWhatsAppEvent,
+  now: number,
+  {
+    passthroughMode,
+    simpleMode,
+  }: {
+    passthroughMode: boolean;
+    simpleMode: boolean;
+  }
+): Promise<void> => {
+  const {
+    instanceId,
+    contact,
+    message,
+    timestamp,
+    direction,
+    chatId,
+    externalId,
+    tenantId: eventTenantId,
+    sessionId: eventSessionId,
+  } = event;
+
+  const normalizedPhone = sanitizePhone(contact.phone);
+  const document = sanitizeDocument(contact.document, normalizedPhone);
+  const metadataRecord = toRecord(event.metadata);
+  const requestId = readString(metadataRecord['requestId']);
+  const metadataContact = toRecord(metadataRecord.contact);
+  const metadataPushName = readString(metadataContact['pushName']) ?? readString(metadataRecord['pushName']);
   const resolvedAvatar = [
     contact.avatarUrl,
     metadataContact.avatarUrl,
@@ -1545,6 +1584,7 @@ The passthrough handler above short-circuits all validations.
   if (eventSessionId && !metadataRecord.sessionId) {
     metadataRecord.sessionId = eventSessionId;
   }
+
   const metadataBroker =
     metadataRecord.broker && typeof metadataRecord.broker === 'object'
       ? (metadataRecord.broker as Record<string, unknown>)
@@ -1591,16 +1631,15 @@ The passthrough handler above short-circuits all validations.
 
   const tenantId = instance.tenantId;
 
-  const campaigns =
-    simpleMode
-      ? []
-      : await prisma.campaign.findMany({
-          where: {
-            tenantId,
-            whatsappInstanceId: instanceId,
-            status: 'active',
-          },
-        });
+  const campaigns = simpleMode
+    ? []
+    : await prisma.campaign.findMany({
+        where: {
+          tenantId,
+          whatsappInstanceId: instanceId,
+          status: 'active',
+        },
+      });
 
   if (!campaigns.length && !simpleMode && !passthroughMode) {
     const fallbackCampaign = await provisionFallbackCampaignForInstance(tenantId, instanceId);
@@ -1748,34 +1787,34 @@ The passthrough handler above short-circuits all validations.
     message && typeof message === 'object' && 'key' in message && message.key && typeof message.key === 'object'
       ? (message.key as { id?: string | null })
       : null;
-    const messageExternalId =
-      readString(externalId) ??
-      readString(normalizedMessage.id) ??
-      readString((message as InboundMessageDetails).id) ??
-      readString(messageKeyRecord?.id) ??
-      event.id;
+  const messageExternalId =
+    readString(externalId) ??
+    readString(normalizedMessage.id) ??
+    readString((message as InboundMessageDetails).id) ??
+    readString(messageKeyRecord?.id) ??
+    event.id;
 
-    if (messageExternalId && !metadataRecord.externalId) {
-      metadataRecord.externalId = messageExternalId;
-    }
+  if (messageExternalId && !metadataRecord.externalId) {
+    metadataRecord.externalId = messageExternalId;
+  }
 
-    const metadataBrokerRecord =
-      metadataRecord.broker && typeof metadataRecord.broker === 'object'
-        ? (metadataRecord.broker as Record<string, unknown>)
-        : null;
-    if (metadataBrokerRecord) {
-      if (messageExternalId && !metadataBrokerRecord.messageId) {
-        metadataBrokerRecord.messageId = messageExternalId;
-      }
-      metadataBrokerRecord.direction = direction;
-      metadataBrokerRecord.instanceId = metadataBrokerRecord.instanceId ?? instanceId;
-    } else if (messageExternalId) {
-      metadataRecord.broker = {
-        direction,
-        instanceId,
-        messageId: messageExternalId,
-      };
+  const metadataBrokerRecord =
+    metadataRecord.broker && typeof metadataRecord.broker === 'object'
+      ? (metadataRecord.broker as Record<string, unknown>)
+      : null;
+  if (metadataBrokerRecord) {
+    if (messageExternalId && !metadataBrokerRecord.messageId) {
+      metadataBrokerRecord.messageId = messageExternalId;
     }
+    metadataBrokerRecord.direction = direction;
+    metadataBrokerRecord.instanceId = metadataBrokerRecord.instanceId ?? instanceId;
+  } else if (messageExternalId) {
+    metadataRecord.broker = {
+      direction,
+      instanceId,
+      messageId: messageExternalId,
+    };
+  }
 
   const brokerTimestamp = normalizedMessage.brokerMessageTimestamp;
   const normalizedTimestamp = (() => {
@@ -1803,119 +1842,6 @@ The passthrough handler above short-circuits all validations.
       brokerMessageId: normalizedMessage.id,
       dedupeKey,
     });
-    return;
-  }
-
-  if (passthroughMode) {
-    const socket = getSocketServer();
-    const metadataContactRecord = metadataContact ?? {};
-    const remoteJidCandidate =
-      readString(metadataContactRecord.remoteJid) ??
-      readString(metadataContactRecord.jid) ??
-      readString(metadataRecord.remoteJid);
-    const resolvedChatId =
-      readString(chatId) ??
-      remoteJidCandidate ??
-      readString(metadataRecord.chatId) ??
-      normalizedPhone ??
-      readString(contact.phone) ??
-      readString(document) ??
-      messageExternalId ??
-      randomUUID();
-
-    const externalIdForUpsert = messageExternalId ?? normalizedMessage.id ?? randomUUID();
-    const passthroughDirection =
-      typeof direction === 'string' && direction.toUpperCase() === 'OUTBOUND' ? 'outbound' : 'inbound';
-
-    const normalizedType = normalizedMessage.type;
-    let passthroughType: 'text' | 'media' | 'unknown' = 'unknown';
-    let passthroughText: string | null = null;
-    let passthroughMedia: {
-      mediaType: string;
-      url?: string | null;
-      mimeType?: string | null;
-      fileName?: string | null;
-      size?: number | null;
-      caption?: string | null;
-    } | null = null;
-
-    if (normalizedType === 'IMAGE' || normalizedType === 'VIDEO' || normalizedType === 'AUDIO' || normalizedType === 'DOCUMENT') {
-      passthroughType = 'media';
-      const mediaType = normalizedType.toLowerCase();
-      passthroughText = normalizedMessage.caption ?? normalizedMessage.text ?? null;
-      passthroughMedia = {
-        mediaType,
-        url: normalizedMessage.mediaUrl ?? null,
-        mimeType: normalizedMessage.mimetype ?? null,
-        size: normalizedMessage.fileSize ?? null,
-        caption: normalizedMessage.caption ?? null,
-      };
-    } else if (
-      normalizedType === 'TEXT' ||
-      normalizedType === 'TEMPLATE' ||
-      normalizedType === 'CONTACT' ||
-      normalizedType === 'LOCATION'
-    ) {
-      passthroughType = 'text';
-      passthroughText = normalizedMessage.text ?? null;
-    } else {
-      passthroughType = 'unknown';
-      passthroughText = normalizedMessage.text ?? null;
-    }
-
-    const metadataForUpsert = {
-      ...metadataRecord,
-      sourceInstance: instanceId,
-      remoteJid: remoteJidCandidate ?? resolvedChatId,
-      phoneE164: normalizedPhone ?? readString(metadataContactRecord.phone) ?? null,
-    };
-
-    const { ticket: passthroughTicket, wasCreated: ticketWasCreated } = await findOrCreateOpenTicketByChat({
-      tenantId,
-      chatId: resolvedChatId,
-      displayName: resolvedName,
-      phone: normalizedPhone ?? readString(contact.phone) ?? resolvedChatId,
-      instanceId,
-    });
-
-    const { message: passthroughMessage, wasCreated: messageWasCreated } = await upsertMessageByExternalId({
-      tenantId,
-      ticketId: passthroughTicket.id,
-      chatId: resolvedChatId,
-      direction: passthroughDirection,
-      externalId: externalIdForUpsert,
-      type: passthroughType,
-      text: passthroughText,
-      media: passthroughMedia,
-      metadata: metadataForUpsert,
-      timestamp: normalizedTimestamp ?? Date.now(),
-    });
-
-    if (socket) {
-      socket.to(`tenant:${tenantId}`).emit('messages.new', passthroughMessage);
-      socket.to(`ticket:${passthroughTicket.id}`).emit('messages.new', passthroughMessage);
-    }
-
-    logger.info(
-      {
-        tenantId,
-        ticketId: passthroughTicket.id,
-        direction: passthroughDirection,
-        externalId: externalIdForUpsert,
-        messageWasCreated,
-        ticketWasCreated,
-      },
-      'passthrough: persisted + emitted messages.new'
-    );
-
-    await emitPassthroughRealtimeUpdates({
-      tenantId,
-      ticketId: passthroughTicket.id,
-      instanceId: instanceId ?? null,
-      message: passthroughMessage,
-      ticketWasCreated,
-    });
-
     return;
   }
 
@@ -2046,7 +1972,7 @@ The passthrough handler above short-circuits all validations.
     }
 
     inboundMessagesProcessedCounter.inc({
-      origin: 'passthrough',
+      origin: 'legacy',
       tenantId,
       instanceId: instanceId ?? 'unknown',
     });
@@ -2063,26 +1989,36 @@ The passthrough handler above short-circuits all validations.
     });
   }
 
-  if (!simpleMode && !passthroughMode && campaigns.length > 0) {
-    for (const campaign of campaigns) {
-      const agreementId = campaign.agreementId || 'unknown';
-      const dedupeKey = `${tenantId}:${campaign.id}:${document || normalizedPhone || leadIdBase}`;
+  if (!simpleMode && !passthroughMode) {
+    const allocationTargets = campaigns.length
+      ? campaigns.map((campaign) => ({
+          campaign,
+          target: { campaignId: campaign.id, instanceId },
+        }))
+      : [{ campaign: null as const, target: { instanceId } }];
 
-      if (await shouldSkipByDedupe(dedupeKey, now)) {
+    for (const { campaign, target } of allocationTargets) {
+      const campaignId = campaign?.id ?? null;
+      const agreementId = campaign?.agreementId || 'unknown';
+      const allocationDedupeKey = campaignId
+        ? `${tenantId}:${campaignId}:${document || normalizedPhone || leadIdBase}`
+        : `${tenantId}:${instanceId}:${document || normalizedPhone || leadIdBase}`;
+
+      if (campaignId && (await shouldSkipByDedupe(allocationDedupeKey, now))) {
         logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
           requestId,
           tenantId,
-          campaignId: campaign.id,
+          campaignId,
           instanceId,
           messageId: message.id ?? null,
           phone: maskPhone(normalizedPhone ?? null),
-          dedupeKey,
+          dedupeKey: allocationDedupeKey,
         });
         continue;
       }
 
       const brokerLead = {
-        id: `${leadIdBase}:${campaign.id}`,
+        id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
         fullName: leadName,
         document,
         registrations,
@@ -2101,16 +2037,12 @@ The passthrough handler above short-circuits all validations.
       };
 
       try {
-        const { newlyAllocated, summary } = await addAllocations(
-          tenantId,
-          { campaignId: campaign.id, instanceId },
-          [brokerLead]
-        );
+        const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
         if (newlyAllocated.length > 0) {
           const allocation = newlyAllocated[0];
           logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
             tenantId,
-            campaignId: campaign.id,
+            campaignId: allocation.campaignId ?? campaignId,
             instanceId,
             allocationId: allocation.allocationId,
             phone: maskPhone(normalizedPhone ?? null),
@@ -2119,8 +2051,8 @@ The passthrough handler above short-circuits all validations.
 
           const realtimePayload = {
             tenantId,
-            campaignId: allocation.campaignId,
-            agreementId: allocation.agreementId,
+            campaignId: allocation.campaignId ?? null,
+            agreementId: allocation.agreementId ?? null,
             instanceId: allocation.instanceId,
             allocation,
             summary,
@@ -2135,7 +2067,7 @@ The passthrough handler above short-circuits all validations.
         if (isUniqueViolation(error)) {
           logger.debug('🎯 LeadEngine • WhatsApp :: ⛔ Lead inbound já alocado recentemente — ignorando duplicidade', {
             tenantId,
-            campaignId: campaign.id,
+            campaignId: campaignId ?? undefined,
             instanceId,
             phone: maskPhone(normalizedPhone ?? null),
           });
@@ -2145,7 +2077,7 @@ The passthrough handler above short-circuits all validations.
         logger.error('🎯 LeadEngine • WhatsApp :: 🚨 Falha ao alocar lead inbound', {
           error: mapErrorForLog(error),
           tenantId,
-          campaignId: campaign.id,
+          campaignId: campaignId ?? undefined,
           instanceId,
           phone: maskPhone(normalizedPhone ?? null),
         });
@@ -2153,4 +2085,4 @@ The passthrough handler above short-circuits all validations.
     }
   }
 };
-*/
+
