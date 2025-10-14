@@ -97,10 +97,18 @@ function App() {
     }
   }, [currentPage, selectedAgreement, whatsappStatus, activeCampaign]);
 
+  const onboardingStages = useMemo(() => {
+    if (selectedAgreement || currentPage === 'agreements') {
+      return journeyStages;
+    }
+
+    return journeyStages.filter((stage) => stage.id !== 'agreements');
+  }, [currentPage, selectedAgreement]);
+
   const activeStep = useMemo(() => {
-    const stageIndex = journeyStages.findIndex((stage) => stage.id === currentPage);
+    const stageIndex = onboardingStages.findIndex((stage) => stage.id === currentPage);
     return stageIndex === -1 ? 0 : stageIndex;
-  }, [currentPage]);
+  }, [currentPage, onboardingStages]);
 
   useEffect(() => {
     let abortController = new AbortController();
@@ -144,21 +152,8 @@ function App() {
   }, [me]);
 
   const computeNextSetupPage = () => {
-    if (whatsappStatus !== 'connected' || !activeCampaign) {
-      return 'whatsapp';
-    }
-
-    if (!selectedAgreement) {
-      return 'agreements';
-    }
-
-    return 'inbox';
     if (whatsappStatus === 'connected') {
       return 'inbox';
-    }
-
-    if (!selectedAgreement) {
-      return 'agreements';
     }
 
     return 'whatsapp';
@@ -170,7 +165,7 @@ function App() {
         return (
           <Dashboard
             onboarding={{
-              stages: journeyStages,
+              stages: onboardingStages,
               activeStep,
               selectedAgreement,
               whatsappStatus,
@@ -183,7 +178,7 @@ function App() {
         return (
           <AgreementGrid
             onboarding={{
-              stages: journeyStages,
+              stages: onboardingStages,
               activeStep,
               selectedAgreement,
               whatsappStatus,
@@ -204,7 +199,7 @@ function App() {
             status={whatsappStatus}
             activeCampaign={activeCampaign}
             onboarding={{
-              stages: journeyStages,
+              stages: onboardingStages,
               activeStep,
             }}
             onStatusChange={setWhatsappStatus}
@@ -250,7 +245,7 @@ function App() {
       currentPage={currentPage}
       onNavigate={setCurrentPage}
       onboarding={{
-        stages: journeyStages,
+        stages: onboardingStages,
         activeStep,
         selectedAgreement,
         whatsappStatus,
