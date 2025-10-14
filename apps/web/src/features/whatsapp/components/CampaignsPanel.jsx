@@ -57,17 +57,23 @@ const CampaignsPanel = ({
   onReassign,
   actionState,
   selectedInstanceId,
+  canCreateCampaigns = true,
 }) => {
   const totalCampaigns = campaigns.length;
   const activeCampaigns = campaigns.filter((entry) => entry.status === 'active').length;
+  const hasAgreementContext = Boolean(agreementName);
 
   const isProcessing = (campaignId, type) =>
     Boolean(actionState?.id === campaignId && (!type || actionState.type === type));
 
   const renderEmptyState = () => (
     <div className="rounded-xl border border-dashed border-white/10 bg-white/5 p-6 text-center text-sm text-muted-foreground">
-      <p>Nenhuma campanha cadastrada para este convênio.</p>
-      <Button size="sm" className="mt-4" onClick={onCreateClick}>
+      <p>
+        {hasAgreementContext
+          ? 'Nenhuma campanha cadastrada para este convênio.'
+          : 'Nenhuma campanha cadastrada até o momento.'}
+      </p>
+      <Button size="sm" className="mt-4" onClick={onCreateClick} disabled={!canCreateCampaigns}>
         <Plus className="mr-2 h-4 w-4" /> Criar primeira campanha
       </Button>
     </div>
@@ -209,8 +215,13 @@ const CampaignsPanel = ({
           <CardDescription>
             {agreementName
               ? `Gerencie campanhas ligadas ao convênio ${agreementName}.`
-              : 'Selecione um convênio para visualizar as campanhas vinculadas.'}
+              : 'Gerencie campanhas vinculadas às suas instâncias do WhatsApp.'}
           </CardDescription>
+          {!canCreateCampaigns ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Vincule um convênio para habilitar a criação de campanhas.
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="info">{activeCampaigns} ativa(s)</Badge>
@@ -228,7 +239,7 @@ const CampaignsPanel = ({
             )}
             Atualizar
           </Button>
-          <Button size="sm" onClick={onCreateClick}>
+          <Button size="sm" onClick={onCreateClick} disabled={!canCreateCampaigns}>
             <Plus className="mr-2 h-4 w-4" /> Nova campanha
           </Button>
         </div>

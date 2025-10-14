@@ -1289,7 +1289,9 @@ const WhatsAppConnect = ({
   const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 3;
   const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : 'Passo 3';
   const nextStage = onboarding?.stages?.[Math.min(stageIndex + 1, totalStages - 1)]?.label ?? 'Inbox de Leads';
-  const hasAgreement = Boolean(selectedAgreement);
+  const hasAgreement = Boolean(selectedAgreement?.id);
+  const agreementName = selectedAgreement?.name ?? null;
+  const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
   const hasCampaign = Boolean(campaign);
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   const generatingQrRef = useRef(isGeneratingQrImage);
@@ -1307,6 +1309,13 @@ const WhatsAppConnect = ({
     : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
+  const onboardingDescription = hasAgreement
+    ? 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Após a conexão, o Lead Engine entrega automaticamente os leads do convênio selecionado.'
+    : 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Você poderá vincular um convênio e campanhas em seguida.';
+  const nextInstanceOrdinal = instances.length + 1;
+  const defaultInstanceName = hasAgreement && agreementName
+    ? `${agreementName} • WhatsApp ${nextInstanceOrdinal}`
+    : `Instância WhatsApp ${nextInstanceOrdinal}`;
   const visibleInstances = useMemo(() => instances.filter(shouldDisplayInstance), [instances]);
   const totalInstanceCount = instances.length;
   const visibleInstanceCount = visibleInstances.length;
@@ -2132,18 +2141,11 @@ const WhatsAppConnect = ({
   }, [campaign, campaigns, instance?.id, onCampaignReady, selectedAgreement?.id]);
 
   const handleCreateInstance = () => {
-    if (!selectedAgreement) {
-      setErrorMessage('Selecione um convênio antes de criar uma instância.');
-      return;
-    }
+    setErrorMessage(null);
     setCreateInstanceOpen(true);
   };
 
   const submitCreateInstance = async ({ name, id }) => {
-    if (!selectedAgreement) {
-      throw new Error('Selecione um convênio para criar uma instância.');
-    }
-
     const normalizedName = `${name ?? ''}`.trim();
     if (!normalizedName) {
       const error = new Error('Informe um nome válido para a nova instância.');
@@ -2152,11 +2154,11 @@ const WhatsAppConnect = ({
     }
 
     const payloadBody = {
-      agreementId: selectedAgreement.id,
-      agreementName: selectedAgreement.name ?? undefined,
-      tenantId: selectedAgreement.tenantId ?? undefined,
       name: normalizedName,
       ...(id ? { id: `${id}`.trim() } : {}),
+      ...(selectedAgreement?.id ? { agreementId: selectedAgreement.id } : {}),
+      ...(selectedAgreement?.name ? { agreementName: selectedAgreement.name } : {}),
+      ...(selectedAgreement?.tenantId ? { tenantId: selectedAgreement.tenantId } : {}),
     };
 
     setLoadingInstances(true);
@@ -2164,7 +2166,7 @@ const WhatsAppConnect = ({
 
     try {
       log('🧪 Criando nova instância WhatsApp', {
-        agreementId: selectedAgreement.id,
+        agreementId: selectedAgreement?.id ?? null,
         name: normalizedName,
       });
 
@@ -2261,8 +2263,8 @@ const WhatsAppConnect = ({
   };
 
   const createCampaign = async ({ name, instanceId, status = 'active' }) => {
-    if (!selectedAgreement) {
-      throw new Error('Selecione um convênio para criar campanhas.');
+    if (!selectedAgreement?.id) {
+      throw new Error('Vincule um convênio antes de criar campanhas.');
     }
 
     const normalizedName = `${name ?? ''}`.trim();
@@ -2904,24 +2906,24 @@ const WhatsAppConnect = ({
             </div>
             <div>
               <h1 className="text-2xl font-semibold text-foreground">Conecte seu WhatsApp</h1>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-                Utilize o QR Code para sincronizar o número que você usa com os clientes. Após a conexão, o Lead Engine entrega
-                automaticamente os leads aquecidos pelo convênio selecionado.
-              </p>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">{onboardingDescription}</p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-2 text-xs text-muted-foreground">
             <Badge variant="status" tone={statusTone} className="gap-2 text-xs font-medium">
               {copy.badge}
             </Badge>
-            {hasAgreement ? (
+            <div className="flex flex-col items-end gap-1">
               <span>
-                Convênio ativo:{' '}
-                <span className="font-medium text-foreground">{selectedAgreement.name}</span>
+                Convênio:{' '}
+                <span className="font-medium text-foreground">{agreementDisplayName}</span>
               </span>
-            ) : (
-              <span>Selecione um convênio para liberar esta etapa.</span>
-            )}
+              {!hasAgreement ? (
+                <span className="text-[0.7rem] text-muted-foreground/80">
+                  Se preferir, escolha um convênio antes de ativar campanhas.
+                </span>
+              ) : null}
+            </div>
             {countdownMessage ? (
               <span className="flex items-center gap-1 text-amber-200">
                 <Clock className="h-3.5 w-3.5" />
@@ -2954,7 +2956,9 @@ const WhatsAppConnect = ({
             <div>
               <CardTitle>Painel de instâncias</CardTitle>
               <CardDescription>
-                Vincule o número certo ao convênio e confirme para avançar para {nextStage}.
+                {hasAgreement
+                  ? `Vincule o número certo ao convênio e confirme para avançar para ${nextStage}.`
+                  : 'Conecte um número do WhatsApp e, quando estiver pronto, vincule campanhas para liberar a distribuição de leads.'}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2971,7 +2975,6 @@ const WhatsAppConnect = ({
                 size="sm"
                 variant="secondary"
                 onClick={() => void handleCreateInstance()}
-                disabled={isBusy || !hasAgreement}
               >
                 + Nova instância
               </Button>
@@ -2988,7 +2991,7 @@ const WhatsAppConnect = ({
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">
-                    {selectedAgreement?.name ?? 'Selecione um convênio'}
+                    {agreementDisplayName}
                   </p>
                   {selectedAgreement?.region ? (
                     <p className="text-xs text-muted-foreground">{selectedAgreement.region}</p>
@@ -3262,12 +3265,11 @@ const WhatsAppConnect = ({
                     SURFACE_COLOR_UTILS.glassTileDashed
                   )}
                 >
-                  <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o convênio selecionado.</p>
+                  <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o Lead Engine.</p>
                   <Button
                     size="sm"
                     className="mt-4"
                     onClick={() => void handleCreateInstance()}
-                    disabled={isBusy || !hasAgreement || !isAuthenticated}
                   >
                     Criar instância agora
                   </Button>
@@ -3329,6 +3331,7 @@ const WhatsAppConnect = ({
           onReassign={(entry) => setPendingReassign(entry)}
           actionState={campaignAction}
           selectedInstanceId={instance?.id ?? null}
+          canCreateCampaigns={hasAgreement}
         />
         <Card className={cn(SURFACE_COLOR_UTILS.qrInstructionsPanel)}>
           <Collapsible open={qrPanelOpen} onOpenChange={setQrPanelOpen}>
@@ -3531,7 +3534,7 @@ const WhatsAppConnect = ({
       <CreateInstanceDialog
         open={isCreateInstanceOpen}
         onOpenChange={setCreateInstanceOpen}
-        defaultName={`Instância ${instances.length + 1}`}
+        defaultName={defaultInstanceName}
         onSubmit={async (payload) => {
           await submitCreateInstance(payload);
         }}

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -175,6 +175,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.clearAllMocks();
 });
 
@@ -313,8 +314,91 @@ describe('WhatsAppConnect', () => {
     const addButton = addButtons[0];
     await userEvent.setup().click(addButton);
 
-    const confirmButton = await screen.findByRole('button', { name: /confirmar criação/i });
-    await userEvent.setup().click(confirmButton);
+    const confirmButtons = await screen.findAllByRole('button', { name: /confirmar criação/i });
+    expect(confirmButtons.length).toBeGreaterThan(0);
+    await userEvent.setup().click(confirmButtons[0]);
+
+    const createdInstanceLabels = await screen.findAllByText('WhatsApp Vendas');
+    expect(createdInstanceLabels.length).toBeGreaterThan(0);
+  });
+
+  it('allows creating an instance without a selected agreement', async () => {
+    const instancesQueue = [
+      { data: { instances: [] } },
+      {
+        data: {
+          instances: [
+            {
+              id: 'whatsapp-vendas',
+              name: 'WhatsApp Vendas',
+              status: 'connecting',
+              connected: false,
+            },
+          ],
+        },
+      },
+    ];
+
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        const response = instancesQueue.shift() ?? instancesQueue[0];
+        return Promise.resolve(response);
+      }
+      if (url.includes('/status')) {
+        return Promise.resolve({ data: { status: 'connecting', instanceId: 'whatsapp-vendas' } });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    mockApiPost.mockImplementation((url) => {
+      if (url === '/api/integrations/whatsapp/instances') {
+        return Promise.resolve({
+          data: { id: 'whatsapp-vendas', status: 'connecting', connected: false },
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    const view = await renderComponent({ selectedAgreement: null });
+    const scoped = within(view.container);
+
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/api/integrations/whatsapp/instances?refresh=1');
+    });
+
+    const agreementLabels = await scoped.findAllByText(/Nenhum convênio selecionado/i);
+    expect(agreementLabels.length).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      const candidates = scoped.getAllByRole('button', { name: /nova instância/i });
+      expect(candidates.some((button) => !button.hasAttribute('disabled'))).toBe(true);
+    });
+
+    const addButtons = scoped.getAllByRole('button', { name: /nova instância/i });
+    const addButton = addButtons.find((button) => !button.hasAttribute('disabled'));
+    expect(addButton).toBeDefined();
+    await userEvent.setup().click(addButton);
+
+    const confirmButtons = await scoped.findAllByRole('button', { name: /confirmar criação/i });
+    expect(confirmButtons.length).toBeGreaterThan(0);
+    await userEvent.setup().click(confirmButtons[0]);
+
+    await waitFor(() => {
+      expect(mockApiPost).toHaveBeenCalledWith(
+        '/api/integrations/whatsapp/instances',
+        expect.objectContaining({ name: 'WhatsApp Vendas' })
+      );
+    });
+
+    const payload = mockApiPost.mock.calls.find(
+      ([endpoint]) => endpoint === '/api/integrations/whatsapp/instances'
+    )?.[1];
+    expect(payload).toBeDefined();
+    expect(payload).not.toHaveProperty('agreementId');
+    expect(payload).not.toHaveProperty('tenantId');
 
     const createdInstanceLabels = await screen.findAllByText('WhatsApp Vendas');
     expect(createdInstanceLabels.length).toBeGreaterThan(0);

@@ -144,6 +144,15 @@ function App() {
   }, [me]);
 
   const computeNextSetupPage = () => {
+    if (whatsappStatus !== 'connected' || !activeCampaign) {
+      return 'whatsapp';
+    }
+
+    if (!selectedAgreement) {
+      return 'agreements';
+    }
+
+    return 'inbox';
     if (whatsappStatus === 'connected') {
       return 'inbox';
     }
