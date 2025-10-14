@@ -769,13 +769,14 @@ class WhatsAppBrokerClient {
     );
 
     const idCandidate = this.pickString(
+      source.instanceId,
+      metadata.instanceId,
+      metadata.instance_id,
       source.id,
       source._id,
-      source.instanceId,
       source.sessionId,
       metadata.id,
       metadata._id,
-      metadata.instanceId,
       metadata.sessionId
     );
 

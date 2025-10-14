@@ -247,9 +247,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const instanceOverride =
       readString(
         (eventRecord as { instanceId?: unknown }).instanceId,
-        (eventRecord as { iid?: unknown }).iid,
-        envelopeRecord.instanceId,
-        envelopeRecord.iid
+        envelopeRecord.instanceId
       ) ?? getDefaultInstanceId();
     const tenantOverride = readString(
       (eventRecord as { tenantId?: unknown }).tenantId,
@@ -282,14 +280,11 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ??
         getDefaultTenantId();
       const instanceId =
-        readString(normalized.data.instanceId) ??
         readString(
+          normalized.data.instanceId,
           (eventRecord as { instanceId?: unknown }).instanceId,
-          (eventRecord as { iid?: unknown }).iid,
-          envelopeRecord.instanceId,
-          envelopeRecord.iid
-        ) ??
-        getDefaultInstanceId();
+          envelopeRecord.instanceId
+        ) ?? getDefaultInstanceId();
 
       const chatIdCandidate =
         normalizeChatId(

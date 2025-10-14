@@ -496,6 +496,15 @@ const normalizeMessagePayload = (
   const fromMe = key?.fromMe === true;
   const direction: 'inbound' | 'outbound' = fromMe ? 'outbound' : 'inbound';
 
+  if (fromMe) {
+    return {
+      ignore: {
+        messageIndex,
+        reason: 'from_me',
+      },
+    };
+  }
+
   const rawContent = asRecord(message.message);
   const messageContent = unwrapMessageContent(rawContent);
 
@@ -724,14 +733,17 @@ export const normalizeUpsertEvent = (
     return { normalized: [], ignored: [] };
   }
 
+  const metadataRecord = asRecord(payload.metadata);
+  const brokerMetadata = metadataRecord ? asRecord(metadataRecord.broker) : null;
+
   const resolvedInstanceId =
     readString(
       overrides?.instanceId,
       payload.instanceId,
       eventRecord.instanceId,
-      overrides?.brokerId,
-      payload.iid,
-      eventRecord.iid
+      metadataRecord?.instanceId,
+      metadataRecord?.instance_id,
+      brokerMetadata?.instanceId
     ) ?? null;
   if (!resolvedInstanceId) {
     return { normalized: [], ignored: [] };
