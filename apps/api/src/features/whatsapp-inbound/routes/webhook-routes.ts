@@ -18,6 +18,7 @@ import {
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
 import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
+import { prisma } from '../../../lib/prisma';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -244,15 +245,59 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const rawPreview = toRawPreview(entry);
     const eventType = readString(eventRecord.event, (eventRecord as { type?: unknown }).type);
 
-    const instanceOverride =
+    const rawInstanceId =
       readString(
         (eventRecord as { instanceId?: unknown }).instanceId,
         envelopeRecord.instanceId
       ) ?? getDefaultInstanceId();
-    const tenantOverride = readString(
+    let instanceOverride = rawInstanceId;
+    let brokerOverride: string | undefined;
+    let tenantOverride = readString(
       (eventRecord as { tenantId?: unknown }).tenantId,
       envelopeRecord.tenantId
     ) ?? undefined;
+
+    if (rawInstanceId) {
+      const existingInstance = await prisma.whatsAppInstance.findFirst({
+        where: {
+          OR: [
+            { id: rawInstanceId },
+            { brokerId: rawInstanceId },
+            {
+              metadata: {
+                path: ['brokerId'],
+                equals: rawInstanceId,
+              } satisfies Prisma.JsonFilter,
+            },
+            {
+              metadata: {
+                path: ['broker', 'id'],
+                equals: rawInstanceId,
+              } satisfies Prisma.JsonFilter,
+            },
+            {
+              metadata: {
+                path: ['broker', 'sessionId'],
+                equals: rawInstanceId,
+              } satisfies Prisma.JsonFilter,
+            },
+          ],
+        },
+        select: {
+          id: true,
+          brokerId: true,
+          tenantId: true,
+        },
+      });
+
+      if (existingInstance) {
+        instanceOverride = existingInstance.id;
+        brokerOverride = existingInstance.brokerId ?? rawInstanceId;
+        if (!tenantOverride && existingInstance.tenantId) {
+          tenantOverride = existingInstance.tenantId;
+        }
+      }
+    }
 
     if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
       whatsappWebhookEventsCounter.inc({
@@ -269,6 +314,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const normalization = normalizeUpsertEvent(eventRecord, {
       instanceId: instanceOverride,
       tenantId: tenantOverride,
+      brokerId: brokerOverride,
     });
 
     if (normalization.normalized.length === 0) {
