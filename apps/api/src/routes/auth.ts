@@ -138,7 +138,7 @@ router.post('/register', (_req: Request, res: Response) => {
 /**
  * GET /api/auth/me - Dados do usuário demo
  */
-router.get('/me', authMiddleware, (_req: Request, res: Response) => {
+router.get('/me', (_req: Request, res: Response) => {
   logger.info('[Auth] GET /me (modo demo)');
   const { user, fallback } = resolveDemoUserOrFallback();
   const nowIso = new Date().toISOString();
