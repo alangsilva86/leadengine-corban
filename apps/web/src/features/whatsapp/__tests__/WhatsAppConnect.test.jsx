@@ -80,7 +80,7 @@ vi.mock('../components/CreateInstanceDialog.jsx', () => ({
     }
 
     const handleSubmit = async () => {
-      await onSubmit?.({ name: 'WhatsApp Vendas', id: 'whatsapp-vendas' });
+      await onSubmit?.({ name: 'WhatsApp Vendas', id: 'WhatsApp Vendas' });
       onOpenChange?.(false);
     };
 
@@ -327,7 +327,7 @@ describe('WhatsAppConnect', () => {
         data: {
           instances: [
             {
-              id: 'whatsapp-vendas',
+              id: 'WhatsApp Vendas',
               name: 'WhatsApp Vendas',
               status: 'connecting',
               connected: false,
@@ -343,7 +343,7 @@ describe('WhatsAppConnect', () => {
         return Promise.resolve(response);
       }
       if (url.includes('/status')) {
-        return Promise.resolve({ data: { status: 'connecting', instanceId: 'whatsapp-vendas' } });
+        return Promise.resolve({ data: { status: 'connecting', instanceId: 'WhatsApp Vendas' } });
       }
       if (url.startsWith('/api/campaigns')) {
         return Promise.resolve({ items: [] });
@@ -354,7 +354,7 @@ describe('WhatsAppConnect', () => {
     mockApiPost.mockImplementation((url) => {
       if (url === '/api/integrations/whatsapp/instances') {
         return Promise.resolve({
-          data: { id: 'whatsapp-vendas', status: 'connecting', connected: false },
+          data: { id: 'WhatsApp Vendas', status: 'connecting', connected: false },
         });
       }
       return Promise.resolve({});
@@ -381,7 +381,7 @@ describe('WhatsAppConnect', () => {
         data: {
           instances: [
             {
-              id: 'whatsapp-vendas',
+              id: 'WhatsApp Vendas',
               name: 'WhatsApp Vendas',
               status: 'connecting',
               connected: false,
@@ -397,7 +397,7 @@ describe('WhatsAppConnect', () => {
         return Promise.resolve(response);
       }
       if (url.includes('/status')) {
-        return Promise.resolve({ data: { status: 'connecting', instanceId: 'whatsapp-vendas' } });
+        return Promise.resolve({ data: { status: 'connecting', instanceId: 'WhatsApp Vendas' } });
       }
       if (url.startsWith('/api/campaigns')) {
         return Promise.resolve({ items: [] });
@@ -408,7 +408,7 @@ describe('WhatsAppConnect', () => {
     mockApiPost.mockImplementation((url) => {
       if (url === '/api/integrations/whatsapp/instances') {
         return Promise.resolve({
-          data: { id: 'whatsapp-vendas', status: 'connecting', connected: false },
+          data: { id: 'WhatsApp Vendas', status: 'connecting', connected: false },
         });
       }
       return Promise.resolve({});
@@ -451,6 +451,7 @@ describe('WhatsAppConnect', () => {
     expect(payload).toBeDefined();
     expect(payload).not.toHaveProperty('agreementId');
     expect(payload).not.toHaveProperty('tenantId');
+    expect(payload?.id).toBe('WhatsApp Vendas');
 
     const createdInstanceLabels = await screen.findAllByText('WhatsApp Vendas');
     expect(createdInstanceLabels.length).toBeGreaterThan(0);
@@ -464,7 +465,7 @@ describe('WhatsAppConnect', () => {
             status: 'qr_required',
             qr: { qrCode: 'BAYL0RS:12345', expiresAt: new Date(Date.now() + 60000).toISOString() },
             instance: {
-              id: 'whatsapp-vendas',
+              id: 'WhatsApp Vendas',
               status: 'qr_required',
               connected: false,
             },
@@ -486,7 +487,7 @@ describe('WhatsAppConnect', () => {
           data: {
             instances: [
               {
-                id: 'whatsapp-vendas',
+                id: 'WhatsApp Vendas',
                 name: 'WhatsApp Vendas',
                 status: 'disconnected',
                 connected: false,

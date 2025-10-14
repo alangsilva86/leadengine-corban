@@ -373,5 +373,26 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(prismaMock.whatsAppInstance.findUnique).not.toHaveBeenCalled();
       expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
     });
+
+    it('processes messages when only the broker UUID is available as instance identifier', async () => {
+      const envelope = buildEnvelope();
+      envelope.instanceId = 'broker-uuid-9';
+      envelope.message.metadata = {
+        ...(envelope.message.metadata as Record<string, unknown>),
+        instanceId: envelope.instanceId,
+      };
+
+      const instanceRecord = { id: 'instance-legacy', tenantId: 'tenant-1' };
+      prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(instanceRecord);
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
+
+      expect(processed).toBe(true);
+      expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledWith({
+        where: { brokerId: 'broker-uuid-9', tenantId: 'tenant-1' },
+      });
+      expect(prismaMock.whatsAppInstance.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
+    });
   });
 });

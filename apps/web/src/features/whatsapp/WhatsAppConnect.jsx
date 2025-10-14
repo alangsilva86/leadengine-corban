@@ -2188,9 +2188,15 @@ const WhatsAppConnect = ({
       throw error;
     }
 
+    const normalizedId =
+      typeof id === 'string'
+        ? id
+        : id === null || typeof id === 'undefined'
+          ? ''
+          : `${id}`;
     const payloadBody = {
       name: normalizedName,
-      ...(id ? { id: `${id}`.trim() } : {}),
+      ...(normalizedId ? { id: normalizedId } : {}),
       ...(selectedAgreement?.id ? { agreementId: selectedAgreement.id } : {}),
       ...(selectedAgreement?.name ? { agreementName: selectedAgreement.name } : {}),
       ...(selectedAgreement?.tenantId ? { tenantId: selectedAgreement.tenantId } : {}),

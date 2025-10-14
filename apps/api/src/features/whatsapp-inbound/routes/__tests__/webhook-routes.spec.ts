@@ -21,6 +21,7 @@ vi.mock('../../services/inbound-lead-service', () => ({
 import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { whatsappWebhookRouter } from '../webhook-routes';
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
@@ -28,6 +29,43 @@ import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
 import { ingestInboundWhatsAppMessage } from '../../services/inbound-lead-service';
 
 const ingestInboundWhatsAppMessageMock = vi.mocked(ingestInboundWhatsAppMessage);
+
+type PrismaMock = {
+  whatsAppInstance: {
+    findFirst: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  };
+};
+
+var prismaMock: PrismaMock;
+
+var ingestInboundWhatsAppMessageMock: ReturnType<typeof vi.fn>;
+var normalizeUpsertEventMock: ReturnType<typeof vi.fn>;
+
+vi.mock('../../../../lib/prisma', () => {
+  prismaMock = {
+    whatsAppInstance: {
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+  };
+
+  return { prisma: prismaMock };
+});
+
+vi.mock('../../services/inbound-lead-service', () => {
+  ingestInboundWhatsAppMessageMock = vi.fn();
+  return {
+    ingestInboundWhatsAppMessage: ingestInboundWhatsAppMessageMock,
+  };
+});
+
+vi.mock('../../services/baileys-raw-normalizer', () => {
+  normalizeUpsertEventMock = vi.fn();
+  return {
+    normalizeUpsertEvent: normalizeUpsertEventMock,
+  };
+});
 
 const ORIGINAL_ENV = {
   enforce: process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE,
@@ -57,6 +95,11 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     process.env.WHATSAPP_WEBHOOK_HMAC_SECRET = 'unit-secret';
     refreshWhatsAppEnv();
     resetMetrics();
+    prismaMock.whatsAppInstance.findFirst.mockReset();
+    prismaMock.whatsAppInstance.update.mockReset();
+    ingestInboundWhatsAppMessageMock.mockReset();
+    normalizeUpsertEventMock.mockReset();
+    normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
   });
 
   it('rejects requests without signature when enforcement is enabled', async () => {
@@ -178,6 +221,114 @@ describe('WhatsApp webhook Baileys event logging', () => {
 
     expect(typeof payload?.rawPayload).toBe('string');
     expect(payload?.rawPayload as string).toContain('WHATSAPP_MESSAGES_UPSERT');
+describe('WhatsApp webhook instance resolution', () => {
+  beforeEach(() => {
+    process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'false';
+    delete process.env.WHATSAPP_WEBHOOK_HMAC_SECRET;
+    refreshWhatsAppEnv();
+    resetMetrics();
+    prismaMock.whatsAppInstance.findFirst.mockReset();
+    prismaMock.whatsAppInstance.update.mockReset();
+    ingestInboundWhatsAppMessageMock.mockReset();
+    normalizeUpsertEventMock.mockReset();
+    normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
+  });
+
+  const buildApp = () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/webhooks', whatsappWebhookRouter);
+    return app;
+  };
+
+  it('resolves stored instance metadata and persists missing broker id when matching UUID', async () => {
+    const app = buildApp();
+    const uuid = 'broker-uuid-1234';
+    prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce({
+      id: 'stored-instance',
+      brokerId: null,
+      tenantId: 'tenant-uuid',
+    });
+    prismaMock.whatsAppInstance.update.mockResolvedValueOnce({});
+
+    normalizeUpsertEventMock.mockReturnValueOnce({
+      normalized: [
+        {
+          messageIndex: 0,
+          messageId: 'wamid.uuid',
+          sessionId: null,
+          brokerId: null,
+          tenantId: 'tenant-uuid',
+          data: {
+            instanceId: 'stored-instance',
+            tenantId: 'tenant-uuid',
+            direction: 'INBOUND',
+            metadata: {
+              instanceId: 'stored-instance',
+              contact: { remoteJid: '5511999999999@s.whatsapp.net' },
+            },
+            message: {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.uuid' },
+            },
+            contact: { phone: '+55 11 99999-9999' },
+          },
+        },
+      ],
+    });
+
+    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
+
+    const response = await request(app)
+      .post('/api/webhooks/whatsapp')
+      .send({
+        event: 'WHATSAPP_MESSAGES_UPSERT',
+        instanceId: uuid,
+        payload: {
+          messages: [
+            {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.uuid' },
+            },
+          ],
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ ok: true, persisted: 1, failures: 0 });
+
+    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
+    const lookupArgs = prismaMock.whatsAppInstance.findFirst.mock.calls[0]?.[0];
+    expect(lookupArgs).toBeTruthy();
+    expect(lookupArgs).toMatchObject({
+      where: {
+        OR: expect.arrayContaining([
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              path: ['lastBrokerSnapshot', 'sessionId'],
+              equals: uuid,
+            }),
+          }),
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              path: ['history'],
+              array_contains: expect.objectContaining({ brokerId: uuid }),
+            }),
+          }),
+        ]),
+      },
+      select: { id: true, brokerId: true, tenantId: true },
+    });
+
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
+      where: { id: 'stored-instance' },
+      data: { brokerId: uuid },
+    });
+
+    expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instanceId: 'stored-instance',
+        tenantId: 'tenant-uuid',
+      })
+    );
   });
 });
 
