@@ -32,6 +32,7 @@ vi.mock('@/features/shared/usePlayfulLogger.js', () => ({
 }));
 
 beforeEach(() => {
+  vi.useRealTimers();
   mockApiGet.mockReset();
   mockApiPatch.mockReset();
 });
@@ -75,6 +76,59 @@ describe('useLeadAllocations', () => {
       expect(result.current.warningMessage).toMatch(/instância ativa do whatsapp/i);
     });
     expect(mockApiGet).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it('prioriza instanceId quando outros identificadores também estão disponíveis', async () => {
+    mockApiGet.mockResolvedValue({ data: [], meta: {} });
+
+    const { unmount } = renderHook(() =>
+      useLeadAllocations({ agreementId: 'agreement-1', campaignId: 'campaign-1', instanceId: 'instance-xyz' })
+    );
+
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
+
+    const [firstCall] = mockApiGet.mock.calls;
+    expect(firstCall?.[0]).toBe('/api/lead-engine/allocations?instanceId=instance-xyz');
+    expect(firstCall?.[0]).not.toContain('campaignId=');
+
+    unmount();
+  });
+
+  it('reinicia carregamento quando a instância muda evitando requisição com campanha antiga', async () => {
+    let resolveFirst;
+    const firstCallPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    mockApiGet
+      .mockImplementationOnce(() => firstCallPromise)
+      .mockImplementationOnce(() => Promise.resolve({ data: [], meta: {} }))
+      .mockImplementation(() => Promise.resolve({ data: [], meta: {} }));
+
+    const { rerender, unmount } = renderHook(
+      (props) => useLeadAllocations(props),
+      {
+        initialProps: { agreementId: null, campaignId: 'campaign-legacy', instanceId: 'instance-old' },
+      }
+    );
+
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalledTimes(1));
+
+    rerender({ agreementId: null, campaignId: 'campaign-legacy', instanceId: 'instance-new' });
+
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalledTimes(2));
+    const [, secondCall] = mockApiGet.mock.calls;
+    expect(secondCall?.[0]).toBe('/api/lead-engine/allocations?instanceId=instance-new');
+
+    resolveFirst({ data: [], meta: {} });
+
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalledTimes(2));
+
+    const subsequentCalls = mockApiGet.mock.calls.slice(1).map(([url]) => url);
+    expect(subsequentCalls.every((url) => url.includes('instanceId=instance-new'))).toBe(true);
+    expect(mockApiGet.mock.calls.every(([url]) => !url.includes('campaignId=campaign-legacy'))).toBe(true);
 
     unmount();
   });
