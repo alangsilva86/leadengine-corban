@@ -7,6 +7,9 @@ const findFirstMock = vi.fn();
 const queueUpsertMock = vi.fn();
 const createTicketMock = vi.fn();
 const leadUpsertMock = vi.fn();
+const leadFindFirstMock = vi.fn();
+const leadUpdateMock = vi.fn();
+const leadCreateMock = vi.fn();
 const leadActivityFindFirstMock = vi.fn();
 const leadActivityCreateMock = vi.fn();
 const emitToTenantMock = vi.fn();
@@ -42,7 +45,10 @@ vi.mock('../../../../lib/prisma', () => ({
       findFirst: tenantFindFirstMock,
     },
     lead: {
+      findFirst: leadFindFirstMock,
       upsert: leadUpsertMock,
+      update: leadUpdateMock,
+      create: leadCreateMock,
     },
     leadActivity: {
       findFirst: leadActivityFindFirstMock,
@@ -348,6 +354,10 @@ describe('upsertLeadFromInbound', () => {
   } as const;
 
   beforeEach(() => {
+    leadFindFirstMock.mockReset();
+    leadFindFirstMock.mockResolvedValue(null);
+    leadUpdateMock.mockReset();
+    leadCreateMock.mockReset();
     leadUpsertMock.mockReset();
     leadActivityFindFirstMock.mockReset();
     leadActivityFindFirstMock.mockResolvedValue(null);
@@ -373,7 +383,7 @@ describe('upsertLeadFromInbound', () => {
       type: 'WHATSAPP_REPLIED',
       occurredAt: baseMessage.createdAt,
     };
-    leadUpsertMock.mockResolvedValueOnce(leadRecord);
+    leadCreateMock.mockResolvedValueOnce(leadRecord);
     leadActivityCreateMock.mockResolvedValueOnce(activityRecord);
 
     const message = baseMessage as unknown as UpsertParams['message'];
@@ -386,16 +396,15 @@ describe('upsertLeadFromInbound', () => {
       message,
     });
 
-    expect(leadUpsertMock).toHaveBeenCalledWith(
+    expect(leadCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
+        data: expect.objectContaining({
           tenantId: 'tenant-1',
           contactId: 'contact-1',
           status: 'NEW',
           source: 'WHATSAPP',
           lastContactAt: baseMessage.createdAt,
         }),
-        update: expect.objectContaining({ lastContactAt: baseMessage.createdAt }),
       })
     );
 
@@ -477,7 +486,8 @@ describe('upsertLeadFromInbound', () => {
       occurredAt: baseMessage.createdAt,
     };
 
-    leadUpsertMock.mockResolvedValueOnce(leadRecord);
+    leadFindFirstMock.mockResolvedValueOnce(leadRecord);
+    leadUpdateMock.mockResolvedValueOnce(leadRecord);
     leadActivityFindFirstMock.mockResolvedValueOnce(existingActivity);
 
     const message = baseMessage as unknown as UpsertParams['message'];
@@ -495,6 +505,13 @@ describe('upsertLeadFromInbound', () => {
     expect(emitToTenantMock).not.toHaveBeenCalled();
     expect(emitToTicketMock).not.toHaveBeenCalled();
     expect(leadLastContactGaugeSetMock).toHaveBeenCalledTimes(1);
+    expect(leadUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: leadRecord.id },
+        data: expect.objectContaining({ lastContactAt: baseMessage.createdAt }),
+      })
+    );
+    expect(leadCreateMock).not.toHaveBeenCalled();
   });
 
   it('updates existing lead when already present', async () => {
@@ -502,14 +519,17 @@ describe('upsertLeadFromInbound', () => {
       ...baseMessage,
       createdAt: new Date('2024-03-22T15:30:00.000Z'),
     } as unknown as UpsertParams['message'];
-    leadUpsertMock.mockResolvedValueOnce({
+    const existingLead = {
       id: 'lead-existing',
       tenantId: 'tenant-1',
       contactId: 'contact-1',
       status: 'CONTACTED',
       source: 'WHATSAPP',
-      lastContactAt: message.createdAt,
-    });
+      lastContactAt: new Date('2024-03-20T15:30:00.000Z'),
+    };
+
+    leadFindFirstMock.mockResolvedValueOnce(existingLead);
+    leadUpdateMock.mockResolvedValueOnce({ ...existingLead, lastContactAt: message.createdAt });
     leadActivityCreateMock.mockResolvedValueOnce({
       id: 'activity-2',
       tenantId: 'tenant-1',
@@ -527,9 +547,13 @@ describe('upsertLeadFromInbound', () => {
       message,
     });
 
-    const call = leadUpsertMock.mock.calls.at(-1)?.[0];
-    expect(call?.update?.lastContactAt).toBe(message.createdAt);
-    expect(call?.create?.status).toBe('NEW');
+    expect(leadUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'lead-existing' },
+        data: expect.objectContaining({ lastContactAt: message.createdAt }),
+      })
+    );
+    expect(leadCreateMock).not.toHaveBeenCalled();
     expect(leadActivityCreateMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -724,6 +724,7 @@ router.get(
   '/allocations',
   query('agreementId').optional().isString().trim(),
   query('campaignId').optional().isString().trim(),
+  query('instanceId').optional().isString().trim(),
   query('status').optional(),
   query('statuses').optional(),
   validateRequest,
@@ -732,6 +733,7 @@ router.get(
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
+    const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId : undefined;
     const { statuses, error } = parseStatusFilter(req.query.status ?? req.query.statuses);
 
     if (error) {
@@ -745,12 +747,12 @@ router.get(
       return;
     }
 
-    if (!agreementId && !campaignId) {
+    if (!agreementId && !campaignId && !instanceId) {
       res.status(400).json({
         success: false,
         error: {
           code: 'ALLOCATIONS_FILTER_REQUIRED',
-          message: 'Informe campaignId ou agreementId para listar alocações.',
+          message: 'Informe campaignId, agreementId ou instanceId para listar alocações.',
         },
       });
       return;
@@ -760,6 +762,7 @@ router.get(
       tenantId,
       agreementId,
       campaignId,
+      instanceId,
       statuses,
     });
 
@@ -767,6 +770,7 @@ router.get(
       const allocations = await listTenantAllocations(tenantId, {
         agreementId,
         campaignId,
+        instanceId,
         statuses,
       });
 
@@ -786,6 +790,7 @@ router.get(
           tenantId,
           agreementId,
           campaignId,
+          instanceId,
           statuses,
           error,
         });
@@ -809,6 +814,7 @@ router.get(
           tenantId,
           agreementId,
           campaignId,
+          instanceId,
           statuses,
           error,
         });
@@ -838,6 +844,7 @@ router.get(
         tenantId,
         agreementId,
         campaignId,
+        instanceId,
         statuses,
         status,
         retryAfter,
@@ -915,7 +922,7 @@ router.post(
       }
 
       const leads = await leadEngineClient.fetchLeadsByAgreement(agreementId, take);
-      const { newlyAllocated, summary } = await addAllocations(tenantId, campaignId, leads);
+      const { newlyAllocated, summary } = await addAllocations(tenantId, { campaignId }, leads);
 
       res.json({
         success: true,
@@ -953,7 +960,7 @@ router.post(
           fallback: fallbackLeads.length,
         });
 
-        const { newlyAllocated, summary } = await addAllocations(tenantId, campaignId, fallbackLeads);
+        const { newlyAllocated, summary } = await addAllocations(tenantId, { campaignId }, fallbackLeads);
 
         res.json({
           success: true,
@@ -1095,6 +1102,7 @@ router.get(
       const allocations = await listTenantAllocations(tenantId, {
         agreementId,
         campaignId,
+        instanceId,
         statuses,
       });
 

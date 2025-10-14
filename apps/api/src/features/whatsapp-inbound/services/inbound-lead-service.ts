@@ -52,6 +52,9 @@ const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
 const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
   'Fila criada automaticamente para mensagens inbound do WhatsApp.';
 
+const DEFAULT_CAMPAIGN_FALLBACK_NAME = 'WhatsApp • Inbound';
+const DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX = 'whatsapp-instance-fallback';
+
 const DEFAULT_TENANT_ID = (() => {
   const envValue = process.env.AUTH_MVP_TENANT_ID;
   if (typeof envValue === 'string' && envValue.trim().length > 0) {
@@ -810,6 +813,59 @@ const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string 
   }
 };
 
+const provisionFallbackCampaignForInstance = async (
+  tenantId: string,
+  instanceId: string
+) => {
+  try {
+    const campaign = await prisma.campaign.upsert({
+      where: {
+        tenantId_agreementId_whatsappInstanceId: {
+          tenantId,
+          agreementId: `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`,
+          whatsappInstanceId: instanceId,
+        },
+      },
+      update: {
+        status: 'active',
+        name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+        agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+        metadata: {
+          fallback: true,
+          source: 'whatsapp-inbound',
+        } as Prisma.InputJsonValue,
+      },
+      create: {
+        tenantId,
+        name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+        agreementId: `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`,
+        agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+        whatsappInstanceId: instanceId,
+        status: 'active',
+        metadata: {
+          fallback: true,
+          source: 'whatsapp-inbound',
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Campanha fallback provisionada automaticamente', {
+      tenantId,
+      instanceId,
+      campaignId: campaign.id,
+    });
+
+    return campaign;
+  } catch (error) {
+    logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar campanha fallback', {
+      error: mapErrorForLog(error),
+      tenantId,
+      instanceId,
+    });
+    return null;
+  }
+};
+
 const isForeignKeyError = (error: unknown): boolean => {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
     return true;
@@ -1350,6 +1406,7 @@ export const __testing = {
   upsertLeadFromInbound,
   emitPassthroughRealtimeUpdates,
   emitRealtimeUpdatesForInbound,
+  provisionFallbackCampaignForInstance,
 };
 
 const resolveEnvelopeChatId = (
@@ -1546,12 +1603,25 @@ The passthrough handler above short-circuits all validations.
         });
 
   if (!campaigns.length && !simpleMode && !passthroughMode) {
-    logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
-      requestId,
-      tenantId,
-      instanceId,
-      messageId: message.id ?? null,
-    });
+    const fallbackCampaign = await provisionFallbackCampaignForInstance(tenantId, instanceId);
+
+    if (fallbackCampaign) {
+      campaigns.push(fallbackCampaign);
+      logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa — fallback provisionado', {
+        requestId,
+        tenantId,
+        instanceId,
+        fallbackCampaignId: fallbackCampaign.id,
+        messageId: message.id ?? null,
+      });
+    } else {
+      logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
+        requestId,
+        tenantId,
+        instanceId,
+        messageId: message.id ?? null,
+      });
+    }
   }
 
   const leadName = resolvedName ?? 'Contato WhatsApp';
@@ -2031,16 +2101,35 @@ The passthrough handler above short-circuits all validations.
       };
 
       try {
-        const { newlyAllocated } = await addAllocations(tenantId, campaign.id, [brokerLead]);
+        const { newlyAllocated, summary } = await addAllocations(
+          tenantId,
+          { campaignId: campaign.id, instanceId },
+          [brokerLead]
+        );
         if (newlyAllocated.length > 0) {
+          const allocation = newlyAllocated[0];
           logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
             tenantId,
             campaignId: campaign.id,
             instanceId,
-            allocationId: newlyAllocated[0].allocationId,
+            allocationId: allocation.allocationId,
             phone: maskPhone(normalizedPhone ?? null),
-            leadId: newlyAllocated[0].leadId,
+            leadId: allocation.leadId,
           });
+
+          const realtimePayload = {
+            tenantId,
+            campaignId: allocation.campaignId,
+            agreementId: allocation.agreementId,
+            instanceId: allocation.instanceId,
+            allocation,
+            summary,
+          };
+
+          emitToTenant(tenantId, 'leadAllocations.new', realtimePayload);
+          if (allocation.agreementId && allocation.agreementId !== 'unknown') {
+            emitToAgreement(allocation.agreementId, 'leadAllocations.new', realtimePayload);
+          }
         }
       } catch (error) {
         if (isUniqueViolation(error)) {

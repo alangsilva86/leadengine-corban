@@ -30,6 +30,7 @@ export interface AllocationFilters {
   tenantId: string;
   agreementId?: string;
   campaignId?: string;
+  instanceId?: string;
   statuses?: LeadAllocationStatus[];
 }
 
@@ -118,6 +119,47 @@ const mapCampaign = (
     agreementId: campaign.agreementId ?? 'unknown',
     instanceId: campaign.whatsappInstanceId ?? 'default',
   };
+};
+
+const FALLBACK_CAMPAIGN_NAME = 'WhatsApp • Inbound';
+const FALLBACK_CAMPAIGN_AGREEMENT_PREFIX = 'whatsapp-instance-fallback';
+
+const ensureFallbackCampaignForInstance = async (
+  tenantId: string,
+  instanceId: string
+): Promise<PrismaCampaign> => {
+  const prisma = getPrismaClient();
+
+  return prisma.campaign.upsert({
+    where: {
+      tenantId_agreementId_whatsappInstanceId: {
+        tenantId,
+        agreementId: `${FALLBACK_CAMPAIGN_AGREEMENT_PREFIX}:${instanceId}`,
+        whatsappInstanceId: instanceId,
+      },
+    },
+    update: {
+      status: 'active',
+      name: FALLBACK_CAMPAIGN_NAME,
+      agreementName: FALLBACK_CAMPAIGN_NAME,
+      metadata: {
+        fallback: true,
+        source: 'whatsapp-inbound',
+      } as Prisma.InputJsonValue,
+    },
+    create: {
+      tenantId,
+      name: FALLBACK_CAMPAIGN_NAME,
+      agreementId: `${FALLBACK_CAMPAIGN_AGREEMENT_PREFIX}:${instanceId}`,
+      agreementName: FALLBACK_CAMPAIGN_NAME,
+      whatsappInstanceId: instanceId,
+      status: 'active',
+      metadata: {
+        fallback: true,
+        source: 'whatsapp-inbound',
+      } as Prisma.InputJsonValue,
+    },
+  });
 };
 
 const mapAllocation = (allocation: LeadAllocationRecord): LeadAllocationDto => {
@@ -262,11 +304,24 @@ export const listAllocations = async (filters: AllocationFilters): Promise<LeadA
     where.status = { in: statuses };
   }
 
+  const campaignCriteria: Prisma.CampaignWhereInput = {};
+
+  if (filters.instanceId) {
+    campaignCriteria.whatsappInstanceId = filters.instanceId;
+  }
+
   if (filters.agreementId) {
     where.OR = [
-      { campaign: { agreementId: filters.agreementId } },
+      {
+        campaign: {
+          ...(filters.instanceId ? { whatsappInstanceId: filters.instanceId } : {}),
+          agreementId: filters.agreementId,
+        },
+      },
       { lead: { agreementId: filters.agreementId } },
     ];
+  } else if (Object.keys(campaignCriteria).length > 0) {
+    where.campaign = campaignCriteria;
   }
 
   const allocations = await prisma.leadAllocation.findMany({
@@ -280,12 +335,27 @@ export const listAllocations = async (filters: AllocationFilters): Promise<LeadA
 
 export const allocateBrokerLeads = async (params: {
   tenantId: string;
-  campaignId: string;
+  campaignId?: string;
+  instanceId?: string;
   leads: BrokerLeadInput[];
 }): Promise<{ newlyAllocated: LeadAllocationDto[]; summary: AllocationSummary }> => {
   const prisma = getPrismaClient();
   const now = new Date();
   const threshold = new Date(now.getTime() - DEDUPE_WINDOW_MS);
+
+  let targetCampaignId = params.campaignId;
+
+  if (!targetCampaignId) {
+    if (!params.instanceId) {
+      throw new Error('campaignId or instanceId must be provided to allocate broker leads');
+    }
+
+    const fallbackCampaign = await ensureFallbackCampaignForInstance(
+      params.tenantId,
+      params.instanceId
+    );
+    targetCampaignId = fallbackCampaign.id;
+  }
 
   const created = await prisma.$transaction(async (tx) => {
     const allocations: LeadAllocationRecord[] = [];
@@ -301,7 +371,7 @@ export const allocateBrokerLeads = async (params: {
       const recentAllocation = await tx.leadAllocation.findFirst({
         where: {
           tenantId: params.tenantId,
-          campaignId: params.campaignId,
+          campaignId: targetCampaignId!,
           receivedAt: { gte: threshold },
           lead: { document },
         },
@@ -355,7 +425,7 @@ export const allocateBrokerLeads = async (params: {
           tenantId_leadId_campaignId: {
             tenantId: params.tenantId,
             leadId: lead.id,
-            campaignId: params.campaignId,
+            campaignId: targetCampaignId!,
           },
         },
       });
@@ -367,7 +437,7 @@ export const allocateBrokerLeads = async (params: {
       const createdAllocation = await tx.leadAllocation.create({
         data: {
           tenantId: params.tenantId,
-          campaignId: params.campaignId,
+          campaignId: targetCampaignId!,
           leadId: lead.id,
           status: 'allocated',
           notes: null,
@@ -383,7 +453,7 @@ export const allocateBrokerLeads = async (params: {
     return allocations;
   });
 
-  const { summary } = await computeSummary(params.tenantId, params.campaignId);
+  const { summary } = await computeSummary(params.tenantId, targetCampaignId);
 
   return {
     newlyAllocated: created.map(mapAllocation),
