@@ -3,13 +3,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet, apiPatch } from '@/lib/api.js';
 import { computeBackoffDelay, parseRetryAfterMs } from '@/lib/rate-limit.js';
 import useRateLimitBanner from '@/hooks/useRateLimitBanner.js';
-import usePlayfulLogger from '../../../shared/usePlayfulLogger.js';
+import usePlayfulLogger from '@/features/shared/usePlayfulLogger.js';
 
 const AUTO_REFRESH_INTERVAL_MS = 15000;
 
 const initialSummary = { total: 0, contacted: 0, won: 0, lost: 0 };
+const FALLBACK_WARNING_MESSAGE =
+  'Sincronizando leads diretamente pela instância conectada. Vincule uma campanha apenas se precisar de roteamento avançado ou relatórios segmentados.';
+const MISSING_CONTEXT_WARNING =
+  'Conecte uma instância ativa do WhatsApp para começar a receber leads automaticamente.';
 
-export const useLeadAllocations = ({ agreementId, campaignId }) => {
+export const useLeadAllocations = ({ agreementId, campaignId, instanceId }) => {
   const { log, warn, error: logError } = usePlayfulLogger('✨ LeadEngine • Inbox');
   const rateLimitInfo = useRateLimitBanner();
 
@@ -83,10 +87,15 @@ export const useLeadAllocations = ({ agreementId, campaignId }) => {
   }, []);
 
   const fetchAllocations = useCallback(async () => {
-    if (!agreementId && !campaignId) {
-      setAllocations([]);
-      setSummary(initialSummary);
-      setWarningMessage(null);
+    const context = {
+      agreementId: agreementId ?? null,
+      campaignId: campaignId ?? null,
+      instanceId: instanceId ?? null,
+    };
+
+    if (!context.agreementId && !context.campaignId && !context.instanceId) {
+      clearScheduledReload();
+      setWarningMessage(MISSING_CONTEXT_WARNING);
       setError(null);
       setNextRefreshAt(null);
       return;
@@ -102,35 +111,47 @@ export const useLeadAllocations = ({ agreementId, campaignId }) => {
       clearScheduledReload();
 
       log('📮 Sincronizando leads', {
-        campaignId,
-        agreementId,
+        campaignId: context.campaignId,
+        agreementId: context.agreementId,
+        instanceId: context.instanceId,
       });
 
       const params = new URLSearchParams();
-      if (campaignId) params.set('campaignId', campaignId);
-      else if (agreementId) params.set('agreementId', agreementId);
+      if (context.campaignId) params.set('campaignId', context.campaignId);
+      else if (context.agreementId) params.set('agreementId', context.agreementId);
+      else if (context.instanceId) params.set('instanceId', context.instanceId);
 
       const payload = await apiGet(`/api/lead-engine/allocations?${params.toString()}`);
       const items = Array.isArray(payload?.data) ? payload.data : [];
 
       if (items.length === 0) {
         warn('Nenhum lead disponível no momento', {
-          campaignId,
-          agreementId,
+          campaignId: context.campaignId,
+          agreementId: context.agreementId,
+          instanceId: context.instanceId,
         });
       }
 
       setAllocations(items);
       setSummary(computeSummary(items));
-      setWarningMessage(Array.isArray(payload?.meta?.warnings) && payload.meta.warnings.length ? payload.meta.warnings[0] : null);
+      const apiWarning =
+        Array.isArray(payload?.meta?.warnings) && payload.meta.warnings.length
+          ? payload.meta.warnings[0]
+          : null;
+      const fallbackWarning =
+        !context.campaignId && !context.agreementId && context.instanceId
+          ? FALLBACK_WARNING_MESSAGE
+          : null;
+      setWarningMessage(apiWarning ?? fallbackWarning);
       setError(null);
       setLastUpdatedAt(new Date());
       scheduleNextLoad(undefined, 'success');
 
       log('✅ Leads sincronizados', {
         total: items.length,
-        campaignId,
-        agreementId,
+        campaignId: context.campaignId,
+        agreementId: context.agreementId,
+        instanceId: context.instanceId,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao carregar leads';
@@ -142,8 +163,9 @@ export const useLeadAllocations = ({ agreementId, campaignId }) => {
         const seconds = Math.ceil(waitMs / 1000);
         setError(`Muitas requisições. Nova tentativa em ${seconds}s.`);
         warn('Broker sinalizou limite ao carregar leads', {
-          campaignId,
-          agreementId,
+          campaignId: context.campaignId,
+          agreementId: context.agreementId,
+          instanceId: context.instanceId,
           status,
           retryAfterMs,
         });
@@ -158,7 +180,7 @@ export const useLeadAllocations = ({ agreementId, campaignId }) => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [agreementId, campaignId, clearScheduledReload, computeSummary, log, logError, scheduleNextLoad, warn]);
+  }, [agreementId, campaignId, instanceId, clearScheduledReload, computeSummary, log, logError, scheduleNextLoad, warn]);
 
   const refresh = useCallback(() => {
     scheduleNextLoad(undefined, 'success');
