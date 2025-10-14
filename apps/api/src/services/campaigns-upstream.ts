@@ -8,17 +8,6 @@ export interface LeadEngineCampaignFilters {
   requestId: string;
 }
 
-export class LeadEngineUpstreamError extends Error {
-  constructor(
-    message: string,
-    public readonly status?: number,
-    public readonly details?: unknown
-  ) {
-    super(message);
-    this.name = 'LeadEngineUpstreamError';
-  }
-}
-
 export const fetchLeadEngineCampaigns = async (
   _filters: LeadEngineCampaignFilters
 ): Promise<CampaignDTO[]> => {

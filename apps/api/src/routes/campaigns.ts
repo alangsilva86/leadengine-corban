@@ -201,9 +201,9 @@ const normalizeQueryValue = (value: unknown): string | undefined => {
   }
 
   if (Array.isArray(value)) {
-    for (const candidate of value) {
-      if (typeof candidate === 'string') {
-        const trimmed = candidate.trim();
+    for (const entry of value) {
+      if (typeof entry === 'string') {
+        const trimmed = entry.trim();
         if (trimmed.length > 0) {
           return trimmed;
         }
@@ -212,6 +212,29 @@ const normalizeQueryValue = (value: unknown): string | undefined => {
   }
 
   return undefined;
+};
+
+const normalizeTenantCandidate = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const readTenantHeader = (req: Request): string | undefined => {
+  const viaFn = req.header?.('x-tenant-id');
+  if (typeof viaFn === 'string') {
+    return viaFn;
+  }
+
+  const rawHeader = req.headers?.['x-tenant-id'];
+  if (Array.isArray(rawHeader)) {
+    return rawHeader.find((entry): entry is string => typeof entry === 'string');
+  }
+
+  return typeof rawHeader === 'string' ? rawHeader : undefined;
 };
 
 const extractStatuses = (value: unknown): CampaignStatus[] => {
@@ -263,7 +286,38 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
   return filters;
 };
 
-export const resolveTenantId = (_req: Request): string | undefined => DEFAULT_TENANT_ID;
+export const resolveTenantId = (req: Request): string | undefined => {
+  const queryTenant = normalizeTenantCandidate(
+    Array.isArray(req.query?.tenantId)
+      ? req.query.tenantId.find((entry): entry is string => typeof entry === 'string')
+      : req.query?.tenantId
+  );
+  if (queryTenant) {
+    return queryTenant;
+  }
+
+  const headerTenant = normalizeTenantCandidate(readTenantHeader(req));
+  if (headerTenant) {
+    return headerTenant;
+  }
+
+  const userTenant = normalizeTenantCandidate(req.user?.tenantId);
+  if (userTenant) {
+    return userTenant;
+  }
+
+  const envTenant = normalizeTenantCandidate(process.env.AUTH_MVP_TENANT_ID);
+  if (envTenant) {
+    return envTenant;
+  }
+
+  const configuredTenant = normalizeTenantCandidate(AUTH_MVP_BYPASS_TENANT_ID);
+  if (configuredTenant && configuredTenant !== 'demo-tenant') {
+    return configuredTenant;
+  }
+
+  return undefined;
+};
 
 type StoreCampaignResult = {
   items: CampaignDTO[];
@@ -1009,21 +1063,12 @@ router.get(
               upstreamStatus,
               error: toSafeError(upstreamError),
             });
-            res.status(502).json({
-              success: false,
-              error: {
-                code: 'UPSTREAM_FAILURE',
-                message: 'Lead Engine indisponível ao listar campanhas.',
-              },
-              requestId,
+          } else {
+            logger.error(`${LOG_CONTEXT} erro inesperado ao consultar upstream`, {
+              ...logContext,
+              error: toSafeError(upstreamError),
             });
-            return;
           }
-
-          logger.error(`${LOG_CONTEXT} erro inesperado ao consultar upstream`, {
-            ...logContext,
-            error: toSafeError(upstreamError),
-          });
 
           logger.warn(`${LOG_CONTEXT} falling back to local store after upstream error`, {
             ...logContext,

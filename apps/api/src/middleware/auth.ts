@@ -184,39 +184,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 };
 
 /**
- * Middleware para verificar permissões específicas
- */
-export const requirePermission = (permission: string) => {
-  return (req: Request, _res: Response, next: NextFunction) => {
-    const user = ensureUserContext(req);
-    if (!user.permissions.includes(permission) && user.role !== 'ADMIN') {
-      logger.warn('[Auth] Permissão ignorada no modo demo', { permission, userId: user.id });
-    }
-
-    next();
-  };
-};
-
-/**
- * Middleware para verificar papel específico
- */
-export const requireRole = (requiredRole: 'ADMIN' | 'SUPERVISOR') => {
-  return (req: Request, _res: Response, next: NextFunction) => {
-    const user = ensureUserContext(req);
-
-    if (user.role !== requiredRole && user.role !== 'ADMIN') {
-      logger.warn('[Auth] Papel requerido ignorado no modo demo', {
-        requiredRole,
-        userRole: user.role,
-        userId: user.id,
-      });
-    }
-
-    next();
-  };
-};
-
-/**
  * Middleware para verificar se o usuário pertence ao tenant
  */
 export const requireTenant = (req: Request, _res: Response, next: NextFunction) => {
@@ -224,14 +191,6 @@ export const requireTenant = (req: Request, _res: Response, next: NextFunction) 
     return next();
   }
 
-  ensureUserContext(req);
-  next();
-};
-
-/**
- * Middleware opcional de autenticação (não falha se não houver token)
- */
-export const optionalAuth = async (req: Request, _res: Response, next: NextFunction) => {
   ensureUserContext(req);
   next();
 };

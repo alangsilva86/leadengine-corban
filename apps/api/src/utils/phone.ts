@@ -60,11 +60,3 @@ export const normalizePhoneNumber = (input: string): NormalizedPhone => {
   }
 };
 
-export const isValidPhoneNumber = (input: string): boolean => {
-  try {
-    PhoneSchema.parse(input);
-    return true;
-  } catch {
-    return false;
-  }
-};
