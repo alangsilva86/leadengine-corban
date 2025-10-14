@@ -41,6 +41,40 @@ const asArray = (value: unknown): unknown[] => {
   return [];
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+};
+
+const unwrapWebhookEvent = (
+  entry: unknown
+): { event: RawBaileysUpsertEvent; envelope: Record<string, unknown> } | null => {
+  const envelope = asRecord(entry);
+  if (!envelope) {
+    return null;
+  }
+
+  const bodyRecord = asRecord(envelope.body);
+  if (!bodyRecord) {
+    return { event: envelope as RawBaileysUpsertEvent, envelope };
+  }
+
+  const merged: Record<string, unknown> = { ...bodyRecord };
+
+  for (const [key, value] of Object.entries(envelope)) {
+    if (key === 'body') {
+      continue;
+    }
+    if (!(key in merged)) {
+      merged[key] = value;
+    }
+  }
+
+  return { event: merged as RawBaileysUpsertEvent, envelope };
+};
+
 const readString = (...candidates: unknown[]): string | null => {
   for (const candidate of candidates) {
     if (typeof candidate === 'string') {
@@ -166,6 +200,23 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     }
   }
 
+  const rawBodyParseError = (req as Request & { rawBodyParseError?: SyntaxError | null }).rawBodyParseError;
+  if (rawBodyParseError) {
+    logger.warn('WhatsApp webhook received invalid JSON payload', { requestId, error: rawBodyParseError.message });
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: 'unknown',
+      instanceId: 'unknown',
+      result: 'rejected',
+      reason: 'invalid_json',
+    });
+    res.status(400).json({
+      ok: false,
+      error: { code: 'INVALID_WEBHOOK_JSON', message: 'Invalid JSON payload' },
+    });
+    return;
+  }
+
   const events = asArray(req.body);
   if (events.length === 0) {
     whatsappWebhookEventsCounter.inc({
@@ -183,11 +234,43 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   let failures = 0;
 
   for (const entry of events) {
-    const eventRecord = entry as RawBaileysUpsertEvent;
+    const unwrapped = unwrapWebhookEvent(entry);
+    if (!unwrapped) {
+      continue;
+    }
+
+    const eventRecord = unwrapped.event;
+    const envelopeRecord = unwrapped.envelope;
+    const rawPreview = toRawPreview(entry);
+    const eventType = readString(eventRecord.event, (eventRecord as { type?: unknown }).type);
+
+    const instanceOverride =
+      readString(
+        (eventRecord as { instanceId?: unknown }).instanceId,
+        (eventRecord as { iid?: unknown }).iid,
+        envelopeRecord.instanceId,
+        envelopeRecord.iid
+      ) ?? getDefaultInstanceId();
+    const tenantOverride = readString(
+      (eventRecord as { tenantId?: unknown }).tenantId,
+      envelopeRecord.tenantId
+    ) ?? undefined;
+
+    if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
+      whatsappWebhookEventsCounter.inc({
+        origin: 'webhook',
+        tenantId: tenantOverride ?? 'unknown',
+        instanceId: instanceOverride ?? 'unknown',
+        result: 'ignored',
+        reason: 'unsupported_event',
+        event: eventType,
+      });
+      continue;
+    }
+
     const normalization = normalizeUpsertEvent(eventRecord, {
-      instanceId: readString((eventRecord as { instanceId?: unknown }).instanceId, (eventRecord as { iid?: unknown }).iid) ??
-        getDefaultInstanceId(),
-      tenantId: readString((eventRecord as { tenantId?: unknown }).tenantId) ?? undefined,
+      instanceId: instanceOverride,
+      tenantId: tenantOverride,
     });
 
     if (normalization.normalized.length === 0) {
@@ -196,11 +279,16 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
     for (const normalized of normalization.normalized) {
       const tenantId = normalized.tenantId ??
-        readString((eventRecord as { tenantId?: unknown }).tenantId) ??
+        readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ??
         getDefaultTenantId();
       const instanceId =
         readString(normalized.data.instanceId) ??
-        readString((eventRecord as { instanceId?: unknown }).instanceId, (eventRecord as { iid?: unknown }).iid) ??
+        readString(
+          (eventRecord as { instanceId?: unknown }).instanceId,
+          (eventRecord as { iid?: unknown }).iid,
+          envelopeRecord.instanceId,
+          envelopeRecord.iid
+        ) ??
         getDefaultInstanceId();
 
       const chatIdCandidate =
@@ -258,7 +346,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           instanceId: metadataBase.instanceId ?? instanceId ?? null,
           sessionId: metadataBase.sessionId ?? normalized.sessionId ?? null,
           normalizedIndex: normalized.messageIndex,
-          raw: metadataBase.raw ?? toRawPreview(eventRecord),
+          raw: metadataBase.raw ?? rawPreview,
           broker: brokerMetadata,
         };
 
