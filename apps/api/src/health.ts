@@ -61,7 +61,3 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     },
   };
 };
-
-export const __private = {
-  deriveStorageBackend,
-};
