@@ -19,6 +19,7 @@ import {
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
 import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
+import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 import { prisma } from '../../../lib/prisma';
 
 const webhookRouter: Router = Router();
@@ -445,6 +446,29 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           raw: metadataBase.raw ?? rawPreview,
           broker: brokerMetadata,
         };
+
+        const metadataSource = readString(metadata.source);
+        const debugSource =
+          metadataSource && metadataSource.toLowerCase().includes('baileys')
+            ? metadataSource
+            : 'baileys:webhook';
+
+        if (debugSource) {
+          await logBaileysDebugEvent(debugSource, {
+            tenantId: tenantId ?? null,
+            instanceId: instanceId ?? null,
+            chatId,
+            messageId: normalized.messageId ?? externalId ?? null,
+            direction,
+            timestamp,
+            metadata,
+            contact: contactRecord,
+            message: messageRecord,
+            rawPayload: toRawPreview(eventRecord),
+            rawEnvelope: toRawPreview(envelopeRecord),
+            normalizedIndex: normalized.messageIndex,
+          });
+        }
 
         const processed = await ingestInboundWhatsAppMessage({
           origin: 'webhook',
