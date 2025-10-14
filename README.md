@@ -124,6 +124,7 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
   - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
   - Configure os limites de falha do circuito outbound via `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` para personalizar tolerância e cooldown de envio.
   - `WHATSAPP_SESSION_STORE_DRIVER` suporta `postgres` (persistência via Prisma), `redis` ou `memory` (apenas desenvolvimento). Use `WHATSAPP_SESSION_STORE_URL` para apontar para o banco/cluster e `WHATSAPP_SESSION_STORE_REDIS_TTL` para definir TTL opcional ao usar Redis.
+  - Mantenha `WHATSAPP_PASSTHROUGH_MODE=false` em produção e QA. Isso força a API a validar `x-api-key`/`x-signature-sha256` para cada evento e garante que apenas instâncias autorizadas — identificadas pelo `instanceId` — consigam movimentar leads.
   - O modo HTTP é fixo: a variável legada `WHATSAPP_MODE` foi removida e a API aborta a inicialização caso ela esteja definida.
   - Use `docs/environments/ticketzapi-production.env` como referência de produção.
 - **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000` e `VITE_WS_URL=ws://localhost:4000`.
@@ -244,6 +245,22 @@ Todos os pacotes possuem `tsup.config.ts` e `tsconfig.build.json`, seguindo o me
 ### Leads e contatos
 - `/api/leads` – paginação, filtros por status, criação/edição (LeadStatus/LeadSource), tags e qualificação.
 - `/api/contacts` – CRUD de contatos com normalização telefônica e associação a tickets/leads.
+- `/api/lead-engine/allocations` – leitura de alocações filtradas por `instanceId` (obrigatório nos fluxos de WhatsApp) e `campaignId`; suporta exportação via `/export` com os mesmos filtros.
+
+#### Exemplos de cURL para QA/Operação (allocations por instância)
+
+```bash
+# Listar alocações da instância corrente
+curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/allocations?instanceId=$INSTANCE_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# Exportar CSV respeitando o filtro de instância
+curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/allocations/export?instanceId=$INSTANCE_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -o allocations-$INSTANCE_ID.csv
+```
+
+- Substitua `$ACCESS_TOKEN` pelo JWT do operador autenticado e `$INSTANCE_ID` pelo identificador provisionado na criação da instância WhatsApp. O backend exige que a instância esteja com `WHATSAPP_PASSTHROUGH_MODE=false` para validar credenciais antes de processar o filtro.
 
 ### Campanhas e pipeline comercial
 - `/api/lead-engine/campaigns` – sincronização com upstream, filtros por `agreementId` e `status`.
