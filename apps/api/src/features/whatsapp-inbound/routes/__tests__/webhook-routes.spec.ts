@@ -39,7 +39,9 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ ok: false, code: 'INVALID_SIGNATURE' });
     const metrics = renderMetrics();
-    expect(metrics).toContain('whatsapp_webhook_events_total{result="rejected",reason="invalid_signature"} 1');
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="invalid_signature"[^}]*result="rejected"[^}]*\} 1/
+    );
   });
 
   it('rejects requests with mismatching signature', async () => {
@@ -52,7 +54,9 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     expect(response.status).toBe(401);
     expect(response.body.code).toBe('INVALID_SIGNATURE');
     const metrics = renderMetrics();
-    expect(metrics).toContain('whatsapp_webhook_events_total{result="rejected",reason="invalid_signature"} 1');
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="invalid_signature"[^}]*result="rejected"[^}]*\} 1/
+    );
   });
 
   it('accepts requests with valid signature', async () => {
