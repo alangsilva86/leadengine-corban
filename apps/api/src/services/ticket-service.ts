@@ -76,12 +76,17 @@ type WhatsAppInstanceForDispatch = {
   brokerId: string | null;
 };
 
+type DispatchInstanceResolution = {
+  dispatchInstanceId: string | null;
+  brokerId: string | null;
+};
+
 export const resolveDispatchInstanceId = async (
   instanceId: string | null | undefined,
   instance?: WhatsAppInstanceForDispatch | null
-): Promise<string | null> => {
+): Promise<DispatchInstanceResolution> => {
   if (!instanceId) {
-    return null;
+    return { dispatchInstanceId: null, brokerId: null };
   }
 
   const record =
@@ -98,7 +103,10 @@ export const resolveDispatchInstanceId = async (
     throw new NotFoundError('WhatsAppInstance', instanceId);
   }
 
-  return record.brokerId ?? record.id;
+  return {
+    dispatchInstanceId: record.brokerId ?? record.id,
+    brokerId: record.brokerId,
+  };
 };
 
 const OUTBOUND_TPS_DEFAULT = (() => {
@@ -1424,8 +1432,13 @@ export const sendMessage = async (
         await markAsFailed({ message: 'contact_phone_missing' });
       } else {
         const transport = dependencies.transport ?? getWhatsAppTransport();
+        const requestedInstanceId = instanceId;
+        let dispatchInstanceId: string | null = null;
+        let dispatchBrokerId: string | null = null;
         try {
-          const dispatchInstanceId = await resolveDispatchInstanceId(instanceId);
+          const dispatchResolution = await resolveDispatchInstanceId(instanceId);
+          dispatchInstanceId = dispatchResolution.dispatchInstanceId;
+          dispatchBrokerId = dispatchResolution.brokerId;
           if (!dispatchInstanceId) {
             throw new NotFoundError('WhatsAppInstance', instanceId ?? 'unknown');
           }
@@ -1487,6 +1500,9 @@ export const sendMessage = async (
                 tenantId,
                 ticketId: ticket.id,
                 instanceId,
+                requestedInstanceId,
+                resolvedDispatchId: dispatchInstanceId,
+                brokerId: dispatchBrokerId,
               });
               emitToTenant(tenantId, 'whatsapp.circuit_breaker.closed', {
                 instanceId,
@@ -1525,6 +1541,9 @@ export const sendMessage = async (
             status,
             requestId,
             rawErrorCode,
+            requestedInstanceId,
+            resolvedDispatchId: dispatchInstanceId,
+            brokerId: dispatchBrokerId,
           });
           if (normalizedCode === 'INSTANCE_NOT_CONNECTED') {
             whatsappSocketReconnectsCounter.inc({
