@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
