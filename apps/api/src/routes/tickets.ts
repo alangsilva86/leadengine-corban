@@ -12,6 +12,7 @@ import {
   TicketFilters,
   Pagination,
   TicketStatus,
+  type MessageType,
 } from '@ticketz/core';
 import { asyncHandler } from '../middleware/error-handler';
 import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
@@ -24,6 +25,7 @@ import {
   getTicketById,
   listMessages,
   listTickets,
+  sendMessage as sendTicketMessage,
   updateTicket,
   type CreateTicketNoteInput,
   type TicketIncludeOption,
@@ -131,6 +133,9 @@ const serializeError = (error: unknown): Record<string, unknown> => {
     message: safeTruncate(error, 500),
   } satisfies Record<string, unknown>;
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const emitRealtimeMessage = (tenantId: string, ticketId: string, payload: unknown) => {
   const socket = getSocketServer();
@@ -288,18 +293,37 @@ const updateTicketValidation = [
 ];
 
 const allowedMediaTypes = new Set(['image', 'video', 'audio', 'document']);
+const allowedMessageTypes = new Set([
+  'TEXT',
+  'IMAGE',
+  'AUDIO',
+  'VIDEO',
+  'DOCUMENT',
+  'LOCATION',
+  'CONTACT',
+  'TEMPLATE',
+]);
 
 const sendMessageValidation = [
-  body('chatId').isString().trim().isLength({ min: 1 }).withMessage('chatId é obrigatório'),
+  body('chatId').optional().isString().trim().isLength({ min: 1 }),
   body('iid').optional().isString().trim().isLength({ min: 1 }),
+  body('ticketId').optional().custom(validateTicketId),
   body().custom((value) => {
-    const hasText = typeof value?.text === 'string' && value.text.trim().length > 0;
-    const media = value?.media;
-    const hasMedia = media && typeof media === 'object';
-
-    if (!hasText && !hasMedia) {
-      throw new Error('Informe text ou media para enviar mensagem.');
+    if (!value || typeof value !== 'object') {
+      throw new Error('Corpo da requisição inválido.');
     }
+
+    const hasChatId = typeof value.chatId === 'string' && value.chatId.trim().length > 0;
+    const hasTicketId = typeof value.ticketId === 'string' && value.ticketId.trim().length > 0;
+
+    if (!hasChatId && !hasTicketId) {
+      throw new Error('Informe chatId ou ticketId para enviar a mensagem.');
+    }
+
+    const hasText = typeof value.text === 'string' && value.text.trim().length > 0;
+    const hasContent = typeof value.content === 'string' && value.content.trim().length > 0;
+    const media = value.media;
+    const hasMedia = media && typeof media === 'object';
 
     if (hasMedia) {
       const mediaType = normalizeString(media.mediaType);
@@ -311,6 +335,30 @@ const sendMessageValidation = [
       if (!hasPayload) {
         throw new Error('media.base64 ou media.mediaUrl deve ser informado');
       }
+    }
+
+    if (hasChatId) {
+      if (!hasText && !hasContent && !hasMedia) {
+        throw new Error('Informe text, content ou media para enviar mensagem.');
+      }
+      return true;
+    }
+
+    const rawType = typeof value.type === 'string' ? value.type.trim().toUpperCase() : 'TEXT';
+    const normalizedType = allowedMessageTypes.has(rawType) ? rawType : 'TEXT';
+    const requiresMedia = normalizedType !== 'TEXT';
+    const hasMediaUrl = typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0;
+
+    if (requiresMedia && !hasMediaUrl) {
+      throw new Error('mediaUrl deve ser informado para mensagens de mídia.');
+    }
+
+    if (!requiresMedia && !hasContent && !hasText) {
+      throw new Error('Informe content ou text para enviar mensagem.');
+    }
+
+    if (!hasTicketId) {
+      throw new Error('ticketId é obrigatório quando chatId não é informado.');
     }
 
     return true;
@@ -659,24 +707,67 @@ router.post(
   sendMessageValidation,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = normalizeString(req.header('x-tenant-id')) ?? getDefaultTenantId();
-    const chatId = normalizeString(req.body.chatId)!;
-    const text = normalizeString(req.body.text);
-    const iid = normalizeString(req.body.iid) ?? getDefaultInstanceId();
-    const mediaPayload = normalizeOutboundMedia(req.body.media);
+    const headerTenantId = normalizeString(req.header('x-tenant-id'));
+    const tenantId = req.user?.tenantId ?? headerTenantId ?? getDefaultTenantId();
+    const chatId = normalizeString(req.body.chatId);
+    const ticketId = normalizeString(req.body.ticketId);
+    const text = normalizeString(req.body.text) ?? normalizeString(req.body.content);
+    const instanceOverride = normalizeString(req.body.iid) ?? normalizeString(req.body.instanceId);
+    const mediaPayload = chatId ? normalizeOutboundMedia(req.body.media) : null;
     const transport = getWhatsAppTransport();
 
-    const instanceId = iid ?? getDefaultInstanceId();
+    if (!chatId && ticketId) {
+      const rawType = typeof req.body.type === 'string' ? req.body.type.trim().toUpperCase() : 'TEXT';
+      const normalizedType = allowedMessageTypes.has(rawType) ? (rawType as MessageType) : 'TEXT';
+      const metadata = isRecord(req.body.metadata)
+        ? { ...(req.body.metadata as Record<string, unknown>) }
+        : ({} as Record<string, unknown>);
+
+      if (typeof req.body.previewUrl === 'boolean') {
+        metadata.previewUrl = req.body.previewUrl;
+      }
+
+      const message = await sendTicketMessage(tenantId, req.user?.id, {
+        ticketId,
+        type: normalizedType,
+        instanceId: instanceOverride ?? undefined,
+        direction: 'OUTBOUND',
+        content: text ?? undefined,
+        caption: normalizeString(req.body.caption) ?? undefined,
+        mediaUrl: normalizeString(req.body.mediaUrl) ?? undefined,
+        mediaFileName: normalizeString(req.body.mediaFileName ?? req.body.fileName) ?? undefined,
+        mediaMimeType: normalizeString(req.body.mediaMimeType ?? req.body.mimetype) ?? undefined,
+        quotedMessageId: normalizeString(req.body.quotedMessageId) ?? undefined,
+        metadata,
+        idempotencyKey: normalizeString(req.body.idempotencyKey) ?? undefined,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Mensagem enviada com sucesso',
+        data: message,
+      });
+      return;
+    }
+
+    const normalizedChatId = chatId;
+    const instanceId = instanceOverride ?? getDefaultInstanceId();
+
+    if (!normalizedChatId) {
+      res.status(400).json({ code: 'CHAT_ID_REQUIRED', message: 'Informe chatId ou ticketId válido.' });
+      return;
+    }
+
     if (!instanceId) {
       res.status(400).json({ code: 'INSTANCE_REQUIRED', message: 'Informe iid ou configure WHATSAPP_DEFAULT_INSTANCE_ID.' });
       return;
     }
 
-    const contactLabel = normalizeString(req.body.contactName) ?? chatId;
+    const contactLabel = normalizeString(req.body.contactName) ?? normalizedChatId;
 
     try {
       const messagePayload: WhatsAppTransportSendMessagePayload = {
-        to: chatId,
+        to: normalizedChatId,
         content: text ?? mediaPayload?.broker.caption ?? '',
         caption: mediaPayload?.broker.caption,
         type: mediaPayload ? mediaPayload.broker.mediaType : 'text',
@@ -692,16 +783,16 @@ router.post(
       const externalId = brokerResponse.externalId ?? `TEMP-${Date.now()}`;
       const ticketContext = await findOrCreateOpenTicketByChat({
         tenantId,
-        chatId,
+        chatId: normalizedChatId,
         displayName: contactLabel,
-        phone: chatId,
+        phone: normalizedChatId,
         instanceId,
       });
 
       const { message } = await upsertMessageByExternalId({
         tenantId,
         ticketId: ticketContext.ticket.id,
-        chatId,
+        chatId: normalizedChatId,
         direction: 'outbound',
         externalId,
         type: mediaPayload ? 'media' : 'text',
@@ -729,9 +820,9 @@ router.post(
 
       const ticketContext = await findOrCreateOpenTicketByChat({
         tenantId,
-        chatId,
+        chatId: normalizedChatId,
         displayName: contactLabel,
-        phone: chatId,
+        phone: normalizedChatId,
         instanceId,
       });
 
@@ -739,7 +830,7 @@ router.post(
       const { message } = await upsertMessageByExternalId({
         tenantId,
         ticketId: ticketContext.ticket.id,
-        chatId,
+        chatId: normalizedChatId,
         direction: 'outbound',
         externalId: errorId,
         type: mediaPayload ? 'media' : 'text',
