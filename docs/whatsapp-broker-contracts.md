@@ -14,7 +14,7 @@
 
 O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/whatsapp/webhook`, é normalizado e persiste imediatamente (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`), emitindo `messages.new` em tempo real.
 
-- Event envelope validated via `BrokerInboundEventSchema` (queue) and `BrokerWebhookInboundSchema` (webhook).
+- Event envelope validated via `BrokerWebhookInboundSchema` (webhook) e pelos guard rails de `ingestInboundWhatsAppMessage` para garantir consistência antes da persistência.
 - Authentication headers: prefer `X-API-Key` with the broker secret; when absent the webhook accepts `Authorization: Bearer <token>` or the legacy `X-Authorization` header carrying the raw token value.
 - Required fields: `id`, `type='MESSAGE_INBOUND'`, `instanceId`, and payload with `contact`, `message`, `metadata`.
 - Timestamp handling: accepts ISO string or epoch (seconds/ms) and normalises to ISO before ingestion; cursor optional.
@@ -52,12 +52,11 @@ O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/wha
 }
 ```
 
-## Session store & inbound queue
+## Session store & ingest pipeline
 
-- A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para desacoplar o webhook e garantir reprocessamentos idempotentes.
-- Não há caminhos paralelos de ingestão: todo evento chega pelo webhook, segue para a fila e é processado pelo worker. Em caso de falhas, o próprio worker agenda retentativas baseadas em backoff controlado.
-- O armazenamento de sessões Baileys foi removido junto com o modo sidecar; apenas o broker HTTP permanece ativo.
-- O runtime sidecar foi aposentado; não há mais dependência de volumes persistentes específicos para sessões Baileys dentro da API.
+- O pipeline inbound agora é totalmente síncrono: o webhook chama `ingestInboundWhatsAppMessage` diretamente e retorna sucesso/erro para o broker no mesmo request.
+- Falhas de persistência resultam em respostas 5xx, permitindo que o broker reprocesse com suas próprias políticas de backoff sem depender de fila interna.
+- O armazenamento de sessões Baileys segue externo à API (modo sidecar aposentado); apenas o broker HTTP permanece ativo.
 - As sessões Baileys precisam de armazenamento persistente — utilize os drivers configurados via `WHATSAPP_SESSION_STORE_*` (Postgres/Redis/memória em desenvolvimento) para manter o estado entre recriações de container, sem volumes Docker dedicados.
 
 ### Baileys raw fallback
@@ -72,7 +71,7 @@ When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHAT
   - `metadata.source = 'raw_normalized'`
   - `metadata.broker = { type: 'baileys', direction: 'inbound', normalized: true, messageType, owner?, source? }`
   - `metadata.rawKey = { remoteJid, participant, jid, participantJid }` for debugging without storing the full payload.
-- Normalized events increment `whatsapp_webhook_events_total{result="accepted",reason="raw_inbound_normalized"}` and flow through the existing queue → worker → socket pipeline, making the fallback transparent for downstream services.
+- Normalized events increment `whatsapp_webhook_events_total{result="accepted",reason="raw_inbound_normalized"}` e seguem direto para `ingestInboundWhatsAppMessage`, mantendo o fallback transparente para sockets e relatórios.
 
 ## Outbound Contract
 

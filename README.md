@@ -183,14 +183,14 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - **data/**: seeds, fixtures e builders usados em testes.
 - **middleware/**: autenticação (`middleware/auth.ts`), auditoria de requisições, validação e tratamento de erros.
 - **routes/**: módulos independentes para auth, tickets, leads, contatos, campanhas, preferências, filas, conversas manuais, integrações e webhooks.
-- **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza e persiste eventos (`features/whatsapp-inbound/routes/webhook-routes.ts`) e a fila interna expõe instrumentação/retentativas (`features/whatsapp-inbound/queue/event-queue.ts`).
+- **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza e persiste eventos de forma síncrona (`features/whatsapp-inbound/routes/webhook-routes.ts`) usando `ingestInboundWhatsAppMessage` como orquestrador principal.
 - **socket/**: handlers de conexão multi-tenant (`socket/connection-handlers.ts`).
 - **utils/** e **lib/**: parse de telefone, normalização de slug, métricas Prometheus, registrador Socket.IO, Prisma singleton e helpers HTTP.
 
 ### Fluxo WhatsApp resumido
 1. Os eventos inbound chegam por `/api/integrations/whatsapp/webhook`, são normalizados e persistidos de forma síncrona (`features/whatsapp-inbound/routes/webhook-routes.ts`) e geram `messages.new` via Socket.IO.
-2. A fila interna (`features/whatsapp-inbound/queue/event-queue.ts`) continua disponível para reprocessamentos, com o worker `inbound-processor` convertendo eventos herdados em tickets/mensagens e alimentando o logger de debug (`features/whatsapp-inbound/workers/inbound-processor.ts`).
-3. O processamento assíncrono roda no worker `inbound-processor` (`features/whatsapp-inbound/workers/inbound-processor.ts`), que consome a fila, aplica dedupe e distribui eventos para tickets/mensagens sem caminhos alternativos paralelos.
+2. A ingestão utiliza diretamente `ingestInboundWhatsAppMessage` (`features/whatsapp-inbound/services/inbound-lead-service.ts`), que aplica dedupe, atualiza tickets/leads e dispara sockets no mesmo ciclo de requisição.
+3. Não há fila ou worker internos: falhas retornam erro HTTP ao broker, facilitando retentativas a partir da origem e simplificando a observabilidade do pipeline.
 4. O router `/api/integrations/whatsapp` centraliza instâncias, QR, pareamento, envio de mensagens e circuit breaker de configuração (`routes/integrations.ts`), além de expor métricas/health específicas para observabilidade.
 
 ### Health & métricas

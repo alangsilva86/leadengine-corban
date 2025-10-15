@@ -56,7 +56,7 @@
   2. If redundant, remove the store modules and migrate any remaining tests to rely on generated fixtures.
 
 ### 7. WhatsApp inbound queue helpers
-- `apps/api/src/features/whatsapp-inbound/queue/event-queue.ts` exposes queue normalization and metric helpers that `ts-prune` flags as unused externally.  
+- `apps/api/src/features/whatsapp-inbound/queue/event-queue.ts` (removido) expunha helpers da fila interna; o pipeline passou a ser síncrono via `ingestInboundWhatsAppMessage`.
 - **Plan**:
   1. Check whether these functions are supposed to be triggered by background workers (possibly outside repo).  
   2. If not, consolidate the module by retaining only the message normalizer used by HTTP ingestion.

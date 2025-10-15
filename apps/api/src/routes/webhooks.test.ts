@@ -30,6 +30,10 @@ vi.mock('../lib/prisma', () => {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
   };
+  const tenantMock = {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+  };
   const contactMock = {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
@@ -63,6 +67,7 @@ vi.mock('../lib/prisma', () => {
       leadActivity: leadActivityMock,
       ticket: ticketMock,
       processedIntegrationEvent: processedIntegrationEventMock,
+      tenant: tenantMock,
     },
   };
 });
@@ -95,8 +100,6 @@ vi.mock('../data/lead-allocation-store', () => ({
   updateAllocation: vi.fn(),
 }));
 
-// Ensure inbound processor is registered
-await import('../features/whatsapp-inbound/workers/inbound-processor');
 const { refreshFeatureFlags } = await import('../config/feature-flags');
 const { refreshWhatsAppEnv } = await import('../config/whatsapp');
 
@@ -215,6 +218,17 @@ const stubInboundSuccessMocks = () => {
     ...data,
   }));
 
+  (prisma.tenant.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: 'tenant-1',
+    slug: 'tenant-1',
+    name: 'Tenant 1',
+  });
+  (prisma.tenant.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: 'tenant-1',
+    slug: 'tenant-1',
+    name: 'Tenant 1',
+  });
+
   (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
     id: 'queue-1',
     tenantId: 'tenant-1',
@@ -284,6 +298,8 @@ describe('WhatsApp webhook (integration)', () => {
     (prisma.campaign.upsert as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.queue.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prisma.tenant.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prisma.tenant.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.contact.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.contact.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.contact.update as unknown as ReturnType<typeof vi.fn>).mockReset();
