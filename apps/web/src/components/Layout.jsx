@@ -23,6 +23,7 @@ import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
+import { isWhatsAppDebugEnabled } from '@/features/debug/featureFlags.js';
 import {
   Sidebar,
   SidebarContent,
@@ -52,6 +53,9 @@ const NAVIGATION_ITEMS = (() => {
   { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare },
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+  ...(isWhatsAppDebugEnabled()
+    ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }]
+    : []),
   { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
   { id: 'settings', label: 'Configurações', icon: Settings },
   ];
