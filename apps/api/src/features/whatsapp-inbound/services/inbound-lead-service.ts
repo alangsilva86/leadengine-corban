@@ -808,17 +808,22 @@ const pickPreferredName = (...values: Array<unknown>): string | null => {
   return null;
 };
 
-const shouldSkipByLocalDedupe = (key: string, now: number, ttlMs: number): boolean => {
+const shouldSkipByLocalDedupe = (key: string, now: number): boolean => {
   pruneDedupeCache(now);
 
   const entry = dedupeCache.get(key);
-  if (entry && entry.expiresAt > now) {
-    return true;
+  return !!entry && entry.expiresAt > now;
+};
+
+const registerLocalDedupe = (key: string, now: number, ttlMs: number): void => {
+  if (ttlMs <= 0) {
+    return;
   }
+
+  pruneDedupeCache(now);
 
   const expiresAt = now + ttlMs;
   dedupeCache.set(key, { expiresAt });
-  return false;
 };
 
 export const shouldSkipByDedupe = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<boolean> => {
@@ -827,25 +832,42 @@ export const shouldSkipByDedupe = async (key: string, now: number, ttlMs = DEFAU
   }
 
   if (dedupeBackend) {
-    if (await dedupeBackend.has(key)) {
-      return true;
-    }
-
     try {
-      await dedupeBackend.set(key, ttlMs);
+      if (await dedupeBackend.has(key)) {
+        return true;
+      }
     } catch (error) {
-      logger.warn('whatsappInbound.dedupeCache.redisFallback', {
+      logger.warn('whatsappInbound.dedupeCache.redisHasFallback', {
         key,
         ttlMs,
         error: mapErrorForLog(error),
       });
-      return shouldSkipByLocalDedupe(key, now, ttlMs);
+      return shouldSkipByLocalDedupe(key, now);
     }
-
-    return false;
   }
 
-  return shouldSkipByLocalDedupe(key, now, ttlMs);
+  return shouldSkipByLocalDedupe(key, now);
+};
+
+const registerDedupeKey = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<void> => {
+  if (ttlMs <= 0) {
+    return;
+  }
+
+  if (dedupeBackend) {
+    try {
+      await dedupeBackend.set(key, ttlMs);
+      return;
+    } catch (error) {
+      logger.warn('whatsappInbound.dedupeCache.redisSetFallback', {
+        key,
+        ttlMs,
+        error: mapErrorForLog(error),
+      });
+    }
+  }
+
+  registerLocalDedupe(key, now, ttlMs);
 };
 
 const mapErrorForLog = (error: unknown) =>
@@ -1917,10 +1939,20 @@ export const ingestInboundWhatsAppMessage = async (
 
   if (passthroughMode) {
     await handlePassthroughIngest(event);
+    await registerDedupeKey(dedupeKey, now, dedupeTtlMs);
     return true;
   }
 
-  await processStandardInboundEvent(event, now, { passthroughMode, simpleMode, preloadedInstance });
+  const messagePersisted = await processStandardInboundEvent(event, now, {
+    passthroughMode,
+    simpleMode,
+    preloadedInstance,
+  });
+
+  if (messagePersisted) {
+    await registerDedupeKey(dedupeKey, now, dedupeTtlMs);
+  }
+
   return true;
 };
 
@@ -1936,7 +1968,7 @@ const processStandardInboundEvent = async (
     simpleMode: boolean;
     preloadedInstance?: WhatsAppInstanceRecord | null;
   }
-): Promise<void> => {
+): Promise<boolean> => {
   const {
     instanceId,
     contact,
@@ -2187,7 +2219,7 @@ const processStandardInboundEvent = async (
       });
     }
 
-    return;
+    return false;
   }
 
   const queueId = queueResolution.queueId;
@@ -2224,7 +2256,7 @@ const processStandardInboundEvent = async (
       instanceId,
       messageId: message.id ?? null,
     });
-    return;
+    return false;
   }
 
   const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
@@ -2287,7 +2319,7 @@ const processStandardInboundEvent = async (
       brokerMessageId: normalizedMessage.id,
       dedupeKey,
     });
-    return;
+    return true;
   }
 
   let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
@@ -2373,6 +2405,8 @@ const processStandardInboundEvent = async (
   }
 
   if (persistedMessage) {
+    await registerDedupeKey(dedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
+
     const providerMessageId = normalizedMessage.id ?? null;
     await emitRealtimeUpdatesForInbound({
       tenantId,
@@ -2483,6 +2517,7 @@ const processStandardInboundEvent = async (
 
       try {
         const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
+        await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
         if (newlyAllocated.length > 0) {
           const allocation = newlyAllocated[0];
           logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
@@ -2516,6 +2551,7 @@ const processStandardInboundEvent = async (
             instanceId,
             phone: maskPhone(normalizedPhone ?? null),
           });
+          await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
           continue;
         }
 
@@ -2529,6 +2565,7 @@ const processStandardInboundEvent = async (
       }
     }
   }
+  return !!persistedMessage;
 };
 
 export const __testing = {

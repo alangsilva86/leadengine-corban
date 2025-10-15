@@ -371,6 +371,20 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       });
     });
 
+    it('permits retry when queue provisioning fails before persisting the message', async () => {
+      prismaMock.queue.findFirst.mockResolvedValueOnce(null);
+      prismaMock.queue.upsert.mockRejectedValueOnce(new Error('queue unavailable'));
+
+      const firstAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
+      expect(firstAttempt).toBe(true);
+      expect(sendMessageMock).not.toHaveBeenCalled();
+
+      const secondAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
+      expect(secondAttempt).toBe(true);
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
+      expect(prismaMock.queue.upsert).toHaveBeenCalledTimes(1);
+    });
+
     it('reuses instance resolved via broker identifier matching the envelope instance id', async () => {
       const envelope = buildEnvelope();
       envelope.message.metadata = {
