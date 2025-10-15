@@ -1663,46 +1663,19 @@ const syncInstancesFromBroker = async (
   }
 
   const existingById = new Map(existing.map((item) => [item.id, item]));
-  const existingByBrokerId = new Map(existing.map((item) => [item.brokerId, item]));
-  const existingByAlias = new Map<string, StoredInstance>();
+  const existingByBrokerId = new Map<string, StoredInstance>();
 
   for (const item of existing) {
-    const metadataRecord = isRecord(item.metadata)
-      ? (item.metadata as Record<string, unknown>)
-      : null;
-    if (!metadataRecord) {
+    if (typeof item.brokerId !== 'string') {
       continue;
     }
 
-    const brokerRecord = isRecord(metadataRecord.broker)
-      ? (metadataRecord.broker as Record<string, unknown>)
-      : null;
-    const lastSnapshotRecord = isRecord(metadataRecord.lastBrokerSnapshot)
-      ? (metadataRecord.lastBrokerSnapshot as Record<string, unknown>)
-      : null;
-    const lastSnapshotRawRecord = isRecord(lastSnapshotRecord?.raw)
-      ? (lastSnapshotRecord?.raw as Record<string, unknown>)
-      : null;
-
-    const aliasCandidates: Array<unknown> = [
-      metadataRecord.displayId,
-      metadataRecord.slug,
-      metadataRecord.brokerId,
-      metadataRecord.instanceId,
-      brokerRecord?.id,
-      brokerRecord?.instanceId,
-      brokerRecord?.sessionId,
-      lastSnapshotRecord?.sessionId,
-      lastSnapshotRawRecord?.id,
-      lastSnapshotRawRecord?.instanceId,
-      lastSnapshotRawRecord?.sessionId,
-    ];
-
-    for (const alias of aliasCandidates) {
-      if (typeof alias === 'string' && alias.trim().length > 0) {
-        existingByAlias.set(alias.trim(), item);
-      }
+    const trimmed = item.brokerId.trim();
+    if (trimmed.length === 0) {
+      continue;
     }
+
+    existingByBrokerId.set(trimmed, item);
   }
 
   logger.info('whatsapp.instances.sync.snapshot', {
@@ -1742,11 +1715,7 @@ const syncInstancesFromBroker = async (
       continue;
     }
 
-    const existingInstance =
-      existingByBrokerId.get(instanceId) ??
-      existingById.get(instanceId) ??
-      existingByAlias.get(instanceId) ??
-      null;
+    const existingInstance = existingById.get(instanceId) ?? existingByBrokerId.get(instanceId) ?? null;
     const derivedStatus = brokerStatus
       ? mapBrokerStatusToDbStatus(brokerStatus)
       : mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);

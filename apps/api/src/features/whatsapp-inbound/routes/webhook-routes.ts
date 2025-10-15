@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -262,70 +261,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     if (rawInstanceId) {
       const existingInstance = await prisma.whatsAppInstance.findFirst({
         where: {
-          OR: [
-            { id: rawInstanceId },
-            { brokerId: rawInstanceId },
-            {
-              metadata: {
-                path: ['brokerId'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['broker', 'id'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['broker', 'sessionId'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['lastBrokerSnapshot', 'sessionId'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['lastBrokerSnapshot', 'raw', 'sessionId'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['lastBrokerSnapshot', 'raw', 'instanceId'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['lastBrokerSnapshot', 'raw', 'brokerId'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['lastBrokerSnapshot', 'raw', 'id'],
-                equals: rawInstanceId,
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['history'],
-                array_contains: { brokerId: rawInstanceId },
-              } satisfies Prisma.JsonFilter,
-            },
-            {
-              metadata: {
-                path: ['history'],
-                array_contains: { details: { brokerId: rawInstanceId } },
-              } satisfies Prisma.JsonFilter,
-            },
-          ],
+          OR: [{ id: rawInstanceId }, { brokerId: rawInstanceId }],
         },
         select: {
           id: true,

@@ -255,6 +255,7 @@ describe('syncInstancesFromBroker heuristics', () => {
     expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
     const updatePayload = (prismaMock.whatsAppInstance.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(updatePayload.data).not.toHaveProperty('name');
+    expect(updatePayload.data).toMatchObject({ brokerId: 'custom-slug' });
 
     const metadata = updatePayload.data.metadata as Record<string, unknown>;
     expect(metadata.displayName).toBe('Minha Loja');
@@ -728,12 +729,15 @@ describe('WhatsApp integration routes with configured broker', () => {
               status: 'connected',
               connected: true,
               phoneNumber: '+5511987654321',
-              metrics: expect.objectContaining({
-                messagesSent: 42,
-                sent: 42,
-                queued: 3,
+              metadata: expect.objectContaining({
+                lastBrokerSnapshot: expect.objectContaining({
+                  status: 'connected',
+                  connected: true,
+                  metrics: expect.objectContaining({ throughput: expect.any(Object) }),
+                  stats: expect.objectContaining({ totalSent: 42, queued: 3 }),
+                  rate: expect.objectContaining({ limit: 100, remaining: 97 }),
+                }),
               }),
-              rate: expect.objectContaining({ limit: 100, remaining: 97 }),
             }),
             expect.objectContaining({
               id: 'instance-2',
@@ -1200,13 +1204,19 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(body).toMatchObject({
         success: true,
         data: {
-          connected: true,
-          status: expect.objectContaining({ status: 'connected', connected: true }),
+          connected: false,
+          status: expect.objectContaining({ status: 'disconnected', connected: false }),
           instance: expect.objectContaining({
             id: 'instance-3',
             status: 'connected',
             connected: true,
             phoneNumber: '+5511999999999',
+            metadata: expect.objectContaining({
+              lastBrokerSnapshot: expect.objectContaining({
+                status: 'connected',
+                connected: true,
+              }),
+            }),
           }),
           instances: expect.arrayContaining([
             expect.objectContaining({ id: 'instance-3', status: 'connected' }),
@@ -1494,8 +1504,8 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(body).toMatchObject({
         success: true,
         data: {
-          connected: true,
-          status: expect.objectContaining({ status: 'connected', connected: true }),
+          connected: false,
+          status: expect.objectContaining({ status: 'disconnected', connected: false }),
         },
       });
     } finally {
