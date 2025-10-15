@@ -4,6 +4,8 @@ import './App.css';
 import { apiGet } from './lib/api.js';
 import { onAuthTokenChange, onTenantIdChange } from './lib/auth.js';
 import { isWhatsAppDebugEnabled } from './features/debug/featureFlags.js';
+import { getRuntimeEnv } from './lib/runtime-env.js';
+import { getFrontendFeatureFlags } from '../../../config/feature-flags.ts';
 
 const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('./components/AgreementGrid.jsx'));
@@ -15,6 +17,12 @@ const BaileysLogs = lazy(() => import('./features/debug/BaileysLogs.jsx'));
 const WhatsAppDebug = lazy(() => import('./features/debug/WhatsAppDebug.jsx'));
 
 const WHATSAPP_DEBUG_ENABLED = isWhatsAppDebugEnabled();
+
+const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
+const shouldEnableWhatsappDebug = frontendFeatureFlags.whatsappDebug;
+const WhatsAppDebug = shouldEnableWhatsappDebug
+  ? lazy(() => import('./features/debug/WhatsAppDebug.jsx'))
+  : null;
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
@@ -177,6 +185,14 @@ function App() {
 
   const renderPage = () => {
     switch (safeCurrentPage) {
+    if (shouldEnableWhatsappDebug && currentPage === 'whatsapp-debug') {
+      if (WhatsAppDebug) {
+        return <WhatsAppDebug />;
+      }
+      return <Dashboard />;
+    }
+
+    switch (currentPage) {
       case 'dashboard':
         return (
           <Dashboard

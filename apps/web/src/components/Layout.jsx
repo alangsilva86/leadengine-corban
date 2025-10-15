@@ -40,8 +40,14 @@ import {
 } from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
+import { getRuntimeEnv } from '@/lib/runtime-env.js';
+import { getFrontendFeatureFlags } from '../../../../config/feature-flags.ts';
 
-const NAVIGATION_ITEMS = [
+const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
+const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;
+
+const NAVIGATION_ITEMS = (() => {
+  const items = [
   { id: 'dashboard', label: 'Visão Geral', icon: Home },
   { id: 'agreements', label: 'Convênios', icon: Briefcase },
   { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
@@ -52,7 +58,18 @@ const NAVIGATION_ITEMS = [
     : []),
   { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
   { id: 'settings', label: 'Configurações', icon: Settings },
-];
+  ];
+
+  if (shouldShowWhatsappDebug) {
+    items.splice(items.length - 1, 0, {
+      id: 'whatsapp-debug',
+      label: 'Debug WhatsApp',
+      icon: Bug,
+    });
+  }
+
+  return items;
+})();
 
 const LayoutHeader = ({ children, className }) => (
   <header
