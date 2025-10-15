@@ -55,6 +55,54 @@ describe('normalizeUpsertEvent', () => {
     expect((metadata.contact as Record<string, unknown>).isGroup).toBe(false);
   });
 
+  it('normalizes messages present only in the raw envelope', () => {
+    const event = buildBaseEvent();
+    event.payload.messages = [];
+    delete (event.payload as Record<string, unknown>).owner;
+    delete (event.payload as Record<string, unknown>).source;
+    delete (event.payload as Record<string, unknown>).timestamp;
+
+    const fallbackTimestamp = 1_700_000_555;
+
+    (event.payload as Record<string, unknown>).raw = {
+      owner: 'raw-owner',
+      source: 'raw-source',
+      timestamp: fallbackTimestamp,
+      messages: [
+        {
+          key: {
+            remoteJid: '5511991234567@s.whatsapp.net',
+            fromMe: false,
+          },
+          pushName: 'Rafa',
+          message: {
+            conversation: 'Fallback mágico',
+          },
+        },
+      ],
+    };
+
+    const result = normalizeUpsertEvent(event);
+
+    expect(result.normalized).toHaveLength(1);
+    const [normalized] = result.normalized;
+    expect(normalized.messageType).toBe('text');
+
+    const message = normalized.data.message as Record<string, unknown>;
+    expect(message.text).toBe('Fallback mágico');
+    expect(message.conversation).toBe('Fallback mágico');
+    expect(message.messageTimestamp).toBe(fallbackTimestamp);
+
+    const metadata = normalized.data.metadata as Record<string, unknown>;
+    const broker = metadata.broker as Record<string, unknown>;
+    expect(broker.owner).toBe('raw-owner');
+    expect(broker.source).toBe('raw-source');
+    expect(broker.messageTimestamp).toBe(fallbackTimestamp);
+
+    const isoFallback = new Date(fallbackTimestamp * 1000).toISOString();
+    expect(normalized.data.timestamp).toBe(isoFallback);
+  });
+
   it('keeps media attributes for image messages', () => {
     const event = buildBaseEvent();
     event.payload.messages.push({
