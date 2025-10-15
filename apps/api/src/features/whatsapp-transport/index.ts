@@ -14,9 +14,5 @@ export const getWhatsAppTransport = (): WhatsAppTransport => {
   return cachedTransport;
 };
 
-export const refreshWhatsAppTransport = () => {
-  cachedTransport = null;
-};
-
 export type { WhatsAppTransport } from './types';
 export type { WhatsAppTransportSendMessagePayload } from './types';
