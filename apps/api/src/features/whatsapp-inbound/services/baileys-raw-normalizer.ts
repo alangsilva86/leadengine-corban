@@ -729,6 +729,7 @@ export const normalizeUpsertEvent = (
   }
 
   const payload = asRecord(eventRecord.payload) ?? {};
+  const rawPayload = asRecord(payload.raw);
   const rawEnvelope = asRecord(payload.raw);
   const rawPayload = asRecord(rawEnvelope?.payload) ?? rawEnvelope;
   const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
@@ -755,11 +756,35 @@ export const normalizeUpsertEvent = (
   }
 
   const tenantId =
-    readString(overrides?.tenantId, payload.tenantId, eventRecord.tenantId) ?? undefined;
+    readString(
+      overrides?.tenantId,
+      payload.tenantId,
+      eventRecord.tenantId,
+      rawPayload?.tenantId,
+      rawMetadata?.tenantId
+    ) ?? undefined;
   const brokerId =
-    readString(overrides?.brokerId, payload.brokerId, eventRecord.brokerId, eventRecord.iid, payload.iid) ??
-    undefined;
+    readString(
+      overrides?.brokerId,
+      payload.brokerId,
+      eventRecord.brokerId,
+      eventRecord.iid,
+      payload.iid,
+      rawPayload?.brokerId,
+      rawMetadata?.brokerId
+    ) ?? undefined;
   const sessionId =
+    readString(
+      overrides?.sessionId,
+      payload.sessionId,
+      eventRecord.sessionId,
+      rawPayload?.sessionId,
+      rawMetadata?.sessionId
+    ) ?? brokerId ?? undefined;
+  const owner =
+    readString(payload.owner, eventRecord.owner, rawPayload?.owner, rawMetadata?.owner) ?? null;
+  const source =
+    readString(payload.source, eventRecord.source, rawPayload?.source, rawMetadata?.source) ?? null;
     readString(overrides?.sessionId, payload.sessionId, eventRecord.sessionId) ?? brokerId ?? undefined;
   const owner = readString(payload.owner, eventRecord.owner, rawPayload?.owner, rawEnvelope?.owner, rawMetadata?.owner) ?? null;
   const source =
@@ -769,6 +794,12 @@ export const normalizeUpsertEvent = (
       payload.timestamp,
       eventRecord.timestamp,
       rawPayload?.timestamp,
+      rawMetadata?.timestamp
+    ) ?? null;
+
+  const payloadMessages = asArray(payload.messages);
+  const rawMessages = rawPayload ? asArray(rawPayload.messages) : [];
+  const messages = payloadMessages.length > 0 ? payloadMessages : rawMessages;
       rawEnvelope?.timestamp,
       rawMetadata?.timestamp
     ) ?? null;
