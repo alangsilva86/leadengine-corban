@@ -320,7 +320,7 @@ describe('WhatsApp webhook instance resolution', () => {
 
     expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
       where: { id: 'stored-instance' },
-      data: { brokerId: uuid },
+      data: { brokerId: 'stored-instance' },
     });
 
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledWith(

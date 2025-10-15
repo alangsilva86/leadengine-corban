@@ -451,7 +451,7 @@ const attemptAutoProvisionWhatsAppInstance = async ({
     return null;
   }
 
-  const brokerId = resolveBrokerIdFromMetadata(metadata) ?? instanceId;
+  const brokerId = instanceId;
   const sessionId = resolveSessionIdFromMetadata(metadata);
   const displayName = resolveInstanceDisplayNameFromMetadata(metadata, tenant.name, instanceId);
 

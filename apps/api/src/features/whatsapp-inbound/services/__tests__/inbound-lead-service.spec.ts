@@ -291,7 +291,7 @@ describe('metadata helpers', () => {
       });
 
       expect(whatsappInstanceFindFirstMock).toHaveBeenCalledWith({
-        where: { brokerId: 'session-1', tenantId: tenantRecord.id },
+        where: { brokerId: 'wa-auto', tenantId: tenantRecord.id },
       });
       expect(whatsappInstanceCreateMock).not.toHaveBeenCalled();
       expect(result).toBe(existingRecord);

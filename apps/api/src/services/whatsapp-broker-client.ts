@@ -505,15 +505,6 @@ type DeleteInstanceOptions = {
 };
 
 class WhatsAppBrokerClient {
-  private slugify(value: string, fallback = 'whatsapp'): string {
-    const slug = value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    return slug.length > 0 ? slug : fallback;
-  }
-
   private resolveConfig(): WhatsAppBrokerResolvedConfig {
     return resolveWhatsAppBrokerConfig();
   }
@@ -1157,10 +1148,15 @@ class WhatsAppBrokerClient {
   }): Promise<WhatsAppInstance> {
     const config = this.resolveConfig();
 
-    const requestedInstanceId =
-      typeof args.instanceId === 'string' && args.instanceId.trim().length > 0
-        ? args.instanceId.trim()
-        : this.slugify(args.name, 'instance');
+    const requestedInstanceId = (() => {
+      const explicitId = typeof args.instanceId === 'string' ? args.instanceId.trim() : '';
+      if (explicitId.length > 0) {
+        return explicitId;
+      }
+
+      const nameDerived = typeof args.name === 'string' ? args.name.trim() : '';
+      return nameDerived.length > 0 ? nameDerived : 'whatsapp-instance';
+    })();
 
     const webhookUrl =
       typeof args.webhookUrl === 'string' && args.webhookUrl.trim().length > 0
@@ -1173,7 +1169,9 @@ class WhatsAppBrokerClient {
       response = await this.request<unknown>('/instances', {
         method: 'POST',
         body: JSON.stringify({
+          name: args.name,
           id: requestedInstanceId,
+          instanceId: requestedInstanceId,
           webhookUrl,
           verifyToken: config.verifyToken,
         }),
