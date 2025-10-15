@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
+import ColumnScrollArea from './ColumnScrollArea.jsx';
 
 const STATUS_META = {
   allocated: { label: 'Aguardando contato', tone: 'neutral' },
@@ -215,9 +216,10 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
         </Button>
       </div>
 
-      <div
-        className={cn(
-          'flex-1 overflow-y-auto px-6 py-6 transition-opacity duration-150 ease-out',
+      <ColumnScrollArea
+        className="flex-1 min-h-0"
+        viewportClassName={cn(
+          'px-6 py-6 transition-opacity duration-150 ease-out',
           isSwitching ? 'opacity-0' : 'opacity-100'
         )}
       >
@@ -273,7 +275,7 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
             })}
           </ol>
         )}
-      </div>
+      </ColumnScrollArea>
     </div>
   );
 };
