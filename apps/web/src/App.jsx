@@ -14,15 +14,12 @@ const ChatCommandCenter = lazy(() => import('./features/chat/ChatCommandCenter.j
 const Reports = lazy(() => import('./components/Reports.jsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
 const BaileysLogs = lazy(() => import('./features/debug/BaileysLogs.jsx'));
-const WhatsAppDebug = lazy(() => import('./features/debug/WhatsAppDebug.jsx'));
+const WhatsAppDebugLazy = lazy(() => import('./features/debug/WhatsAppDebug.jsx'));
 
 const WHATSAPP_DEBUG_ENABLED = isWhatsAppDebugEnabled();
 
 const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
 const shouldEnableWhatsappDebug = frontendFeatureFlags.whatsappDebug;
-const WhatsAppDebug = shouldEnableWhatsappDebug
-  ? lazy(() => import('./features/debug/WhatsAppDebug.jsx'))
-  : null;
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
@@ -48,11 +45,11 @@ function App() {
   const [loadingCurrentUser, setLoadingCurrentUser] = useState(true);
 
   const safeCurrentPage = useMemo(() => {
-    if (!WHATSAPP_DEBUG_ENABLED && currentPage === 'whatsapp-debug') {
+    if (!WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug && currentPage === 'whatsapp-debug') {
       return 'dashboard';
     }
     return currentPage;
-  }, [currentPage]);
+  }, [currentPage, shouldEnableWhatsappDebug]);
 
   const loadCurrentUser = useCallback(
     async (signal) => {
@@ -185,14 +182,6 @@ function App() {
 
   const renderPage = () => {
     switch (safeCurrentPage) {
-    if (shouldEnableWhatsappDebug && currentPage === 'whatsapp-debug') {
-      if (WhatsAppDebug) {
-        return <WhatsAppDebug />;
-      }
-      return <Dashboard />;
-    }
-
-    switch (currentPage) {
       case 'dashboard':
         return (
           <Dashboard
@@ -268,8 +257,11 @@ function App() {
       case 'baileys-logs':
         return <BaileysLogs />;
       case 'whatsapp-debug':
+        if (shouldEnableWhatsappDebug) {
+          return <WhatsAppDebugLazy />;
+        }
         if (WHATSAPP_DEBUG_ENABLED) {
-          return <WhatsAppDebug />;
+          return <WhatsAppDebugLazy />;
         }
         return <Dashboard />;
       default:
@@ -279,12 +271,12 @@ function App() {
 
   const handleNavigate = useCallback(
     (nextPage) => {
-      if (nextPage === 'whatsapp-debug' && !WHATSAPP_DEBUG_ENABLED) {
+      if (nextPage === 'whatsapp-debug' && !WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug) {
         return;
       }
       setCurrentPage(nextPage);
     },
-    []
+    [shouldEnableWhatsappDebug]
   );
 
   return (
