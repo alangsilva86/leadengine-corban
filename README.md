@@ -24,7 +24,7 @@ O **Ticketz LeadEngine** reúne o fluxo de tickets do ecossistema Ticketz, a orq
 
 - 🎫 **Gestão de tickets** com atribuição, histórico, filas e chat em tempo real via Socket.IO.
 - 👥 **Pipeline de leads** com qualificação, tags, campanhas e dashboards alimentados pela API oficial do LeadEngine.
-- 📱 **Integração WhatsApp** utilizando exclusivamente o broker HTTP, com ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) e fila interna para orquestrar o processamento com pipeline único.
+- 📱 **Integração WhatsApp** utilizando exclusivamente o broker HTTP, com ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) processada de forma síncrona via `ingestInboundWhatsAppMessage`.
 - 🏢 **Multi-tenant completo**: cada requisição exige `tenantId`, há bypass controlado para demos e todas as entidades principais carregam isolamento lógico.
 - 🧱 **Arquitetura modular** com pacotes de domínio, storage, integrações e contratos compartilhados entre backend e frontend.
 
