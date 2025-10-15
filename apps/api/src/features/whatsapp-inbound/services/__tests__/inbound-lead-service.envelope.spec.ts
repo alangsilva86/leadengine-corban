@@ -376,13 +376,15 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       prismaMock.queue.upsert.mockRejectedValueOnce(new Error('queue unavailable'));
 
       const firstAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
-      expect(firstAttempt).toBe(true);
+      expect(firstAttempt).toBe(false);
       expect(sendMessageMock).not.toHaveBeenCalled();
+      expect(testingInternals.dedupeCache.size).toBe(0);
 
       const secondAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
       expect(secondAttempt).toBe(true);
       expect(sendMessageMock).toHaveBeenCalledTimes(1);
       expect(prismaMock.queue.upsert).toHaveBeenCalledTimes(1);
+      expect(testingInternals.dedupeCache.size).toBeGreaterThan(0);
     });
 
     it('reuses instance resolved via broker identifier matching the envelope instance id', async () => {
