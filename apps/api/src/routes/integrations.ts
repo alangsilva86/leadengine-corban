@@ -1664,6 +1664,46 @@ const syncInstancesFromBroker = async (
 
   const existingById = new Map(existing.map((item) => [item.id, item]));
   const existingByBrokerId = new Map(existing.map((item) => [item.brokerId, item]));
+  const existingByAlias = new Map<string, StoredInstance>();
+
+  for (const item of existing) {
+    const metadataRecord = isRecord(item.metadata)
+      ? (item.metadata as Record<string, unknown>)
+      : null;
+    if (!metadataRecord) {
+      continue;
+    }
+
+    const brokerRecord = isRecord(metadataRecord.broker)
+      ? (metadataRecord.broker as Record<string, unknown>)
+      : null;
+    const lastSnapshotRecord = isRecord(metadataRecord.lastBrokerSnapshot)
+      ? (metadataRecord.lastBrokerSnapshot as Record<string, unknown>)
+      : null;
+    const lastSnapshotRawRecord = isRecord(lastSnapshotRecord?.raw)
+      ? (lastSnapshotRecord?.raw as Record<string, unknown>)
+      : null;
+
+    const aliasCandidates: Array<unknown> = [
+      metadataRecord.displayId,
+      metadataRecord.slug,
+      metadataRecord.brokerId,
+      metadataRecord.instanceId,
+      brokerRecord?.id,
+      brokerRecord?.instanceId,
+      brokerRecord?.sessionId,
+      lastSnapshotRecord?.sessionId,
+      lastSnapshotRawRecord?.id,
+      lastSnapshotRawRecord?.instanceId,
+      lastSnapshotRawRecord?.sessionId,
+    ];
+
+    for (const alias of aliasCandidates) {
+      if (typeof alias === 'string' && alias.trim().length > 0) {
+        existingByAlias.set(alias.trim(), item);
+      }
+    }
+  }
 
   logger.info('whatsapp.instances.sync.snapshot', {
     tenantId,
@@ -1703,7 +1743,10 @@ const syncInstancesFromBroker = async (
     }
 
     const existingInstance =
-      existingByBrokerId.get(instanceId) ?? existingById.get(instanceId) ?? null;
+      existingByBrokerId.get(instanceId) ??
+      existingById.get(instanceId) ??
+      existingByAlias.get(instanceId) ??
+      null;
     const derivedStatus = brokerStatus
       ? mapBrokerStatusToDbStatus(brokerStatus)
       : mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
@@ -1834,7 +1877,7 @@ const syncInstancesFromBroker = async (
         tenantId,
         status: derivedStatus,
         connected: derivedConnected,
-        brokerId: instanceId,
+        brokerId: existingInstance.id,
         ...(phoneNumber ? { phoneNumber } : {}),
         ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
         metadata: metadataWithoutError,
@@ -1846,7 +1889,7 @@ const syncInstancesFromBroker = async (
       });
 
       emitToTenant(tenantId, 'whatsapp.instance.updated', {
-        id: instanceId,
+        id: existingInstance.id,
         status: derivedStatus,
         connected: derivedConnected,
         phoneNumber,
@@ -2650,14 +2693,18 @@ router.post(
         throw brokerError;
       }
 
-      const brokerId = brokerInstance?.id;
-      if (!brokerId) {
-        logger.warn('whatsapp.instance.create.missingBrokerId', {
+      const brokerId =
+        typeof brokerInstance?.id === 'string' && brokerInstance.id.trim().length > 0
+          ? brokerInstance.id.trim()
+          : null;
+      if (brokerId && brokerId !== normalizedId) {
+        logger.warn('whatsapp.instance.create.brokerIdMismatch', {
           tenantId,
           requestedId: normalizedId,
+          brokerId,
         });
       }
-      const resolvedBrokerId = brokerId ?? normalizedId;
+      const resolvedBrokerId = normalizedId;
       const actorId = req.user?.id ?? 'system';
       const historyEntry = buildHistoryEntry(
         'created',
