@@ -194,12 +194,12 @@ describe('metadata helpers', () => {
       whatsappInstanceFindFirstMock.mockResolvedValue(null);
     });
 
-    it('returns null when simple mode is disabled', async () => {
+    it('returns null when tenant identifiers cannot be resolved', async () => {
       const result = await testing.attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
-        metadata: baseMetadata,
+        metadata: { sessionId: 'session-1' },
         requestId: 'req-1',
-        simpleMode: false,
+        simpleMode: true,
       });
 
       expect(result).toBeNull();
@@ -262,7 +262,64 @@ describe('metadata helpers', () => {
       expect(whatsappInstanceFindFirstMock).toHaveBeenCalledWith({
         where: { brokerId: 'wa-auto', tenantId: tenantRecord.id },
       });
-      expect(result).toEqual(expect.objectContaining({ id: 'wa-auto', tenantId: tenantRecord.id }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          instance: expect.objectContaining({ id: 'wa-auto', tenantId: tenantRecord.id }),
+          wasCreated: true,
+          brokerId: 'wa-auto',
+        })
+      );
+    });
+
+    it('creates a WhatsApp instance with inbound-auto source when simple mode is disabled', async () => {
+      const tenantRecord = { id: 'tenant-autoprov', name: 'Tenant Demo', slug: 'tenant-autoprov' };
+      const instanceRecord = {
+        id: 'wa-auto',
+        tenantId: tenantRecord.id,
+        name: 'WhatsApp Principal',
+        brokerId: 'wa-friendly',
+        status: 'connected',
+        connected: true,
+        phoneNumber: null,
+        lastSeenAt: null,
+        metadata: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      tenantFindFirstMock.mockResolvedValueOnce(tenantRecord);
+      whatsappInstanceFindFirstMock.mockResolvedValueOnce(null);
+      whatsappInstanceCreateMock.mockResolvedValueOnce(instanceRecord);
+
+      const metadataWithBroker = {
+        ...baseMetadata,
+        brokerId: 'wa-friendly',
+      };
+
+      const result = await testing.attemptAutoProvisionWhatsAppInstance({
+        instanceId: 'wa-auto',
+        metadata: metadataWithBroker,
+        requestId: 'req-2',
+        simpleMode: false,
+      });
+
+      expect(whatsappInstanceCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({
+              autopProvisionSource: 'inbound-auto',
+              autopProvisionBrokerId: 'wa-friendly',
+            }),
+          }),
+        })
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          instance: expect.objectContaining({ brokerId: 'wa-friendly' }),
+          wasCreated: true,
+          brokerId: 'wa-friendly',
+        })
+      );
     });
 
     it('reuses existing instance located by broker before creating a new record', async () => {
@@ -295,10 +352,16 @@ describe('metadata helpers', () => {
       });
 
       expect(whatsappInstanceFindFirstMock).toHaveBeenCalledWith({
-        where: { brokerId: 'wa-auto', tenantId: tenantRecord.id },
+        where: { brokerId: 'session-1', tenantId: tenantRecord.id },
       });
       expect(whatsappInstanceCreateMock).not.toHaveBeenCalled();
-      expect(result).toBe(existingRecord);
+      expect(result).toEqual(
+        expect.objectContaining({
+          instance: existingRecord,
+          wasCreated: false,
+          brokerId: 'session-1',
+        })
+      );
     });
 
     it('reuses existing instance when broker collision happens', async () => {
@@ -344,7 +407,13 @@ describe('metadata helpers', () => {
           },
         },
       });
-      expect(result).toBe(existingRecord);
+      expect(result).toEqual(
+        expect.objectContaining({
+          instance: existingRecord,
+          wasCreated: false,
+          brokerId: 'wa-auto',
+        })
+      );
     });
   });
 });

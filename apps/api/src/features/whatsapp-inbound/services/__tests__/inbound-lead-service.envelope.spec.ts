@@ -418,12 +418,19 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       const createdInstance = {
         id: 'instance-1',
         tenantId: 'tenant-1',
-        brokerId: 'instance-1',
+        brokerId: 'wa-friendly',
         metadata: {},
       };
       prismaMock.whatsAppInstance.create.mockResolvedValueOnce(createdInstance);
 
-      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+      const envelope = buildEnvelope();
+      envelope.message.metadata = {
+        ...(envelope.message.metadata as Record<string, unknown>),
+        brokerId: 'wa-friendly',
+        instanceName: 'WhatsApp Principal',
+      };
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
 
       expect(processed).toBe(true);
       expect(prismaMock.whatsAppInstance.create).toHaveBeenCalledWith(
@@ -433,9 +440,10 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
             tenantId: 'tenant-1',
             metadata: expect.objectContaining({
               autopProvisionSource: 'inbound-auto',
-              autopProvisionBrokerId: 'instance-1',
+              autopProvisionBrokerId: 'wa-friendly',
               autopProvisionTenantIdentifiers: expect.arrayContaining(['tenant-1']),
             }),
+            brokerId: 'wa-friendly',
           }),
         })
       );
@@ -550,11 +558,12 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(processed).toBe(true);
 
       expect(loggerMock.info).toHaveBeenCalledWith(
-        '🎯 LeadEngine • WhatsApp :: 🤝 Instância autoprov conectada durante ingestão padrão',
+        '🎯 LeadEngine • WhatsApp :: 🆕 Instância autoprov criada durante ingestão padrão',
         expect.objectContaining({
           instanceId: 'instance-1',
           tenantId: 'tenant-1',
           tenantIdentifiers: expect.arrayContaining(['tenant-1']),
+          brokerId: 'instance-1',
         })
       );
       expect(loggerMock.warn).not.toHaveBeenCalledWith(
