@@ -74,6 +74,7 @@ When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHAT
   - `metadata.broker = { type: 'baileys', direction: 'inbound', normalized: true, messageType, owner?, source? }`
   - `metadata.rawKey = { remoteJid, participant, jid, participantJid }` for debugging without storing the full payload.
 - Normalized events increment `whatsapp_webhook_events_total{result="accepted",reason="raw_inbound_normalized"}` and flow through the existing queue → worker → socket pipeline, making the fallback transparent for downstream services.
+- When brokers only provide the original Baileys envelope under `payload.raw`, the normaliser reuses `owner`, `source` and `timestamp` from that block and reads `payload.raw.messages` so that every message is still normalised with full context.
 
 ## Outbound Contract
 
