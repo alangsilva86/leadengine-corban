@@ -729,7 +729,6 @@ export const normalizeUpsertEvent = (
   }
 
   const payload = asRecord(eventRecord.payload) ?? {};
-  const rawPayload = asRecord(payload.raw);
   const rawEnvelope = asRecord(payload.raw);
   const rawPayload = asRecord(rawEnvelope?.payload) ?? rawEnvelope;
   const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
@@ -779,27 +778,30 @@ export const normalizeUpsertEvent = (
       payload.sessionId,
       eventRecord.sessionId,
       rawPayload?.sessionId,
+      rawEnvelope?.sessionId,
       rawMetadata?.sessionId
     ) ?? brokerId ?? undefined;
   const owner =
-    readString(payload.owner, eventRecord.owner, rawPayload?.owner, rawMetadata?.owner) ?? null;
+    readString(
+      payload.owner,
+      eventRecord.owner,
+      rawPayload?.owner,
+      rawEnvelope?.owner,
+      rawMetadata?.owner
+    ) ?? null;
   const source =
-    readString(payload.source, eventRecord.source, rawPayload?.source, rawMetadata?.source) ?? null;
-    readString(overrides?.sessionId, payload.sessionId, eventRecord.sessionId) ?? brokerId ?? undefined;
-  const owner = readString(payload.owner, eventRecord.owner, rawPayload?.owner, rawEnvelope?.owner, rawMetadata?.owner) ?? null;
-  const source =
-    readString(payload.source, eventRecord.source, rawPayload?.source, rawEnvelope?.source, rawMetadata?.source) ?? null;
+    readString(
+      payload.source,
+      eventRecord.source,
+      rawPayload?.source,
+      rawEnvelope?.source,
+      rawMetadata?.source
+    ) ?? null;
   const fallbackTimestamp =
     readNumber(
       payload.timestamp,
       eventRecord.timestamp,
       rawPayload?.timestamp,
-      rawMetadata?.timestamp
-    ) ?? null;
-
-  const payloadMessages = asArray(payload.messages);
-  const rawMessages = rawPayload ? asArray(rawPayload.messages) : [];
-  const messages = payloadMessages.length > 0 ? payloadMessages : rawMessages;
       rawEnvelope?.timestamp,
       rawMetadata?.timestamp
     ) ?? null;
