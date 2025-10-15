@@ -13,6 +13,7 @@ const featureFlagsState = {
   useRealData: false,
   mvpAuthBypass: false,
   whatsappRawFallbackEnabled: false,
+  whatsappDebug: false,
 };
 
 const originalMvpTenantId = process.env.AUTH_MVP_TENANT_ID;
@@ -41,6 +42,7 @@ vi.mock('../../config/feature-flags', () => ({
   getUseRealDataFlag: () => featureFlagsState.useRealData,
   isMvpAuthBypassEnabled: () => featureFlagsState.mvpAuthBypass,
   isWhatsappRawFallbackEnabled: () => featureFlagsState.whatsappRawFallbackEnabled,
+  isWhatsappDebugFeatureEnabled: () => featureFlagsState.whatsappDebug,
   refreshFeatureFlags: vi.fn(),
   getMvpBypassTenantId: () => process.env.AUTH_MVP_TENANT_ID ?? undefined,
 }));
@@ -99,6 +101,7 @@ describe('GET /api/campaigns', () => {
     vi.clearAllMocks();
     featureFlagsState.useRealData = false;
     featureFlagsState.mvpAuthBypass = false;
+    featureFlagsState.whatsappDebug = false;
     fetchLeadEngineCampaignsMock.mockReset();
 
     getCampaignMetricsMock.mockResolvedValue({

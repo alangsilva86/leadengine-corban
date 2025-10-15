@@ -1,4 +1,4 @@
-import express, { type Application, type RequestHandler } from 'express';
+import express, { type Application, type RequestHandler, type Router } from 'express';
 import cors from 'cors';
 import type { CorsOptions } from 'cors';
 import helmet from 'helmet';
@@ -32,7 +32,7 @@ import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
 import { manualConversationsRouter } from './routes/manual-conversations';
-import { debugMessagesRouter } from './features/debug/routes/messages';
+import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -40,6 +40,14 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app: Application = express();
 const server = createServer(app);
+
+const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
+let debugMessagesRouter: Router | null = null;
+
+if (shouldRegisterWhatsappDebugRoutes) {
+  const debugModule = require('./features/debug/routes/messages') as typeof import('./features/debug/routes/messages');
+  debugMessagesRouter = debugModule.debugMessagesRouter;
+}
 
 type RawBodyIncomingMessage = IncomingMessage & {
   originalUrl?: string;
@@ -347,7 +355,9 @@ app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', leadEngineRouter);
-app.use('/api', debugMessagesRouter);
+if (debugMessagesRouter) {
+  app.use('/api', debugMessagesRouter);
+}
 
 // Rotas protegidas (com autenticação)
 app.use('/api/tickets', authMiddleware, ticketsRouter);
