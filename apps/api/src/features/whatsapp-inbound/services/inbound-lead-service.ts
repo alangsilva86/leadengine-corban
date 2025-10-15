@@ -31,6 +31,7 @@ import {
   getSocketServer,
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
+import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 
 const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
@@ -1873,6 +1874,24 @@ export const ingestInboundWhatsAppMessage = async (
   const keyChatId = chatId ?? '__unknown__';
   const dedupeKey = `${tenantId}:${messageEnvelope.instanceId}:${keyChatId}:${messageId}`;
 
+  emitWhatsAppDebugPhase({
+    phase: 'ingest:received',
+    correlationId: messageId,
+    tenantId: tenantId ?? null,
+    instanceId: messageEnvelope.instanceId ?? null,
+    chatId,
+    tags: ['ingest'],
+    context: {
+      origin: messageEnvelope.origin,
+      dedupeKey,
+      dedupeTtlMs,
+    },
+    payload: {
+      message: messageEnvelope.message.payload,
+      metadata,
+    },
+  });
+
   if (await shouldSkipByDedupe(dedupeKey, now, dedupeTtlMs)) {
     logger.info('whatsappInbound.ingest.dedupeSkip', {
       origin: messageEnvelope.origin,
@@ -1882,6 +1901,19 @@ export const ingestInboundWhatsAppMessage = async (
       messageId,
       dedupeKey,
       dedupeTtlMs,
+    });
+    emitWhatsAppDebugPhase({
+      phase: 'ingest:dedupe-skipped',
+      correlationId: messageId,
+      tenantId: tenantId ?? null,
+      instanceId: messageEnvelope.instanceId ?? null,
+      chatId,
+      tags: ['ingest'],
+      context: {
+        origin: messageEnvelope.origin,
+        dedupeKey,
+        dedupeTtlMs,
+      },
     });
     return false;
   }
@@ -1961,6 +1993,26 @@ export const ingestInboundWhatsAppMessage = async (
     chatId: keyChatId,
     messageId,
     persisted: messagePersisted,
+  });
+
+  emitWhatsAppDebugPhase({
+    phase: messagePersisted ? 'ingest:completed' : 'ingest:failed',
+    correlationId: messageId,
+    tenantId: tenantId ?? null,
+    instanceId: messageEnvelope.instanceId ?? null,
+    chatId,
+    tags: ['ingest'],
+    context: {
+      origin: messageEnvelope.origin,
+      dedupeKey,
+      dedupeTtlMs,
+      passthroughMode,
+      simpleMode,
+      persisted: messagePersisted,
+    },
+    payload: {
+      event,
+    },
   });
 
   return messagePersisted;
