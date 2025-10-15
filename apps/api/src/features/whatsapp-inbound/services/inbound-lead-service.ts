@@ -93,11 +93,14 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     chatId,
     externalId,
     tenantId: eventTenantId,
+    sessionId: eventSessionId,
   } = event;
 
   const effectiveTenantId =
     (typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null) ??
     DEFAULT_TENANT_ID;
+  const instanceIdentifier =
+    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
   const metadataRecord = toRecord(event.metadata);
   const metadataContact = toRecord(metadataRecord.contact);
   const messageRecord = toRecord(message);
@@ -109,7 +112,20 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     sanitizePhone(contactPhone) ??
     sanitizePhone(metadataContactPhone) ??
     sanitizePhone(metadataRecordPhone);
-  const document = sanitizeDocument(readString(contact.document), normalizedPhone);
+  const deterministicIdentifiers = resolveDeterministicContactIdentifier({
+    instanceId: instanceIdentifier,
+    metadataRecord,
+    metadataContact,
+    sessionId: readString(eventSessionId) ?? readString(metadataRecord.sessionId) ?? readString(metadataRecord.session_id),
+    externalId,
+  });
+  const document = sanitizeDocument(readString(contact.document), [
+    normalizedPhone,
+    deterministicIdentifiers.deterministicId,
+    deterministicIdentifiers.contactId,
+    deterministicIdentifiers.sessionId,
+    instanceIdentifier,
+  ]);
 
   const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
   const passthroughDirection =
@@ -127,6 +143,7 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     remoteJidCandidate ??
     normalizedPhone ??
     document ??
+    deterministicIdentifiers.deterministicId ??
     readString(externalId) ??
     normalizedMessage.id ??
     event.id ??
@@ -175,9 +192,6 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     passthroughText = normalizedMessage.text ?? null;
   }
 
-  const instanceIdentifier =
-    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
-
   const metadataForUpsert = {
     ...metadataRecord,
     tenantId: effectiveTenantId,
@@ -198,7 +212,7 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
     tenantId: effectiveTenantId,
     chatId: resolvedChatId,
     displayName,
-    phone: normalizedPhone ?? resolvedChatId,
+    phone: normalizedPhone ?? deterministicIdentifiers.deterministicId ?? document ?? resolvedChatId,
     instanceId: instanceIdentifier,
   });
 
@@ -290,6 +304,123 @@ const readNestedString = (source: Record<string, unknown>, path: string[]): stri
   }
 
   return readString(current);
+};
+
+const composeDeterministicId = (
+  parts: Array<string | null | undefined>,
+  { minParts = 1 }: { minParts?: number } = {}
+): string | null => {
+  const normalizedParts: string[] = [];
+  const seen = new Set<string>();
+
+  for (const part of parts) {
+    if (typeof part !== 'string') {
+      continue;
+    }
+
+    const trimmed = part.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+
+    normalizedParts.push(trimmed);
+    seen.add(trimmed);
+  }
+
+  if (normalizedParts.length < minParts) {
+    return null;
+  }
+
+  return normalizedParts.join(':');
+};
+
+const resolveDeterministicContactIdentifier = ({
+  instanceId,
+  metadataRecord,
+  metadataContact,
+  sessionId,
+  externalId,
+}: {
+  instanceId?: string | null;
+  metadataRecord: Record<string, unknown>;
+  metadataContact: Record<string, unknown>;
+  sessionId?: string | null;
+  externalId?: string | null;
+}): { deterministicId: string | null; contactId: string | null; sessionId: string | null } => {
+  const instanceIdentifier =
+    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
+
+  const contactIdentifiers: string[] = [];
+  const sessionIdentifiers: string[] = [];
+
+  const pushCandidate = (collection: string[], value: unknown) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed || collection.includes(trimmed)) {
+      return;
+    }
+
+    collection.push(trimmed);
+  };
+
+  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['id']);
+  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['contactId']);
+  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['contact_id']);
+  pushCandidate(contactIdentifiers, metadataRecord['contactId']);
+  pushCandidate(contactIdentifiers, metadataRecord['contact_id']);
+  pushCandidate(contactIdentifiers, metadataRecord['customerId']);
+  pushCandidate(contactIdentifiers, metadataRecord['customer_id']);
+  pushCandidate(contactIdentifiers, metadataRecord['profileId']);
+  pushCandidate(contactIdentifiers, metadataRecord['profile_id']);
+  pushCandidate(contactIdentifiers, metadataRecord['contactIdentifier']);
+  pushCandidate(contactIdentifiers, metadataRecord['contact_identifier']);
+  pushCandidate(contactIdentifiers, metadataRecord['id']);
+
+  pushCandidate(sessionIdentifiers, metadataRecord['sessionId']);
+  pushCandidate(sessionIdentifiers, metadataRecord['session_id']);
+  pushCandidate(sessionIdentifiers, metadataRecord['threadId']);
+  pushCandidate(sessionIdentifiers, metadataRecord['thread_id']);
+  pushCandidate(sessionIdentifiers, metadataRecord['conversationId']);
+  pushCandidate(sessionIdentifiers, metadataRecord['conversation_id']);
+  pushCandidate(sessionIdentifiers, metadataRecord['roomId']);
+  pushCandidate(sessionIdentifiers, metadataRecord['room_id']);
+  pushCandidate(sessionIdentifiers, metadataRecord['chatId']);
+  pushCandidate(sessionIdentifiers, metadataRecord['chat_id']);
+  pushCandidate(sessionIdentifiers, sessionId);
+
+  const normalizedExternalId =
+    typeof externalId === 'string' && externalId.trim().length > 0 ? externalId.trim() : null;
+
+  const primaryContactId = contactIdentifiers[0] ?? null;
+  const primarySessionId = sessionIdentifiers[0] ?? null;
+
+  let deterministicId: string | null = null;
+
+  if (primaryContactId) {
+    deterministicId =
+      composeDeterministicId([instanceIdentifier, primaryContactId], {
+        minParts: instanceIdentifier ? 2 : 1,
+      }) ?? primaryContactId;
+  } else if (primarySessionId) {
+    deterministicId =
+      composeDeterministicId([instanceIdentifier, primarySessionId], {
+        minParts: instanceIdentifier ? 2 : 1,
+      }) ??
+      (sessionIdentifiers.length > 1
+        ? composeDeterministicId(sessionIdentifiers, { minParts: 2 })
+        : primarySessionId);
+  } else if (instanceIdentifier && normalizedExternalId) {
+    deterministicId = composeDeterministicId([instanceIdentifier, normalizedExternalId], { minParts: 2 });
+  }
+
+  return {
+    deterministicId,
+    contactId: primaryContactId,
+    sessionId: primarySessionId,
+  };
 };
 
 const resolveTicketAgreementId = (ticket: unknown): string | null => {
@@ -761,16 +892,35 @@ const sanitizePhone = (value?: string | null): string | undefined => {
   return `+${digits.replace(/^\+/, '')}`;
 };
 
-const sanitizeDocument = (value?: string | null, fallback?: string): string => {
-  const candidate = (value ?? '').replace(/\D/g, '');
-  if (candidate.length >= 4) {
-    return candidate;
+const sanitizeDocument = (value?: string | null, fallbacks: Array<string | null | undefined> = []): string => {
+  const candidateDigits = typeof value === 'string' ? value.replace(/\D/g, '') : '';
+  if (candidateDigits.length >= 4) {
+    return candidateDigits;
   }
-  const fallbackDigits = (fallback ?? '').replace(/\D/g, '');
-  if (fallbackDigits.length >= 4) {
-    return fallbackDigits;
+
+  for (const fallback of fallbacks) {
+    if (typeof fallback !== 'string') {
+      continue;
+    }
+
+    const digits = fallback.replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return digits;
+    }
   }
-  return fallback ?? `wa-${randomUUID()}`;
+
+  for (const fallback of fallbacks) {
+    if (typeof fallback !== 'string') {
+      continue;
+    }
+
+    const trimmed = fallback.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return `wa-${randomUUID()}`;
 };
 
 const uniqueStringList = (values?: string[] | null): string[] => {
@@ -2043,12 +2193,28 @@ const processStandardInboundEvent = async (
     sessionId: eventSessionId,
   } = event;
 
+  const instanceIdentifier =
+    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
   const normalizedPhone = sanitizePhone(contact.phone);
-  const document = sanitizeDocument(contact.document, normalizedPhone);
   const metadataRecord = toRecord(event.metadata);
+  const metadataContact = toRecord(metadataRecord.contact);
+  const deterministicIdentifiers = resolveDeterministicContactIdentifier({
+    instanceId: instanceIdentifier,
+    metadataRecord,
+    metadataContact,
+    sessionId:
+      readString(eventSessionId) ?? readString(metadataRecord.sessionId) ?? readString(metadataRecord.session_id),
+    externalId,
+  });
+  const document = sanitizeDocument(contact.document, [
+    normalizedPhone,
+    deterministicIdentifiers.deterministicId,
+    deterministicIdentifiers.contactId,
+    deterministicIdentifiers.sessionId,
+    instanceIdentifier,
+  ]);
   const requestId = readString(metadataRecord['requestId']);
   const resolvedBrokerId = resolveBrokerIdFromMetadata(metadataRecord);
-  const metadataContact = toRecord(metadataRecord.contact);
   const metadataTenantRecord = toRecord(metadataRecord.tenant);
   const metadataPushName = readString(metadataContact['pushName']) ?? readString(metadataRecord['pushName']);
   const resolvedAvatar = [
@@ -2641,6 +2807,7 @@ export const __testing = {
   resolveBrokerIdFromMetadata,
   resolveSessionIdFromMetadata,
   resolveInstanceDisplayNameFromMetadata,
+  resolveDeterministicContactIdentifier,
   attemptAutoProvisionWhatsAppInstance,
   pruneDedupeCache,
   getDefaultQueueId,
@@ -2650,5 +2817,6 @@ export const __testing = {
   emitRealtimeUpdatesForInbound,
   provisionFallbackCampaignForInstance,
   ensureInboundQueueForInboundMessage,
+  handlePassthroughIngest,
   processStandardInboundEvent,
 };
