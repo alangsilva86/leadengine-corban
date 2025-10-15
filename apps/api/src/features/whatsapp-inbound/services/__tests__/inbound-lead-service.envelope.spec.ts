@@ -79,17 +79,28 @@ vi.mock('../utils/normalize', () => ({
   normalizeInboundMessage: normalizeInboundMessageMock,
 }));
 
+type MockedLogger = {
+  info: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+  debug: ReturnType<typeof vi.fn>;
+};
+
 let ingestInboundWhatsAppMessage:
   typeof import('../inbound-lead-service')['ingestInboundWhatsAppMessage'];
 let resetInboundLeadServiceTestState:
   typeof import('../inbound-lead-service')['resetInboundLeadServiceTestState'];
 let testingInternals: typeof import('../inbound-lead-service')['__testing'];
+let loggerMock: MockedLogger;
 
 beforeAll(async () => {
   const module = await import('../inbound-lead-service');
   ingestInboundWhatsAppMessage = module.ingestInboundWhatsAppMessage;
   resetInboundLeadServiceTestState = module.resetInboundLeadServiceTestState;
   testingInternals = module.__testing;
+
+  const loggerModule = await import('../../../../config/logger');
+  loggerMock = loggerModule.logger as MockedLogger;
 });
 
 const resetPrismaMocks = () => {
@@ -163,6 +174,10 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     emitToAgreementMock.mockReset();
     createTicketMock.mockReset();
     sendMessageMock.mockReset();
+    loggerMock.info.mockReset();
+    loggerMock.warn.mockReset();
+    loggerMock.error.mockReset();
+    loggerMock.debug.mockReset();
 
     isWhatsappPassthroughModeEnabledMock.mockReturnValue(true);
     isWhatsappInboundSimpleModeEnabledMock.mockReturnValue(false);
@@ -513,6 +528,41 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(testingInternals.queueCacheByTenant.get('tenant-1')).toEqual(
         expect.objectContaining({ id: 'queue-auto-1' })
       );
+    });
+
+    it('logs auto provisioning success for fresh instances when simple mode is disabled', async () => {
+      const envelope = buildEnvelope();
+
+      prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
+      prismaMock.tenant.findFirst.mockResolvedValueOnce(null);
+      prismaMock.tenant.findFirst.mockResolvedValue({ id: 'tenant-1', name: 'Tenant One' });
+
+      const createdInstance = {
+        id: 'instance-1',
+        tenantId: 'tenant-1',
+        brokerId: 'instance-1',
+        metadata: {},
+      };
+      prismaMock.whatsAppInstance.create.mockResolvedValueOnce(createdInstance);
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
+
+      expect(processed).toBe(true);
+
+      expect(loggerMock.info).toHaveBeenCalledWith(
+        '🎯 LeadEngine • WhatsApp :: 🤝 Instância autoprov conectada durante ingestão padrão',
+        expect.objectContaining({
+          instanceId: 'instance-1',
+          tenantId: 'tenant-1',
+          tenantIdentifiers: expect.arrayContaining(['tenant-1']),
+        })
+      );
+      expect(loggerMock.warn).not.toHaveBeenCalledWith(
+        '🎯 LeadEngine • WhatsApp :: ⚠️ Autoprovisionamento não realizado durante ingestão padrão',
+        expect.any(Object)
+      );
+      expect(createTicketMock).toHaveBeenCalledTimes(1);
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
     });
   });
 });

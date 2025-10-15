@@ -1763,6 +1763,7 @@ const processStandardInboundEvent = async (
   const requestId = readString(metadataRecord['requestId']);
   const resolvedBrokerId = resolveBrokerIdFromMetadata(metadataRecord);
   const metadataContact = toRecord(metadataRecord.contact);
+  const metadataTenantRecord = toRecord(metadataRecord.tenant);
   const metadataPushName = readString(metadataContact['pushName']) ?? readString(metadataRecord['pushName']);
   const resolvedAvatar = [
     contact.avatarUrl,
@@ -1778,15 +1779,41 @@ const processStandardInboundEvent = async (
 
   const normalizedEventTenantId =
     typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null;
-  const metadataTenantId = readString(metadataRecord['tenantId']);
+  let metadataTenantId = readString(metadataRecord['tenantId']);
+
+  if (normalizedEventTenantId) {
+    if (!metadataTenantId || metadataTenantId !== normalizedEventTenantId) {
+      metadataRecord.tenantId = normalizedEventTenantId;
+      metadataTenantId = normalizedEventTenantId;
+    }
+  } else if (eventTenantId && !metadataTenantId) {
+    metadataRecord.tenantId = eventTenantId;
+    metadataTenantId = eventTenantId;
+  }
+
+  if (metadataTenantId) {
+    let tenantRecordUpdated = false;
+    const tenantRecordId = readString(metadataTenantRecord['id']);
+    if (!tenantRecordId || tenantRecordId !== metadataTenantId) {
+      metadataTenantRecord['id'] = metadataTenantId;
+      tenantRecordUpdated = true;
+    }
+    const tenantRecordTenantId = readString(metadataTenantRecord['tenantId']);
+    if (!tenantRecordTenantId || tenantRecordTenantId !== metadataTenantId) {
+      metadataTenantRecord['tenantId'] = metadataTenantId;
+      tenantRecordUpdated = true;
+    }
+
+    if (tenantRecordUpdated || (!metadataRecord.tenant && Object.keys(metadataTenantRecord).length > 0)) {
+      metadataRecord.tenant = metadataTenantRecord;
+    }
+  }
+
   const tenantIdForBrokerLookup = normalizedEventTenantId ?? metadataTenantId ?? null;
 
   metadataRecord.direction = direction;
   if (chatId && !metadataRecord.chatId) {
     metadataRecord.chatId = chatId;
-  }
-  if (eventTenantId && !metadataRecord.tenantId) {
-    metadataRecord.tenantId = eventTenantId;
   }
   if (eventSessionId && !metadataRecord.sessionId) {
     metadataRecord.sessionId = eventSessionId;
@@ -1835,12 +1862,28 @@ const processStandardInboundEvent = async (
   }
 
   if (!instance) {
+    const tenantIdentifiersForAutoProvision = resolveTenantIdentifiersFromMetadata(metadataRecord);
     instance = await attemptAutoProvisionWhatsAppInstance({
       instanceId,
       metadata: metadataRecord,
       requestId,
       simpleMode,
     });
+
+    if (instance) {
+      logger.info('🎯 LeadEngine • WhatsApp :: 🤝 Instância autoprov conectada durante ingestão padrão', {
+        requestId,
+        instanceId,
+        tenantId: instance.tenantId,
+        tenantIdentifiers: tenantIdentifiersForAutoProvision,
+      });
+    } else {
+      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Autoprovisionamento não realizado durante ingestão padrão', {
+        requestId,
+        instanceId,
+        tenantIdentifiers: tenantIdentifiersForAutoProvision,
+      });
+    }
   }
 
   if (!instance) {
