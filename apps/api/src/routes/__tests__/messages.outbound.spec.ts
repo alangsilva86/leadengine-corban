@@ -1,6 +1,6 @@
 import express, { type Request } from 'express';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ticket } from '@ticketz/core';
 
 const {
@@ -11,21 +11,51 @@ const {
   contactCreateMock,
   whatsAppInstanceFindUniqueMock,
   ticketFindUniqueMock,
-} = vi.hoisted(() => ({
-  queueFindFirstMock: vi.fn(),
-  queueUpsertMock: vi.fn(),
-  contactFindUniqueMock: vi.fn(),
-  contactUpdateMock: vi.fn(),
-  contactCreateMock: vi.fn(),
-  whatsAppInstanceFindUniqueMock: vi.fn(),
-  ticketFindUniqueMock: vi.fn(),
-}));
+  userDeleteManyMock,
+  userUpsertMock,
+  restoreMvpBypassEnv,
+} = vi.hoisted(() => {
+  const originalMvpBypass = process.env.MVP_AUTH_BYPASS;
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  process.env.MVP_AUTH_BYPASS = 'true';
+  process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://example.com/mock-db';
+
+  return {
+    queueFindFirstMock: vi.fn(),
+    queueUpsertMock: vi.fn(),
+    contactFindUniqueMock: vi.fn(),
+    contactUpdateMock: vi.fn(),
+    contactCreateMock: vi.fn(),
+    whatsAppInstanceFindUniqueMock: vi.fn(),
+    ticketFindUniqueMock: vi.fn(),
+    userDeleteManyMock: vi.fn(),
+    userUpsertMock: vi.fn(),
+    restoreMvpBypassEnv: () => {
+      if (originalMvpBypass === undefined) {
+        delete process.env.MVP_AUTH_BYPASS;
+      } else {
+        process.env.MVP_AUTH_BYPASS = originalMvpBypass;
+      }
+      if (originalDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = originalDatabaseUrl;
+      }
+    },
+  };
+});
 
 vi.mock('@ticketz/storage', () => import('../../test-utils/storage-mock'));
 
-vi.mock('../../middleware/auth', () => ({
-  requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
+vi.mock('../../middleware/auth', async () => {
+  const actual = await vi.importActual<typeof import('../../middleware/auth')>(
+    '../../middleware/auth'
+  );
+  return {
+    ...actual,
+    requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
+  };
+});
 
 vi.mock('../../lib/prisma', () => ({
   prisma: {
@@ -44,7 +74,12 @@ vi.mock('../../lib/prisma', () => ({
     ticket: {
       findUnique: (...args: unknown[]) => ticketFindUniqueMock(...args),
     },
+    user: {
+      deleteMany: (...args: unknown[]) => userDeleteManyMock(...args),
+      upsert: (...args: unknown[]) => userUpsertMock(...args),
+    },
   },
+  isDatabaseEnabled: true,
 }));
 
 import { ticketMessagesRouter } from '../messages.ticket';
@@ -129,6 +164,10 @@ type MockContact = {
 const contacts = new Map<string, MockContact>();
 const tickets = new Map<string, Ticket>();
 
+afterAll(() => {
+  restoreMvpBypassEnv();
+});
+
 describe('Outbound message routes', () => {
   let socket: MockSocketServer;
   let sendMessageMock: ReturnType<typeof vi.fn>;
@@ -149,6 +188,20 @@ describe('Outbound message routes', () => {
       tenantId: 'tenant-123',
       name: 'Default',
       orderIndex: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    userDeleteManyMock.mockResolvedValue({ count: 0 });
+    userUpsertMock.mockResolvedValue({
+      id: 'operator-1',
+      tenantId: 'tenant-123',
+      email: 'agent@example.com',
+      name: 'Agent Smith',
+      role: 'AGENT',
+      isActive: true,
+      passwordHash: 'hash',
+      settings: {},
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -311,6 +364,8 @@ describe('Outbound message routes', () => {
     contactCreateMock.mockReset();
     whatsAppInstanceFindUniqueMock.mockReset();
     ticketFindUniqueMock.mockReset();
+    userDeleteManyMock.mockReset();
+    userUpsertMock.mockReset();
   });
 
   it('sends outbound message on ticket and emits realtime events', async () => {
@@ -903,5 +958,57 @@ describe('Outbound message routes', () => {
     expect(blocked.status).toBe(423);
     expect(blocked.body.error).toMatchObject({ code: 'WHATSAPP_CIRCUIT_OPEN' });
     expect(sendMessageMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('returns 202 for outbound sends when MVP bypass seeds demo user', async () => {
+    const { refreshFeatureFlags } = await import('../../config/feature-flags');
+    refreshFeatureFlags({ mvpAuthBypass: true });
+
+    userDeleteManyMock.mockResolvedValue({ count: 0 });
+    userUpsertMock.mockResolvedValue({
+      id: '00000000-0000-4000-8000-000000000001',
+      tenantId: 'demo-tenant',
+      email: 'mvp-anonymous@leadengine.local',
+      name: 'MVP Anonymous',
+      role: 'ADMIN',
+      isActive: true,
+      passwordHash: 'hash',
+      settings: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const { prisma } = await import('../../lib/prisma');
+    await prisma.user.deleteMany({});
+
+    const authModule = await import('../../middleware/auth');
+
+    const app = express();
+    app.use(express.json());
+    app.use(authModule.authMiddleware);
+    app.use('/api', whatsappMessagesRouter);
+    app.use(errorHandler);
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/instances/instance-001/messages')
+      .set('Idempotency-Key', 'demo-seed-1')
+      .send({
+        to: '+554499999999',
+        payload: {
+          type: 'text',
+          text: 'Olá MVP bypass',
+        },
+        idempotencyKey: 'demo-seed-1',
+      });
+
+    expect(response.status).toBe(202);
+    expect(userDeleteManyMock).toHaveBeenCalledTimes(1);
+    expect(userUpsertMock).toHaveBeenCalledTimes(1);
+
+    const [upsertArgs] = userUpsertMock.mock.calls;
+    expect(upsertArgs?.[0]).toMatchObject({
+      where: { id: authModule.AUTH_MVP_BYPASS_USER_ID },
+      create: expect.objectContaining({ tenantId: authModule.AUTH_MVP_BYPASS_TENANT_ID }),
+    });
   });
 });
