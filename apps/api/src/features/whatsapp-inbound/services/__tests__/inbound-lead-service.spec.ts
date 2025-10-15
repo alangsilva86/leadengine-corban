@@ -6,6 +6,7 @@ const findUniqueMock = vi.fn();
 const findFirstMock = vi.fn();
 const queueUpsertMock = vi.fn();
 const createTicketMock = vi.fn();
+const sendMessageMock = vi.fn();
 const leadUpsertMock = vi.fn();
 const leadFindFirstMock = vi.fn();
 const leadUpdateMock = vi.fn();
@@ -20,6 +21,11 @@ const whatsappInstanceCreateMock = vi.fn();
 const whatsappInstanceFindFirstMock = vi.fn();
 const whatsappInstanceUpdateMock = vi.fn();
 const tenantFindFirstMock = vi.fn();
+const contactFindUniqueMock = vi.fn();
+const contactFindFirstMock = vi.fn();
+const contactUpdateMock = vi.fn();
+const contactCreateMock = vi.fn();
+const ticketFindUniqueMock = vi.fn();
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -46,6 +52,12 @@ vi.mock('../../../../lib/prisma', () => ({
     tenant: {
       findFirst: tenantFindFirstMock,
     },
+    contact: {
+      findUnique: contactFindUniqueMock,
+      findFirst: contactFindFirstMock,
+      update: contactUpdateMock,
+      create: contactCreateMock,
+    },
     lead: {
       findFirst: leadFindFirstMock,
       upsert: leadUpsertMock,
@@ -56,18 +68,27 @@ vi.mock('../../../../lib/prisma', () => ({
       findFirst: leadActivityFindFirstMock,
       create: leadActivityCreateMock,
     },
+    ticket: {
+      findUnique: ticketFindUniqueMock,
+    },
   },
 }));
 
 vi.mock('../../../../services/ticket-service', () => ({
   createTicket: createTicketMock,
-  sendMessage: vi.fn(),
+  sendMessage: sendMessageMock,
 }));
 
 vi.mock('../../../../lib/socket-registry', () => ({
   emitToTenant: emitToTenantMock,
   emitToTicket: emitToTicketMock,
   emitToAgreement: vi.fn(),
+}));
+
+const ensureTenantRecordMock = vi.fn();
+
+vi.mock('../../../../services/tenant-service', () => ({
+  ensureTenantRecord: ensureTenantRecordMock,
 }));
 
 vi.mock('../../../../lib/metrics', () => ({
@@ -79,6 +100,8 @@ type TestingHelpers = typeof import('../inbound-lead-service')['__testing'];
 
 let testing!: TestingHelpers;
 type UpsertParams = Parameters<TestingHelpers['upsertLeadFromInbound']>[0];
+type ProcessEventParams = Parameters<TestingHelpers['processStandardInboundEvent']>;
+type InboundEvent = ProcessEventParams[0];
 
 beforeAll(async () => {
   testing = (await import('../inbound-lead-service')).__testing;
@@ -349,6 +372,78 @@ describe('metadata helpers', () => {
   });
 });
 
+describe('ensureInboundQueueForInboundMessage', () => {
+  beforeEach(() => {
+    testing.queueCacheByTenant.clear();
+    vi.resetAllMocks();
+  });
+
+  it('ensures tenant automatically when foreign key errors occur', async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    const fkError = new Prisma.PrismaClientKnownRequestError('Missing tenant', {
+      code: 'P2003',
+      clientVersion: '5.0.0',
+    });
+    queueUpsertMock.mockRejectedValueOnce(fkError).mockResolvedValueOnce({
+      id: 'queue-after-tenant',
+      tenantId: 'tenant-missing',
+    });
+    ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
+
+    const result = await testing.ensureInboundQueueForInboundMessage({
+      tenantId: 'tenant-missing',
+      requestId: 'req-tenant',
+      instanceId: 'instance-tenant',
+      simpleMode: true,
+    });
+
+    expect(result.queueId).toBe('queue-after-tenant');
+    expect(result.wasProvisioned).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(ensureTenantRecordMock).toHaveBeenCalledWith(
+      'tenant-missing',
+      expect.objectContaining({ source: 'whatsapp-inbound-auto-queue', action: 'ensure-tenant' })
+    );
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      'tenant-missing',
+      'whatsapp.queue.autoProvisioned',
+      expect.objectContaining({ queueId: 'queue-after-tenant' })
+    );
+  });
+
+  it('returns recoverable error when tenant cannot be provisioned automatically', async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    const fkError = new Prisma.PrismaClientKnownRequestError('Missing tenant', {
+      code: 'P2003',
+      clientVersion: '5.0.0',
+    });
+    queueUpsertMock.mockRejectedValueOnce(fkError).mockRejectedValueOnce(fkError);
+    ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
+
+    const result = await testing.ensureInboundQueueForInboundMessage({
+      tenantId: 'tenant-missing',
+      requestId: 'req-tenant',
+      instanceId: 'instance-tenant',
+      simpleMode: false,
+    });
+
+    expect(result.queueId).toBeNull();
+    expect(result.wasProvisioned).toBe(false);
+    expect(result.error).toEqual(
+      expect.objectContaining({ reason: 'TENANT_NOT_FOUND', recoverable: true })
+    );
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      'tenant-missing',
+      'whatsapp.queue.missing',
+      expect.objectContaining({
+        reason: 'TENANT_NOT_FOUND',
+        recoverable: true,
+      })
+    );
+    expect(testing.queueCacheByTenant.has('tenant-missing')).toBe(false);
+  });
+});
+
 describe('ensureTicketForContact', () => {
   beforeEach(() => {
     testing.queueCacheByTenant.clear();
@@ -357,9 +452,7 @@ describe('ensureTicketForContact', () => {
 
   it('provisions fallback queue for tenants without queues and continues ticket creation', async () => {
     findFirstMock.mockResolvedValueOnce(null);
-    queueUpsertMock
-      .mockRejectedValueOnce(new Error('temporary failure'))
-      .mockResolvedValueOnce({ id: 'queue-auto', tenantId: 'tenant-queue-less' });
+    queueUpsertMock.mockResolvedValueOnce({ id: 'queue-auto', tenantId: 'tenant-queue-less' });
 
     const queueResolution = await testing.ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-queue-less',
@@ -370,6 +463,7 @@ describe('ensureTicketForContact', () => {
 
     expect(queueResolution.queueId).toBe('queue-auto');
     expect(queueResolution.wasProvisioned).toBe(true);
+    expect(queueResolution.error).toBeUndefined();
     expect(testing.queueCacheByTenant.get('tenant-queue-less')).toMatchObject({ id: 'queue-auto' });
     expect(emitToTenantMock).toHaveBeenCalledWith(
       'tenant-queue-less',
@@ -661,5 +755,85 @@ describe('upsertLeadFromInbound', () => {
     );
     expect(leadCreateMock).not.toHaveBeenCalled();
     expect(leadActivityCreateMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('processStandardInboundEvent', () => {
+  beforeEach(() => {
+    testing.queueCacheByTenant.clear();
+    vi.resetAllMocks();
+    ticketFindUniqueMock.mockReset();
+  });
+
+  it('auto provisions fallback queue and delivers message to inbox when tenant lacks queues', async () => {
+    const instanceRecord = {
+      id: 'wa-tenantless',
+      tenantId: 'tenant-queue-gap',
+      name: 'WhatsApp Principal',
+      brokerId: 'wa-tenantless',
+    } as const;
+
+    const event: InboundEvent = {
+      id: 'event-queue-gap',
+      instanceId: instanceRecord.id,
+      tenantId: instanceRecord.tenantId,
+      direction: 'INBOUND',
+      contact: { phone: '+5511999999999', name: 'Cliente WhatsApp' },
+      message: { id: 'broker-message-1', text: 'Olá!' },
+      timestamp: new Date('2024-03-22T10:00:00.000Z').toISOString(),
+      metadata: { requestId: 'req-queue-gap' },
+      chatId: null,
+      externalId: null,
+      sessionId: null,
+    } as unknown as InboundEvent;
+
+    findFirstMock.mockResolvedValueOnce(null);
+    queueUpsertMock.mockResolvedValueOnce({ id: 'queue-fallback', tenantId: instanceRecord.tenantId });
+
+    createTicketMock.mockResolvedValueOnce({ id: 'ticket-fallback' });
+    contactFindUniqueMock.mockResolvedValueOnce(null);
+    contactFindFirstMock.mockResolvedValueOnce(null);
+    contactCreateMock.mockResolvedValueOnce({
+      id: 'contact-fallback',
+      tenantId: instanceRecord.tenantId,
+      phone: '+5511999999999',
+      name: 'Cliente WhatsApp',
+    });
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-1',
+      createdAt: new Date('2024-03-22T10:00:00.000Z'),
+      metadata: { eventMetadata: { requestId: 'req-queue-gap' } },
+      content: 'Olá! Tudo bem?',
+    });
+    ticketFindUniqueMock.mockResolvedValueOnce({
+      id: 'ticket-fallback',
+      status: 'OPEN',
+      updatedAt: new Date('2024-03-22T10:00:00.000Z'),
+    });
+
+    await testing.processStandardInboundEvent(event, Date.now(), {
+      passthroughMode: false,
+      simpleMode: true,
+      preloadedInstance: instanceRecord as unknown as Parameters<TestingHelpers['processStandardInboundEvent']>[2]['preloadedInstance'],
+    });
+
+    expect(queueUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId_name: expect.objectContaining({ tenantId: instanceRecord.tenantId }) }),
+      })
+    );
+    expect(createTicketMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: instanceRecord.tenantId, queueId: 'queue-fallback' })
+    );
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      instanceRecord.tenantId,
+      undefined,
+      expect.objectContaining({ ticketId: 'ticket-fallback', content: 'Olá!' })
+    );
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      instanceRecord.tenantId,
+      'tickets.updated',
+      expect.objectContaining({ ticketId: 'ticket-fallback' })
+    );
   });
 });

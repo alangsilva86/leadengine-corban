@@ -18,6 +18,7 @@ import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
 } from '../../../services/ticket-service';
+import { ensureTenantRecord } from '../../../services/tenant-service';
 import {
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
@@ -908,9 +909,9 @@ const emitPassthroughRealtimeUpdates = async ({
   }
 };
 
-const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string | null> => {
-  try {
-    const queue = await prisma.queue.upsert({
+const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string> => {
+  const upsertFallbackQueue = async () =>
+    prisma.queue.upsert({
       where: {
         tenantId_name: {
           tenantId,
@@ -930,23 +931,67 @@ const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string 
       },
     });
 
+  const refreshCache = (queueId: string) => {
     queueCacheByTenant.set(tenantId, {
-      id: queue.id,
+      id: queueId,
       expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
+  };
 
+  try {
+    const queue = await upsertFallbackQueue();
+    refreshCache(queue.id);
     logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada automaticamente', {
       tenantId,
       queueId: queue.id,
+      ensuredTenant: false,
     });
-
     return queue.id;
   } catch (error) {
+    if (isForeignKeyError(error)) {
+      logger.warn('🎯 LeadEngine • WhatsApp :: 🧱 Provisionamento de fila falhou — tenant ausente, tentando garantir', {
+        tenantId,
+      });
+
+      try {
+        await ensureTenantRecord(tenantId, {
+          source: 'whatsapp-inbound-auto-queue',
+          action: 'ensure-tenant',
+        });
+
+        const queue = await upsertFallbackQueue();
+        refreshCache(queue.id);
+        logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada após criar tenant automaticamente', {
+          tenantId,
+          queueId: queue.id,
+          ensuredTenant: true,
+        });
+
+        return queue.id;
+      } catch (retryError) {
+        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão mesmo após garantir tenant', {
+          error: mapErrorForLog(retryError),
+          tenantId,
+        });
+
+        throw new QueueFallbackProvisionError(
+          'Tenant ausente impede o provisionamento automático da fila padrão.',
+          'TENANT_NOT_FOUND',
+          { cause: retryError }
+        );
+      }
+    }
+
     logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão', {
       error: mapErrorForLog(error),
       tenantId,
     });
-    return null;
+
+    throw new QueueFallbackProvisionError(
+      'Erro desconhecido ao provisionar fila padrão.',
+      'UNKNOWN',
+      { cause: error }
+    );
   }
 };
 
@@ -1070,7 +1115,22 @@ const isMissingQueueError = (error: unknown): boolean => {
   return false;
 };
 
-const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
+type QueueFallbackErrorReason = 'TENANT_NOT_FOUND' | 'UNKNOWN';
+
+class QueueFallbackProvisionError extends Error {
+  public readonly reason: QueueFallbackErrorReason;
+
+  constructor(message: string, reason: QueueFallbackErrorReason, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'QueueFallbackProvisionError';
+    this.reason = reason;
+  }
+}
+
+const getDefaultQueueId = async (
+  tenantId: string,
+  { provisionIfMissing = true }: { provisionIfMissing?: boolean } = {}
+): Promise<string | null> => {
   const now = Date.now();
   const cached = queueCacheByTenant.get(tenantId);
 
@@ -1092,11 +1152,27 @@ const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
   });
 
   if (!queue) {
-    const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
-    if (!provisionedQueueId) {
-      queueCacheByTenant.delete(tenantId);
+    queueCacheByTenant.delete(tenantId);
+
+    if (!provisionIfMissing) {
+      return null;
     }
-    return provisionedQueueId;
+
+    try {
+      const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
+      return provisionedQueueId;
+    } catch (error) {
+      if (error instanceof QueueFallbackProvisionError) {
+        throw error;
+      }
+
+      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha inesperada ao obter fila padrão', {
+        error: mapErrorForLog(error),
+        tenantId,
+      });
+
+      throw error;
+    }
   }
 
   queueCacheByTenant.set(tenantId, {
@@ -1113,9 +1189,18 @@ type EnsureInboundQueueParams = {
   simpleMode: boolean;
 };
 
+type EnsureInboundQueueErrorReason = 'TENANT_NOT_FOUND' | 'PROVISIONING_FAILED';
+
+type EnsureInboundQueueError = {
+  reason: EnsureInboundQueueErrorReason;
+  recoverable: boolean;
+  message: string;
+};
+
 type EnsureInboundQueueResult = {
   queueId: string | null;
   wasProvisioned: boolean;
+  error?: EnsureInboundQueueError;
 };
 
 const ensureInboundQueueForInboundMessage = async ({
@@ -1124,7 +1209,7 @@ const ensureInboundQueueForInboundMessage = async ({
   instanceId,
   simpleMode,
 }: EnsureInboundQueueParams): Promise<EnsureInboundQueueResult> => {
-  const existingQueueId = await getDefaultQueueId(tenantId);
+  const existingQueueId = await getDefaultQueueId(tenantId, { provisionIfMissing: false });
 
   if (existingQueueId) {
     return { queueId: existingQueueId, wasProvisioned: false };
@@ -1137,44 +1222,61 @@ const ensureInboundQueueForInboundMessage = async ({
     simpleMode,
   });
 
-  const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
+  try {
+    const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
 
-  if (!provisionedQueueId) {
-    logger.error(
-      '🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático',
-      {
-        requestId,
-        tenantId,
-        instanceId,
-        simpleMode,
+    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão disponível para mensagens inbound', {
+      requestId,
+      tenantId,
+      instanceId,
+      queueId: provisionedQueueId,
+      simpleMode,
+    });
+
+    emitToTenant(tenantId, 'whatsapp.queue.autoProvisioned', {
+      tenantId,
+      instanceId,
+      queueId: provisionedQueueId,
+      message: 'Fila padrão criada automaticamente para mensagens inbound do WhatsApp.',
+    });
+
+    return { queueId: provisionedQueueId, wasProvisioned: true };
+  } catch (error) {
+    const provisionError = (() => {
+      if (error instanceof QueueFallbackProvisionError) {
+        return {
+          reason: error.reason === 'TENANT_NOT_FOUND' ? 'TENANT_NOT_FOUND' : 'PROVISIONING_FAILED',
+          recoverable: error.reason === 'TENANT_NOT_FOUND',
+          message: error.message,
+        } satisfies EnsureInboundQueueError;
       }
-    );
+
+      return {
+        reason: 'PROVISIONING_FAILED' as const,
+        recoverable: false,
+        message: 'Falha desconhecida ao provisionar fila padrão.',
+      } satisfies EnsureInboundQueueError;
+    })();
+
+    logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático', {
+      requestId,
+      tenantId,
+      instanceId,
+      simpleMode,
+      error: mapErrorForLog(error),
+      reason: provisionError.reason,
+    });
 
     emitToTenant(tenantId, 'whatsapp.queue.missing', {
       tenantId,
       instanceId,
       message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
+      reason: provisionError.reason,
+      recoverable: provisionError.recoverable,
     });
 
-    return { queueId: null, wasProvisioned: false };
+    return { queueId: null, wasProvisioned: false, error: provisionError };
   }
-
-  logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão disponível para mensagens inbound', {
-    requestId,
-    tenantId,
-    instanceId,
-    queueId: provisionedQueueId,
-    simpleMode,
-  });
-
-  emitToTenant(tenantId, 'whatsapp.queue.autoProvisioned', {
-    tenantId,
-    instanceId,
-    queueId: provisionedQueueId,
-    message: 'Fila padrão criada automaticamente para mensagens inbound do WhatsApp.',
-  });
-
-  return { queueId: provisionedQueueId, wasProvisioned: true };
 };
 
 const ensureContact = async (
@@ -1335,7 +1437,30 @@ const ensureTicketForContact = async (
 
     if (isMissingQueueError(error)) {
       queueCacheByTenant.delete(tenantId);
-      const refreshedQueueId = await getDefaultQueueId(tenantId);
+      let refreshedQueueId: string | null = null;
+
+      try {
+        refreshedQueueId = await getDefaultQueueId(tenantId, { provisionIfMissing: false });
+      } catch (refreshError) {
+        logger.warn('Failed to refresh WhatsApp queue after missing queue error', {
+          error: mapErrorForLog(refreshError),
+          tenantId,
+          contactId,
+        });
+      }
+
+      if (!refreshedQueueId) {
+        try {
+          refreshedQueueId = await provisionDefaultQueueForTenant(tenantId);
+        } catch (provisionError) {
+          logger.error('Failed to ensure WhatsApp ticket for contact after queue refresh', {
+            error: mapErrorForLog(provisionError),
+            tenantId,
+            contactId,
+          });
+          return null;
+        }
+      }
 
       if (refreshedQueueId) {
         try {
@@ -1598,28 +1723,6 @@ const upsertLeadFromInbound = async ({
   }
 
   return { lead, leadActivity };
-};
-
-export const __testing = {
-  DEFAULT_DEDUPE_TTL_MS,
-  MAX_DEDUPE_CACHE_SIZE,
-  DEFAULT_QUEUE_CACHE_TTL_MS,
-  dedupeCache,
-  configureInboundDedupeBackend,
-  queueCacheByTenant,
-  resolveTenantIdentifiersFromMetadata,
-  resolveBrokerIdFromMetadata,
-  resolveSessionIdFromMetadata,
-  resolveInstanceDisplayNameFromMetadata,
-  attemptAutoProvisionWhatsAppInstance,
-  pruneDedupeCache,
-  getDefaultQueueId,
-  ensureTicketForContact,
-  upsertLeadFromInbound,
-  emitPassthroughRealtimeUpdates,
-  emitRealtimeUpdatesForInbound,
-  provisionFallbackCampaignForInstance,
-  ensureInboundQueueForInboundMessage,
 };
 
 const resolveEnvelopeChatId = (
@@ -2009,16 +2112,28 @@ const processStandardInboundEvent = async (
   const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 
-  const { queueId } = await ensureInboundQueueForInboundMessage({
+  const queueResolution = await ensureInboundQueueForInboundMessage({
     tenantId,
     requestId: requestId ?? null,
     instanceId: instanceId ?? null,
     simpleMode,
   });
 
-  if (!queueId) {
+  if (!queueResolution.queueId) {
+    if (queueResolution.error) {
+      logger.warn('🎯 LeadEngine • WhatsApp :: 🧱 Mensagem estacionada por ausência de fila padrão', {
+        requestId,
+        tenantId,
+        instanceId,
+        reason: queueResolution.error.reason,
+        recoverable: queueResolution.error.recoverable,
+      });
+    }
+
     return;
   }
+
+  const queueId = queueResolution.queueId;
 
   const contactRecord = await ensureContact(tenantId, {
     phone: normalizedPhone,
@@ -2357,4 +2472,27 @@ const processStandardInboundEvent = async (
       }
     }
   }
+};
+
+export const __testing = {
+  DEFAULT_DEDUPE_TTL_MS,
+  MAX_DEDUPE_CACHE_SIZE,
+  DEFAULT_QUEUE_CACHE_TTL_MS,
+  dedupeCache,
+  configureInboundDedupeBackend,
+  queueCacheByTenant,
+  resolveTenantIdentifiersFromMetadata,
+  resolveBrokerIdFromMetadata,
+  resolveSessionIdFromMetadata,
+  resolveInstanceDisplayNameFromMetadata,
+  attemptAutoProvisionWhatsAppInstance,
+  pruneDedupeCache,
+  getDefaultQueueId,
+  ensureTicketForContact,
+  upsertLeadFromInbound,
+  emitPassthroughRealtimeUpdates,
+  emitRealtimeUpdatesForInbound,
+  provisionFallbackCampaignForInstance,
+  ensureInboundQueueForInboundMessage,
+  processStandardInboundEvent,
 };
