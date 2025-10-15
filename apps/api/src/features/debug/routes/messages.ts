@@ -5,21 +5,21 @@ import { asyncHandler } from '../../../middleware/error-handler';
 import { prisma } from '../../../lib/prisma';
 import { mapPassthroughMessage } from '@ticketz/storage';
 
-const asRecord = (value: unknown): Record<string, unknown> | null => {
+export const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
   return null;
 };
 
-const normalizeJsonRecord = (value: unknown): Record<string, unknown> => {
+export const normalizeJsonRecord = (value: unknown): Record<string, unknown> => {
   const record = asRecord(value);
   return record ? { ...record } : {};
 };
 
 const router: Router = Router();
 
-const normalizeQueryValue = (value: unknown): string | null => {
+export const normalizeQueryValue = (value: unknown): string | null => {
   if (Array.isArray(value)) {
     return normalizeQueryValue(value[0]);
   }
@@ -32,7 +32,7 @@ const normalizeQueryValue = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const buildWhereClause = (
+export const buildWhereClause = (
   tenantId: string | null,
   { chatId, direction }: { chatId: string | null; direction: 'INBOUND' | 'OUTBOUND' | null }
 ): Prisma.MessageWhereInput => {

@@ -7,6 +7,7 @@ type FeatureFlags = {
   whatsappInboundSimpleMode: boolean;
   whatsappPassthroughMode: boolean;
   whatsappBrokerStrictConfig: boolean;
+  whatsappDebugToolsEnabled: boolean;
 };
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
@@ -57,6 +58,11 @@ const computeFlags = (): FeatureFlags => {
     logger.warn('[config] WhatsApp broker strict config habilitado — bloqueando se faltar URL/API key');
   }
 
+  const whatsappDebugToolsEnabled = parseBoolean(process.env.WHATSAPP_DEBUG_TOOLS_ENABLED, false);
+  if (whatsappDebugToolsEnabled) {
+    logger.warn('[config] WhatsApp debug tools habilitado — endpoints sensíveis ativos');
+  }
+
   return {
     useRealData,
     mvpAuthBypass,
@@ -64,6 +70,7 @@ const computeFlags = (): FeatureFlags => {
     whatsappInboundSimpleMode,
     whatsappPassthroughMode,
     whatsappBrokerStrictConfig,
+    whatsappDebugToolsEnabled,
   } satisfies FeatureFlags;
 };
 
@@ -83,6 +90,8 @@ export const isWhatsappPassthroughModeEnabled = (): boolean => cachedFlags.whats
 
 export const isWhatsappBrokerStrictConfigEnabled = (): boolean => cachedFlags.whatsappBrokerStrictConfig;
 
+export const isWhatsappDebugToolsEnabled = (): boolean => cachedFlags.whatsappDebugToolsEnabled;
+
 export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureFlags => {
   const next = { ...computeFlags(), ...overrides } satisfies FeatureFlags;
   const useRealDataChanged = next.useRealData !== cachedFlags.useRealData;
@@ -91,6 +100,7 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
   const whatsappSimpleChanged = next.whatsappInboundSimpleMode !== cachedFlags.whatsappInboundSimpleMode;
   const whatsappPassthroughChanged = next.whatsappPassthroughMode !== cachedFlags.whatsappPassthroughMode;
   const whatsappStrictChanged = next.whatsappBrokerStrictConfig !== cachedFlags.whatsappBrokerStrictConfig;
+  const whatsappDebugChanged = next.whatsappDebugToolsEnabled !== cachedFlags.whatsappDebugToolsEnabled;
 
   if (
     useRealDataChanged ||
@@ -98,7 +108,8 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     whatsappFallbackChanged ||
     whatsappSimpleChanged ||
     whatsappPassthroughChanged ||
-    whatsappStrictChanged
+    whatsappStrictChanged ||
+    whatsappDebugChanged
   ) {
     logger.info('[config] Feature flags atualizados', {
       useRealData: next.useRealData,
@@ -107,6 +118,7 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
       whatsappInboundSimpleMode: next.whatsappInboundSimpleMode,
       whatsappPassthroughMode: next.whatsappPassthroughMode,
       whatsappBrokerStrictConfig: next.whatsappBrokerStrictConfig,
+      whatsappDebugToolsEnabled: next.whatsappDebugToolsEnabled,
     });
     if (next.mvpAuthBypass) {
       logger.warn('[config] MVP auth bypass habilitado (refresh)');
@@ -124,6 +136,9 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     }
     if (next.whatsappBrokerStrictConfig && !cachedFlags.whatsappBrokerStrictConfig) {
       logger.warn('[config] WhatsApp broker strict config habilitado (refresh)');
+    }
+    if (next.whatsappDebugToolsEnabled && !cachedFlags.whatsappDebugToolsEnabled) {
+      logger.warn('[config] WhatsApp debug tools habilitado (refresh) — endpoints sensíveis ativos');
     }
   }
   cachedFlags = next;
