@@ -131,7 +131,7 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
       });
     }
 
-    await ingestInboundWhatsAppMessage({
+    const persisted = await ingestInboundWhatsAppMessage({
       origin: 'broker',
       instanceId: normalized.instanceId,
       chatId,
@@ -155,6 +155,25 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
         brokerEventId: event.id,
         brokerType: event.type,
       },
+    });
+
+    if (!persisted) {
+      logger.error('🎯 LeadEngine • WhatsApp :: 🪀 Worker ingestão não confirmou persistência', {
+        eventId: event.id,
+        tenantId: effectiveTenantId ?? null,
+        instanceId: normalized.instanceId ?? null,
+        messageId: externalId,
+        chatId,
+      });
+      throw new Error('Inbound WhatsApp message ingestion did not persist the message');
+    }
+
+    logger.info('🎯 LeadEngine • WhatsApp :: 🚚 Worker encaminhou mensagem com sucesso', {
+      eventId: event.id,
+      tenantId: effectiveTenantId ?? null,
+      instanceId: normalized.instanceId ?? null,
+      messageId: externalId,
+      chatId,
     });
   } catch (error) {
     logger.error('Failed to process WhatsApp message event', {

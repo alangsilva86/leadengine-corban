@@ -1,71 +1,55 @@
-import { vi } from 'vitest';
-
-const prismaMocks = vi.hoisted(() => ({
-  processedIntegrationEventCreateMock: vi.fn(),
-  whatsAppInstanceFindFirstMock: vi.fn(),
-}));
-
-vi.mock('../../../../lib/prisma', () => ({
-  prisma: {
-    processedIntegrationEvent: { create: prismaMocks.processedIntegrationEventCreateMock },
-    whatsAppInstance: { findFirst: prismaMocks.whatsAppInstanceFindFirstMock },
-  },
-}));
-
-const { processedIntegrationEventCreateMock, whatsAppInstanceFindFirstMock } = prismaMocks;
-
-vi.mock('../../services/inbound-lead-service', () => ({
-  ingestInboundWhatsAppMessage: vi.fn().mockResolvedValue({ id: 'mocked-message' }),
-}));
-
 import express from 'express';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { whatsappWebhookRouter } from '../webhook-routes';
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
-import { ingestInboundWhatsAppMessage } from '../../services/inbound-lead-service';
 
-const ingestInboundWhatsAppMessageMock = vi.mocked(ingestInboundWhatsAppMessage);
+const hoistedMocks = vi.hoisted(() => {
+  const processedIntegrationEventCreateMock = vi.fn();
+  const whatsAppInstanceFindFirstMock = vi.fn();
+  const whatsAppInstanceUpdateMock = vi.fn();
+  const ingestInboundWhatsAppMessageMock = vi.fn();
+  const normalizeUpsertEventMock = vi.fn();
 
-type PrismaMock = {
-  whatsAppInstance: {
-    findFirst: ReturnType<typeof vi.fn>;
-    update: ReturnType<typeof vi.fn>;
-  };
-};
-
-var prismaMock: PrismaMock;
-
-var ingestInboundWhatsAppMessageMock: ReturnType<typeof vi.fn>;
-var normalizeUpsertEventMock: ReturnType<typeof vi.fn>;
-
-vi.mock('../../../../lib/prisma', () => {
-  prismaMock = {
+  const prisma = {
+    processedIntegrationEvent: { create: processedIntegrationEventCreateMock },
     whatsAppInstance: {
-      findFirst: vi.fn(),
-      update: vi.fn(),
+      findFirst: whatsAppInstanceFindFirstMock,
+      update: whatsAppInstanceUpdateMock,
     },
   };
 
-  return { prisma: prismaMock };
-});
-
-vi.mock('../../services/inbound-lead-service', () => {
-  ingestInboundWhatsAppMessageMock = vi.fn();
   return {
-    ingestInboundWhatsAppMessage: ingestInboundWhatsAppMessageMock,
+    prisma,
+    processedIntegrationEventCreateMock,
+    whatsAppInstanceFindFirstMock,
+    whatsAppInstanceUpdateMock,
+    ingestInboundWhatsAppMessageMock,
+    normalizeUpsertEventMock,
   };
 });
 
-vi.mock('../../services/baileys-raw-normalizer', () => {
-  normalizeUpsertEventMock = vi.fn();
-  return {
-    normalizeUpsertEvent: normalizeUpsertEventMock,
-  };
-});
+vi.mock('../../../../lib/prisma', () => ({ prisma: hoistedMocks.prisma }));
+
+vi.mock('../../services/inbound-lead-service', () => ({
+  ingestInboundWhatsAppMessage: hoistedMocks.ingestInboundWhatsAppMessageMock,
+}));
+
+vi.mock('../../services/baileys-raw-normalizer', () => ({
+  normalizeUpsertEvent: hoistedMocks.normalizeUpsertEventMock,
+}));
+
+const prismaMock = hoistedMocks.prisma;
+const {
+  processedIntegrationEventCreateMock,
+  whatsAppInstanceFindFirstMock,
+  whatsAppInstanceUpdateMock: _whatsAppInstanceUpdateMock,
+  ingestInboundWhatsAppMessageMock,
+  normalizeUpsertEventMock,
+} = hoistedMocks;
+
 
 const ORIGINAL_ENV = {
   enforce: process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE,
@@ -153,9 +137,34 @@ describe('WhatsApp webhook Baileys event logging', () => {
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
     refreshWhatsAppEnv();
     resetMetrics();
-    whatsAppInstanceFindFirstMock.mockResolvedValue(null);
+    prismaMock.whatsAppInstance.findFirst.mockResolvedValue(null);
     processedIntegrationEventCreateMock.mockResolvedValue({} as never);
-    ingestInboundWhatsAppMessageMock.mockResolvedValue({ id: 'mocked-message' });
+    ingestInboundWhatsAppMessageMock.mockResolvedValue(true);
+    normalizeUpsertEventMock.mockReset();
+    normalizeUpsertEventMock.mockReturnValue({
+      normalized: [
+        {
+          messageIndex: 0,
+          messageId: 'wamid-1',
+          sessionId: null,
+          brokerId: null,
+          tenantId: 'tenant-42',
+          data: {
+            instanceId: 'instance-1',
+            tenantId: 'tenant-42',
+            direction: 'INBOUND',
+            metadata: {
+              instanceId: 'instance-1',
+              contact: { remoteJid: '5511999999999@s.whatsapp.net' },
+            },
+            message: {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid-1' },
+            },
+            contact: { phone: '+55 11 99999-9999' },
+          },
+        },
+      ],
+    });
   });
 
   it('persists a debug snapshot before ingesting normalized messages', async () => {
@@ -221,6 +230,9 @@ describe('WhatsApp webhook Baileys event logging', () => {
 
     expect(typeof payload?.rawPayload).toBe('string');
     expect(payload?.rawPayload as string).toContain('WHATSAPP_MESSAGES_UPSERT');
+  });
+});
+
 describe('WhatsApp webhook instance resolution', () => {
   beforeEach(() => {
     process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'false';
@@ -240,6 +252,60 @@ describe('WhatsApp webhook instance resolution', () => {
     app.use('/api/webhooks', whatsappWebhookRouter);
     return app;
   };
+
+  it('signals failure when ingestion does not persist message', async () => {
+    const app = buildApp();
+    prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(null);
+
+    normalizeUpsertEventMock.mockReturnValueOnce({
+      normalized: [
+        {
+          messageIndex: 0,
+          messageId: 'wamid.fail',
+          sessionId: null,
+          brokerId: null,
+          tenantId: 'tenant-uuid',
+          data: {
+            instanceId: 'instance-1',
+            tenantId: 'tenant-uuid',
+            direction: 'INBOUND',
+            metadata: {
+              instanceId: 'instance-1',
+              contact: { remoteJid: '5511999999999@s.whatsapp.net' },
+            },
+            message: {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.fail' },
+            },
+            contact: { phone: '+55 11 99999-9999' },
+          },
+        },
+      ],
+    });
+
+    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(false);
+
+    const response = await request(app)
+      .post('/api/webhooks/whatsapp')
+      .send({
+        event: 'WHATSAPP_MESSAGES_UPSERT',
+        instanceId: 'instance-1',
+        payload: {
+          messages: [
+            {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.fail' },
+            },
+          ],
+        },
+      });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toMatchObject({ ok: false, persisted: 0, failures: 1 });
+
+    const metrics = renderMetrics();
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="ingest_failed"[^}]*result="failed"[^}]*\} 1/
+    );
+  });
 
   it('resolves stored instance metadata and persists missing broker id when matching UUID', async () => {
     const app = buildApp();
@@ -301,18 +367,8 @@ describe('WhatsApp webhook instance resolution', () => {
     expect(lookupArgs).toMatchObject({
       where: {
         OR: expect.arrayContaining([
-          expect.objectContaining({
-            metadata: expect.objectContaining({
-              path: ['lastBrokerSnapshot', 'sessionId'],
-              equals: uuid,
-            }),
-          }),
-          expect.objectContaining({
-            metadata: expect.objectContaining({
-              path: ['history'],
-              array_contains: expect.objectContaining({ brokerId: uuid }),
-            }),
-          }),
+          expect.objectContaining({ id: uuid }),
+          expect.objectContaining({ brokerId: uuid }),
         ]),
       },
       select: { id: true, brokerId: true, tenantId: true },

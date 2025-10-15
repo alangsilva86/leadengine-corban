@@ -234,6 +234,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   let persisted = 0;
   let failures = 0;
+  let attempted = 0;
 
   for (const entry of events) {
     const unwrapped = unwrapWebhookEvent(entry);
@@ -406,6 +407,8 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           });
         }
 
+        attempted += 1;
+
         const processed = await ingestInboundWhatsAppMessage({
           origin: 'webhook',
           instanceId: instanceId ?? 'unknown-instance',
@@ -437,6 +440,29 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
             result: 'accepted',
             reason: 'ok',
           });
+          logger.info('🎯 LeadEngine • WhatsApp :: 🎉 Webhook ingestão concluída', {
+            requestId,
+            tenantId,
+            instanceId,
+            chatId,
+            normalizedIndex: normalized.messageIndex,
+          });
+        } else {
+          failures += 1;
+          logger.warn('🎯 LeadEngine • WhatsApp :: 🎭 Webhook ingestão não persistiu mensagem', {
+            requestId,
+            tenantId,
+            instanceId,
+            chatId,
+            normalizedIndex: normalized.messageIndex,
+          });
+          whatsappWebhookEventsCounter.inc({
+            origin: 'webhook',
+            tenantId: tenantId ?? 'unknown',
+            instanceId: instanceId ?? 'unknown',
+            result: 'failed',
+            reason: 'ingest_failed',
+          });
         }
       } catch (error) {
         failures += 1;
@@ -457,8 +483,18 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     }
   }
 
-  res.status(200).json({
-    ok: true,
+  const allFailed = attempted > 0 && persisted === 0;
+  const statusCode = allFailed ? 500 : 200;
+
+  if (allFailed) {
+    logger.error('🎯 LeadEngine • WhatsApp :: 💥 Webhook finalizou com todas ingestões falhando', {
+      requestId,
+      received: events.length,
+    });
+  }
+
+  res.status(statusCode).json({
+    ok: !allFailed,
     received: events.length,
     persisted,
     failures,

@@ -1937,23 +1937,33 @@ export const ingestInboundWhatsAppMessage = async (
     }
   }
 
+  let messagePersisted = false;
+
   if (passthroughMode) {
     await handlePassthroughIngest(event);
-    await registerDedupeKey(dedupeKey, now, dedupeTtlMs);
-    return true;
+    messagePersisted = true;
+  } else {
+    messagePersisted = await processStandardInboundEvent(event, now, {
+      passthroughMode,
+      simpleMode,
+      preloadedInstance,
+    });
   }
-
-  const messagePersisted = await processStandardInboundEvent(event, now, {
-    passthroughMode,
-    simpleMode,
-    preloadedInstance,
-  });
 
   if (messagePersisted) {
     await registerDedupeKey(dedupeKey, now, dedupeTtlMs);
   }
 
-  return true;
+  logger.info('🎯 LeadEngine • WhatsApp :: 🤹 Resultado final da ingestão', {
+    origin: messageEnvelope.origin,
+    instanceId: messageEnvelope.instanceId,
+    tenantId: tenantId ?? 'unknown',
+    chatId: keyChatId,
+    messageId,
+    persisted: messagePersisted,
+  });
+
+  return messagePersisted;
 };
 
 const processStandardInboundEvent = async (
