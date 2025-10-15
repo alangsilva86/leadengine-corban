@@ -4,6 +4,11 @@ import { Prisma } from '@prisma/client';
 import { asyncHandler } from '../../../middleware/error-handler';
 import { prisma } from '../../../lib/prisma';
 import { mapPassthroughMessage } from '@ticketz/storage';
+import {
+  isWhatsAppDebugStreamEnabled,
+  registerWhatsAppDebugSink,
+  type WhatsAppDebugEvent,
+} from '../services/whatsapp-debug-emitter';
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -18,6 +23,87 @@ const normalizeJsonRecord = (value: unknown): Record<string, unknown> => {
 };
 
 const router: Router = Router();
+
+const safeStringify = (value: unknown): string => {
+  try {
+    return JSON.stringify(value, (_key, candidate) => {
+      if (typeof candidate === 'bigint') {
+        return candidate.toString();
+      }
+      if (candidate instanceof Date) {
+        return candidate.toISOString();
+      }
+      return candidate;
+    });
+  } catch (error) {
+    return JSON.stringify({
+      error: 'serialization_failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
+router.get('/debug/wa/stream', (req: Request, res: Response) => {
+  if (!isWhatsAppDebugStreamEnabled()) {
+    res.status(404).json({
+      success: false,
+      message: 'WhatsApp debug stream desabilitado.',
+    });
+    return;
+  }
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+
+  const flushHeaders = (res as Response & { flushHeaders?: () => void }).flushHeaders;
+  if (typeof flushHeaders === 'function') {
+    flushHeaders.call(res);
+  }
+
+  let closed = false;
+  let unsubscribe: () => void = () => undefined;
+
+  const sendEvent = (event: WhatsAppDebugEvent) => {
+    if (closed || res.writableEnded) {
+      return;
+    }
+
+    res.write(`event: whatsapp-debug\n`);
+    res.write(`data: ${safeStringify(event)}\n\n`);
+  };
+
+  unsubscribe = registerWhatsAppDebugSink(sendEvent);
+
+  const now = new Date().toISOString();
+  res.write(`event: whatsapp-debug:init\n`);
+  res.write(`data: ${safeStringify({ ok: true, emittedAt: now })}\n\n`);
+
+  const heartbeat = setInterval(() => {
+    if (closed || res.writableEnded) {
+      return;
+    }
+
+    res.write(`: heartbeat ${Date.now()}\n\n`);
+  }, 15000);
+
+  const cleanup = () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+    if (!res.writableEnded) {
+      res.end();
+    }
+  };
+
+  req.on('close', cleanup);
+  req.on('end', cleanup);
+  req.on('error', cleanup);
+});
 
 const normalizeQueryValue = (value: unknown): string | null => {
   if (Array.isArray(value)) {
