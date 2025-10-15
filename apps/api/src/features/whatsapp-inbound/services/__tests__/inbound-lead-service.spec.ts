@@ -18,6 +18,7 @@ const leadLastContactGaugeSetMock = vi.fn();
 const whatsappInstanceFindUniqueMock = vi.fn();
 const whatsappInstanceCreateMock = vi.fn();
 const whatsappInstanceFindFirstMock = vi.fn();
+const whatsappInstanceUpdateMock = vi.fn();
 const tenantFindFirstMock = vi.fn();
 
 vi.mock('../../../../config/logger', () => ({
@@ -40,6 +41,7 @@ vi.mock('../../../../lib/prisma', () => ({
       findUnique: whatsappInstanceFindUniqueMock,
       create: whatsappInstanceCreateMock,
       findFirst: whatsappInstanceFindFirstMock,
+      update: whatsappInstanceUpdateMock,
     },
     tenant: {
       findFirst: tenantFindFirstMock,
@@ -187,6 +189,7 @@ describe('metadata helpers', () => {
       whatsappInstanceFindUniqueMock.mockReset();
       whatsappInstanceCreateMock.mockReset();
       whatsappInstanceFindFirstMock.mockReset();
+      whatsappInstanceUpdateMock.mockReset();
       tenantFindFirstMock.mockReset();
       whatsappInstanceFindFirstMock.mockResolvedValue(null);
     });
@@ -282,6 +285,7 @@ describe('metadata helpers', () => {
       const metadataWithoutInstance = { ...baseMetadata };
       delete (metadataWithoutInstance as Record<string, unknown>).instanceId;
       whatsappInstanceFindFirstMock.mockResolvedValueOnce(existingRecord);
+      whatsappInstanceUpdateMock.mockResolvedValueOnce(existingRecord);
 
       const result = await testing.attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
@@ -319,6 +323,7 @@ describe('metadata helpers', () => {
       whatsappInstanceFindUniqueMock.mockResolvedValueOnce(null);
       whatsappInstanceFindFirstMock.mockResolvedValueOnce(existingRecord);
       whatsappInstanceFindUniqueMock.mockResolvedValueOnce(existingRecord);
+      whatsappInstanceUpdateMock.mockResolvedValue(existingRecord);
 
       const result = await testing.attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
@@ -348,6 +353,52 @@ describe('ensureTicketForContact', () => {
   beforeEach(() => {
     testing.queueCacheByTenant.clear();
     vi.resetAllMocks();
+  });
+
+  it('provisions fallback queue for tenants without queues and continues ticket creation', async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    queueUpsertMock
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce({ id: 'queue-auto', tenantId: 'tenant-queue-less' });
+
+    const queueResolution = await testing.ensureInboundQueueForInboundMessage({
+      tenantId: 'tenant-queue-less',
+      requestId: 'req-queue',
+      instanceId: 'instance-queue',
+      simpleMode: false,
+    });
+
+    expect(queueResolution.queueId).toBe('queue-auto');
+    expect(queueResolution.wasProvisioned).toBe(true);
+    expect(testing.queueCacheByTenant.get('tenant-queue-less')).toMatchObject({ id: 'queue-auto' });
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      'tenant-queue-less',
+      'whatsapp.queue.autoProvisioned',
+      expect.objectContaining({
+        tenantId: 'tenant-queue-less',
+        instanceId: 'instance-queue',
+        queueId: 'queue-auto',
+      })
+    );
+
+    createTicketMock.mockResolvedValueOnce({ id: 'ticket-auto' });
+
+    const ticketId = await testing.ensureTicketForContact(
+      'tenant-queue-less',
+      'contact-queue',
+      queueResolution.queueId!,
+      'Subject',
+      {}
+    );
+
+    expect(ticketId).toBe('ticket-auto');
+    expect(createTicketMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-queue-less',
+        contactId: 'contact-queue',
+        queueId: 'queue-auto',
+      })
+    );
   });
 
   it('clears cache and retries with refreshed queue when NotFoundError is thrown', async () => {
