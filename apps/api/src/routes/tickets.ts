@@ -32,11 +32,15 @@ import {
 } from '../services/ticket-service';
 import { getSocketServer } from '../lib/socket-registry';
 import { getDefaultInstanceId, getDefaultTenantId } from '../config/whatsapp';
-import { WhatsAppBrokerNotConfiguredError } from '../services/whatsapp-broker-client';
+import {
+  WhatsAppBrokerError,
+  WhatsAppBrokerNotConfiguredError,
+} from '../services/whatsapp-broker-client';
 import {
   getWhatsAppTransport,
   type WhatsAppTransportSendMessagePayload,
 } from '../features/whatsapp-transport';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 
 const router: Router = Router();
 
@@ -727,26 +731,43 @@ router.post(
         metadata.previewUrl = req.body.previewUrl;
       }
 
-      const message = await sendTicketMessage(tenantId, req.user?.id, {
-        ticketId,
-        type: normalizedType,
-        instanceId: instanceOverride ?? undefined,
-        direction: 'OUTBOUND',
-        content: text ?? undefined,
-        caption: normalizeString(req.body.caption) ?? undefined,
-        mediaUrl: normalizeString(req.body.mediaUrl) ?? undefined,
-        mediaFileName: normalizeString(req.body.mediaFileName ?? req.body.fileName) ?? undefined,
-        mediaMimeType: normalizeString(req.body.mediaMimeType ?? req.body.mimetype) ?? undefined,
-        quotedMessageId: normalizeString(req.body.quotedMessageId) ?? undefined,
-        metadata,
-        idempotencyKey: normalizeString(req.body.idempotencyKey) ?? undefined,
-      });
+      try {
+        const message = await sendTicketMessage(tenantId, req.user?.id, {
+          ticketId,
+          type: normalizedType,
+          instanceId: instanceOverride ?? undefined,
+          direction: 'OUTBOUND',
+          content: text ?? undefined,
+          caption: normalizeString(req.body.caption) ?? undefined,
+          mediaUrl: normalizeString(req.body.mediaUrl) ?? undefined,
+          mediaFileName: normalizeString(req.body.mediaFileName ?? req.body.fileName) ?? undefined,
+          mediaMimeType: normalizeString(req.body.mediaMimeType ?? req.body.mimetype) ?? undefined,
+          quotedMessageId: normalizeString(req.body.quotedMessageId) ?? undefined,
+          metadata,
+          idempotencyKey: normalizeString(req.body.idempotencyKey) ?? undefined,
+        });
 
-      res.status(201).json({
-        success: true,
-        message: 'Mensagem enviada com sucesso',
-        data: message,
-      });
+        res.status(201).json({
+          success: true,
+          message: 'Mensagem enviada com sucesso',
+          data: message,
+        });
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerNotConfiguredError) {
+          res.status(503).json({ code: 'BROKER_NOT_CONFIGURED' });
+          return;
+        }
+
+        if (error instanceof WhatsAppBrokerError || error instanceof WhatsAppTransportError) {
+          res.status(502).json({
+            code: 'BROKER_ERROR',
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        throw error;
+      }
       return;
     }
 
