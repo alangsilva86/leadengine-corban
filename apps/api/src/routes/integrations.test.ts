@@ -38,6 +38,13 @@ function createModelMock() {
   };
 }
 
+const createDatabaseDisabledError = () => {
+  const error = new Error('Database disabled for this environment');
+  error.name = 'DatabaseDisabledError';
+  (error as Error & { code?: string }).code = 'DATABASE_DISABLED';
+  return error;
+};
+
 const prismaMockContainer = vi.hoisted(() => ({
   value: {
     whatsAppInstance: createModelMock(),
@@ -828,6 +835,74 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('falls back to broker snapshots when database access is disabled', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    prisma.whatsAppInstance.findMany.mockRejectedValue(createDatabaseDisabledError());
+
+    const brokerSnapshots: WhatsAppBrokerInstanceSnapshot[] = [
+      {
+        instance: {
+          id: 'broker-instance-disabled',
+          tenantId: 'tenant-123',
+          name: 'Fallback Snapshot',
+          status: 'connected',
+          connected: true,
+          phoneNumber: '+5511999998888',
+          lastActivity: '2024-01-10T00:00:00.000Z',
+        },
+        status: {
+          status: 'connected',
+          connected: true,
+          qr: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          expiresAt: null,
+          metrics: null,
+          messages: null,
+          rate: null,
+          rateUsage: null,
+          raw: null,
+          stats: null,
+        },
+      },
+    ];
+
+    const listSpy = vi
+      .spyOn(whatsappBrokerClient, 'listInstances')
+      .mockResolvedValue(brokerSnapshots);
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'GET',
+        headers: {
+          'x-tenant-id': 'tenant-123',
+        },
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(listSpy).toHaveBeenCalledWith('tenant-123');
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          instances: [
+            expect.objectContaining({
+              id: 'broker-instance-disabled',
+              metadata: expect.objectContaining({ fallbackSource: 'broker-snapshot' }),
+            }),
+          ],
+        },
+        meta: expect.objectContaining({ storageFallback: true }),
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('creates a WhatsApp instance', async () => {
   });
 
@@ -1112,6 +1187,38 @@ describe('WhatsApp integration routes with configured broker', () => {
         success: false,
         error: {
           code: 'WHATSAPP_STORAGE_UNAVAILABLE',
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns database disabled when persistence is disabled while creating an instance', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+
+    (prisma.whatsAppInstance.findUnique as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      createDatabaseDisabledError()
+    );
+
+    try {
+      const response = await fetch(`${url}/api/integrations/whatsapp/instances`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ name: 'new-instance' }),
+      });
+
+      const body = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(body).toMatchObject({
+        success: false,
+        error: {
+          code: 'DATABASE_DISABLED',
         },
       });
     } finally {
