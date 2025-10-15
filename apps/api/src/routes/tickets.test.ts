@@ -10,6 +10,8 @@ import { ticketsRouter } from './tickets';
 import { errorHandler } from '../middleware/error-handler';
 import { registerSocketServer, type SocketServerAdapter } from '../lib/socket-registry';
 import { resetTicketStore } from '@ticketz/storage';
+import { WhatsAppBrokerNotConfiguredError } from '../services/whatsapp-broker-client';
+import * as ticketService from '../services/ticket-service';
 
 vi.mock('../middleware/auth', () => ({
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -75,6 +77,7 @@ describe('Tickets routes', () => {
 
   afterEach(() => {
     registerSocketServer(null);
+    vi.restoreAllMocks();
   });
 
   it('handles ticket lifecycle end-to-end', async () => {
@@ -211,6 +214,46 @@ describe('Tickets routes', () => {
       expect(emittedEvents).toContain('ticket.message');
       expect(emittedEvents).toContain('messages.new');
       expect(emittedEvents).toContain('ticket.closed');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('returns 503 when broker is not configured for ticket messages', async () => {
+    const { server, url } = await startTestServer();
+
+    const ticketId = '00000000-0000-4000-8000-000000000123';
+    const brokerError = new WhatsAppBrokerNotConfiguredError('Broker disabled');
+    const sendMessageSpy = vi
+      .spyOn(ticketService, 'sendMessage')
+      .mockRejectedValue(brokerError);
+
+    try {
+      const response = await fetch(`${url}/api/tickets/messages`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({
+          ticketId,
+          content: 'Mensagem de teste',
+          type: 'TEXT',
+        }),
+      });
+
+      expect(sendMessageSpy).toHaveBeenCalledWith(
+        'tenant-123',
+        '44444444-4444-4444-4444-444444444444',
+        expect.objectContaining({
+          ticketId,
+          direction: 'OUTBOUND',
+        })
+      );
+
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(body).toEqual({ code: 'BROKER_NOT_CONFIGURED' });
     } finally {
       await stopTestServer(server);
     }
