@@ -55,6 +55,46 @@ describe('normalizeUpsertEvent', () => {
     expect((metadata.contact as Record<string, unknown>).isGroup).toBe(false);
   });
 
+  it('normalizes messages from raw payload when primary array is empty', () => {
+    const event = buildBaseEvent();
+    event.payload.messages = [];
+    delete (event.payload as Record<string, unknown>).owner;
+    delete (event.payload as Record<string, unknown>).source;
+    delete (event.payload as Record<string, unknown>).timestamp;
+    (event.payload as Record<string, unknown>).raw = {
+      owner: 'raw-owner',
+      source: 'raw-source',
+      timestamp: 1_700_000_555,
+      messages: [
+        {
+          key: {
+            id: 'wamid-raw-1',
+            remoteJid: '5511999999999@s.whatsapp.net',
+            fromMe: false,
+          },
+          pushName: 'Fallback',
+          message: {
+            conversation: 'Mensagem vinda do raw',
+          },
+        },
+      ],
+    };
+
+    const result = normalizeUpsertEvent(event);
+
+    expect(result.normalized).toHaveLength(1);
+    const [normalized] = result.normalized;
+    expect(normalized.messageType).toBe('text');
+
+    const message = normalized.data.message as Record<string, unknown>;
+    expect(message.text).toBe('Mensagem vinda do raw');
+
+    const metadata = normalized.data.metadata as Record<string, unknown>;
+    const broker = metadata.broker as Record<string, unknown>;
+    expect(broker.owner).toBe('raw-owner');
+    expect(broker.source).toBe('raw-source');
+  });
+
   it('keeps media attributes for image messages', () => {
     const event = buildBaseEvent();
     event.payload.messages.push({

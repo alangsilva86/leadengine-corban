@@ -727,6 +727,8 @@ export const normalizeUpsertEvent = (
   }
 
   const payload = asRecord(eventRecord.payload) ?? {};
+  const rawPayload = asRecord(payload.raw);
+  const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
 
   const eventType = readString(eventRecord.event);
   if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
@@ -750,17 +752,46 @@ export const normalizeUpsertEvent = (
   }
 
   const tenantId =
-    readString(overrides?.tenantId, payload.tenantId, eventRecord.tenantId) ?? undefined;
+    readString(
+      overrides?.tenantId,
+      payload.tenantId,
+      eventRecord.tenantId,
+      rawPayload?.tenantId,
+      rawMetadata?.tenantId
+    ) ?? undefined;
   const brokerId =
-    readString(overrides?.brokerId, payload.brokerId, eventRecord.brokerId, eventRecord.iid, payload.iid) ??
-    undefined;
+    readString(
+      overrides?.brokerId,
+      payload.brokerId,
+      eventRecord.brokerId,
+      eventRecord.iid,
+      payload.iid,
+      rawPayload?.brokerId,
+      rawMetadata?.brokerId
+    ) ?? undefined;
   const sessionId =
-    readString(overrides?.sessionId, payload.sessionId, eventRecord.sessionId) ?? brokerId ?? undefined;
-  const owner = readString(payload.owner, eventRecord.owner) ?? null;
-  const source = readString(payload.source, eventRecord.source) ?? null;
-  const fallbackTimestamp = readNumber(payload.timestamp, eventRecord.timestamp) ?? null;
+    readString(
+      overrides?.sessionId,
+      payload.sessionId,
+      eventRecord.sessionId,
+      rawPayload?.sessionId,
+      rawMetadata?.sessionId
+    ) ?? brokerId ?? undefined;
+  const owner =
+    readString(payload.owner, eventRecord.owner, rawPayload?.owner, rawMetadata?.owner) ?? null;
+  const source =
+    readString(payload.source, eventRecord.source, rawPayload?.source, rawMetadata?.source) ?? null;
+  const fallbackTimestamp =
+    readNumber(
+      payload.timestamp,
+      eventRecord.timestamp,
+      rawPayload?.timestamp,
+      rawMetadata?.timestamp
+    ) ?? null;
 
-  const messages = asArray(payload.messages);
+  const payloadMessages = asArray(payload.messages);
+  const rawMessages = rawPayload ? asArray(rawPayload.messages) : [];
+  const messages = payloadMessages.length > 0 ? payloadMessages : rawMessages;
 
   const normalized: NormalizedRawUpsertMessage[] = [];
   const ignored: IgnoredRawUpsertMessage[] = [];

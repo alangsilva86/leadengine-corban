@@ -65,6 +65,7 @@ O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/wha
 When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHATSAPP_MESSAGES_UPSERT` events and converts each incoming message to the standard `MESSAGE_INBOUND` envelope before enqueueing. Key rules:
 
 - Messages flagged as `key.fromMe`, `protocolMessage`, `historySyncNotification` or `messageStubType` are ignored and counted under `whatsapp_webhook_events_total{result="ignored",reason="raw_inbound_ignored"}`.
+- When the broker omits `payload.messages` or sends an empty array, the normaliser inspects `payload.raw.messages` (when present) to extract entries while preserving identifiers/timestamps from the envelope.
 - Contact data is derived from the event: `remoteJid` → sanitized phone, `pushName`/`notifyName` → display name, `key.participant` kept in `metadata.contact.participantJid` for group conversations. Groups are flagged with `metadata.contact.isGroup = true`.
 - Message typing covers `text`, `image`, `video`, `audio`, `document`, `buttons_response`, `list_response`, `poll` and `poll_choice`. Media payloads retain `mimetype`, `fileLength`, `fileName`, `caption`.
 - Quotes populate `message.quotedMessageId`/`quotedText` when `contextInfo` is present.
