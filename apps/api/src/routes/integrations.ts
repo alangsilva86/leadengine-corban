@@ -95,6 +95,11 @@ const PRISMA_STORAGE_ERROR_CODES = new Set([
   'P2025',
 ]);
 
+const DATABASE_DISABLED_ERROR_CODES = new Set([
+  'DATABASE_DISABLED',
+  'STORAGE_DATABASE_DISABLED',
+]);
+
 const hasErrorName = (error: unknown, expected: string): boolean => {
   return (
     typeof error === 'object' &&
@@ -117,9 +122,41 @@ const readPrismaErrorCode = (error: unknown): string | null => {
   return null;
 };
 
+const isDatabaseDisabledError = (error: unknown): boolean => {
+  if (!error) {
+    return false;
+  }
+
+  if (hasErrorName(error, 'DatabaseDisabledError')) {
+    return true;
+  }
+
+  const code = readPrismaErrorCode(error);
+  if (code && DATABASE_DISABLED_ERROR_CODES.has(code)) {
+    return true;
+  }
+
+  if (
+    typeof error === 'object' &&
+    'code' in (error as Record<string, unknown>) &&
+    typeof (error as { code?: unknown }).code === 'string'
+  ) {
+    const normalized = ((error as { code?: string }).code ?? '').toString().trim();
+    if (DATABASE_DISABLED_ERROR_CODES.has(normalized)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const resolveWhatsAppStorageError = (
   error: unknown
 ): { isStorageError: boolean; prismaCode: string | null } => {
+  if (isDatabaseDisabledError(error)) {
+    return { isStorageError: true, prismaCode: 'DATABASE_DISABLED' };
+  }
+
   const prismaCode = readPrismaErrorCode(error);
 
   if (prismaCode && PRISMA_STORAGE_ERROR_CODES.has(prismaCode)) {
@@ -141,6 +178,20 @@ const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boole
 
   if (!isStorageError) {
     return false;
+  }
+
+  const storageDisabled = prismaCode === 'DATABASE_DISABLED';
+
+  if (storageDisabled) {
+    res.locals.errorCode = 'DATABASE_DISABLED';
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'DATABASE_DISABLED',
+        message: 'Persistência das instâncias WhatsApp está desabilitada neste ambiente.',
+      },
+    });
+    return true;
   }
 
   res.locals.errorCode = 'WHATSAPP_STORAGE_UNAVAILABLE';
