@@ -913,13 +913,13 @@ export const LeadInbox = ({
       />
 
       <div className="flex-1 min-h-0">
-        <div className="grid h-full min-h-0 gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
+        <div className="grid h-full min-h-0 auto-rows-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
           <GlassPanel
             as="section"
             tone="surface"
             radius="xl"
             shadow="2xl"
-            className="relative flex min-h-[520px] min-w-0 flex-col"
+            className="relative flex h-full min-h-[520px] min-w-0 flex-col"
           >
             <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
               <GlobalFiltersBar
@@ -1008,7 +1008,7 @@ export const LeadInbox = ({
             </div>
           </GlassPanel>
 
-          <div className="relative flex min-h-[520px] min-w-0 flex-col">
+          <div className="relative flex h-full min-h-[520px] min-w-0 flex-col">
             <LeadConversationPanel
               allocation={activeAllocation}
               onOpenWhatsApp={handleOpenWhatsApp}
@@ -1026,7 +1026,7 @@ export const LeadInbox = ({
             tone="overlay"
             radius="xl"
             shadow="xl"
-            className="flex min-h-[520px] min-w-0 flex-col"
+            className="flex h-full min-h-[520px] min-w-0 flex-col"
           >
             <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
               <Card className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
