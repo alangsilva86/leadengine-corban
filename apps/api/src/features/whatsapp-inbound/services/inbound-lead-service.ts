@@ -504,6 +504,10 @@ const attemptAutoProvisionWhatsAppInstance = async ({
   requestId: string | null;
   simpleMode: boolean;
 }): Promise<WhatsAppInstanceRecord | null> => {
+  if (!simpleMode) {
+    return null;
+  }
+
   const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
 
   if (tenantIdentifiers.length === 0) {
@@ -1102,6 +1106,77 @@ const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
   return queue.id;
 };
 
+type EnsureInboundQueueParams = {
+  tenantId: string;
+  requestId: string | null;
+  instanceId: string | null;
+  simpleMode: boolean;
+};
+
+type EnsureInboundQueueResult = {
+  queueId: string | null;
+  wasProvisioned: boolean;
+};
+
+const ensureInboundQueueForInboundMessage = async ({
+  tenantId,
+  requestId,
+  instanceId,
+  simpleMode,
+}: EnsureInboundQueueParams): Promise<EnsureInboundQueueResult> => {
+  const existingQueueId = await getDefaultQueueId(tenantId);
+
+  if (existingQueueId) {
+    return { queueId: existingQueueId, wasProvisioned: false };
+  }
+
+  logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Provisionando fila padrão automaticamente', {
+    requestId,
+    tenantId,
+    instanceId,
+    simpleMode,
+  });
+
+  const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
+
+  if (!provisionedQueueId) {
+    logger.error(
+      '🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático',
+      {
+        requestId,
+        tenantId,
+        instanceId,
+        simpleMode,
+      }
+    );
+
+    emitToTenant(tenantId, 'whatsapp.queue.missing', {
+      tenantId,
+      instanceId,
+      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
+    });
+
+    return { queueId: null, wasProvisioned: false };
+  }
+
+  logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão disponível para mensagens inbound', {
+    requestId,
+    tenantId,
+    instanceId,
+    queueId: provisionedQueueId,
+    simpleMode,
+  });
+
+  emitToTenant(tenantId, 'whatsapp.queue.autoProvisioned', {
+    tenantId,
+    instanceId,
+    queueId: provisionedQueueId,
+    message: 'Fila padrão criada automaticamente para mensagens inbound do WhatsApp.',
+  });
+
+  return { queueId: provisionedQueueId, wasProvisioned: true };
+};
+
 const ensureContact = async (
   tenantId: string,
   {
@@ -1544,6 +1619,7 @@ export const __testing = {
   emitPassthroughRealtimeUpdates,
   emitRealtimeUpdatesForInbound,
   provisionFallbackCampaignForInstance,
+  ensureInboundQueueForInboundMessage,
 };
 
 const resolveEnvelopeChatId = (
@@ -1933,21 +2009,14 @@ const processStandardInboundEvent = async (
   const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 
-  const queueId = await getDefaultQueueId(tenantId);
+  const { queueId } = await ensureInboundQueueForInboundMessage({
+    tenantId,
+    requestId: requestId ?? null,
+    instanceId: instanceId ?? null,
+    simpleMode,
+  });
+
   if (!queueId) {
-    logger.error(
-      '🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático',
-      {
-        requestId,
-        tenantId,
-        instanceId,
-      }
-    );
-    emitToTenant(tenantId, 'whatsapp.queue.missing', {
-      tenantId,
-      instanceId,
-      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
-    });
     return;
   }
 
