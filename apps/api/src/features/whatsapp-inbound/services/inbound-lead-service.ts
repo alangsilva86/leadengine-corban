@@ -1088,7 +1088,11 @@ const getDefaultQueueId = async (tenantId: string): Promise<string | null> => {
   });
 
   if (!queue) {
-    return provisionDefaultQueueForTenant(tenantId);
+    const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
+    if (!provisionedQueueId) {
+      queueCacheByTenant.delete(tenantId);
+    }
+    return provisionedQueueId;
   }
 
   queueCacheByTenant.set(tenantId, {
@@ -1582,13 +1586,48 @@ const mergeEnvelopeMetadata = (
   chatId: string | null
 ): Record<string, unknown> => {
   const base = toRecord(envelope.message.metadata);
+  const payloadRecord = toRecord(envelope.message.payload);
 
   if (!base.chatId && chatId) {
     base.chatId = chatId;
   }
-  if (!base.tenantId && envelope.tenantId) {
-    base.tenantId = envelope.tenantId;
+  if (!base.tenantId) {
+    const payloadTenantId = readString(payloadRecord.tenantId);
+    if (payloadTenantId) {
+      base.tenantId = payloadTenantId;
+    } else if (envelope.tenantId) {
+      base.tenantId = envelope.tenantId;
+    }
   }
+
+  if (!base.tenant) {
+    const payloadTenant = toRecord(payloadRecord.tenant);
+    if (Object.keys(payloadTenant).length > 0) {
+      base.tenant = payloadTenant;
+    }
+  }
+
+  if (!base.context) {
+    const payloadContext = toRecord(payloadRecord.context);
+    if (Object.keys(payloadContext).length > 0) {
+      base.context = payloadContext;
+    }
+  }
+
+  if (!base.integration) {
+    const payloadIntegration = toRecord(payloadRecord.integration);
+    if (Object.keys(payloadIntegration).length > 0) {
+      base.integration = payloadIntegration;
+    }
+  }
+
+  if (!base.sessionId) {
+    const payloadSessionId = readString(payloadRecord.sessionId);
+    if (payloadSessionId) {
+      base.sessionId = payloadSessionId;
+    }
+  }
+
   if (!base.instanceId) {
     base.instanceId = envelope.instanceId;
   }
@@ -1613,9 +1652,19 @@ export const ingestInboundWhatsAppMessage = async (
 
   const messageEnvelope: InboundWhatsAppEnvelopeMessage = envelope;
 
-  const tenantId = messageEnvelope.tenantId ?? DEFAULT_TENANT_ID;
   const chatId = resolveEnvelopeChatId(messageEnvelope);
   const messageId = resolveEnvelopeMessageId(messageEnvelope) ?? randomUUID();
+  const payloadRecord = toRecord(messageEnvelope.message.payload);
+  const envelopeTenantId = readString(messageEnvelope.tenantId);
+  const payloadTenantId = readString(payloadRecord.tenantId);
+  const metadata = mergeEnvelopeMetadata(messageEnvelope, chatId);
+  let tenantId =
+    readString(metadata.tenantId) ?? payloadTenantId ?? envelopeTenantId ?? DEFAULT_TENANT_ID;
+
+  if (!metadata.tenantId && tenantId) {
+    metadata.tenantId = tenantId;
+  }
+
   const now = Date.now();
   const dedupeTtlMs = messageEnvelope.dedupeTtlMs ?? DEFAULT_DEDUPE_TTL_MS;
   const keyChatId = chatId ?? '__unknown__';
@@ -1633,8 +1682,6 @@ export const ingestInboundWhatsAppMessage = async (
     });
     return false;
   }
-
-  const metadata = mergeEnvelopeMetadata(messageEnvelope, chatId);
 
   const event: InboundWhatsAppEvent = {
     id: messageEnvelope.message.id ?? messageId,
@@ -1843,61 +1890,22 @@ const processStandardInboundEvent = async (
   const registrations = uniqueStringList(contact.registrations || null);
   const leadIdBase = message.id || `${instanceId}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 
-  let queueId = await getDefaultQueueId(tenantId);
+  const queueId = await getDefaultQueueId(tenantId);
   if (!queueId) {
-    if (simpleMode) {
-      try {
-        const fallbackQueue = await prisma.queue.upsert({
-          where: {
-            tenantId_name: {
-              tenantId,
-              name: 'WhatsApp • Fallback',
-            },
-          },
-          update: {
-            description: 'Fila criada automaticamente em modo simples.',
-            isActive: true,
-          },
-          create: {
-            tenantId,
-            name: 'WhatsApp • Fallback',
-            description: 'Fila criada automaticamente em modo simples.',
-            color: '#22C55E',
-            orderIndex: 0,
-          },
-        });
-        queueCacheByTenant.set(tenantId, {
-          id: fallbackQueue.id,
-          expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
-        });
-        queueId = fallbackQueue.id;
-        logger.warn('🎯 LeadEngine • WhatsApp :: ⚙️ Modo simples — fila fallback provisionada', {
-          requestId,
-          tenantId,
-          instanceId,
-          queueId,
-        });
-      } catch (error) {
-        logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao provisionar fila fallback em modo simples', {
-          error: mapErrorForLog(error),
-          requestId,
-          tenantId,
-          instanceId,
-        });
-      }
-    } else {
-      logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente e fallback falhou', {
+    logger.error(
+      '🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático',
+      {
         requestId,
         tenantId,
         instanceId,
-      });
-      emitToTenant(tenantId, 'whatsapp.queue.missing', {
-        tenantId,
-        instanceId,
-        message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
-      });
-      return;
-    }
+      }
+    );
+    emitToTenant(tenantId, 'whatsapp.queue.missing', {
+      tenantId,
+      instanceId,
+      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
+    });
+    return;
   }
 
   const contactRecord = await ensureContact(tenantId, {
@@ -1917,36 +1925,13 @@ const processStandardInboundEvent = async (
   };
 
   const ticketSubject = contactRecord.name || contactRecord.phone || 'Contato WhatsApp';
-  let ticketId: string | null = null;
-  if (queueId) {
-    ticketId = await ensureTicketForContact(
-      tenantId,
-      contactRecord.id,
-      queueId,
-      ticketSubject,
-      ticketMetadata
-    );
-  } else {
-    const existingTicket = await prisma.ticket.findFirst({
-      where: {
-        tenantId,
-        contactId: contactRecord.id,
-        channel: 'WHATSAPP',
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-    if (existingTicket) {
-      ticketId = existingTicket.id;
-      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Reutilizando ticket existente por ausência de fila', {
-        requestId,
-        tenantId,
-        instanceId,
-        ticketId,
-      });
-    }
-  }
+  const ticketId = await ensureTicketForContact(
+    tenantId,
+    contactRecord.id,
+    queueId,
+    ticketSubject,
+    ticketMetadata
+  );
 
   if (!ticketId) {
     logger.error('🎯 LeadEngine • WhatsApp :: 🚧 Não consegui garantir o ticket para a mensagem inbound', {

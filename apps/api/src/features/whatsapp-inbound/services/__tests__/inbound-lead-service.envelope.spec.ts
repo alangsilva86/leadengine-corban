@@ -83,11 +83,13 @@ let ingestInboundWhatsAppMessage:
   typeof import('../inbound-lead-service')['ingestInboundWhatsAppMessage'];
 let resetInboundLeadServiceTestState:
   typeof import('../inbound-lead-service')['resetInboundLeadServiceTestState'];
+let testingInternals: typeof import('../inbound-lead-service')['__testing'];
 
 beforeAll(async () => {
   const module = await import('../inbound-lead-service');
   ingestInboundWhatsAppMessage = module.ingestInboundWhatsAppMessage;
   resetInboundLeadServiceTestState = module.resetInboundLeadServiceTestState;
+  testingInternals = module.__testing;
 });
 
 const resetPrismaMocks = () => {
@@ -440,6 +442,76 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
           tenantId: 'tenant-1',
           ticketId: 'ticket-1',
         })
+      );
+    });
+
+    it('auto provisions queues for first inbound message when payload supplies tenant identification', async () => {
+      const envelope = buildEnvelope();
+      envelope.tenantId = null;
+      envelope.message.payload = {
+        ...envelope.message.payload,
+        tenantId: 'tenant-1',
+        tenant: { id: 'tenant-1' },
+      };
+
+      prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
+      prismaMock.tenant.findFirst.mockResolvedValueOnce({ id: 'tenant-1', name: 'Tenant One' });
+      const createdInstance = {
+        id: 'instance-1',
+        tenantId: 'tenant-1',
+        brokerId: 'instance-1',
+        metadata: {},
+      };
+      prismaMock.whatsAppInstance.create.mockResolvedValueOnce(createdInstance);
+
+      prismaMock.queue.findFirst.mockResolvedValueOnce(null);
+      prismaMock.queue.upsert.mockResolvedValueOnce({ id: 'queue-auto-1' });
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
+
+      expect(processed).toBe(true);
+
+      expect(prismaMock.tenant.findFirst).toHaveBeenCalledWith({
+        where: {
+          OR: expect.arrayContaining([
+            expect.objectContaining({ id: 'tenant-1' }),
+            expect.objectContaining({ slug: 'tenant-1' }),
+          ]),
+        },
+      });
+
+      expect(prismaMock.queue.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            tenantId_name: {
+              tenantId: 'tenant-1',
+              name: 'Atendimento Geral',
+            },
+          },
+        })
+      );
+
+      expect(createTicketMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          queueId: 'queue-auto-1',
+        })
+      );
+
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
+      expect(emitToTicketMock).toHaveBeenCalledWith(
+        'ticket-1',
+        'tickets.updated',
+        expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+      );
+      expect(emitToTenantMock).toHaveBeenCalledWith(
+        'tenant-1',
+        'tickets.updated',
+        expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+      );
+
+      expect(testingInternals.queueCacheByTenant.get('tenant-1')).toEqual(
+        expect.objectContaining({ id: 'queue-auto-1' })
       );
     });
   });
