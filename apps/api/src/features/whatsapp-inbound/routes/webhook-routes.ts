@@ -20,6 +20,7 @@ import {
 import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 import { prisma } from '../../../lib/prisma';
+import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -383,6 +384,26 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           raw: metadataBase.raw ?? rawPreview,
           broker: brokerMetadata,
         };
+
+        emitWhatsAppDebugPhase({
+          phase: 'webhook:normalized',
+          correlationId: normalized.messageId ?? externalId ?? requestId ?? null,
+          tenantId: tenantId ?? null,
+          instanceId: instanceId ?? null,
+          chatId,
+          tags: ['webhook'],
+          context: {
+            requestId,
+            normalizedIndex: normalized.messageIndex,
+            direction,
+            source: 'webhook',
+          },
+          payload: {
+            contact: contactRecord,
+            message: messageRecord,
+            metadata,
+          },
+        });
 
         const metadataSource = readString(metadata.source);
         const debugSource =

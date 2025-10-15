@@ -17,11 +17,13 @@ import {
   Sun,
   Moon,
   ScrollText,
+  Bug,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
+import { isWhatsAppDebugEnabled } from '@/features/debug/featureFlags.js';
 import {
   Sidebar,
   SidebarContent,
@@ -38,16 +40,36 @@ import {
 } from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
+import { getRuntimeEnv } from '@/lib/runtime-env.js';
+import { getFrontendFeatureFlags } from '../../../../config/feature-flags.ts';
 
-const NAVIGATION_ITEMS = [
+const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
+const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;
+
+const NAVIGATION_ITEMS = (() => {
+  const items = [
   { id: 'dashboard', label: 'Visão Geral', icon: Home },
   { id: 'agreements', label: 'Convênios', icon: Briefcase },
   { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare },
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+  ...(isWhatsAppDebugEnabled()
+    ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }]
+    : []),
   { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
   { id: 'settings', label: 'Configurações', icon: Settings },
-];
+  ];
+
+  if (shouldShowWhatsappDebug) {
+    items.splice(items.length - 1, 0, {
+      id: 'whatsapp-debug',
+      label: 'Debug WhatsApp',
+      icon: Bug,
+    });
+  }
+
+  return items;
+})();
 
 const LayoutHeader = ({ children, className }) => (
   <header

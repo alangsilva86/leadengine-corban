@@ -3,6 +3,7 @@ import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
 import { logger } from '../../../config/logger';
 import { BrokerInboundEventSchema } from '../schemas/broker-contracts';
 import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
+import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 
 const PASSTHROUGH_TENANT_FALLBACK = 'demo-tenant';
 
@@ -90,6 +91,27 @@ const handleMessageEvent = async (event: WhatsAppBrokerEvent) => {
     if (remoteJidCandidate) {
       metadata.remoteJid = remoteJidCandidate;
     }
+
+    emitWhatsAppDebugPhase({
+      phase: 'worker:normalized',
+      correlationId: normalized.id ?? event.id ?? null,
+      tenantId: normalized.tenantId ?? event.tenantId ?? null,
+      instanceId: normalized.instanceId ?? event.instanceId ?? null,
+      chatId,
+      tags: ['worker'],
+      context: {
+        eventId: event.id,
+        cursor: event.cursor ?? null,
+        brokerType: event.type,
+        direction,
+        origin: 'broker',
+      },
+      payload: {
+        message: messageRecord,
+        contact: contactRecord,
+        metadata,
+      },
+    });
 
     const fallbackTenant = PASSTHROUGH_TENANT_FALLBACK;
     const effectiveTenantId = normalized.tenantId ?? event.tenantId ?? fallbackTenant;
