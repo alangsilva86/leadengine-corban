@@ -1,5 +1,6 @@
 .page-content--inbox {
-  overflow: hidden;
+  overflow-y: hidden;
+  overflow-x: clip;
 }
 
 .page-content--inbox .page-content-inner {
