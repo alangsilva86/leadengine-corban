@@ -417,6 +417,12 @@ type AutoProvisionMetadataPayload = {
   autopProvisionBrokerId: string;
 };
 
+type AutoProvisionResult = {
+  instance: WhatsAppInstanceRecord;
+  wasCreated: boolean;
+  brokerId: string;
+};
+
 const ensureAutopProvisionMetadata = async (
   instance: WhatsAppInstanceRecord,
   {
@@ -503,11 +509,7 @@ const attemptAutoProvisionWhatsAppInstance = async ({
   metadata: Record<string, unknown>;
   requestId: string | null;
   simpleMode: boolean;
-}): Promise<WhatsAppInstanceRecord | null> => {
-  if (!simpleMode) {
-    return null;
-  }
-
+}): Promise<AutoProvisionResult | null> => {
   const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
 
   if (tenantIdentifiers.length === 0) {
@@ -536,7 +538,7 @@ const attemptAutoProvisionWhatsAppInstance = async ({
     return null;
   }
 
-  const brokerId = instanceId;
+  const brokerId = resolveBrokerIdFromMetadata(metadata) ?? instanceId;
   const sessionId = resolveSessionIdFromMetadata(metadata);
   const displayName = resolveInstanceDisplayNameFromMetadata(metadata, tenant.name, instanceId);
   const autopProvisionMetadataPayload: AutoProvisionMetadataPayload = {
@@ -558,13 +560,13 @@ const attemptAutoProvisionWhatsAppInstance = async ({
 
   if (existingByBroker) {
     const enriched = await ensureAutopProvisionMetadata(existingByBroker, autopProvisionMetadataPayload);
-    logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente localizada por broker', {
+    logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada localizada por broker', {
       instanceId,
       tenantId: enriched?.tenantId,
       brokerId,
       requestId,
     });
-    return enriched;
+    return { instance: enriched, wasCreated: false, brokerId };
   }
 
   try {
@@ -587,19 +589,19 @@ const attemptAutoProvisionWhatsAppInstance = async ({
       requestId,
     });
 
-    return created;
+    return { instance: created, wasCreated: true, brokerId };
   } catch (error) {
     if (isUniqueViolation(error)) {
       const existingById = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
       if (existingById) {
         const enriched = await ensureAutopProvisionMetadata(existingById, autopProvisionMetadataPayload);
-        logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente após colisão de id', {
+        logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada após colisão de id', {
           instanceId,
           tenantId: enriched?.tenantId,
           brokerId,
           requestId,
         });
-        return enriched;
+        return { instance: enriched, wasCreated: false, brokerId };
       }
 
       const existing =
@@ -615,13 +617,13 @@ const attemptAutoProvisionWhatsAppInstance = async ({
         (await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere }));
       if (existing) {
         const enriched = await ensureAutopProvisionMetadata(existing, autopProvisionMetadataPayload);
-        logger.warn('🎯 LeadEngine • WhatsApp :: 🔁 Reutilizando instância existente após colisão de broker', {
+        logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada após colisão de broker', {
           instanceId,
           tenantId: enriched?.tenantId,
           brokerId,
           requestId,
         });
-        return enriched;
+        return { instance: enriched, wasCreated: false, brokerId };
       }
     }
 
@@ -1786,15 +1788,26 @@ export const ingestInboundWhatsAppMessage = async (
 
     if (tenantIdentifiers.length > 0) {
       const requestIdForProvision = readString(metadata.requestId);
-      preloadedInstance = await attemptAutoProvisionWhatsAppInstance({
+      const autoProvisionResult = await attemptAutoProvisionWhatsAppInstance({
         instanceId: messageEnvelope.instanceId,
         metadata,
         requestId: requestIdForProvision,
         simpleMode,
       });
 
-      if (preloadedInstance?.tenantId && (!event.tenantId || event.tenantId !== preloadedInstance.tenantId)) {
-        event.tenantId = preloadedInstance.tenantId;
+      if (autoProvisionResult) {
+        preloadedInstance = autoProvisionResult.instance;
+
+        if (!metadata.brokerId) {
+          metadata.brokerId = autoProvisionResult.brokerId;
+        }
+
+        if (
+          autoProvisionResult.instance?.tenantId &&
+          (!event.tenantId || event.tenantId !== autoProvisionResult.instance.tenantId)
+        ) {
+          event.tenantId = autoProvisionResult.instance.tenantId;
+        }
       }
     }
   }
@@ -1902,11 +1915,19 @@ const processStandardInboundEvent = async (
   if (metadataBroker) {
     metadataBroker.direction = direction;
     metadataBroker.instanceId = metadataBroker.instanceId ?? instanceId;
+    if (resolvedBrokerId && (!metadataBroker.id || metadataBroker.id !== resolvedBrokerId)) {
+      metadataBroker.id = resolvedBrokerId;
+    }
   } else {
     metadataRecord.broker = {
       direction,
       instanceId,
+      ...(resolvedBrokerId ? { id: resolvedBrokerId } : {}),
     };
+  }
+
+  if (resolvedBrokerId && (!metadataRecord.brokerId || metadataRecord.brokerId !== resolvedBrokerId)) {
+    metadataRecord.brokerId = resolvedBrokerId;
   }
 
   logger.info('🎯 LeadEngine • WhatsApp :: ✉️ Processando mensagem WhatsApp fresquinha', {
@@ -1939,20 +1960,54 @@ const processStandardInboundEvent = async (
 
   if (!instance) {
     const tenantIdentifiersForAutoProvision = resolveTenantIdentifiersFromMetadata(metadataRecord);
-    instance = await attemptAutoProvisionWhatsAppInstance({
+    const autoProvisionResult = await attemptAutoProvisionWhatsAppInstance({
       instanceId,
       metadata: metadataRecord,
       requestId,
       simpleMode,
     });
 
-    if (instance) {
-      logger.info('🎯 LeadEngine • WhatsApp :: 🤝 Instância autoprov conectada durante ingestão padrão', {
+    if (autoProvisionResult) {
+      instance = autoProvisionResult.instance;
+
+      metadataTenantId = instance?.tenantId ?? metadataTenantId;
+
+      if (instance?.tenantId) {
+        metadataRecord.tenantId = instance.tenantId;
+        metadataTenantRecord['id'] = instance.tenantId;
+        metadataTenantRecord['tenantId'] = instance.tenantId;
+        metadataRecord.tenant = metadataTenantRecord;
+      }
+
+      if (!metadataRecord.brokerId) {
+        metadataRecord.brokerId = autoProvisionResult.brokerId;
+      }
+
+      if (metadataBroker) {
+        if (!metadataBroker.id || metadataBroker.id !== autoProvisionResult.brokerId) {
+          metadataBroker.id = autoProvisionResult.brokerId;
+        }
+      } else {
+        metadataRecord.broker = {
+          direction,
+          instanceId,
+          id: autoProvisionResult.brokerId,
+        };
+      }
+
+      const logContext = {
         requestId,
         instanceId,
-        tenantId: instance.tenantId,
+        tenantId: instance?.tenantId ?? null,
         tenantIdentifiers: tenantIdentifiersForAutoProvision,
-      });
+        brokerId: autoProvisionResult.brokerId,
+      };
+
+      if (autoProvisionResult.wasCreated) {
+        logger.info('🎯 LeadEngine • WhatsApp :: 🆕 Instância autoprov criada durante ingestão padrão', logContext);
+      } else {
+        logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância autoprov reutilizada durante ingestão padrão', logContext);
+      }
     } else {
       logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Autoprovisionamento não realizado durante ingestão padrão', {
         requestId,
@@ -1961,6 +2016,8 @@ const processStandardInboundEvent = async (
       });
     }
   }
+
+  event.metadata = metadataRecord;
 
   if (!instance) {
     logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Instância não encontrada — mensagem inbound estacionada', {
