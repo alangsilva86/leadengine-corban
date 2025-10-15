@@ -3,6 +3,7 @@ import Layout from './components/Layout.jsx';
 import './App.css';
 import { apiGet } from './lib/api.js';
 import { onAuthTokenChange, onTenantIdChange } from './lib/auth.js';
+import { isWhatsAppDebugEnabled } from './features/debug/featureFlags.js';
 
 const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('./components/AgreementGrid.jsx'));
@@ -11,6 +12,9 @@ const ChatCommandCenter = lazy(() => import('./features/chat/ChatCommandCenter.j
 const Reports = lazy(() => import('./components/Reports.jsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
 const BaileysLogs = lazy(() => import('./features/debug/BaileysLogs.jsx'));
+const WhatsAppDebug = lazy(() => import('./features/debug/WhatsAppDebug.jsx'));
+
+const WHATSAPP_DEBUG_ENABLED = isWhatsAppDebugEnabled();
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
@@ -34,6 +38,13 @@ function App() {
   const [activeCampaign, setActiveCampaign] = useState(null);
   const [me, setMe] = useState(null);
   const [loadingCurrentUser, setLoadingCurrentUser] = useState(true);
+
+  const safeCurrentPage = useMemo(() => {
+    if (!WHATSAPP_DEBUG_ENABLED && currentPage === 'whatsapp-debug') {
+      return 'dashboard';
+    }
+    return currentPage;
+  }, [currentPage]);
 
   const loadCurrentUser = useCallback(
     async (signal) => {
@@ -73,7 +84,12 @@ function App() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const persisted = JSON.parse(raw);
-      setCurrentPage(persisted.currentPage || 'dashboard');
+      const restoredPage = persisted.currentPage || 'dashboard';
+      if (!WHATSAPP_DEBUG_ENABLED && restoredPage === 'whatsapp-debug') {
+        setCurrentPage('dashboard');
+      } else {
+        setCurrentPage(restoredPage);
+      }
       setSelectedAgreement(persisted.selectedAgreement || null);
       setWhatsappStatus(persisted.whatsappStatus || 'disconnected');
       setActiveCampaign(persisted.activeCampaign || null);
@@ -160,7 +176,7 @@ function App() {
   };
 
   const renderPage = () => {
-    switch (currentPage) {
+    switch (safeCurrentPage) {
       case 'dashboard':
         return (
           <Dashboard
@@ -235,15 +251,30 @@ function App() {
         return <Settings />;
       case 'baileys-logs':
         return <BaileysLogs />;
+      case 'whatsapp-debug':
+        if (WHATSAPP_DEBUG_ENABLED) {
+          return <WhatsAppDebug />;
+        }
+        return <Dashboard />;
       default:
         return <Dashboard />;
     }
   };
 
+  const handleNavigate = useCallback(
+    (nextPage) => {
+      if (nextPage === 'whatsapp-debug' && !WHATSAPP_DEBUG_ENABLED) {
+        return;
+      }
+      setCurrentPage(nextPage);
+    },
+    []
+  );
+
   return (
     <Layout
-      currentPage={currentPage}
-      onNavigate={setCurrentPage}
+      currentPage={safeCurrentPage}
+      onNavigate={handleNavigate}
       onboarding={{
         stages: onboardingStages,
         activeStep,
