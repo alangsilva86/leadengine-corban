@@ -25,6 +25,18 @@ export const normalizeJsonRecord = (value: unknown): Record<string, unknown> => 
 const router: Router = Router();
 
 export const normalizeQueryValue = (value: unknown): string | null => {
+  if (Array.isArray(value)) {
+    return normalizeQueryValue(value[0]);
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const safeStringify = (value: unknown): string => {
   try {
     return JSON.stringify(value, (_key, candidate) => {
@@ -105,19 +117,6 @@ router.get('/debug/wa/stream', (req: Request, res: Response) => {
   req.on('end', cleanup);
   req.on('error', cleanup);
 });
-
-const normalizeQueryValue = (value: unknown): string | null => {
-  if (Array.isArray(value)) {
-    return normalizeQueryValue(value[0]);
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
 
 export const buildWhereClause = (
   tenantId: string | null,

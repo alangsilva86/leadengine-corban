@@ -9,7 +9,6 @@ type FeatureFlags = {
   whatsappPassthroughMode: boolean;
   whatsappBrokerStrictConfig: boolean;
   whatsappDebugToolsEnabled: boolean;
-};
 } & SharedFeatureFlags;
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
@@ -63,6 +62,8 @@ const computeFlags = (): FeatureFlags => {
   const whatsappDebugToolsEnabled = parseBoolean(process.env.WHATSAPP_DEBUG_TOOLS_ENABLED, false);
   if (whatsappDebugToolsEnabled) {
     logger.warn('[config] WhatsApp debug tools habilitado — endpoints sensíveis ativos');
+  }
+
   const sharedFlags = resolveSharedFeatureFlags(process.env);
   if (sharedFlags.whatsappDebug) {
     logger.info('[config] WhatsApp debug routes habilitadas (FEATURE_DEBUG_WHATSAPP)');
@@ -107,8 +108,9 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
   const whatsappSimpleChanged = next.whatsappInboundSimpleMode !== cachedFlags.whatsappInboundSimpleMode;
   const whatsappPassthroughChanged = next.whatsappPassthroughMode !== cachedFlags.whatsappPassthroughMode;
   const whatsappStrictChanged = next.whatsappBrokerStrictConfig !== cachedFlags.whatsappBrokerStrictConfig;
-  const whatsappDebugChanged = next.whatsappDebugToolsEnabled !== cachedFlags.whatsappDebugToolsEnabled;
-  const whatsappDebugChanged = next.whatsappDebug !== cachedFlags.whatsappDebug;
+  const whatsappDebugToolsChanged =
+    next.whatsappDebugToolsEnabled !== cachedFlags.whatsappDebugToolsEnabled;
+  const whatsappDebugFeatureChanged = next.whatsappDebug !== cachedFlags.whatsappDebug;
 
   if (
     useRealDataChanged ||
@@ -117,7 +119,8 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     whatsappSimpleChanged ||
     whatsappPassthroughChanged ||
     whatsappStrictChanged ||
-    whatsappDebugChanged
+    whatsappDebugToolsChanged ||
+    whatsappDebugFeatureChanged
   ) {
     logger.info('[config] Feature flags atualizados', {
       useRealData: next.useRealData,
@@ -148,6 +151,7 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     }
     if (next.whatsappDebugToolsEnabled && !cachedFlags.whatsappDebugToolsEnabled) {
       logger.warn('[config] WhatsApp debug tools habilitado (refresh) — endpoints sensíveis ativos');
+    }
     if (next.whatsappDebug && !cachedFlags.whatsappDebug) {
       logger.info('[config] WhatsApp debug routes habilitadas (refresh)');
     }
