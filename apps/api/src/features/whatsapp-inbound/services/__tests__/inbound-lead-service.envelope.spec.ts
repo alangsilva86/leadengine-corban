@@ -12,7 +12,7 @@ const isWhatsappPassthroughModeEnabledMock = vi.fn();
 const isWhatsappInboundSimpleModeEnabledMock = vi.fn();
 
 const prismaMock = {
-  whatsAppInstance: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
+  whatsAppInstance: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   tenant: { findFirst: vi.fn() },
   campaign: { findMany: vi.fn(), upsert: vi.fn() },
   queue: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn() },
@@ -393,6 +393,54 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       });
       expect(prismaMock.whatsAppInstance.findUnique).not.toHaveBeenCalled();
       expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
+    });
+
+    it('auto provisions missing instances before processing standard inbound flow', async () => {
+      prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
+      prismaMock.tenant.findFirst.mockResolvedValueOnce({ id: 'tenant-1', name: 'Tenant One' });
+      const createdInstance = {
+        id: 'instance-1',
+        tenantId: 'tenant-1',
+        brokerId: 'instance-1',
+        metadata: {},
+      };
+      prismaMock.whatsAppInstance.create.mockResolvedValueOnce(createdInstance);
+
+      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+
+      expect(processed).toBe(true);
+      expect(prismaMock.whatsAppInstance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: 'instance-1',
+            tenantId: 'tenant-1',
+            metadata: expect.objectContaining({
+              autopProvisionSource: 'inbound-auto',
+              autopProvisionBrokerId: 'instance-1',
+              autopProvisionTenantIdentifiers: expect.arrayContaining(['tenant-1']),
+            }),
+          }),
+        })
+      );
+      expect(prismaMock.whatsAppInstance.update).not.toHaveBeenCalled();
+      expect(createTicketMock).toHaveBeenCalledTimes(1);
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
+      expect(emitToTicketMock).toHaveBeenCalledWith(
+        'ticket-1',
+        expect.stringMatching(/tickets\./),
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          ticketId: 'ticket-1',
+        })
+      );
+      expect(emitToTenantMock).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.stringMatching(/tickets\./),
+        expect.objectContaining({
+          tenantId: 'tenant-1',
+          ticketId: 'ticket-1',
+        })
+      );
     });
   });
 });
