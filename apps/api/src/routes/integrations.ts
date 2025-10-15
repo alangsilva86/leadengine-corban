@@ -1802,24 +1802,21 @@ const syncInstancesFromBroker = async (
         typeof existingInstance.name === 'string' && existingInstance.name.trim().length > 0
           ? existingInstance.name.trim()
           : null;
-      // Only adopt the broker provided name when we do not have a stored nickname yet
-      // or when the stored value still mirrors the instance identifier (slug).
-      const shouldAdoptBrokerName =
-        hasBrokerName && (!existingDisplayName || existingDisplayName === instanceId);
 
-      if (shouldAdoptBrokerName) {
-        logger.info('whatsapp.instances.sync.adoptBrokerName', {
-          tenantId,
-          instanceId,
-          brokerNameCandidate,
-          reason: existingDisplayName ? 'stored-name-matches-slug' : 'stored-name-missing',
-        });
-      } else if (hasBrokerName && existingDisplayName && existingDisplayName !== brokerNameCandidate) {
+      if (hasBrokerName && existingDisplayName && existingDisplayName !== brokerNameCandidate) {
         logger.debug('whatsapp.instances.sync.preserveStoredName', {
           tenantId,
           instanceId,
           storedName: existingDisplayName,
           brokerNameCandidate,
+          reason: 'preserve-user-defined-name',
+        });
+      } else if (hasBrokerName && !existingDisplayName) {
+        logger.debug('whatsapp.instances.sync.useBrokerDisplayNameFallback', {
+          tenantId,
+          instanceId,
+          brokerNameCandidate,
+          reason: 'no-stored-name',
         });
       }
 
@@ -1827,15 +1824,10 @@ const syncInstancesFromBroker = async (
         typeof metadataWithHistory.displayName === 'string' && metadataWithHistory.displayName.trim().length > 0
           ? metadataWithHistory.displayName.trim()
           : null;
-      if (shouldAdoptBrokerName) {
-        metadataWithHistory.displayName = brokerNameCandidate;
-        metadataWithHistory.label = brokerNameCandidate;
-      } else {
-        const preservedDisplayName =
-          metadataNickname ?? existingDisplayName ?? (hasBrokerName ? brokerNameCandidate : instanceId);
-        metadataWithHistory.displayName = preservedDisplayName;
-        metadataWithHistory.label = preservedDisplayName;
-      }
+      const preservedDisplayName =
+        metadataNickname ?? existingDisplayName ?? (hasBrokerName ? brokerNameCandidate : instanceId);
+      metadataWithHistory.displayName = preservedDisplayName;
+      metadataWithHistory.label = preservedDisplayName;
       const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
 
       const updateData: Prisma.WhatsAppInstanceUpdateArgs['data'] = {
@@ -1847,10 +1839,6 @@ const syncInstancesFromBroker = async (
         ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
         metadata: metadataWithoutError,
       };
-
-      if (shouldAdoptBrokerName) {
-        updateData.name = brokerNameCandidate;
-      }
 
       await prisma.whatsAppInstance.update({
         where: { id: existingInstance.id },
