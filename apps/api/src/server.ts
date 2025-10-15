@@ -32,6 +32,9 @@ import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
 import { manualConversationsRouter } from './routes/manual-conversations';
+import { debugMessagesRouter } from './features/debug/routes/messages';
+import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
+import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
 
 if (process.env.NODE_ENV !== 'production') {
@@ -355,6 +358,17 @@ app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', leadEngineRouter);
+app.use('/api', debugMessagesRouter);
+app.use('/api/debug/wa', (req, res, next) => {
+  if (!isWhatsappDebugToolsEnabled()) {
+    res.status(404).json({
+      error: 'Not Found',
+      message: `Route ${req.originalUrl} not found`,
+    });
+    return;
+  }
+  next();
+}, whatsappDebugRouter);
 if (debugMessagesRouter) {
   app.use('/api', debugMessagesRouter);
 }

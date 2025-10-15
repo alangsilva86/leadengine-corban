@@ -10,20 +10,21 @@ import {
   type WhatsAppDebugEvent,
 } from '../services/whatsapp-debug-emitter';
 
-const asRecord = (value: unknown): Record<string, unknown> | null => {
+export const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
   return null;
 };
 
-const normalizeJsonRecord = (value: unknown): Record<string, unknown> => {
+export const normalizeJsonRecord = (value: unknown): Record<string, unknown> => {
   const record = asRecord(value);
   return record ? { ...record } : {};
 };
 
 const router: Router = Router();
 
+export const normalizeQueryValue = (value: unknown): string | null => {
 const safeStringify = (value: unknown): string => {
   try {
     return JSON.stringify(value, (_key, candidate) => {
@@ -118,7 +119,7 @@ const normalizeQueryValue = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const buildWhereClause = (
+export const buildWhereClause = (
   tenantId: string | null,
   { chatId, direction }: { chatId: string | null; direction: 'INBOUND' | 'OUTBOUND' | null }
 ): Prisma.MessageWhereInput => {
