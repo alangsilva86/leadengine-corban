@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { logger } from '../../../config/logger';
+
 import type { BrokerWebhookInbound } from '../schemas/broker-contracts';
 
 type UnknownRecord = Record<string, unknown>;
@@ -727,6 +729,9 @@ export const normalizeUpsertEvent = (
   }
 
   const payload = asRecord(eventRecord.payload) ?? {};
+  const rawEnvelope = asRecord(payload.raw);
+  const rawPayload = asRecord(rawEnvelope?.payload) ?? rawEnvelope;
+  const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
 
   const eventType = readString(eventRecord.event);
   if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
@@ -756,17 +761,44 @@ export const normalizeUpsertEvent = (
     undefined;
   const sessionId =
     readString(overrides?.sessionId, payload.sessionId, eventRecord.sessionId) ?? brokerId ?? undefined;
-  const owner = readString(payload.owner, eventRecord.owner) ?? null;
-  const source = readString(payload.source, eventRecord.source) ?? null;
-  const fallbackTimestamp = readNumber(payload.timestamp, eventRecord.timestamp) ?? null;
+  const owner = readString(payload.owner, eventRecord.owner, rawPayload?.owner, rawEnvelope?.owner, rawMetadata?.owner) ?? null;
+  const source =
+    readString(payload.source, eventRecord.source, rawPayload?.source, rawEnvelope?.source, rawMetadata?.source) ?? null;
+  const fallbackTimestamp =
+    readNumber(
+      payload.timestamp,
+      eventRecord.timestamp,
+      rawPayload?.timestamp,
+      rawEnvelope?.timestamp,
+      rawMetadata?.timestamp
+    ) ?? null;
 
-  const messages = asArray(payload.messages);
+  const primaryMessages = asArray(payload.messages);
+  const rawMessages = asArray(rawPayload?.messages ?? rawEnvelope?.messages);
+  const messages = primaryMessages.length > 0 ? primaryMessages : rawMessages;
+
+  logger.info('🎬 WhatsApp raw normalizer subiu ao palco', {
+    instanceId: resolvedInstanceId,
+    providedMessages: primaryMessages.length,
+    fallbackMessages: rawMessages.length,
+  });
+
+  if (primaryMessages.length === 0 && rawMessages.length > 0) {
+    logger.info('🪄 Mensagens pescadas direto do envelope raw', {
+      instanceId: resolvedInstanceId,
+      total: rawMessages.length,
+    });
+  }
 
   const normalized: NormalizedRawUpsertMessage[] = [];
   const ignored: IgnoredRawUpsertMessage[] = [];
 
   messages.forEach((entry, index) => {
     if (!entry || typeof entry !== 'object') {
+      logger.info('🙈 Mensagem raw ignorada por estar fora do formato esperado', {
+        instanceId: resolvedInstanceId,
+        messageIndex: index,
+      });
       ignored.push({
         messageIndex: index,
         reason: 'invalid_entry',
@@ -785,10 +817,20 @@ export const normalizeUpsertEvent = (
     });
 
     if ('ignore' in normalizedMessage) {
+      logger.info('🙈 Mensagem raw saiu do palco', {
+        instanceId: resolvedInstanceId,
+        messageIndex: index,
+        reason: normalizedMessage.ignore.reason,
+      });
       ignored.push(normalizedMessage.ignore);
       return;
     }
 
+    logger.info('💌 Mensagem raw ganhou os holofotes', {
+      instanceId: resolvedInstanceId,
+      messageIndex: index,
+      messageType: normalizedMessage.normalized.messageType,
+    });
     normalized.push(normalizedMessage.normalized);
   });
 
