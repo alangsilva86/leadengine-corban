@@ -104,8 +104,6 @@ vi.mock('../data/lead-allocation-store', () => ({
   updateAllocation: vi.fn(),
 }));
 
-// Ensure inbound processor is registered
-await import('../features/whatsapp-inbound/workers/inbound-processor');
 const { refreshFeatureFlags } = await import('../config/feature-flags');
 const { refreshWhatsAppEnv } = await import('../config/whatsapp');
 

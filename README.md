@@ -180,14 +180,14 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - **data/**: seeds, fixtures e builders usados em testes.
 - **middleware/**: autenticação (`middleware/auth.ts`), auditoria de requisições, validação e tratamento de erros.
 - **routes/**: módulos independentes para auth, tickets, leads, contatos, campanhas, preferências, filas, conversas manuais, integrações e webhooks.
-- **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza e persiste eventos (`features/whatsapp-inbound/routes/webhook-routes.ts`) e a fila interna expõe instrumentação/retentativas (`features/whatsapp-inbound/queue/event-queue.ts`).
+- **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza, persiste eventos (`features/whatsapp-inbound/routes/webhook-routes.ts`) e delega regras de ingestão para serviços dedicados (`services/inbound-lead-service.ts`).
 - **socket/**: handlers de conexão multi-tenant (`socket/connection-handlers.ts`).
 - **utils/** e **lib/**: parse de telefone, normalização de slug, métricas Prometheus, registrador Socket.IO, Prisma singleton e helpers HTTP.
 
 ### Fluxo WhatsApp resumido
 1. Os eventos inbound chegam por `/api/integrations/whatsapp/webhook`, são normalizados e persistidos de forma síncrona (`features/whatsapp-inbound/routes/webhook-routes.ts`) e geram `messages.new` via Socket.IO.
-2. A fila interna (`features/whatsapp-inbound/queue/event-queue.ts`) continua disponível para reprocessamentos, com o worker `inbound-processor` convertendo eventos herdados em tickets/mensagens e alimentando o logger de debug (`features/whatsapp-inbound/workers/inbound-processor.ts`).
-3. O processamento assíncrono roda no worker `inbound-processor` (`features/whatsapp-inbound/workers/inbound-processor.ts`), que consome a fila, aplica dedupe e distribui eventos para tickets/mensagens sem caminhos alternativos paralelos.
+2. O serviço `ingestInboundWhatsAppMessage` aplica dedupe, cria/atualiza contatos e tickets e garante o enfileiramento em filas de atendimento (`prisma.queue`) quando necessário.
+3. Logs de debug (`features/whatsapp-inbound/utils/baileys-event-logger.ts`) e métricas (`lib/metrics.ts`) acompanham o throughput inbound sem depender de workers dedicados.
 4. O router `/api/integrations/whatsapp` centraliza instâncias, QR, pareamento, envio de mensagens e circuit breaker de configuração (`routes/integrations.ts`), além de expor métricas/health específicas para observabilidade.
 
 ### Health & métricas
