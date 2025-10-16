@@ -157,6 +157,8 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
         normalizedPayload.type === 'template' ? (normalizedPayload.template as unknown) : undefined,
       location:
         normalizedPayload.type === 'location' ? (normalizedPayload.location as unknown) : undefined,
+      contact:
+        normalizedPayload.type === 'contact' ? (normalizedPayload.contact as unknown) : undefined,
       contacts:
         normalizedPayload.type === 'contact' ? (normalizedPayload.contacts as unknown) : undefined,
       metadata: normalizedPayload.metadata,
@@ -274,7 +276,9 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       previewUrl: payload.previewUrl,
       media: mediaPayload as unknown,
       location: payload.location as unknown,
+      contact: payload.contact as unknown,
       template: payload.template as unknown,
+      poll: payload.poll as unknown,
       contacts: payload.contacts as unknown,
       metadata: payload.metadata,
     });

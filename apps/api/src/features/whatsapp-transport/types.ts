@@ -13,7 +13,9 @@ export type WhatsAppTransportSendMessagePayload = {
   mediaFileName?: string;
   media?: Record<string, unknown>;
   location?: Record<string, unknown>;
+  contact?: Record<string, unknown>;
   template?: Record<string, unknown>;
+  poll?: Record<string, unknown>;
   contacts?: Array<Record<string, unknown>>;
   metadata?: Record<string, unknown>;
 };

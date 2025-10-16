@@ -6,15 +6,24 @@
 
 export interface paths {
   "/tickets/{ticketId}/messages": {
-    /** Enfileira uma nova mensagem para um ticket existente */
+    /**
+     * Enfileira uma nova mensagem para um ticket existente
+     * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
+     */
     post: operations["createTicketMessage"];
   };
   "/contacts/{contactId}/messages": {
-    /** Enfileira uma nova mensagem para um contato específico */
+    /**
+     * Enfileira uma nova mensagem para um contato específico
+     * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
+     */
     post: operations["createContactMessage"];
   };
   "/integrations/whatsapp/instances/{instanceId}/messages": {
-    /** Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp */
+    /**
+     * Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
+     * @description Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
+     */
     post: operations["createInstanceMessage"];
   };
 }
@@ -23,20 +32,183 @@ export type webhooks = Record<string, never>;
 
 export interface components {
   schemas: {
-    MessagePayload: {
+    MessagePayload: components["schemas"]["TextMessagePayload"] | components["schemas"]["ImageMessagePayload"] | components["schemas"]["DocumentMessagePayload"] | components["schemas"]["AudioMessagePayload"] | components["schemas"]["VideoMessagePayload"] | components["schemas"]["LocationMessagePayload"] | components["schemas"]["ContactMessagePayload"] | components["schemas"]["TemplateMessagePayload"] | components["schemas"]["PollMessagePayload"];
+    MessagePreviewSupport: {
+      previewUrl?: boolean;
+    };
+    TextMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+      /** @constant */
+      type: "text";
+      /** @description Conteúdo textual da mensagem */
+      text: string;
+    };
+    MediaMessagePayloadBase: components["schemas"]["MessagePreviewSupport"] & {
+      /** @description Texto complementar opcional exibido como mensagem separada */
+      text?: string;
+      /** @description Legenda exibida junto à mídia */
+      caption?: string;
       /**
-       * @default text
+       * Format: uri
+       * @description URL pública da mídia
+       */
+      mediaUrl: string;
+      /** @description MIME type da mídia */
+      mimeType?: string;
+      /** @description Nome sugerido do arquivo */
+      fileName?: string;
+    };
+    ImageMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "image";
+    };
+    DocumentMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "document";
+    };
+    AudioMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "audio";
+    };
+    VideoMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "video";
+    };
+    LocationMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+      /** @constant */
+      type: "location";
+      /** @description Texto complementar opcional que acompanha o envio da localização */
+      text?: string;
+      location: {
+        latitude: number;
+        longitude: number;
+        /** @description Nome amigável do local */
+        name?: string;
+        /** @description Endereço completo exibido no WhatsApp */
+        address?: string;
+        /**
+         * Format: uri
+         * @description URL de referência para o local
+         */
+        url?: string;
+      };
+    };
+    ContactEmail: {
+      /** Format: email */
+      email: string;
+      /** @description Rótulo do e-mail (ex. work, personal) */
+      type?: string;
+    };
+    ContactPhone: {
+      /** @description Número do contato no formato internacional */
+      phoneNumber: string;
+      /** @description Rótulo do telefone (ex. mobile, home) */
+      type?: string;
+      /** @description Identificador WhatsApp (JID) quando disponível */
+      waId?: string;
+    };
+    ContactMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+      /** @constant */
+      type: "contact";
+      /** @description Texto complementar exibido junto ao cartão de contato */
+      text?: string;
+      contact: {
+        /** @description Nome completo do contato */
+        fullName?: string;
+        /** @description Organização associada ao contato */
+        organization?: string;
+        emails?: components["schemas"]["ContactEmail"][];
+        phones?: components["schemas"]["ContactPhone"][];
+        /** @description Representação completa em vCard 3.0/4.0 */
+        vcard?: string;
+      };
+    };
+    TemplateLanguage: {
+      /** @description Código do idioma (ex. pt_BR) */
+      code: string;
+      /**
+       * @description Política de fallback do idioma
        * @enum {string}
        */
-      type?: "text" | "image" | "document" | "audio" | "video";
-      /** @description Conteúdo textual da mensagem */
+      policy?: "deterministic" | "fallback";
+    };
+    TemplateComponentTextParameter: {
+      /** @constant */
+      type: "text";
+      text: string;
+    };
+    TemplateComponentCurrencyParameter: {
+      /** @constant */
+      type: "currency";
+      currency: {
+        /** @description Valor multiplicado por 1000 conforme contrato Meta */
+        amount1000: number;
+        currencyCode: string;
+      };
+    };
+    TemplateComponentDateTimeParameter: {
+      /** @constant */
+      type: "date_time";
+      dateTime: {
+        fallbackValue?: string;
+        /** @description Epoch seconds */
+        timestamp?: number;
+      };
+    };
+    TemplateComponentImageParameter: {
+      /** @constant */
+      type: "image";
+      image: {
+        /** Format: uri */
+        link: string;
+      };
+    };
+    TemplateComponentDocumentParameter: {
+      /** @constant */
+      type: "document";
+      document: {
+        /** Format: uri */
+        link: string;
+        filename?: string;
+      };
+    };
+    TemplateComponentVideoParameter: {
+      /** @constant */
+      type: "video";
+      video: {
+        /** Format: uri */
+        link: string;
+      };
+    };
+    TemplateComponentParameter: components["schemas"]["TemplateComponentTextParameter"] | components["schemas"]["TemplateComponentCurrencyParameter"] | components["schemas"]["TemplateComponentDateTimeParameter"] | components["schemas"]["TemplateComponentImageParameter"] | components["schemas"]["TemplateComponentDocumentParameter"] | components["schemas"]["TemplateComponentVideoParameter"];
+    TemplateComponent: {
+      /** @enum {string} */
+      type: "header" | "body" | "footer" | "button";
+      /** @enum {string} */
+      subType?: "quick_reply" | "url" | "copy_code" | "phone_number";
+      /** @description Índice do componente conforme posição no template */
+      index?: string;
+      parameters?: components["schemas"]["TemplateComponentParameter"][];
+    };
+    TemplateMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+      /** @constant */
+      type: "template";
+      /** @description Texto complementar opcional (exibido como fallback) */
       text?: string;
-      /** Format: uri */
-      mediaUrl?: string;
-      caption?: string;
-      mimeType?: string;
-      fileName?: string;
-      previewUrl?: boolean;
+      template: {
+        namespace: string;
+        name: string;
+        language: components["schemas"]["TemplateLanguage"];
+        components?: components["schemas"]["TemplateComponent"][];
+      };
+    };
+    PollMessagePayload: {
+      /** @constant */
+      type: "poll";
+      poll: {
+        question: string;
+        options: string[];
+        allowMultipleAnswers?: boolean;
+      };
     };
     SendMessageByTicketRequest: {
       /** @description Identificador opcional da instância do WhatsApp */
@@ -110,7 +282,10 @@ export type external = Record<string, never>;
 
 export interface operations {
 
-  /** Enfileira uma nova mensagem para um ticket existente */
+  /**
+   * Enfileira uma nova mensagem para um ticket existente
+   * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
+   */
   createTicketMessage: {
     parameters: {
       path: {
@@ -149,7 +324,10 @@ export interface operations {
       };
     };
   };
-  /** Enfileira uma nova mensagem para um contato específico */
+  /**
+   * Enfileira uma nova mensagem para um contato específico
+   * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
+   */
   createContactMessage: {
     parameters: {
       path: {
@@ -188,7 +366,10 @@ export interface operations {
       };
     };
   };
-  /** Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp */
+  /**
+   * Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
+   * @description Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
+   */
   createInstanceMessage: {
     parameters: {
       path: {

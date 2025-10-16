@@ -1640,6 +1640,14 @@ const toMessageType = (type: NormalizedMessagePayload['type']): Message['type'] 
       return 'VIDEO';
     case 'document':
       return 'DOCUMENT';
+    case 'location':
+      return 'LOCATION';
+    case 'contact':
+      return 'CONTACT';
+    case 'template':
+      return 'TEMPLATE';
+    case 'poll':
+      return 'TEXT';
     default:
       return 'TEXT';
   }
@@ -1732,6 +1740,18 @@ export const sendOnTicket = async (
   const metadata: Record<string, unknown> = {};
   if (typeof payload.previewUrl === 'boolean') {
     metadata.previewUrl = payload.previewUrl;
+  }
+  if (payload.location) {
+    metadata.location = payload.location;
+  }
+  if (payload.contact) {
+    metadata.contact = payload.contact;
+  }
+  if (payload.template) {
+    metadata.template = payload.template;
+  }
+  if (payload.poll) {
+    metadata.poll = payload.poll;
   }
   if (idempotencyKey) {
     metadata.idempotencyKey = idempotencyKey;

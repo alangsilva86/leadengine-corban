@@ -81,7 +81,13 @@ When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHAT
 - Requests validated with `BrokerOutboundMessageSchema` inside `whatsappBrokerClient.sendMessage`.
 - Minimal required fields: `sessionId`/`instanceId`, `to`, `content`; `type` defaults to `text`.
 - Delivery always happens through `POST /instances/:id/send-text` with the normalised payload `{ sessionId, instanceId, to, type, message, text?, previewUrl?, externalId?, template?, location?, mediaUrl?, mimeType?, fileName?, metadata? }`. Even with the `send-text` suffix the endpoint accepts any supported `type` as long as the complementary fields are present.
-- Media/template/location payloads remain optional but become mandatory whenever `type !== text`. `mediaUrl` must be provided for `image`, `video`, `document` and `audio` messages.
+- O payload agora segue um contrato discriminado:
+  - `text` exige `payload.text` não vazio.
+  - Tipos de mídia (`image`, `video`, `document`, `audio`) requerem `mediaUrl` válido; `caption`, `mimeType` e `fileName` permanecem opcionais.
+  - `location` precisa de `location.latitude`/`location.longitude` (±90/±180) com `name`, `address` e `url` opcionais.
+  - `contact` aceita `fullName`, `organization`, e-mails e telefones (com `waId` opcional), mas valida que ao menos `vcard`, `phones`, `emails` ou `fullName` estejam presentes.
+  - `template` exige `template.namespace`, `template.name` e `template.language.code`, além de componentes estruturados (header/body/footer/button) com parâmetros `text`, `currency`, `date_time` (timestamp ou fallback) e mídia (`image`, `document`, `video`).
+  - `poll` utiliza `poll.question` + `poll.options` (mínimo dois itens) e continua sendo disparado via rota dedicada `POST /api/integrations/whatsapp/instances/:id/polls`.
 - Headers propagated automatically: `X-API-Key` from `WHATSAPP_BROKER_API_KEY` and `Idempotency-Key` from `metadata.idempotencyKey` (or the explicit function argument). There is no fallback to `/broker/**` routes nor environment toggles for legacy delivery modes.
 - Complementary operations use the official broker surface: `POST /instances` for creation, `GET /instances/:id/status` for connectivity, `POST /instances/:id/exists` to validate recipients, `GET /instances/:id/groups` for group listing and `GET /instances/:id/metrics` for usage dashboards.
 - Responses normalised via `BrokerOutboundResponseSchema`; `externalId` fallback maintained for idempotency.
@@ -98,7 +104,9 @@ When `WHATSAPP_RAW_FALLBACK_ENABLED=true`, the webhook accepts raw Baileys `WHAT
 - `document`
 - `audio`
 - `location`
+- `contact`
 - `template`
+- `poll` (envio realizado via `transport.createPoll` com o mesmo payload `poll.question/options` validado pelos contratos)
 
 ## Timeline Reconciliacao (Semana 2)
 

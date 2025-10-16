@@ -146,27 +146,415 @@ paths:
 components:
   schemas:
     MessagePayload:
+      oneOf:
+        - $ref: '#/components/schemas/TextMessagePayload'
+        - $ref: '#/components/schemas/ImageMessagePayload'
+        - $ref: '#/components/schemas/DocumentMessagePayload'
+        - $ref: '#/components/schemas/AudioMessagePayload'
+        - $ref: '#/components/schemas/VideoMessagePayload'
+        - $ref: '#/components/schemas/LocationMessagePayload'
+        - $ref: '#/components/schemas/ContactMessagePayload'
+        - $ref: '#/components/schemas/TemplateMessagePayload'
+        - $ref: '#/components/schemas/PollMessagePayload'
+      discriminator:
+        propertyName: type
+    MessagePreviewSupport:
       type: object
+      properties:
+        previewUrl:
+          type: boolean
+    TextMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MessagePreviewSupport'
+        - type: object
+          required: [type, text]
+          properties:
+            type:
+              type: string
+              const: text
+            text:
+              type: string
+              description: Conteúdo textual da mensagem
+              minLength: 1
+          additionalProperties: false
+    MediaMessagePayloadBase:
+      allOf:
+        - $ref: '#/components/schemas/MessagePreviewSupport'
+        - type: object
+          required: [mediaUrl]
+          properties:
+            text:
+              type: string
+              description: Texto complementar opcional exibido como mensagem separada
+              minLength: 1
+            caption:
+              type: string
+              description: Legenda exibida junto à mídia
+              minLength: 1
+            mediaUrl:
+              type: string
+              format: uri
+              description: URL pública da mídia
+            mimeType:
+              type: string
+              description: MIME type da mídia
+            fileName:
+              type: string
+              description: Nome sugerido do arquivo
+    ImageMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MediaMessagePayloadBase'
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: image
+          additionalProperties: false
+    DocumentMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MediaMessagePayloadBase'
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: document
+          additionalProperties: false
+    AudioMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MediaMessagePayloadBase'
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: audio
+          additionalProperties: false
+    VideoMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MediaMessagePayloadBase'
+        - type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              const: video
+          additionalProperties: false
+    LocationMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MessagePreviewSupport'
+        - type: object
+          required: [type, location]
+          properties:
+            type:
+              type: string
+              const: location
+            text:
+              type: string
+              description: Texto complementar opcional que acompanha o envio da localização
+              minLength: 1
+            location:
+              type: object
+              required: [latitude, longitude]
+              properties:
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                name:
+                  type: string
+                  description: Nome amigável do local
+                  minLength: 1
+                address:
+                  type: string
+                  description: Endereço completo exibido no WhatsApp
+                  minLength: 1
+                url:
+                  type: string
+                  format: uri
+                  description: URL de referência para o local
+              additionalProperties: false
+          additionalProperties: false
+    ContactEmail:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        type:
+          type: string
+          description: Rótulo do e-mail (ex. work, personal)
+          minLength: 1
+      additionalProperties: false
+    ContactPhone:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber:
+          type: string
+          description: Número do contato no formato internacional
+          minLength: 8
+          maxLength: 32
+        type:
+          type: string
+          description: Rótulo do telefone (ex. mobile, home)
+          minLength: 1
+        waId:
+          type: string
+          description: Identificador WhatsApp (JID) quando disponível
+          minLength: 1
+      additionalProperties: false
+    ContactMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MessagePreviewSupport'
+        - type: object
+          required: [type, contact]
+          properties:
+            type:
+              type: string
+              const: contact
+            text:
+              type: string
+              description: Texto complementar exibido junto ao cartão de contato
+              minLength: 1
+            contact:
+              allOf:
+                - type: object
+                  properties:
+                    fullName:
+                      type: string
+                      description: Nome completo do contato
+                      minLength: 1
+                    organization:
+                      type: string
+                      description: Organização associada ao contato
+                      minLength: 1
+                    emails:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ContactEmail'
+                      minItems: 1
+                    phones:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ContactPhone'
+                      minItems: 1
+                    vcard:
+                      type: string
+                      description: Representação completa em vCard 3.0/4.0
+                      minLength: 1
+                  additionalProperties: false
+                - anyOf:
+                    - required: [vcard]
+                    - required: [phones]
+                    - required: [emails]
+                    - required: [fullName]
+          additionalProperties: false
+    TemplateLanguage:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: Código do idioma (ex. pt_BR)
+          minLength: 1
+        policy:
+          type: string
+          enum: [deterministic, fallback]
+          description: Política de fallback do idioma
+      additionalProperties: false
+    TemplateComponentTextParameter:
+      type: object
+      required: [type, text]
       properties:
         type:
           type: string
-          enum: [text, image, document, audio, video]
-          default: text
+          const: text
         text:
           type: string
-          description: Conteúdo textual da mensagem
           minLength: 1
-        mediaUrl:
+      additionalProperties: false
+    TemplateComponentCurrencyParameter:
+      type: object
+      required: [type, currency]
+      properties:
+        type:
           type: string
-          format: uri
-        caption:
+          const: currency
+        currency:
+          type: object
+          required: [amount1000, currencyCode]
+          properties:
+            amount1000:
+              type: integer
+              description: Valor multiplicado por 1000 conforme contrato Meta
+            currencyCode:
+              type: string
+              minLength: 1
+          additionalProperties: false
+      additionalProperties: false
+    TemplateComponentDateTimeParameter:
+      type: object
+      required: [type, dateTime]
+      properties:
+        type:
           type: string
-        mimeType:
+          const: date_time
+        dateTime:
+          allOf:
+            - type: object
+              properties:
+                fallbackValue:
+                  type: string
+                  minLength: 1
+                timestamp:
+                  type: integer
+                  description: Epoch seconds
+              additionalProperties: false
+            - anyOf:
+                - required: [fallbackValue]
+                - required: [timestamp]
+      additionalProperties: false
+    TemplateComponentImageParameter:
+      type: object
+      required: [type, image]
+      properties:
+        type:
           type: string
-        fileName:
+          const: image
+        image:
+          type: object
+          required: [link]
+          properties:
+            link:
+              type: string
+              format: uri
+          additionalProperties: false
+      additionalProperties: false
+    TemplateComponentDocumentParameter:
+      type: object
+      required: [type, document]
+      properties:
+        type:
           type: string
-        previewUrl:
-          type: boolean
+          const: document
+        document:
+          type: object
+          required: [link]
+          properties:
+            link:
+              type: string
+              format: uri
+            filename:
+              type: string
+              minLength: 1
+          additionalProperties: false
+      additionalProperties: false
+    TemplateComponentVideoParameter:
+      type: object
+      required: [type, video]
+      properties:
+        type:
+          type: string
+          const: video
+        video:
+          type: object
+          required: [link]
+          properties:
+            link:
+              type: string
+              format: uri
+          additionalProperties: false
+      additionalProperties: false
+    TemplateComponentParameter:
+      oneOf:
+        - $ref: '#/components/schemas/TemplateComponentTextParameter'
+        - $ref: '#/components/schemas/TemplateComponentCurrencyParameter'
+        - $ref: '#/components/schemas/TemplateComponentDateTimeParameter'
+        - $ref: '#/components/schemas/TemplateComponentImageParameter'
+        - $ref: '#/components/schemas/TemplateComponentDocumentParameter'
+        - $ref: '#/components/schemas/TemplateComponentVideoParameter'
+      discriminator:
+        propertyName: type
+    TemplateComponent:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [header, body, footer, button]
+        subType:
+          type: string
+          enum: [quick_reply, url, copy_code, phone_number]
+        index:
+          type: string
+          description: Índice do componente conforme posição no template
+          minLength: 1
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateComponentParameter'
+      additionalProperties: false
+    TemplateMessagePayload:
+      allOf:
+        - $ref: '#/components/schemas/MessagePreviewSupport'
+        - type: object
+          required: [type, template]
+          properties:
+            type:
+              type: string
+              const: template
+            text:
+              type: string
+              description: Texto complementar opcional (exibido como fallback)
+              minLength: 1
+            template:
+              type: object
+              required: [namespace, name, language]
+              properties:
+                namespace:
+                  type: string
+                  minLength: 1
+                name:
+                  type: string
+                  minLength: 1
+                language:
+                  $ref: '#/components/schemas/TemplateLanguage'
+                components:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TemplateComponent'
+              additionalProperties: false
+          additionalProperties: false
+    PollMessagePayload:
+      type: object
+      required: [type, poll]
+      properties:
+        type:
+          type: string
+          const: poll
+        poll:
+          type: object
+          required: [question, options]
+          properties:
+            question:
+              type: string
+              minLength: 1
+            options:
+              type: array
+              items:
+                type: string
+                minLength: 1
+              minItems: 2
+            allowMultipleAnswers:
+              type: boolean
+          additionalProperties: false
       additionalProperties: false
     SendMessageByTicketRequest:
       type: object

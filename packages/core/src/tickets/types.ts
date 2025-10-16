@@ -208,6 +208,7 @@ export const SendMessageDTOSchema = z
   .superRefine((value, ctx) => {
     const hasText = typeof value.content === 'string' && value.content.trim().length > 0;
     const hasMedia = typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0;
+    const mediaTypes = new Set(['IMAGE', 'VIDEO', 'DOCUMENT', 'AUDIO']);
 
     if (value.type === 'TEXT' && !hasText) {
       ctx.addIssue({
@@ -217,6 +218,7 @@ export const SendMessageDTOSchema = z
       });
     }
 
+    if (mediaTypes.has(value.type) && !hasMedia) {
     const requiresMediaUrl = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(value.type);
 
     if (requiresMediaUrl && !hasMedia) {
