@@ -11,6 +11,12 @@ import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn } from '@/lib/utils.js';
+import {
+  ensureDate,
+  formatDateTime,
+  getFirstString,
+  getFirstValidDate,
+} from '../utils/dateUtils.js';
 
 const STATUS_META = {
   allocated: { label: 'Aguardando contato', tone: 'neutral' },
@@ -19,58 +25,7 @@ const STATUS_META = {
   lost: { label: 'Sem interesse', tone: 'error' },
 };
 
-const ensureDate = (value) => {
-  if (!value) return null;
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value;
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const formatDateTime = (value) => {
-  const date = ensureDate(value);
-  if (!date) return null;
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
-
-const getNestedValue = (object, path) => {
-  if (!isPlainObject(object)) return undefined;
-  return path.reduce((acc, key) => {
-    if (acc && typeof acc === 'object' && key in acc) {
-      return acc[key];
-    }
-    return undefined;
-  }, object);
-};
-
-const getFirstValidDate = (object, paths) => {
-  for (const path of paths) {
-    const candidate = getNestedValue(object, path);
-    const date = ensureDate(candidate);
-    if (date) {
-      return { value: candidate, date, path };
-    }
-  }
-  return null;
-};
-
-const getFirstString = (object, paths) => {
-  for (const path of paths) {
-    const candidate = getNestedValue(object, path);
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate.trim();
-    }
-  }
-  return null;
-};
 
 const buildTimeline = (allocation) => {
   if (!allocation) return [];

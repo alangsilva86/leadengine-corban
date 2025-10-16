@@ -10,6 +10,9 @@ import { cn } from '@/lib/utils.js';
 
 import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
 import { useManualConversationLauncher } from '../hooks/useManualConversationLauncher.js';
+import {
+  ensureDate,
+} from '../utils/dateUtils.js';
 import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiveUpdates.js';
 import InboxHeader from './InboxHeader.jsx';
 import InboxActions from './InboxActions.jsx';
@@ -77,17 +80,6 @@ const serializeFilters = (value) => {
     filters.minMargin ?? null,
     filters.hasPhoneOnly,
   ]);
-};
-
-const ensureDate = (input) => {
-  if (!input) return null;
-
-  if (input instanceof Date && !Number.isNaN(input.getTime())) {
-    return input;
-  }
-
-  const date = new Date(input);
-  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const resolveReferenceDate = (allocation) => {
