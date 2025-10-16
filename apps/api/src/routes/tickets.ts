@@ -41,6 +41,14 @@ import {
   type WhatsAppTransportSendMessagePayload,
 } from '../features/whatsapp-transport';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
+import {
+  hasStructuredContactData,
+  hasValidLocationData,
+  hasValidTemplateData,
+  normalizeContactsPayload,
+  normalizeLocationPayload,
+  normalizeTemplatePayload,
+} from '../utils/message-normalizers';
 
 const router: Router = Router();
 
@@ -297,6 +305,7 @@ const updateTicketValidation = [
 ];
 
 const allowedMediaTypes = new Set(['image', 'video', 'audio', 'document']);
+const allowedFileMessageTypes = new Set(['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT']);
 const allowedMessageTypes = new Set([
   'TEXT',
   'IMAGE',
@@ -341,28 +350,49 @@ const sendMessageValidation = [
       }
     }
 
-    if (hasChatId) {
-      if (!hasText && !hasContent && !hasMedia) {
-        throw new Error('Informe text, content ou media para enviar mensagem.');
-      }
-      return true;
+    const rawType = typeof value.type === 'string' ? value.type.trim().toUpperCase() : 'TEXT';
+    if (rawType && !allowedMessageTypes.has(rawType)) {
+      throw new Error('Tipo de mensagem inválido.');
     }
 
-    const rawType = typeof value.type === 'string' ? value.type.trim().toUpperCase() : 'TEXT';
     const normalizedType = allowedMessageTypes.has(rawType) ? rawType : 'TEXT';
-    const requiresMedia = normalizedType !== 'TEXT';
+    const requiresMedia = allowedFileMessageTypes.has(normalizedType);
     const hasMediaUrl = typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0;
 
-    if (requiresMedia && !hasMediaUrl) {
-      throw new Error('mediaUrl deve ser informado para mensagens de mídia.');
+    if (normalizedType === 'TEXT' && !hasContent && !hasText) {
+      throw new Error('Informe content ou text para enviar mensagem.');
     }
 
-    if (!requiresMedia && !hasContent && !hasText) {
-      throw new Error('Informe content ou text para enviar mensagem.');
+    if (normalizedType === 'LOCATION' && !hasValidLocationData(value.location ?? value.coordinates)) {
+      throw new Error('Informe location.latitude e location.longitude válidos para mensagens de localização.');
+    }
+
+    if (normalizedType === 'CONTACT' && !hasStructuredContactData(value.contacts ?? value.contact ?? value.vcard)) {
+      throw new Error('Informe os dados do contato (vCard ou campos estruturados) para enviar mensagem de contato.');
+    }
+
+    if (normalizedType === 'TEMPLATE' && !hasValidTemplateData(value.template)) {
+      throw new Error('Informe os dados do template para enviar mensagem de template.');
+    }
+
+    if (hasChatId) {
+      if (!hasText && !hasContent && !hasMedia && normalizedType === 'TEXT') {
+        throw new Error('Informe text, content ou media para enviar mensagem.');
+      }
+
+      if (requiresMedia && !hasMedia && !hasMediaUrl) {
+        throw new Error('Informe media.base64 ou media.mediaUrl para mensagens de mídia.');
+      }
+
+      return true;
     }
 
     if (!hasTicketId) {
       throw new Error('ticketId é obrigatório quando chatId não é informado.');
+    }
+
+    if (requiresMedia && !hasMediaUrl) {
+      throw new Error('mediaUrl deve ser informado para mensagens de mídia.');
     }
 
     return true;
@@ -727,6 +757,50 @@ router.post(
         ? { ...(req.body.metadata as Record<string, unknown>) }
         : ({} as Record<string, unknown>);
 
+      const locationPayload =
+        normalizedType === 'LOCATION'
+          ? normalizeLocationPayload(req.body.location ?? req.body.coordinates)
+          : null;
+      const contactsPayload =
+        normalizedType === 'CONTACT'
+          ? normalizeContactsPayload(req.body.contacts ?? req.body.contact ?? req.body.vcard)
+          : null;
+      const templatePayload =
+        normalizedType === 'TEMPLATE' ? normalizeTemplatePayload(req.body.template) : null;
+
+      if (locationPayload) {
+        metadata.location = locationPayload;
+      }
+
+      if (contactsPayload) {
+        metadata.contacts = contactsPayload;
+      }
+
+      if (templatePayload) {
+        metadata.template = templatePayload;
+      }
+
+      if (allowedFileMessageTypes.has(normalizedType)) {
+        const mediaMetadata: Record<string, unknown> = {};
+        const mediaUrl = normalizeString(req.body.mediaUrl);
+        const mediaFileName = normalizeString(req.body.mediaFileName ?? req.body.fileName);
+        const mediaMimeType = normalizeString(req.body.mediaMimeType ?? req.body.mimetype);
+
+        if (mediaUrl) {
+          mediaMetadata.url = mediaUrl;
+        }
+        if (mediaFileName) {
+          mediaMetadata.fileName = mediaFileName;
+        }
+        if (mediaMimeType) {
+          mediaMetadata.mimeType = mediaMimeType;
+        }
+
+        if (Object.keys(mediaMetadata).length > 0) {
+          metadata.media = mediaMetadata;
+        }
+      }
+
       if (typeof req.body.previewUrl === 'boolean') {
         metadata.previewUrl = req.body.previewUrl;
       }
@@ -785,18 +859,65 @@ router.post(
     }
 
     const contactLabel = normalizeString(req.body.contactName) ?? normalizedChatId;
+    const messageMetadata = isRecord(req.body.metadata)
+      ? { ...(req.body.metadata as Record<string, unknown>) }
+      : ({} as Record<string, unknown>);
+
+    const requestedType = typeof req.body.type === 'string' ? req.body.type.trim().toUpperCase() : null;
+    const normalizedLocation = normalizeLocationPayload(req.body.location ?? req.body.coordinates);
+    const normalizedContacts = normalizeContactsPayload(req.body.contacts ?? req.body.contact ?? req.body.vcard);
+    const normalizedTemplate = normalizeTemplatePayload(req.body.template);
+
+    if (normalizedLocation) {
+      messageMetadata.location = normalizedLocation;
+    }
+
+    if (normalizedContacts) {
+      messageMetadata.contacts = normalizedContacts;
+    }
+
+    if (normalizedTemplate) {
+      messageMetadata.template = normalizedTemplate;
+    }
+
+    if (typeof req.body.previewUrl === 'boolean') {
+      messageMetadata.previewUrl = req.body.previewUrl;
+    }
+
+    const normalizedType = (() => {
+      if (requestedType && allowedMessageTypes.has(requestedType)) {
+        return requestedType.toLowerCase();
+      }
+      if (mediaPayload) {
+        return mediaPayload.broker.mediaType;
+      }
+      if (normalizedLocation) {
+        return 'location';
+      }
+      if (normalizedTemplate) {
+        return 'template';
+      }
+      if (normalizedContacts) {
+        return 'contact';
+      }
+      return 'text';
+    })();
 
     try {
       const messagePayload: WhatsAppTransportSendMessagePayload = {
         to: normalizedChatId,
         content: text ?? mediaPayload?.broker.caption ?? '',
         caption: mediaPayload?.broker.caption,
-        type: mediaPayload ? mediaPayload.broker.mediaType : 'text',
+        type: normalizedType,
         media: mediaPayload ? (mediaPayload.broker as Record<string, unknown>) : undefined,
         mediaUrl: mediaPayload?.broker.mediaUrl,
         mediaMimeType: mediaPayload?.broker.mimetype,
         mediaFileName: mediaPayload?.broker.fileName,
         previewUrl: Boolean(req.body?.previewUrl),
+        location: normalizedType === 'location' ? (normalizedLocation ?? undefined) : undefined,
+        template: normalizedType === 'template' ? (normalizedTemplate ?? undefined) : undefined,
+        contacts: normalizedType === 'contact' ? (normalizedContacts ?? undefined) : undefined,
+        metadata: Object.keys(messageMetadata).length > 0 ? messageMetadata : undefined,
       };
 
       const brokerResponse = await transport.sendMessage(instanceId, messagePayload);
