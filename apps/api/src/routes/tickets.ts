@@ -6,14 +6,14 @@ import {
   upsertMessageByExternalId,
   type PassthroughMessageMedia,
 } from '@ticketz/storage';
-import {
+import type {
   CreateTicketDTO,
   UpdateTicketDTO,
   TicketFilters,
   Pagination,
   TicketStatus,
-  type MessageType,
-} from '@ticketz/core';
+  MessageType,
+} from '../types/tickets';
 import { asyncHandler } from '../middleware/error-handler';
 import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';

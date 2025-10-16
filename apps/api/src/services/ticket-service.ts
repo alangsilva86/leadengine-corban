@@ -1,5 +1,5 @@
-import {
-  ConflictError,
+import { ConflictError, NotFoundError } from '@ticketz/core';
+import type {
   Contact,
   CreateTicketDTO,
   Lead,
@@ -9,9 +9,9 @@ import {
   SendMessageDTO,
   Ticket,
   TicketFilters,
+  TicketStatus,
   UpdateTicketDTO,
-  NotFoundError,
-} from '@ticketz/core';
+} from '../types/tickets';
 import { Prisma } from '@prisma/client';
 import {
   assignTicket as storageAssignTicket,

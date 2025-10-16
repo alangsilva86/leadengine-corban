@@ -1,7 +1,7 @@
 import express, { type Request } from 'express';
 import request from 'supertest';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Ticket } from '@ticketz/core';
+import type { Ticket } from '../../types/tickets';
 
 const {
   queueFindFirstMock,
