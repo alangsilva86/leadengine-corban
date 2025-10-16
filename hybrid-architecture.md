@@ -34,8 +34,8 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 ## 📥 Pipeline inbound consolidado
 
 1. Webhook único (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) normaliza eventos Baileys, persiste mensagens e aciona `messages.new` em Socket.IO.
-2. A fila interna (`apps/api/src/features/whatsapp-inbound/queue/event-queue.ts`) e o worker (`workers/inbound-processor.ts`) permanecem para reprocessamentos/passthrough, alimentando o logger de debug e mantendo compatibilidade com jobs herdados.
-3. O processamento assíncrono é centralizado no worker `inbound-processor` (`apps/api/src/features/whatsapp-inbound/workers/inbound-processor.ts`), que consome a fila, aplica dedupe e mantém o pipeline consistente sem caminhos paralelos.
+2. O serviço `ingestInboundWhatsAppMessage` realiza dedupe, provisiona filas de atendimento (`prisma.queue`) e cria tickets/mensagens de forma síncrona.
+3. Logs e métricas (`features/whatsapp-inbound/utils/baileys-event-logger.ts`, `apps/api/src/lib/metrics.ts`) monitoram throughput e falhas sem depender de workers separados.
 
 ## 📊 Observabilidade e circuit breaker
 
