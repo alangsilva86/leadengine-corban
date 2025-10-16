@@ -2,7 +2,6 @@ import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import {
   Form,
@@ -14,6 +13,7 @@ import {
 } from '@/components/ui/form.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 
@@ -149,13 +149,14 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
 
             {rootError ? <p className="text-sm font-medium text-destructive">{rootError}</p> : null}
 
-            <Button
+            <InboxPrimaryButton
               type="submit"
-              className="w-full rounded-2xl bg-emerald-500 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-950 shadow-[0_12px_34px_color-mix(in_srgb,#10b981_40%,transparent)] transition-opacity hover:bg-emerald-400 disabled:opacity-60"
+              uppercase
+              className="w-full rounded-2xl text-sm font-semibold tracking-[0.3em] shadow-[0_12px_34px_color-mix(in_srgb,var(--accent-inbox-primary)_40%,transparent)]"
               disabled={isProcessing}
             >
               Iniciar conversa
-            </Button>
+            </InboxPrimaryButton>
           </form>
         </Form>
       </CardContent>
