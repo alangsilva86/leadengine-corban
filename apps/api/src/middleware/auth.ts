@@ -149,7 +149,7 @@ export const resolveDemoUser = (): AuthenticatedUser => buildMvpBypassUser();
 let ensureDemoUserPromise: Promise<void> | null = null;
 
 const ensureDemoUserRecord = async (): Promise<void> => {
-  if (!MVP_AUTH_BYPASS_ENABLED || !isDatabaseEnabled) {
+  if (!isDatabaseEnabled) {
     return;
   }
 
@@ -180,7 +180,7 @@ const ensureDemoUserRecord = async (): Promise<void> => {
       .then(() => undefined)
       .catch((error) => {
         ensureDemoUserPromise = null;
-        logger.warn('[Auth] Falha ao garantir usuário demo para bypass', { error });
+        logger.warn('[Auth] Falha ao garantir usuário demo', { error });
         throw error;
       });
   }

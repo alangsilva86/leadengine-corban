@@ -9,12 +9,23 @@ const loggerMock = {
   debug: vi.fn(),
 };
 
+const prismaMock = {
+  user: {
+    upsert: vi.fn(),
+  },
+};
+
 vi.mock('../../config/logger', () => ({
   logger: loggerMock,
 }));
 
 vi.mock('../../config/feature-flags', () => ({
   isMvpAuthBypassEnabled: () => false,
+}));
+
+vi.mock('../../lib/prisma', () => ({
+  prisma: prismaMock,
+  isDatabaseEnabled: true,
 }));
 
 describe('auth middleware demo mode', () => {
@@ -24,6 +35,8 @@ describe('auth middleware demo mode', () => {
     loggerMock.warn.mockReset();
     loggerMock.error.mockReset();
     loggerMock.debug.mockReset();
+    prismaMock.user.upsert.mockReset();
+    prismaMock.user.upsert.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -67,5 +80,19 @@ describe('auth middleware demo mode', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.tenantId).toBe(resolveDemoUser().tenantId);
+  });
+
+  it('upserts demo user record even when bypass is disabled', async () => {
+    const { authMiddleware } = await loadAuthModule();
+
+    const app = express();
+    app.get('/seed-check', authMiddleware, (_req, res) => {
+      res.status(204).end();
+    });
+
+    const response = await request(app).get('/seed-check');
+
+    expect(response.status).toBe(204);
+    expect(prismaMock.user.upsert).toHaveBeenCalledTimes(1);
   });
 });
