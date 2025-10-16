@@ -2937,8 +2937,8 @@ describe('WhatsApp integration routes with configured broker', () => {
         to: '5511999999999',
         payload: expect.objectContaining({ type: 'text', content: 'Olá instancia' }),
         rateLimitConsumed: true,
+        tenantId: 'tenant-123',
       });
-      expect(adHocArgs).not.toHaveProperty('tenantId');
       expect(body).toEqual({ success: true, data: { id: 'wamid-321' } });
     } finally {
       await stopTestServer(server);

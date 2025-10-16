@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WhatsAppTransport } from '../../features/whatsapp-transport';
+import { errorHandler } from '../../middleware/error-handler';
 
 const sendAdHocMock = vi.fn();
 const rateKeyForInstanceMock = vi.fn();
@@ -68,6 +69,7 @@ describe('WhatsApp HTTP integration routes', () => {
 
     const { whatsappMessagesRouter } = await import('../integrations/whatsapp.messages');
     app.use('/api', whatsappMessagesRouter);
+    app.use(errorHandler);
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/instances/inst-1/messages')
@@ -81,7 +83,38 @@ describe('WhatsApp HTTP integration routes', () => {
 
     expect(response.status).toBe(202);
     expect(sendAdHocMock).toHaveBeenCalledTimes(1);
+    const [adHocPayload] = sendAdHocMock.mock.calls[0] ?? [];
+    expect(adHocPayload).toMatchObject({ tenantId: 'tenant-1' });
     const [, options] = sendAdHocMock.mock.calls[0] ?? [];
     expect(options).toEqual({ transport: transportMock });
+  });
+
+  it('rejects sending messages when tenant does not own the instance', async () => {
+    sendAdHocMock.mockResolvedValue({ success: true, data: { id: 'wamid-1' } });
+
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).user = { id: 'operator-1', tenantId: 'tenant-2' };
+      next();
+    });
+
+    const { whatsappMessagesRouter } = await import('../integrations/whatsapp.messages');
+    app.use('/api', whatsappMessagesRouter);
+    app.use(errorHandler);
+
+    const response = await request(app)
+      .post('/api/integrations/whatsapp/instances/inst-1/messages')
+      .set('content-type', 'application/json')
+      .set('Idempotency-Key', 'it-1')
+      .set('x-tenant-id', 'tenant-2')
+      .send({
+        to: '5511999999999',
+        payload: { type: 'text', text: 'Hello HTTP' },
+        idempotencyKey: 'it-1',
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body?.error?.code).toBe('NOT_FOUND');
+    expect(sendAdHocMock).not.toHaveBeenCalled();
   });
 });

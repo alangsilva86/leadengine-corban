@@ -87,6 +87,32 @@ router.post(
       throw new NotFoundError('WhatsAppInstance', instanceId);
     }
 
+    const headerTenantRaw = req.headers['x-tenant-id'];
+    const headerTenantId = Array.isArray(headerTenantRaw)
+      ? headerTenantRaw.map((value) => value?.trim()).find((value) => value)
+      : typeof headerTenantRaw === 'string'
+        ? headerTenantRaw.trim() || undefined
+        : undefined;
+    const userTenantId = typeof req.user?.tenantId === 'string' ? req.user.tenantId.trim() || undefined : undefined;
+
+    if (headerTenantId && userTenantId && headerTenantId !== userTenantId) {
+      res.locals.errorCode = 'TENANT_HEADER_MISMATCH';
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'TENANT_HEADER_MISMATCH',
+          message: 'Tenant informado não corresponde ao usuário autenticado.',
+        },
+      });
+      return;
+    }
+
+    const resolvedTenantId = userTenantId ?? headerTenantId ?? null;
+
+    if (resolvedTenantId && resolvedTenantId !== instance.tenantId) {
+      throw new NotFoundError('WhatsAppInstance', instanceId);
+    }
+
     const isConnected =
       instance.connected ?? (typeof instance.status === 'string' && instance.status === 'connected');
 
@@ -159,6 +185,7 @@ router.post(
         {
           operatorId: req.user?.id,
           instanceId: instance.id,
+          tenantId: resolvedTenantId ?? undefined,
           to: parsed.to,
           payload,
           idempotencyKey,
