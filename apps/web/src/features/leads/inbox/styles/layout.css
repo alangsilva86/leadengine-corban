@@ -15,6 +15,11 @@
   min-height: 0;
 }
 
+.inbox-scroll-area {
+  --inbox-scrollbar-thumb: var(--color-inbox-scrollbar-thumb, rgba(148, 163, 184, 0.55));
+}
+
+.inbox-scroll-area__viewport {
 @media (min-width: 1280px) {
   .page-content--inbox {
     overflow-y: hidden;
@@ -35,32 +40,32 @@
   transition: scrollbar-color 0.2s ease;
 }
 
-.column-scroll-viewport[data-scrolling='true'],
-.group:hover .column-scroll-viewport {
-  scrollbar-color: var(--inbox-scrollbar-thumb, rgba(148, 163, 184, 0.55)) transparent;
+.inbox-scroll-area[data-inbox-scrolling='true'] .inbox-scroll-area__viewport,
+.inbox-scroll-area:hover .inbox-scroll-area__viewport {
+  scrollbar-color: var(--inbox-scrollbar-thumb) transparent;
 }
 
-.column-scroll-viewport::-webkit-scrollbar {
+.inbox-scroll-area__viewport::-webkit-scrollbar {
   width: 8px;
 }
 
-.column-scroll-viewport::-webkit-scrollbar-track {
+.inbox-scroll-area__viewport::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.column-scroll-viewport::-webkit-scrollbar-thumb {
+.inbox-scroll-area__viewport::-webkit-scrollbar-thumb {
   background: transparent;
   border-radius: 999px;
   transition: background-color 0.2s ease;
 }
 
-.column-scroll-viewport[data-scrolling='true']::-webkit-scrollbar-thumb,
-.group:hover .column-scroll-viewport::-webkit-scrollbar-thumb {
-  background: var(--inbox-scrollbar-thumb, rgba(148, 163, 184, 0.55));
+.inbox-scroll-area[data-inbox-scrolling='true'] .inbox-scroll-area__viewport::-webkit-scrollbar-thumb,
+.inbox-scroll-area:hover .inbox-scroll-area__viewport::-webkit-scrollbar-thumb {
+  background: var(--inbox-scrollbar-thumb);
 }
 
 @media (max-width: 1023px) {
-  .column-scroll-viewport {
+  .inbox-scroll-area__viewport {
     padding-right: 0.25rem;
   }
 }

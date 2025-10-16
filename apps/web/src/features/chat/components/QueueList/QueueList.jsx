@@ -2,7 +2,7 @@ import { Fragment, useMemo } from 'react';
 import { Loader2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+import { InboxScrollArea } from '@/features/leads/inbox/components/ColumnScrollArea.jsx';
 import { cn, formatPhoneNumber } from '@/lib/utils.js';
 
 const minutesToLabel = (minutes) => {
@@ -164,7 +164,7 @@ const QueueList = ({
 
       <QueueMetrics metrics={metrics} />
 
-      <ScrollArea className="flex-1">
+      <InboxScrollArea className="flex-1">
         <div className="space-y-2 px-1 pb-6">
           {tickets.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-800/80 bg-slate-950/60 p-6 text-center text-sm text-slate-400">
@@ -189,7 +189,7 @@ const QueueList = ({
             ))
           )}
         </div>
-      </ScrollArea>
+      </InboxScrollArea>
     </div>
   );
 };
