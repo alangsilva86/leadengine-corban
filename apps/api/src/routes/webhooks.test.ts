@@ -5,14 +5,23 @@ import type { Message, Ticket } from '@ticketz/core';
 
 import { integrationWebhooksRouter } from './webhooks';
 
-const { findOrCreateOpenTicketByChatMock, upsertMessageByExternalIdMock } = vi.hoisted(() => ({
+const {
+  findOrCreateOpenTicketByChatMock,
+  upsertMessageByExternalIdMock,
+  findMessageByExternalIdMock,
+  applyBrokerAckMock,
+} = vi.hoisted(() => ({
   findOrCreateOpenTicketByChatMock: vi.fn(),
   upsertMessageByExternalIdMock: vi.fn(),
+  findMessageByExternalIdMock: vi.fn(),
+  applyBrokerAckMock: vi.fn(),
 }));
 
 vi.mock('@ticketz/storage', () => ({
   findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
   upsertMessageByExternalId: upsertMessageByExternalIdMock,
+  findMessageByExternalId: findMessageByExternalIdMock,
+  applyBrokerAck: applyBrokerAckMock,
 }));
 
 vi.mock('../lib/prisma', () => {
@@ -108,6 +117,9 @@ const { resetInboundLeadServiceTestState } = await import(
 const ticketsModule = await import('../services/ticket-service');
 const createTicketSpy = vi.spyOn(ticketsModule, 'createTicket');
 const sendMessageSpy = vi.spyOn(ticketsModule, 'sendMessage');
+const emitMessageUpdatedEventsSpy = vi
+  .spyOn(ticketsModule, 'emitMessageUpdatedEvents')
+  .mockImplementation(() => {});
 const socketModule = await import('../lib/socket-registry');
 const emitToTenantSpy = vi.spyOn(socketModule, 'emitToTenant').mockImplementation(() => {});
 
@@ -271,6 +283,8 @@ const stubInboundSuccessMocks = () => {
     createdAt: new Date('2024-01-01T12:00:00.000Z'),
     updatedAt: new Date('2024-01-01T12:00:00.000Z'),
   } as unknown as Message);
+  findMessageByExternalIdMock.mockResolvedValue(null);
+  applyBrokerAckMock.mockResolvedValue(null);
 };
 
 describe('WhatsApp webhook (integration)', () => {
@@ -301,9 +315,12 @@ describe('WhatsApp webhook (integration)', () => {
     );
     createTicketSpy.mockReset();
     sendMessageSpy.mockReset();
+    emitMessageUpdatedEventsSpy.mockClear();
     emitToTenantSpy.mockClear();
     findOrCreateOpenTicketByChatMock.mockReset();
     upsertMessageByExternalIdMock.mockReset();
+    findMessageByExternalIdMock.mockReset();
+    applyBrokerAckMock.mockReset();
     process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
     delete process.env.WHATSAPP_PASSTHROUGH_MODE;
     delete process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE;
@@ -654,17 +671,40 @@ describe('WhatsApp webhook (integration)', () => {
     );
   });
 
-  it('acknowledges WhatsApp message status updates without processing payload', async () => {
+  it('applies WhatsApp message status updates via broker ACK', async () => {
     const app = createApp();
+
+    findMessageByExternalIdMock.mockResolvedValue({
+      id: 'message-db-1',
+      tenantId: 'tenant-status',
+      ticketId: 'ticket-status',
+      instanceId: 'inst-status',
+      externalId: 'wamid-status-1',
+      metadata: {
+        broker: {
+          messageId: 'wamid-status-1',
+        },
+      },
+    } as unknown as Message);
+
+    applyBrokerAckMock.mockResolvedValue({
+      id: 'message-db-1',
+      tenantId: 'tenant-status',
+      ticketId: 'ticket-status',
+      status: 'READ',
+      metadata: {},
+    } as unknown as Message);
 
     const payload = {
       event: 'WHATSAPP_MESSAGES_UPDATE',
       instanceId: 'inst-status',
+      tenantId: 'tenant-status',
       body: {
         event: 'WHATSAPP_MESSAGES_UPDATE',
         instanceId: 'inst-status',
         payload: {
           iid: 'inst-status',
+          tenantId: 'tenant-status',
           raw: {
             updates: [
               {
@@ -690,9 +730,30 @@ describe('WhatsApp webhook (integration)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(
-      expect.objectContaining({ ok: true, received: 1, persisted: 0, failures: 0 })
+      expect.objectContaining({ ok: true, received: 1, persisted: 1, failures: 0 })
     );
     expect(findOrCreateOpenTicketByChatMock).not.toHaveBeenCalled();
     expect(upsertMessageByExternalIdMock).not.toHaveBeenCalled();
+    expect(findMessageByExternalIdMock).toHaveBeenCalledWith('tenant-status', 'wamid-status-1');
+    expect(applyBrokerAckMock).toHaveBeenCalledWith(
+      'tenant-status',
+      'message-db-1',
+      expect.objectContaining({
+        status: 'READ',
+        metadata: expect.objectContaining({
+          broker: expect.objectContaining({
+            lastAck: expect.objectContaining({ raw: expect.any(Object) }),
+          }),
+        }),
+        deliveredAt: expect.any(Date),
+        readAt: expect.any(Date),
+      })
+    );
+    expect(emitMessageUpdatedEventsSpy).toHaveBeenCalledWith(
+      'tenant-status',
+      'ticket-status',
+      expect.objectContaining({ id: 'message-db-1', status: 'READ' }),
+      null
+    );
   });
 });
