@@ -52,6 +52,11 @@ import {
   rememberIdempotency,
 } from '../utils/idempotency';
 import {
+  normalizeContactsPayload,
+  normalizeLocationPayload,
+  normalizeTemplatePayload,
+} from '../utils/message-normalizers';
+import {
   assertCircuitClosed,
   buildCircuitBreakerKey,
   getCircuitBreakerConfig,
@@ -1442,6 +1447,9 @@ export const sendMessage = async (
           if (!dispatchInstanceId) {
             throw new NotFoundError('WhatsAppInstance', instanceId ?? 'unknown');
           }
+          const locationMetadata = normalizeLocationPayload(messageMetadata.location);
+          const templateMetadata = normalizeTemplatePayload(messageMetadata.template);
+          const contactsMetadata = normalizeContactsPayload(messageMetadata.contacts);
           const dispatchResult = await transport.sendMessage(
             dispatchInstanceId,
             {
@@ -1454,6 +1462,9 @@ export const sendMessage = async (
               mediaMimeType: input.mediaMimeType,
               mediaFileName: input.mediaFileName,
               previewUrl: Boolean(messageMetadata.previewUrl),
+              location: locationMetadata ?? undefined,
+              template: templateMetadata ?? undefined,
+              contacts: contactsMetadata ?? undefined,
               metadata: messageMetadata,
             },
             { idempotencyKey: message.id }

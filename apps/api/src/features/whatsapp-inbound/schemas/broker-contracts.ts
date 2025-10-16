@@ -213,6 +213,7 @@ const OutboundPollSchema = z
     allowMultipleAnswers: z.boolean().optional(),
   })
   .strict();
+const outboundMessageTypes = ['text', 'image', 'video', 'document', 'audio', 'location', 'template', 'contact'] as const;
 
 export const BrokerOutboundMessageSchema = z
   .object({
@@ -243,6 +244,7 @@ export const BrokerOutboundMessageSchema = z
         address: nullableTrimmedString.optional(),
       })
       .optional(),
+    contacts: z.array(safeRecord).optional(),
     template: z
       .object({
         name: trimmedString,
@@ -272,6 +274,20 @@ export const BrokerOutboundMessageSchema = z
       ctx.addIssue({
         code: 'custom',
         message: 'Mensagens de mídia exigem media payload.',
+    if (value.type === 'contact') {
+      if (!value.contacts || value.contacts.length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Contact messages require contacts payload.',
+          path: ['contacts'],
+        });
+      }
+    }
+
+    if (value.type !== 'text' && !value.media && !value.template && !value.location && !value.contacts) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Non-text messages require media, template, location, or contacts payload',
         path: ['type'],
       });
     }

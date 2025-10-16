@@ -16,6 +16,7 @@ export type WhatsAppTransportSendMessagePayload = {
   contact?: Record<string, unknown>;
   template?: Record<string, unknown>;
   poll?: Record<string, unknown>;
+  contacts?: Array<Record<string, unknown>>;
   metadata?: Record<string, unknown>;
 };
 

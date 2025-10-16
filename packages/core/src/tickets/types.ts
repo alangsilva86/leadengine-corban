@@ -219,6 +219,9 @@ export const SendMessageDTOSchema = z
     }
 
     if (mediaTypes.has(value.type) && !hasMedia) {
+    const requiresMediaUrl = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(value.type);
+
+    if (requiresMediaUrl && !hasMedia) {
       ctx.addIssue({
         code: 'custom',
         message: 'Mensagens de mídia exigem mediaUrl válido.',
