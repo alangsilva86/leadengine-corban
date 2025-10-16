@@ -94,6 +94,24 @@ describe('Contacts routes', () => {
     expect(response.body.data.items[0].name).toBe('Maria');
   });
 
+  it('defaults pagination params when not provided', async () => {
+    contactFindMany.mockResolvedValueOnce([]);
+    contactCount.mockResolvedValueOnce(0);
+
+    const app = buildApp();
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(contactFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 20,
+        skip: 0,
+      })
+    );
+    expect(response.body.data.limit).toBe(20);
+    expect(response.body.data.page).toBe(1);
+  });
+
   it('creates a new contact and returns payload', async () => {
     const now = new Date();
     contactCreate.mockResolvedValueOnce({

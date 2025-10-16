@@ -5,14 +5,14 @@ import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { ConflictError, ValidationError } from '@ticketz/core';
-
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
+import {
+  buildPaginatedResponse,
+  buildPaginationValidators,
+  parsePaginationParams,
+} from '../utils/pagination';
 
 const paginationValidation = [
-  query('page').optional().isInt({ min: 1 }).toInt(),
-  query('limit').optional().isInt({ min: 1, max: MAX_LIMIT }).toInt(),
+  ...buildPaginationValidators(),
   query('search').optional().isString(),
 ];
 
@@ -52,12 +52,8 @@ router.get(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
-    const { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, search, phone } = req.query as Partial<{
-      page: number;
-      limit: number;
-      search: string;
-      phone: string;
-    }>;
+    const { page, limit, skip } = parsePaginationParams(req.query as Record<string, unknown>);
+    const { search, phone } = req.query as Partial<{ search: string; phone: string }>;
 
     const normalizedPhone = typeof phone === 'string' && phone.trim().length > 0 ? phone.trim() : undefined;
 
@@ -84,10 +80,6 @@ router.get(
       return;
     }
 
-    const safeLimit = Math.min(Math.max(limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-    const safePage = Math.max(page ?? DEFAULT_PAGE, 1);
-    const skip = (safePage - 1) * safeLimit;
-
     const searchTerm = typeof search === 'string' && search.trim().length > 0 ? search.trim() : undefined;
 
     const where = {
@@ -108,26 +100,14 @@ router.get(
         where,
         orderBy: { createdAt: 'desc' },
         skip,
-        take: safeLimit,
+        take: limit,
       }),
       prisma.contact.count({ where }),
     ]);
 
-    const totalPages = safeLimit > 0 ? Math.ceil(total / safeLimit) : 0;
-    const hasNext = safePage < totalPages;
-    const hasPrev = safePage > 1 && totalPages > 0;
-
     res.json({
       success: true,
-      data: {
-        items,
-        total,
-        page: safePage,
-        limit: safeLimit,
-        totalPages,
-        hasNext,
-        hasPrev,
-      },
+      data: buildPaginatedResponse({ items, total, page, limit }),
     });
   })
 );
