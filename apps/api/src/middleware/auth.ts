@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../config/logger';
 import { isMvpAuthBypassEnabled } from '../config/feature-flags';
+import { isDatabaseEnabled, prisma } from '../lib/prisma';
 
 type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
 
@@ -60,6 +62,9 @@ const AUTH_MVP_USER_NAME = process.env.AUTH_MVP_USER_NAME || 'MVP Anonymous';
 const AUTH_MVP_USER_EMAIL =
   process.env.AUTH_MVP_USER_EMAIL || 'mvp-anonymous@leadengine.local';
 const AUTH_MVP_ROLE = (process.env.AUTH_MVP_ROLE || 'ADMIN') as UserRole;
+const AUTH_MVP_PASSWORD_HASH = createHash('sha256')
+  .update(process.env.AUTH_MVP_PASSWORD || 'mvp-bypass')
+  .digest('hex');
 
 /**
  * Define permissões baseadas no papel do usuário
@@ -141,8 +146,51 @@ export const AUTH_MVP_BYPASS_USER_NAME = AUTH_MVP_USER_NAME;
  */
 export const resolveDemoUser = (): AuthenticatedUser => buildMvpBypassUser();
 
-const ensureUserContext = (req: Request): AuthenticatedUser => {
+let ensureDemoUserPromise: Promise<void> | null = null;
+
+const ensureDemoUserRecord = async (): Promise<void> => {
+  if (!MVP_AUTH_BYPASS_ENABLED || !isDatabaseEnabled) {
+    return;
+  }
+
+  if (!ensureDemoUserPromise) {
+    const resolvedRole = normalizeRole(AUTH_MVP_ROLE);
+    ensureDemoUserPromise = prisma.user
+      .upsert({
+        where: { id: AUTH_MVP_USER_ID },
+        update: {
+          tenantId: AUTH_MVP_TENANT_ID,
+          email: AUTH_MVP_USER_EMAIL,
+          name: AUTH_MVP_USER_NAME,
+          role: resolvedRole,
+          isActive: true,
+          passwordHash: AUTH_MVP_PASSWORD_HASH,
+        },
+        create: {
+          id: AUTH_MVP_USER_ID,
+          tenantId: AUTH_MVP_TENANT_ID,
+          email: AUTH_MVP_USER_EMAIL,
+          name: AUTH_MVP_USER_NAME,
+          role: resolvedRole,
+          isActive: true,
+          passwordHash: AUTH_MVP_PASSWORD_HASH,
+          settings: {},
+        },
+      })
+      .then(() => undefined)
+      .catch((error) => {
+        ensureDemoUserPromise = null;
+        logger.warn('[Auth] Falha ao garantir usuário demo para bypass', { error });
+        throw error;
+      });
+  }
+
+  await ensureDemoUserPromise;
+};
+
+const ensureUserContext = async (req: Request): Promise<AuthenticatedUser> => {
   if (!req.user) {
+    await ensureDemoUserRecord();
     req.user = resolveDemoUser();
   }
   return req.user;
@@ -167,7 +215,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       );
     }
 
-    ensureUserContext(req);
+    await ensureUserContext(req);
     next();
   } catch (error) {
     logger.error('[Auth] Erro inesperado no middleware de autenticação', {
@@ -186,11 +234,15 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 /**
  * Middleware para verificar se o usuário pertence ao tenant
  */
-export const requireTenant = (req: Request, _res: Response, next: NextFunction) => {
+export const requireTenant = async (req: Request, _res: Response, next: NextFunction) => {
   if (req.method === 'OPTIONS') {
     return next();
   }
 
-  ensureUserContext(req);
-  next();
+  try {
+    await ensureUserContext(req);
+    next();
+  } catch (error) {
+    next(error);
+  }
 };
