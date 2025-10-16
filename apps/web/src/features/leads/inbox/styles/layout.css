@@ -11,6 +11,7 @@
 .inbox-page-container {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
 }
@@ -20,16 +21,6 @@
 }
 
 .inbox-scroll-area__viewport {
-}
-
-@media (min-width: 1280px) {
-  .page-content--inbox {
-    overflow-y: hidden;
-  }
-
-  .inbox-page-container {
-    overflow: hidden;
-  }
 }
 
 .column-scroll-viewport {
