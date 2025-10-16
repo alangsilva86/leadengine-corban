@@ -44,7 +44,7 @@ export const MessageTimeline = ({
       <section
         id="chat-scroll"
         ref={containerRef}
-        className="min-h-0 flex-1 max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
+        className="chat-scroll-area min-h-0 flex-1 max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
         role="log"
         aria-live="polite"
         aria-relevant="additions"
