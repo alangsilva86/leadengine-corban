@@ -6,7 +6,7 @@
 - Provide a prioritized sequence for the cleanup effort, including tooling and regression checks.
 
 ## Repository Inventory
-- **Applications**: `apps/api` (Express backend), `apps/web` (React/Vite frontend), `apps/baileys-acessuswpp` (Render deployment manifest only).
+- **Applications**: `apps/api` (Express backend) e `apps/web` (React/Vite frontend).
 - **Shared packages**: Domain contracts (`packages/contracts`), core domain logic (`packages/core`), shared utilities (`packages/shared`), storage abstractions (`packages/storage`), third-party integrations (`packages/integrations`), and WhatsApp specific contracts (`packages/wa-contracts`).
 - **Docs & scripts**: Extensive documentation in `docs/**` plus maintenance scripts under `scripts/`.
 
@@ -61,9 +61,9 @@
   1. Check whether these functions are supposed to be triggered by background workers (possibly outside repo).  
   2. If not, consolidate the module by retaining only the message normalizer used by HTTP ingestion.
 
-### 8. Render-only deployment (`apps/baileys-acessuswpp/render.yaml`)
-- Contains deployment metadata for a Baileys service but there is no application code; confirm if the service has been retired.  
-- **Plan**: remove folder if infrastructure now managed elsewhere, or migrate the manifest to infra repo.
+### 8. Render-only deployment (arquivo removido)
+- O antigo manifesto `apps/baileys-acessuswpp/render.yaml` foi aposentado junto com o conector Baileys.
+- **Plano**: garantir que qualquer automação ou documentação externa referencie o novo fluxo 100% HTTP hospedado separadamente.
 
 ### 9. Documentation sweep
 - Legacy WhatsApp broker docs (`docs/whatsapp-broker-refactor.md`, `docs/whatsapp-broker-contracts.md`) may no longer describe the active implementation.  

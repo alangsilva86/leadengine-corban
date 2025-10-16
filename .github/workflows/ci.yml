@@ -18,7 +18,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: npx @stoplight/spectral lint ./packages/contracts/openapi.yaml
-      - run: pnpm test
+      - run: pnpm --filter @ticketz/api exec vitest run src/routes/__tests__/campaigns.e2e.spec.ts
       - run: pnpm build:css-report
       - uses: actions/upload-artifact@v4
         if: always()

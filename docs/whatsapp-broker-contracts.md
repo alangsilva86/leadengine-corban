@@ -58,7 +58,6 @@ O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/wha
 - Não há caminhos paralelos de ingestão: todo evento chega pelo webhook, segue para a fila e é processado pelo worker. Em caso de falhas, o próprio worker agenda retentativas baseadas em backoff controlado.
 - O armazenamento de sessões Baileys foi removido junto com o modo sidecar; apenas o broker HTTP permanece ativo.
 - O runtime sidecar foi aposentado; não há mais dependência de volumes persistentes específicos para sessões Baileys dentro da API.
-- As sessões Baileys precisam de armazenamento persistente — utilize os drivers configurados via `WHATSAPP_SESSION_STORE_*` (Postgres/Redis/memória em desenvolvimento) para manter o estado entre recriações de container, sem volumes Docker dedicados.
 
 ### Baileys raw fallback
 
