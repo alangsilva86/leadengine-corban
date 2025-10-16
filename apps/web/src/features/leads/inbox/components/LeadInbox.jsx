@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
+import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn } from '@/lib/utils.js';
 
 import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
@@ -16,13 +17,10 @@ import InboxList from './InboxList.jsx';
 import GlobalFiltersBar from './GlobalFiltersBar.jsx';
 import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
-import ColumnScrollArea from './ColumnScrollArea.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
 
-import '../styles/layout.css';
-
 const InboxPageContainer = ({ children, className }) => (
-  <div className={cn('inbox-page-container flex h-full min-h-0 flex-1 flex-col', className)}>
+  <div className={cn('flex h-[100dvh] min-h-0 w-full flex-1 flex-col', className)}>
     {children}
   </div>
 );
@@ -368,7 +366,7 @@ export const LeadInbox = ({
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(null);
   const [activeAllocationId, setActiveAllocationId] = useState(null);
   const [leadPanelSwitching, setLeadPanelSwitching] = useState(false);
-  const inboxScrollRef = useRef(null);
+  const inboxScrollViewportRef = useRef(null);
   const {
     launch: launchManualConversation,
     isPending: manualConversationPending,
@@ -439,18 +437,11 @@ export const LeadInbox = ({
   const inboxListRef = useRef(null);
   const [inboxScrollParent, setInboxScrollParent] = useState(null);
 
-  const handleColumnScrollAreaRef = useCallback((instance) => {
-    const nextNode = instance?.node ?? null;
+  const registerInboxScrollViewport = useCallback((node) => {
+    const nextNode = node ?? null;
+    inboxScrollViewportRef.current = nextNode;
     setInboxScrollParent((current) => (current === nextNode ? current : nextNode));
   }, []);
-
-  const registerColumnScrollAreaRef = useCallback(
-    (instance) => {
-      inboxScrollRef.current = instance;
-      handleColumnScrollAreaRef(instance);
-    },
-    [handleColumnScrollAreaRef]
-  );
 
   useEffect(() => {
     const previous = previousContextRef.current;
@@ -617,7 +608,7 @@ export const LeadInbox = ({
       return undefined;
     }
 
-    const viewport = inboxScrollRef.current?.node ?? inboxScrollRef.current ?? null;
+    const viewport = inboxScrollViewportRef.current;
     if (viewport) {
       const rawId = String(activeAllocationId);
       const escapedId = window.CSS?.escape
@@ -895,14 +886,14 @@ export const LeadInbox = ({
         onboarding={onboarding}
       />
 
-      <div className="flex-1 min-h-0">
-        <div className="grid h-full min-h-0 auto-rows-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="grid h-full min-h-0 gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
           <GlassPanel
             as="section"
             tone="inbox"
             radius="xl"
             shadow="2xl"
-            className="relative flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0"
+            className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
           >
             <div className="flex-shrink-0 border-b border-[color:var(--color-inbox-border)] px-5 py-5">
               <GlobalFiltersBar
@@ -921,10 +912,13 @@ export const LeadInbox = ({
               />
             </div>
 
-            <ColumnScrollArea
-              ref={registerColumnScrollAreaRef}
+            <ScrollArea
               className="flex-1 min-h-0"
-              viewportClassName="space-y-5 px-5 pb-6 pr-6 pt-5"
+              viewportRef={registerInboxScrollViewport}
+              viewportClassName="h-full space-y-5 px-5 pb-6 pr-6 pt-5 overscroll-contain scroll-smooth"
+              viewportProps={{
+                style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
+              }}
             >
               <InboxList
                 allocations={allocations}
@@ -984,14 +978,14 @@ export const LeadInbox = ({
                   ) : null}
                 </div>
               ) : null}
-            </ColumnScrollArea>
+            </ScrollArea>
 
             <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
               <span className="block h-full w-px rounded-full bg-[color:var(--color-inbox-border)] shadow-[1px_0_18px_color-mix(in_srgb,var(--color-inbox-border)_55%,transparent)]" />
             </div>
           </GlassPanel>
 
-          <div className="relative flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0">
+          <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
             <LeadConversationPanel
               allocation={activeAllocation}
               onOpenWhatsApp={handleOpenWhatsApp}
@@ -1009,9 +1003,15 @@ export const LeadInbox = ({
             tone="inbox"
             radius="xl"
             shadow="xl"
-            className="flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0"
+            className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
           >
-            <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
+            <ScrollArea
+              className="flex-1 min-h-0"
+              viewportClassName="h-full space-y-5 px-5 pb-6 pt-5 overscroll-contain"
+              viewportProps={{
+                style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
+              }}
+            >
               <Card className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]">
                 <CardHeader className="space-y-2 pb-2">
                   <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
@@ -1065,7 +1065,7 @@ export const LeadInbox = ({
                 autoRefreshSeconds={autoRefreshSeconds}
                 lastUpdatedAt={lastUpdatedAt}
               />
-            </ColumnScrollArea>
+            </ScrollArea>
           </GlassPanel>
         </div>
       </div>
