@@ -22,7 +22,7 @@ import ManualConversationCard from './ManualConversationCard.jsx';
 import '../styles/layout.css';
 
 const InboxPageContainer = ({ children, className }) => (
-  <div className={cn('inbox-page-container flex h-full min-h-0 flex-col', className)}>
+  <div className={cn('inbox-page-container flex h-full min-h-0 flex-1 flex-col', className)}>
     {children}
   </div>
 );

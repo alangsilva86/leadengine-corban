@@ -85,7 +85,8 @@ const LayoutHeader = ({ children, className }) => (
 const LayoutContent = ({ children, className, isInboxPage = false }) => (
   <div
     className={cn(
-      'page-content flex-1 min-h-0 overflow-y-auto',
+      'page-content flex-1 min-h-0',
+      !isInboxPage && 'overflow-y-auto',
       className,
       isInboxPage && 'page-content--inbox'
     )}
