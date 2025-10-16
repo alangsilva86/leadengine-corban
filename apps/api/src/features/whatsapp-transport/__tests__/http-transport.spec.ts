@@ -153,6 +153,29 @@ describe('HttpWhatsAppTransport', () => {
     });
   });
 
+  it('dispatches contact payloads including structured contacts array', async () => {
+    const { performRequest } = setupSpies();
+    performRequest.mockResolvedValueOnce({ id: 'wamid-contact', status: 'sent' } as Record<string, unknown>);
+
+    const transport = new HttpWhatsAppTransport();
+    await transport.sendMessage('instance-3', {
+      to: '+5511987654321',
+      type: 'contact',
+      contacts: [{ name: 'Alice', phones: ['+5511987654321'] }],
+      metadata: { source: 'test' },
+    });
+
+    expect(performRequest).toHaveBeenCalledTimes(1);
+    const [path, init] = performRequest.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/instances/instance-3/send-text');
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      type: 'contact',
+      contacts: [{ name: 'Alice', phones: ['+5511987654321'] }],
+      metadata: { source: 'test' },
+    });
+  });
+
   it('derives idempotency key from metadata when option is missing', async () => {
     const { performRequest } = setupSpies();
     performRequest.mockResolvedValueOnce({ id: 'wamid-456', status: 'sent' } as Record<string, unknown>);
