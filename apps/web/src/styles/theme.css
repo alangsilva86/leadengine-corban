@@ -76,6 +76,8 @@
   --color-muted-foreground: var(--sys-color-muted-foreground);
   --color-accent: var(--sys-color-accent);
   --color-accent-foreground: var(--sys-color-accent-foreground);
+  --color-accent-inbox-primary: var(--sys-color-accent-inbox-primary);
+  --color-accent-inbox-primary-foreground: var(--sys-color-accent-inbox-primary-foreground);
   --color-destructive: var(--sys-color-destructive);
   --color-chart-1: var(--sys-color-chart-1);
   --color-chart-2: var(--sys-color-chart-2);
@@ -158,6 +160,8 @@
   --text-shell-muted: var(--color-text-shell-muted);
   --accent: var(--color-accent);
   --accent-foreground: var(--color-accent-foreground);
+  --accent-inbox-primary: var(--color-accent-inbox-primary);
+  --accent-inbox-primary-foreground: var(--color-accent-inbox-primary-foreground);
   --destructive: var(--color-destructive);
   --status-whatsapp-surface: var(--color-status-whatsapp-surface);
   --status-whatsapp-border: var(--color-status-whatsapp-border);
@@ -253,6 +257,8 @@
   --sys-color-muted-foreground: #475569;
   --sys-color-accent: rgba(79, 70, 229, 0.16);
   --sys-color-accent-foreground: #0f172a;
+  --sys-color-accent-inbox-primary: #10b981;
+  --sys-color-accent-inbox-primary-foreground: #022c22;
   --sys-color-destructive: #dc2626;
   --sys-color-chart-1: #4f46e5;
   --sys-color-chart-2: #0ea5e9;
@@ -325,6 +331,8 @@
   --color-muted-foreground: var(--sys-color-muted-foreground);
   --color-accent: var(--sys-color-accent);
   --color-accent-foreground: var(--sys-color-accent-foreground);
+  --color-accent-inbox-primary: var(--sys-color-accent-inbox-primary);
+  --color-accent-inbox-primary-foreground: var(--sys-color-accent-inbox-primary-foreground);
   --color-destructive: var(--sys-color-destructive);
   --color-chart-1: var(--sys-color-chart-1);
   --color-chart-2: var(--sys-color-chart-2);
@@ -517,6 +525,8 @@
   --sys-color-muted-foreground: #94a3b8;
   --sys-color-accent: rgba(99, 102, 241, 0.18);
   --sys-color-accent-foreground: #f1f5f9;
+  --sys-color-accent-inbox-primary: #34d399;
+  --sys-color-accent-inbox-primary-foreground: #022c22;
   --sys-color-destructive: #ef4444;
   --sys-color-chart-1: #6366f1;
   --sys-color-chart-2: #22d3ee;

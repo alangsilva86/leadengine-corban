@@ -8,12 +8,19 @@ import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn } from '@/lib/utils.js';
 
+import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiveUpdates.js';
 import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
+import useInboxViewState from '../hooks/useInboxViewState.js';
 import { useManualConversationLauncher } from '../hooks/useManualConversationLauncher.js';
 import {
   ensureDate,
 } from '../utils/dateUtils.js';
 import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiveUpdates.js';
+  SAVED_VIEWS_LIMIT,
+  TIME_WINDOW_OPTIONS,
+  filterAllocationsWithFilters,
+  resolveQueueValue,
+} from '../utils/filtering.js';
 import InboxHeader from './InboxHeader.jsx';
 import InboxActions from './InboxActions.jsx';
 import InboxList from './InboxList.jsx';
@@ -345,16 +352,6 @@ export const LeadInbox = ({
   const resolvedTenantId =
     selectedAgreement?.tenantId ?? campaign?.tenantId ?? onboarding?.tenantId ?? null;
 
-  const initialFilters = useMemo(() => loadStoredFilters(), []);
-  const initialViews = useMemo(() => loadStoredViews(), []);
-
-  const [filters, setFilters] = useState(initialFilters);
-  const [savedViews, setSavedViews] = useState(initialViews);
-  const [activeViewId, setActiveViewId] = useState(() => {
-    const serialized = serializeFilters(initialFilters);
-    const matchingView = initialViews.find((view) => serializeFilters(view.filters) === serialized);
-    return matchingView?.id ?? null;
-  });
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(null);
   const [activeAllocationId, setActiveAllocationId] = useState(null);
   const [leadPanelSwitching, setLeadPanelSwitching] = useState(false);
@@ -379,6 +376,20 @@ export const LeadInbox = ({
     nextRefreshAt,
   } = useLeadAllocations({ agreementId, campaignId, instanceId: resolvedInstanceId });
 
+  const {
+    filters,
+    updateFilters,
+    resetFilters,
+    savedViews,
+    savedViewsWithCount,
+    activeViewId,
+    selectSavedView,
+    deleteSavedView,
+    saveCurrentView,
+    canSaveView: canSaveCurrentView,
+    matchingSavedView,
+  } = useInboxViewState({ allocations });
+
   const { connected: realtimeConnected, connectionError } = useInboxLiveUpdates({
     tenantId: resolvedTenantId,
     enabled: Boolean(agreementId || campaignId || resolvedInstanceId),
@@ -386,39 +397,6 @@ export const LeadInbox = ({
       refresh();
     },
   });
-
-  useEffect(() => {
-    setSavedViews((current) => {
-      const now = Date.now();
-      const pruned = current.filter((view) => {
-        const reference = view.lastUsedAt ?? view.createdAt;
-        return !reference || now - reference <= THIRTY_DAYS_MS;
-      });
-      return pruned.length === current.length ? current : pruned;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem(SAVED_FILTERS_STORAGE_KEY, JSON.stringify(filters));
-    } catch (error) {
-      console.warn('Não foi possível persistir filtros da Inbox', error);
-    }
-  }, [filters]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      window.localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(savedViews));
-    } catch (error) {
-      console.warn('Não foi possível persistir views salvas da Inbox', error);
-    }
-  }, [savedViews]);
 
   const previousContextRef = useRef({
     agreementId: agreementId ?? null,
@@ -452,12 +430,11 @@ export const LeadInbox = ({
       hasChanged &&
       (previous.agreementId !== null || previous.campaignId !== null || previous.instanceId !== null)
     ) {
-      setFilters({ ...defaultFilters });
-      setActiveViewId(null);
+      resetFilters();
     }
 
     previousContextRef.current = current;
-  }, [agreementId, campaignId, resolvedInstanceId]);
+  }, [agreementId, campaignId, resolvedInstanceId, resetFilters]);
 
   const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'inbox') ?? onboarding?.activeStep ?? 3;
   const totalStages = onboarding?.stages?.length ?? 0;
@@ -539,33 +516,6 @@ export const LeadInbox = ({
       pendingFocusPhoneRef.current = null;
     }
   }, [allocations]);
-
-  const savedViewsWithCount = useMemo(
-    () =>
-      savedViews.map((view) => ({
-        ...view,
-        count: filterAllocationsWithFilters(allocations, view.filters).length,
-      })),
-    [allocations, savedViews]
-  );
-
-  const serializedFilters = useMemo(() => serializeFilters(filters), [filters]);
-
-  const matchingSavedView = useMemo(
-    () => savedViews.find((view) => serializeFilters(view.filters) === serializedFilters) ?? null,
-    [savedViews, serializedFilters]
-  );
-
-  useEffect(() => {
-    if (matchingSavedView && activeViewId !== matchingSavedView.id) {
-      setActiveViewId(matchingSavedView.id);
-    }
-    if (!matchingSavedView && activeViewId) {
-      setActiveViewId(null);
-    }
-  }, [activeViewId, matchingSavedView]);
-
-  const canSaveCurrentView = savedViews.length < SAVED_VIEWS_LIMIT && !matchingSavedView;
 
   const activeAllocation = useMemo(
     () => filteredAllocations.find((item) => item.allocationId === activeAllocationId) ?? null,
@@ -657,39 +607,26 @@ export const LeadInbox = ({
 
   const handleUpdateFilters = useCallback(
     (partial) => {
-      setFilters((current) => {
-        const next = normalizeFilters({ ...current, ...partial });
-        if (activeViewId) {
-          const activeView = savedViews.find((view) => view.id === activeViewId);
-          if (!activeView || serializeFilters(activeView.filters) !== serializeFilters(next)) {
-            setActiveViewId(null);
-          }
-        }
-        return next;
-      });
+      updateFilters(partial);
     },
-    [activeViewId, savedViews]
+    [updateFilters]
   );
 
   const handleResetFilters = useCallback(() => {
-    setFilters({ ...defaultFilters });
-    setActiveViewId(null);
-  }, []);
+    resetFilters();
+  }, [resetFilters]);
 
-  const handleSelectSavedView = useCallback((view) => {
-    setFilters(normalizeFilters(view.filters));
-    setActiveViewId(view.id);
-    setSavedViews((current) =>
-      current.map((item) =>
-        item.id === view.id ? { ...item, lastUsedAt: Date.now() } : item
-      )
-    );
-  }, []);
+  const handleSelectSavedView = useCallback(
+    (view) => {
+      selectSavedView(view);
+    },
+    [selectSavedView]
+  );
 
   const handleSaveCurrentView = useCallback(() => {
     if (!canSaveCurrentView) {
       if (matchingSavedView) {
-        setActiveViewId(matchingSavedView.id);
+        selectSavedView(matchingSavedView);
       }
       return;
     }
@@ -700,37 +637,14 @@ export const LeadInbox = ({
       return;
     }
 
-    const trimmed = input.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    const newView = {
-      id: `view-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      name: trimmed.slice(0, 48),
-      filters: normalizeFilters(filters),
-      createdAt: Date.now(),
-      lastUsedAt: Date.now(),
-    };
-
-    setSavedViews((current) => {
-      const next = [...current, newView];
-      if (next.length > SAVED_VIEWS_LIMIT) {
-        next.shift();
-      }
-      return next;
-    });
-    setActiveViewId(newView.id);
-  }, [canSaveCurrentView, filters, matchingSavedView, savedViews.length]);
+    saveCurrentView(input);
+  }, [canSaveCurrentView, matchingSavedView, savedViews.length, saveCurrentView, selectSavedView]);
 
   const handleDeleteSavedView = useCallback(
     (view) => {
-      setSavedViews((current) => current.filter((item) => item.id !== view.id));
-      if (activeViewId === view.id) {
-        setActiveViewId(null);
-      }
+      deleteSavedView(view);
     },
-    [activeViewId]
+    [deleteSavedView]
   );
 
   const handleSelectAllocation = useCallback((allocation) => {

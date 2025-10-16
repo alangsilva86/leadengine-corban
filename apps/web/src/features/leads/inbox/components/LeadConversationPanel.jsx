@@ -7,7 +7,6 @@ import {
   UserCheck,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn } from '@/lib/utils.js';
@@ -17,6 +16,7 @@ import {
   getFirstString,
   getFirstValidDate,
 } from '../utils/dateUtils.js';
+import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 
 const STATUS_META = {
   allocated: { label: 'Aguardando contato', tone: 'neutral' },
@@ -161,14 +161,14 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
             <p className="max-w-xl text-sm text-[color:var(--color-inbox-foreground-muted)] line-clamp-2">{lastMessagePreview}</p>
           ) : null}
         </div>
-        <Button
+        <InboxPrimaryButton
           size="sm"
-          className="gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 shadow-[0_12px_26px_color-mix(in_srgb,#10b981_42%,transparent)] transition hover:bg-emerald-400"
+          className="gap-2 rounded-full px-4 py-2 text-sm font-medium shadow-[0_12px_26px_color-mix(in_srgb,var(--accent-inbox-primary)_42%,transparent)]"
           onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
           disabled={!allocation?.phone || !onOpenWhatsApp}
         >
           <MessageCircle className="h-4 w-4" /> Abrir WhatsApp
-        </Button>
+        </InboxPrimaryButton>
       </div>
 
       <ScrollArea
