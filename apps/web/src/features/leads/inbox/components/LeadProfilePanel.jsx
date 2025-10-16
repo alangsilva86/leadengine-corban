@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { cn } from '@/lib/utils.js';
+import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 
 const STATUS_META = {
   allocated: { label: 'Aguardando contato', tone: 'neutral' },
@@ -155,15 +156,15 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Button
+              <InboxPrimaryButton
                 type="button"
                 size="sm"
                 onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
                 disabled={!allocation?.phone || !onOpenWhatsApp || showSkeleton}
-                className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_12px_34px_color-mix(in_srgb,#10b981_45%,transparent)] transition hover:bg-emerald-400"
+                className="group flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium shadow-[0_12px_34px_color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)]"
               >
                 <Phone className="h-4 w-4" /> Abrir conversa
-              </Button>
+              </InboxPrimaryButton>
               {actions.map((action) => {
                 const Icon = action.icon;
                 return (

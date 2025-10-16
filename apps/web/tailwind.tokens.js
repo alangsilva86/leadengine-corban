@@ -154,6 +154,14 @@ export const accent = {
     default: '#eef2ff',
     dark: '#f8fafc',
   },
+  'inbox-primary': {
+    default: '#10b981',
+    dark: '#34d399',
+  },
+  'inbox-primary-foreground': {
+    default: '#022c22',
+    dark: '#022c22',
+  },
   secondary: {
     default: 'rgba(79, 70, 229, 0.1)',
     dark: 'rgba(99, 102, 241, 0.12)',

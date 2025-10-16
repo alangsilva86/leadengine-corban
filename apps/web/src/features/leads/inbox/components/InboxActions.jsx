@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
+import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 
 const formatCountdown = (seconds) => {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
@@ -66,14 +67,15 @@ export const InboxActions = ({
             {onStartManualConversation ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
+                  <InboxPrimaryButton
                     size="sm"
                     onClick={onStartManualConversation}
-                    className="gap-2 rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-950 shadow-[0_10px_24px_color-mix(in_srgb,#10b981_35%,transparent)] transition hover:bg-emerald-400"
+                    uppercase
+                    className="gap-2 rounded-2xl px-4 py-2 text-xs font-semibold tracking-[0.22em] shadow-[0_10px_24px_color-mix(in_srgb,var(--accent-inbox-primary)_35%,transparent)]"
                   >
                     <MessageSquarePlus className="h-4 w-4" />
                     Nova conversa manual
-                  </Button>
+                  </InboxPrimaryButton>
                 </TooltipTrigger>
                 <TooltipContent>Cadastre um contato e abra o WhatsApp imediatamente.</TooltipContent>
               </Tooltip>
