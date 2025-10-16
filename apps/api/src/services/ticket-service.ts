@@ -1872,6 +1872,7 @@ export const sendToContact = async (
 type SendAdHocParams = {
   operatorId?: string;
   instanceId: string;
+  tenantId?: string;
   to: string;
   payload: NormalizedMessagePayload;
   idempotencyKey?: string;
@@ -1882,6 +1883,7 @@ export const sendAdHoc = async (
   {
     operatorId,
     instanceId,
+    tenantId: callerTenantId,
     to,
     payload,
     idempotencyKey,
@@ -1892,6 +1894,10 @@ export const sendAdHoc = async (
   const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
   if (!instance) {
+    throw new NotFoundError('WhatsAppInstance', instanceId);
+  }
+
+  if (callerTenantId && callerTenantId !== instance.tenantId) {
     throw new NotFoundError('WhatsAppInstance', instanceId);
   }
 
