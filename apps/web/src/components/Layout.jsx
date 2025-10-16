@@ -82,9 +82,20 @@ const LayoutHeader = ({ children, className }) => (
   </header>
 );
 
-const LayoutContent = ({ children, className }) => (
-  <div className={cn('page-content flex-1 min-h-0 overflow-y-auto', className)}>
-    <div className="page-content-inner mx-auto flex w-full max-w-7xl flex-col gap-6 p-6 md:p-8">
+const LayoutContent = ({ children, className, isInboxPage = false }) => (
+  <div
+    className={cn(
+      'page-content flex-1 min-h-0 overflow-y-auto',
+      className,
+      isInboxPage && 'page-content--inbox'
+    )}
+  >
+    <div
+      className={cn(
+        'page-content-inner mx-auto flex w-full max-w-7xl flex-col gap-6 p-6 md:p-8',
+        isInboxPage && 'page-content-inner--inbox'
+      )}
+    >
       {children}
     </div>
   </div>
@@ -140,6 +151,7 @@ const LayoutShell = ({
   isDarkMode,
   themeMounted,
   setTheme,
+  isInboxPage = false,
 }) => {
   const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
   const isSidebarCollapsed = state === 'collapsed';
@@ -297,7 +309,7 @@ const LayoutShell = ({
             />
           </div>
         </div>
-        <LayoutContent>
+        <LayoutContent isInboxPage={isInboxPage}>
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
           ) : null}
@@ -374,6 +386,7 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
         isDarkMode={isDarkMode}
         themeMounted={themeMounted}
         setTheme={setTheme}
+        isInboxPage={currentPage === 'inbox'}
       >
         {children}
       </LayoutShell>
