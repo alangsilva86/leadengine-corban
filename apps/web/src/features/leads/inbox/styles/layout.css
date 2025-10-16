@@ -1,16 +1,28 @@
 .page-content--inbox {
-  overflow-y: hidden;
   overflow-x: clip;
 }
 
+.page-content-inner--inbox,
 .page-content--inbox .page-content-inner {
   height: 100%;
   min-height: 0;
 }
 
-.page-content-inner--inbox {
+.inbox-page-container {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+@media (min-width: 1280px) {
+  .page-content--inbox {
+    overflow-y: hidden;
+  }
+
+  .inbox-page-container {
+    overflow: hidden;
+  }
 }
 
 .column-scroll-viewport {

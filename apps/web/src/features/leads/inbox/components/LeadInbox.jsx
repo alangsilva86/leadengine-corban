@@ -21,6 +21,12 @@ import ManualConversationCard from './ManualConversationCard.jsx';
 
 import '../styles/layout.css';
 
+const InboxPageContainer = ({ children, className }) => (
+  <div className={cn('inbox-page-container flex h-full min-h-0 flex-col', className)}>
+    {children}
+  </div>
+);
+
 const SAVED_FILTERS_STORAGE_KEY = 'leadengine_inbox_filters_v1';
 const SAVED_VIEWS_STORAGE_KEY = 'leadengine_inbox_saved_views_v1';
 const SAVED_VIEWS_LIMIT = 10;
@@ -390,76 +396,6 @@ export const LeadInbox = ({
       refresh();
     },
   });
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const body = document.body;
-    const html = document.documentElement;
-    const pageContent = document.querySelector('.page-content');
-    const pageContentInner = document.querySelector('.page-content-inner');
-
-    if (!pageContent || !pageContentInner) {
-      console.warn(
-        'LeadInbox: não foi possível localizar contêiner principal da página para aplicar classes específicas da inbox.'
-      );
-    }
-
-    const previousBodyOverflow = body.style.overflow;
-    const previousHtmlOverflow = html.style.overflow;
-    let applied = false;
-
-    const applyLock = () => {
-      if (applied) return;
-      applied = true;
-      body.style.overflow = 'hidden';
-      html.style.overflow = 'hidden';
-      pageContent?.classList.add('page-content--inbox');
-      pageContentInner?.classList.add('page-content-inner--inbox');
-    };
-
-    const removeLock = () => {
-      if (!applied) return;
-      applied = false;
-      body.style.overflow = previousBodyOverflow;
-      html.style.overflow = previousHtmlOverflow;
-      pageContent?.classList.remove('page-content--inbox');
-      pageContentInner?.classList.remove('page-content-inner--inbox');
-    };
-
-    const updateLock = (matches) => {
-      if (matches) {
-        applyLock();
-      } else {
-        removeLock();
-      }
-    };
-
-    const mediaQuery = window.matchMedia('(min-width: 1280px)');
-
-    updateLock(mediaQuery.matches);
-
-    const handleMediaChange = (event) => {
-      updateLock(event.matches);
-    };
-
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', handleMediaChange);
-    } else if (typeof mediaQuery.addListener === 'function') {
-      mediaQuery.addListener(handleMediaChange);
-    }
-
-    return () => {
-      removeLock();
-      if (typeof mediaQuery.removeEventListener === 'function') {
-        mediaQuery.removeEventListener('change', handleMediaChange);
-      } else if (typeof mediaQuery.removeListener === 'function') {
-        mediaQuery.removeListener(handleMediaChange);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     setSavedViews((current) => {
@@ -952,7 +888,7 @@ export const LeadInbox = ({
     showRealtimeConnecting || showRealtimeError || showErrorNotice || showWarningNotice;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6 xl:gap-8">
+    <InboxPageContainer className="gap-6 xl:gap-8">
       <InboxHeader
         stepLabel={stepLabel}
         campaign={campaign}
@@ -960,14 +896,12 @@ export const LeadInbox = ({
       />
 
       <div className="flex-1 min-h-0">
-        <div className="grid h-full min-h-0 gap-6 xl:auto-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
         <div className="grid h-full min-h-0 auto-rows-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
           <GlassPanel
             as="section"
             tone="surface"
             radius="xl"
             shadow="2xl"
-            className="relative flex min-h-[520px] min-w-0 flex-col xl:h-full xl:min-h-0"
             className="relative flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0"
           >
             <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
@@ -1057,7 +991,6 @@ export const LeadInbox = ({
             </div>
           </GlassPanel>
 
-          <div className="relative flex min-h-[520px] min-w-0 flex-col xl:h-full xl:min-h-0">
           <div className="relative flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0">
             <LeadConversationPanel
               allocation={activeAllocation}
@@ -1076,7 +1009,6 @@ export const LeadInbox = ({
             tone="overlay"
             radius="xl"
             shadow="xl"
-            className="flex min-h-[520px] min-w-0 flex-col xl:h-full xl:min-h-0"
             className="flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0"
           >
             <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
@@ -1137,7 +1069,7 @@ export const LeadInbox = ({
           </GlassPanel>
         </div>
       </div>
-    </div>
+    </InboxPageContainer>
   );
 };
 
