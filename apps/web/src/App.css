@@ -15,16 +15,19 @@
     transition: background-color 150ms ease, color 150ms ease;
   }
 
-  #chat-scroll {
+  #chat-scroll,
+  .chat-scroll-area {
     scrollbar-gutter: stable both-edges;
     -webkit-overflow-scrolling: touch;
   }
 
-  #chat-scroll::-webkit-scrollbar {
+  #chat-scroll::-webkit-scrollbar,
+  .chat-scroll-area::-webkit-scrollbar {
     width: 10px;
   }
 
-  #chat-scroll::-webkit-scrollbar-thumb {
+  #chat-scroll::-webkit-scrollbar-thumb,
+  .chat-scroll-area::-webkit-scrollbar-thumb {
     background: var(--color-inbox-scrollbar-thumb, #0f172a);
     border-radius: 9999px;
   }

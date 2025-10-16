@@ -89,7 +89,7 @@ export const InboxPanel = ({
 
       <MetricsCard metrics={metrics} />
 
-      <div className="flex-1 overflow-y-auto pr-1">
+      <div className="chat-scroll-area flex-1 overflow-y-auto pr-1">
         {tickets.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-800/70 bg-slate-950/70 p-6 text-center text-[13px] text-muted-foreground/80">
             <p className="text-base font-bold text-foreground">Nada por aqui ainda</p>
