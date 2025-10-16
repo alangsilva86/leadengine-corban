@@ -125,6 +125,24 @@ describe('Leads routes', () => {
     expect(response.body.data.items[0].id).toBe('lead-1');
   });
 
+  it('defaults pagination params when not provided', async () => {
+    leadFindMany.mockResolvedValueOnce([]);
+    leadCount.mockResolvedValueOnce(0);
+
+    const app = buildApp();
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(leadFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 20,
+      })
+    );
+    expect(response.body.data.limit).toBe(20);
+    expect(response.body.data.page).toBe(1);
+  });
+
   it('creates a new lead when contact exists', async () => {
     const now = new Date();
     contactFindUnique.mockResolvedValueOnce({
