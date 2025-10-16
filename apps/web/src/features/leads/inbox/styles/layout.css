@@ -20,6 +20,8 @@
 }
 
 .inbox-scroll-area__viewport {
+}
+
 @media (min-width: 1280px) {
   .page-content--inbox {
     overflow-y: hidden;
