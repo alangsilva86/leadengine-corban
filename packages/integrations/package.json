@@ -5,9 +5,7 @@
   "main": "dist/index.mjs",
   "module": "dist/index.mjs",
   "types": "index.d.ts",
-  "sideEffects": [
-    "./src/whatsapp/libsignal-polyfill.ts"
-  ],
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./index.d.ts",
@@ -16,21 +14,13 @@
     }
   },
   "scripts": {
-    "pretypecheck": "node -e \"require.resolve('@whiskeysockets/baileys'); require.resolve('@hapi/boom')\"",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "typecheck:trace": "tsc -p tsconfig.build.json --noEmit --traceResolution",
     "build": "tsup",
     "build:clean": "tsup --clean"
   },
-  "dependencies": {
-    "@hapi/boom": "^10.0.1",
-    "@ticketz/core": "workspace:*",
-    "@whiskeysockets/baileys": "^6.7.20",
-    "qrcode": "^1.5.3",
-    "qrcode-terminal": "^0.12.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/qrcode": "^1.5.5",
     "tsup": "^8.5.0",
     "typescript": "^5.3.3",
     "vitest": "^1.6.1"

@@ -36,12 +36,11 @@ O **Ticketz LeadEngine** reúne o fluxo de tickets do ecossistema Ticketz, a orq
 leadengine-corban/
 ├── apps/
 │   ├── api/                  # API Express + Socket.IO + Prisma
-│   ├── web/                  # Frontend React 19 + Vite + Tailwind tokens
-│   └── baileys-acessuswpp/   # Manifesto Render do broker oficial
+│   └── web/                  # Frontend React 19 + Vite + Tailwind tokens
 ├── packages/
 │   ├── contracts/            # OpenAPI + tipos TypeScript gerados
 │   ├── core/                 # Regras de negócio (tickets, leads, erros comuns)
-│   ├── integrations/         # Adaptadores para Baileys e utilidades
+│   ├── integrations/         # Utilidades compartilhadas para integrações HTTP
 │   ├── shared/               # Logger Winston, config e helpers cross-app
 │   └── storage/              # Prisma Client e repositórios de dados
 ├── prisma/                   # schema.prisma, migrations e seeds
@@ -53,7 +52,7 @@ leadengine-corban/
 ```
 
 Cada pasta tem owner claro:
-- **apps/** entrega experiências (API, frontend e manifesto do broker).
+- **apps/** entrega experiências (API e frontend).
 - **packages/** guarda blocos reutilizáveis – são buildados antes de qualquer app.
 - **prisma/** versiona o modelo de dados PostgreSQL usado pela API.
 - **docs/** registra decisões, tokens de design e receitas de operação.
@@ -79,7 +78,7 @@ Cada pasta tem owner claro:
 ### Pacotes compartilhados
 - **@ticketz/contracts**: contrato OpenAPI (`openapi.yaml`) e tipos gerados para mensagens & APIs.
 - **@ticketz/core**: domínios `tickets`/`leads`, erros (`ValidationError`, `NotFoundError`) e helpers comuns.
-- **@ticketz/integrations**: adaptadores do broker Baileys (`whatsapp/baileys-provider.ts`) e utilidades (normalização, tipos).
+- **@ticketz/integrations**: utilidades compartilhadas para integrações HTTP (logger leve, helpers de mídia, contratos base).
 - **@ticketz/shared**: configuração central (`src/config`), logger (`src/logger`), parseadores e formatação.
 - **@ticketz/storage**: bootstrap do Prisma Client, factories de repositório e operações de dados.
 
@@ -123,12 +122,10 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
 - **Backend**: crie `apps/api/.env` (ou `.env.local`) baseado nas chaves usadas em produção.
   - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
   - Configure os limites de falha do circuito outbound via `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` para personalizar tolerância e cooldown de envio.
-  - `WHATSAPP_SESSION_STORE_DRIVER` suporta `postgres` (persistência via Prisma), `redis` ou `memory` (apenas desenvolvimento). Use `WHATSAPP_SESSION_STORE_URL` para apontar para o banco/cluster e `WHATSAPP_SESSION_STORE_REDIS_TTL` para definir TTL opcional ao usar Redis.
   - Mantenha `WHATSAPP_PASSTHROUGH_MODE=false` em produção e QA. Isso força a API a validar `x-api-key`/`x-signature-sha256` para cada evento e garante que apenas instâncias autorizadas — identificadas pelo `instanceId` — consigam movimentar leads.
   - O modo HTTP é fixo: a variável legada `WHATSAPP_MODE` foi removida e a API aborta a inicialização caso ela esteja definida.
   - Use `docs/environments/ticketzapi-production.env` como referência de produção.
 - **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000` e `VITE_WS_URL=ws://localhost:4000`.
-- **Broker**: quando for hospedar o Baileys externo, alinhe chaves com `apps/baileys-acessuswpp/render.yaml`.
 
 ### 5. Banco de dados & Prisma
 ```bash
@@ -309,10 +306,8 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
 ## Capítulo 9 – Docker, deploy e ambientes
 
 - `docker-compose.yml` sobe Postgres 15, Redis 7, API e Web com as variáveis necessárias para o broker HTTP.
-- `docker-compose.yml` sobe Postgres 15, Redis 7, API e Web.
 - `docker-compose.prod.yml` adiciona Nginx e ajustes de build multi-stage.
 - `apps/api/Dockerfile` e `apps/web/Dockerfile` usam multi-stage (builder → runner) com pnpm cache.
-- `apps/baileys-acessuswpp/render.yaml` descreve o deploy oficial do broker Baileys na Render (incluindo `API_KEY`).
 - Para Railway/Render: consultar `docs/docker.md`, `docs/whatsapp-broker-contracts.md` e `docs/whatsapp-railway-curl-recipes.md` para validar rotas e webhooks.
 - O transporte WhatsApp opera exclusivamente em modo HTTP; `/healthz` expõe o status atual para auditoria.
 - Rollback/feature flag: `WHATSAPP_MODE` foi removido; qualquer definição interrompe o boot. Um rollback para sidecar exige reverter a release para uma tag anterior que ainda aceitava o modo legado.

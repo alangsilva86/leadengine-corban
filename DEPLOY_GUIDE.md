@@ -62,10 +62,6 @@ nano .env
 O runtime sidecar Baileys foi removido desta base. Não é mais necessário preparar volumes ou diretórios dedicados a sessões — qualquer configuração existente com `WHATSAPP_MODE=sidecar` agora falha na inicialização até que a variável seja removida do ambiente.
 - Integração WhatsApp: configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` (se aplicável) e mantenha `WHATSAPP_MODE` ausente; qualquer definição interrompe a aplicação.
 
-### 1.1. Session store
-
-O session store padrão permanece nos bancos declarados via `WHATSAPP_SESSION_STORE_*` (Postgres/Redis/memória em desenvolvimento). Não há contêiner sidecar nem volume dedicado para sessões.
-
 ### 2. Configurar Domínio (Opcional)
 
 Se você tem um domínio, configure os DNS:
