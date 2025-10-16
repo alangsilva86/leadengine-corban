@@ -87,13 +87,13 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
     <Card
       ref={cardRef}
       id="manual-conversation-card"
-      className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_36px_rgba(5,12,30,0.42)]"
+      className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]"
     >
       <CardHeader className="space-y-2 pb-2">
-        <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
+        <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
           Iniciar conversa manual
         </CardTitle>
-        <CardDescription className="text-xs text-white/70">
+        <CardDescription className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
           Cadastre o contato manualmente e envie a mensagem inicial sem sair do LeadEngine.
         </CardDescription>
       </CardHeader>
@@ -105,7 +105,7 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-medium uppercase tracking-[0.2em] text-white/70">
+                  <FormLabel className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
                     Telefone
                   </FormLabel>
                   <FormControl>
@@ -131,7 +131,7 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
               name="message"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-medium uppercase tracking-[0.2em] text-white/70">
+                  <FormLabel className="text-xs font-medium uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
                     Mensagem inicial
                   </FormLabel>
                   <FormControl>
@@ -151,7 +151,7 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
 
             <Button
               type="submit"
-              className="w-full rounded-2xl bg-emerald-500 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-950 transition-opacity hover:bg-emerald-400 disabled:opacity-60"
+              className="w-full rounded-2xl bg-emerald-500 text-sm font-semibold uppercase tracking-[0.3em] text-emerald-950 shadow-[0_12px_34px_color-mix(in_srgb,#10b981_40%,transparent)] transition-opacity hover:bg-emerald-400 disabled:opacity-60"
               disabled={isProcessing}
             >
               Iniciar conversa

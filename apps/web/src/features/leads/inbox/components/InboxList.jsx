@@ -7,32 +7,32 @@ import LeadAllocationCard from './LeadAllocationCard.jsx';
 import EmptyInboxState from './EmptyInboxState.jsx';
 
 const SkeletonCard = () => (
-  <div className="space-y-4 rounded-[24px] border border-[var(--color-inbox-border)] bg-[var(--color-inbox-surface-strong)] p-5 text-[var(--color-inbox-foreground)] shadow-[0_18px_44px_rgba(3,9,24,0.45)] backdrop-blur-xl">
+  <div className="space-y-4 rounded-[24px] border border-[var(--color-inbox-border)] bg-[var(--color-inbox-surface-strong)] p-5 text-[var(--color-inbox-foreground)] shadow-[0_18px_44px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)] backdrop-blur-xl">
     <div className="flex items-start justify-between gap-4">
       <div className="space-y-2">
-        <div className="h-2.5 w-16 animate-pulse rounded-full bg-white/12" />
+        <div className="h-2.5 w-16 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
         <div className="space-y-2">
-          <div className="h-4 w-40 animate-pulse rounded-full bg-white/12" />
-          <div className="h-3 w-24 animate-pulse rounded-full bg-white/12" />
+          <div className="h-4 w-40 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
+          <div className="h-3 w-24 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
         </div>
       </div>
-      <div className="h-6 w-28 animate-pulse rounded-full bg-white/12" />
+      <div className="h-6 w-28 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
     </div>
 
-    <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 sm:grid-cols-3">
+    <div className="grid gap-3 rounded-2xl border border-[var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 sm:grid-cols-3">
       {Array.from({ length: 3 }).map((_, detailIndex) => (
         <div key={`allocation-detail-${detailIndex}`} className="space-y-2">
-          <div className="h-2.5 w-24 animate-pulse rounded-full bg-white/12" />
-          <div className="h-3.5 w-28 animate-pulse rounded-full bg-white/12" />
+          <div className="h-2.5 w-24 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
+          <div className="h-3.5 w-28 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
         </div>
       ))}
     </div>
 
-    <div className="grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
+    <div className="grid gap-3 border-t border-[var(--color-inbox-border)] pt-4 sm:grid-cols-2">
       {Array.from({ length: 2 }).map((_, summaryIndex) => (
         <div key={`allocation-summary-${summaryIndex}`} className="space-y-2">
-          <div className="h-2.5 w-24 animate-pulse rounded-full bg-white/12" />
-          <div className="h-4 w-32 animate-pulse rounded-full bg-white/12" />
+          <div className="h-2.5 w-24 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
+          <div className="h-4 w-32 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
         </div>
       ))}
     </div>
@@ -42,7 +42,7 @@ const SkeletonCard = () => (
 const EmptyFilteredState = ({ className }) => (
   <div
     className={cn(
-      'rounded-[24px] border border-dashed border-[var(--color-inbox-border)] bg-[var(--color-inbox-surface-strong)] p-6 text-center text-sm text-[var(--color-inbox-foreground-muted)] shadow-[0_18px_44px_rgba(3,9,24,0.45)]',
+      'rounded-[24px] border border-dashed border-[var(--color-inbox-border)] bg-[var(--color-inbox-surface-strong)] p-6 text-center text-sm text-[var(--color-inbox-foreground-muted)] shadow-[0_18px_44px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]',
       className
     )}
   >

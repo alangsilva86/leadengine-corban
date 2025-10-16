@@ -3,8 +3,14 @@ import { forwardRef } from 'react';
 import { cn } from '@/lib/utils.js';
 
 const TONE_STYLES = {
-  surface: 'border border-white/12 bg-surface-shell ring-1 ring-white/10',
-  overlay: 'border border-surface-contrast bg-slate-950/40 ring-1 ring-white/10',
+  surface:
+    'border border-[color:var(--surface-overlay-glass-border)] bg-[color:var(--surface-overlay-quiet)] text-[color:var(--foreground)] ring-1 ring-[color:var(--surface-overlay-glass-border)]',
+  overlay:
+    'border border-[color:var(--surface-overlay-glass-border)] bg-[color:var(--surface-overlay-strong)] text-[color:var(--foreground)] ring-1 ring-[color:var(--surface-overlay-glass-border)]',
+  glass:
+    'border border-[color:var(--surface-overlay-glass-border)] bg-[color:var(--surface-overlay-glass)] text-[color:var(--foreground)] ring-1 ring-[color:var(--surface-overlay-glass-border)]',
+  inbox:
+    'border border-[color:var(--color-inbox-border)] bg-[color:var(--color-inbox-surface-strong)] text-[color:var(--color-inbox-foreground)] ring-1 ring-[color:var(--color-inbox-border)]',
 };
 
 const RADIUS_STYLES = {
@@ -19,11 +25,12 @@ const RADIUS_STYLES = {
 
 const SHADOW_STYLES = {
   none: '',
-  sm: 'shadow-[0_14px_30px_rgba(5,12,28,0.35)]',
-  md: 'shadow-[0_18px_44px_rgba(3,9,24,0.45)]',
-  lg: 'shadow-[0_20px_60px_rgba(15,23,42,0.35)]',
-  xl: 'shadow-[0_28px_60px_-42px_rgba(15,23,42,0.9)]',
-  '2xl': 'shadow-[0_32px_64px_-40px_rgba(15,23,42,0.95)]',
+  xs: 'shadow-[var(--shadow-xs)]',
+  sm: 'shadow-[var(--shadow-sm)]',
+  md: 'shadow-[var(--shadow-md)]',
+  lg: 'shadow-[var(--shadow-lg)]',
+  xl: 'shadow-[var(--shadow-xl)]',
+  '2xl': 'shadow-[0_32px_64px_color-mix(in_srgb,var(--color-border)_48%,transparent)]',
 };
 
 const resolveStyle = (map, value) => {

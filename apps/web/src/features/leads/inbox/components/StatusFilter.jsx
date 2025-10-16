@@ -10,7 +10,7 @@ const STATUS_LABEL = {
 };
 
 export const StatusFilter = ({ value, onChange }) => (
-  <div className="inline-flex items-center gap-1 rounded-full bg-[rgba(148,163,184,0.12)] p-1 text-xs text-muted-foreground">
+  <div className="inline-flex items-center gap-1 rounded-full bg-[color:color-mix(in_srgb,var(--color-inbox-border)_28%,transparent)] p-1 text-xs text-muted-foreground">
     {STATUS_ORDER.map((status) => (
       <button
         key={status}

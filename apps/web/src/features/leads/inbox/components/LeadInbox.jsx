@@ -899,12 +899,12 @@ export const LeadInbox = ({
         <div className="grid h-full min-h-0 auto-rows-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
           <GlassPanel
             as="section"
-            tone="surface"
+            tone="inbox"
             radius="xl"
             shadow="2xl"
             className="relative flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0"
           >
-            <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
+            <div className="flex-shrink-0 border-b border-[color:var(--color-inbox-border)] px-5 py-5">
               <GlobalFiltersBar
                 filters={filters}
                 onUpdateFilters={handleUpdateFilters}
@@ -987,7 +987,7 @@ export const LeadInbox = ({
             </ColumnScrollArea>
 
             <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
-              <span className="block h-full w-px rounded-full bg-white/12 shadow-[1px_0_18px_rgba(5,10,26,0.55)]" />
+              <span className="block h-full w-px rounded-full bg-[color:var(--color-inbox-border)] shadow-[1px_0_18px_color-mix(in_srgb,var(--color-inbox-border)_55%,transparent)]" />
             </div>
           </GlassPanel>
 
@@ -1000,24 +1000,24 @@ export const LeadInbox = ({
             />
 
             <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
-              <span className="block h-full w-px rounded-full bg-white/10 shadow-[1px_0_20px_rgba(4,9,24,0.5)]" />
+              <span className="block h-full w-px rounded-full bg-[color:var(--color-inbox-border)] shadow-[1px_0_20px_color-mix(in_srgb,var(--color-inbox-border)_60%,transparent)]" />
             </div>
           </div>
 
           <GlassPanel
             as="aside"
-            tone="overlay"
+            tone="inbox"
             radius="xl"
             shadow="xl"
             className="flex h-full min-h-[520px] min-w-0 flex-col xl:min-h-0"
           >
             <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
-              <Card className="rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)]">
+              <Card className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]">
                 <CardHeader className="space-y-2 pb-2">
-                  <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-white/80">
+                  <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
                     Resumo
                   </CardTitle>
-                  <CardDescription className="text-xs text-white/70">
+                  <CardDescription className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
                     Distribuição dos leads recebidos via WhatsApp conectado.
                   </CardDescription>
                 </CardHeader>
@@ -1026,13 +1026,13 @@ export const LeadInbox = ({
                     {statusMetrics.map(({ key, label, accent, icon }) => (
                       <div
                         key={key}
-                        className="space-y-1 rounded-2xl border border-surface-contrast bg-white/[0.07] px-3 py-3 shadow-[0_14px_30px_rgba(5,12,28,0.35)]"
+                        className="space-y-1 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
                       >
-                        <dt className="flex items-center gap-2 text-xs font-medium text-white/75">
+                        <dt className="flex items-center gap-2 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">
                           {icon ? icon : null}
                           <span>{label}</span>
                         </dt>
-                        <dd className={cn('text-xl font-semibold text-white/90', accent ?? '')}>
+                        <dd className={cn('text-xl font-semibold text-[color:var(--color-inbox-foreground)]', accent ?? '')}>
                           {formatSummaryValue(summary[key])}
                         </dd>
                       </div>

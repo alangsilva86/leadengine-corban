@@ -22,12 +22,12 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
   ];
 
   return (
-    <header className="glass-surface rounded-[32px] border border-[var(--border)] p-6 shadow-[0_20px_46px_rgba(3,8,22,0.5)] ring-1 ring-white/10">
+    <header className="glass-surface rounded-[32px] border border-[var(--border)] p-6 shadow-[0_20px_46px_color-mix(in_srgb,var(--border)_42%,transparent)] ring-1 ring-[color:var(--surface-overlay-glass-border)]">
       <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
         {stepLabel ? (
           <Badge
             variant="outline"
-            className="border-white/40 bg-white/[0.08] px-3 py-1 text-xs font-medium uppercase tracking-[0.28em] text-foreground"
+            className="border-[color:var(--surface-overlay-glass-border)] bg-[color:var(--surface-overlay-quiet)] px-3 py-1 text-xs font-medium uppercase tracking-[0.28em] text-foreground"
           >
             {stepLabel}
           </Badge>
@@ -69,7 +69,7 @@ export const InboxHeader = ({ stepLabel, campaign, onboarding }) => {
           </p>
         </div>
 
-        <div className="flex flex-col items-end gap-1 rounded-2xl border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-5 py-4 text-right text-muted-foreground shadow-[0_12px_32px_rgba(3,9,24,0.4)]">
+        <div className="flex flex-col items-end gap-1 rounded-2xl border border-[var(--border)] bg-[color:color-mix(in_oklab,var(--surface)_82%,transparent)] px-5 py-4 text-right text-muted-foreground shadow-[0_12px_32px_color-mix(in_srgb,var(--border)_38%,transparent)]">
           <p className="text-xs font-medium uppercase tracking-[0.24em]">Status atual</p>
           <p className="text-base font-semibold text-foreground">
             {hasLeadCount ? (
