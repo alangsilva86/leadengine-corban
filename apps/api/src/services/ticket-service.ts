@@ -454,7 +454,7 @@ const emitMessageCreatedEvents = (
   emitTicketEvent(tenantId, ticket.id, 'ticket.message', message, options.userId);
 };
 
-const emitMessageUpdatedEvents = (
+export const emitMessageUpdatedEvents = (
   tenantId: string,
   ticketId: string,
   message: Message,
@@ -503,7 +503,7 @@ const resolveWhatsAppInstanceId = (ticket: Ticket | null | undefined): string | 
   return null;
 };
 
-const normalizeBrokerStatus = (status: string | undefined): Message['status'] => {
+export const normalizeBrokerStatus = (status: string | undefined): Message['status'] => {
   const normalized = (status || '').trim().toUpperCase();
   switch (normalized) {
     case 'DELIVERED':
