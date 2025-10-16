@@ -91,18 +91,18 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
   return (
     <Card
       className={cn(
-        'rounded-3xl border-surface-contrast bg-white/[0.08] shadow-[0_18px_40px_rgba(5,12,30,0.45)] transition-opacity duration-150 ease-out',
+        'rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)] transition-opacity duration-150 ease-out',
         isSwitching ? 'opacity-0' : 'opacity-100'
       )}
       aria-busy={showSkeleton}
     >
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm font-semibold uppercase tracking-[0.12em] text-white/80">
+          <CardTitle className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--color-inbox-foreground)]">
             Informações do lead
           </CardTitle>
           {showSkeleton ? (
-            <div className="h-6 w-32 animate-pulse rounded-full bg-white/12" />
+            <div className="h-6 w-32 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
           ) : allocation ? (
             <Badge
               variant="status"
@@ -113,7 +113,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             </Badge>
           ) : null}
         </div>
-        <p className="text-xs text-white/70">
+        <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
           Dados essenciais sempre visíveis para agilizar o atendimento e garantir foco na conversa.
         </p>
       </CardHeader>
@@ -123,32 +123,32 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div key={`skeleton-info-${index}`} className="space-y-2">
-                  <div className="h-3 w-32 animate-pulse rounded-full bg-white/12" />
-                  <div className="h-4 w-full animate-pulse rounded-full bg-white/12" />
+                  <div className="h-3 w-32 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
+                  <div className="h-4 w-full animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
                 </div>
               ))}
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {Array.from({ length: 3 }).map((_, index) => (
-                <div key={`skeleton-action-${index}`} className="h-10 animate-pulse rounded-2xl bg-white/12" />
+                <div key={`skeleton-action-${index}`} className="h-10 animate-pulse rounded-2xl bg-[color:var(--surface-overlay-quiet)]" />
               ))}
             </div>
 
-            <div className="h-8 w-3/4 animate-pulse rounded-2xl bg-white/12" />
+            <div className="h-8 w-3/4 animate-pulse rounded-2xl bg-[color:var(--surface-overlay-quiet)]" />
           </div>
         ) : (
           <>
-            <div className={cn('grid grid-cols-1 gap-3 rounded-2xl border border-white/12 bg-white/[0.06] p-4 text-sm text-white/80', 'sm:grid-cols-2')}>
+            <div className={cn('grid grid-cols-1 gap-3 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-4 text-sm text-[color:var(--color-inbox-foreground-muted)]', 'sm:grid-cols-2')}>
               {infoRows(allocation).map((row) => {
                 const Icon = row.icon;
                 return (
                   <div key={row.label} className="space-y-1">
-                    <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-white/65">
-                      <Icon className="h-3.5 w-3.5 text-white/70" />
+                    <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">
+                      <Icon className="h-3.5 w-3.5 text-[color:var(--color-inbox-foreground-muted)]" />
                       <span>{row.label}</span>
                     </div>
-                    <p className="text-sm font-medium text-white/90">{row.value || '—'}</p>
+                    <p className="text-sm font-medium text-[color:var(--color-inbox-foreground)]">{row.value || '—'}</p>
                   </div>
                 );
               })}
@@ -160,7 +160,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
                 size="sm"
                 onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
                 disabled={!allocation?.phone || !onOpenWhatsApp || showSkeleton}
-                className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_12px_34px_rgba(16,185,129,0.45)] transition hover:bg-emerald-400"
+                className="group flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-emerald-950 shadow-[0_12px_34px_color-mix(in_srgb,#10b981_45%,transparent)] transition hover:bg-emerald-400"
               >
                 <Phone className="h-4 w-4" /> Abrir conversa
               </Button>
@@ -176,7 +176,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
                     onClick={() =>
                       allocation && onUpdateStatus ? onUpdateStatus(allocation.allocationId, action.status) : null
                     }
-                    className="flex items-center justify-center gap-2 rounded-2xl border-surface-contrast bg-white/[0.08] px-4 py-3 text-sm font-medium text-white/90 transition hover:border-white/30 hover:bg-white/[0.12]"
+                    className="flex items-center justify-center gap-2 rounded-2xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-quiet)] px-4 py-3 text-sm font-medium text-[color:var(--color-inbox-foreground)] transition hover:border-primary/40 hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_75%,transparent)]"
                   >
                     <Icon className="h-4 w-4" />
                     {action.label}
@@ -186,8 +186,8 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             </div>
 
             {allocation?.email ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.08] px-3 py-2 text-xs text-white/75">
-                <Mail className="h-4 w-4 text-white/65" />
+              <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+                <Mail className="h-4 w-4 text-[color:var(--color-inbox-foreground-muted)]" />
                 <span>{allocation.email}</span>
               </div>
             ) : null}

@@ -184,12 +184,12 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
     ]) ?? allocation?.notes ?? null;
 
   return (
-    <div className="flex min-h-[520px] flex-col rounded-[32px] border border-surface-contrast bg-slate-950/50 shadow-[0_30px_64px_-42px_rgba(15,23,42,0.9)] ring-1 ring-white/10 backdrop-blur-xl xl:h-full xl:min-h-0">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/12 bg-white/[0.05] px-6 py-4 shadow-[0_20px_38px_-28px_rgba(15,23,42,0.9)]">
+    <div className="flex min-h-[520px] flex-col rounded-[32px] border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)] ring-1 ring-[color:var(--color-inbox-border)] backdrop-blur-xl xl:h-full xl:min-h-0">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-6 py-4 shadow-[var(--shadow-lg)]">
         <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/70">Timeline</p>
+          <p className="text-xs font-medium uppercase tracking-[0.3em] text-[color:var(--color-inbox-foreground-muted)]">Timeline</p>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-lg font-semibold tracking-tight text-white/95">
+            <h2 className="text-lg font-semibold tracking-tight text-[color:var(--color-inbox-foreground)]">
               {allocation ? allocation.fullName : 'Selecione um lead'}
             </h2>
             {allocation ? (
@@ -203,12 +203,12 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
             ) : null}
           </div>
           {lastMessagePreview ? (
-            <p className="max-w-xl text-sm text-white/80 line-clamp-2">{lastMessagePreview}</p>
+            <p className="max-w-xl text-sm text-[color:var(--color-inbox-foreground-muted)] line-clamp-2">{lastMessagePreview}</p>
           ) : null}
         </div>
         <Button
           size="sm"
-          className="gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 shadow-[0_12px_26px_rgba(16,185,129,0.45)] transition hover:bg-emerald-400"
+          className="gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 shadow-[0_12px_26px_color-mix(in_srgb,#10b981_42%,transparent)] transition hover:bg-emerald-400"
           onClick={() => (allocation && onOpenWhatsApp ? onOpenWhatsApp(allocation) : null)}
           disabled={!allocation?.phone || !onOpenWhatsApp}
         >
@@ -227,8 +227,8 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
           <div className="space-y-4">
             {[1, 2, 3].map((item) => (
               <div key={item} className="space-y-2">
-                <div className="h-3 w-24 animate-pulse rounded-full bg-white/12" />
-                <div className="h-4 w-full animate-pulse rounded-full bg-white/12" />
+                <div className="h-3 w-24 animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
+                <div className="h-4 w-full animate-pulse rounded-full bg-[color:var(--surface-overlay-quiet)]" />
               </div>
             ))}
           </div>
@@ -237,7 +237,7 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
             <MessageSquareDashed className="h-10 w-10 text-muted-foreground/60" />
             <div className="space-y-1">
               <p className="text-sm font-medium text-foreground-muted">Selecione um lead para iniciar o foco</p>
-              <p className="text-xs text-white/70">
+              <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
                 A conversa aparece aqui com histórico e contexto assim que você escolhe um lead na lista.
               </p>
             </div>
@@ -247,7 +247,7 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
             <CalendarClock className="h-10 w-10 text-muted-foreground/60" />
             <div className="space-y-1">
               <p className="text-sm font-medium text-foreground-muted">Nenhum evento registrado ainda</p>
-              <p className="text-xs text-white/70">
+              <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
                 Assim que o lead interagir pelo WhatsApp, registramos automaticamente os marcos aqui.
               </p>
             </div>
@@ -259,16 +259,16 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
               return (
                 <li key={`${event.key}-${event.date?.getTime?.() ?? Math.random()}`} className="space-y-1.5">
                   <div className="flex items-center gap-3">
-                    <div className="flex size-9 items-center justify-center rounded-full border border-surface-contrast bg-white/[0.08] shadow-[0_10px_22px_rgba(4,10,26,0.35)]">
-                      <Icon className="h-4 w-4 text-white/75" />
+                    <div className="flex size-9 items-center justify-center rounded-full border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[0_10px_22px_color-mix(in_srgb,var(--color-inbox-border)_45%,transparent)]">
+                      <Icon className="h-4 w-4 text-[color:var(--color-inbox-foreground-muted)]" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-white/90">{event.label}</p>
-                      <p className="text-xs text-white/70">{formatDateTime(event.date)}</p>
+                      <p className="text-sm font-medium text-[color:var(--color-inbox-foreground)]">{event.label}</p>
+                      <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{formatDateTime(event.date)}</p>
                     </div>
                   </div>
                   {event.description ? (
-                    <p className="ml-12 text-sm text-white/80">{event.description}</p>
+                    <p className="ml-12 text-sm text-[color:var(--color-inbox-foreground-muted)]">{event.description}</p>
                   ) : null}
                 </li>
               );
