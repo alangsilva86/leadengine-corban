@@ -32,6 +32,7 @@ const supportedDirectTypes = new Set([
   'audio',
   'template',
   'location',
+  'contact',
 ]);
 const mediaDirectTypes = new Set(['image', 'video', 'document', 'audio']);
 
@@ -156,6 +157,8 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
         normalizedPayload.type === 'template' ? (normalizedPayload.template as unknown) : undefined,
       location:
         normalizedPayload.type === 'location' ? (normalizedPayload.location as unknown) : undefined,
+      contact:
+        normalizedPayload.type === 'contact' ? (normalizedPayload.contact as unknown) : undefined,
       metadata: normalizedPayload.metadata,
       ...(isMediaType
         ? (() => {
@@ -271,7 +274,9 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       previewUrl: payload.previewUrl,
       media: mediaPayload as unknown,
       location: payload.location as unknown,
+      contact: payload.contact as unknown,
       template: payload.template as unknown,
+      poll: payload.poll as unknown,
       metadata: payload.metadata,
     });
 

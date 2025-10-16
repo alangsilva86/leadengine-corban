@@ -208,6 +208,7 @@ export const SendMessageDTOSchema = z
   .superRefine((value, ctx) => {
     const hasText = typeof value.content === 'string' && value.content.trim().length > 0;
     const hasMedia = typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0;
+    const mediaTypes = new Set(['IMAGE', 'VIDEO', 'DOCUMENT', 'AUDIO']);
 
     if (value.type === 'TEXT' && !hasText) {
       ctx.addIssue({
@@ -217,7 +218,7 @@ export const SendMessageDTOSchema = z
       });
     }
 
-    if (value.type !== 'TEXT' && !hasMedia) {
+    if (mediaTypes.has(value.type) && !hasMedia) {
       ctx.addIssue({
         code: 'custom',
         message: 'Mensagens de mídia exigem mediaUrl válido.',

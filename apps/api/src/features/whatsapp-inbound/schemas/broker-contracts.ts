@@ -13,6 +13,12 @@ const nullableTrimmedString = z
   })
   .nullable();
 
+const optionalTrimmedString = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().min(1))
+  .optional();
+
 const directionInput = z
   .string()
   .transform((value) => value.trim().toLowerCase())
@@ -149,7 +155,64 @@ export const BrokerInboundEventSchema = z
 
 export type BrokerInboundEvent = z.infer<typeof BrokerInboundEventSchema>;
 
-const outboundMessageTypes = ['text', 'image', 'video', 'document', 'audio', 'location', 'template'] as const;
+const outboundMessageTypes = [
+  'text',
+  'image',
+  'video',
+  'document',
+  'audio',
+  'location',
+  'template',
+  'contact',
+  'poll',
+] as const;
+
+const OutboundContactEmailSchema = z
+  .object({
+    email: trimmedString,
+    type: optionalTrimmedString,
+  })
+  .strict();
+
+const OutboundContactPhoneSchema = z
+  .object({
+    phoneNumber: trimmedString,
+    type: optionalTrimmedString,
+    waId: optionalTrimmedString,
+  })
+  .strict();
+
+const OutboundContactSchema = z
+  .object({
+    fullName: optionalTrimmedString,
+    organization: optionalTrimmedString,
+    emails: z.array(OutboundContactEmailSchema).min(1).optional(),
+    phones: z.array(OutboundContactPhoneSchema).min(1).optional(),
+    vcard: trimmedString.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasVcard = typeof value.vcard === 'string' && value.vcard.length > 0;
+    const hasPhones = Array.isArray(value.phones) && value.phones.length > 0;
+    const hasEmails = Array.isArray(value.emails) && value.emails.length > 0;
+    const hasName = typeof value.fullName === 'string' && value.fullName.length > 0;
+
+    if (!hasVcard && !hasPhones && !hasEmails && !hasName) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Contato deve informar vcard, phones, emails ou fullName.',
+        path: ['vcard'],
+      });
+    }
+  });
+
+const OutboundPollSchema = z
+  .object({
+    question: trimmedString,
+    options: z.array(trimmedString).min(2),
+    allowMultipleAnswers: z.boolean().optional(),
+  })
+  .strict();
 
 export const BrokerOutboundMessageSchema = z
   .object({
@@ -188,6 +251,8 @@ export const BrokerOutboundMessageSchema = z
         components: z.array(safeRecord).optional(),
       })
       .optional(),
+    contact: OutboundContactSchema.optional(),
+    poll: OutboundPollSchema.optional(),
     metadata: safeRecord.optional(),
   })
   .superRefine((value, ctx) => {
@@ -201,11 +266,45 @@ export const BrokerOutboundMessageSchema = z
       });
     }
 
-    if (value.type !== 'text' && !value.media && !value.template && !value.location) {
+    const mediaTypes = new Set(['image', 'video', 'document', 'audio']);
+
+    if (mediaTypes.has(value.type) && !value.media) {
       ctx.addIssue({
         code: 'custom',
-        message: 'Non-text messages require media, template, or location payload',
+        message: 'Mensagens de mídia exigem media payload.',
         path: ['type'],
+      });
+    }
+
+    if (value.type === 'location' && !value.location) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Mensagens de localização exigem location payload.',
+        path: ['location'],
+      });
+    }
+
+    if (value.type === 'template' && !value.template) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Mensagens template exigem template payload.',
+        path: ['template'],
+      });
+    }
+
+    if (value.type === 'contact' && !value.contact) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Mensagens de contato exigem contact payload.',
+        path: ['contact'],
+      });
+    }
+
+    if (value.type === 'poll' && !value.poll) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Mensagens de enquete exigem poll payload.',
+        path: ['poll'],
       });
     }
   })
