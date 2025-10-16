@@ -213,7 +213,6 @@ const OutboundPollSchema = z
     allowMultipleAnswers: z.boolean().optional(),
   })
   .strict();
-const outboundMessageTypes = ['text', 'image', 'video', 'document', 'audio', 'location', 'template', 'contact'] as const;
 
 export const BrokerOutboundMessageSchema = z
   .object({
@@ -274,20 +273,36 @@ export const BrokerOutboundMessageSchema = z
       ctx.addIssue({
         code: 'custom',
         message: 'Mensagens de mídia exigem media payload.',
+        path: ['media'],
+      });
+    }
+
     if (value.type === 'contact') {
-      if (!value.contacts || value.contacts.length === 0) {
+      const hasContactsArray = Array.isArray(value.contacts) && value.contacts.length > 0;
+      const hasContactObject = value.contact !== undefined && value.contact !== null;
+
+      if (!hasContactsArray && !hasContactObject) {
         ctx.addIssue({
           code: 'custom',
-          message: 'Contact messages require contacts payload.',
-          path: ['contacts'],
+          message: 'Mensagens de contato exigem contacts ou contact payload.',
+          path: ['contact'],
         });
       }
     }
 
-    if (value.type !== 'text' && !value.media && !value.template && !value.location && !value.contacts) {
+    if (
+      value.type !== 'text' &&
+      !value.media &&
+      !value.template &&
+      !value.location &&
+      !value.contacts &&
+      !value.contact &&
+      !value.poll
+    ) {
       ctx.addIssue({
         code: 'custom',
-        message: 'Non-text messages require media, template, location, or contacts payload',
+        message:
+          'Non-text messages require media, template, location, contacts, contact, or poll payload',
         path: ['type'],
       });
     }
@@ -305,14 +320,6 @@ export const BrokerOutboundMessageSchema = z
         code: 'custom',
         message: 'Mensagens template exigem template payload.',
         path: ['template'],
-      });
-    }
-
-    if (value.type === 'contact' && !value.contact) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Mensagens de contato exigem contact payload.',
-        path: ['contact'],
       });
     }
 
