@@ -1,4 +1,4 @@
-import type { MessageStatus } from '@ticketz/core';
+import type { MessageStatus } from '../../../types/tickets';
 
 import { normalizeBrokerStatus } from '../../../services/ticket-service';
 

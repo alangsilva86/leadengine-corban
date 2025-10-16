@@ -6,19 +6,21 @@ import {
   type Contact as PrismaContact,
   type Queue as PrismaQueue,
 } from '@prisma/client';
-import {
-  type Contact,
-  type CreateTicketDTO,
-  type Message,
-  type MessageFilters,
-  type Pagination,
-  type PaginatedResult,
-  type SendMessageDTO,
-  type Ticket,
-  type TicketFilters,
-  type TicketStatus,
-  type UpdateTicketDTO,
-} from '@ticketz/core';
+import type {
+  Contact,
+  CreateTicketDTO,
+  Message,
+  MessageType,
+  MessageFilters,
+  Pagination,
+  PaginatedResult,
+  SendMessageDTO,
+  SortOrder,
+  Ticket,
+  TicketFilters,
+  TicketStatus,
+  UpdateTicketDTO,
+} from './ticket-types';
 
 import { getPrismaClient } from '../prisma-client';
 
@@ -69,16 +71,16 @@ type UpsertPassthroughMessageInput = {
 
 const mapPrismaMessageTypeToDomain = (
   type: PrismaMessageType
-): Message['type'] => {
+): MessageType => {
   if (type === $Enums.MessageType.STICKER) {
     return 'IMAGE';
   }
 
-  return type as Message['type'];
+  return type as MessageType;
 };
 
 const normalizeMessageTypeForWrite = (
-  type: Message['type'] | undefined
+  type: MessageType | undefined
 ): PrismaMessageType => {
   if (type && PRISMA_MESSAGE_TYPES.has(type as PrismaMessageType)) {
     return type as PrismaMessageType;
@@ -88,7 +90,7 @@ const normalizeMessageTypeForWrite = (
 };
 
 const normalizeMessageTypesForFilter = (
-  types: Message['type'][] | undefined
+  types: MessageType[] | undefined
 ): PrismaMessageType[] => {
   if (!types?.length) {
     return [];
@@ -105,12 +107,17 @@ const normalizeMessageTypesForFilter = (
     .filter((value): value is PrismaMessageType => value !== null);
 };
 
-const defaultPagination = (
-  pagination: Pagination
-): Pagination & Required<Pick<Pagination, 'page' | 'limit' | 'sortOrder'>> => ({
+type NormalizedPagination = {
+  page: number;
+  limit: number;
+  sortBy?: string;
+  sortOrder: SortOrder;
+};
+
+const defaultPagination = (pagination: Pagination): NormalizedPagination => ({
   page: pagination.page ?? 1,
   limit: pagination.limit ?? 20,
-  sortBy: pagination.sortBy,
+  ...(pagination.sortBy !== undefined ? { sortBy: pagination.sortBy } : {}),
   sortOrder: pagination.sortOrder ?? 'desc',
 });
 

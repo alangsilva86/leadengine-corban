@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import {
-  type CreateTicketDTO,
-  type Message,
-  type MessageFilters,
-  type Pagination,
-  type PaginatedResult,
-  type SendMessageDTO,
-  type Ticket,
-  type TicketFilters,
-  type TicketStatus,
-  type UpdateTicketDTO,
-} from '@ticketz/core';
+import type {
+  CreateTicketDTO,
+  Message,
+  MessageFilters,
+  Pagination,
+  PaginatedResult,
+  SendMessageDTO,
+  Ticket,
+  TicketFilters,
+  TicketStatus,
+  UpdateTicketDTO,
+} from '../types/tickets';
 
 export const STORAGE_VERSION = 'test';
 

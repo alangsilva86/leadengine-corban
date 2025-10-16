@@ -1,7 +1,7 @@
 import express, { type Request } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Message } from '@ticketz/core';
+import type { Message } from '../../types/tickets';
 
 const sendMessageMock = vi.fn();
 

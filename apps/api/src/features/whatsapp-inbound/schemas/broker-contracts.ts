@@ -274,6 +274,10 @@ export const BrokerOutboundMessageSchema = z
       ctx.addIssue({
         code: 'custom',
         message: 'Mensagens de mídia exigem media payload.',
+        path: ['media'],
+      });
+    }
+
     if (value.type === 'contact') {
       if (!value.contacts || value.contacts.length === 0) {
         ctx.addIssue({
