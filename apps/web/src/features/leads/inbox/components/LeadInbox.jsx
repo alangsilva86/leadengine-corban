@@ -392,25 +392,72 @@ export const LeadInbox = ({
   });
 
   useEffect(() => {
-    if (typeof document === 'undefined') {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
       return undefined;
     }
 
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const body = document.body;
+    const html = document.documentElement;
     const pageContent = document.querySelector('.page-content');
     const pageContentInner = document.querySelector('.page-content-inner');
 
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    pageContent?.classList.add('page-content--inbox');
-    pageContentInner?.classList.add('page-content-inner--inbox');
+    if (!pageContent || !pageContentInner) {
+      console.warn(
+        'LeadInbox: não foi possível localizar contêiner principal da página para aplicar classes específicas da inbox.'
+      );
+    }
 
-    return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overflow = previousHtmlOverflow;
+    const previousBodyOverflow = body.style.overflow;
+    const previousHtmlOverflow = html.style.overflow;
+    let applied = false;
+
+    const applyLock = () => {
+      if (applied) return;
+      applied = true;
+      body.style.overflow = 'hidden';
+      html.style.overflow = 'hidden';
+      pageContent?.classList.add('page-content--inbox');
+      pageContentInner?.classList.add('page-content-inner--inbox');
+    };
+
+    const removeLock = () => {
+      if (!applied) return;
+      applied = false;
+      body.style.overflow = previousBodyOverflow;
+      html.style.overflow = previousHtmlOverflow;
       pageContent?.classList.remove('page-content--inbox');
       pageContentInner?.classList.remove('page-content-inner--inbox');
+    };
+
+    const updateLock = (matches) => {
+      if (matches) {
+        applyLock();
+      } else {
+        removeLock();
+      }
+    };
+
+    const mediaQuery = window.matchMedia('(min-width: 1280px)');
+
+    updateLock(mediaQuery.matches);
+
+    const handleMediaChange = (event) => {
+      updateLock(event.matches);
+    };
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleMediaChange);
+    } else if (typeof mediaQuery.addListener === 'function') {
+      mediaQuery.addListener(handleMediaChange);
+    }
+
+    return () => {
+      removeLock();
+      if (typeof mediaQuery.removeEventListener === 'function') {
+        mediaQuery.removeEventListener('change', handleMediaChange);
+      } else if (typeof mediaQuery.removeListener === 'function') {
+        mediaQuery.removeListener(handleMediaChange);
+      }
     };
   }, []);
 
@@ -913,12 +960,14 @@ export const LeadInbox = ({
       />
 
       <div className="flex-1 min-h-0">
+        <div className="grid h-full min-h-0 gap-6 xl:auto-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
         <div className="grid h-full min-h-0 auto-rows-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
           <GlassPanel
             as="section"
             tone="surface"
             radius="xl"
             shadow="2xl"
+            className="relative flex min-h-[520px] min-w-0 flex-col xl:h-full"
             className="relative flex h-full min-h-[520px] min-w-0 flex-col"
           >
             <div className="flex-shrink-0 border-b border-white/12 px-5 py-5">
@@ -1008,6 +1057,7 @@ export const LeadInbox = ({
             </div>
           </GlassPanel>
 
+          <div className="relative flex min-h-[520px] min-w-0 flex-col xl:h-full">
           <div className="relative flex h-full min-h-[520px] min-w-0 flex-col">
             <LeadConversationPanel
               allocation={activeAllocation}
@@ -1026,6 +1076,7 @@ export const LeadInbox = ({
             tone="overlay"
             radius="xl"
             shadow="xl"
+            className="flex min-h-[520px] min-w-0 flex-col xl:h-full"
             className="flex h-full min-h-[520px] min-w-0 flex-col"
           >
             <ColumnScrollArea className="flex-1 min-h-0" viewportClassName="space-y-5 px-5 pb-6 pt-5">
