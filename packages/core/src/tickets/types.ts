@@ -218,8 +218,7 @@ export const SendMessageDTOSchema = z
       });
     }
 
-    if (mediaTypes.has(value.type) && !hasMedia) {
-    const requiresMediaUrl = ['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT'].includes(value.type);
+    const requiresMediaUrl = mediaTypes.has(value.type);
 
     if (requiresMediaUrl && !hasMedia) {
       ctx.addIssue({
