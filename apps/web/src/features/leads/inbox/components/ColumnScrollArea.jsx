@@ -2,7 +2,9 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 
 import { cn } from '@/lib/utils.js';
 
-const ColumnScrollArea = forwardRef(({ className, viewportClassName, children, ...props }, forwardedRef) => {
+import '../styles/layout.css';
+
+const InboxScrollArea = forwardRef(({ className, viewportClassName, children, ...props }, forwardedRef) => {
   const viewportRef = useRef(null);
   const [showTopShadow, setShowTopShadow] = useState(false);
   const [showBottomShadow, setShowBottomShadow] = useState(false);
@@ -79,12 +81,14 @@ const ColumnScrollArea = forwardRef(({ className, viewportClassName, children, .
   );
 
   return (
-    <div className={cn('group relative h-full min-h-0 overflow-hidden', className)}>
+    <div
+      className={cn('inbox-scroll-area group relative h-full min-h-0 overflow-hidden', className)}
+      data-inbox-scrolling={isInteracting ? 'true' : undefined}
+    >
       <div
         ref={viewportRef}
-        data-scrolling={isInteracting ? 'true' : undefined}
         className={cn(
-          'column-scroll-viewport h-full overflow-y-auto overscroll-contain scroll-smooth',
+          'inbox-scroll-area__viewport h-full overflow-y-auto overscroll-contain scroll-smooth',
           viewportClassName
         )}
         style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
@@ -96,14 +100,14 @@ const ColumnScrollArea = forwardRef(({ className, viewportClassName, children, .
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-slate-950/85 via-slate-950/35 to-transparent transition-opacity duration-200 ease-out',
+          'inbox-scroll-area__shadow pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-slate-950/85 via-slate-950/35 to-transparent transition-opacity duration-200 ease-out',
           showTopShadow ? 'opacity-100' : 'opacity-0'
         )}
       />
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent transition-opacity duration-200 ease-out',
+          'inbox-scroll-area__shadow pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent transition-opacity duration-200 ease-out',
           showBottomShadow ? 'opacity-100' : 'opacity-0'
         )}
       />
@@ -111,6 +115,8 @@ const ColumnScrollArea = forwardRef(({ className, viewportClassName, children, .
   );
 });
 
-ColumnScrollArea.displayName = 'ColumnScrollArea';
+InboxScrollArea.displayName = 'InboxScrollArea';
 
-export default ColumnScrollArea;
+export { InboxScrollArea };
+
+export default InboxScrollArea;
