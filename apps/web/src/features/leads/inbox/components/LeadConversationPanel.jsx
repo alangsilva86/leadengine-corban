@@ -9,8 +9,8 @@ import {
 
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
+import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn } from '@/lib/utils.js';
-import ColumnScrollArea from './ColumnScrollArea.jsx';
 
 const STATUS_META = {
   allocated: { label: 'Aguardando contato', tone: 'neutral' },
@@ -216,12 +216,15 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
         </Button>
       </div>
 
-      <ColumnScrollArea
+      <ScrollArea
         className="flex-1 min-h-0"
         viewportClassName={cn(
-          'px-6 py-6 transition-opacity duration-150 ease-out',
+          'h-full px-6 py-6 overscroll-contain transition-opacity duration-150 ease-out',
           isSwitching ? 'opacity-0' : 'opacity-100'
         )}
+        viewportProps={{
+          style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
+        }}
       >
         {isLoading ? (
           <div className="space-y-4">
@@ -275,7 +278,7 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
             })}
           </ol>
         )}
-      </ColumnScrollArea>
+      </ScrollArea>
     </div>
   );
 };
