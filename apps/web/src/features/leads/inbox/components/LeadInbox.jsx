@@ -36,7 +36,7 @@ import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
 
 const InboxPageContainer = ({ children, className }) => (
-  <div className={cn('flex h-[100dvh] min-h-0 w-full flex-1 flex-col', className)}>
+  <div className={cn('flex min-h-[100dvh] w-full flex-col', className)}>
     {children}
   </div>
 );
@@ -534,14 +534,14 @@ export const LeadInbox = ({
         onboarding={onboarding}
       />
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 xl:overflow-hidden">
         <div className="grid h-full min-h-0 gap-6 xl:grid-cols-[minmax(320px,340px)_minmax(0,1fr)_minmax(320px,340px)] xl:gap-7">
           <GlassPanel
             as="section"
             tone="inbox"
             radius="xl"
             shadow="2xl"
-            className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+            className="relative flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0"
           >
             <div className="flex-shrink-0 border-b border-[color:var(--color-inbox-border)] px-5 py-5">
               <GlobalFiltersBar
@@ -633,7 +633,7 @@ export const LeadInbox = ({
             </div>
           </GlassPanel>
 
-          <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="relative flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0">
             <LeadConversationPanel
               allocation={activeAllocation}
               onOpenWhatsApp={handleOpenWhatsApp}
@@ -651,7 +651,7 @@ export const LeadInbox = ({
             tone="inbox"
             radius="xl"
             shadow="xl"
-            className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+            className="flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0"
           >
             <ScrollArea
               className="flex-1 min-h-0"
