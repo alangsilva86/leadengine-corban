@@ -322,6 +322,7 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
 - **Testes**: `pnpm run test` roda os E2E da API (`apps/api/src/routes/__tests__`). Frontend utiliza Vitest/Testing Library sob demanda.
 - **Typecheck**: `pnpm run typecheck` reforça que integrações estejam saudáveis antes do build.
 - **CI-friendly**: `pnpm -C apps/web exec vite build --config apps/web/vite.build.ci.mjs` economiza memória em ambientes restritos.
+- **Checklist web**: no frontend, priorize `pnpm --filter web lint`, `pnpm --filter web exec vitest run --coverage`, `pnpm --filter web exec jscpd` (instale `jscpd` globalmente ou adicione como devDependency antes de executar) e `pnpm --filter web exec tsc --noEmit` para validar tokens Tailwind, cobertura e tipos.
 
 ---
 
