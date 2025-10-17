@@ -4,15 +4,15 @@ import { ExternalLink } from 'lucide-react';
 
 export const AuditTrailLink = ({ onOpenAudit }) => {
   return (
-    <Card className="border-0 bg-slate-950/25 text-slate-100 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
+    <Card className="border-0 bg-surface-overlay-quiet text-foreground shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
       <CardHeader>
         <CardTitle className="text-sm">Compliance & Auditoria</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 text-xs text-slate-300">
-        <p className="text-slate-400">Acesse relatórios, trilha de auditoria (CMN 4.935) e exportações para QA.</p>
+      <CardContent className="flex flex-col gap-3 text-xs text-foreground-muted">
+        <p className="text-foreground-muted">Acesse relatórios, trilha de auditoria (CMN 4.935) e exportações para QA.</p>
         <Button
           size="sm"
-          className="justify-start gap-2 rounded-full bg-slate-900/40 text-slate-100 ring-1 ring-white/5 hover:bg-slate-900/30"
+          className="justify-start gap-2 rounded-full bg-surface-overlay-quiet text-foreground ring-1 ring-surface-overlay-glass-border hover:bg-surface-overlay-strong"
           onClick={onOpenAudit}
         >
           <ExternalLink className="h-4 w-4" /> Abrir auditoria completa

@@ -127,20 +127,20 @@ export const Composer = ({
   };
 
   return (
-    <div className="rounded-[26px] bg-slate-950/25 p-4 shadow-[0_24px_56px_-34px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
+    <div className="rounded-[26px] bg-surface-overlay-quiet p-4 shadow-[0_24px_56px_-34px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
       {attachments.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((file) => (
             <Badge
               key={file.id}
               variant="secondary"
-              className="flex items-center gap-2 bg-slate-900/40 text-xs text-slate-200 ring-1 ring-white/5"
+              className="flex items-center gap-2 bg-surface-overlay-quiet text-xs text-foreground-muted ring-1 ring-surface-overlay-glass-border"
             >
               <span>{file.name}</span>
-              <span className="text-slate-400">{Math.round(file.size / 1024)} KB</span>
+              <span className="text-foreground-muted">{Math.round(file.size / 1024)} KB</span>
               <button
                 type="button"
-                className="text-slate-400 transition hover:text-slate-100"
+                className="text-foreground-muted transition hover:text-foreground"
                 onClick={() => removeAttachment(file.id)}
               >
                 <X className="h-3 w-3" />
@@ -168,12 +168,12 @@ export const Composer = ({
                   return [...current, reply];
                 });
               }}
-              className="h-10 w-10 rounded-full bg-slate-900/40 ring-1 ring-white/5"
+              className="h-10 w-10 rounded-full bg-surface-overlay-quiet ring-1 ring-surface-overlay-glass-border"
             />
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full bg-slate-900/40 text-slate-300 ring-1 ring-white/5 transition hover:bg-slate-900/30 hover:text-white"
+              className="h-10 w-10 rounded-full bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={handleAttachmentClick}
             >
               <Paperclip className="h-4 w-4" />
@@ -189,7 +189,7 @@ export const Composer = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full bg-slate-900/40 text-slate-300 ring-1 ring-white/5 transition hover:bg-slate-900/30 hover:text-white"
+              className="h-10 w-10 rounded-full bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={() => setTemplatePickerOpen((open) => !open)}
             >
               <Smile className="h-4 w-4" />
@@ -198,7 +198,7 @@ export const Composer = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full bg-slate-900/40 text-slate-300 ring-1 ring-white/5 transition hover:bg-slate-900/30 hover:text-white"
+              className="h-10 w-10 rounded-full bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={() => onRequestSuggestion?.()}
               disabled={aiLoading}
             >
@@ -229,7 +229,7 @@ export const Composer = ({
             }}
             disabled={disabled || isSending}
             placeholder={placeholder}
-            className="min-h-[88px] flex-1 resize-none rounded-[22px] border-none bg-slate-950/35 px-4 py-3 text-slate-100 placeholder:text-slate-500 ring-1 ring-white/5"
+            className="min-h-[88px] flex-1 resize-none rounded-[22px] border-none bg-surface-overlay-quiet px-4 py-3 text-foreground placeholder:text-foreground-muted ring-1 ring-surface-overlay-glass-border"
           />
           <Button
             variant="default"
@@ -245,16 +245,16 @@ export const Composer = ({
       </div>
 
       {sendError ? (
-        <div className="mt-2 rounded-md bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+        <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">
           {sendError.message ?? 'Falha ao enviar mensagem.'}
         </div>
       ) : null}
 
       {aiSuggestions.length > 0 ? (
-        <div className="mt-3 space-y-2 rounded-2xl bg-slate-950/30 p-3 text-sm text-slate-200 ring-1 ring-white/5">
-          <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+        <div className="mt-3 space-y-2 rounded-2xl bg-surface-overlay-quiet p-3 text-sm text-foreground ring-1 ring-surface-overlay-glass-border">
+          <div className="flex items-center justify-between text-xs uppercase tracking-wide text-foreground-muted">
             <span>Sugestões da IA</span>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-slate-400 hover:text-slate-100" onClick={onDiscardSuggestion}>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-foreground-muted hover:text-foreground" onClick={onDiscardSuggestion}>
               Limpar
             </Button>
           </div>
@@ -263,7 +263,7 @@ export const Composer = ({
               <button
                 key={`${index}-${suggestion.slice(0, 20)}`}
                 type="button"
-                className="w-full rounded-xl bg-slate-900/40 px-3 py-2 text-left text-xs text-slate-200 ring-1 ring-white/5 transition hover:bg-slate-900/30"
+                className="w-full rounded-xl bg-surface-overlay-quiet px-3 py-2 text-left text-xs text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong"
                 onClick={() => onApplySuggestion?.(suggestion)}
               >
                 {suggestion}
