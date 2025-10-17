@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 import { formatCurrency, formatDocument } from '../utils/formatters.js';
 
 const STATUS_META = {
@@ -59,6 +60,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
         </Badge>
       </div>
 
+      <InboxSurface radius="md" padding="sm" shadow="none" className="grid gap-3 text-[13px] text-muted-foreground sm:grid-cols-3">
       <div className="grid gap-3 rounded-2xl border border-[var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-[13px] text-[color:var(--color-inbox-foreground-muted)] sm:grid-cols-3">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Telefone</p>
@@ -72,7 +74,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
           <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Registros</p>
           <p className="font-medium text-[color:var(--color-inbox-foreground)]">{resolveRegistrations(allocation.registrations)}</p>
         </div>
-      </div>
+      </InboxSurface>
 
       <div className="grid gap-3 border-t border-[var(--color-inbox-border)] pt-4 text-[13px] sm:grid-cols-2">
         <div className="space-y-1">

@@ -34,6 +34,7 @@ import GlobalFiltersBar from './GlobalFiltersBar.jsx';
 import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 import { InboxSummaryGrid } from './InboxSummaryGrid.jsx';
 
 const InboxPageContainer = ({ children, className }) => (
@@ -657,6 +658,37 @@ export const LeadInbox = ({
                 style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
               }}
             >
+              <InboxSurface as={Card}>
+                <CardHeader className="space-y-2 pb-2">
+                  <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
+                    Resumo
+                  </CardTitle>
+                  <CardDescription className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
+                    Distribuição dos leads recebidos via WhatsApp conectado.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid grid-cols-2 gap-4">
+                    {statusMetrics.map(({ key, label, accent, icon }) => (
+                      <InboxSurface
+                        as="div"
+                        radius="md"
+                        shadow="none"
+                        key={key}
+                        className="space-y-1 px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
+                      >
+                        <dt className="flex items-center gap-2 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">
+                          {icon ? icon : null}
+                          <span>{label}</span>
+                        </dt>
+                        <dd className={cn('text-xl font-semibold text-[color:var(--color-inbox-foreground)]', accent ?? '')}>
+                          {formatSummaryValue(summary[key])}
+                        </dd>
+                      </InboxSurface>
+                    ))}
+                  </dl>
+                </CardContent>
+              </InboxSurface>
               <InboxSummaryGrid summary={summary} />
 
               <LeadProfilePanel

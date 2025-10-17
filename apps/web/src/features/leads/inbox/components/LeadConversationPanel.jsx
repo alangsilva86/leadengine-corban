@@ -18,6 +18,7 @@ import {
 } from '../utils/dateUtils.js';
 import { STATUS_META } from '../constants/statusMeta.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -133,8 +134,18 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
     ]) ?? allocation?.notes ?? null;
 
   return (
-    <div className="flex min-h-[520px] flex-col rounded-[32px] border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)] ring-1 ring-[color:var(--color-inbox-border)] backdrop-blur-xl xl:h-full xl:min-h-0">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-6 py-4 shadow-[var(--shadow-lg)]">
+    <InboxSurface
+      tone="bold"
+      radius="xl"
+      className="flex min-h-[520px] flex-col ring-1 ring-[color:var(--color-inbox-border)] backdrop-blur-xl xl:h-full xl:min-h-0"
+    >
+      <InboxSurface
+        tone="quiet"
+        radius="none"
+        shadow="lg"
+        border={false}
+        className="flex flex-wrap items-center justify-between gap-4 border-b border-[color:var(--color-inbox-border)] px-6 py-4"
+      >
         <div className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-[0.3em] text-[color:var(--color-inbox-foreground-muted)]">Timeline</p>
           <div className="flex flex-wrap items-center gap-3">
@@ -163,7 +174,7 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
         >
           <MessageCircle className="h-4 w-4" /> Abrir WhatsApp
         </InboxPrimaryButton>
-      </div>
+      </InboxSurface>
 
       <ScrollArea
         className="flex-1 min-h-0"
@@ -228,7 +239,7 @@ const LeadConversationPanel = ({ allocation, onOpenWhatsApp, isLoading, isSwitch
           </ol>
         )}
       </ScrollArea>
-    </div>
+    </InboxSurface>
   );
 };
 
