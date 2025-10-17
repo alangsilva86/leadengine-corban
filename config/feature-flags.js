@@ -23,22 +23,9 @@ export const resolveSharedFeatureFlags = (env) => {
     const whatsappDebug = parseBoolean(normalized[FEATURE_DEBUG_WHATSAPP], false);
     return { whatsappDebug };
 };
-const getProcessEnv = () => {
-    if (typeof process === 'undefined' || !process?.env) {
-        return {};
-    }
-    return normalizeEnv(process.env);
-};
-export const getBackendFeatureFlags = (env) => {
-    if (env) {
-        return resolveSharedFeatureFlags(env);
-    }
-    return resolveSharedFeatureFlags(getProcessEnv());
-};
 export const getFrontendFeatureFlags = (env) => {
     if (env) {
         return resolveSharedFeatureFlags(env);
     }
     return resolveSharedFeatureFlags();
 };
-export const isWhatsappDebugEnabled = (env) => resolveSharedFeatureFlags(env).whatsappDebug;

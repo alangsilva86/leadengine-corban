@@ -50,7 +50,7 @@
 - **Plan**: search for potential UI usage; if none, delete and rely on schema validation when needed.
 
 ### 6. In-memory stores for tests (`apps/api/src/data/**` and `apps/api/src/test-utils/storage-mock.ts`)
-- Numerous helpers (e.g., `resetTicketNotes`, `resetUserPreferencesStore`, `allocateBrokerLeads`) support old test setups.  
+- Several helpers supported old test setups. Functions such as `resetTicketNotes` and `resetUserPreferencesStore` have now been removed; continue auditing entries like `allocateBrokerLeads` to confirm whether they still provide value.
 - **Plan**:
   1. Audit existing Vitest suites to confirm whether newer Prisma-backed mocks replaced these utilities.  
   2. If redundant, remove the store modules and migrate any remaining tests to rely on generated fixtures.

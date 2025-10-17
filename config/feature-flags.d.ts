@@ -4,7 +4,5 @@ export type SharedFeatureFlags = {
 };
 type EnvSource = Record<string, string | undefined> | undefined | null;
 export declare const resolveSharedFeatureFlags: (env?: EnvSource) => SharedFeatureFlags;
-export declare const getBackendFeatureFlags: (env?: EnvSource) => SharedFeatureFlags;
 export declare const getFrontendFeatureFlags: (env?: EnvSource) => SharedFeatureFlags;
-export declare const isWhatsappDebugEnabled: (env?: EnvSource) => boolean;
 export {};

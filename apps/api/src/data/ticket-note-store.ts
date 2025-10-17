@@ -82,6 +82,3 @@ export const createTicketNote = async (input: CreateNoteInput): Promise<TicketNo
   };
 };
 
-export const resetTicketNotes = () => {
-  notesByTenant.clear();
-};

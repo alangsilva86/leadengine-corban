@@ -18,8 +18,3 @@ export const isValidSlug = (value: string): boolean => {
   return /^[a-z0-9\-]+$/.test(value);
 };
 
-export const assertValidSlug = (value: string, field = 'slug'): void => {
-  if (!isValidSlug(value)) {
-    throw new Error(`${field} deve conter apenas letras minúsculas, números ou hífens.`);
-  }
-};
