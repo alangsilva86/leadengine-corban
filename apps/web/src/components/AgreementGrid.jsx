@@ -3,6 +3,56 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
+import useOnboardingStepLabel from '@/features/onboarding/useOnboardingStepLabel.js';
+
+const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
+  const [agreements, setAgreements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        const payload = await apiGet('/api/lead-engine/agreements');
+        if (!mounted) return;
+        setAgreements(payload.data || []);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Falha ao carregar convênios');
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const { stepLabel, nextStage } = useOnboardingStepLabel({
+    stages: onboarding?.stages,
+    targetStageId: 'agreements',
+    fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'WhatsApp' },
+  });
+  const isLoading = loading && agreements.length === 0;
+
+  const handleRetry = async () => {
+    try {
+      setError(null);
+      setLoading(true);
+      const payload = await apiGet('/api/lead-engine/agreements');
+      setAgreements(payload.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao carregar convênios');
+    } finally {
+      setLoading(false);
+    }
+  };
 import useAgreements from '@/features/agreements/useAgreements.js';
 
 const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
