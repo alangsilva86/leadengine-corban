@@ -216,6 +216,18 @@ curl -H "x-tenant-id: <TENANT_ID>" http://localhost:4000/api/integrations/whatsa
 
 Os retornos devem refletir os dados reais do broker, sem recorrer ao QR de fallback, confirmando que a criação e conexão das instâncias estão operando end-to-end.
 
+Para validar o pipeline completo (webhook → Socket.IO → persistência) execute o smoke test automatizado:
+
+```bash
+API_URL="https://ticketzapi-production.up.railway.app" \
+WHATSAPP_WEBHOOK_API_KEY="<API_KEY>" \
+TENANT_ID="demo-tenant" \
+INSTANCE_ID="alan" \
+pnpm test:whatsapp
+```
+
+O script `scripts/whatsapp-smoke-test.ts` envia um evento inbound sintético, aguarda `messages.new` e confirma a mensagem via REST. Caso necessário, utilize `pnpm exec tsx scripts/replay-baileys-log.ts` para reproduzir logs reais do connector Baileys diretamente no webhook HTTP.
+
 ## 🔒 SSL/HTTPS (Recomendado)
 
 ### 1. Instalar Certbot

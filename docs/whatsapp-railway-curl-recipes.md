@@ -131,7 +131,7 @@ Use the helper script below to replay events stored by the Baileys connector (`b
 ```bash
 # Defaults: URL=http://localhost:3000/api/integrations/whatsapp/webhook
 # and API key from WHATSAPP_WEBHOOK_API_KEY / WHATSAPP_BROKER_API_KEY
-node scripts/replay-baileys-log.mjs ./logs/baileys.ndjson --url="$API_URL/api/integrations/whatsapp/webhook"
+pnpm exec tsx scripts/replay-baileys-log.ts ./logs/baileys.ndjson --url="$API_URL/api/integrations/whatsapp/webhook"
 ```
 
 The script accepts logs formatted as newline-delimited JSON. Each line must contain either a raw Baileys payload or an envelope with a `payload`/`event` property. Failed lines are reported but the replay continues processing the remainder of the file.
