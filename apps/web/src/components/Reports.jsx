@@ -44,11 +44,11 @@ const Reports = () => {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Relatórios e Insights</h1>
-          <div className="animate-pulse bg-gray-200 h-10 w-32 rounded"></div>
+          <div className="animate-pulse bgSurfaceOverlayQuiet h-10 w-32 rounded"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="animate-pulse bg-gray-200 h-32 rounded-lg"></div>
+            <div key={i} className="animate-pulse bgSurfaceOverlayQuiet h-32 rounded-lg"></div>
           ))}
         </div>
       </div>
@@ -61,7 +61,7 @@ const Reports = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Relatórios e Insights</h1>
-          <p className="text-gray-600 mt-1">Acompanhe o desempenho dos seus leads e campanhas</p>
+          <p className="textForegroundMuted mt-1">Acompanhe o desempenho dos seus leads e campanhas</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm">
@@ -100,11 +100,11 @@ const Reports = () => {
           <Card key={index}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{metric.metric}</CardTitle>
-              <TrendingUp className={`h-4 w-4 ${metric.trend === 'up' ? 'text-green-600' : 'text-red-600'}`} />
+              <TrendingUp className={`h-4 w-4 ${metric.trend === 'up' ? 'textSuccess' : 'textStatusError'}`} />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{metric.value}</div>
-              <p className={`text-xs ${metric.trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
+              <p className={`text-xs ${metric.trend === 'up' ? 'textSuccess' : 'textStatusError'}`}>
                 {metric.change} em relação ao período anterior
               </p>
             </CardContent>
@@ -187,14 +187,14 @@ const Reports = () => {
                   <td className="p-2 font-medium">SAEC Goiânia</td>
                   <td className="text-right p-2">156</td>
                   <td className="text-right p-2">23</td>
-                  <td className="text-right p-2 text-green-600">14.7%</td>
+                  <td className="text-right p-2 textSuccess">14.7%</td>
                   <td className="text-right p-2">R$ 34.500</td>
                 </tr>
                 <tr className="border-b">
                   <td className="p-2 font-medium">RF1 Boa Vista</td>
                   <td className="text-right p-2">98</td>
                   <td className="text-right p-2">12</td>
-                  <td className="text-right p-2 text-green-600">12.2%</td>
+                  <td className="text-right p-2 textSuccess">12.2%</td>
                   <td className="text-right p-2">R$ 18.000</td>
                 </tr>
                 <tr className="border-b">
@@ -208,7 +208,7 @@ const Reports = () => {
                   <td className="p-2 font-medium">SAEC Curaçá</td>
                   <td className="text-right p-2">45</td>
                   <td className="text-right p-2">4</td>
-                  <td className="text-right p-2 text-red-600">8.9%</td>
+                  <td className="text-right p-2 textStatusError">8.9%</td>
                   <td className="text-right p-2">R$ 6.000</td>
                 </tr>
               </tbody>
