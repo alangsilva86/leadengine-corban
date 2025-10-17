@@ -49,6 +49,8 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | --- | --- | --- | --- | --- |
 | `brand.primary.solid` | Cor primária para CTAs e gráficos. | `#4f46e5` | `#6366f1` | `Button` (default), `Dashboard` (indicadores) |
 | `brand.primary.onSolid` | Texto sobre o primário sólido. | `#eef2ff` | `#f8fafc` | `Button`, ícones acionáveis |
+| `brand.primary.soft` | Fundo suave para estados ativos discretos. | `rgba(79, 70, 229, 0.14)` | `rgba(99, 102, 241, 0.2)` | `AgreementGrid` (selo “Convênio ativo”), filtros destacados |
+| `brand.primary.softBorder` | Borda/acento de foco para cartões selecionados. | `rgba(79, 70, 229, 0.38)` | `rgba(99, 102, 241, 0.45)` | `AgreementGrid` (card selecionado), indicadores de foco |
 | `brand.secondary.surface` | Segundo plano de destaque brando. | `rgba(79, 70, 229, 0.1)` | `rgba(99, 102, 241, 0.12)` | `Badge` secundário, cards do dashboard |
 | `brand.secondary.onSurface` | Texto sobre secundário. | `#0f172a` | `#f1f5f9` | `Badge`, cards temáticos |
 | `brand.accent.surface` | Fundo de chips e indicadores. | `rgba(79, 70, 229, 0.16)` | `rgba(99, 102, 241, 0.18)` | `LeadAllocationCard`, estatísticas |

@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { apiGet } from '@/lib/api.js';
+import { cn } from '@/lib/utils.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 
 const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
@@ -67,7 +68,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
         </div>
         {selectedAgreement ? (
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2 rounded-full bg-[rgba(99,102,241,0.12)] px-3 py-1 font-medium text-[color:var(--primary-foreground)]">
+            <span className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 font-medium text-primary-foreground">
               Convênio ativo
             </span>
             <strong className="text-foreground">{selectedAgreement.name}</strong>
@@ -137,11 +138,12 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
               return (
                 <Card
                   key={agreement.id}
-                  className={`transition-colors duration-200 ${
+                  className={cn(
+                    'transition-colors duration-200',
                     isSelected
-                      ? 'border-[color-mix(in_oklab,_var(--primary)_55%,_transparent)] shadow-[0_0_0_1px_rgba(99,102,241,0.35)]'
-                      : 'border-[var(--border)]'
-                  }`}
+                      ? 'border-primary-soft-border shadow-none shadow-focus-primary'
+                      : 'border-border'
+                  )}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">

@@ -6,6 +6,9 @@
   --color-divider: var(--sys-color-divider);
   --color-primary: var(--sys-color-primary);
   --color-primary-foreground: var(--sys-color-primary-foreground);
+  --color-primary-soft: var(--tone-info-surface);
+  --color-primary-soft-border: var(--tone-info-border);
+  --color-primary-soft-foreground: var(--tone-info-foreground);
   --color-success: var(--sys-color-success);
   --color-success-soft: var(--tone-success-surface);
   --color-success-soft-border: var(--tone-success-border);
@@ -121,6 +124,9 @@
   --divider: var(--color-divider);
   --primary: var(--color-primary);
   --primary-foreground: var(--color-primary-foreground);
+  --primary-soft: var(--color-primary-soft);
+  --primary-soft-border: var(--color-primary-soft-border);
+  --primary-soft-foreground: var(--color-primary-soft-foreground);
   --success: var(--color-success);
   --success-soft: var(--color-success-soft);
   --success-soft-border: var(--color-success-soft-border);
@@ -398,6 +404,9 @@
   --divider: var(--color-divider);
   --primary: var(--color-primary);
   --primary-foreground: var(--color-primary-foreground);
+  --primary-soft: var(--color-primary-soft);
+  --primary-soft-border: var(--color-primary-soft-border);
+  --primary-soft-foreground: var(--color-primary-soft-foreground);
   --success: var(--color-success);
   --success-soft-foreground: var(--color-success-soft-foreground);
   --success-strong-foreground: var(--color-success-strong-foreground);
