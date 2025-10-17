@@ -11,7 +11,7 @@ import {
   persistStoredViews,
   pruneStaleViews,
   serializeFilters,
-} from '../utils/filtering.js';
+} from '../utils/index.js';
 
 export const useInboxViewState = ({ allocations }) => {
   const initialFiltersRef = useRef(loadStoredFilters());

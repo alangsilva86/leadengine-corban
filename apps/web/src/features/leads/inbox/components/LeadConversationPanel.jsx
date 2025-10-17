@@ -15,7 +15,7 @@ import {
   formatDateTime,
   getFirstString,
   getFirstValidDate,
-} from '../utils/dateUtils.js';
+} from '../utils/index.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 
 const STATUS_META = {
