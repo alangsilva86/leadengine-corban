@@ -1,14 +1,75 @@
 /** @vitest-environment jsdom */
+import { cloneElement, isValidElement } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
-const mockApiGet = vi.fn();
-const mockApiPost = vi.fn();
-const mockApiPatch = vi.fn();
-const mockApiDelete = vi.fn();
-const mockGetAuthToken = vi.fn(() => null);
+const {
+  mockApiGet,
+  mockApiPost,
+  mockApiPatch,
+  mockApiDelete,
+  mockGetAuthToken,
+  mockUseInstanceLiveUpdates,
+  toastSpies,
+  createInstanceDialogMock,
+  buttonMock,
+} = vi.hoisted(() => {
+  const mockApiGetFn = vi.fn();
+  const mockApiPostFn = vi.fn();
+  const mockApiPatchFn = vi.fn();
+  const mockApiDeleteFn = vi.fn();
+  const mockTokenFn = vi.fn(() => null);
+  const mockRealtimeHook = vi.fn(() => ({ connected: false }));
+  const toast = {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+  };
+
+  const dialogMock = vi.fn(({ open, onOpenChange, onSubmit }) => {
+    if (!open) {
+      return null;
+    }
+
+    const handleSubmit = async () => {
+      await onSubmit?.({ name: 'WhatsApp Vendas', id: 'WhatsApp Vendas' });
+      onOpenChange?.(false);
+    };
+
+    return (
+      <div>
+        <button type="button" onClick={handleSubmit}>
+          confirmar criação
+        </button>
+      </div>
+    );
+  });
+
+  const button = ({ asChild, children, ...props }) => {
+    if (asChild && isValidElement(children)) {
+      return cloneElement(children, props);
+    }
+    return (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    );
+  };
+
+  return {
+    mockApiGet: mockApiGetFn,
+    mockApiPost: mockApiPostFn,
+    mockApiPatch: mockApiPatchFn,
+    mockApiDelete: mockApiDeleteFn,
+    mockGetAuthToken: mockTokenFn,
+    mockUseInstanceLiveUpdates: mockRealtimeHook,
+    toastSpies: toast,
+    createInstanceDialogMock: dialogMock,
+    buttonMock: button,
+  };
+});
 
 vi.mock('@/lib/api.js', () => ({
   apiGet: (...args) => mockApiGet(...args),
@@ -25,20 +86,12 @@ vi.mock('@/lib/session-storage.js', () => ({
   default: () => false,
 }));
 
-vi.mock('@/lib/auth.js', () => ({
-  getAuthToken: () => 'test-token',
-}));
-
 vi.mock('qrcode', () => ({
   toDataURL: vi.fn(() => Promise.resolve('data:image/png;base64,ZmFrZQ==')),
 }));
 
 vi.mock('sonner', () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
-  },
+  toast: toastSpies,
 }));
 
 vi.mock('../shared/usePlayfulLogger.js', () => ({
@@ -50,7 +103,7 @@ vi.mock('../shared/usePlayfulLogger.js', () => ({
 }));
 
 vi.mock('./hooks/useInstanceLiveUpdates.js', () => ({
-  default: () => ({ connected: false }),
+  default: (...args) => mockUseInstanceLiveUpdates(...args),
 }));
 
 vi.mock('@/components/ui/notice-banner.jsx', () => ({
@@ -73,33 +126,28 @@ vi.mock('../components/CampaignHistoryDialog.jsx', () => ({
   default: () => null,
 }));
 
-vi.mock('../components/CreateInstanceDialog.jsx', () => ({
-  default: ({ open, onOpenChange, onSubmit }) => {
-    if (!open) {
-      return null;
-    }
-
-    const handleSubmit = async () => {
-      await onSubmit?.({ name: 'WhatsApp Vendas', id: 'WhatsApp Vendas' });
-      onOpenChange?.(false);
-    };
-
-    return (
-      <div>
-        <button type="button" onClick={handleSubmit}>
-          confirmar criação
-        </button>
-      </div>
-    );
-  },
+vi.mock('../components/QrPreview.jsx', () => ({
+  default: () => (
+    <div data-testid="qr-preview">
+      <img alt="QR Code do WhatsApp" src="data:image/png;base64,mock" />
+    </div>
+  ),
 }));
 
-const passthrough = (Tag = 'div') => ({ children, ...props }) => (
-  <Tag {...props}>{children}</Tag>
-);
+vi.mock('../components/CreateInstanceDialog.jsx', () => ({
+  default: (...args) => createInstanceDialogMock(...args),
+}));
+
+const passthrough = (Tag = 'div') => ({ asChild, children, ...props }) => {
+  if (asChild && isValidElement(children)) {
+    return cloneElement(children, props);
+  }
+  const Component = Tag;
+  return <Component {...props}>{children}</Component>;
+};
 
 vi.mock('@/components/ui/badge.jsx', () => ({ Badge: passthrough('span') }));
-vi.mock('@/components/ui/button.jsx', () => ({ Button: passthrough('button') }));
+vi.mock('@/components/ui/button.jsx', () => ({ Button: (...args) => buttonMock(...args) }));
 vi.mock('@/components/ui/card.jsx', () => ({
   Card: passthrough('section'),
   CardHeader: passthrough('div'),
@@ -172,6 +220,9 @@ beforeEach(() => {
   mockApiDelete.mockReset();
   mockGetAuthToken.mockReset();
   mockGetAuthToken.mockReturnValue(null);
+  mockUseInstanceLiveUpdates.mockReset();
+  mockUseInstanceLiveUpdates.mockReturnValue({ connected: false });
+  createInstanceDialogMock.mockClear();
 });
 
 afterEach(() => {
@@ -268,11 +319,18 @@ describe('WhatsAppConnect', () => {
   });
 
   it('hides disconnected broker sessions by default but allows showing all', async () => {
+    const user = userEvent.setup();
     mockApiGet.mockImplementation((url) => {
       if (url.startsWith('/api/integrations/whatsapp/instances')) {
         return Promise.resolve({
           data: {
             instances: [
+              {
+                id: 'inst-1',
+                name: 'Instância Ativa',
+                status: 'connected',
+                connected: true,
+              },
               {
                 id: '5511999999999@whatsapp.net',
                 name: 'WhatsApp Broker Desconectado',
@@ -294,8 +352,8 @@ describe('WhatsAppConnect', () => {
 
     expect(screen.queryByText('WhatsApp Broker Desconectado')).not.toBeInTheDocument();
 
-    const showAllButtons = await screen.findAllByRole('button', { name: /mostrar todas/i });
-    await userEvent.setup().click(showAllButtons[showAllButtons.length - 1]);
+    const showAllButton = await screen.findByRole('button', { name: /mostrar todas/i });
+    await user.click(showAllButton);
 
     const brokerInstance = await screen.findAllByText('WhatsApp Broker Desconectado');
     expect(brokerInstance.length).toBeGreaterThan(0);
