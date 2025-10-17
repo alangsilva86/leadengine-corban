@@ -48,6 +48,7 @@ import CampaignsPanel from './components/CampaignsPanel.jsx';
 import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
 import CreateInstanceDialog from './components/CreateInstanceDialog.jsx';
 import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
+import QrPreview from './components/QrPreview.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
 
@@ -3427,49 +3428,17 @@ const WhatsAppConnect = ({
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="space-y-6">
-                <div
-                  className={cn(
-                    'flex flex-col items-center gap-4 rounded-xl p-6',
-                    SURFACE_COLOR_UTILS.glassTileDashed
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'flex h-44 w-44 items-center justify-center rounded-2xl',
-                      SURFACE_COLOR_UTILS.qrIllustration
-                    )}
-                  >
-                    {hasQr ? (
-                      <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-36 w-36 rounded-lg shadow-inner" />
-                    ) : isGeneratingQrImage ? (
-                      <Loader2 className="h-12 w-12 animate-spin" />
-                    ) : (
-                      <QrCode className="h-24 w-24" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                    <Clock className="h-3.5 w-3.5" />
-                    {qrStatusMessage}
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void handleGenerateQr()}
-                      disabled={isBusy || !instance || !isAuthenticated}
-                    >
-                      <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setQrDialogOpen(true)}
-                      disabled={!hasQr}
-                    >
-                      Abrir em tela cheia
-                    </Button>
-                  </div>
-                </div>
+                <QrPreview
+                  className={cn('rounded-xl p-6', SURFACE_COLOR_UTILS.glassTileDashed)}
+                  illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
+                  src={qrImageSrc}
+                  isGenerating={isGeneratingQrImage}
+                  statusMessage={qrStatusMessage}
+                  onGenerate={handleGenerateQr}
+                  onOpen={() => setQrDialogOpen(true)}
+                  generateDisabled={isBusy || !instance || !isAuthenticated}
+                  openDisabled={!hasQr}
+                />
 
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex items-start gap-3">
@@ -3690,20 +3659,12 @@ const WhatsAppConnect = ({
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4">
-            <div
-              className={cn(
-                'flex h-64 w-64 items-center justify-center rounded-2xl',
-                SURFACE_COLOR_UTILS.qrIllustration
-              )}
-            >
-              {hasQr ? (
-                <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-56 w-56 rounded-lg shadow-inner" />
-              ) : isGeneratingQrImage ? (
-                <Loader2 className="h-16 w-16 animate-spin" />
-              ) : (
-                <QrCode className="h-32 w-32" />
-              )}
-            </div>
+            <QrPreview
+              illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
+              src={qrImageSrc}
+              isGenerating={isGeneratingQrImage}
+              size={64}
+            />
             <p className="text-center text-sm text-muted-foreground">
               Abra o WhatsApp &gt; Configurações &gt; Dispositivos Conectados &gt; Conectar dispositivo e escaneie o QR Code exibido.
             </p>
