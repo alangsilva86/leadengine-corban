@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
-import { LeadInbox } from '../LeadInbox.jsx';
+import LeadInbox from '../LeadInbox.jsx';
 
 const mockUseLeadAllocations = vi.fn();
 const mockUseInboxLiveUpdates = vi.fn();
