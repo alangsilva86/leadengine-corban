@@ -139,7 +139,7 @@ O ambiente da Render deve ser dividido em **dois serviços**: a API (serviço No
 | Node version | Defina `NODE_VERSION=20` (ou deixe o Render usar a versão declarada no `package.json`) |
 
 - **Cache**: habilite o diretório `./.pnpm-store` no menu de _Build Cache_ da Render. Os scripts já exportam `PNPM_STORE_PATH=.pnpm-store`, portanto a restauração será automática entre deploys.
-- **Migrações**: utilize um _background worker_ ou _job manual_ com `pnpm --filter @ticketz/api exec prisma migrate deploy --schema=prisma/schema.prisma` antes de promover novas releases.
+- **Migrações**: utilize um _background worker_ ou _job manual_ com `pnpm --filter @ticketz/api exec prisma migrate deploy --schema=../../packages/storage/prisma/schema.prisma` antes de promover novas releases.
 - **Health check**: configure `Path = /healthz`, `Timeout = 30s` e `Interval = 60s` para evitar reinícios agressivos.
 
 Variáveis de ambiente (além das já mencionadas na seção de configuração geral):

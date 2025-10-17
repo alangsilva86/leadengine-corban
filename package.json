@@ -12,7 +12,7 @@
     "preinstall": "npx -y only-allow pnpm",
     "doctor": "node scripts/doctor.mjs",
     "depcheck": "pnpm exec depcheck --skip-missing --ignores=prettier,eslint-config-prettier,eslint-plugin-prettier,@types/node,@typescript-eslint/eslint-plugin,@typescript-eslint/parser",
-    "prebuild": "pnpm exec prisma generate --schema=prisma/schema.prisma",
+    "prebuild": "pnpm --filter @ticketz/storage run prisma:generate",
     "start": "pnpm --filter web run start",
     "build": "pnpm run build:libs && pnpm run build:api && pnpm run build:web",
     "build:css-report": "cross-env GENERATE_CSS_REPORT=true pnpm run build && pnpm --filter web run css:report",

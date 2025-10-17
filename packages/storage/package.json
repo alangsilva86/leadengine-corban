@@ -14,14 +14,17 @@
     }
   },
   "scripts": {
+    "prisma:generate": "prisma generate",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "build": "tsup",
     "build:clean": "tsup --clean"
   },
   "dependencies": {
+    "@prisma/client": "5.22.0",
     "@ticketz/core": "workspace:*"
   },
   "devDependencies": {
+    "prisma": "5.22.0",
     "tsup": "^8.5.0",
     "typescript": "^5.3.3",
     "vitest": "^1.6.1"

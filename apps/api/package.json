@@ -4,18 +4,18 @@
   "description": "API REST para o sistema Ticketz-LeadEngine",
   "main": "dist/server.js",
   "scripts": {
-    "build:dependencies": "pnpm -r install --frozen-lockfile --prod=false && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations --filter @ticketz/wa-contracts run typecheck && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations --filter @ticketz/wa-contracts run build:clean && pnpm --filter @ticketz/contracts run build:clean",
+    "build:dependencies": "pnpm -r install --frozen-lockfile --prod=false && pnpm --filter @ticketz/storage run prisma:generate && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations --filter @ticketz/wa-contracts run typecheck && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations --filter @ticketz/wa-contracts run build:clean && pnpm --filter @ticketz/contracts run build:clean",
     "build": "pnpm run build:dependencies && pnpm run db:generate && tsup",
     "dev": "tsx watch src/server.ts",
     "prestart": "pnpm run build:dependencies && pnpm run db:generate",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "db:generate": "prisma generate --schema=../../prisma/schema.prisma",
-    "db:push": "prisma db push --schema=../../prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema=../../prisma/schema.prisma",
-    "db:studio": "prisma studio --schema=../../prisma/schema.prisma",
-    "db:reset": "prisma migrate reset --force --schema=../../prisma/schema.prisma"
+    "db:generate": "pnpm --filter @ticketz/storage run prisma:generate",
+    "db:push": "prisma db push --schema=../../packages/storage/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=../../packages/storage/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema=../../packages/storage/prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --force --schema=../../packages/storage/prisma/schema.prisma"
   },
   "dependencies": {
     "@ticketz/contracts": "workspace:*",
