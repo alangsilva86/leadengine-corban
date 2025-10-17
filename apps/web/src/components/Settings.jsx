@@ -71,7 +71,7 @@ const Settings = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Configurações</h1>
-          <p className="text-gray-600 mt-1">Gerencie sua conta, equipe e integrações</p>
+          <p className="textForegroundMuted mt-1">Gerencie sua conta, equipe e integrações</p>
         </div>
         <Button onClick={handleSave}>
           <Save className="w-4 h-4 mr-2" />
@@ -179,7 +179,7 @@ const Settings = () => {
                     {users.map((user) => (
                       <tr key={user.id} className="border-b">
                         <td className="p-2 font-medium">{user.name}</td>
-                        <td className="p-2 text-gray-600">{user.email}</td>
+                        <td className="p-2 textForegroundMuted">{user.email}</td>
                         <td className="p-2">
                           <Badge variant={user.role === 'Admin' ? 'default' : 'secondary'}>
                             {user.role}
@@ -221,7 +221,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Notificações por E-mail</Label>
-                    <p className="text-sm text-gray-600">Receba atualizações importantes por e-mail</p>
+                    <p className="text-sm textForegroundMuted">Receba atualizações importantes por e-mail</p>
                   </div>
                   <Switch 
                     checked={settings.notifications.email}
@@ -231,7 +231,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Notificações por SMS</Label>
-                    <p className="text-sm text-gray-600">Receba alertas urgentes por SMS</p>
+                    <p className="text-sm textForegroundMuted">Receba alertas urgentes por SMS</p>
                   </div>
                   <Switch 
                     checked={settings.notifications.sms}
@@ -241,7 +241,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Notificações Push</Label>
-                    <p className="text-sm text-gray-600">Receba notificações no navegador</p>
+                    <p className="text-sm textForegroundMuted">Receba notificações no navegador</p>
                   </div>
                   <Switch 
                     checked={settings.notifications.push}
@@ -251,7 +251,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Alertas de Novos Leads</Label>
-                    <p className="text-sm text-gray-600">Seja notificado imediatamente sobre novos leads</p>
+                    <p className="text-sm textForegroundMuted">Seja notificado imediatamente sobre novos leads</p>
                   </div>
                   <Switch 
                     checked={settings.notifications.leadAlerts}
@@ -275,12 +275,12 @@ const Settings = () => {
                 <div className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Phone className="w-5 h-5 text-green-600" />
+                      <Phone className="w-5 h-5 textStatusWhatsapp" />
                       <span className="font-medium">WhatsApp Business</span>
                     </div>
                     <Badge variant="default">Conectado</Badge>
                   </div>
-                  <p className="text-sm text-gray-600">Receba e envie mensagens via WhatsApp</p>
+                  <p className="text-sm textForegroundMuted">Receba e envie mensagens via WhatsApp</p>
                   <Button variant="outline" size="sm">Configurar</Button>
                 </div>
 
@@ -292,7 +292,7 @@ const Settings = () => {
                     </div>
                     <Badge variant="secondary">Desconectado</Badge>
                   </div>
-                  <p className="text-sm text-gray-600">Integre com plataformas de e-mail marketing</p>
+                  <p className="text-sm textForegroundMuted">Integre com plataformas de e-mail marketing</p>
                   <Button variant="outline" size="sm">Conectar</Button>
                 </div>
 
@@ -304,7 +304,7 @@ const Settings = () => {
                     </div>
                     <Badge variant="secondary">Desconectado</Badge>
                   </div>
-                  <p className="text-sm text-gray-600">Envie dados para sistemas externos</p>
+                  <p className="text-sm textForegroundMuted">Envie dados para sistemas externos</p>
                   <Button variant="outline" size="sm">Configurar</Button>
                 </div>
 
@@ -316,7 +316,7 @@ const Settings = () => {
                     </div>
                     <Badge variant="secondary">Desconectado</Badge>
                   </div>
-                  <p className="text-sm text-gray-600">Sincronize com seu CRM atual</p>
+                  <p className="text-sm textForegroundMuted">Sincronize com seu CRM atual</p>
                   <Button variant="outline" size="sm">Conectar</Button>
                 </div>
               </div>
@@ -336,7 +336,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Autenticação de Dois Fatores</Label>
-                    <p className="text-sm text-gray-600">Adicione uma camada extra de segurança</p>
+                    <p className="text-sm textForegroundMuted">Adicione uma camada extra de segurança</p>
                   </div>
                   <Switch 
                     checked={settings.security.twoFactor}
@@ -356,7 +356,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label>Lista Branca de IPs</Label>
-                    <p className="text-sm text-gray-600">Restrinja acesso a IPs específicos</p>
+                    <p className="text-sm textForegroundMuted">Restrinja acesso a IPs específicos</p>
                   </div>
                   <Switch 
                     checked={settings.security.ipWhitelist}
@@ -377,7 +377,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
                     <p className="font-medium">Chave Principal</p>
-                    <p className="text-sm text-gray-600">tk_live_••••••••••••••••</p>
+                    <p className="text-sm textForegroundMuted">tk_live_••••••••••••••••</p>
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm">Regenerar</Button>
