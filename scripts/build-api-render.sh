@@ -12,7 +12,7 @@ pnpm i --frozen-lockfile
 
 export NODE_ENV=production
 
-pnpm -w prisma generate
+pnpm --filter @ticketz/storage run prisma:generate
 pnpm --filter @ticketz/shared build
 pnpm --filter @ticketz/core build
 pnpm --filter @ticketz/storage build
