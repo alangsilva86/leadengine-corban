@@ -177,6 +177,15 @@ const SAFE_MODE = process.env.SAFE_MODE === 'true';
 
 const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
 
+const normalizeTenantSlug = (value: string | null | undefined): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const slug = toSlug(value, '');
+  return slug.length > 0 ? slug : undefined;
+};
+
 const normalizeStatus = (value: unknown): CampaignStatus | null => {
   if (typeof value !== 'string') {
     return null;
@@ -630,14 +639,109 @@ router.post(
       }
     }
 
-    const tenantId =
-      (typeof instance.tenantId === 'string' && instance.tenantId.trim().length > 0
+    const instanceTenantId =
+      typeof instance.tenantId === 'string' && instance.tenantId.trim().length > 0
         ? instance.tenantId.trim()
-        : undefined) ||
+        : undefined;
+
+    let tenantRecord = instanceTenantId
+      ? await prisma.tenant.findFirst({
+          where: {
+            OR: [
+              { id: instanceTenantId },
+              ...(normalizeTenantSlug(instanceTenantId)
+                ? [{ slug: normalizeTenantSlug(instanceTenantId) as string }]
+                : []),
+            ],
+          },
+        })
+      : null;
+
+    const fallbackTenantIdCandidates = new Set<string>([
+      ...(explicitTenantId ? [explicitTenantId] : []),
+      ...(requestedTenantId ? [requestedTenantId] : []),
+      ...(resolvedAgreementId ? [resolvedAgreementId] : []),
+      ...(instanceTenantId ? [instanceTenantId] : []),
+    ]);
+
+    const fallbackSlugCandidates = new Set<string>();
+    for (const candidate of [
+      explicitTenantId,
+      requestedTenantId,
+      resolvedAgreementId,
+      resolvedAgreementName,
+      instanceTenantId,
+    ]) {
+      const slug = normalizeTenantSlug(candidate ?? undefined);
+      if (slug) {
+        fallbackSlugCandidates.add(slug);
+      }
+    }
+
+    const pickFirst = <T,>(values: Iterable<T>): T | undefined => {
+      for (const value of values) {
+        return value;
+      }
+      return undefined;
+    };
+
+    const preferredTenantId = pickFirst(fallbackTenantIdCandidates) ?? DEFAULT_TENANT_ID;
+    const preferredSlug =
+      normalizeTenantSlug(preferredTenantId) ?? pickFirst(fallbackSlugCandidates);
+    const preferredName =
+      resolvedAgreementName || resolvedAgreementId || preferredTenantId || 'Lead Engine Tenant';
+
+    if (!tenantRecord) {
+      try {
+        tenantRecord = await prisma.tenant.create({
+          data: {
+            id: preferredTenantId,
+            name: preferredName,
+            slug: preferredSlug ?? undefined,
+            settings: {},
+          },
+        });
+      } catch (creationError) {
+        if (creationError instanceof Prisma.PrismaClientKnownRequestError && creationError.code === 'P2002') {
+          const fallbackWhere = {
+            OR: [
+              ...Array.from(fallbackTenantIdCandidates).map((id) => ({ id })),
+              ...(fallbackSlugCandidates.size > 0
+                ? Array.from(fallbackSlugCandidates).map((slug) => ({ slug }))
+                : []),
+              ...(preferredSlug ? [{ slug: preferredSlug }] : []),
+              ...(preferredTenantId ? [{ id: preferredTenantId }] : []),
+            ],
+            ...(preferredSlug ? { slug: preferredSlug } : {}),
+          } as Prisma.TenantWhereInput;
+
+          tenantRecord = await prisma.tenant.findFirst({ where: fallbackWhere });
+
+          if (!tenantRecord) {
+            throw creationError;
+          }
+        } else {
+          throw creationError;
+        }
+      }
+    }
+
+    const resolvedTenantId =
+      tenantRecord?.id ||
+      instanceTenantId ||
       explicitTenantId ||
       requestedTenantId ||
-      (resolvedAgreementId || undefined) ||
+      resolvedAgreementId ||
       DEFAULT_TENANT_ID;
+
+    if (tenantRecord && instance.tenantId !== tenantRecord.id) {
+      instance = await prisma.whatsAppInstance.update({
+        where: { id: instance.id },
+        data: { tenantId: tenantRecord.id },
+      });
+    }
+
+    const tenantId = resolvedTenantId;
     const effectiveInstanceId = instance.id;
 
     const actorId = req.user?.id ?? 'system';
@@ -1054,7 +1158,7 @@ router.get(
       tenantId,
       agreementId: agreementId ?? null,
       instanceId: instanceId ?? null,
-      statuses,
+      status: statuses,
     };
 
     logger.info(`${LOG_CONTEXT} list request received`, logContext);
