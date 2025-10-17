@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
@@ -8,7 +8,7 @@ const STORAGE_KEY = 'leadengine_onboarding_v1';
 
 const layoutMockState = { calls: [] };
 
-const apiGetMock = vi.fn(async (url) => {
+const defaultApiGetImplementation = async (url) => {
   if (url === '/api/auth/me') {
     return { data: { id: 'user-1', tenantId: 'tenant-1' } };
   }
@@ -18,9 +18,15 @@ const apiGetMock = vi.fn(async (url) => {
   }
 
   return { data: null };
-});
+};
+
+const apiGetMock = vi.fn(defaultApiGetImplementation);
 
 vi.mock('../lib/api.js', () => ({
+  apiGet: (...args) => apiGetMock(...args),
+}));
+
+vi.mock('@/lib/api.js', () => ({
   apiGet: (...args) => apiGetMock(...args),
 }));
 
@@ -97,6 +103,7 @@ vi.mock('../features/debug/BaileysLogs.jsx', () => ({
 
 // Import after mocks are registered
 import App from '../App.jsx';
+import useAgreements from '../features/agreements/useAgreements.js';
 
 const getLatestLayoutCall = () => layoutMockState.calls.at(-1) ?? null;
 
@@ -104,6 +111,7 @@ describe('App onboarding journey', () => {
   beforeEach(() => {
     layoutMockState.calls = [];
     localStorage.clear();
+    apiGetMock.mockImplementation(defaultApiGetImplementation);
   });
 
   afterEach(() => {
@@ -206,6 +214,65 @@ describe('App onboarding journey', () => {
       'inbox',
     ]);
     expect(latestLayout?.activeStep).toBe(1);
+  });
+});
+
+describe('useAgreements hook', () => {
+  beforeEach(() => {
+    apiGetMock.mockImplementation(defaultApiGetImplementation);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('carrega convênios automaticamente e expõe estado carregado', async () => {
+    const mockAgreements = [
+      {
+        id: 'agreement-1',
+        name: 'Convênio Teste',
+      },
+    ];
+
+    apiGetMock.mockResolvedValueOnce({ data: mockAgreements });
+
+    const { result } = renderHook(() => useAgreements());
+
+    expect(result.current.isLoading).toBe(true);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.agreements).toEqual(mockAgreements);
+    expect(result.current.error).toBeNull();
+    expect(apiGetMock).toHaveBeenCalledWith('/api/lead-engine/agreements');
+  });
+
+  it('permite tentar novamente após uma falha', async () => {
+    const mockAgreements = [
+      {
+        id: 'agreement-2',
+        name: 'Convênio Sucesso',
+      },
+    ];
+
+    apiGetMock.mockRejectedValueOnce(new Error('Network error'));
+    apiGetMock.mockResolvedValueOnce({ data: mockAgreements });
+
+    const { result } = renderHook(() => useAgreements());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.error).toBe('Network error');
+    expect(result.current.agreements).toEqual([]);
+
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.error).toBeNull();
+    expect(result.current.agreements).toEqual(mockAgreements);
+    expect(apiGetMock).toHaveBeenCalledTimes(2);
   });
 });
 

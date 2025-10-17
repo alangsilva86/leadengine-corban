@@ -2,6 +2,20 @@ import { ArrowRight, MapPin } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { cn } from '@/lib/utils.js';
+
+const formatLastSync = (lastSyncAt) => {
+  if (!lastSyncAt) {
+    return '—';
+  }
+
+  const date = lastSyncAt instanceof Date ? lastSyncAt : new Date(lastSyncAt);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return date.toLocaleString();
+};
 
 const AgreementCard = ({
   name,
@@ -30,6 +44,23 @@ const AgreementCard = ({
           : 'border-[var(--border)]'
       } ${className}`}
       {...cardProps}
+  availableLeads,
+  hotLeads,
+  tags = [],
+  lastSyncAt,
+  isSelected = false,
+  onSelect,
+  className,
+}) => {
+  return (
+    <Card
+      className={cn(
+        'transition-colors duration-200',
+        isSelected
+          ? 'border-[color-mix(in_oklab,_var(--primary)_55%,_transparent)] shadow-[0_0_0_1px_rgba(99,102,241,0.35)]'
+          : 'border-[var(--border)]',
+        className
+      )}
     >
       <CardHeader>
         <div className="flex items-start justify-between">
@@ -39,6 +70,10 @@ const AgreementCard = ({
           </div>
           {region ? (
             <Badge variant={resolvedBadgeVariant}>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          {region ? (
+            <Badge variant={isSelected ? 'secondary' : 'info'}>
               <MapPin className="mr-1 h-3 w-3" />
               {region}
             </Badge>
@@ -70,6 +105,9 @@ const AgreementCard = ({
         <div className="text-xs text-muted-foreground">Atualizado em {formattedLastSync}</div>
         <Button size="sm" onClick={onSelect} variant={isSelected ? 'default' : 'outline'}>
           {resolvedActionLabel}
+        <div className="text-xs text-muted-foreground">Atualizado em {formatLastSync(lastSyncAt)}</div>
+        <Button size="sm" onClick={onSelect} variant={isSelected ? 'default' : 'outline'}>
+          {isSelected ? 'Convênio selecionado' : 'Ativar leads'}
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </CardFooter>
