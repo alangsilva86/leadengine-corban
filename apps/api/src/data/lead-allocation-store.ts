@@ -115,10 +115,10 @@ export const listAllocations = async (
   try {
     return await listPersistedAllocations({
       tenantId,
-      agreementId: options.agreementId,
-      campaignId: options.campaignId,
-      instanceId: options.instanceId,
-      statuses: options.statuses,
+      ...(options.agreementId !== undefined ? { agreementId: options.agreementId } : {}),
+      ...(options.campaignId !== undefined ? { campaignId: options.campaignId } : {}),
+      ...(options.instanceId !== undefined ? { instanceId: options.instanceId } : {}),
+      ...(options.statuses !== undefined ? { statuses: options.statuses } : {}),
     });
   } catch (error) {
     if (isStorageInitializationError(error)) {
@@ -147,8 +147,8 @@ export const addAllocations = async (
 
   return allocateBrokerLeads({
     tenantId,
-    campaignId: target.campaignId,
-    instanceId: target.instanceId,
+    ...(target.campaignId !== undefined ? { campaignId: target.campaignId } : {}),
+    ...(target.instanceId !== undefined ? { instanceId: target.instanceId } : {}),
     leads: leads.map((lead) => ({
       ...lead,
     })),
@@ -160,12 +160,19 @@ export const updateAllocation = async (
   allocationId: string,
   updates: Partial<Pick<LeadAllocation, 'status' | 'notes'>>
 ): Promise<LeadAllocation | null> => {
+  const normalizedUpdates: Partial<Pick<LeadAllocation, 'status' | 'notes'>> = {};
+
+  if (updates.status !== undefined) {
+    normalizedUpdates.status = updates.status;
+  }
+
+  if (updates.notes !== undefined) {
+    normalizedUpdates.notes = updates.notes ?? null;
+  }
+
   return updatePersistedAllocation({
     tenantId,
     allocationId,
-    updates: {
-      status: updates.status,
-      notes: updates.notes ?? null,
-    },
+    updates: normalizedUpdates,
   });
 };

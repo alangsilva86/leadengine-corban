@@ -35,7 +35,11 @@ export const listTicketNotes = async (tenantId: string, ticketId: string): Promi
   return notes
     .slice()
     .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1))
-    .map((note) => ({ ...note, tags: note.tags ? [...note.tags] : undefined, metadata: note.metadata ? { ...note.metadata } : undefined }));
+    .map((note) => ({
+      ...note,
+      ...(note.tags ? { tags: [...note.tags] } : {}),
+      ...(note.metadata ? { metadata: { ...note.metadata } } : {}),
+    }));
 };
 
 type CreateNoteInput = {
@@ -61,17 +65,21 @@ export const createTicketNote = async (input: CreateNoteInput): Promise<TicketNo
     authorAvatar: input.authorAvatar ?? null,
     body: input.body,
     visibility: input.visibility ?? 'team',
-    tags: input.tags ? [...input.tags] : undefined,
-    metadata: input.metadata ? { ...input.metadata } : undefined,
     createdAt: now,
     updatedAt: now,
+    ...(input.tags ? { tags: [...input.tags] } : {}),
+    ...(input.metadata ? { metadata: { ...input.metadata } } : {}),
   };
 
   const tenantBucket = getTenantBucket(input.tenantId);
   const list = tenantBucket.get(input.ticketId) ?? [];
   tenantBucket.set(input.ticketId, [...list, note]);
 
-  return { ...note, tags: note.tags ? [...note.tags] : undefined, metadata: note.metadata ? { ...note.metadata } : undefined };
+  return {
+    ...note,
+    ...(note.tags ? { tags: [...note.tags] } : {}),
+    ...(note.metadata ? { metadata: { ...note.metadata } } : {}),
+  };
 };
 
 export const resetTicketNotes = () => {

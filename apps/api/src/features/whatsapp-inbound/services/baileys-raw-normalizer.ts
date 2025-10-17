@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { logger } from '../../../config/logger';
 
-import type { BrokerWebhookInbound } from '../schemas/broker-contracts';
+import type { BrokerWebhookInbound, BrokerInboundContact } from '../schemas/broker-contracts';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -658,9 +658,9 @@ const normalizeMessagePayload = (
     rawRemoteJid,
     rawParticipant,
     isGroup,
-    tenantId: context.tenantId,
-    sessionId: context.sessionId,
-    brokerId: context.brokerId ?? null,
+    ...(context.tenantId !== undefined ? { tenantId: context.tenantId } : {}),
+    ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+    ...(context.brokerId !== undefined ? { brokerId: context.brokerId ?? null } : {}),
     instanceId: context.instanceId,
     direction,
   });
@@ -673,7 +673,7 @@ const normalizeMessagePayload = (
     jid: rawRemoteJid ?? undefined,
     participantJid: rawParticipant ?? undefined,
     registrations: null,
-  });
+  }) as BrokerInboundContact;
 
   if (quoted) {
     metadata.quoted = quoted;
@@ -689,17 +689,19 @@ const normalizeMessagePayload = (
     metadata.skd = true;
   }
 
+  const fromContact = compactRecord({
+    phone: contactDetails.phone ?? undefined,
+    name: contactDetails.name ?? undefined,
+    pushName: contactDetails.pushName ?? undefined,
+    registrations: null,
+  }) as BrokerInboundContact;
+
   const normalized: BrokerWebhookInbound = {
     event: 'message',
     direction,
     instanceId: context.instanceId,
     timestamp: toIsoTimestamp(messageTimestamp),
-    from: compactRecord({
-      phone: contactDetails.phone ?? undefined,
-      name: contactDetails.name ?? undefined,
-      pushName: contactDetails.pushName ?? undefined,
-      registrations: null,
-    }),
+    from: fromContact,
     message: normalizedMessage,
     metadata,
   };
@@ -708,9 +710,9 @@ const normalizeMessagePayload = (
     normalized: {
       data: normalized,
       messageIndex,
-      tenantId: context.tenantId,
-      sessionId: context.sessionId,
-      brokerId: context.brokerId ?? undefined,
+      ...(context.tenantId !== undefined ? { tenantId: context.tenantId } : {}),
+      ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+      ...(context.brokerId !== undefined ? { brokerId: context.brokerId } : {}),
       messageId,
       messageType,
       isGroup,

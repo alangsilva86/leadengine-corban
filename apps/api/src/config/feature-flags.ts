@@ -1,5 +1,46 @@
-import { resolveSharedFeatureFlags, type SharedFeatureFlags } from '../../../../config/feature-flags';
 import { logger } from './logger';
+
+const FEATURE_DEBUG_WHATSAPP = 'FEATURE_DEBUG_WHATSAPP' as const;
+
+type EnvSource = Record<string, string | undefined> | undefined | null;
+
+const normalizeEnv = (env: EnvSource): Record<string, string | undefined> => {
+  if (!env || typeof env !== 'object') {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(env).map(([key, value]) => [key, typeof value === 'string' ? value : undefined])
+  );
+};
+
+const parseSharedBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
+  if (typeof value !== 'string') {
+    return defaultValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) {
+    return false;
+  }
+
+  return defaultValue;
+};
+
+type SharedFeatureFlags = {
+  whatsappDebug: boolean;
+};
+
+const resolveSharedFeatureFlags = (env?: EnvSource): SharedFeatureFlags => {
+  const normalized = normalizeEnv(env);
+  const whatsappDebug = parseSharedBoolean(normalized[FEATURE_DEBUG_WHATSAPP], false);
+  return { whatsappDebug };
+};
 
 type FeatureFlags = {
   useRealData: boolean;

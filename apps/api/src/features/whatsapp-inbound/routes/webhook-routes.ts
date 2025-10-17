@@ -706,35 +706,43 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           envelopeRecord.instanceId
         ) ?? getDefaultInstanceId();
 
+      const metadataContactRecord = asRecord(normalized.data.metadata?.contact);
+      const messageRecord = (normalized.data.message ?? {}) as Record<string, unknown>;
+      const messageKeyRecord = asRecord(messageRecord.key);
+      const fromRecord = asRecord(normalized.data.from);
+
       const chatIdCandidate =
         normalizeChatId(
-          normalized.data.metadata?.contact?.remoteJid ??
-            normalized.data.metadata?.contact?.jid ??
-            normalized.data.message?.key?.remoteJid ??
-            normalized.data.from?.phone ??
-            normalized.data.message?.key?.id
-        ) ?? normalizeChatId(normalized.data.from?.phone);
+          readString(metadataContactRecord?.remoteJid) ??
+            readString(metadataContactRecord?.jid) ??
+            readString(messageKeyRecord?.remoteJid) ??
+            readString(fromRecord?.phone) ??
+            readString(messageKeyRecord?.id)
+        ) ?? normalizeChatId(readString(fromRecord?.phone));
 
       const chatId = chatIdCandidate ?? `${tenantId}@baileys`;
 
       try {
         const data = normalized.data;
-        const messageRecord = (data.message ?? {}) as Record<string, unknown>;
-        const messageKey = (messageRecord.key ?? {}) as Record<string, unknown>;
-        const contactRecord = (data.contact ?? {}) as Record<string, unknown>;
         const metadataBase =
           data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
             ? { ...(data.metadata as Record<string, unknown>) }
             : ({} as Record<string, unknown>);
+        const metadataContact = asRecord(metadataBase.contact);
+        const messageRecord = (data.message ?? {}) as Record<string, unknown>;
+        const messageKey = asRecord(messageRecord.key) ?? {};
+        const contactRecord = asRecord(data.contact) ?? {};
 
         const remoteJid =
           normalizeChatId(
-            messageKey.remoteJid ??
-              data.metadata?.contact?.jid ??
-              data.metadata?.contact?.remoteJid ??
-              (eventRecord as { payload?: { messages?: Array<{ key?: { remoteJid?: string } }> } })?.payload?.messages?.[
-                normalized.messageIndex
-              ]?.key?.remoteJid
+            readString(messageKey.remoteJid) ??
+              readString(metadataContact?.jid) ??
+              readString(metadataContact?.remoteJid) ??
+              readString(
+                (eventRecord as {
+                  payload?: { messages?: Array<{ key?: { remoteJid?: string } }> };
+                })?.payload?.messages?.[normalized.messageIndex]?.key?.remoteJid
+              )
           ) ?? chatId;
 
         const direction = (data.direction ?? 'inbound').toString().toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';

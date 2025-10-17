@@ -18,6 +18,7 @@
     "db:reset": "prisma migrate reset --force --schema=../../packages/storage/prisma/schema.prisma"
   },
   "dependencies": {
+    "@prisma/client": "5.22.0",
     "@ticketz/contracts": "workspace:*",
     "@ticketz/core": "workspace:*",
     "@ticketz/integrations": "workspace:*",

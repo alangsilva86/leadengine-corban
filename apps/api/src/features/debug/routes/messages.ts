@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../../../middleware/error-handler';
 import { prisma } from '../../../lib/prisma';
@@ -170,7 +170,8 @@ router.get(
       take: limit,
     });
 
-    const payload = records.map((record) => mapPassthroughMessage(record));
+    type MessageRecord = Awaited<typeof records>[number];
+    const payload = records.map((record: MessageRecord) => mapPassthroughMessage(record));
 
     res.json({
       success: true,
@@ -208,8 +209,9 @@ router.get(
       take: Math.min(limit * 5, 500),
     });
 
+    type ProcessedEvent = Awaited<typeof events>[number];
     const normalized = events
-      .map((event) => {
+      .map((event: ProcessedEvent) => {
         const payload = normalizeJsonRecord(event.payload);
         const payloadTenant = typeof payload.tenantId === 'string' ? payload.tenantId : null;
         const direction = typeof payload.direction === 'string' ? payload.direction.toLowerCase() : null;

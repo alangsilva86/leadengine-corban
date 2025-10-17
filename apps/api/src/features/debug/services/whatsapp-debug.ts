@@ -4,7 +4,11 @@ import { ForbiddenError, NotFoundError, ValidationError } from '@ticketz/core';
 import { mapPassthroughMessage } from '@ticketz/storage';
 
 import { prisma } from '../../../lib/prisma';
-import { ingestInboundWhatsAppMessage, type InboundWhatsAppEnvelope } from '../../whatsapp-inbound/services/inbound-lead-service';
+import {
+  ingestInboundWhatsAppMessage,
+  type InboundWhatsAppEnvelope,
+  type InboundWhatsAppEnvelopeMessage,
+} from '../../whatsapp-inbound/services/inbound-lead-service';
 import { isWhatsappDebugToolsEnabled } from '../../../config/feature-flags';
 import { asRecord, buildWhereClause, normalizeJsonRecord } from '../routes/messages';
 
@@ -105,7 +109,15 @@ const normalizeInboundEnvelope = (
   const timestamp =
     readString(messageRecord.timestamp) ?? readString(envelopeRecord.timestamp) ?? null;
 
-  return {
+  const dedupeTtl =
+    typeof envelopeRecord.dedupeTtlMs === 'number' ? envelopeRecord.dedupeTtlMs : undefined;
+  const brokerMessageId = readString(messageRecord.brokerMessageId);
+  const externalId = readString(messageRecord.externalId) ?? messageId ?? null;
+  const metadata = metadataRecord;
+  const contactDetails = contactRecord as unknown as InboundWhatsAppEnvelopeMessage['message']['contact'];
+  const payloadDetails = normalizedPayload as unknown as InboundWhatsAppEnvelopeMessage['message']['payload'];
+
+  const envelope: InboundWhatsAppEnvelopeMessage = {
     origin: readString(envelopeRecord.origin) ?? fallbackOrigin,
     instanceId:
       readString(envelopeRecord.instanceId) ??
@@ -118,19 +130,24 @@ const normalizeInboundEnvelope = (
       readString(metadataRecord?.chatId) ??
       null,
     tenantId,
-    dedupeTtlMs: typeof envelopeRecord.dedupeTtlMs === 'number' ? envelopeRecord.dedupeTtlMs : undefined,
     message: {
       kind: 'message',
       id: messageId ?? null,
-      externalId: readString(messageRecord.externalId) ?? messageId ?? null,
-      brokerMessageId: readString(messageRecord.brokerMessageId),
+      externalId,
+      ...(brokerMessageId !== null ? { brokerMessageId } : {}),
       timestamp,
       direction: normalizeDirection(messageRecord.direction ?? envelopeRecord.direction),
-      contact: contactRecord,
-      payload: normalizedPayload,
-      metadata: metadataRecord,
+      contact: contactDetails,
+      payload: payloadDetails,
+      metadata,
     },
-  } satisfies InboundWhatsAppEnvelope;
+  };
+
+  if (dedupeTtl !== undefined) {
+    envelope.dedupeTtlMs = dedupeTtl;
+  }
+
+  return envelope;
 };
 
 export const listWhatsappDebugMessages = async ({
@@ -153,7 +170,8 @@ export const listWhatsappDebugMessages = async ({
     take: limit,
   });
 
-  return records.map((record) => mapPassthroughMessage(record));
+  type MessageRecord = (typeof records)[number];
+  return records.map((record: MessageRecord) => mapPassthroughMessage(record));
 };
 
 export const processWhatsappDebugSend = async ({
@@ -232,7 +250,15 @@ const normalizeReplayEnvelope = (
   const timestamp =
     readString(payload.timestamp) ?? readString(messageRecord.timestamp) ?? null;
 
-  return {
+  const dedupeTtl =
+    typeof payload.dedupeTtlMs === 'number' ? payload.dedupeTtlMs : undefined;
+  const brokerMessageId = readString(messageRecord.brokerMessageId);
+  const externalId = readString(messageRecord.externalId) ?? messageId ?? null;
+  const metadata = metadataRecord;
+  const contactDetails = contactRecord as unknown as InboundWhatsAppEnvelopeMessage['message']['contact'];
+  const payloadDetails = normalizedPayload as unknown as InboundWhatsAppEnvelopeMessage['message']['payload'];
+
+  const envelope: InboundWhatsAppEnvelopeMessage = {
     origin: readString(metadataRecord?.source) ?? 'debug:replay',
     instanceId:
       readString(payload.instanceId) ??
@@ -248,15 +274,21 @@ const normalizeReplayEnvelope = (
     message: {
       kind: 'message',
       id: messageId ?? null,
-      externalId: readString(messageRecord.externalId) ?? messageId ?? null,
-      brokerMessageId: readString(messageRecord.brokerMessageId),
+      externalId,
+      ...(brokerMessageId !== null ? { brokerMessageId } : {}),
       timestamp,
       direction: normalizeDirection(payload.direction ?? messageRecord.direction),
-      contact: contactRecord,
-      payload: normalizedPayload,
-      metadata: metadataRecord,
+      contact: contactDetails,
+      payload: payloadDetails,
+      metadata,
     },
-  } satisfies InboundWhatsAppEnvelope;
+  };
+
+  if (dedupeTtl !== undefined) {
+    envelope.dedupeTtlMs = dedupeTtl;
+  }
+
+  return envelope;
 };
 
 export const processWhatsappDebugReplay = async ({

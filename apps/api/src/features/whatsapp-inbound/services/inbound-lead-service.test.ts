@@ -1,18 +1,27 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   resetInboundLeadServiceTestState,
   __testing,
 } from './inbound-lead-service';
 
-vi.mock('../../../lib/socket-registry', () => ({
-  emitToTenant: vi.fn(),
-  emitToTicket: vi.fn(),
-  emitToAgreement: vi.fn(),
-  getSocketServer: vi.fn(() => null),
-}));
+import type * as TicketService from '../../../../services/ticket-service.js';
+import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../../lib/prisma', () => ({
+vi.mock('../../../lib/socket-registry.js', () => {
+  const emitToTenant = vi.fn();
+  const emitToTicket = vi.fn();
+  const emitToAgreement = vi.fn();
+  const getSocketServer = vi.fn(() => null);
+  return {
+    emitToTenant,
+    emitToTicket,
+    emitToAgreement,
+    getSocketServer,
+  };
+});
+
+vi.mock('../../../lib/prisma.js', () => ({
   prisma: {
     ticket: {
       findUnique: vi.fn(),
@@ -21,14 +30,20 @@ vi.mock('../../../lib/prisma', () => ({
 }));
 
 const { emitPassthroughRealtimeUpdates, emitRealtimeUpdatesForInbound } = __testing;
-type SendMessageResult = Awaited<
-  ReturnType<typeof import('../../../../services/ticket-service')['sendMessage']>
->;
-const socketModule = await import('../../../lib/socket-registry');
-const emitToTenantMock = socketModule.emitToTenant as unknown as ReturnType<typeof vi.fn>;
-const emitToTicketMock = socketModule.emitToTicket as unknown as ReturnType<typeof vi.fn>;
-const emitToAgreementMock = socketModule.emitToAgreement as unknown as ReturnType<typeof vi.fn>;
-const { prisma } = await import('../../../lib/prisma');
+type SendMessageResult = Awaited<ReturnType<typeof TicketService.sendMessage>>;
+let emitToTenantMock: ReturnType<typeof vi.fn>;
+let emitToTicketMock: ReturnType<typeof vi.fn>;
+let emitToAgreementMock: ReturnType<typeof vi.fn>;
+let prismaClientMock: PrismaClient;
+
+beforeAll(async () => {
+  const socketModule = await import('../../../lib/socket-registry.js');
+  const prismaModule = await import('../../../lib/prisma.js');
+  emitToTenantMock = socketModule.emitToTenant as unknown as ReturnType<typeof vi.fn>;
+  emitToTicketMock = socketModule.emitToTicket as unknown as ReturnType<typeof vi.fn>;
+  emitToAgreementMock = socketModule.emitToAgreement as unknown as ReturnType<typeof vi.fn>;
+  prismaClientMock = prismaModule.prisma as PrismaClient;
+});
 
 describe('emitPassthroughRealtimeUpdates', () => {
   beforeEach(() => {
@@ -36,11 +51,11 @@ describe('emitPassthroughRealtimeUpdates', () => {
     emitToTenantMock.mockClear();
     emitToTicketMock.mockClear();
     emitToAgreementMock.mockClear();
-    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
   });
 
   it('emits tickets.updated and tickets.new payloads when a passthrough ticket is created', async () => {
-    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'ticket-1',
       tenantId: 'tenant-1',
       agreementId: 'agreement-1',
@@ -92,7 +107,7 @@ describe('emitPassthroughRealtimeUpdates', () => {
   });
 
   it('propagates realtime events even when the persisted ticket belongs to another tenant', async () => {
-    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'ticket-foreign',
       tenantId: 'tenant-foreign',
       agreementId: 'agreement-foreign',
@@ -139,11 +154,11 @@ describe('emitRealtimeUpdatesForInbound', () => {
     emitToTenantMock.mockClear();
     emitToTicketMock.mockClear();
     emitToAgreementMock.mockClear();
-    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
+    (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
   });
 
   it('emits realtime updates even when ticket tenant differs from event tenant', async () => {
-    (prisma.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'ticket-cross',
       tenantId: 'tenant-database',
       agreementId: 'agreement-cross',
