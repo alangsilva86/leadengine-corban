@@ -121,38 +121,34 @@ const InboxAppShell = ({
 
   const renderListPane = useCallback(
     ({ showCloseButton = false } = {}) => (
-      <div className="flex h-full flex-col">
-        <div className="px-5 pb-4 pt-5">
-          <div className="flex items-center justify-between gap-3 text-sm font-semibold text-foreground">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-300 shadow-inner shadow-slate-950/50">
-                <MessageSquare className="h-4 w-4" />
-              </span>
-              <div className="space-y-0.5">
-                <p className="text-sm font-semibold leading-none">Inbox</p>
-                <p className="text-xs text-[color:var(--text-shell-muted)]">Atendimento em tempo real</p>
-              </div>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-3 text-sm font-semibold text-[color:var(--color-inbox-foreground)]">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] text-[color:var(--accent-inbox-primary)] shadow-[var(--shadow-sm)]">
+              <MessageSquare className="h-4 w-4" />
+            </span>
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold leading-none">Inbox</p>
+              <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">Atendimento em tempo real</p>
             </div>
-            {showCloseButton ? (
-              <SheetClose asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-full text-[color:var(--text-shell-muted)] hover:text-foreground"
-                  aria-label="Fechar lista de tickets"
-                >
-                  <PanelLeftClose className="h-4 w-4" />
-                </Button>
-              </SheetClose>
-            ) : null}
           </div>
+          {showCloseButton ? (
+            <SheetClose asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
+                aria-label="Fechar lista de tickets"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </SheetClose>
+          ) : null}
         </div>
-        <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full px-2 pb-6">{sidebar}</ScrollArea>
-        </div>
-        <div className="px-5 pb-5 pt-4 text-xs text-[color:var(--text-shell-muted)]">
-          <p className="font-medium text-[color:var(--text-shell-muted)]">⌥ L alterna lista</p>
-          <p className="mt-1 text-xs uppercase tracking-wide text-[color:var(--text-shell-muted)]">
+        <ScrollArea className="flex-1 px-3 py-4">{sidebar}</ScrollArea>
+        <div className="border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
+          <p className="font-medium">⌥ L alterna lista</p>
+          <p className="mt-1 uppercase tracking-wide">
             {canPersistPreferences ? 'Preferência salva automaticamente' : 'Preferência local temporária'}
           </p>
         </div>
@@ -168,17 +164,15 @@ const InboxAppShell = ({
     return (
       <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
         <div className="flex min-h-0 flex-1">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] bg-surface-shell-subtle p-0 shadow-xl ring-1 ring-[color:var(--ring-shell)] backdrop-blur-xl">
-            <div className="flex min-h-0 flex-1 flex-col px-4 pb-5 pt-5 sm:px-6 lg:px-8">
-              {children}
-            </div>
+          <div className="flex min-h-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
+            <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">{children}</div>
           </div>
         </div>
         <ContextDrawer
           open={contextOpen}
           onOpenChange={setContextOpen}
-          desktopClassName="rounded-[32px] bg-surface-shell-muted shadow-xl ring-1 ring-[color:var(--ring-shell)] backdrop-blur-xl"
-          desktopContentClassName="px-5 py-6"
+          desktopClassName="rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]"
+          desktopContentClassName="px-4 py-5"
         >
           {context}
         </ContextDrawer>
@@ -191,59 +185,59 @@ const InboxAppShell = ({
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-shell text-foreground">
-      <header className="flex flex-wrap items-center justify-between gap-3 bg-surface-toolbar px-4 py-3 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.9)] supports-[backdrop-filter]:bg-surface-toolbar-muted backdrop-blur-xl">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 rounded-full text-[color:var(--text-shell-muted)] hover:text-foreground lg:hidden"
-            onClick={() => setMobileListOpen(true)}
-            aria-label="Abrir lista de tickets"
-          >
-            <PanelLeftOpen className="h-5 w-5" />
-          </Button>
-          <h1 className="text-base font-semibold text-foreground sm:text-lg">{title}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell lg:inline-flex"
-            onClick={toggleListVisibility}
-          >
-            {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-            <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell"
-            onClick={() => setContextOpen((previous) => !previous)}
-          >
-            {contextOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-            <span className="ml-2 hidden text-xs font-medium sm:inline">
-              {contextOpen ? 'Ocultar painel' : 'Exibir painel'}
-            </span>
-          </Button>
-        </div>
-      </header>
-      {toolbar ? (
-        <div className="bg-surface-toolbar px-4 py-4 shadow-[0_20px_48px_-36px_rgba(15,23,42,0.8)] supports-[backdrop-filter]:bg-surface-toolbar-muted backdrop-blur-xl">
-          <div className="mx-auto w-full max-w-6xl">
-            {toolbar}
+      <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
+        <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-[color:var(--text-shell-muted)] hover:text-foreground lg:hidden"
+              onClick={() => setMobileListOpen(true)}
+              aria-label="Abrir lista de tickets"
+            >
+              <PanelLeftOpen className="h-5 w-5" />
+            </Button>
+            <h1 className="text-base font-semibold text-foreground sm:text-lg">{title}</h1>
           </div>
-        </div>
-      ) : null}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell lg:inline-flex"
+              onClick={toggleListVisibility}
+            >
+              {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell"
+              onClick={() => setContextOpen((previous) => !previous)}
+            >
+              {contextOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              <span className="ml-2 hidden text-xs font-medium sm:inline">
+                {contextOpen ? 'Ocultar painel' : 'Exibir painel'}
+              </span>
+            </Button>
+          </div>
+        </header>
+        {toolbar ? (
+          <div className="border-t border-[color:var(--border-shell)] px-4 py-3 sm:px-5">
+            <div className="mx-auto w-full max-w-6xl">{toolbar}</div>
+          </div>
+        ) : null}
+      </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex h-full w-full max-w-7xl flex-1">
           {isDesktop ? (
             <SplitLayout
-              className="h-full w-full gap-6 px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-6"
+              className="h-full w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
               list={listContent}
               detail={renderDetailSurface()}
               listPosition={effectiveListPosition}
               listClassName={cn(
-                'flex flex-col overflow-hidden rounded-[28px] bg-surface-shell-muted shadow-xl ring-1 ring-[color:var(--ring-shell)] backdrop-blur-xl'
+                'flex min-h-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]'
               )}
               detailClassName="min-h-0 min-w-0"
               listWidth={listWidth}
@@ -253,7 +247,7 @@ const InboxAppShell = ({
               resizable={desktopListVisible && Boolean(sidebar)}
             />
           ) : (
-            <div className="flex h-full w-full px-4 pb-6 pt-4 sm:px-6 sm:pb-8 sm:pt-6">
+            <div className="flex h-full w-full px-4 py-4 sm:px-6 sm:py-6">
               {renderDetailSurface()}
             </div>
           )}
@@ -262,7 +256,10 @@ const InboxAppShell = ({
       <Sheet open={mobileListOpen} onOpenChange={setMobileListOpen}>
         <SheetContent
           side="left"
-          className={cn('w-[min(420px,90vw)] border-[color:var(--border-shell)] bg-surface-shell-muted p-0 text-foreground backdrop-blur-xl', 'border-r')}
+          className={cn(
+            'w-[min(420px,90vw)] border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-0 text-foreground shadow-[var(--shadow-lg)]',
+            'border-r'
+          )}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Lista de tickets</SheetTitle>

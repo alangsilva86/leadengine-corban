@@ -17,8 +17,8 @@ import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 const statusTone = {
   active: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
   paused: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
-  ended: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
-  archived: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
+  ended: 'bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground-muted)] border-[color:var(--color-inbox-border)]',
+  archived: 'bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground-muted)] border-[color:var(--color-inbox-border)]',
 };
 
 const CampaignHistoryDialog = ({ agreementId }) => {
@@ -73,7 +73,9 @@ const CampaignHistoryDialog = ({ agreementId }) => {
   }, [agreementId, log, warn, open]);
 
   const renderStatus = (campaign) => {
-    const tone = statusTone[campaign.status] || 'bg-slate-500/15 text-slate-200 border-slate-500/40';
+    const tone =
+      statusTone[campaign.status] ||
+      'bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] border-[color:var(--color-inbox-border)]';
     return (
       <Badge variant="outline" className={`border ${tone}`}>
         {campaign.status}
@@ -112,12 +114,15 @@ const CampaignHistoryDialog = ({ agreementId }) => {
             <ScrollArea className="max-h-80">
               <div className="space-y-3 pr-4">
                 {campaigns.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-white/10 bg-white/5 p-4 text-sm text-muted-foreground">
+                  <div className="rounded-lg border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-4 text-sm text-muted-foreground">
                     Nenhuma campanha encontrada ainda. Crie uma nova ao confirmar o WhatsApp e voltamos a listar por aqui.
                   </div>
                 ) : (
                   campaigns.map((campaign) => (
-                    <div key={campaign.id} className="glass-surface space-y-2 rounded-[var(--radius)] border border-white/10 p-4">
+                    <div
+                      key={campaign.id}
+                      className="glass-surface space-y-2 rounded-[var(--radius)] border border-[color:var(--color-inbox-border)] p-4"
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <p className="text-sm font-semibold text-foreground">{campaign.name}</p>

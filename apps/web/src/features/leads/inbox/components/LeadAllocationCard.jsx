@@ -1,15 +1,7 @@
 import { Badge } from '@/components/ui/badge.jsx';
-import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
 import { InboxSurface } from './shared/InboxSurface.jsx';
 import { formatCurrency, formatDocument } from '../utils/formatters.js';
-
-const STATUS_META = {
-  allocated: { label: 'Aguardando contato', tone: 'neutral' },
-  contacted: { label: 'Em conversa', tone: 'info' },
-  won: { label: 'Venda realizada', tone: 'success' },
-  lost: { label: 'Sem interesse', tone: 'error' },
-};
 import { STATUS_META } from '../constants/statusMeta.js';
 
 const resolveRegistrations = (registrations) => {
@@ -24,71 +16,77 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
   const statusMeta = STATUS_META[status] ?? STATUS_META.allocated;
 
   return (
-    <GlassPanel
+    <InboxSurface
       as="button"
       type="button"
-      onClick={() => onSelect?.(allocation)}
-      onDoubleClick={() => (allocation && onDoubleOpen ? onDoubleOpen(allocation) : null)}
+      tone={isActive ? 'strong' : 'quiet'}
+      radius="lg"
+      padding="md"
+      shadow={isActive ? 'lg' : 'md'}
+      border
       data-allocation-id={allocation?.allocationId ?? undefined}
       aria-current={isActive ? 'true' : undefined}
-      tone="surface"
-      radius="lg"
-      shadow="md"
       className={cn(
-        'group flex w-full flex-col gap-4 p-5 text-left text-[color:var(--color-inbox-foreground)] ring-0 ring-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:border-primary/40 hover:bg-primary/15 hover:shadow-[0_26px_54px_color-mix(in_srgb,var(--color-inbox-border)_55%,transparent)]',
-        isActive
-          ? 'border-primary/60 bg-primary/15 shadow-[0_30px_70px_color-mix(in_srgb,var(--color-inbox-border)_55%,transparent)]'
-          : null
+        'group w-full text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
+        'hover:border-primary/40 hover:shadow-[var(--shadow-lg)]',
+        isActive && 'border-primary/60'
       )}
+      onClick={() => onSelect?.(allocation)}
+      onDoubleClick={() => (allocation && onDoubleOpen ? onDoubleOpen(allocation) : null)}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Lead</p>
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">
+            Lead
+          </p>
           <div className="space-y-0.5">
-            <h3 className="text-base font-semibold leading-snug text-[color:var(--color-inbox-foreground)]">
+            <h3 className="text-base font-semibold leading-tight text-[color:var(--color-inbox-foreground)]">
               {allocation.fullName}
             </h3>
-            <p className="text-[13px] text-[color:var(--color-inbox-foreground-muted)]">{formatDocument(allocation.document)}</p>
+            <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
+              {formatDocument(allocation.document)}
+            </p>
           </div>
         </div>
         <Badge
           variant="status"
           tone={statusMeta.tone}
-          className="px-2.5 py-1 text-xs font-medium uppercase tracking-[0.24em]"
+          className="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
         >
           {statusMeta.label}
         </Badge>
       </div>
 
-      <InboxSurface radius="md" padding="sm" shadow="none" className="grid gap-3 text-[13px] text-muted-foreground sm:grid-cols-3">
-      <div className="grid gap-3 rounded-2xl border border-[var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-[13px] text-[color:var(--color-inbox-foreground-muted)] sm:grid-cols-3">
+      <div className="grid gap-3 border border-[color:var(--color-inbox-border)] border-opacity-80 bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-3 text-sm text-[color:var(--color-inbox-foreground)] sm:grid-cols-3">
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Telefone</p>
-          <p className="font-medium text-[color:var(--color-inbox-foreground)]">{allocation.phone ?? '—'}</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">Telefone</p>
+          <p className="font-medium">{allocation.phone ?? '—'}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Score</p>
-          <p className="font-medium text-[color:var(--color-inbox-foreground)]">{allocation.score ?? '—'}</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">Score</p>
+          <p className="font-medium">{allocation.score ?? '—'}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Registros</p>
-          <p className="font-medium text-[color:var(--color-inbox-foreground)]">{resolveRegistrations(allocation.registrations)}</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">Registros</p>
+          <p className="font-medium">{resolveRegistrations(allocation.registrations)}</p>
         </div>
-      </InboxSurface>
+      </div>
 
-      <div className="grid gap-3 border-t border-[var(--color-inbox-border)] pt-4 text-[13px] sm:grid-cols-2">
+      <div className="grid gap-3 border-t border-[color:var(--color-inbox-border)] pt-3 text-sm sm:grid-cols-2">
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Margem bruta</p>
-          <p className="text-[15px] font-semibold text-[color:var(--color-inbox-foreground)]">{formatCurrency(allocation.margin)}</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">Margem bruta</p>
+          <p className="text-[15px] font-semibold text-[color:var(--color-inbox-foreground)]">
+            {formatCurrency(allocation.margin)}
+          </p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">Margem disponível</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">Margem disponível</p>
           <p className="text-[15px] font-semibold text-[color:var(--color-inbox-foreground)]">
             {formatCurrency(allocation.netMargin ?? allocation.margin)}
           </p>
         </div>
       </div>
-    </GlassPanel>
+    </InboxSurface>
   );
 };
 

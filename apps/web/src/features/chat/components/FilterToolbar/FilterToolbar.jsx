@@ -116,32 +116,32 @@ const FilterToolbar = ({
       tone="overlay"
       radius="md"
       shadow="lg"
-      className="space-y-4 border-slate-900/70 bg-slate-950/80 p-5 text-slate-100"
+      className="space-y-4 border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-5 text-[color:var(--color-inbox-foreground)]"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-xl space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Painel de atendimento</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[color:var(--color-inbox-foreground-muted)]">Painel de atendimento</p>
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold text-slate-100">Inbox de Leads</h2>
-            <p className="text-sm text-slate-400">
+            <h2 className="text-xl font-semibold text-[color:var(--color-inbox-foreground)]">Inbox de Leads</h2>
+            <p className="text-sm text-[color:var(--color-inbox-foreground-muted)]">
               Priorize as conversas certas e acompanhe os tickets sem deixar o foco se perder.
             </p>
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--color-inbox-foreground-muted)]" />
             <Input
               value={search}
               onChange={(event) => onSearchChange?.(event.target.value)}
               placeholder="Buscar tickets, contatos..."
-              className="h-10 w-full rounded-xl border-slate-800/60 bg-slate-900/60 pl-9 text-slate-100 placeholder:text-slate-500"
+              className="h-10 w-full rounded-xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] pl-9 text-[color:var(--color-inbox-foreground)] placeholder:text-[color:var(--color-inbox-foreground-muted)]"
             />
           </div>
           {onStartManualConversation ? (
             <Button
               size="sm"
-              className="h-10 rounded-xl bg-emerald-500 px-4 text-xs font-semibold uppercase tracking-wide text-emerald-950 shadow-[0_10px_24px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400 disabled:opacity-70"
+              className="h-10 rounded-xl bg-success text-xs font-semibold uppercase tracking-wide text-success-foreground shadow-[var(--shadow-md)] transition hover:bg-success/90 disabled:opacity-70"
               onClick={onStartManualConversation}
               disabled={manualConversationPending}
             >
@@ -156,7 +156,7 @@ const FilterToolbar = ({
           <Button
             variant="outline"
             size="sm"
-            className="h-10 rounded-xl border-slate-800 bg-slate-900/60 text-slate-200 hover:bg-slate-900"
+            className="h-10 rounded-xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
             onClick={onRefresh}
             disabled={loading}
           >
@@ -166,7 +166,7 @@ const FilterToolbar = ({
         </div>
       </div>
 
-      <div className="h-px w-full bg-slate-900/60" />
+      <div className="h-px w-full bg-[color:var(--color-inbox-border)]" />
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -175,14 +175,14 @@ const FilterToolbar = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-full border-slate-800/80 bg-slate-950/60 px-4 text-slate-200 hover:bg-slate-900"
+                className="rounded-full border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-4 text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
               >
                 <Filter className="h-4 w-4" />
                 <span className="ml-2 text-xs font-semibold uppercase tracking-wide">Ajustar filtros</span>
                 {activeFiltersCount > 0 ? (
                   <Badge
                     variant="secondary"
-                    className="ml-2 rounded-full border-0 bg-sky-500/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-sky-200"
+                    className="ml-2 rounded-full border border-[color:var(--accent-inbox-primary)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[color:var(--accent-inbox-primary)]"
                   >
                     {activeFiltersCount}
                   </Badge>
@@ -191,19 +191,19 @@ const FilterToolbar = ({
             </PopoverTrigger>
             <PopoverContent
               align="end"
-              className="w-[320px] rounded-xl border-slate-800/80 bg-slate-950/95 p-4 text-slate-100 shadow-xl"
+              className="w-[320px] rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] p-4 text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]"
             >
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Responsável</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Responsável</p>
                   <Select
                     value={effectiveFilters.scope}
                     onValueChange={(value) => applyFilters({ scope: value })}
                   >
-                    <SelectTrigger className="h-10 rounded-lg border-slate-800/60 bg-slate-900/60 text-slate-100">
+                    <SelectTrigger className="h-10 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)]">
                       <SelectValue placeholder="Equipe" />
                     </SelectTrigger>
-                    <SelectContent className="border-slate-800/80 bg-slate-950 text-slate-100">
+                    <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
                       {SCOPE_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -214,15 +214,15 @@ const FilterToolbar = ({
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Status</p>
                   <Select
                     value={effectiveFilters.state}
                     onValueChange={(value) => applyFilters({ state: value })}
                   >
-                    <SelectTrigger className="h-10 rounded-lg border-slate-800/60 bg-slate-900/60 text-slate-100">
+                    <SelectTrigger className="h-10 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)]">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
-                    <SelectContent className="border-slate-800/80 bg-slate-950 text-slate-100">
+                    <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
                       {STATE_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -233,15 +233,15 @@ const FilterToolbar = ({
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Janela</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Janela</p>
                   <Select
                     value={effectiveFilters.window}
                     onValueChange={(value) => applyFilters({ window: value })}
                   >
-                    <SelectTrigger className="h-10 rounded-lg border-slate-800/60 bg-slate-900/60 text-slate-100">
+                    <SelectTrigger className="h-10 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)]">
                       <SelectValue placeholder="Janela" />
                     </SelectTrigger>
-                    <SelectContent className="border-slate-800/80 bg-slate-950 text-slate-100">
+                    <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
                       {WINDOW_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -252,15 +252,15 @@ const FilterToolbar = ({
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Resultado</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Resultado</p>
                   <Select
                     value={effectiveFilters.outcome}
                     onValueChange={(value) => applyFilters({ outcome: value })}
                   >
-                    <SelectTrigger className="h-10 rounded-lg border-slate-800/60 bg-slate-900/60 text-slate-100">
+                    <SelectTrigger className="h-10 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)]">
                       <SelectValue placeholder="Resultado" />
                     </SelectTrigger>
-                    <SelectContent className="border-slate-800/80 bg-slate-950 text-slate-100">
+                    <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
                       {OUTCOME_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
@@ -273,7 +273,7 @@ const FilterToolbar = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-center rounded-lg border border-slate-800/60 bg-slate-900/60 text-xs font-semibold uppercase tracking-wide text-slate-300 hover:bg-slate-900"
+                  className="w-full justify-center rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
                   onClick={handleResetFilters}
                 >
                   Limpar filtros
@@ -289,14 +289,14 @@ const FilterToolbar = ({
               <Badge
                 key={summary.id}
                 variant="outline"
-                className="inline-flex items-center gap-2 rounded-full border-slate-800/80 bg-slate-950/60 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-slate-300"
+                className="inline-flex items-center gap-2 rounded-full border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-[color:var(--color-inbox-foreground)]"
               >
-                <span className="text-slate-500">{summary.label}</span>
-                <span className="text-slate-100">{summary.value}</span>
+                <span className="text-[color:var(--color-inbox-foreground-muted)]">{summary.label}</span>
+                <span className="text-[color:var(--color-inbox-foreground)]">{summary.value}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveFilter(summary.id)}
-                  className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/70 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+                  className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground-muted)] transition hover:bg-[color:var(--surface-overlay-inbox-bold)] hover:text-[color:var(--color-inbox-foreground)]"
                 >
                   <span className="sr-only">Remover filtro {summary.label}</span>
                   <X className="h-3.5 w-3.5" aria-hidden />

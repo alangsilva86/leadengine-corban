@@ -22,7 +22,7 @@ const MOCK_TEMPLATES = [
 export const TemplatePicker = ({ open, onClose, onSelect }) => {
   return (
     <Dialog open={open} onOpenChange={(next) => (!next ? onClose?.() : undefined)}>
-      <DialogContent className="max-w-md bg-slate-950/90 text-slate-100">
+      <DialogContent className="max-w-md border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]">
         <DialogHeader>
           <DialogTitle>Selecionar template aprovado</DialogTitle>
         </DialogHeader>
@@ -31,11 +31,11 @@ export const TemplatePicker = ({ open, onClose, onSelect }) => {
             <button
               key={template.id}
               type="button"
-              className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3 text-left hover:border-sky-500/60 hover:bg-slate-900"
+              className="rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-left transition hover:border-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               onClick={() => onSelect?.(template)}
             >
-              <div className="text-sm font-semibold text-slate-100">{template.name}</div>
-              <div className="text-xs text-slate-400">{template.body}</div>
+              <div className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">{template.name}</div>
+              <div className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{template.body}</div>
             </button>
           ))}
         </div>

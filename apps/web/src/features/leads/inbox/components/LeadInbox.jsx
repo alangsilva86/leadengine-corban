@@ -1,31 +1,8 @@
-import LeadInboxView from './LeadInbox/LeadInboxView.jsx';
-import { useLeadInboxController } from '../hooks/useLeadInboxController.jsx';
-
-export const LeadInbox = (props) => {
-  const viewModel = useLeadInboxController(props);
-  return <LeadInboxView {...viewModel} />;
-};
-
-export {
-  SAVED_FILTERS_STORAGE_KEY,
-  SAVED_VIEWS_STORAGE_KEY,
-  SAVED_VIEWS_LIMIT,
-  THIRTY_DAYS_MS,
-  NO_QUEUE_VALUE,
-  defaultFilters,
-  TIME_WINDOW_OPTIONS,
-  normalizeFilters,
-  serializeFilters,
-  filterAllocationsWithFilters,
-  loadStoredFilters,
-  loadStoredViews,
-  resolveQueueValue,
-} from '../utils/filtering.js';
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
@@ -50,7 +27,7 @@ import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
 import { InboxSurface } from './shared/InboxSurface.jsx';
-import { InboxSummaryGrid } from './InboxSummaryGrid.jsx';
+import InboxSummaryGrid, { statusMetrics, formatSummaryValue } from './InboxSummaryGrid.jsx';
 
 const InboxPageContainer = ({ children, className }) => (
   <div className={cn('flex min-h-[100dvh] w-full flex-col', className)}>

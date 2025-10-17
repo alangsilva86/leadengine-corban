@@ -63,7 +63,7 @@ export const ConversationArea = ({
   }, [ai, ticket?.id]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 sm:gap-5">
       <ConversationHeader
         ticket={ticket}
         onRegisterResult={onRegisterResult}
@@ -74,7 +74,7 @@ export const ConversationArea = ({
         typingAgents={typingIndicator?.agentsTyping ?? []}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[26px] bg-surface-overlay-quiet shadow-inner shadow-slate-950/40 ring-1 ring-surface-overlay-glass-border backdrop-blur-xl">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] shadow-[var(--shadow-lg)]">
         <MessageTimeline
           items={timelineItems}
           loading={messagesQuery.isFetchingNextPage}

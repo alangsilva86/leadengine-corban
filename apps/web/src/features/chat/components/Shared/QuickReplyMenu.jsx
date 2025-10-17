@@ -75,7 +75,7 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
             variant="ghost"
             size="icon"
             className={cn(
-              'h-9 w-9 rounded-full border border-slate-800/60 bg-slate-950/60 text-slate-300 hover:bg-slate-900 hover:text-white',
+              'h-9 w-9 rounded-full border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] hover:text-[color:var(--color-inbox-foreground)]',
               className
             )}
           >
@@ -85,32 +85,32 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className="w-64 rounded-xl border-slate-800/80 bg-slate-950/95 p-2 text-slate-100 shadow-xl"
+          className="w-64 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] p-2 text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]"
         >
-          <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">
             Respostas rápidas
           </DropdownMenuLabel>
-          <DropdownMenuSeparator className="my-1 bg-slate-900/60" />
+          <DropdownMenuSeparator className="my-1 bg-[color:var(--color-inbox-border)]/70" />
           {availableReplies.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-500">Nenhuma resposta cadastrada ainda.</div>
+            <div className="px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">Nenhuma resposta cadastrada ainda.</div>
           ) : (
             availableReplies.map((reply) => (
               <DropdownMenuItem
                 key={reply.id}
-                className="flex flex-col items-start gap-1 rounded-lg px-3 py-2 text-left text-xs text-slate-300 focus:bg-slate-900 focus:text-slate-100"
+                className="flex flex-col items-start gap-1 rounded-lg px-3 py-2 text-left text-xs text-[color:var(--color-inbox-foreground)] focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-[color:var(--color-inbox-foreground)]"
                 onSelect={(event) => {
                   event.preventDefault();
                   handleSelect(reply);
                 }}
               >
-                <span className="text-sm font-medium text-slate-100">{reply.label}</span>
-                <span className="line-clamp-2 text-xs text-slate-500">{reply.text}</span>
+                <span className="text-sm font-medium text-[color:var(--color-inbox-foreground)]">{reply.label}</span>
+                <span className="line-clamp-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">{reply.text}</span>
               </DropdownMenuItem>
             ))
           )}
-          <DropdownMenuSeparator className="my-1 bg-slate-900/60" />
+          <DropdownMenuSeparator className="my-1 bg-[color:var(--color-inbox-border)]/70" />
           <DropdownMenuItem
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium uppercase tracking-wide text-sky-300 focus:bg-slate-900 focus:text-sky-200"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium uppercase tracking-wide text-[color:var(--accent-inbox-primary)] focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-[color:var(--accent-inbox-primary)]"
             onSelect={(event) => {
               event.preventDefault();
               setDialogOpen(true);
@@ -131,7 +131,7 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
           }
         }}
       >
-        <DialogContent className="max-w-md rounded-2xl border-slate-800/80 bg-slate-950/95 text-slate-100">
+        <DialogContent className="max-w-md rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]">
           <DialogHeader>
             <DialogTitle>Nova resposta rápida</DialogTitle>
             <DialogDescription>
@@ -140,7 +140,7 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="quick-reply-label" className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <Label htmlFor="quick-reply-label" className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">
                 Nome visível
               </Label>
               <Input
@@ -148,11 +148,11 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
                 value={form.label}
                 onChange={(event) => setForm((current) => ({ ...current, label: event.target.value }))}
                 placeholder="Ex.: Saudação inicial"
-                className="h-10 rounded-lg border-slate-800/60 bg-slate-900/60 text-sm text-slate-100 placeholder:text-slate-500"
+                className="h-10 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)] placeholder:text-[color:var(--color-inbox-foreground-muted)]"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="quick-reply-text" className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <Label htmlFor="quick-reply-text" className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">
                 Mensagem
               </Label>
               <Textarea
@@ -160,14 +160,14 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
                 value={form.text}
                 onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))}
                 placeholder="Escreva a mensagem completa que será inserida na conversa"
-                className="min-h-[120px] rounded-lg border-slate-800/60 bg-slate-900/60 text-sm text-slate-100 placeholder:text-slate-500"
+                className="min-h-[120px] rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)] placeholder:text-[color:var(--color-inbox-foreground-muted)]"
               />
             </div>
             <DialogFooter>
               <Button
                 type="button"
                 variant="ghost"
-                className="border border-slate-800/60 bg-transparent text-slate-300 hover:bg-slate-900"
+                className="border border-[color:var(--color-inbox-border)] bg-transparent text-[color:var(--color-inbox-foreground-muted)] hover:bg-[color:var(--surface-overlay-inbox-quiet)]"
                 onClick={() => setDialogOpen(false)}
               >
                 Cancelar

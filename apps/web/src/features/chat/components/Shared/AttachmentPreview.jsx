@@ -17,9 +17,9 @@ export const AttachmentPreview = ({ attachments = [] }) => {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-slate-700/60 bg-slate-900/60 px-2 py-1 text-xs text-slate-200 hover:border-slate-500 hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-md border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-2 py-1 text-xs text-[color:var(--color-inbox-foreground)] hover:border-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
           >
-            <Paperclip className="h-4 w-4 text-slate-400" />
+            <Paperclip className="h-4 w-4 text-[color:var(--color-inbox-foreground-muted)]" />
             <span className="truncate max-w-[140px]">{label}</span>
           </a>
         );

@@ -193,7 +193,7 @@ const CampaignsPanel = ({
     Boolean(actionState?.id === campaignId && (!type || actionState.type === type));
 
   const renderEmptyState = () => (
-    <div className="rounded-xl border border-dashed border-white/10 bg-white/5 p-6 text-center text-sm text-muted-foreground">
+    <div className="rounded-xl border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-6 text-center text-sm text-muted-foreground">
       <p>
         {isFiltered
           ? 'Nenhuma campanha corresponde aos filtros aplicados.'
@@ -248,7 +248,7 @@ const CampaignsPanel = ({
     return (
       <div
         key={campaign.id}
-        className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4"
+        className="space-y-4 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-4"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">

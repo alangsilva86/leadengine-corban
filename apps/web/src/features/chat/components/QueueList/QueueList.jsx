@@ -7,7 +7,11 @@ import { cn, formatPhoneNumber } from '@/lib/utils.js';
 
 const minutesToLabel = (minutes) => {
   if (minutes === null || minutes === undefined) {
-    return { label: 'Sem janela', tone: 'text-slate-300', badge: 'bg-slate-800/60 text-slate-200' };
+    return {
+      label: 'Sem janela',
+      tone: 'text-[color:var(--color-inbox-foreground-muted)]',
+      badge: 'bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] border border-[color:var(--color-inbox-border)]',
+    };
   }
 
   if (minutes <= 0) {
@@ -68,37 +72,37 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
       type="button"
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'w-full rounded-xl border border-slate-900/60 bg-slate-950/60 p-3 text-left transition hover:border-slate-700/70 hover:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
-        selected && 'border-sky-500/50 bg-slate-900'
+        'w-full rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-left transition hover:border-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
+        selected && 'border-[color:var(--accent-inbox-primary)] bg-[color:var(--surface-overlay-inbox-bold)]'
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col">
-          <p className="truncate text-sm font-semibold text-slate-100" title={displayName}>
+          <p className="truncate text-sm font-semibold text-[color:var(--color-inbox-foreground)]" title={displayName}>
             {displayName}
           </p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
             <span>{displayPhone}</span>
-            {remoteJid ? <span className="text-slate-600">{remoteJid}</span> : null}
+            {remoteJid ? <span className="text-[color:var(--color-inbox-foreground-muted)]/80">{remoteJid}</span> : null}
           </div>
-          <p className="text-xs text-slate-500">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
+          <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
         </div>
         <Badge className={cn('text-xs font-medium', slaBadgeClass)}>{slaLabel}</Badge>
       </div>
-      <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
-        <span className="flex items-center gap-1 text-slate-400">
-          <Clock className="h-3.5 w-3.5 text-slate-500" />
+      <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+        <span className="flex items-center gap-1 text-[color:var(--color-inbox-foreground-muted)]">
+          <Clock className="h-3.5 w-3.5 text-[color:var(--color-inbox-foreground-muted)]" />
           Último cliente: {lastInbound ?? '—'}
         </span>
-        <span className="text-slate-500">•</span>
-        <span className="text-slate-400">Você: {lastOutbound ?? '—'}</span>
+        <span className="text-[color:var(--color-inbox-foreground-muted)]">•</span>
+        <span className="text-[color:var(--color-inbox-foreground-muted)]">Você: {lastOutbound ?? '—'}</span>
       </div>
-      <p className="mt-2 line-clamp-2 text-xs text-slate-400">{formatPreview(ticket)}</p>
+      <p className="mt-2 line-clamp-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">{formatPreview(ticket)}</p>
       {agentTyping ? (
-        <div className="mt-2 text-xs text-emerald-200">Agente digitando…</div>
+        <div className="mt-2 text-xs text-[color:var(--accent-inbox-primary)]">Agente digitando…</div>
       ) : null}
       {ticket.timeline?.unreadInboundCount ? (
-        <div className="mt-2 text-xs text-emerald-200">
+        <div className="mt-2 text-xs text-[color:var(--accent-inbox-primary)]">
           {ticket.timeline.unreadInboundCount} novas mensagens do cliente
         </div>
       ) : null}
@@ -116,18 +120,18 @@ const QueueMetrics = ({ metrics }) => {
   const qualityTier = metrics.whatsappQuality?.qualityTier ?? null;
 
   return (
-    <div className="grid grid-cols-1 gap-2 rounded-lg border border-slate-900/80 bg-slate-950/70 p-3 text-xs text-slate-300">
+    <div className="grid grid-cols-1 gap-2 rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-xs text-[color:var(--color-inbox-foreground-muted)]">
       <div className="flex items-center justify-between">
         <span>1ª resposta (mediana)</span>
-        <span className="font-medium text-slate-100">{median !== null ? `${median} min` : '—'}</span>
+        <span className="font-medium text-[color:var(--color-inbox-foreground)]">{median !== null ? `${median} min` : '—'}</span>
       </div>
       <div className="flex items-center justify-between">
         <span>Dentro de 5 min</span>
-        <span className="font-medium text-slate-100">{slaRate !== null ? `${Math.round(slaRate * 100)}%` : '—'}</span>
+        <span className="font-medium text-[color:var(--color-inbox-foreground)]">{slaRate !== null ? `${Math.round(slaRate * 100)}%` : '—'}</span>
       </div>
       <div className="flex items-center justify-between">
         <span>Qualidade WA</span>
-        <span className="uppercase tracking-wide text-slate-100">{qualityTier ?? '—'}</span>
+        <span className="uppercase tracking-wide text-[color:var(--color-inbox-foreground)]">{qualityTier ?? '—'}</span>
       </div>
     </div>
   );
@@ -148,11 +152,11 @@ const QueueList = ({
     <div className="flex h-full flex-col gap-3">
       <div className="space-y-2 px-1">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-200">Filas de atendimento</h2>
+          <h2 className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">Filas de atendimento</h2>
           <Button
             variant="ghost"
             size="icon"
-            className="text-slate-300 hover:text-slate-100"
+            className="text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
             onClick={onRefresh}
             disabled={loading}
           >
@@ -167,8 +171,8 @@ const QueueList = ({
       <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-2 px-1 pb-6">
           {tickets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-800/80 bg-slate-950/60 p-6 text-center text-sm text-slate-400">
-              <AlertTriangle className="h-5 w-5 text-slate-500" />
+            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-6 text-center text-sm text-[color:var(--color-inbox-foreground-muted)]">
+              <AlertTriangle className="h-5 w-5 text-[color:var(--color-inbox-foreground-muted)]" />
               <p>Nenhum ticket encontrado com os filtros atuais.</p>
             </div>
           ) : (

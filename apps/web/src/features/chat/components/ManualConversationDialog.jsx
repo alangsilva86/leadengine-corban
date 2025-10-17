@@ -97,12 +97,12 @@ const ManualConversationDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-slate-950/95 border-slate-900/80 text-slate-100">
+      <DialogContent className="border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]">
         <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="text-lg font-semibold text-slate-100">
+          <DialogTitle className="text-lg font-semibold text-[color:var(--color-inbox-foreground)]">
             Iniciar conversa manual
           </DialogTitle>
-          <DialogDescription className="text-xs uppercase tracking-[0.24em] text-slate-400">
+          <DialogDescription className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">
             Cadastre o contato e envie a mensagem inicial diretamente pelo LeadEngine.
           </DialogDescription>
         </DialogHeader>
@@ -114,7 +114,7 @@ const ManualConversationDialog = ({
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
                     Telefone
                   </FormLabel>
                   <FormControl>
@@ -140,7 +140,7 @@ const ManualConversationDialog = ({
               name="message"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
                     Mensagem inicial
                   </FormLabel>
                   <FormControl>
@@ -162,7 +162,7 @@ const ManualConversationDialog = ({
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-xl border-slate-800 bg-slate-950/60 text-slate-200 hover:bg-slate-900"
+                className="rounded-xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
                 disabled={isProcessing}
                 onClick={() => onOpenChange?.(false)}
               >
@@ -170,7 +170,7 @@ const ManualConversationDialog = ({
               </Button>
               <Button
                 type="submit"
-                className="rounded-xl bg-emerald-500 px-4 text-xs font-semibold uppercase tracking-[0.28em] text-emerald-950 shadow-[0_10px_24px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400 disabled:opacity-70"
+                className="rounded-xl bg-success px-4 text-xs font-semibold uppercase tracking-[0.28em] text-success-foreground shadow-[var(--shadow-md)] transition hover:bg-success/90 disabled:opacity-70"
                 disabled={isProcessing}
               >
                 Iniciar conversa

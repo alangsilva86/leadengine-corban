@@ -11,7 +11,7 @@ const Timeline = ({
 }) => {
   return (
     <div className={cn('space-y-3 rounded-xl p-4', surfaceStyles.glassTile)}>
-      <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
+      <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">
         <span className="flex items-center gap-2">
           <History className="h-4 w-4" /> Atividade recente
         </span>

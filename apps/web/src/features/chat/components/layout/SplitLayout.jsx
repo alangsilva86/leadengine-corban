@@ -155,7 +155,7 @@ const SplitLayout = ({
 
   return (
     <div
-      className={cn('relative grid h-full min-h-0 w-full gap-0', className)}
+      className={cn('relative grid h-full min-h-0 w-full gap-0 items-stretch', className)}
       style={{ gridTemplateColumns, gridTemplateAreas }}
       data-list-position={listPosition}
       {...props}
@@ -163,13 +163,16 @@ const SplitLayout = ({
       {isListVisible ? (
         <aside
           aria-label="Lista de tickets"
-          className={cn('relative min-h-0 min-w-0 overflow-hidden', listClassName)}
+          className={cn('relative flex h-full min-h-0 min-w-0 flex-col', listClassName)}
           style={{ gridArea: 'list' }}
         >
           {list}
         </aside>
       ) : null}
-      <section className={cn('relative min-h-0 min-w-0 overflow-hidden', detailClassName)} style={{ gridArea: 'detail' }}>
+      <section
+        className={cn('relative flex h-full min-h-0 min-w-0 flex-col', detailClassName)}
+        style={{ gridArea: 'detail' }}
+      >
         {detail}
       </section>
       {isListVisible && resizable && onListWidthChange ? (

@@ -16,7 +16,7 @@ export const QuickReplyList = ({ replies = [], onSelect, className }) => {
             key={key}
             variant="outline"
             size="sm"
-            className="border-dashed border-slate-500/40 bg-slate-950/40 text-slate-200 hover:bg-slate-900"
+            className="border-dashed border-[color:var(--color-inbox-border)]/80 bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
             onClick={() => {
               if (typeof onSelect === 'function') {
                 onSelect(value, reply);

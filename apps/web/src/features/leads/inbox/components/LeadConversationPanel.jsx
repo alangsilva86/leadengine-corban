@@ -16,7 +16,6 @@ import {
   getFirstString,
   getFirstValidDate,
 } from '../utils/index.js';
-} from '../utils/dateUtils.js';
 import { STATUS_META } from '../constants/statusMeta.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 import { InboxSurface } from './shared/InboxSurface.jsx';

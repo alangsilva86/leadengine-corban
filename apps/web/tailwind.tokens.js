@@ -372,6 +372,7 @@ export const shadows = {
   'focus-primary': [
     'var(--shadow-lg)',
     '0 0 0 1px var(--color-primary-soft-border, rgba(79, 70, 229, 0.38))',
+  ].join(', '),
   'brand-ring': [
     'var(--shadow-lg, 0 12px 32px -12px color-mix(in srgb, var(--color-border) 32%, transparent))',
     '0 0 0 1px var(--tone-info-border, rgba(79, 70, 229, 0.42))',

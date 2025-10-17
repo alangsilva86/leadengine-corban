@@ -1401,7 +1401,7 @@ const WhatsAppConnect = ({
       <header className="glass-surface space-y-4 rounded-[var(--radius)] border border-[var(--border)] px-6 py-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-slate-300/80">
+            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/80">
               <Badge variant="secondary">{stepLabel}</Badge>
               <span>Próximo: {nextStage}</span>
             </div>
@@ -1535,7 +1535,7 @@ const WhatsAppConnect = ({
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
+              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">
                 <span>Instâncias disponíveis</span>
                 <div className="flex items-center gap-2">
                   {instancesReady && hasHiddenInstances && hasRenderableInstances ? (
@@ -1956,7 +1956,7 @@ const WhatsAppConnect = ({
                     SURFACE_COLOR_UTILS.glassTile
                   )}
                 >
-                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">
                     <span className="flex items-center gap-2">
                       <History className="h-4 w-4" /> Atividade recente
                     </span>
