@@ -5,6 +5,21 @@ import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import useInstanceLiveUpdates from './useInstanceLiveUpdates.js';
 import {
   clearInstancesCache,
+import { toDataURL as generateQrDataUrl } from 'qrcode';
+import { toast } from 'sonner';
+
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
+import { getAuthToken } from '@/lib/auth.js';
+import { parseRetryAfterMs } from '@/lib/rate-limit.js';
+
+import usePlayfulLogger from '../shared/usePlayfulLogger.js';
+import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
+import useInstanceLiveUpdates from './useInstanceLiveUpdates.js';
+
+import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
+import {
+  clearInstancesCache,
+  ensureArrayOfObjects,
   normalizeInstancesCollection,
   parseInstancesPayload,
   persistInstancesCache,
@@ -28,6 +43,137 @@ const extractAgreementIdentifiers = (agreement) => ({
   name: agreement?.name ?? null,
   region: agreement?.region ?? null,
 });
+} from '../utils/instances.js';
+import { getInstanceMetrics } from '../utils/metrics.js';
+import {
+  formatMetricValue,
+  formatPhoneNumber,
+  formatTimestampLabel,
+  humanizeLabel,
+} from '../utils/formatting.js';
+import { extractQrPayload, getQrImageSrc } from '../utils/qr.js';
+
+const STATUS_TONES = {
+  disconnected: 'warning',
+  connecting: 'info',
+  connected: 'success',
+  qr_required: 'warning',
+  fallback: 'neutral',
+};
+
+const SURFACE_COLOR_UTILS = {
+  instancesPanel: 'border border-border/60 bg-surface-overlay-strong',
+  qrInstructionsPanel: 'border border-border/60 bg-surface-overlay-quiet',
+  glassTile: 'border border-surface-overlay-glass-border bg-surface-overlay-glass',
+  glassTileDashed: 'border border-dashed border-surface-overlay-glass-border bg-surface-overlay-glass',
+  glassTileActive: 'border-primary/60 bg-primary/10 ring-1 ring-primary/40 shadow-sm',
+  glassTileIdle: 'border-surface-overlay-glass-border bg-surface-overlay-glass hover:border-primary/30',
+  destructiveBanner: 'border border-destructive/40 bg-destructive/10 text-destructive',
+  qrIllustration: 'border-surface-overlay-glass-border bg-surface-overlay-glass text-primary shadow-inner',
+  progressTrack: 'bg-surface-overlay-glass',
+  progressIndicator: 'bg-primary',
+};
+
+const statusCopy = {
+  disconnected: {
+    badge: 'Pendente',
+    description: 'Leia o QR Code no WhatsApp Web para conectar seu número e começar a receber leads.',
+    tone: STATUS_TONES.disconnected,
+  },
+  connecting: {
+    badge: 'Conectando',
+    description: 'Estamos sincronizando com o seu número. Mantenha o WhatsApp aberto até concluir.',
+    tone: STATUS_TONES.connecting,
+  },
+  connected: {
+    badge: 'Ativo',
+    description: 'Pronto! Todos os leads qualificados serão entregues diretamente no seu WhatsApp.',
+    tone: STATUS_TONES.connected,
+  },
+  qr_required: {
+    badge: 'QR necessário',
+    description: 'Gere um novo QR Code e escaneie para reativar a sessão.',
+    tone: STATUS_TONES.qr_required,
+  },
+};
+
+const statusCodeMeta = [
+  { code: '1', label: '1', description: 'Total de mensagens reportadas com o código 1 pelo broker.' },
+  { code: '2', label: '2', description: 'Total de mensagens reportadas com o código 2 pelo broker.' },
+  { code: '3', label: '3', description: 'Total de mensagens reportadas com o código 3 pelo broker.' },
+  { code: '4', label: '4', description: 'Total de mensagens reportadas com o código 4 pelo broker.' },
+  { code: '5', label: '5', description: 'Total de mensagens reportadas com o código 5 pelo broker.' },
+];
+
+const DEFAULT_POLL_INTERVAL_MS = 15_000;
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+import { toast } from 'sonner';
+import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
+import { getAuthToken } from '@/lib/auth.js';
+import { parseRetryAfterMs } from '@/lib/rate-limit.js';
+import sessionStorageAvailable from '@/lib/session-storage.js';
+import useInstanceLiveUpdates from './useInstanceLiveUpdates.js';
+import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
+
+const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
+const DEFAULT_POLL_INTERVAL_MS = 15000;
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+
+const readInstancesCache = () => {
+  if (!sessionStorageAvailable()) {
+    return null;
+  }
+  try {
+    const raw = sessionStorage.getItem(INSTANCES_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn('Não foi possível ler o cache de instâncias WhatsApp', error);
+    return null;
+  }
+};
+
+const persistInstancesCache = (list, currentId) => {
+  if (!sessionStorageAvailable()) {
+    return;
+  }
+  try {
+    sessionStorage.setItem(
+      INSTANCES_CACHE_KEY,
+      JSON.stringify({
+        list,
+        currentId,
+        updatedAt: Date.now(),
+      })
+    );
+  } catch (error) {
+    console.warn('Não foi possível armazenar o cache de instâncias WhatsApp', error);
+  }
+};
+
+const clearInstancesCache = () => {
+  if (!sessionStorageAvailable()) {
+    return;
+  }
+  sessionStorage.removeItem(INSTANCES_CACHE_KEY);
+};
+
+const ensureArrayOfObjects = (value) =>
+  Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
+
+const looksLikeWhatsAppJid = (value) =>
+  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
+
+const getStatusInfo = (instance) => {
+  const rawStatus = instance?.status || (instance?.connected ? 'connected' : 'disconnected');
+  const map = {
+    connected: { label: 'Conectado', variant: 'success' },
+    connecting: { label: 'Conectando', variant: 'info' },
+    disconnected: { label: 'Desconectado', variant: 'secondary' },
+    qr_required: { label: 'QR necessário', variant: 'warning' },
+    error: { label: 'Erro', variant: 'destructive' },
+  };
+  return map[rawStatus] || { label: rawStatus || 'Indefinido', variant: 'secondary' };
+};
 
 const resolveInstancePhone = (instance) =>
   instance?.phoneNumber ||
@@ -90,6 +236,64 @@ const resolveFriendlyError = (resolveCopy, error, fallbackMessage) => {
   const rawMessage =
     error?.payload?.error?.message ?? (error instanceof Error ? error.message : fallbackMessage);
   const copy = resolveCopy(codeCandidate, rawMessage ?? fallbackMessage);
+const useQrImageSource = (qrPayload) => {
+  const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
+  const { code, immediate, needsGeneration } = qrMeta;
+  const [src, setSrc] = useState(immediate ?? null);
+  const [isGenerating, setIsGenerating] = useState(Boolean(needsGeneration && !immediate));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (immediate) {
+      setSrc(immediate);
+      setIsGenerating(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!code || !needsGeneration) {
+      setSrc(null);
+      setIsGenerating(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSrc(null);
+    setIsGenerating(true);
+    generateQrDataUrl(code, { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 })
+      .then((url) => {
+        if (!cancelled) {
+          setSrc(url);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Falha ao gerar QR Code', error);
+          setSrc(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGenerating(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, immediate, needsGeneration]);
+
+  return { src, isGenerating };
+};
+
+const resolveFriendlyError = (error, fallbackMessage) => {
+  const codeCandidate = error?.payload?.error?.code ?? error?.code ?? null;
+  const rawMessage =
+    error?.payload?.error?.message ?? (error instanceof Error ? error.message : fallbackMessage);
+  const copy = resolveWhatsAppErrorCopy(codeCandidate, rawMessage ?? fallbackMessage);
   return {
     code: copy.code,
     title: copy.title,
@@ -97,38 +301,15 @@ const resolveFriendlyError = (resolveCopy, error, fallbackMessage) => {
   };
 };
 
-const ensureToast = (toast) =>
-  toast && typeof toast === 'object'
-    ? {
-        success: typeof toast.success === 'function' ? toast.success.bind(toast) : () => {},
-        error: typeof toast.error === 'function' ? toast.error.bind(toast) : () => {},
-      }
-    : { success: () => {}, error: () => {} };
-
-const ensureLogger = (logger) => ({
-  log: typeof logger?.log === 'function' ? logger.log.bind(logger) : () => {},
-  warn: typeof logger?.warn === 'function' ? logger.warn.bind(logger) : () => {},
-  error: typeof logger?.error === 'function' ? logger.error.bind(logger) : () => {},
-});
-
 const useWhatsAppInstances = ({
   agreement,
+  status: initialStatus = 'disconnected',
+  onboarding,
   activeCampaign,
   onStatusChange,
-  onAuthFallback,
-  toast,
-  logger,
-  formatters = {},
-  campaignHelpers = {},
-  status: externalStatus = 'disconnected',
-} = {}) => {
-  const { success: toastSuccess, error: toastError } = ensureToast(toast);
-  const { log, warn, error: logError } = ensureLogger(logger);
-  const resolveCopy = formatters.resolveWhatsAppErrorCopy || defaultResolveWhatsAppErrorCopy;
-  const clearCampaignSelection = campaignHelpers.clearCampaignSelection;
-
+}) => {
+  const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const pollIdRef = useRef(0);
-  const preferredInstanceIdRef = useRef(null);
   const loadInstancesRef = useRef(() => {});
   const hasFetchedOnceRef = useRef(false);
   const loadingInstancesRef = useRef(false);
@@ -139,11 +320,384 @@ const useWhatsAppInstances = ({
   const [instance, setInstance] = useState(null);
   const [instancesReady, setInstancesReady] = useState(false);
   const [showAllInstances, setShowAllInstances] = useState(false);
+const formatInstanceDisplayId = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  if (looksLikeWhatsAppJid(value)) {
+    return value.replace(/@s\.whatsapp\.net$/i, '@wa');
+  }
+  return value;
+};
+
+const pickStringValue = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+};
+
+const isPlainRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const mergeInstanceEntries = (previous, next) => {
+  if (!previous) {
+    return next;
+  }
+  const previousMetadata = isPlainRecord(previous.metadata) ? previous.metadata : {};
+  const nextMetadata = isPlainRecord(next.metadata) ? next.metadata : {};
+  const mergedMetadata = { ...previousMetadata, ...nextMetadata };
+  return {
+    ...previous,
+    ...next,
+    metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,
+    connected: Boolean(previous.connected || next.connected),
+    status:
+      next.status ||
+      previous.status ||
+      (previous.connected || next.connected ? 'connected' : 'disconnected'),
+    tenantId: next.tenantId ?? previous.tenantId ?? null,
+    name: next.name ?? previous.name ?? null,
+    phoneNumber: next.phoneNumber ?? previous.phoneNumber ?? null,
+    displayId: next.displayId || previous.displayId || next.id || previous.id,
+    source: next.source || previous.source || null,
+  };
+};
+
+const normalizeInstanceRecord = (entry) => {
+  if (!isPlainRecord(entry)) {
+    return null;
+  }
+
+  const base = entry;
+  const metadata = isPlainRecord(base.metadata) ? base.metadata : {};
+  const profile = isPlainRecord(base.profile) ? base.profile : {};
+  const details = isPlainRecord(base.details) ? base.details : {};
+  const info = isPlainRecord(base.info) ? base.info : {};
+  const mergedMetadata = { ...metadata, ...profile, ...details, ...info };
+
+  const id =
+    pickStringValue(
+      base.id,
+      base.instanceId,
+      base.instance_id,
+      base.sessionId,
+      base.session_id,
+      mergedMetadata.id,
+      mergedMetadata.instanceId,
+      mergedMetadata.instance_id,
+      mergedMetadata.sessionId,
+      mergedMetadata.session_id
+    ) ?? null;
+
+  if (!id) {
+    return null;
+  }
+
+  const rawStatus =
+    pickStringValue(
+      base.status,
+      base.connectionStatus,
+      base.state,
+      mergedMetadata.status,
+      mergedMetadata.state
+    ) ?? null;
+  const normalizedStatus = rawStatus ? rawStatus.toLowerCase() : null;
+
+  const connectedValue =
+    typeof base.connected === 'boolean'
+      ? base.connected
+      : typeof mergedMetadata.connected === 'boolean'
+        ? mergedMetadata.connected
+        : normalizedStatus === 'connected';
+
+  const tenantId =
+    pickStringValue(
+      base.tenantId,
+      base.tenant_id,
+      mergedMetadata.tenantId,
+      mergedMetadata.tenant_id,
+      base.agreementId,
+      mergedMetadata.agreementId,
+      base.accountId,
+      mergedMetadata.accountId
+    ) ?? null;
+
+  const name =
+    pickStringValue(
+      base.name,
+      base.displayName,
+      base.label,
+      mergedMetadata.name,
+      mergedMetadata.displayName,
+      mergedMetadata.label,
+      mergedMetadata.instanceName,
+      mergedMetadata.sessionName,
+      mergedMetadata.profileName
+    ) ?? null;
+
+  const phoneNumber =
+    pickStringValue(
+      base.phoneNumber,
+      base.phone,
+      base.number,
+      mergedMetadata.phoneNumber,
+      mergedMetadata.phone,
+      mergedMetadata.number
+    ) ?? null;
+
+  const source =
+    pickStringValue(base.source, mergedMetadata.source, mergedMetadata.origin, base.origin) ??
+    (looksLikeWhatsAppJid(id) ? 'broker' : 'db');
+
+  const normalizedStatusValue = normalizedStatus || (connectedValue ? 'connected' : 'disconnected');
+
+  return {
+    ...base,
+    metadata: mergedMetadata,
+    id,
+    tenantId,
+    name,
+    phoneNumber,
+    status: normalizedStatusValue,
+    connected: Boolean(connectedValue),
+    displayId: formatInstanceDisplayId(id),
+    source,
+  };
+};
+
+const normalizeInstancesCollection = (rawList, options = {}) => {
+  const allowedTenants = Array.isArray(options.allowedTenants)
+    ? options.allowedTenants
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : [];
+  const shouldFilterByTenant =
+    (options.filterByTenant === true || options.enforceTenantScope === true) &&
+    allowedTenants.length > 0;
+
+  const order = [];
+  const map = new Map();
+
+  if (!Array.isArray(rawList)) {
+    return [];
+  }
+
+  for (const entry of rawList) {
+    const normalized = normalizeInstanceRecord(entry);
+    if (!normalized) {
+      continue;
+    }
+
+    if (
+      shouldFilterByTenant &&
+      normalized.tenantId &&
+      !allowedTenants.includes(normalized.tenantId)
+    ) {
+      continue;
+    }
+
+    const existing = map.get(normalized.id);
+    const merged = mergeInstanceEntries(existing, normalized);
+
+    if (!existing) {
+      order.push(normalized.id);
+    }
+
+    map.set(normalized.id, merged);
+  }
+
+  return order.map((id) => map.get(id)).filter(Boolean);
+};
+
+const unwrapWhatsAppResponse = (payload) => {
+  if (!payload) {
+    return {};
+  }
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && typeof payload === 'object') {
+    if (payload.data && typeof payload.data === 'object') {
+      return payload.data;
+    }
+    if (payload.result && typeof payload.result === 'object') {
+      return payload.result;
+    }
+  }
+
+  return payload;
+};
+
+const extractInstanceFromPayload = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  if (payload.instance && typeof payload.instance === 'object') {
+    return payload.instance;
+  }
+
+  if (payload.data && typeof payload.data === 'object') {
+    const nested = extractInstanceFromPayload(payload.data);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  if (payload.id || payload.name || payload.status || payload.connected) {
+    return payload;
+  }
+
+  return null;
+};
+
+const parseInstancesPayload = (payload) => {
+  const data = unwrapWhatsAppResponse(payload);
+  const rootIsObject = data && typeof data === 'object' && !Array.isArray(data);
+
+  let instances = [];
+  if (rootIsObject && Array.isArray(data.instances)) {
+    instances = ensureArrayOfObjects(data.instances);
+  } else if (rootIsObject && Array.isArray(data.items)) {
+    instances = ensureArrayOfObjects(data.items);
+  } else if (rootIsObject && Array.isArray(data.data)) {
+    instances = ensureArrayOfObjects(data.data);
+  } else if (Array.isArray(data)) {
+    instances = ensureArrayOfObjects(data);
+  }
+
+  const instance = extractInstanceFromPayload(rootIsObject ? data : null) || null;
+
+  if (instance && !instances.some((item) => item && item.id === instance.id)) {
+    instances = [...instances, instance];
+  }
+
+  const statusPayload = rootIsObject
+    ? typeof data.status === 'object' && data.status !== null
+      ? data.status
+      : typeof data.instanceStatus === 'object' && data.instanceStatus !== null
+        ? data.instanceStatus
+        : null
+    : null;
+
+  const status =
+    typeof statusPayload?.status === 'string'
+      ? statusPayload.status
+      : typeof data?.status === 'string'
+        ? data.status
+        : typeof instance?.status === 'string'
+          ? instance.status
+          : null;
+
+  const connected =
+    typeof statusPayload?.connected === 'boolean'
+      ? statusPayload.connected
+      : typeof data?.connected === 'boolean'
+        ? data.connected
+        : typeof instance?.connected === 'boolean'
+          ? instance.connected
+          : null;
+
+  const qr = (() => {
+    const candidate = rootIsObject ? data.qr || data.qrCode || data.qr_code || null : null;
+    if (!candidate) {
+      return null;
+    }
+    if (typeof candidate === 'string') {
+      return { qr: candidate, qrCode: candidate, qrExpiresAt: null, expiresAt: null };
+    }
+    if (candidate && typeof candidate === 'object') {
+      const qrCode = pickStringValue(candidate.qr, candidate.qrCode, candidate.code);
+      const expiresAt = pickStringValue(candidate.expiresAt, candidate.qrExpiresAt);
+      if (!qrCode) {
+        return null;
+      }
+      return {
+        ...candidate,
+        qr: qrCode,
+        qrCode,
+        qrExpiresAt: expiresAt ?? candidate.expiresAt ?? null,
+        expiresAt: expiresAt ?? candidate.expiresAt ?? null,
+      };
+    }
+    return null;
+  })();
+
+  return {
+    data,
+    instance,
+    instances,
+    qr,
+    status,
+    connected,
+    instanceId:
+      typeof data?.instanceId === 'string'
+        ? data.instanceId
+        : typeof data?.id === 'string'
+          ? data.id
+          : instance?.id ?? null,
+  };
+};
+
+const pickCurrentInstance = (list, { preferredInstanceId, campaignInstanceId } = {}) => {
+  if (!Array.isArray(list) || list.length === 0) {
+    return null;
+  }
+
+  const findMatch = (targetId) => {
+    if (!targetId) {
+      return null;
+    }
+    return list.find((item) => item.id === targetId || item.name === targetId) || null;
+  };
+
+  const preferredMatch = findMatch(preferredInstanceId);
+  if (preferredMatch) {
+    return preferredMatch;
+  }
+
+  const campaignMatch = findMatch(campaignInstanceId);
+  if (campaignMatch) {
+    return campaignMatch;
+  }
+
+  const connected = list.find((item) => item.connected === true);
+  return connected || list[0];
+};
+
+const defaultLogger = {
+  log: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export default function useWhatsAppInstances({
+  selectedAgreement,
+  status: initialStatus,
+  onStatusChange,
+  onError,
+  logger,
+  campaignInstanceId = null,
+} = {}) {
+  const { log, warn, error: logError } = { ...defaultLogger, ...logger };
+
+  const [instances, setInstances] = useState([]);
+  const [currentInstance, setCurrentInstance] = useState(null);
+  const [instancesReady, setInstancesReady] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [loadingQr, setLoadingQr] = useState(false);
-  const [isQrImageGenerating, setIsQrImageGenerating] = useState(false);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
@@ -182,6 +736,69 @@ const useWhatsAppInstances = ({
   const applyErrorMessageFromError = useCallback(
     (error, fallbackMessage, meta = {}) => {
       const friendly = resolveFriendlyError(resolveCopy, error, fallbackMessage);
+  const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
+  const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
+  const [pendingReassign, setPendingReassign] = useState(null);
+  const [reassignIntent, setReassignIntent] = useState('reassign');
+
+  const enforceAuthMessage =
+    'Não foi possível sincronizar as instâncias de WhatsApp no momento. Tente novamente em instantes.';
+
+  const setErrorMessage = useCallback((message, meta = {}) => {
+    if (message) {
+      const copy = resolveWhatsAppErrorCopy(meta.code, message);
+      const resolvedState = {
+        ...meta,
+        code: copy.code ?? meta.code ?? null,
+        title: meta.title ?? copy.title ?? 'Algo deu errado',
+        message: copy.description ?? message,
+      };
+      setErrorState(resolvedState);
+    } else {
+      setErrorState(null);
+    }
+  }, []);
+
+  const [sessionActive, setSessionActive] = useState(true);
+  const [authDeferred, setAuthDeferred] = useState(false);
+  const [authTokenState, setAuthTokenState] = useState(() => getAuthToken());
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [deletingInstanceId, setDeletingInstanceId] = useState(null);
+  const [localStatus, setLocalStatus] = useState(initialStatus ?? 'disconnected');
+
+  const pollIdRef = useRef(0);
+  const preferredInstanceIdRef = useRef(null);
+  const loadInstancesRef = useRef();
+  const hasFetchedOnceRef = useRef(false);
+  const loadingInstancesRef = useRef(false);
+  const loadingQrRef = useRef(false);
+  const generatingQrRef = useRef(false);
+
+  const setErrorMessage = useCallback(
+    (message, meta = {}) => {
+      onError?.(message, meta);
+    },
+    [onError]
+  );
+
+  const requireAuthMessage =
+    'Não foi possível sincronizar as instâncias de WhatsApp no momento. Tente novamente em instantes.';
+
+  const resolveFriendlyError = useCallback((error, fallbackMessage) => {
+    const codeCandidate = error?.payload?.error?.code ?? error?.code ?? null;
+    const rawMessage =
+      error?.payload?.error?.message ?? (error instanceof Error ? error.message : fallbackMessage);
+    const copy = resolveWhatsAppErrorCopy(codeCandidate, rawMessage ?? fallbackMessage);
+    return {
+      code: copy.code,
+      title: copy.title,
+      message: copy.description ?? rawMessage ?? fallbackMessage,
+    };
+  }, []);
+
+  const applyErrorMessageFromError = useCallback(
+    (error, fallbackMessage, meta = {}) => {
+      const friendly = resolveFriendlyError(error, fallbackMessage);
       setErrorMessage(friendly.message, {
         ...meta,
         code: friendly.code ?? meta.code,
@@ -194,6 +811,9 @@ const useWhatsAppInstances = ({
 
   const requireAuthMessage =
     'Não foi possível sincronizar as instâncias de WhatsApp no momento. Tente novamente em instantes.';
+
+    [resolveFriendlyError, setErrorMessage]
+  );
 
   const isAuthError = useCallback((error) => {
     const status = typeof error?.status === 'number' ? error.status : null;
