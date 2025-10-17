@@ -59,6 +59,8 @@ describe('CampaignsPanel', () => {
     expect(screen.getByText('Convênio: Convênio Beta')).toBeInTheDocument();
     expect(screen.getAllByText('Instância vinculada').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Aguardando vínculo').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Leads recebidos')).toHaveLength(2);
+    expect(screen.getAllByText('Contactados')).toHaveLength(2);
 
     const disconnectButton = screen.getByRole('button', { name: /Desvincular/i });
     await user.click(disconnectButton);
