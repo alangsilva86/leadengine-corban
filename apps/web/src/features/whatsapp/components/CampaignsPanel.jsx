@@ -30,12 +30,8 @@ import {
   Trash2,
 } from 'lucide-react';
 
-const statusMeta = {
-  active: { label: 'Ativa', variant: 'success' },
-  paused: { label: 'Pausada', variant: 'warning' },
-  draft: { label: 'Rascunho', variant: 'info' },
-  ended: { label: 'Encerrada', variant: 'secondary' },
-};
+import CampaignMetricsGrid from './CampaignMetricsGrid.jsx';
+import { statusMeta } from '../utils/campaign-helpers.js';
 
 const NO_AGREEMENT_VALUE = '__no_agreement__';
 const NO_INSTANCE_VALUE = '__no_instance__';
@@ -54,9 +50,6 @@ const formatDateTime = (value) => {
     return '—';
   }
 };
-
-const formatNumber = (value) =>
-  new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value ?? 0);
 
 const formatAgreementLabel = (campaign) => {
   if (campaign?.agreementName) {
@@ -292,26 +285,14 @@ const CampaignsPanel = ({
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
+        <CampaignMetricsGrid
+          metrics={[
             { label: 'Leads recebidos', value: metrics.total },
             { label: 'Contactados', value: metrics.contacted },
             { label: 'Ganhos', value: metrics.won },
             { label: 'Perdidos', value: metrics.lost },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="rounded-lg border border-white/10 bg-white/5 p-3 text-center"
-            >
-              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                {item.label}
-              </p>
-              <p className="mt-1 text-lg font-semibold text-foreground">
-                {formatNumber(item.value)}
-              </p>
-            </div>
-          ))}
-        </div>
+          ]}
+        />
 
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
           <span>Atualizada em {formatDateTime(campaign.updatedAt)}</span>

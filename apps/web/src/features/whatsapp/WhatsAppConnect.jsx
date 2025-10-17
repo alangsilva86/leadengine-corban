@@ -35,6 +35,7 @@ import { getAuthToken } from '@/lib/auth.js';
 import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
+import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
 import sessionStorageAvailable from '@/lib/session-storage.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import {
@@ -48,6 +49,7 @@ import CampaignsPanel from './components/CampaignsPanel.jsx';
 import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
 import CreateInstanceDialog from './components/CreateInstanceDialog.jsx';
 import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
+import QrPreview from './components/QrPreview.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
 
@@ -1297,11 +1299,11 @@ const WhatsAppConnect = ({
     return new Date(qrData.expiresAt).getTime();
   }, [qrData]);
 
-  const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'whatsapp') ?? 2;
-  const totalStages = onboarding?.stages?.length ?? 0;
-  const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 3;
-  const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : 'Passo 3';
-  const nextStage = onboarding?.stages?.[Math.min(stageIndex + 1, totalStages - 1)]?.label ?? 'Inbox de Leads';
+  const { stepLabel, nextStage } = useOnboardingStepLabel({
+    stages: onboarding?.stages,
+    targetStageId: 'whatsapp',
+    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
+  });
   const hasAgreement = Boolean(selectedAgreement?.id);
   const agreementName = selectedAgreement?.name ?? null;
   const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
@@ -1614,40 +1616,7 @@ const WhatsAppConnect = ({
   useEffect(() => {
     if (!selectedAgreement) {
       setCampaign(null);
-      return undefined;
     }
-
-    let cancelled = false;
-
-    const hydrateCampaign = async () => {
-      try {
-        const response = await apiGet('/api/campaigns?status=active');
-        if (cancelled) return;
-        const campaigns = Array.isArray(response?.items)
-          ? response.items
-          : Array.isArray(response?.data)
-          ? response.data
-          : [];
-        const existing =
-          campaigns.find((entry) => entry.agreementId === selectedAgreement.id) ?? null;
-        if (existing) {
-          setCampaign(existing);
-          onCampaignReady?.(existing);
-        } else {
-          setCampaign(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn('Não foi possível carregar campanhas existentes', err);
-        }
-      }
-    };
-
-    void hydrateCampaign();
-
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgreement?.id]);
 
@@ -1989,7 +1958,7 @@ const WhatsAppConnect = ({
   };
   loadInstancesRef.current = loadInstances;
 
-  const loadCampaigns = async () => {
+  const loadCampaigns = async (options = {}) => {
     setCampaignsLoading(true);
     setCampaignError(null);
 
@@ -2007,9 +1976,20 @@ const WhatsAppConnect = ({
 
       setCampaigns(list);
 
+      const {
+        preferredAgreementId: preferredAgreementIdInput,
+        preferredCampaignId: preferredCampaignIdInput,
+        preferredInstanceId: preferredInstanceIdInput,
+      } = options ?? {};
+
+      const preferredAgreementId =
+        preferredAgreementIdInput ?? selectedAgreement?.id ?? null;
+      const preferredCampaignId = preferredCampaignIdInput ?? campaign?.id ?? null;
+      const preferredInstanceId = preferredInstanceIdInput ?? instance?.id ?? null;
+
       const scopedList = (() => {
-        if (selectedAgreement?.id) {
-          const matches = list.filter((entry) => entry.agreementId === selectedAgreement.id);
+        if (preferredAgreementId) {
+          const matches = list.filter((entry) => entry.agreementId === preferredAgreementId);
           if (matches.length > 0) {
             return matches;
           }
@@ -2019,22 +1999,22 @@ const WhatsAppConnect = ({
       const selectionPool = scopedList.length > 0 ? scopedList : list;
 
       const findByInstance = (collection) => {
-        if (!instance?.id || !Array.isArray(collection) || collection.length === 0) {
+        if (!preferredInstanceId || !Array.isArray(collection) || collection.length === 0) {
           return null;
         }
         return (
           collection.find(
-            (entry) => entry.instanceId === instance.id && entry.status === 'active'
+            (entry) => entry.instanceId === preferredInstanceId && entry.status === 'active'
           ) ??
-          collection.find((entry) => entry.instanceId === instance.id) ??
+          collection.find((entry) => entry.instanceId === preferredInstanceId) ??
           null
         );
       };
 
       let preferred = null;
 
-      if (campaign?.id) {
-        preferred = list.find((entry) => entry.id === campaign.id) ?? null;
+      if (preferredCampaignId) {
+        preferred = list.find((entry) => entry.id === preferredCampaignId) ?? null;
       }
 
       if (!preferred) {
@@ -2051,7 +2031,7 @@ const WhatsAppConnect = ({
       }
 
       const resolvedPreferred =
-        selectedAgreement?.id && preferred && preferred.agreementId !== selectedAgreement.id
+        preferredAgreementId && preferred && preferred.agreementId !== preferredAgreementId
           ? null
           : preferred;
 
@@ -2067,7 +2047,7 @@ const WhatsAppConnect = ({
         onCampaignReady?.(resolvedPreferred);
       }
 
-      return { success: true, items: list };
+      return { success: true, items: list, selectedCampaign: resolvedPreferred ?? null };
     } catch (err) {
       if (isAuthError(err)) {
         handleAuthFallback({ error: err });
@@ -2087,7 +2067,10 @@ const WhatsAppConnect = ({
     let cancelled = false;
 
     const fetchCampaigns = async () => {
-      const result = await loadCampaignsRef.current?.();
+      const result = await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredInstanceId: instance?.id ?? null,
+      });
       if (!cancelled && result?.error && !isAuthError(result.error)) {
         warn('Falha ao listar campanhas', result.error);
       }
@@ -2336,12 +2319,12 @@ const WhatsAppConnect = ({
       });
 
       const createdCampaign = payload?.data ?? null;
-      if (createdCampaign) {
-        setCampaign(createdCampaign);
-        onCampaignReady?.(createdCampaign);
-      }
 
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement.id,
+        preferredCampaignId: createdCampaign?.id ?? null,
+        preferredInstanceId: createdCampaign?.instanceId ?? instance?.id ?? null,
+      });
       toast.success('Campanha criada com sucesso.');
       return createdCampaign;
     } catch (err) {
@@ -2375,7 +2358,11 @@ const WhatsAppConnect = ({
         status: nextStatus,
       });
 
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: target?.id ?? null,
+        preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
+      });
       toast.success(
         nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.'
       );
@@ -2404,13 +2391,16 @@ const WhatsAppConnect = ({
 
     setCampaignError(null);
     setCampaignAction({ id: target.id, type: 'delete' });
+    const currentCampaignId = campaign?.id ?? null;
 
     try {
       await apiDelete(`/api/campaigns/${encodeURIComponent(target.id)}`);
-      if (campaign?.id === target.id) {
-        setCampaign(null);
-      }
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId:
+          currentCampaignId && currentCampaignId !== target.id ? currentCampaignId : null,
+        preferredInstanceId: instance?.id ?? null,
+      });
       toast.success('Campanha encerrada com sucesso.');
     } catch (err) {
       if (isAuthError(err)) {
@@ -2461,7 +2451,11 @@ const WhatsAppConnect = ({
         instanceId: requestedInstanceId ?? null,
       });
 
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: target?.id ?? null,
+        preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
+      });
       toast.success(
         requestedInstanceId
           ? 'Campanha reatribuída com sucesso.'
@@ -3383,7 +3377,13 @@ const WhatsAppConnect = ({
           campaigns={campaigns}
           loading={campaignsLoading}
           error={campaignError}
-          onRefresh={() => void loadCampaignsRef.current?.()}
+          onRefresh={() =>
+            void loadCampaignsRef.current?.({
+              preferredAgreementId: selectedAgreement?.id ?? null,
+              preferredCampaignId: campaign?.id ?? null,
+              preferredInstanceId: instance?.id ?? null,
+            })
+          }
           onCreateClick={() => setCreateCampaignOpen(true)}
           onPause={(entry) => void updateCampaignStatus(entry, 'paused')}
           onActivate={(entry) => void updateCampaignStatus(entry, 'active')}
@@ -3427,49 +3427,17 @@ const WhatsAppConnect = ({
             </CardHeader>
             <CollapsibleContent>
               <CardContent className="space-y-6">
-                <div
-                  className={cn(
-                    'flex flex-col items-center gap-4 rounded-xl p-6',
-                    SURFACE_COLOR_UTILS.glassTileDashed
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'flex h-44 w-44 items-center justify-center rounded-2xl',
-                      SURFACE_COLOR_UTILS.qrIllustration
-                    )}
-                  >
-                    {hasQr ? (
-                      <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-36 w-36 rounded-lg shadow-inner" />
-                    ) : isGeneratingQrImage ? (
-                      <Loader2 className="h-12 w-12 animate-spin" />
-                    ) : (
-                      <QrCode className="h-24 w-24" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-                    <Clock className="h-3.5 w-3.5" />
-                    {qrStatusMessage}
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void handleGenerateQr()}
-                      disabled={isBusy || !instance || !isAuthenticated}
-                    >
-                      <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setQrDialogOpen(true)}
-                      disabled={!hasQr}
-                    >
-                      Abrir em tela cheia
-                    </Button>
-                  </div>
-                </div>
+                <QrPreview
+                  className={cn('rounded-xl p-6', SURFACE_COLOR_UTILS.glassTileDashed)}
+                  illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
+                  src={qrImageSrc}
+                  isGenerating={isGeneratingQrImage}
+                  statusMessage={qrStatusMessage}
+                  onGenerate={handleGenerateQr}
+                  onOpen={() => setQrDialogOpen(true)}
+                  generateDisabled={isBusy || !instance || !isAuthenticated}
+                  openDisabled={!hasQr}
+                />
 
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <div className="flex items-start gap-3">
@@ -3690,20 +3658,12 @@ const WhatsAppConnect = ({
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4">
-            <div
-              className={cn(
-                'flex h-64 w-64 items-center justify-center rounded-2xl',
-                SURFACE_COLOR_UTILS.qrIllustration
-              )}
-            >
-              {hasQr ? (
-                <img src={qrImageSrc} alt="QR Code do WhatsApp" className="h-56 w-56 rounded-lg shadow-inner" />
-              ) : isGeneratingQrImage ? (
-                <Loader2 className="h-16 w-16 animate-spin" />
-              ) : (
-                <QrCode className="h-32 w-32" />
-              )}
-            </div>
+            <QrPreview
+              illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
+              src={qrImageSrc}
+              isGenerating={isGeneratingQrImage}
+              size={64}
+            />
             <p className="text-center text-sm text-muted-foreground">
               Abra o WhatsApp &gt; Configurações &gt; Dispositivos Conectados &gt; Conectar dispositivo e escaneie o QR Code exibido.
             </p>

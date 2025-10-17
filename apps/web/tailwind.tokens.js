@@ -327,6 +327,21 @@ export const status = {
   },
 }
 
+export const tone = {
+  'tone-info-surface': {
+    default: 'rgba(79, 70, 229, 0.18)',
+    dark: 'rgba(99, 102, 241, 0.18)',
+  },
+  'tone-info-border': {
+    default: 'rgba(79, 70, 229, 0.42)',
+    dark: 'rgba(99, 102, 241, 0.45)',
+  },
+  'tone-info-foreground': {
+    default: '#bbc5fc',
+    dark: '#cad3fd',
+  },
+}
+
 export const spacing = {
   1: '0.25rem',
   2: '0.5rem',
@@ -357,5 +372,8 @@ export const shadows = {
   'focus-primary': [
     'var(--shadow-lg)',
     '0 0 0 1px var(--color-primary-soft-border, rgba(79, 70, 229, 0.38))',
+  'brand-ring': [
+    'var(--shadow-lg, 0 12px 32px -12px color-mix(in srgb, var(--color-border) 32%, transparent))',
+    '0 0 0 1px var(--tone-info-border, rgba(79, 70, 229, 0.42))',
   ].join(', '),
 }

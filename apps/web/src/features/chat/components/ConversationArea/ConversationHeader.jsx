@@ -76,11 +76,11 @@ const STATUS_TONE = {
 };
 
 const CHIP_STYLES = {
-  info: 'border border-sky-400/70 text-sky-100',
-  warning: 'border border-amber-400/30 bg-amber-400/15 text-amber-100',
-  danger: 'border border-rose-400/30 bg-rose-500/15 text-rose-100',
-  neutral: 'border border-white/12 text-white/80',
-  success: 'border border-emerald-400/40 text-emerald-100',
+  info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+  danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+  neutral: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  success: 'border-success-soft-border bg-success-soft text-success-strong',
 };
 
 const LOSS_REASON_HELPERS = LOSS_REASONS.reduce((acc, item) => {
@@ -174,10 +174,10 @@ const TypingIndicator = ({ agents = [] }) => {
   if (!agents.length) return null;
   const label = agents[0]?.userName ?? 'Agente';
   return (
-    <div className="inline-flex min-h-[28px] items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 text-[12px] text-white/80">
+    <div className="inline-flex min-h-[28px] items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-[12px] text-foreground-muted">
       <div className="flex -space-x-2">
         {agents.slice(0, 3).map((agent) => (
-          <Avatar key={agent.userId} className="h-6 w-6 border border-slate-900/40">
+          <Avatar key={agent.userId} className="h-6 w-6 border border-surface-overlay-glass-border">
             <AvatarFallback>{buildInitials(agent.userName, 'AG')}</AvatarFallback>
           </Avatar>
         ))}
@@ -191,7 +191,7 @@ const MetadataBadge = ({ icon: Icon, children, className, ...props }) => (
   <button
     type="button"
     className={cn(
-      'inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-white/10 bg-white/8 px-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
+      'inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border',
       className,
     )}
     {...props}>
@@ -360,7 +360,7 @@ export const ConversationHeader = ({
 
   if (!ticket) {
     return (
-      <div className="flex h-24 items-center justify-center rounded-2xl border border-white/8 bg-slate-950/40 text-sm text-slate-400 shadow-inner shadow-slate-950/40 backdrop-blur">
+      <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
         Selecione um ticket para visualizar a conversa.
       </div>
     );
@@ -371,13 +371,13 @@ export const ConversationHeader = ({
       open={isExpanded}
       onOpenChange={setIsExpanded}
       className={cn(
-        'rounded-2xl border border-white/12 bg-slate-950/85 p-4 shadow-[0_4px_24px_rgba(15,23,42,0.45)] backdrop-blur transition-opacity duration-150',
+        'rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong p-4 shadow-[0_4px_24px_rgba(15,23,42,0.45)] backdrop-blur transition-opacity duration-150',
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-[18px] font-semibold tracking-[0.2px] text-white">
+          <h3 className="text-[18px] font-semibold tracking-[0.2px] text-foreground">
             {title}
           </h3>
           <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
@@ -388,7 +388,7 @@ export const ConversationHeader = ({
               </Chip>
             </TooltipTrigger>
             <TooltipContent side="bottom" align="start">
-              <p className="max-w-[220px] text-xs text-white/80">{slaTooltip}</p>
+              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -401,7 +401,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => onGenerateProposal?.(ticket)}
-                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Gerar proposta"
               >
                 <FileText className="size-4" aria-hidden />
@@ -417,7 +417,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => onAssign?.(ticket)}
-                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Atribuir"
               >
                 <UserPlus className="size-4" aria-hidden />
@@ -433,7 +433,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => onScheduleFollowUp?.(ticket)}
-                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Agendar follow-up"
               >
                 <CalendarClock className="size-4" aria-hidden />
@@ -451,7 +451,7 @@ export const ConversationHeader = ({
                     variant="ghost"
                     size="icon"
                     aria-label="Registrar resultado"
-                    className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                    className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                     disabled={isRegisteringResult}
                   >
                     <ClipboardList className="size-4" aria-hidden />
@@ -485,7 +485,7 @@ export const ConversationHeader = ({
                     variant="ghost"
                     size="icon"
                     aria-label="Opções de telefone"
-                    className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                    className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     <Phone className="size-4" aria-hidden />
                   </Button>
@@ -513,7 +513,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={handleCopyDocument}
-                className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Copiar documento"
               >
                 <IdCard className="size-4" aria-hidden />
@@ -528,7 +528,7 @@ export const ConversationHeader = ({
               variant="ghost"
               size="icon"
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/12"
+              className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
             >
               <ChevronDown
                 className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
@@ -540,8 +540,8 @@ export const ConversationHeader = ({
       </div>
 
       <CollapsibleContent>
-        <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
-          <p className="text-[13px] font-medium text-white/70">{subtitle}</p>
+        <div className="mt-4 space-y-4 border-t border-surface-overlay-glass-border pt-4">
+          <p className="text-[13px] font-medium text-foreground-muted">{subtitle}</p>
 
           <section className="flex flex-wrap items-center gap-3">
             <Button
@@ -557,7 +557,7 @@ export const ConversationHeader = ({
               size="lg"
               variant="outline"
               onClick={() => onAssign?.(ticket)}
-              className="min-h-[44px] rounded-xl border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
+              className="min-h-[44px] rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
             >
               Atribuir
             </Button>
@@ -566,7 +566,7 @@ export const ConversationHeader = ({
               size="lg"
               variant="outline"
               onClick={() => onScheduleFollowUp?.(ticket)}
-              className="min-h-[44px] rounded-xl border-white/20 bg-white/5 text-white/80 hover:bg-white/10"
+              className="min-h-[44px] rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
             >
               Agendar follow-up
             </Button>
@@ -576,7 +576,7 @@ export const ConversationHeader = ({
                   type="button"
                   size="lg"
                   aria-label="Registrar resultado"
-                  className="min-h-[44px] rounded-xl bg-white/12 text-white hover:bg-white/16 focus-visible:ring-white/40"
+                  className="min-h-[44px] rounded-xl bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
                   disabled={isRegisteringResult}
                 >
                   <span className="mr-1">Registrar resultado</span>

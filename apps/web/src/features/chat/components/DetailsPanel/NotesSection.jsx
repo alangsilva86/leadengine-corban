@@ -25,24 +25,24 @@ export const NotesSection = forwardRef(({ notes = [], onCreate, loading }, ref) 
   };
 
   return (
-    <Card className="border-0 bg-slate-950/25 text-slate-100 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
+    <Card className="border-0 bg-surface-overlay-quiet text-foreground shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <StickyNote className="h-4 w-4 text-amber-300" /> Notas internas
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 text-xs text-slate-300">
+      <CardContent className="flex flex-col gap-3 text-xs text-foreground-muted">
         {notes.length === 0 ? (
-          <p className="text-slate-500">Nenhuma nota registrada.</p>
+          <p className="text-foreground-muted">Nenhuma nota registrada.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {notes.map((note) => (
-              <div key={note.id} className="rounded-2xl bg-slate-900/35 p-3 ring-1 ring-white/5">
-                <div className="flex justify-between text-xs text-slate-400">
+              <div key={note.id} className="rounded-2xl bg-surface-overlay-quiet p-3 ring-1 ring-surface-overlay-glass-border">
+                <div className="flex justify-between text-xs text-foreground-muted">
                   <span>{note.authorName ?? 'Agente'}</span>
                   <span>{new Date(note.createdAt ?? note.updatedAt ?? Date.now()).toLocaleString('pt-BR')}</span>
                 </div>
-                <p className="mt-1 text-slate-200">{note.body}</p>
+                <p className="mt-1 text-foreground">{note.body}</p>
               </div>
             ))}
           </div>
@@ -54,7 +54,7 @@ export const NotesSection = forwardRef(({ notes = [], onCreate, loading }, ref) 
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Adicionar nota interna (/nota)"
-          className="min-h-[80px] rounded-[18px] border-none bg-slate-950/35 text-slate-100 placeholder:text-slate-500 ring-1 ring-white/5"
+          className="min-h-[80px] rounded-[18px] border-none bg-surface-overlay-quiet text-foreground placeholder:text-foreground-muted ring-1 ring-surface-overlay-glass-border"
         />
         <Button
           size="sm"

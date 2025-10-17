@@ -17,20 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.jsx';
-import { Skeleton } from '@/components/ui/skeleton.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { AlertCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label.jsx';
-
-const formatNumber = (value) =>
-  new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value ?? 0);
-
-const statusMeta = {
-  active: { label: 'Ativa', variant: 'success' },
-  paused: { label: 'Pausada', variant: 'warning' },
-  draft: { label: 'Rascunho', variant: 'info' },
-  ended: { label: 'Encerrada', variant: 'secondary' },
-};
+import CampaignMetricsGrid from './CampaignMetricsGrid.jsx';
+import { statusMeta } from '../utils/campaign-helpers.js';
 
 const DISCONNECT_VALUE = '__disconnect__';
 
@@ -155,38 +146,24 @@ const ReassignCampaignDialog = ({
             </p>
           </NoticeBanner>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {impactLoading ? (
-              Array.from({ length: 4 }).map((_, index) => (
-                <Skeleton key={index} className="h-20 rounded-lg" />
-              ))
-            ) : impactSummary ? (
-              [
-                { label: 'Leads totais', value: impactSummary.total },
-                { label: 'Contactados', value: impactSummary.contacted },
-                { label: 'Ganhos', value: impactSummary.won },
-                { label: 'Perdidos', value: impactSummary.lost },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-lg border border-white/10 bg-white/5 p-3 text-center"
-                >
-                  <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                    {item.label}
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-foreground">
-                    {formatNumber(item.value)}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <div className="sm:col-span-2 lg:col-span-4 rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-muted-foreground">
-                {impactError
-                  ? impactError
-                  : 'Nenhum lead alocado foi encontrado para essa campanha até o momento.'}
-              </div>
-            )}
-          </div>
+          <CampaignMetricsGrid
+            loading={impactLoading}
+            metrics={
+              impactSummary
+                ? [
+                    { label: 'Leads totais', value: impactSummary.total },
+                    { label: 'Contactados', value: impactSummary.contacted },
+                    { label: 'Ganhos', value: impactSummary.won },
+                    { label: 'Perdidos', value: impactSummary.lost },
+                  ]
+                : []
+            }
+            fallback={
+              impactError
+                ? impactError
+                : 'Nenhum lead alocado foi encontrado para essa campanha até o momento.'
+            }
+          />
 
           <div className="space-y-2">
             <Label>Nova instância</Label>

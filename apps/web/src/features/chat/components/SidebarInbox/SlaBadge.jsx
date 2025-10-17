@@ -36,7 +36,7 @@ export const SlaBadge = ({ window }) => {
   const tone = useMemo(() => getTone(window ?? {}), [window]);
 
   return (
-    <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
+    <Badge variant="outline" className="border border-border bg-transparent text-foreground-muted">
       {tone.label}
     </Badge>
   );
