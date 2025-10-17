@@ -30,7 +30,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
+import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken } from '@/lib/auth.js';
 import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
@@ -43,6 +43,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
 import useInstanceLiveUpdates from './hooks/useInstanceLiveUpdates.js';
+import useWhatsAppCampaigns from './hooks/useWhatsAppCampaigns.js';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import CampaignsPanel from './components/CampaignsPanel.jsx';
 import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
@@ -256,11 +257,6 @@ const WhatsAppConnect = ({
   const [errorState, setErrorState] = useState(null);
   const [localStatus, setLocalStatus] = useState(status);
   const [qrPanelOpen, setQrPanelOpen] = useState(status !== 'connected');
-  const [campaign, setCampaign] = useState(activeCampaign || null);
-  const [campaigns, setCampaigns] = useState([]);
-  const [campaignsLoading, setCampaignsLoading] = useState(false);
-  const [campaignError, setCampaignError] = useState(null);
-  const [campaignAction, setCampaignAction] = useState(null);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
   const [deletingInstanceId, setDeletingInstanceId] = useState(null);
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
@@ -269,9 +265,7 @@ const WhatsAppConnect = ({
   const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
   const [pendingReassign, setPendingReassign] = useState(null);
   const [reassignIntent, setReassignIntent] = useState('reassign');
-  const [persistentWarning, setPersistentWarning] = useState(null);
   const loadInstancesRef = useRef(() => {});
-  const loadCampaignsRef = useRef(() => {});
   const hasFetchedOnceRef = useRef(false);
   const loadingInstancesRef = useRef(loadingInstances);
   const loadingQrRef = useRef(loadingQr);
@@ -314,6 +308,34 @@ const WhatsAppConnect = ({
       setAuthTokenState(null);
     }
   };
+
+  const {
+    campaign,
+    campaigns,
+    campaignsLoading,
+    campaignError,
+    campaignAction,
+    persistentWarning,
+    loadCampaigns,
+    createCampaign,
+    updateCampaignStatus,
+    deleteCampaign,
+    reassignCampaign,
+    fetchCampaignImpact,
+    clearCampaignSelection,
+  } = useWhatsAppCampaigns({
+    agreement: selectedAgreement,
+    instance,
+    instances,
+    activeCampaign,
+    onCampaignReady,
+    isAuthError,
+    onAuthError: handleAuthFallback,
+    onSuccess: (message, options) => toast.success(message, options),
+    onError: (message, options) => toast.error(message, options),
+    warn,
+    logError,
+  });
 
   const enforceAuthPrompt = () => {
     handleAuthFallback({ reset: true });
@@ -620,10 +642,6 @@ const WhatsAppConnect = ({
   }, [localStatus]);
 
   useEffect(() => {
-    setCampaign(activeCampaign || null);
-  }, [activeCampaign]);
-
-  useEffect(() => {
     loadingInstancesRef.current = loadingInstances;
   }, [loadingInstances]);
 
@@ -708,13 +726,6 @@ const WhatsAppConnect = ({
       }
     };
   }, [selectedAgreement?.id, isAuthenticated]);
-
-  useEffect(() => {
-    if (!selectedAgreement) {
-      setCampaign(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAgreement?.id]);
 
   useEffect(() => {
     if (!expiresAt || localStatus === 'connected') {
@@ -1053,546 +1064,6 @@ const WhatsAppConnect = ({
     }
   };
   loadInstancesRef.current = loadInstances;
-
-  const loadCampaigns = async (options = {}) => {
-    setCampaignsLoading(true);
-    setCampaignError(null);
-
-    try {
-      const params = new URLSearchParams();
-      params.set('status', 'active,paused,draft,ended');
-
-      const response = await apiGet(`/api/campaigns?${params.toString()}`);
-      const entries = Array.isArray(response?.items)
-        ? response.items
-        : Array.isArray(response?.data)
-        ? response.data
-        : [];
-      const list = entries.filter((entry) => entry?.status !== 'ended');
-
-      setCampaigns(list);
-
-      const {
-        preferredAgreementId: preferredAgreementIdInput,
-        preferredCampaignId: preferredCampaignIdInput,
-        preferredInstanceId: preferredInstanceIdInput,
-      } = options ?? {};
-
-      const preferredAgreementId =
-        preferredAgreementIdInput ?? selectedAgreement?.id ?? null;
-      const preferredCampaignId = preferredCampaignIdInput ?? campaign?.id ?? null;
-      const preferredInstanceId = preferredInstanceIdInput ?? instance?.id ?? null;
-
-      const scopedList = (() => {
-        if (preferredAgreementId) {
-          const matches = list.filter((entry) => entry.agreementId === preferredAgreementId);
-          if (matches.length > 0) {
-            return matches;
-          }
-        }
-        return list;
-      })();
-      const selectionPool = scopedList.length > 0 ? scopedList : list;
-
-      const findByInstance = (collection) => {
-        if (!preferredInstanceId || !Array.isArray(collection) || collection.length === 0) {
-          return null;
-        }
-        return (
-          collection.find(
-            (entry) => entry.instanceId === preferredInstanceId && entry.status === 'active'
-          ) ??
-          collection.find((entry) => entry.instanceId === preferredInstanceId) ??
-          null
-        );
-      };
-
-      let preferred = null;
-
-      if (preferredCampaignId) {
-        preferred = list.find((entry) => entry.id === preferredCampaignId) ?? null;
-      }
-
-      if (!preferred) {
-        preferred = findByInstance(selectionPool) ?? findByInstance(list);
-      }
-
-      if (!preferred) {
-        preferred =
-          selectionPool.find((entry) => entry.status === 'active') ??
-          selectionPool[0] ??
-          list.find((entry) => entry.status === 'active') ??
-          list[0] ??
-          null;
-      }
-
-      const resolvedPreferred =
-        preferredAgreementId && preferred && preferred.agreementId !== preferredAgreementId
-          ? null
-          : preferred;
-
-      const previousId = campaign?.id ?? null;
-      const nextId = resolvedPreferred?.id ?? null;
-
-      if (nextId !== previousId) {
-        setCampaign(resolvedPreferred ?? null);
-        if (resolvedPreferred) {
-          onCampaignReady?.(resolvedPreferred);
-        }
-      } else if (resolvedPreferred) {
-        onCampaignReady?.(resolvedPreferred);
-      }
-
-      return { success: true, items: list, selectedCampaign: resolvedPreferred ?? null };
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      } else {
-        setCampaignError(
-          err instanceof Error ? err.message : 'Não foi possível carregar campanhas'
-        );
-      }
-      return { success: false, error: err };
-    } finally {
-      setCampaignsLoading(false);
-    }
-  };
-  loadCampaignsRef.current = loadCampaigns;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchCampaigns = async () => {
-      const result = await loadCampaignsRef.current?.({
-        preferredAgreementId: selectedAgreement?.id ?? null,
-        preferredInstanceId: instance?.id ?? null,
-      });
-      if (!cancelled && result?.error && !isAuthError(result.error)) {
-        warn('Falha ao listar campanhas', result.error);
-      }
-    };
-
-    void fetchCampaigns();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAgreement?.id, warn]);
-
-  useEffect(() => {
-    if (!selectedAgreement?.id) {
-      setPersistentWarning(null);
-      if (campaign) {
-        setCampaign(null);
-      }
-      return;
-    }
-
-    const scopedCampaigns = campaigns.filter(
-      (entry) => entry.agreementId === selectedAgreement.id
-    );
-
-    if (!scopedCampaigns.length) {
-      if (campaign?.agreementId === selectedAgreement.id) {
-        setCampaign(null);
-      }
-      const warningMessage =
-        'Nenhuma campanha cadastrada para este convênio. Os leads continuarão chegando pela instância conectada; vincule uma campanha apenas se precisar de roteamento avançado.';
-      setPersistentWarning(warningMessage);
-      return;
-    }
-
-    if (campaign && campaign.agreementId !== selectedAgreement.id) {
-      setCampaign(null);
-    }
-
-    const activeForAgreement = scopedCampaigns.filter((entry) => entry.status === 'active');
-    let warningMessage = null;
-
-    if (activeForAgreement.length === 0) {
-      warningMessage =
-        'Nenhuma campanha ativa para este convênio. Os leads seguirão para a inbox, mas ative ou crie uma campanha se quiser roteamento avançado.';
-    } else if (
-      instance?.id &&
-      !activeForAgreement.some((entry) => entry.instanceId === instance.id)
-    ) {
-      warningMessage =
-        'A instância selecionada não possui campanhas ativas. Os leads continuarão sendo entregues; vincule uma campanha para direcionar filas ou regras específicas.';
-    }
-
-    setPersistentWarning(warningMessage);
-
-    if (instance?.id) {
-      const activeMatch = scopedCampaigns.find(
-        (entry) => entry.instanceId === instance.id && entry.status === 'active'
-      );
-      if (activeMatch && activeMatch.id !== (campaign?.id ?? null)) {
-        setCampaign(activeMatch);
-        onCampaignReady?.(activeMatch);
-        return;
-      }
-
-      const instanceMatch = scopedCampaigns.find(
-        (entry) => entry.instanceId === instance.id
-      );
-      if (instanceMatch && instanceMatch.id !== (campaign?.id ?? null)) {
-        setCampaign(instanceMatch);
-        onCampaignReady?.(instanceMatch);
-        return;
-      }
-    }
-
-    if (!campaign || campaign.agreementId !== selectedAgreement.id) {
-      const fallback =
-        scopedCampaigns.find((entry) => entry.status === 'active') ??
-        scopedCampaigns[0] ??
-        null;
-      if (fallback) {
-        setCampaign(fallback);
-        onCampaignReady?.(fallback);
-      }
-    }
-  }, [campaign, campaigns, instance?.id, onCampaignReady, selectedAgreement?.id]);
-
-  const handleCreateInstance = () => {
-    setErrorMessage(null);
-    setCreateInstanceOpen(true);
-  };
-
-  const submitCreateInstance = async ({ name, id }) => {
-    const normalizedName = `${name ?? ''}`.trim();
-    if (!normalizedName) {
-      const error = new Error('Informe um nome válido para a nova instância.');
-      setErrorMessage(error.message);
-      throw error;
-    }
-
-    const normalizedId =
-      typeof id === 'string'
-        ? id
-        : id === null || typeof id === 'undefined'
-          ? ''
-          : `${id}`;
-    const payloadBody = {
-      name: normalizedName,
-      ...(normalizedId ? { id: normalizedId } : {}),
-      ...(selectedAgreement?.id ? { agreementId: selectedAgreement.id } : {}),
-      ...(selectedAgreement?.name ? { agreementName: selectedAgreement.name } : {}),
-      ...(selectedAgreement?.tenantId ? { tenantId: selectedAgreement.tenantId } : {}),
-    };
-
-    setLoadingInstances(true);
-    setErrorMessage(null);
-
-    try {
-      log('🧪 Criando nova instância WhatsApp', {
-        agreementId: selectedAgreement?.id ?? null,
-        name: normalizedName,
-      });
-
-      const response = await apiPost('/api/integrations/whatsapp/instances', payloadBody);
-      setSessionActive(true);
-      const payload = response?.data ?? {};
-      const createdInstance = extractInstanceFromPayload(payload);
-      const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
-      const resolvedCreatedInstance = createdInstance
-        ? {
-            ...createdInstance,
-            name: createdInstance.name ?? normalizedName,
-            displayName:
-              createdInstance.displayName ||
-              createdInstance.label ||
-              createdInstance.metadata?.displayName ||
-              normalizedName,
-            label: createdInstance.label ?? createdInstance.displayName ?? undefined,
-          }
-        : null;
-
-      let connectResult = null;
-
-      if (createdInstanceId) {
-        try {
-          const startResult = await connectInstance(createdInstanceId);
-          if (startResult) {
-            connectResult = {
-              ...startResult,
-              instance: {
-                ...(resolvedCreatedInstance || {}),
-                ...(startResult.instance || {}),
-              },
-            };
-          }
-        } catch (startError) {
-          console.warn('Não foi possível iniciar a instância recém-criada', startError);
-          connectResult = {
-            status: createdInstance?.status,
-            connected:
-              typeof createdInstance?.connected === 'boolean'
-                ? createdInstance.connected
-                : createdInstance?.status === 'connected'
-                ? true
-                : undefined,
-            qr: null,
-            instance: resolvedCreatedInstance || null,
-          };
-        }
-      }
-
-      if (!connectResult && resolvedCreatedInstance) {
-        connectResult = {
-          status: resolvedCreatedInstance.status,
-          connected:
-            typeof resolvedCreatedInstance.connected === 'boolean'
-              ? resolvedCreatedInstance.connected
-              : resolvedCreatedInstance.status === 'connected'
-              ? true
-              : undefined,
-          qr: extractQrPayload(payload),
-          instance: resolvedCreatedInstance,
-        };
-      }
-
-      await loadInstances({
-        connectResult: connectResult || undefined,
-        preferredInstanceId: createdInstanceId || normalizedName,
-        forceRefresh: true,
-      });
-
-      log('🎉 Instância criada com sucesso', {
-        instanceId: createdInstanceId,
-        name: normalizedName,
-      });
-
-      return { instanceId: createdInstanceId ?? normalizedName };
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const friendly = applyErrorMessageFromError(
-        err,
-        'Não foi possível criar uma nova instância'
-      );
-      logError('Falha ao criar instância WhatsApp', err);
-      const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
-      throw errorToThrow;
-    } finally {
-      setLoadingInstances(false);
-    }
-  };
-
-  const createCampaign = async ({ name, instanceId, status = 'active' }) => {
-    if (!selectedAgreement?.id) {
-      throw new Error('Vincule um convênio antes de criar campanhas.');
-    }
-
-    const normalizedName = `${name ?? ''}`.trim();
-    if (!instanceId) {
-      const error = new Error('Escolha a instância que será vinculada à campanha.');
-      setCampaignError(error.message);
-      throw error;
-    }
-
-    const targetInstance =
-      instances.find((entry) => entry && entry.id === instanceId) ?? null;
-    const brokerId =
-      targetInstance && isPlainRecord(targetInstance.metadata)
-        ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
-        : null;
-
-    setCampaignError(null);
-    setCampaignAction({ id: null, type: 'create' });
-
-    try {
-      const payload = await apiPost('/api/campaigns', {
-        agreementId: selectedAgreement.id,
-        agreementName: selectedAgreement.name,
-        instanceId,
-        ...(brokerId ? { brokerId } : {}),
-        name: normalizedName || `${selectedAgreement.name} • ${instanceId}`,
-        status,
-      });
-
-      const createdCampaign = payload?.data ?? null;
-
-      await loadCampaignsRef.current?.({
-        preferredAgreementId: selectedAgreement.id,
-        preferredCampaignId: createdCampaign?.id ?? null,
-        preferredInstanceId: createdCampaign?.instanceId ?? instance?.id ?? null,
-      });
-      toast.success('Campanha criada com sucesso.');
-      return createdCampaign;
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const message =
-        err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível criar a campanha');
-      setCampaignError(message);
-      logError('Falha ao criar campanha WhatsApp', err);
-      toast.error('Falha ao criar campanha', { description: message });
-      throw err instanceof Error ? err : new Error(message);
-    } finally {
-      setCampaignAction(null);
-    }
-  };
-
-  const updateCampaignStatus = async (target, nextStatus) => {
-    if (!target?.id) {
-      return;
-    }
-
-    setCampaignError(null);
-    setCampaignAction({ id: target.id, type: nextStatus });
-
-    try {
-      await apiPatch(`/api/campaigns/${encodeURIComponent(target.id)}`, {
-        status: nextStatus,
-      });
-
-      await loadCampaignsRef.current?.({
-        preferredAgreementId: selectedAgreement?.id ?? null,
-        preferredCampaignId: target?.id ?? null,
-        preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
-      });
-      toast.success(
-        nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.'
-      );
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const message =
-        err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível atualizar a campanha');
-      setCampaignError(message);
-      toast.error('Falha ao atualizar campanha', { description: message });
-      logError('Falha ao atualizar status da campanha', err);
-      throw err instanceof Error ? err : new Error(message);
-    } finally {
-      setCampaignAction(null);
-    }
-  };
-
-  const deleteCampaign = async (target) => {
-    if (!target?.id) {
-      return;
-    }
-
-    setCampaignError(null);
-    setCampaignAction({ id: target.id, type: 'delete' });
-    const currentCampaignId = campaign?.id ?? null;
-
-    try {
-      await apiDelete(`/api/campaigns/${encodeURIComponent(target.id)}`);
-      await loadCampaignsRef.current?.({
-        preferredAgreementId: selectedAgreement?.id ?? null,
-        preferredCampaignId:
-          currentCampaignId && currentCampaignId !== target.id ? currentCampaignId : null,
-        preferredInstanceId: instance?.id ?? null,
-      });
-      toast.success('Campanha encerrada com sucesso.');
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const message =
-        err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível encerrar a campanha');
-      setCampaignError(message);
-      toast.error('Falha ao encerrar campanha', { description: message });
-      logError('Falha ao encerrar campanha WhatsApp', err);
-      throw err instanceof Error ? err : new Error(message);
-    } finally {
-      setCampaignAction(null);
-    }
-  };
-
-  const reassignCampaign = async (target, nextInstanceId) => {
-    if (!target?.id) {
-      return;
-    }
-
-    const normalizedNext =
-      typeof nextInstanceId === 'string'
-        ? nextInstanceId.trim()
-        : nextInstanceId === null
-        ? null
-        : undefined;
-    const requestedInstanceId =
-      normalizedNext === undefined ? null : normalizedNext === '' ? null : normalizedNext;
-    const currentInstanceId = target.instanceId ?? null;
-
-    if ((requestedInstanceId ?? null) === (currentInstanceId ?? null)) {
-      const error = new Error(
-        'Selecione uma opção diferente para concluir ou escolha desvincular a campanha.'
-      );
-      setCampaignError(error.message);
-      throw error;
-    }
-
-    setCampaignError(null);
-    setCampaignAction({ id: target.id, type: 'reassign' });
-
-    try {
-      await apiPatch(`/api/campaigns/${encodeURIComponent(target.id)}`, {
-        instanceId: requestedInstanceId ?? null,
-      });
-
-      await loadCampaignsRef.current?.({
-        preferredAgreementId: selectedAgreement?.id ?? null,
-        preferredCampaignId: target?.id ?? null,
-        preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
-      });
-      toast.success(
-        requestedInstanceId
-          ? 'Campanha reatribuída com sucesso.'
-          : 'Campanha desvinculada da instância.'
-      );
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const message =
-        err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível reatribuir a campanha');
-      setCampaignError(message);
-      toast.error('Falha ao reatribuir campanha', { description: message });
-      logError('Falha ao reatribuir campanha WhatsApp', err);
-      throw err instanceof Error ? err : new Error(message);
-    } finally {
-      setCampaignAction(null);
-    }
-  };
-
-  const fetchCampaignImpact = async (campaignId) => {
-    if (!campaignId) {
-      return { summary: null };
-    }
-
-    try {
-      const response = await apiGet(
-        `/api/lead-engine/allocations?campaignId=${encodeURIComponent(campaignId)}`
-      );
-      const summary = response?.meta?.summary ?? null;
-      return { summary, items: Array.isArray(response?.data) ? response.data : [] };
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      }
-      throw err instanceof Error ? err : new Error('Falha ao carregar impacto da campanha');
-    }
-  };
 
   const handleDeleteInstance = async (target) => {
     if (!target?.id) {
@@ -1959,7 +1430,7 @@ const WhatsAppConnect = ({
     onStatusChange?.(statusFromInstance);
 
     if (campaign && campaign.instanceId !== inst.id) {
-      setCampaign(null);
+      clearCampaignSelection();
     }
 
     if (!skipAutoQr && statusFromInstance !== 'connected') {
@@ -1981,6 +1452,112 @@ const WhatsAppConnect = ({
   const handleGenerateQr = async () => {
     if (!instance) return;
     await generateQr(instance.id);
+  };
+
+  const handleCreateInstance = () => {
+    setErrorMessage(null);
+    setCreateInstanceOpen(true);
+  };
+
+  const submitCreateInstance = async ({ name, id }) => {
+    const normalizedName = `${name ?? ''}`.trim();
+    if (!normalizedName) {
+      const error = new Error('Informe um nome válido para a nova instância.');
+      setErrorMessage(error.message);
+      throw error;
+    }
+
+    const normalizedId =
+      typeof id === 'string'
+        ? id
+        : id === null || typeof id === 'undefined'
+          ? ''
+          : `${id}`;
+    const payloadBody = {
+      name: normalizedName,
+      ...(normalizedId ? { id: normalizedId } : {}),
+      ...(selectedAgreement?.id ? { agreementId: selectedAgreement.id } : {}),
+      ...(selectedAgreement?.name ? { agreementName: selectedAgreement.name } : {}),
+      ...(selectedAgreement?.tenantId ? { tenantId: selectedAgreement.tenantId } : {}),
+    };
+
+    setLoadingInstances(true);
+    setErrorMessage(null);
+
+    try {
+      log('🧪 Criando nova instância WhatsApp', {
+        agreementId: selectedAgreement?.id ?? null,
+        name: normalizedName,
+      });
+
+      const response = await apiPost('/api/integrations/whatsapp/instances', payloadBody);
+      setSessionActive(true);
+      const payload = response?.data ?? {};
+      const createdInstance = extractInstanceFromPayload(payload);
+      const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
+      const resolvedCreatedInstance = createdInstance
+        ? {
+            ...createdInstance,
+            name: createdInstance.name ?? normalizedName,
+            displayName:
+              createdInstance.displayName ||
+              createdInstance.label ||
+              createdInstance.metadata?.displayName ||
+              normalizedName,
+            label: createdInstance.label ?? createdInstance.displayName ?? undefined,
+          }
+        : null;
+
+      let connectResult = null;
+
+      if (createdInstanceId) {
+        try {
+          const startResult = await connectInstance(createdInstanceId);
+          if (startResult) {
+            connectResult = {
+              ...startResult,
+              instance: {
+                ...(resolvedCreatedInstance || {}),
+                ...(startResult.instance || {}),
+              },
+            };
+          }
+        } catch (startError) {
+          console.warn('Não foi possível iniciar a instância recém-criada', startError);
+        }
+      }
+
+      await loadInstances({
+        preferredInstanceId: createdInstanceId,
+        connectResult: connectResult || undefined,
+        forceRefresh: true,
+      });
+
+      if (resolvedCreatedInstance) {
+        setInstance(resolvedCreatedInstance);
+        preferredInstanceIdRef.current = resolvedCreatedInstance.id ?? null;
+        persistInstancesCache(instances, resolvedCreatedInstance.id ?? null);
+      }
+
+      toast.success('Instância criada com sucesso. Escaneie o QR Code para concluir a conexão.');
+      setCreateInstanceOpen(false);
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+        throw err;
+      }
+
+      const friendly = resolveFriendlyError(
+        err,
+        'Não foi possível criar a instância. Tente novamente em instantes.'
+      );
+      setErrorMessage(friendly.message);
+      logError('Falha ao criar instância WhatsApp', err);
+      const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
+      throw errorToThrow;
+    } finally {
+      setLoadingInstances(false);
+    }
   };
 
   const handleMarkConnected = async () => {
@@ -2474,7 +2051,7 @@ const WhatsAppConnect = ({
           loading={campaignsLoading}
           error={campaignError}
           onRefresh={() =>
-            void loadCampaignsRef.current?.({
+            void loadCampaigns({
               preferredAgreementId: selectedAgreement?.id ?? null,
               preferredCampaignId: campaign?.id ?? null,
               preferredInstanceId: instance?.id ?? null,
