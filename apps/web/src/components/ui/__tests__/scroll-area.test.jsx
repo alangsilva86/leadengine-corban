@@ -76,7 +76,7 @@ describe('ScrollArea', () => {
 
     const root = getByTestId('scroll-root');
     expect(root).toHaveAttribute('data-slot', 'scroll-area');
-    expect(root.className).toMatch(/overflow-hidden/);
+    expect(root.className).toMatch(/relative/);
     expect(root.className).toMatch(/custom-root/);
   });
 
@@ -93,7 +93,7 @@ describe('ScrollArea', () => {
     expect(viewport.className).toMatch(/custom-viewport/);
   });
 
-  it('renders both vertical and horizontal scrollbars with the expected data attributes', () => {
+  it('renders the vertical scrollbar with the expected data attributes', () => {
     const { container } = render(
       <ScrollArea>
         <div style={{ height: 2000, width: 2000 }}>huge content</div>

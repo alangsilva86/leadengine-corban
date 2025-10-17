@@ -41,16 +41,16 @@ const SavedViewChip = ({ view, isActive, onSelect, onDelete }) => {
         type="button"
         onClick={() => onSelect(view)}
         className={cn(
-          'flex items-center gap-2 rounded-full border border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_82%,transparent)] px-3 py-1 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
+          'flex items-center gap-2 rounded-full border border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_82%,transparent)] px-3 py-1 text-xs font-medium text-[color:var(--color-inbox-foreground)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
           isActive
-            ? 'border-primary/60 bg-primary/12 text-[color:var(--color-inbox-foreground)] shadow-[0_18px_36px_color-mix(in_srgb,var(--color-inbox-border)_52%,transparent)]'
-            : 'hover:border-primary/40 hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_88%,transparent)] hover:text-[color:var(--color-inbox-foreground)]'
+            ? 'border-primary/60 bg-primary/14 shadow-[0_18px_36px_color-mix(in_srgb,var(--color-inbox-border)_52%,transparent)]'
+            : 'hover:border-primary/40 hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_88%,transparent)]'
         )}
       >
         <span>{view.name}</span>
         <Badge
           variant={isActive ? 'info' : 'outline'}
-          className="border border-[color:var(--color-inbox-border)] px-2 text-xs text-[color:var(--color-inbox-foreground-muted)]"
+          className="border border-[color:var(--color-inbox-border)] px-2 text-xs text-[color:color-mix(in_srgb,var(--color-inbox-foreground)_88%,transparent)]"
         >
           {view.count ?? 0}
         </Badge>

@@ -6,7 +6,7 @@ import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_VIEWPORT_CLASSES =
-  'chat-scroll-area size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:outline-1 focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'chat-scroll-area size-full overflow-y-auto overflow-x-hidden rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:outline-1 focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 const ScrollArea = React.forwardRef(function ScrollArea(
   {
@@ -25,7 +25,7 @@ const ScrollArea = React.forwardRef(function ScrollArea(
     <ScrollAreaPrimitive.Root
       ref={ref}
       data-slot="scroll-area"
-      className={cn('relative overflow-hidden', className)}
+      className={cn('relative', className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
@@ -37,7 +37,6 @@ const ScrollArea = React.forwardRef(function ScrollArea(
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar orientation="vertical" />
-      <ScrollBar orientation="horizontal" />
       <ScrollAreaPrimitive.Corner data-slot="scroll-area-corner" />
     </ScrollAreaPrimitive.Root>
   );
