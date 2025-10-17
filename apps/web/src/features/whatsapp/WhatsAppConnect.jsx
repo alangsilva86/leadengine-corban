@@ -26,7 +26,6 @@ import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
-import sessionStorageAvailable from '@/lib/session-storage.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import {
   Collapsible,
@@ -45,6 +44,7 @@ import InstancesPanel from './components/InstancesPanel.jsx';
 import QrSection from './components/QrSection.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
+import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.js';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 import {
   clearInstancesCache,
@@ -211,6 +211,156 @@ const resolveInstancePhone = (instance) =>
   instance?.session ||
   '';
 
+const extractQrPayload = (payload) => {
+  if (!payload) return null;
+
+  const mergeQr = (primary, secondary) => {
+    if (!primary) return secondary;
+    if (!secondary) return primary;
+    return {
+      qr: primary.qr ?? secondary.qr ?? null,
+      qrCode: primary.qrCode ?? secondary.qrCode ?? primary.qr ?? secondary.qr ?? null,
+      qrExpiresAt: primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
+      expiresAt:
+        primary.expiresAt ??
+        secondary.expiresAt ??
+        primary.qrExpiresAt ??
+        secondary.qrExpiresAt ??
+        null,
+    };
+  };
+
+  const parseCandidate = (candidate) => {
+    if (!candidate) return null;
+
+    if (typeof candidate === 'string') {
+      return { qr: candidate, qrCode: candidate, qrExpiresAt: null, expiresAt: null };
+    }
+
+    if (typeof candidate !== 'object') {
+      return null;
+    }
+
+    const source = candidate;
+
+    const directQr =
+      typeof source.qr === 'string'
+        ? source.qr
+        : typeof source.qrCode === 'string'
+        ? source.qrCode
+        : typeof source.qr_code === 'string'
+        ? source.qr_code
+        : typeof source.code === 'string'
+        ? source.code
+        : typeof source.image === 'string'
+        ? source.image
+        : typeof source.value === 'string'
+        ? source.value
+        : null;
+
+    const qrCodeCandidate =
+      typeof source.qrCode === 'string'
+        ? source.qrCode
+        : typeof source.qr_code === 'string'
+        ? source.qr_code
+        : null;
+
+    const qrExpiresCandidate =
+      typeof source.qrExpiresAt === 'string'
+        ? source.qrExpiresAt
+        : typeof source.qr_expires_at === 'string'
+        ? source.qr_expires_at
+        : null;
+
+    const expiresCandidate =
+      typeof source.expiresAt === 'string'
+        ? source.expiresAt
+        : typeof source.expiration === 'string'
+        ? source.expiration
+        : typeof source.expires === 'string'
+        ? source.expires
+        : null;
+
+    let normalized = null;
+
+    if (directQr || qrCodeCandidate || qrExpiresCandidate || expiresCandidate) {
+      normalized = {
+        qr: directQr ?? qrCodeCandidate ?? null,
+        qrCode: qrCodeCandidate ?? directQr ?? null,
+        qrExpiresAt: qrExpiresCandidate ?? null,
+        expiresAt: expiresCandidate ?? qrExpiresCandidate ?? null,
+      };
+    }
+
+    const nestedCandidates = [
+      source.qr,
+      source.qrData,
+      source.qrPayload,
+      source.qr_info,
+      source.data,
+      source.payload,
+      source.result,
+      source.response,
+    ];
+
+    for (const nestedSource of nestedCandidates) {
+      const nested = parseCandidate(nestedSource);
+      if (nested) {
+        normalized = mergeQr(normalized, nested);
+        break;
+      }
+    }
+
+    return normalized;
+  };
+
+  const normalized = parseCandidate(payload);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const finalPayload = { ...normalized };
+  if (!finalPayload.qr && finalPayload.qrCode) {
+    finalPayload.qr = finalPayload.qrCode;
+  }
+  if (!finalPayload.qrCode && finalPayload.qr) {
+    finalPayload.qrCode = finalPayload.qr;
+  }
+  if (!finalPayload.expiresAt && finalPayload.qrExpiresAt) {
+    finalPayload.expiresAt = finalPayload.qrExpiresAt;
+  }
+  if (!finalPayload.qrExpiresAt && finalPayload.expiresAt) {
+    finalPayload.qrExpiresAt = finalPayload.expiresAt;
+  }
+
+  return finalPayload;
+};
+
+const extractInstanceFromPayload = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  if (payload.instance && typeof payload.instance === 'object') {
+    return payload.instance;
+  }
+
+  if (payload.data && typeof payload.data === 'object') {
+    const nested = extractInstanceFromPayload(payload.data);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  if (payload.id || payload.name || payload.status || payload.connected) {
+    return payload;
+  }
+
+  return null;
+};
+
+;
 
 
 
@@ -231,33 +381,20 @@ const WhatsAppConnect = ({
   onBack,
 }) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
-  const pollIdRef = useRef(0);
-  const [instances, setInstances] = useState([]);
-  const [instance, setInstance] = useState(null);
-  const [instancesReady, setInstancesReady] = useState(false);
   const [showAllInstances, setShowAllInstances] = useState(false);
-  const preferredInstanceIdRef = useRef(null);
-  const [qrData, setQrData] = useState(null);
-  const [secondsLeft, setSecondsLeft] = useState(null);
-  const [loadingInstances, setLoadingInstances] = useState(false);
-  const [loadingQr, setLoadingQr] = useState(false);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
-  const [sessionActive, setSessionActive] = useState(true);
-  const [authDeferred, setAuthDeferred] = useState(false);
-  const [authTokenState, setAuthTokenState] = useState(() => getAuthToken());
   const [errorState, setErrorState] = useState(null);
-  const [localStatus, setLocalStatus] = useState(status);
   const [qrPanelOpen, setQrPanelOpen] = useState(status !== 'connected');
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
-  const [deletingInstanceId, setDeletingInstanceId] = useState(null);
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
-  const [liveEvents, setLiveEvents] = useState([]);
   const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
   const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
   const [pendingReassign, setPendingReassign] = useState(null);
   const [reassignIntent, setReassignIntent] = useState('reassign');
+  const [persistentWarning, setPersistentWarning] = useState(null);
+  const loadCampaignsRef = useRef(() => {});
   const loadInstancesRef = useRef(() => {});
   const hasFetchedOnceRef = useRef(false);
   const loadingInstancesRef = useRef(loadingInstances);
@@ -361,6 +498,50 @@ const WhatsAppConnect = ({
     };
   };
 
+  const {
+    instances,
+    instancesReady,
+    currentInstance: instance,
+    status: localStatus,
+    qrData,
+    secondsLeft,
+    loadingInstances,
+    loadingQr,
+    isAuthenticated: hookIsAuthenticated,
+    sessionActive,
+    authDeferred,
+    deletingInstanceId,
+    liveEvents,
+    loadInstances,
+    selectInstance,
+    generateQr,
+    connectInstance,
+    createInstance: createInstanceAction,
+    deleteInstance: deleteInstanceAction,
+    markConnected,
+    handleAuthFallback,
+    setSecondsLeft,
+    setGeneratingQrState,
+    setStatus,
+    realtimeConnected,
+  } = useWhatsAppInstances({
+    selectedAgreement,
+    status,
+    onStatusChange,
+    onError: setErrorMessage,
+    logger: { log, warn, error: logError },
+    campaignInstanceId: campaign?.instanceId ?? null,
+  });
+
+  const enforceAuthPrompt = () => {
+    handleAuthFallback({ reset: true });
+  };
+
+  const isAuthError = (error) => {
+    const statusCode = typeof error?.status === 'number' ? error.status : null;
+    return statusCode === 401 || statusCode === 403;
+  };
+
   const applyErrorMessageFromError = (error, fallbackMessage, meta = {}) => {
     const friendly = resolveFriendlyError(error, fallbackMessage);
     setErrorMessage(friendly.message, {
@@ -371,32 +552,7 @@ const WhatsAppConnect = ({
     return friendly;
   };
 
-  useEffect(() => {
-    const cached = readInstancesCache();
-    if (!cached) {
-      setInstancesReady(false);
-      preferredInstanceIdRef.current = null;
-      return;
-    }
 
-    const list = Array.isArray(cached.list) ? cached.list : [];
-    if (list.length > 0) {
-      const current = cached.currentId
-        ? list.find((item) => item.id === cached.currentId) || list[0]
-        : list[0];
-      setInstances(list);
-      setInstance(current ?? null);
-      preferredInstanceIdRef.current = current?.id ?? null;
-      if (current?.status) {
-        setLocalStatus(current.status);
-      }
-      setInstancesReady(true);
-    } else {
-      setInstancesReady(false);
-      preferredInstanceIdRef.current = null;
-    }
-    hasFetchedOnceRef.current = false;
-  }, [selectedAgreement?.id]);
 
   useEffect(() => {
     setPairingPhoneInput('');
@@ -420,10 +576,13 @@ const WhatsAppConnect = ({
   const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
   const hasCampaign = Boolean(campaign);
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
-  const generatingQrRef = useRef(isGeneratingQrImage);
+  useEffect(() => {
+    setGeneratingQrState(isGeneratingQrImage);
+  }, [isGeneratingQrImage, setGeneratingQrState]);
+
   const hasQr = Boolean(qrImageSrc);
   const canSynchronize = sessionActive && !authDeferred;
-  const isAuthenticated = canSynchronize && Boolean(authTokenState);
+  const isAuthenticated = hookIsAuthenticated;
   const canContinue = localStatus === 'connected' && Boolean(instance);
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -454,114 +613,6 @@ const WhatsAppConnect = ({
     : 'Sincronizando…';
   const hasRenderableInstances = renderInstances.length > 0;
   const showFilterNotice = instancesReady && hasHiddenInstances && !showAllInstances;
-
-  const handleRealtimeEvent = useCallback((event) => {
-    if (!event || typeof event !== 'object' || !event.payload) {
-      return;
-    }
-
-    const payload = event.payload;
-    const eventInstanceId =
-      payload.id || payload.instanceId || payload.brokerId || payload.sessionId || null;
-
-    if (!eventInstanceId) {
-      return;
-    }
-
-    const timestampCandidate =
-      (typeof payload.syncedAt === 'string' && payload.syncedAt) ||
-      (typeof payload.timestamp === 'string' && payload.timestamp) ||
-      new Date().toISOString();
-
-    const statusCandidate = (() => {
-      if (typeof payload.status === 'string') {
-        return payload.status;
-      }
-      if (payload.status && typeof payload.status === 'object') {
-        if (typeof payload.status.current === 'string') {
-          return payload.status.current;
-        }
-        if (typeof payload.status.status === 'string') {
-          return payload.status.status;
-        }
-      }
-      return null;
-    })();
-
-    const connectedCandidate = (() => {
-      if (typeof payload.connected === 'boolean') {
-        return payload.connected;
-      }
-      if (payload.status && typeof payload.status === 'object') {
-        if (typeof payload.status.connected === 'boolean') {
-          return payload.status.connected;
-        }
-      }
-      return null;
-    })();
-
-    const phoneCandidate = (() => {
-      if (typeof payload.phoneNumber === 'string') {
-        return payload.phoneNumber;
-      }
-      if (payload.metadata && typeof payload.metadata === 'object') {
-        const metadata = payload.metadata;
-        if (typeof metadata.phoneNumber === 'string') {
-          return metadata.phoneNumber;
-        }
-        if (typeof metadata.phone_number === 'string') {
-          return metadata.phone_number;
-        }
-        if (typeof metadata.msisdn === 'string') {
-          return metadata.msisdn;
-        }
-      }
-      return null;
-    })();
-
-    setLiveEvents((previous) => {
-      const next = [
-        {
-          id: `${event.type}-${eventInstanceId}-${timestampCandidate}`,
-          instanceId: eventInstanceId,
-          type: typeof event.type === 'string' && event.type ? event.type : 'updated',
-          status: statusCandidate,
-          connected: connectedCandidate,
-          phoneNumber: phoneCandidate,
-          timestamp: timestampCandidate,
-        },
-        ...previous,
-      ];
-
-      const seen = new Set();
-      const deduped = [];
-      for (const entry of next) {
-        const key = `${entry.instanceId}-${entry.timestamp}-${entry.type}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        deduped.push(entry);
-        if (deduped.length >= 30) {
-          break;
-        }
-      }
-
-      return deduped;
-    });
-  }, []);
-
-  const tenantRoomId = selectedAgreement?.tenantId ?? selectedAgreement?.id ?? null;
-
-  const { connected: realtimeConnected } = useInstanceLiveUpdates({
-    tenantId: tenantRoomId,
-    enabled: Boolean(tenantRoomId),
-    onEvent: handleRealtimeEvent,
-  });
-
-  useEffect(() => {
-    setLiveEvents([]);
-  }, [selectedAgreement?.id]);
 
   const timelineItems = useMemo(() => {
     if (!instance) {
@@ -608,31 +659,30 @@ const WhatsAppConnect = ({
   }, [instance, liveEvents]);
 
   const handleRefreshInstances = useCallback(() => {
-    void loadInstancesRef.current?.({ forceRefresh: true });
-  }, []);
+    void loadInstances({ forceRefresh: true });
+  }, [loadInstances]);
 
   useEffect(() => {
     if (!canSynchronize) {
-      setInstancesReady(true);
       return;
     }
     void loadInstances({ forceRefresh: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSynchronize, selectedAgreement?.id]);
-
-  useEffect(() => {
-    if (!canSynchronize) {
-      setInstancesReady(true);
-    }
-  }, [canSynchronize]);
-
-  useEffect(() => {
-    setLocalStatus(status);
-  }, [status]);
 
   useEffect(() => {
     setQrPanelOpen(localStatus !== 'connected');
   }, [localStatus]);
+
+  useEffect(() => {
+    setCampaign(activeCampaign || null);
+  }, [activeCampaign]);
+
+
+  useEffect(() => {
+    if (!selectedAgreement) {
+      setCampaign(null);
+    }
+  }, [selectedAgreement?.id]);
 
   useEffect(() => {
     loadingInstancesRef.current = loadingInstances;
@@ -730,7 +780,7 @@ const WhatsAppConnect = ({
       const diff = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setSecondsLeft(diff);
       if (diff === 0) {
-        setLocalStatus('qr_required');
+        setStatus('qr_required');
         onStatusChange?.('disconnected');
       }
     };
@@ -740,6 +790,171 @@ const WhatsAppConnect = ({
     return () => clearInterval(timer);
   }, [expiresAt, localStatus, onStatusChange]);
 
+  const handleCreateInstance = () => {
+    setErrorMessage(null);
+    setCreateInstanceOpen(true);
+  };
+
+  const submitCreateInstance = async ({ name, id }) => {
+    const normalizedName = `${name ?? ''}`.trim();
+    if (!normalizedName) {
+      const error = new Error('Informe um nome válido para a nova instância.');
+      setErrorMessage(error.message);
+      throw error;
+    }
+
+    const normalizedId =
+      typeof id === 'string'
+        ? id
+        : id === null || typeof id === 'undefined'
+          ? ''
+          : `${id}`;
+
+    try {
+      await createInstanceAction({ name: normalizedName, id: normalizedId });
+      setCreateInstanceOpen(false);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Não foi possível criar uma nova instância';
+      setErrorMessage(message);
+      throw err instanceof Error ? err : new Error(message);
+    }
+  };
+
+  const createCampaign = async ({ name, instanceId, status = 'active' }) => {
+    if (!selectedAgreement?.id) {
+      throw new Error('Vincule um convênio antes de criar campanhas.');
+    }
+
+    const normalizedName = `${name ?? ''}`.trim();
+    if (!instanceId) {
+      const error = new Error('Escolha a instância que será vinculada à campanha.');
+      setCampaignError(error.message);
+      throw error;
+    }
+
+    const targetInstance =
+      instances.find((entry) => entry && entry.id === instanceId) ?? null;
+    const brokerId =
+      targetInstance && targetInstance.metadata && typeof targetInstance.metadata === 'object'
+        ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
+        : null;
+
+    setCampaignError(null);
+    setCampaignAction({ id: null, type: 'create' });
+
+    try {
+      const payload = await apiPost('/api/campaigns', {
+        agreementId: selectedAgreement.id,
+        agreementName: selectedAgreement.name,
+        instanceId,
+        ...(brokerId ? { brokerId } : {}),
+        name: normalizedName || `${selectedAgreement.name} • ${instanceId}`,
+        status,
+      });
+
+      const createdCampaign = payload?.data ?? null;
+
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement.id,
+        preferredCampaignId: createdCampaign?.id ?? null,
+        preferredInstanceId: createdCampaign?.instanceId ?? instance?.id ?? null,
+      });
+      toast.success('Campanha criada com sucesso.');
+      return createdCampaign;
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+        throw err;
+      }
+
+      const message =
+        err?.payload?.error?.message ||
+        (err instanceof Error ? err.message : 'Não foi possível criar a campanha');
+      setCampaignError(message);
+      logError('Falha ao criar campanha WhatsApp', err);
+      toast.error('Falha ao criar campanha', { description: message });
+      throw err instanceof Error ? err : new Error(message);
+    } finally {
+      setCampaignAction(null);
+    }
+  };
+
+  const updateCampaignStatus = async (target, nextStatus) => {
+    if (!target?.id) {
+      return;
+    }
+
+    setCampaignError(null);
+    setCampaignAction({ id: target.id, type: nextStatus });
+
+    try {
+      await apiPatch(`/api/campaigns/${encodeURIComponent(target.id)}`, {
+        status: nextStatus,
+      });
+
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: target?.id ?? null,
+        preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
+      });
+      toast.success(
+        nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.'
+      );
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+        throw err;
+      }
+
+      const message =
+        err?.payload?.error?.message ||
+        (err instanceof Error ? err.message : 'Não foi possível atualizar a campanha');
+      setCampaignError(message);
+      toast.error('Falha ao atualizar campanha', { description: message });
+      logError('Falha ao atualizar status da campanha', err);
+      throw err instanceof Error ? err : new Error(message);
+    } finally {
+      setCampaignAction(null);
+    }
+  };
+
+  const deleteCampaign = async (target) => {
+    if (!target?.id) {
+      return;
+    }
+
+    setCampaignError(null);
+    setCampaignAction({ id: target.id, type: 'delete' });
+    const currentCampaignId = campaign?.id ?? null;
+
+    try {
+      await apiDelete(`/api/campaigns/${encodeURIComponent(target.id)}`);
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: currentCampaignId === target.id ? null : currentCampaignId,
+        preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
+      });
+      toast.success('Campanha removida com sucesso.');
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+        throw err;
+      }
+
+      const message =
+        err?.payload?.error?.message ||
+        (err instanceof Error ? err.message : 'Não foi possível remover a campanha');
+      setCampaignError(message);
+      toast.error('Falha ao remover campanha', { description: message });
+      logError('Falha ao remover campanha WhatsApp', err);
+      throw err instanceof Error ? err : new Error(message);
+    } finally {
+      setCampaignAction(null);
+    }
+  };
+
+  const reassignCampaign = async (target, requestedInstanceId) => {
   const pickCurrentInstance = (
     list,
     { preferredInstanceId, campaignInstanceId } = {}
@@ -1063,6 +1278,64 @@ const WhatsAppConnect = ({
       return;
     }
 
+    setCampaignError(null);
+    setCampaignAction({ id: target.id, type: 'reassign' });
+
+    try {
+      if (requestedInstanceId === target.instanceId) {
+        const error = new Error('Selecione uma opção diferente para concluir ou escolha desvincular a campanha.');
+        setCampaignError(error.message);
+        throw error;
+      }
+
+      await apiPatch(`/api/campaigns/${encodeURIComponent(target.id)}`, {
+        instanceId: requestedInstanceId ?? null,
+      });
+
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: target?.id ?? null,
+        preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
+      });
+      toast.success(
+        requestedInstanceId
+          ? 'Campanha reatribuída com sucesso.'
+          : 'Campanha desvinculada da instância.'
+      );
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+        throw err;
+      }
+
+      const message =
+        err?.payload?.error?.message ||
+        (err instanceof Error ? err.message : 'Não foi possível reatribuir a campanha');
+      setCampaignError(message);
+      toast.error('Falha ao reatribuir campanha', { description: message });
+      logError('Falha ao reatribuir campanha WhatsApp', err);
+      throw err instanceof Error ? err : new Error(message);
+    } finally {
+      setCampaignAction(null);
+    }
+  };
+
+  const fetchCampaignImpact = async (campaignId) => {
+    if (!campaignId) {
+      return { summary: null };
+    }
+
+    try {
+      const response = await apiGet(
+        `/api/lead-engine/allocations?campaignId=${encodeURIComponent(campaignId)}`
+      );
+      const summary = response?.meta?.summary ?? null;
+      return { summary, items: Array.isArray(response?.data) ? response.data : [] };
+    } catch (err) {
+      if (isAuthError(err)) {
+        handleAuthFallback({ error: err });
+      }
+      throw err instanceof Error ? err : new Error('Falha ao carregar impacto da campanha');
     const agreementId = selectedAgreement?.id;
     setDeletingInstanceId(target.id);
     try {
@@ -1414,36 +1687,23 @@ const WhatsAppConnect = ({
 
   const handleInstanceSelect = async (inst, { skipAutoQr = false } = {}) => {
     if (!inst) return;
-    setInstance(inst);
-    const nextInstanceId = inst?.id ?? null;
-    preferredInstanceIdRef.current = nextInstanceId;
-    persistInstancesCache(instances, nextInstanceId);
-    const statusFromInstance = inst.status || 'disconnected';
-    setLocalStatus(statusFromInstance);
-    onStatusChange?.(statusFromInstance);
 
     if (campaign && campaign.instanceId !== inst.id) {
       clearCampaignSelection();
     }
 
-    if (!skipAutoQr && statusFromInstance !== 'connected') {
-      ++pollIdRef.current; // invalida qualquer polling anterior
-      await generateQr(inst.id);
-    } else {
-      setQrData(null);
-      setSecondsLeft(null);
-    }
+    await selectInstance(inst, { skipAutoQr });
   };
 
   const handleViewQr = async (inst) => {
     if (!inst) return;
-    await handleInstanceSelect(inst, { skipAutoQr: true });
+    await selectInstance(inst, { skipAutoQr: true });
     await generateQr(inst.id);
     setQrDialogOpen(true);
   };
 
   const handleGenerateQr = async () => {
-    if (!instance) return;
+    if (!instance?.id) return;
     await generateQr(instance.id);
   };
 
@@ -1554,47 +1814,19 @@ const WhatsAppConnect = ({
   };
 
   const handleMarkConnected = async () => {
-    if (!instance?.id) return;
-    try {
-      // Valida com o servidor, se rota existir
-      const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`);
-      setSessionActive(true);
-      setAuthDeferred(false);
-      const parsed = parseInstancesPayload(status);
-      const connected =
-        typeof parsed.connected === 'boolean'
-          ? parsed.connected
-          : parsed.status === 'connected';
-
-      if (parsed.instance) {
-        setInstance((current) =>
-          current && current.id === parsed.instance.id ? { ...current, ...parsed.instance } : current
-        );
-        setInstances((prev) =>
-          prev.map((item) =>
-            item.id === parsed.instance.id ? { ...item, ...parsed.instance } : item
-          )
-        );
-      }
-
-      if (!connected) {
-        setErrorMessage(
-          'A instância ainda não está conectada. Escaneie o QR e tente novamente.'
-        );
-        return;
-      }
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        return;
-      }
-      // Continua em modo otimista caso a rota não exista
+    const success = await markConnected();
+    if (success) {
+      setQrDialogOpen(false);
     }
-    setLocalStatus('connected');
-    setQrData(null);
-    setSecondsLeft(null);
-    setQrDialogOpen(false);
-    onStatusChange?.('connected');
+  };
+
+  const handleDeleteInstance = async (target) => {
+    if (!target?.id) {
+      return;
+    }
+
+    await deleteInstanceAction(target);
+    setInstancePendingDelete(null);
   };
 
   const handleConfirm = () => {
