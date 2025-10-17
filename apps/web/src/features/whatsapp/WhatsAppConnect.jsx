@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
-import { Input } from '@/components/ui/input.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import {
@@ -16,19 +14,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.jsx';
 import {
-  QrCode,
-  CheckCircle2,
-  Link2,
   ArrowLeft,
-  RefreshCcw,
   Clock,
-  AlertCircle,
-  Loader2,
-  Trash2,
-  ChevronDown,
-  History,
   AlertTriangle,
 } from 'lucide-react';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
 import { cn } from '@/lib/utils.js';
 import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken } from '@/lib/auth.js';
@@ -36,6 +26,7 @@ import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
+import sessionStorageAvailable from '@/lib/session-storage.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import {
   Collapsible,
@@ -50,6 +41,8 @@ import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
 import CreateInstanceDialog from './components/CreateInstanceDialog.jsx';
 import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import QrPreview from './components/QrPreview.jsx';
+import InstancesPanel from './components/InstancesPanel.jsx';
+import QrSection from './components/QrSection.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
@@ -1678,373 +1671,51 @@ const WhatsAppConnect = ({
       ) : null}
 
       <div className="space-y-6">
-        <Card className={cn(SURFACE_COLOR_UTILS.instancesPanel)}>
-          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <CardTitle>Painel de instâncias</CardTitle>
-              <CardDescription>
-                {hasAgreement
-                  ? `Vincule o número certo ao convênio e confirme para avançar para ${nextStage}. Campanhas permanecem opcionais para quem precisa de regras avançadas.`
-                  : 'Conecte um número do WhatsApp e avance. Se quiser regras de roteamento, crie campanhas opcionais quando fizer sentido.'}
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <CampaignHistoryDialog agreementId={selectedAgreement?.id} />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void handleRefreshInstances()}
-                disabled={loadingInstances || !isAuthenticated}
-              >
-                <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar lista
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => void handleCreateInstance()}
-              >
-                + Nova instância
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-                <div
-                  className={cn(
-                    'grid gap-4 rounded-[var(--radius)] p-4 text-sm',
-                    SURFACE_COLOR_UTILS.glassTile
-                  )}
-                >
-              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">
-                    {agreementDisplayName}
-                  </p>
-                  {selectedAgreement?.region ? (
-                    <p className="text-xs text-muted-foreground">{selectedAgreement.region}</p>
-                  ) : null}
-                </div>
-                <div className="max-w-[260px] sm:max-w-full">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância selecionada</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-foreground">
-                      {instance?.name || instance?.id || 'Escolha uma instância'}
-                    </p>
-                    {selectedInstanceStatusInfo ? (
-                      <Badge variant={selectedInstanceStatusInfo.variant} className="px-2 py-0 text-[0.65rem]">
-                        {selectedInstanceStatusInfo.label}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {instance ? `Telefone: ${formatPhoneNumber(selectedInstancePhone)}` : '—'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Campanha</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">
-                    {hasCampaign ? campaign.name : 'Será criada após a confirmação'}
-                  </p>
-                  {hasCampaign && campaign.updatedAt ? (
-                    <p className="text-xs text-muted-foreground">
-                      Atualizada em {new Date(campaign.updatedAt).toLocaleString('pt-BR')}
-                    </p>
-                  ) : hasCampaign ? (
-                    <p className="text-xs text-muted-foreground">
-                      Instância vinculada: {campaign.instanceName || campaign.instanceId}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Será ligada ao número selecionado.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
-                <span>Instâncias disponíveis</span>
-                <div className="flex items-center gap-2">
-                  {instancesReady && hasHiddenInstances && hasRenderableInstances ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="link"
-                      className="h-auto px-0 text-[0.65rem] uppercase"
-                      onClick={() => setShowAllInstances((current) => !current)}
-                    >
-                      {showAllInstances ? 'Ocultar desconectadas' : 'Mostrar todas'}
-                    </Button>
-                  ) : null}
-                  <span>{instancesCountLabel}</span>
-                </div>
-              </div>
-              {showFilterNotice ? (
-                <p className="text-[0.7rem] text-muted-foreground">
-                  Mostrando apenas instâncias conectadas. Use “Mostrar todas” para acessar sessões desconectadas.
-                </p>
-              ) : null}
-              {!instancesReady ? (
-                <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                  {Array.from({ length: 2 }).map((_, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        'flex h-full w-full flex-col rounded-2xl p-4',
-                        SURFACE_COLOR_UTILS.glassTile
-                      )}
-                    >
-                      <Skeleton className="h-5 w-3/4" />
-                      <Skeleton className="mt-2 h-4 w-1/2" />
-                      <Skeleton className="mt-2 h-4 w-2/3" />
-                      <div className="mt-4 grid gap-2">
-                        <Skeleton className="h-16 w-full" />
-                        <Skeleton className="h-16 w-full" />
-                      </div>
-                      <Skeleton className="mt-4 h-10 w-24" />
-                    </div>
-                  ))}
-                </div>
-              ) : hasRenderableInstances ? (
-                <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                  {renderInstances.map((item, index) => {
-                    const isCurrent = instance?.id === item.id;
-                    const statusInfo = getStatusInfo(item);
-                    const metrics = getInstanceMetrics(item);
-                    const statusValues = metrics.status || {};
-                    const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
-                    const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
-                    const phoneLabel = resolveInstancePhone(item);
-                    const addressLabel = item.address || item.jid || item.session || '';
-                    const lastUpdated = item.updatedAt || item.lastSeen || item.connectedAt;
-                    const lastUpdatedLabel = lastUpdated
-                      ? new Date(lastUpdated).toLocaleString('pt-BR')
-                      : '—';
-
-                    return (
-                      <div
-                        key={item.id || item.name || index}
-                        className={cn(
-                          'flex h-full w-full flex-col rounded-2xl border p-4 transition-colors',
-                          isCurrent
-                            ? SURFACE_COLOR_UTILS.glassTileActive
-                            : SURFACE_COLOR_UTILS.glassTileIdle
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">{item.name || item.id}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatPhoneNumber(phoneLabel) || '—'}
-                        </p>
-                        {addressLabel && addressLabel !== phoneLabel ? (
-                          <p className="text-xs text-muted-foreground">{addressLabel}</p>
-                        ) : null}
-                      </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Remover instância"
-                            title="Remover instância"
-                            disabled={deletingInstanceId === item.id}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setInstancePendingDelete(item);
-                            }}
-                          >
-                            {deletingInstanceId === item.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                          <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
-                            <div
-                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                            >
-                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
-                              <p className="mt-1 text-base font-semibold text-foreground">
-                                {formatMetricValue(metrics.sent)}
-                              </p>
-                            </div>
-                            <div
-                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                            >
-                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
-                              <p className="mt-1 text-base font-semibold text-foreground">
-                                {formatMetricValue(metrics.queued)}
-                              </p>
-                            </div>
-                            <div
-                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                            >
-                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
-                              <p className="mt-1 text-base font-semibold text-foreground">
-                                {formatMetricValue(metrics.failed)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-2 text-center sm:grid-cols-3 lg:grid-cols-5">
-                            {statusCodeMeta.map((meta) => (
-                              <div
-                                key={meta.code}
-                                className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                                title={meta.description}
-                              >
-                                <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                                  {meta.label}
-                                </p>
-                                <p className="mt-1 text-base font-semibold text-foreground">
-                                  {formatMetricValue(statusValues[meta.code])}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-
-                          <div
-                            className={cn(
-                              'rounded-lg p-3 text-left',
-                              SURFACE_COLOR_UTILS.glassTile
-                            )}
-                            title="Uso do limite de envio reportado pelo broker."
-                          >
-                            <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                              <span>Utilização do limite</span>
-                              <span>{ratePercentage}%</span>
-                            </div>
-                            <div
-                              className={cn(
-                                'mt-2 h-2 w-full overflow-hidden rounded-full',
-                                SURFACE_COLOR_UTILS.progressTrack
-                              )}
-                            >
-                              <div
-                                className={cn(
-                                  'h-full rounded-full transition-all',
-                                  SURFACE_COLOR_UTILS.progressIndicator
-                                )}
-                                style={{ width: `${ratePercentage}%` }}
-                              />
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                              <span>Usadas: {formatMetricValue(rateUsage.used)}</span>
-                              <span>Disponível: {formatMetricValue(rateUsage.remaining)}</span>
-                              <span>Limite: {formatMetricValue(rateUsage.limit)}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <span>Atualizado: {lastUpdatedLabel}</span>
-                          {item.user ? <span>Operador: {item.user}</span> : null}
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant={isCurrent ? 'default' : 'outline'}
-                            onClick={() => void handleInstanceSelect(item)}
-                            disabled={isBusy}
-                          >
-                            {isCurrent ? 'Instância selecionada' : 'Selecionar'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => void handleViewQr(item)}
-                            disabled={isBusy || !isAuthenticated}
-                          >
-                            <QrCode className="mr-2 h-3.5 w-3.5" /> Ver QR
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : hasHiddenInstances ? (
-                <div
-                  className={cn(
-                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
-                    SURFACE_COLOR_UTILS.glassTileDashed
-                  )}
-                >
-                  <p>Nenhuma instância conectada no momento. Mostre todas para gerenciar sessões desconectadas.</p>
-                  <Button
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => setShowAllInstances(true)}
-                    disabled={isBusy}
-                  >
-                    Mostrar todas
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  className={cn(
-                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
-                    SURFACE_COLOR_UTILS.glassTileDashed
-                  )}
-                >
-                  <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o Lead Engine.</p>
-                  <Button
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => void handleCreateInstance()}
-                  >
-                    Criar instância agora
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {errorState ? (
-              <div
-                className={cn(
-                  'flex flex-wrap items-start gap-3 rounded-[var(--radius)] p-3 text-xs',
-                  SURFACE_COLOR_UTILS.destructiveBanner
-                )}
-              >
-                <AlertCircle className="mt-0.5 h-4 w-4" />
-                <div className="flex-1 space-y-1">
-                  <p className="font-medium">{errorState.title ?? 'Algo deu errado'}</p>
-                  <p>{errorState.message}</p>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void loadInstances({ forceRefresh: true })}
-                  >
-                    Tentar novamente
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-          <CardFooter className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Link2 className="h-4 w-4" />
-              Status atual: <span className="font-medium text-foreground">{copy.badge}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {localStatus !== 'connected' ? (
-                <Button onClick={handleMarkConnected} disabled={isBusy || !isAuthenticated}>
-                  Marcar como conectado
-                </Button>
-              ) : null}
-              <Button onClick={() => void handleConfirm()} disabled={confirmDisabled}>
-                {confirmLabel}
-              </Button>
-            </div>
-          </CardFooter>
-        </Card>
+        <InstancesPanel
+          surfaceStyles={SURFACE_COLOR_UTILS}
+          hasAgreement={hasAgreement}
+          nextStage={nextStage}
+          agreementDisplayName={agreementDisplayName}
+          selectedAgreementRegion={selectedAgreement?.region ?? null}
+          selectedAgreementId={selectedAgreement?.id}
+          selectedInstance={instance}
+          selectedInstanceStatusInfo={selectedInstanceStatusInfo}
+          selectedInstancePhone={selectedInstancePhone}
+          hasCampaign={hasCampaign}
+          campaign={campaign}
+          instancesReady={instancesReady}
+          hasHiddenInstances={hasHiddenInstances}
+          hasRenderableInstances={hasRenderableInstances}
+          renderInstances={renderInstances}
+          showFilterNotice={showFilterNotice}
+          showAllInstances={showAllInstances}
+          instancesCountLabel={instancesCountLabel}
+          errorState={errorState}
+          isBusy={isBusy}
+          isAuthenticated={isAuthenticated}
+          loadingInstances={loadingInstances}
+          copy={copy}
+          localStatus={localStatus}
+          confirmLabel={confirmLabel}
+          confirmDisabled={confirmDisabled}
+          onConfirm={() => void handleConfirm()}
+          onMarkConnected={handleMarkConnected}
+          onRefresh={() => void handleRefreshInstances()}
+          onCreateInstance={() => void handleCreateInstance()}
+          onToggleShowAll={() => setShowAllInstances((current) => !current)}
+          onShowAll={() => setShowAllInstances(true)}
+          onRetry={() => void loadInstances({ forceRefresh: true })}
+          onSelectInstance={(item) => void handleInstanceSelect(item)}
+          onViewQr={(item) => void handleViewQr(item)}
+          onRequestDelete={(item) => setInstancePendingDelete(item)}
+          deletingInstanceId={deletingInstanceId}
+          statusCodeMeta={statusCodeMeta}
+          getStatusInfo={getStatusInfo}
+          getInstanceMetrics={getInstanceMetrics}
+          formatMetricValue={formatMetricValue}
+          resolveInstancePhone={resolveInstancePhone}
+          formatPhoneNumber={formatPhoneNumber}
+        />
         <CampaignsPanel
           agreementName={selectedAgreement?.name ?? null}
           campaigns={campaigns}
@@ -2074,170 +1745,29 @@ const WhatsAppConnect = ({
           canCreateCampaigns={hasAgreement}
           selectedAgreementId={selectedAgreement?.id ?? null}
         />
-        <Card className={cn(SURFACE_COLOR_UTILS.qrInstructionsPanel)}>
-          <Collapsible open={qrPanelOpen} onOpenChange={setQrPanelOpen}>
-            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <QrCode className="h-5 w-5" />
-                  QR Code e instruções
-                </CardTitle>
-                <CardDescription>Escaneie com o aplicativo oficial para ativar a sessão.</CardDescription>
-              </div>
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    'ml-auto inline-flex items-center gap-2 text-xs uppercase tracking-wide transition-transform',
-                    qrPanelOpen ? 'rotate-180' : ''
-                  )}
-                >
-                  <ChevronDown className="h-4 w-4" />
-                  {qrPanelOpen ? 'Recolher' : 'Expandir'}
-                </Button>
-              </CollapsibleTrigger>
-            </CardHeader>
-            <CollapsibleContent>
-              <CardContent className="space-y-6">
-                <QrPreview
-                  className={cn('rounded-xl p-6', SURFACE_COLOR_UTILS.glassTileDashed)}
-                  illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
-                  src={qrImageSrc}
-                  isGenerating={isGeneratingQrImage}
-                  statusMessage={qrStatusMessage}
-                  onGenerate={handleGenerateQr}
-                  onOpen={() => setQrDialogOpen(true)}
-                  generateDisabled={isBusy || !instance || !isAuthenticated}
-                  openDisabled={!hasQr}
-                />
-
-                <div className="space-y-3 text-sm text-muted-foreground">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                    <p>Use o número que já interage com os clientes. Não é necessário chip ou aparelho adicional.</p>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                    <p>O Lead Engine garante distribuição automática. Você só recebe quando o servidor responde “quero falar”.</p>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                    <p>Se perder a conexão, repita o processo — seus leads permanecem reservados na sua inbox.</p>
-                  </div>
-                </div>
-
-                <div
-                  className={cn(
-                    'space-y-3 rounded-xl p-4',
-                    SURFACE_COLOR_UTILS.glassTile
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                    <span className="flex items-center gap-2">
-                      <Link2 className="h-4 w-4" /> Pareamento por código
-                    </span>
-                    <span className="text-[0.65rem] text-muted-foreground">Opcional</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Receba um código de 8 dígitos no aplicativo oficial para vincular sem escanear o QR Code.
-                  </p>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      value={pairingPhoneInput}
-                      onChange={handlePairingPhoneChange}
-                      placeholder="DDD + número"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      disabled={isBusy || !instance || !isAuthenticated}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => void handleRequestPairingCode()}
-                      disabled={isBusy || !instance || !isAuthenticated}
-                    >
-                      {requestingPairingCode ? (
-                        <>
-                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Solicitando…
-                        </>
-                      ) : (
-                        <>
-                          <Link2 className="mr-2 h-3.5 w-3.5" /> Parear por código
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  {pairingPhoneError ? (
-                    <p className="text-xs text-destructive">{pairingPhoneError}</p>
-                  ) : (
-                    <p className="text-[0.7rem] text-muted-foreground">
-                      No WhatsApp: Configurações &gt; Dispositivos conectados &gt; Conectar com código.
-                    </p>
-                  )}
-                </div>
-
-                <div
-                  className={cn(
-                    'space-y-3 rounded-xl p-4',
-                    SURFACE_COLOR_UTILS.glassTile
-                  )}
-                >
-                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
-                    <span className="flex items-center gap-2">
-                      <History className="h-4 w-4" /> Atividade recente
-                    </span>
-                    <span className={cn('text-[0.65rem]', realtimeConnected ? 'text-emerald-300' : 'text-muted-foreground')}>
-                      {realtimeConnected ? 'Tempo real ativo' : 'Tempo real offline'}
-                    </span>
-                  </div>
-                  {timelineItems.length > 0 ? (
-                    <ul className="space-y-2 text-sm">
-                      {timelineItems.map((item) => (
-                        <li
-                          key={item.id}
-                          className={cn(
-                            'flex flex-wrap justify-between gap-3 rounded-lg px-3 py-2',
-                            SURFACE_COLOR_UTILS.glassTile
-                          )}
-                        >
-                          <div className="space-y-1">
-                            <p className="font-medium text-foreground">{humanizeLabel(item.type)}</p>
-                            {item.status ? (
-                              <p className="text-xs text-muted-foreground">
-                                Status: {humanizeLabel(item.status)}
-                                {typeof item.connected === 'boolean'
-                                  ? ` • ${item.connected ? 'Conectado' : 'Desconectado'}`
-                                  : ''}
-                              </p>
-                            ) : null}
-                            {item.phoneNumber ? (
-                              <p className="text-xs text-muted-foreground">
-                                Telefone: {formatPhoneNumber(item.phoneNumber)}
-                              </p>
-                            ) : null}
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTimestampLabel(item.timestamp)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Aguardando atividades desta instância. As sincronizações e mudanças de status aparecem aqui em tempo real.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-              <CardFooter className="rounded-lg bg-muted/40 px-6 py-4 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Dica para evitar bloqueios</p>
-                <p className="mt-1">
-                  Mantenha o aplicativo oficial aberto e responda às mensagens em até 15 minutos. A inteligência do Lead Engine cuida do aquecimento automático do número.
-                </p>
-              </CardFooter>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
+        <QrSection
+          surfaceStyles={SURFACE_COLOR_UTILS}
+          open={qrPanelOpen}
+          onOpenChange={setQrPanelOpen}
+          qrImageSrc={qrImageSrc}
+          isGeneratingQrImage={isGeneratingQrImage}
+          qrStatusMessage={qrStatusMessage}
+          onGenerate={handleGenerateQr}
+          onOpenQrDialog={() => setQrDialogOpen(true)}
+          generateDisabled={isBusy || !instance || !isAuthenticated}
+          openDisabled={!hasQr}
+          pairingPhoneInput={pairingPhoneInput}
+          onPairingPhoneChange={handlePairingPhoneChange}
+          pairingDisabled={isBusy || !instance || !isAuthenticated}
+          requestingPairingCode={requestingPairingCode}
+          onRequestPairingCode={() => void handleRequestPairingCode()}
+          pairingPhoneError={pairingPhoneError}
+          timelineItems={timelineItems}
+          realtimeConnected={realtimeConnected}
+          humanizeLabel={humanizeLabel}
+          formatPhoneNumber={formatPhoneNumber}
+          formatTimestampLabel={formatTimestampLabel}
+        />
       </div>
 
       <CreateInstanceDialog
