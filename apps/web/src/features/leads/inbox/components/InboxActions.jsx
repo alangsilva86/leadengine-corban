@@ -6,6 +6,7 @@ import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 
 const formatCountdown = (seconds) => {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
@@ -38,7 +39,7 @@ export const InboxActions = ({
 
   return (
     <div className="space-y-4">
-      <Card className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]">
+      <InboxSurface as={Card}>
         <CardHeader className="space-y-2 pb-3">
           <CardTitle className="text-sm font-semibold text-foreground-muted">Sincronização inteligente</CardTitle>
           <CardDescription className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
@@ -46,7 +47,11 @@ export const InboxActions = ({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_32px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]">
+          <InboxSurface
+            radius="md"
+            shadow="none"
+            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_32px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
+          >
             <div className="flex items-center gap-2 text-left text-sm text-[color:var(--color-inbox-foreground)]">
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin text-[color:var(--color-inbox-foreground-muted)]" />
@@ -61,7 +66,7 @@ export const InboxActions = ({
             {lastUpdatedLabel ? (
               <span className="text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">{lastUpdatedLabel}</span>
             ) : null}
-          </div>
+          </InboxSurface>
 
           <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
             {onStartManualConversation ? (
@@ -107,7 +112,7 @@ export const InboxActions = ({
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </InboxSurface>
 
       {rateLimitInfo.show ? (
         <NoticeBanner tone="warning" className="rounded-2xl text-sm">
