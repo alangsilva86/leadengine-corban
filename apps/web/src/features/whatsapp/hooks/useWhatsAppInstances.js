@@ -16,6 +16,7 @@ import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
 import useInstanceLiveUpdates from './useInstanceLiveUpdates.js';
 
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
+import { looksLikeWhatsAppJid, resolveInstancePhone } from '../utils/instanceIdentifiers.js';
 import {
   clearInstancesCache,
   ensureArrayOfObjects,
@@ -30,9 +31,6 @@ import { resolveWhatsAppErrorCopy as defaultResolveWhatsAppErrorCopy } from '../
 
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
-
-const looksLikeWhatsAppJid = (value) =>
-  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
 const ensureObject = (value) => (value && typeof value === 'object' ? value : {});
 
@@ -159,9 +157,6 @@ const clearInstancesCache = () => {
 const ensureArrayOfObjects = (value) =>
   Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
 
-const looksLikeWhatsAppJid = (value) =>
-  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
-
 const getStatusInfo = (instance) => {
   const rawStatus = instance?.status || (instance?.connected ? 'connected' : 'disconnected');
   const map = {
@@ -173,17 +168,6 @@ const getStatusInfo = (instance) => {
   };
   return map[rawStatus] || { label: rawStatus || 'Indefinido', variant: 'secondary' };
 };
-
-const resolveInstancePhone = (instance) =>
-  instance?.phoneNumber ||
-  instance?.number ||
-  instance?.msisdn ||
-  instance?.metadata?.phoneNumber ||
-  instance?.metadata?.phone_number ||
-  instance?.metadata?.msisdn ||
-  instance?.jid ||
-  instance?.session ||
-  '';
 
 const ensureArray = (value) => (Array.isArray(value) ? value : []);
 

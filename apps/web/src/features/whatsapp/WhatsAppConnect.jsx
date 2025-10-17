@@ -43,7 +43,7 @@ import InstancesPanel from './components/InstancesPanel.jsx';
 import QrSection from './components/QrSection.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
-import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.js';
+import { looksLikeWhatsAppJid, resolveInstancePhone } from './utils/instanceIdentifiers.js';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 import {
   clearInstancesCache,
@@ -159,6 +159,59 @@ const resolveInstancePhone = (instance) =>
   instance?.jid ||
   instance?.session ||
   '';
+const useQrImageSource = (qrPayload) => {
+  const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
+  const { code, immediate, needsGeneration } = qrMeta;
+  const [src, setSrc] = useState(immediate ?? null);
+  const [isGenerating, setIsGenerating] = useState(Boolean(needsGeneration && !immediate));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (immediate) {
+      setSrc(immediate);
+      setIsGenerating(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!code || !needsGeneration) {
+      setSrc(null);
+      setIsGenerating(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSrc(null);
+    setIsGenerating(true);
+    generateQrDataUrl(code, { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 })
+      .then((url) => {
+        if (!cancelled) {
+          setSrc(url);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Falha ao gerar QR Code', error);
+          setSrc(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsGenerating(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, immediate, needsGeneration]);
+
+  return { src, isGenerating };
+};
+
 
 const extractQrPayload = (payload) => {
   if (!payload) return null;
