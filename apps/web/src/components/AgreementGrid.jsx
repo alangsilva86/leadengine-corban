@@ -13,6 +13,8 @@ import { MapPin, ArrowRight, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { apiGet } from '@/lib/api.js';
+import { cn } from '@/lib/utils.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import useOnboardingStepLabel from '@/features/onboarding/useOnboardingStepLabel.js';
 
@@ -87,6 +89,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
         </div>
         {selectedAgreement ? (
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 font-medium text-primary-foreground">
             <span className="inline-flex items-center gap-2 rounded-full border borderToneInfoBorder bgToneInfoSurface px-3 py-1 font-medium textToneInfoForeground">
               Convênio ativo
             </span>
@@ -164,6 +167,12 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
               return (
                 <Card
                   key={agreement.id}
+                  className={cn(
+                    'transition-colors duration-200',
+                    isSelected
+                      ? 'border-primary-soft-border shadow-none shadow-focus-primary'
+                      : 'border-border'
+                  )}
                   className={`transition-colors duration-200 ${
                     isSelected ? 'borderToneInfoBorder shadow-brand-ring' : 'borderBorder'
                   }`}

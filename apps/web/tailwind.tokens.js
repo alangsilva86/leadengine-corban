@@ -154,6 +154,14 @@ export const accent = {
     default: '#eef2ff',
     dark: '#f8fafc',
   },
+  'primary-soft': {
+    default: 'rgba(79, 70, 229, 0.14)',
+    dark: 'rgba(99, 102, 241, 0.2)',
+  },
+  'primary-soft-border': {
+    default: 'rgba(79, 70, 229, 0.38)',
+    dark: 'rgba(99, 102, 241, 0.45)',
+  },
   'inbox-primary': {
     default: '#10b981',
     dark: '#34d399',
@@ -361,6 +369,9 @@ export const shadows = {
   md: '0 6px 16px -2px color-mix(in srgb, var(--color-border) 35%, transparent)',
   lg: '0 12px 32px -12px color-mix(in srgb, var(--color-border) 32%, transparent)',
   xl: '0 24px 60px color-mix(in srgb, var(--color-border) 25%, transparent)',
+  'focus-primary': [
+    'var(--shadow-lg)',
+    '0 0 0 1px var(--color-primary-soft-border, rgba(79, 70, 229, 0.38))',
   'brand-ring': [
     'var(--shadow-lg, 0 12px 32px -12px color-mix(in srgb, var(--color-border) 32%, transparent))',
     '0 0 0 1px var(--tone-info-border, rgba(79, 70, 229, 0.42))',
