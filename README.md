@@ -179,7 +179,7 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - **clients/** & **services/**: wrappers HTTP (`lead-engine-client.ts`, `whatsapp-broker-client.ts`), sincronização de campanhas (`campaigns-upstream.ts`) e serviço de tenants.
 - **data/**: seeds, fixtures e builders usados em testes.
 - **middleware/**: autenticação (`middleware/auth.ts`), auditoria de requisições, validação e tratamento de erros.
-- **routes/**: módulos independentes para auth, tickets, leads, contatos, campanhas, preferências, filas, conversas manuais, integrações e webhooks.
+- **routes/**: módulos independentes para auth, tickets, leads, contatos, campanhas, preferências, filas, integrações e webhooks.
 - **features/**: pipelines especializados; no WhatsApp inbound o webhook normaliza, persiste eventos (`features/whatsapp-inbound/routes/webhook-routes.ts`) e delega regras de ingestão para serviços dedicados (`services/inbound-lead-service.ts`).
 - **socket/**: handlers de conexão multi-tenant (`socket/connection-handlers.ts`).
 - **utils/** e **lib/**: parse de telefone, normalização de slug, métricas Prometheus, registrador Socket.IO, Prisma singleton e helpers HTTP.
@@ -264,10 +264,9 @@ curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/alloca
 - `/api/lead-engine/agreements` – lista acordos ativos/ disponíveis.
 - `/api/campaigns` – gestão interna de campanhas (status, métricas, webhooks).
 
-### Preferências, filas e conversas manuais
+### Preferências e filas
 - `/api/preferences` – salva preferências de usuários (tema, filtros, layout).
 - `/api/queues` – CRUD de filas/etapas do fluxo de tickets.
-- `/api/manual-conversations` – permite criar conversas sem ticket para interações rápidas.
 
 ### Integração WhatsApp
 - `/api/integrations/whatsapp/instances` – CRUD de instâncias, QR (`/qr.png`), pareamento (`/pair`), métricas e status.

@@ -30,7 +30,6 @@ import { whatsappMessagesRouter } from './routes/integrations/whatsapp.messages'
 import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
-import { manualConversationsRouter } from './routes/manual-conversations';
 import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
@@ -372,7 +371,6 @@ if (debugMessagesRouter) {
 
 // Rotas protegidas (com autenticação)
 app.use('/api/tickets', authMiddleware, ticketsRouter);
-app.use('/api/manual-conversations', authMiddleware, manualConversationsRouter);
 app.use('/api/leads', authMiddleware, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api', authMiddleware, ticketMessagesRouter);
