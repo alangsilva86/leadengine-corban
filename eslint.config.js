@@ -10,6 +10,8 @@ import noForbiddenTailwindColorsRule from './eslint-rules/no-forbidden-tailwind-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const forbiddenTailwindAllowlist = path.resolve(__dirname, 'config/forbidden-tailwind-exceptions.json')
+
 const tailwindPlugin = {
   rules: {
     'no-forbidden-tailwind-colors': noForbiddenTailwindColorsRule,
@@ -26,9 +28,6 @@ export default tseslint.config(
       '**/.turbo/**',
       '**/storybook-static/**',
       '**/node_modules/**',
-      // FIXME: arquivo com sintaxe inválida a ser corrigida futuramente
-      '**/SidebarInbox/InboxItem.jsx',
-      '/workspace/leadengine-corban/apps/web/src/features/chat/components/SidebarInbox/InboxItem.jsx',
     ],
     linterOptions: {
       reportUnusedDisableDirectives: 'off',
@@ -70,7 +69,7 @@ export default tseslint.config(
       'no-forbidden-tailwind-colors/no-forbidden-tailwind-colors': [
         'error',
         {
-          allowlistPath: './config/forbidden-tailwind-exceptions.json',
+          allowlistPath: forbiddenTailwindAllowlist,
           baseDir: '.',
         },
       ],
@@ -129,8 +128,5 @@ export default tseslint.config(
     rules: {
       'react-hooks/rules-of-hooks': 'off',
     },
-  },
-  {
-    ignores: ['**/SidebarInbox/InboxItem.jsx'],
   },
 )

@@ -26,6 +26,38 @@ const formatPreview = (ticket) => {
   return 'Sem mensagens ainda';
 };
 
+const getTypingLabel = (typingAgents) => {
+  if (!typingAgents?.length) return null;
+  const [firstAgent] = typingAgents;
+  return `${firstAgent?.userName ?? 'Agente'} digitando…`;
+};
+
+const getPhoneLabel = (ticket) => {
+  const phone = ticket?.contact?.phone;
+  return phone ? formatPhoneNumber(phone) : null;
+};
+
+const getAssignmentLabel = (ticket) => (ticket?.userId ? 'Atribuído' : 'Não atribuído');
+
+const getLastInboundLabel = (ticket, locale = 'pt-BR') => {
+  const lastInbound = ticket?.timeline?.lastInboundAt;
+  if (!lastInbound) return null;
+
+  const date = new Date(lastInbound);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const formattedTime = date.toLocaleTimeString(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `Último cliente: ${formattedTime}`;
+};
+
+const createMenuHandler = (ticket, callback) => (event) => {
+  event?.stopPropagation?.();
+  callback?.(ticket);
+};
+
 export const InboxItem = ({
   ticket,
   selected,
@@ -42,38 +74,29 @@ export const InboxItem = ({
   const ChannelIcon = CHANNEL_ICONS[ticket.channel] ?? MessageCircle;
   const name = ticket.contact?.name ?? ticket.subject ?? 'Contato sem nome';
   const initials = buildInitials(name);
-  const phoneLabel = ticket.contact?.phone ? formatPhoneNumber(ticket.contact.phone) : null;
-  const typingLabel = typingAgents.length > 0 ? `${typingAgents[0].userName ?? 'Agente'} digitando…` : null;
+  const typingLabel = getTypingLabel(typingAgents);
+  const preview = formatPreview(ticket);
+  const phoneLabel = getPhoneLabel(ticket);
+  const assignmentLabel = getAssignmentLabel(ticket);
+  const lastInboundLabel = getLastInboundLabel(ticket);
 
   return (
     <button
       type="button"
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'flex w-full flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4 text-left text-slate-200 transition hover:border-slate-600 hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
-        selected && 'border-sky-500/60 bg-slate-900'
+        'flex w-full flex-col gap-4 rounded-xl border border-slate-800/70 bg-slate-950/75 p-4 text-left text-slate-200 transition hover:border-sky-500/40 hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
+        selected && 'border-sky-500/80 bg-slate-900'
       )}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-slate-300">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/80 text-sky-300">
             <ChannelIcon className="h-4 w-4" />
           </span>
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
               <span className="max-w-[160px] truncate" title={name}>
-        'flex w-full flex-col gap-3 rounded-xl border border-slate-800/70 bg-slate-950/75 p-3 text-left transition hover:border-sky-500/40 hover:bg-slate-900',
-        selected && 'border-sky-500/80 bg-slate-900'
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <span className="rounded-full bg-slate-900/80 p-2 text-sky-300">
-            <ChannelIcon className="h-4 w-4" />
-          </span>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <span className="max-w-[180px] truncate" title={name}>
                 {name}
               </span>
               <StatusBadge status={ticket.status} />
@@ -89,26 +112,11 @@ export const InboxItem = ({
           </div>
         </div>
         <AssignmentMenu
-          onAssign={(event) => {
-            event?.stopPropagation?.();
-            onAssign?.(ticket);
-          }}
-          onTransfer={(event) => {
-            event?.stopPropagation?.();
-            onTransfer?.(ticket);
-          }}
-          onMute={(event) => {
-            event?.stopPropagation?.();
-            onMute?.(ticket);
-          }}
-          onFollowUp={(event) => {
-            event?.stopPropagation?.();
-            onFollowUp?.(ticket);
-          }}
-          onMacro={(event) => {
-            event?.stopPropagation?.();
-            onMacro?.(ticket);
-          }}
+          onAssign={createMenuHandler(ticket, onAssign)}
+          onTransfer={createMenuHandler(ticket, onTransfer)}
+          onMute={createMenuHandler(ticket, onMute)}
+          onFollowUp={createMenuHandler(ticket, onFollowUp)}
+          onMacro={createMenuHandler(ticket, onMacro)}
         />
       </div>
 
@@ -127,35 +135,19 @@ export const InboxItem = ({
       </div>
 
       <div className="text-sm text-slate-300">
-        {typingLabel ? <span className="text-slate-100">{typingLabel}</span> : formatPreview(ticket)}
+        {typingLabel ? <span className="text-slate-100">{typingLabel}</span> : preview}
       </div>
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <Avatar className="h-8 w-8 border border-slate-800/70">
-      <div className="text-[13px] text-muted-foreground/80">
-        {typingLabel ? <span className="font-medium text-emerald-300">{typingLabel}</span> : formatPreview(ticket)}
-      </div>
-
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground/70">
-        <div className="flex items-center gap-1.5 text-[13px] font-normal text-muted-foreground/80">
-          <Avatar className="h-6 w-6 border border-slate-800/70">
             <AvatarImage src={ticket.contact?.avatar} alt={name} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          {ticket.userId ? <span className="text-[13px] text-muted-foreground/80">Atribuído</span> : <span className="text-[13px] text-muted-foreground/80">Não atribuído</span>}
+          <span className="text-[13px] text-slate-300">{assignmentLabel}</span>
         </div>
-        {phoneLabel ? <span className="text-xs font-medium text-muted-foreground/70">{phoneLabel}</span> : null}
-        {ticket.timeline?.lastInboundAt ? (
-          <span>
-            Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          <span className="text-xs font-medium text-muted-foreground/70">
-            Último cliente: {new Date(ticket.timeline.lastInboundAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        ) : null}
+        {phoneLabel ? <span className="text-xs text-slate-400">{phoneLabel}</span> : null}
+        {lastInboundLabel ? <span className="text-xs text-slate-400">{lastInboundLabel}</span> : null}
       </div>
     </button>
   );
