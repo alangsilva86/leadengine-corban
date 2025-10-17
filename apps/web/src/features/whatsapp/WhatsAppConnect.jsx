@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
@@ -23,7 +23,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
-import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
@@ -61,7 +60,7 @@ import {
   formatTimestampLabel,
   humanizeLabel,
 } from './utils/formatting.js';
-import { getQrImageSrc } from './utils/qr.js';
+import useQrImageSource from './hooks/useQrImageSource.js';
 
 const STATUS_TONES = {
   disconnected: 'warning',
@@ -144,60 +143,6 @@ const getStatusInfo = (instance) => {
 
 
 
-
-
-const useQrImageSource = (qrPayload) => {
-  const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
-  const { code, immediate, needsGeneration } = qrMeta;
-  const [src, setSrc] = useState(immediate ?? null);
-  const [isGenerating, setIsGenerating] = useState(Boolean(needsGeneration && !immediate));
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (immediate) {
-      setSrc(immediate);
-      setIsGenerating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!code || !needsGeneration) {
-      setSrc(null);
-      setIsGenerating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSrc(null);
-    setIsGenerating(true);
-    generateQrDataUrl(code, { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 })
-      .then((url) => {
-        if (!cancelled) {
-          setSrc(url);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error('Falha ao gerar QR Code', error);
-          setSrc(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsGenerating(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [code, immediate, needsGeneration]);
-
-  return { src, isGenerating };
-};
 
 
 const looksLikeWhatsAppJid = (value) =>

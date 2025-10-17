@@ -5,7 +5,6 @@ import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import useInstanceLiveUpdates from './useInstanceLiveUpdates.js';
 import {
   clearInstancesCache,
-import { toDataURL as generateQrDataUrl } from 'qrcode';
 import { toast } from 'sonner';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
@@ -51,7 +50,7 @@ import {
   formatTimestampLabel,
   humanizeLabel,
 } from '../utils/formatting.js';
-import { extractQrPayload, getQrImageSrc } from '../utils/qr.js';
+import { extractQrPayload } from '../utils/qr.js';
 
 const STATUS_TONES = {
   disconnected: 'warning',
@@ -236,59 +235,6 @@ const resolveFriendlyError = (resolveCopy, error, fallbackMessage) => {
   const rawMessage =
     error?.payload?.error?.message ?? (error instanceof Error ? error.message : fallbackMessage);
   const copy = resolveCopy(codeCandidate, rawMessage ?? fallbackMessage);
-const useQrImageSource = (qrPayload) => {
-  const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
-  const { code, immediate, needsGeneration } = qrMeta;
-  const [src, setSrc] = useState(immediate ?? null);
-  const [isGenerating, setIsGenerating] = useState(Boolean(needsGeneration && !immediate));
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (immediate) {
-      setSrc(immediate);
-      setIsGenerating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!code || !needsGeneration) {
-      setSrc(null);
-      setIsGenerating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSrc(null);
-    setIsGenerating(true);
-    generateQrDataUrl(code, { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 })
-      .then((url) => {
-        if (!cancelled) {
-          setSrc(url);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error('Falha ao gerar QR Code', error);
-          setSrc(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsGenerating(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [code, immediate, needsGeneration]);
-
-  return { src, isGenerating };
-};
-
 const resolveFriendlyError = (error, fallbackMessage) => {
   const codeCandidate = error?.payload?.error?.code ?? error?.code ?? null;
   const rawMessage =
