@@ -9,6 +9,7 @@ const STATUS_META = {
   won: { label: 'Venda realizada', tone: 'success' },
   lost: { label: 'Sem interesse', tone: 'error' },
 };
+import { STATUS_META } from '../constants/statusMeta.js';
 
 const resolveRegistrations = (registrations) => {
   if (!Array.isArray(registrations) || registrations.length === 0) {

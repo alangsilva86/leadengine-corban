@@ -16,14 +16,8 @@ import {
   getFirstString,
   getFirstValidDate,
 } from '../utils/dateUtils.js';
+import { STATUS_META } from '../constants/statusMeta.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
-
-const STATUS_META = {
-  allocated: { label: 'Aguardando contato', tone: 'neutral' },
-  contacted: { label: 'Em conversa', tone: 'info' },
-  won: { label: 'Venda realizada', tone: 'success' },
-  lost: { label: 'Sem interesse', tone: 'error' },
-};
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 

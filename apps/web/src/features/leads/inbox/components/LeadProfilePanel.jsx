@@ -21,6 +21,27 @@ const STATUS_META = {
   contacted: { label: 'Em conversa', tone: 'info' },
   won: { label: 'Venda realizada', tone: 'success' },
   lost: { label: 'Sem interesse', tone: 'error' },
+import { STATUS_META } from '../constants/statusMeta.js';
+import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
+
+const formatCurrency = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+  return value.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+  });
+};
+
+const formatDocument = (value) => {
+  if (!value) return '—';
+  const digits = String(value).replace(/\D/g, '');
+  if (digits.length === 11) {
+    return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  }
+  return value;
 };
 
 const infoRows = (allocation) => {
