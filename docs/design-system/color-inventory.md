@@ -11,7 +11,7 @@
 | Card das instruções de QR Code | `border border-[var(--border)]/60 bg-[rgba(15,23,42,0.35)]` | Sim | `surface.panel.qr.translucent` |
 | Cartões internos/glass tile | `border border-white/10 bg-white/5` | Sim | `surface.tile.glass.default` |
 | Cartão vazio (borda tracejada) | `border border-dashed border-white/10 bg-white/5` | Sim | `surface.tile.glass.dashed` |
-| Cartão/ação da instância selecionada | `border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(99,102,241,0.45)]` | Sim | `surface.tile.glass.active` |
+| Cartão/ação da instância selecionada | `borderToneInfoBorder bgToneInfoSurface shadow-brand-ring` | Sim | `tone.info.surface`, `tone.info.border`, `shadows.brandRing` |
 | Cartão/ação da instância padrão | `border-white/10 bg-white/5 hover:border-primary/30` | Sim | `surface.tile.glass.hover` |
 | Banner de erro da integração | `border border-destructive/40 bg-destructive/10 text-destructive` | Sim | `feedback.error.surface` |
 | Moldura do preview de QR | `border-[rgba(99,102,241,0.25)] bg-[rgba(99,102,241,0.08)] text-primary shadow-inner` | Sim | `illustration.qr.highlight` |

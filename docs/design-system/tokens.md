@@ -53,6 +53,9 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | `brand.secondary.onSurface` | Texto sobre secundário. | `#0f172a` | `#f1f5f9` | `Badge`, cards temáticos |
 | `brand.accent.surface` | Fundo de chips e indicadores. | `rgba(79, 70, 229, 0.16)` | `rgba(99, 102, 241, 0.18)` | `LeadAllocationCard`, estatísticas |
 | `brand.accent.onSurface` | Texto sobre o accent. | `#0f172a` | `#f1f5f9` | `LeadAllocationCard`, `Dashboard` |
+| `tone.info.surface` | Fundo informativo que substitui `bg-primary/10`. | `rgba(79, 70, 229, 0.18)` | `rgba(99, 102, 241, 0.18)` | `AgreementGrid`, `Badge` com `tone="info"` |
+| `tone.info.border` | Contorno/anel para estados informativos. | `rgba(79, 70, 229, 0.42)` | `rgba(99, 102, 241, 0.45)` | `AgreementGrid`, indicadores “ativo” |
+| `tone.info.foreground` | Texto sobre superfícies informativas. | `#bbc5fc` | `#cad3fd` | `Badge` informativo, selo “Convênio ativo” |
 | `support.muted.surface` | Base neutra para estados “muted”. | `rgba(148, 163, 184, 0.16)` | `rgba(148, 163, 184, 0.08)` | `FilterToolbar`, `StatusFilter` |
 | `support.muted.onSurface` | Texto sobre superfícies neutras. | `#475569` | `#94a3b8` | `FilterToolbar`, tooltips |
 
@@ -96,6 +99,7 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | Token | Propósito | Valor | Componentes consumidores |
 | --- | --- | --- | --- |
 | `shadows.xs – shadows.xl` | Elevações graduais para superfícies interativas. | Definidos com `color-mix` a partir de `--color-border`. | `Card`, botões, painéis do dashboard |
+| `shadows.brandRing` | Destaque combinado de sombra + halo primário. | `var(--shadow-lg), 0 0 0 1px var(--tone-info-border)` | Cards selecionados (`AgreementGrid`), mosaicos ativos |
 
 > **Fallbacks:** todas as custom properties usam `theme()` do Tailwind com valores padrão definidos em `apps/web/tailwind.tokens.js`. Em ambientes que não carregam a folha de estilos, os valores _hardcoded_ no arquivo de tokens são aplicados automaticamente.
 

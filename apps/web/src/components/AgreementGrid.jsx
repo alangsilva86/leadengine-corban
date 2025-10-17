@@ -67,7 +67,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
         </div>
         {selectedAgreement ? (
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2 rounded-full bg-[rgba(99,102,241,0.12)] px-3 py-1 font-medium text-[color:var(--primary-foreground)]">
+            <span className="inline-flex items-center gap-2 rounded-full border borderToneInfoBorder bgToneInfoSurface px-3 py-1 font-medium textToneInfoForeground">
               Convênio ativo
             </span>
             <strong className="text-foreground">{selectedAgreement.name}</strong>
@@ -99,7 +99,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {isLoading
           ? Array.from({ length: 3 }).map((_, index) => (
-              <Card key={`skeleton-${index}`} className="border-[var(--border)]">
+              <Card key={`skeleton-${index}`} className="borderBorder">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2">
@@ -138,9 +138,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
                 <Card
                   key={agreement.id}
                   className={`transition-colors duration-200 ${
-                    isSelected
-                      ? 'border-[color-mix(in_oklab,_var(--primary)_55%,_transparent)] shadow-[0_0_0_1px_rgba(99,102,241,0.35)]'
-                      : 'border-[var(--border)]'
+                    isSelected ? 'borderToneInfoBorder shadow-brand-ring' : 'borderBorder'
                   }`}
                 >
                   <CardHeader>

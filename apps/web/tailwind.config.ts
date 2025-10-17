@@ -1,6 +1,6 @@
 import type { Config } from 'tailwindcss'
 import plugin from 'tailwindcss/plugin'
-import { surface, foreground, accent, status, spacing, radii, shadows } from './tailwind.tokens.js'
+import { surface, foreground, accent, status, tone, spacing, radii, shadows } from './tailwind.tokens.js'
 
 type TokenGroup = Record<string, { default: string; dark: string }>
 
@@ -9,6 +9,7 @@ const tokenGroups = {
   foreground,
   accent,
   status,
+  tone,
 } satisfies Record<string, TokenGroup>
 
 const cssVarOverrides: Record<string, string> = {
@@ -43,6 +44,7 @@ const surfaceColors = createColorScale('surface')
 const foregroundColors = createColorScale('foreground')
 const accentColors = createColorScale('accent')
 const statusColors = createColorScale('status')
+const toneColors = createColorScale('tone')
 
 const aliasColors = Object.entries(flattenTokens).reduce(
   (acc, [token, value]) => {
@@ -51,10 +53,12 @@ const aliasColors = Object.entries(flattenTokens).reduce(
       token === 'foreground' ||
       token === 'accent' ||
       token === 'status' ||
+      token === 'tone' ||
       token.startsWith('surface-') ||
       token.startsWith('foreground-') ||
       token.startsWith('accent-') ||
-      token.startsWith('status-')
+      token.startsWith('status-') ||
+      token.startsWith('tone-')
 
     if (!isGroupToken) {
       acc[token] = `var(${toCssVar(token)}, ${value.default})`
@@ -114,6 +118,7 @@ const config = {
         foreground: foregroundColors,
         accent: accentColors,
         status: statusColors,
+        tone: toneColors,
       },
     },
   },
