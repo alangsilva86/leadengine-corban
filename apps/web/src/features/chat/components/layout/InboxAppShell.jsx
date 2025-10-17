@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
@@ -40,6 +40,84 @@ const writePreference = (key, value) => {
     console.warn('Failed to persist preference', { key, error });
   }
 };
+
+const ListPanelHeader = ({ showCloseButton = false }) => (
+  <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-3 text-sm font-semibold text-[color:var(--color-inbox-foreground)]">
+    <div className="flex items-center gap-2">
+      <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] text-[color:var(--accent-inbox-primary)] shadow-[var(--shadow-sm)]">
+        <MessageSquare className="h-4 w-4" />
+      </span>
+      <div className="space-y-0.5">
+        <p className="text-sm font-semibold leading-none">Inbox</p>
+        <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">Atendimento em tempo real</p>
+      </div>
+    </div>
+    {showCloseButton ? (
+      <SheetClose asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-full text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
+          aria-label="Fechar lista de tickets"
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </Button>
+      </SheetClose>
+    ) : null}
+  </div>
+);
+
+const ListPanelContent = ({ children }) => (
+  <div className="flex-1 overflow-y-auto px-3 py-4">{children}</div>
+);
+
+const ListPanelFooter = ({ canPersistPreferences }) => (
+  <div className="border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
+    <p className="font-medium">⌥ L alterna lista</p>
+    <p className="mt-1 uppercase tracking-wide">
+      {canPersistPreferences ? 'Preferência salva automaticamente' : 'Preferência local temporária'}
+    </p>
+  </div>
+);
+
+const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) => (
+  <div className="flex h-full min-h-0 flex-col">
+    <ListPanelHeader showCloseButton={showCloseButton} />
+    <ListPanelContent>{sidebar}</ListPanelContent>
+    <ListPanelFooter canPersistPreferences={canPersistPreferences} />
+  </div>
+);
+
+const DesktopToolbar = ({
+  onToggleListVisibility,
+  onToggleContext,
+  contextOpen,
+  desktopListVisible,
+  headerListButtonLabel,
+}) => (
+  <div className="flex items-center gap-2">
+    <Button
+      variant="outline"
+      size="sm"
+      className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell lg:inline-flex"
+      onClick={onToggleListVisibility}
+    >
+      {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+      <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
+    </Button>
+    <Button
+      variant="outline"
+      size="sm"
+      className="border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell"
+      onClick={onToggleContext}
+    >
+      {contextOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+      <span className="ml-2 hidden text-xs font-medium sm:inline">
+        {contextOpen ? 'Ocultar painel' : 'Exibir painel'}
+      </span>
+    </Button>
+  </div>
+);
 
 const InboxAppShell = ({
   sidebar,
@@ -118,44 +196,6 @@ const InboxAppShell = ({
     [canPersistPreferences, updatePreferences]
   );
 
-  const renderListPane = useCallback(
-    ({ showCloseButton = false } = {}) => (
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-3 text-sm font-semibold text-[color:var(--color-inbox-foreground)]">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] text-[color:var(--accent-inbox-primary)] shadow-[var(--shadow-sm)]">
-              <MessageSquare className="h-4 w-4" />
-            </span>
-            <div className="space-y-0.5">
-              <p className="text-sm font-semibold leading-none">Inbox</p>
-              <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">Atendimento em tempo real</p>
-            </div>
-          </div>
-          {showCloseButton ? (
-            <SheetClose asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-full text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
-                aria-label="Fechar lista de tickets"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </Button>
-            </SheetClose>
-          ) : null}
-        </div>
-        <div className="flex-1 overflow-y-auto px-3 py-4">{sidebar}</div>
-        <div className="border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
-          <p className="font-medium">⌥ L alterna lista</p>
-          <p className="mt-1 uppercase tracking-wide">
-            {canPersistPreferences ? 'Preferência salva automaticamente' : 'Preferência local temporária'}
-          </p>
-        </div>
-      </div>
-    ),
-    [sidebar, canPersistPreferences]
-  );
-
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
   const renderDetailSurface = () => {
     const detailGap = contextOpen ? 'lg:gap-6' : 'lg:gap-0';
@@ -179,8 +219,19 @@ const InboxAppShell = ({
     );
   };
 
-  const listContent = renderListPane();
-  const mobileListContent = renderListPane({ showCloseButton: true });
+  const listContent = useMemo(
+    () => (
+      <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} />
+    ),
+    [sidebar, canPersistPreferences]
+  );
+
+  const mobileListContent = useMemo(
+    () => (
+      <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} showCloseButton />
+    ),
+    [sidebar, canPersistPreferences]
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-shell text-foreground">
@@ -198,28 +249,13 @@ const InboxAppShell = ({
             </Button>
             <h1 className="text-base font-semibold text-foreground sm:text-lg">{title}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell lg:inline-flex"
-              onClick={toggleListVisibility}
-            >
-              {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-              <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell"
-              onClick={() => setContextOpen((previous) => !previous)}
-            >
-              {contextOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-              <span className="ml-2 hidden text-xs font-medium sm:inline">
-                {contextOpen ? 'Ocultar painel' : 'Exibir painel'}
-              </span>
-            </Button>
-          </div>
+          <DesktopToolbar
+            onToggleListVisibility={toggleListVisibility}
+            onToggleContext={() => setContextOpen((previous) => !previous)}
+            contextOpen={contextOpen}
+            desktopListVisible={desktopListVisible}
+            headerListButtonLabel={headerListButtonLabel}
+          />
         </header>
         {toolbar ? (
           <div className="border-t border-[color:var(--border-shell)] px-4 py-3 sm:px-5">

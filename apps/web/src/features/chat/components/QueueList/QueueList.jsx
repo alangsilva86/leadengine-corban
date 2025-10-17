@@ -4,29 +4,26 @@ import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn, formatPhoneNumber } from '@/lib/utils.js';
+import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 
-const minutesToLabel = (minutes) => {
+const resolveWindowStatus = (minutes) => {
   if (minutes === null || minutes === undefined) {
-    return {
-      label: 'Sem janela',
-      tone: 'text-[color:var(--color-inbox-foreground-muted)]',
-      badge: 'bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] border border-[color:var(--color-inbox-border)]',
-    };
+    return { label: 'Sem janela', tone: 'neutral' };
   }
 
   if (minutes <= 0) {
-    return { label: 'Expirado', tone: 'text-rose-300', badge: 'bg-rose-500/10 text-rose-200 border border-rose-500/30' };
+    return { label: 'Expirado', tone: 'expired' };
   }
 
   if (minutes <= 10) {
-    return { label: `Crítico • ${minutes} min`, tone: 'text-amber-200', badge: 'bg-amber-500/10 text-amber-100 border border-amber-500/30' };
+    return { label: `Crítico • ${minutes} min`, tone: 'critical' };
   }
 
   if (minutes <= 30) {
-    return { label: `Atenção • ${minutes} min`, tone: 'text-amber-100', badge: 'bg-amber-400/10 text-amber-100/90 border border-amber-400/20' };
+    return { label: `Atenção • ${minutes} min`, tone: 'warning' };
   }
 
-  return { label: `Em dia • ${minutes} min`, tone: 'text-emerald-200', badge: 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20' };
+  return { label: `Em dia • ${minutes} min`, tone: 'success' };
 };
 
 const formatPreview = (ticket) => {
@@ -51,7 +48,8 @@ const formatTime = (iso) => {
 
 const QueueListItem = ({ ticket, selected, onSelect }) => {
   const windowStats = ticket?.window;
-  const { label: slaLabel, badge: slaBadgeClass } = minutesToLabel(windowStats?.remainingMinutes ?? null);
+  const { label: slaLabel, tone: slaTone } = resolveWindowStatus(windowStats?.remainingMinutes ?? null);
+  const slaToneClasses = useStatusToneClasses(slaTone, { uppercase: false, className: 'text-xs' });
   const lastInbound = formatTime(ticket?.timeline?.lastInboundAt);
   const lastOutbound = formatTime(ticket?.timeline?.lastOutboundAt);
   const agentTyping = ticket?.timeline?.typing;
@@ -87,7 +85,9 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
           </div>
           <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
         </div>
-        <Badge className={cn('text-xs font-medium', slaBadgeClass)}>{slaLabel}</Badge>
+        <Badge variant="status" tone={slaToneClasses.badgeTone} className={slaToneClasses.badgeClassName}>
+          {slaLabel}
+        </Badge>
       </div>
       <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--color-inbox-foreground-muted)]">
         <span className="flex items-center gap-1 text-[color:var(--color-inbox-foreground-muted)]">

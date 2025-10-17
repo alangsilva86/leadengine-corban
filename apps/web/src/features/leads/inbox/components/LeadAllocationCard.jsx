@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils.js';
 import { InboxSurface } from './shared/InboxSurface.jsx';
 import { formatCurrency, formatDocument } from '../utils/formatters.js';
 import { STATUS_META } from '../constants/statusMeta.js';
+import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 
 const resolveRegistrations = (registrations) => {
   if (!Array.isArray(registrations) || registrations.length === 0) {
@@ -14,6 +15,7 @@ const resolveRegistrations = (registrations) => {
 export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpen }) => {
   const status = allocation?.status ?? 'allocated';
   const statusMeta = STATUS_META[status] ?? STATUS_META.allocated;
+  const statusTone = useStatusToneClasses(statusMeta.tone, { uppercase: true, weight: 'semibold' });
 
   return (
     <InboxSurface
@@ -48,11 +50,7 @@ export const LeadAllocationCard = ({ allocation, isActive, onSelect, onDoubleOpe
             </p>
           </div>
         </div>
-        <Badge
-          variant="status"
-          tone={statusMeta.tone}
-          className="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]"
-        >
+        <Badge variant="status" tone={statusTone.badgeTone} className={statusTone.badgeClassName}>
           {statusMeta.label}
         </Badge>
       </div>
