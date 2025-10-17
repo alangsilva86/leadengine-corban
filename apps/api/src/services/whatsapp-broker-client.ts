@@ -20,26 +20,28 @@ import {
 } from '@ticketz/wa-contracts';
 
 export class WhatsAppBrokerNotConfiguredError extends Error {
+  override name = 'WhatsAppBrokerNotConfiguredError';
+
   constructor(message = 'WhatsApp broker not configured') {
     super(message);
-    this.name = 'WhatsAppBrokerNotConfiguredError';
   }
 }
 
 export type WhatsAppBrokerErrorOptions = {
-  code?: string;
-  brokerStatus?: number;
-  brokerCode?: string;
-  requestId?: string;
+  code?: string | undefined;
+  brokerStatus?: number | undefined;
+  brokerCode?: string | undefined;
+  requestId?: string | undefined;
   cause?: unknown;
 };
 
 export class WhatsAppBrokerError extends Error {
+  override name = 'WhatsAppBrokerError';
   status = 502 as const;
   code: string;
-  requestId?: string;
-  brokerStatus?: number;
-  brokerCode?: string;
+  requestId: string | undefined;
+  brokerStatus: number | undefined;
+  brokerCode: string | undefined;
   cause?: unknown;
 
   constructor(
@@ -50,15 +52,14 @@ export class WhatsAppBrokerError extends Error {
   ) {
     const options: WhatsAppBrokerErrorOptions =
       typeof codeOrOptions === 'string'
-        ? {
+        ? ({
             code: codeOrOptions,
-            brokerStatus: legacyStatus,
-            requestId: legacyRequestId,
-          }
+            brokerStatus: legacyStatus ?? undefined,
+            requestId: legacyRequestId ?? undefined,
+          } satisfies WhatsAppBrokerErrorOptions)
         : codeOrOptions ?? {};
 
     super(message);
-    this.name = 'WhatsAppBrokerError';
     this.code = options.code ?? 'BROKER_ERROR';
     this.requestId = options.requestId;
     this.brokerStatus = options.brokerStatus;

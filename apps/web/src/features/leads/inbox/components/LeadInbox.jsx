@@ -530,7 +530,7 @@ const LeadInbox = ({
             tone="inbox"
             radius="xl"
             shadow="2xl"
-            className="relative flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0"
+            className="relative flex min-w-0 flex-1 min-h-0 flex-col"
           >
             <div className="flex-shrink-0 border-b border-[color:var(--color-inbox-border)] px-5 py-5">
               <GlobalFiltersBar
@@ -549,70 +549,69 @@ const LeadInbox = ({
               />
             </div>
 
-            <div
-              ref={registerInboxScrollViewport}
-              className="flex-1 min-h-0 overflow-y-auto"
-              style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
-            >
-              <div className="h-full space-y-5 px-5 pb-6 pr-6 pt-5 overscroll-contain scroll-smooth">
-              <InboxList
-                allocations={allocations}
-                filteredAllocations={filteredAllocations}
-                loading={loading}
-                selectedAgreement={selectedAgreement}
-                campaign={campaign}
-                onBackToWhatsApp={onBackToWhatsApp}
-                onSelectAgreement={onSelectAgreement}
-                onSelectAllocation={handleSelectAllocation}
-                activeAllocationId={activeAllocationId}
-                onOpenWhatsApp={handleOpenWhatsApp}
-                className="pb-3"
-                ref={inboxListRef}
-                scrollParent={inboxScrollParent}
-              />
+            <div className="flex-1 min-h-0">
+              <div
+                ref={registerInboxScrollViewport}
+                className="h-full overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+                style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
+              >
+                <div className="space-y-5 px-5 pb-6 pr-6 pt-5">
+                  <InboxList
+                    allocations={allocations}
+                    filteredAllocations={filteredAllocations}
+                    loading={loading}
+                    selectedAgreement={selectedAgreement}
+                    campaign={campaign}
+                    onBackToWhatsApp={onBackToWhatsApp}
+                    onSelectAgreement={onSelectAgreement}
+                    onSelectAllocation={handleSelectAllocation}
+                    activeAllocationId={activeAllocationId}
+                    onOpenWhatsApp={handleOpenWhatsApp}
+                    className="pb-3"
+                    ref={inboxListRef}
+                    scrollParent={inboxScrollParent}
+                  />
 
-              {hasNotices ? (
-                <div className="space-y-3 text-sm">
-                  {showRealtimeConnecting ? (
-                    <NoticeBanner
-                      tone="info"
-                      className="rounded-2xl"
-                    >
-                      Conectando ao tempo real para receber novos leads automaticamente…
-                    </NoticeBanner>
-                  ) : null}
+                  {hasNotices ? (
+                    <div className="space-y-3 text-sm">
+                      {showRealtimeConnecting ? (
+                        <NoticeBanner tone="info" className="rounded-2xl">
+                          Conectando ao tempo real para receber novos leads automaticamente…
+                        </NoticeBanner>
+                      ) : null}
 
-                  {showRealtimeError ? (
-                    <NoticeBanner
-                      tone="warning"
-                      icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl"
-                    >
-                      Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
-                    </NoticeBanner>
-                  ) : null}
+                      {showRealtimeError ? (
+                        <NoticeBanner
+                          tone="warning"
+                          icon={<AlertCircle className="h-4 w-4" />}
+                          className="rounded-2xl"
+                        >
+                          Tempo real indisponível: {connectionError}. Continuamos monitorando via atualização automática.
+                        </NoticeBanner>
+                      ) : null}
 
-                  {showErrorNotice ? (
-                    <NoticeBanner
-                      tone="error"
-                      icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl"
-                    >
-                      {error}
-                    </NoticeBanner>
-                  ) : null}
+                      {showErrorNotice ? (
+                        <NoticeBanner
+                          tone="error"
+                          icon={<AlertCircle className="h-4 w-4" />}
+                          className="rounded-2xl"
+                        >
+                          {error}
+                        </NoticeBanner>
+                      ) : null}
 
-                  {showWarningNotice ? (
-                    <NoticeBanner
-                      tone="warning"
-                      icon={<AlertCircle className="h-4 w-4" />}
-                      className="rounded-2xl"
-                    >
-                      {warningMessage}
-                    </NoticeBanner>
+                      {showWarningNotice ? (
+                        <NoticeBanner
+                          tone="warning"
+                          icon={<AlertCircle className="h-4 w-4" />}
+                          className="rounded-2xl"
+                        >
+                          {warningMessage}
+                        </NoticeBanner>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
-              ) : null}
               </div>
             </div>
 
@@ -621,13 +620,15 @@ const LeadInbox = ({
             </div>
           </GlassPanel>
 
-          <div className="relative flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0">
-            <LeadConversationPanel
-              allocation={activeAllocation}
-              onOpenWhatsApp={handleOpenWhatsApp}
-              isLoading={loading}
-              isSwitching={leadPanelSwitching}
-            />
+          <div className="relative flex min-w-0 flex-1 min-h-0 flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <LeadConversationPanel
+                allocation={activeAllocation}
+                onOpenWhatsApp={handleOpenWhatsApp}
+                isLoading={loading}
+                isSwitching={leadPanelSwitching}
+              />
+            </div>
 
             <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
               <span className="block h-full w-px rounded-full bg-[color:var(--color-inbox-border)] shadow-[1px_0_20px_color-mix(in_srgb,var(--color-inbox-border)_60%,transparent)]" />
@@ -639,70 +640,72 @@ const LeadInbox = ({
             tone="inbox"
             radius="xl"
             shadow="xl"
-            className="flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0"
+            className="flex min-w-0 w-full xl:w-auto flex-1 min-h-0 flex-col"
           >
-            <div
-              className="flex-1 min-h-0 overflow-y-auto"
-              style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
-            >
-              <div className="h-full space-y-5 px-5 pb-6 pt-5 overscroll-contain">
-              <InboxSurface as={Card}>
-                <CardHeader className="space-y-2 pb-2">
-                  <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
-                    Resumo
-                  </CardTitle>
-                  <CardDescription className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
-                    Distribuição dos leads recebidos via WhatsApp conectado.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <dl className="grid grid-cols-2 gap-4">
-                    {statusMetrics.map(({ key, label, accent, icon }) => (
-                      <InboxSurface
-                        as="div"
-                        radius="md"
-                        shadow="none"
-                        key={key}
-                        className="space-y-1 px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
-                      >
-                        <dt className="flex items-center gap-2 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">
-                          {icon ? icon : null}
-                          <span>{label}</span>
-                        </dt>
-                        <dd className={cn('text-xl font-semibold text-[color:var(--color-inbox-foreground)]', accent ?? '')}>
-                          {formatSummaryValue(summary[key])}
-                        </dd>
-                      </InboxSurface>
-                    ))}
-                  </dl>
-                </CardContent>
-              </InboxSurface>
-              <InboxSummaryGrid summary={summary} />
+            <div className="flex-1 min-h-0">
+              <div
+                className="h-full overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+                style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
+              >
+                <div className="space-y-5 px-5 pb-6 pt-5">
+                  <InboxSurface as={Card}>
+                    <CardHeader className="space-y-2 pb-2">
+                      <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
+                        Resumo
+                      </CardTitle>
+                      <CardDescription className="text-xs text-[color:var(--color-inbox-foreground-muted)]">
+                        Distribuição dos leads recebidos via WhatsApp conectado.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <dl className="grid grid-cols-2 gap-4">
+                        {statusMetrics.map(({ key, label, accent, icon }) => (
+                          <InboxSurface
+                            as="div"
+                            radius="md"
+                            shadow="none"
+                            key={key}
+                            className="space-y-1 px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
+                          >
+                            <dt className="flex items-center gap-2 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">
+                              {icon ? icon : null}
+                              <span>{label}</span>
+                            </dt>
+                            <dd className={cn('text-xl font-semibold text-[color:var(--color-inbox-foreground)]', accent ?? '')}>
+                              {formatSummaryValue(summary[key])}
+                            </dd>
+                          </InboxSurface>
+                        ))}
+                      </dl>
+                    </CardContent>
+                  </InboxSurface>
+                  <InboxSummaryGrid summary={summary} />
 
-              <LeadProfilePanel
-                allocation={activeAllocation}
-                onUpdateStatus={handleUpdateAllocationStatus}
-                onOpenWhatsApp={handleOpenWhatsApp}
-                isLoading={loading}
-                isSwitching={leadPanelSwitching}
-              />
+                  <LeadProfilePanel
+                    allocation={activeAllocation}
+                    onUpdateStatus={handleUpdateAllocationStatus}
+                    onOpenWhatsApp={handleOpenWhatsApp}
+                    isLoading={loading}
+                    isSwitching={leadPanelSwitching}
+                  />
 
-              <ManualConversationCard
-                ref={manualConversationCardRef}
-                onSubmit={handleManualConversationSubmit}
-                onSuccess={handleManualConversationSuccess}
-                isSubmitting={manualConversationPending}
-              />
+                  <ManualConversationCard
+                    ref={manualConversationCardRef}
+                    onSubmit={handleManualConversationSubmit}
+                    onSuccess={handleManualConversationSuccess}
+                    isSubmitting={manualConversationPending}
+                  />
 
-              <InboxActions
-                loading={loading}
-                onRefresh={refresh}
-                onExport={handleExport}
-                onStartManualConversation={handleOpenManualConversationCard}
-                rateLimitInfo={rateLimitInfo}
-                autoRefreshSeconds={autoRefreshSeconds}
-                lastUpdatedAt={lastUpdatedAt}
-              />
+                  <InboxActions
+                    loading={loading}
+                    onRefresh={refresh}
+                    onExport={handleExport}
+                    onStartManualConversation={handleOpenManualConversationCard}
+                    rateLimitInfo={rateLimitInfo}
+                    autoRefreshSeconds={autoRefreshSeconds}
+                    lastUpdatedAt={lastUpdatedAt}
+                  />
+                </div>
               </div>
             </div>
           </GlassPanel>
