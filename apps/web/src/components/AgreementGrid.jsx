@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react';
 import { MapPin, ArrowRight, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { apiGet } from '@/lib/api.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import useOnboardingStepLabel from '@/features/onboarding/useOnboardingStepLabel.js';
 
@@ -55,6 +53,16 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
       setLoading(false);
     }
   };
+import useAgreements from '@/features/agreements/useAgreements.js';
+
+const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
+  const { agreements, isLoading, error, retry } = useAgreements();
+  const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'agreements') ?? 1;
+  const totalStages = onboarding?.stages?.length ?? 0;
+  const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 2;
+  const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : 'Passo 2';
+  const nextStage = onboarding?.stages?.[Math.min(stageIndex + 1, totalStages - 1)]?.label ?? 'WhatsApp';
+  const showSkeletons = isLoading && agreements.length === 0;
 
   return (
     <div className="space-y-6">
@@ -91,14 +99,14 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
             <p className="font-medium">Não foi possível carregar os convênios.</p>
             <p className="text-xs text-destructive/80">{error}</p>
           </div>
-          <Button size="sm" variant="outline" className="ml-auto" onClick={handleRetry}>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={retry}>
             Tentar novamente
           </Button>
         </div>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {isLoading
+        {showSkeletons
           ? Array.from({ length: 3 }).map((_, index) => (
               <Card key={`skeleton-${index}`} className="border-[var(--border)]">
                 <CardHeader>
