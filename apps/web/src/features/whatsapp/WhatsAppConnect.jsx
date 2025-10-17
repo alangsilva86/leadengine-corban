@@ -35,6 +35,7 @@ import { getAuthToken } from '@/lib/auth.js';
 import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
+import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
 import sessionStorageAvailable from '@/lib/session-storage.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import {
@@ -1297,11 +1298,11 @@ const WhatsAppConnect = ({
     return new Date(qrData.expiresAt).getTime();
   }, [qrData]);
 
-  const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'whatsapp') ?? 2;
-  const totalStages = onboarding?.stages?.length ?? 0;
-  const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 3;
-  const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : 'Passo 3';
-  const nextStage = onboarding?.stages?.[Math.min(stageIndex + 1, totalStages - 1)]?.label ?? 'Inbox de Leads';
+  const { stepLabel, nextStage } = useOnboardingStepLabel({
+    stages: onboarding?.stages,
+    targetStageId: 'whatsapp',
+    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
+  });
   const hasAgreement = Boolean(selectedAgreement?.id);
   const agreementName = selectedAgreement?.name ?? null;
   const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
