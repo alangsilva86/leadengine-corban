@@ -17,9 +17,7 @@ const minify = parseBoolean(TSUP_MINIFY, false);
 
 export default defineConfig({
   entry: {
-    "index": "src/index.ts",
-    "leads/index": "src/leads/index.ts",
-    "tickets/index": "src/tickets/index.ts"
+    "index": "src/index.ts"
   },
   splitting: false,
   sourcemap,

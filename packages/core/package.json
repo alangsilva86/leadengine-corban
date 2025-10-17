@@ -11,16 +11,6 @@
       "types": "./index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
-    },
-    "./tickets": {
-      "types": "./tickets.d.ts",
-      "import": "./dist/tickets/index.mjs",
-      "default": "./dist/tickets/index.mjs"
-    },
-    "./leads": {
-      "types": "./leads.d.ts",
-      "import": "./dist/leads/index.mjs",
-      "default": "./dist/leads/index.mjs"
     }
   },
   "scripts": {
@@ -48,8 +38,6 @@
   },
   "files": [
     "dist",
-    "index.d.ts",
-    "tickets.d.ts",
-    "leads.d.ts"
+    "index.d.ts"
   ]
 }
