@@ -3,6 +3,11 @@ import { AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { apiGet } from '@/lib/api.js';
+import AgreementCard from '@/components/agreements/AgreementCard.jsx';
+import AgreementCardSkeleton from '@/components/agreements/AgreementCardSkeleton.jsx';
+import { Badge } from '@/components/ui/badge.jsx';
+import { Button } from '@/components/ui/button.jsx';
+import { apiGet } from '@/lib/api.js';
 import { AgreementCard, AgreementCardSkeleton } from './agreements/index.js';
 import { MapPin, ArrowRight, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -112,6 +117,13 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, index) => <AgreementCardSkeleton key={`skeleton-${index}`} />)
+          : agreements.map((agreement) => (
+              <AgreementCard
+                key={agreement.id}
+                {...agreement}
+                tags={agreement.tags ?? []}
         {showSkeletons
           ? Array.from({ length: 3 }).map((_, index) => (
               <AgreementCardSkeleton key={`skeleton-${index}`} className="border-[var(--border)]" />

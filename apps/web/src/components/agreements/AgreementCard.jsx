@@ -21,6 +21,29 @@ const AgreementCard = ({
   name,
   description,
   region,
+  tags = [],
+  availableLeads,
+  hotLeads,
+  lastSyncAt,
+  isSelected = false,
+  onSelect,
+  actionLabel,
+  className = '',
+  badgeVariant,
+  ...cardProps
+}) => {
+  const formattedLastSync = lastSyncAt ? new Date(lastSyncAt).toLocaleString() : '—';
+  const resolvedActionLabel = actionLabel ?? (isSelected ? 'Convênio selecionado' : 'Ativar leads');
+  const resolvedBadgeVariant = badgeVariant ?? (isSelected ? 'secondary' : 'info');
+
+  return (
+    <Card
+      className={`transition-colors duration-200 ${
+        isSelected
+          ? 'border-[color-mix(in_oklab,_var(--primary)_55%,_transparent)] shadow-[0_0_0_1px_rgba(99,102,241,0.35)]'
+          : 'border-[var(--border)]'
+      } ${className}`}
+      {...cardProps}
   availableLeads,
   hotLeads,
   tags = [],
@@ -43,6 +66,10 @@ const AgreementCard = ({
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-lg font-semibold">{name}</CardTitle>
+            {description ? <CardDescription>{description}</CardDescription> : null}
+          </div>
+          {region ? (
+            <Badge variant={resolvedBadgeVariant}>
             <CardDescription>{description}</CardDescription>
           </div>
           {region ? (
@@ -75,6 +102,9 @@ const AgreementCard = ({
         ) : null}
       </CardContent>
       <CardFooter className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">Atualizado em {formattedLastSync}</div>
+        <Button size="sm" onClick={onSelect} variant={isSelected ? 'default' : 'outline'}>
+          {resolvedActionLabel}
         <div className="text-xs text-muted-foreground">Atualizado em {formatLastSync(lastSyncAt)}</div>
         <Button size="sm" onClick={onSelect} variant={isSelected ? 'default' : 'outline'}>
           {isSelected ? 'Convênio selecionado' : 'Ativar leads'}
