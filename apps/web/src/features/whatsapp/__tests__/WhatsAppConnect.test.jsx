@@ -260,6 +260,11 @@ describe('WhatsAppConnect', () => {
       );
     expect(globalCall).toBeDefined();
     expect(globalCall?.searchParams.has('agreementId')).toBe(false);
+
+    const campaignCalls = capturedCalls.filter((entry) =>
+      entry.startsWith('/api/campaigns')
+    );
+    expect(campaignCalls).toHaveLength(1);
   });
 
   it('hides disconnected broker sessions by default but allows showing all', async () => {
