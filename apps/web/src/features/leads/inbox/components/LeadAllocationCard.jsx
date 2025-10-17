@@ -1,13 +1,7 @@
 import { Badge } from '@/components/ui/badge.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import { cn } from '@/lib/utils.js';
-
-const STATUS_META = {
-  allocated: { label: 'Aguardando contato', tone: 'neutral' },
-  contacted: { label: 'Em conversa', tone: 'info' },
-  won: { label: 'Venda realizada', tone: 'success' },
-  lost: { label: 'Sem interesse', tone: 'error' },
-};
+import { STATUS_META } from '../constants/statusMeta.js';
 
 const formatCurrency = (value) => {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
