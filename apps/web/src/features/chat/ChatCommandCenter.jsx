@@ -9,7 +9,7 @@ import FilterToolbar from './components/FilterToolbar/FilterToolbar.jsx';
 import useChatController from './hooks/useChatController.js';
 import { resolveWhatsAppErrorCopy } from '../whatsapp/utils/whatsapp-error-codes.js';
 import ManualConversationDialog from './components/ManualConversationDialog.jsx';
-import { useManualConversationLauncher } from '@/features/leads/inbox/hooks/useManualConversationLauncher.js';
+import { useManualConversationLauncher } from './hooks/useManualConversationLauncher.js';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 

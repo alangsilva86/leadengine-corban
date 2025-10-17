@@ -145,7 +145,6 @@ const CampaignsPanel = ({
         }
         return campaign.instanceId === instanceFilter;
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [campaigns, agreementFilter, instanceFilter]
   );
 
