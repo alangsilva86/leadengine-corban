@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, MessageSquare, Trophy, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
@@ -36,21 +35,13 @@ import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
 import { InboxSurface } from './shared/InboxSurface.jsx';
+import { InboxSummaryGrid } from './InboxSummaryGrid.jsx';
 
 const InboxPageContainer = ({ children, className }) => (
   <div className={cn('flex min-h-[100dvh] w-full flex-col', className)}>
     {children}
   </div>
 );
-
-const statusMetrics = [
-  { key: 'total', label: 'Total recebido' },
-  { key: 'contacted', label: 'Em conversa', accent: 'text-status-whatsapp', icon: <MessageSquare className="h-4 w-4 text-status-whatsapp" /> },
-  { key: 'won', label: 'Ganhos', accent: 'text-success', icon: <Trophy className="h-4 w-4 text-success" /> },
-  { key: 'lost', label: 'Perdidos', accent: 'text-status-error', icon: <XCircle className="h-4 w-4 text-status-error" /> },
-];
-
-const formatSummaryValue = (value) => value ?? 0;
 
 const statusToastCopy = {
   contacted: {
@@ -698,6 +689,7 @@ export const LeadInbox = ({
                   </dl>
                 </CardContent>
               </InboxSurface>
+              <InboxSummaryGrid summary={summary} />
 
               <LeadProfilePanel
                 allocation={activeAllocation}
