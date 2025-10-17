@@ -2,10 +2,11 @@ import { MessageSquarePlus, NotebookPen } from 'lucide-react';
 
 import { Button } from '@/components/ui/button.jsx';
 import { ButtonGroup } from '@/components/ui/button-group.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 
 const EmptyInboxState = ({ onSelectAgreement, onBackToWhatsApp }) => {
   return (
-    <div className="flex h-full flex-col items-center justify-center space-y-6 rounded-[var(--radius)] border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-10 text-center text-[color:var(--color-inbox-foreground)]">
+    <InboxSurface className="flex h-full flex-col items-center justify-center space-y-6" padding="2xl" radius="token">
       <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_82%,transparent)] text-primary">
         <MessageSquarePlus className="h-7 w-7" />
       </div>
@@ -20,10 +21,15 @@ const EmptyInboxState = ({ onSelectAgreement, onBackToWhatsApp }) => {
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-[color:var(--color-inbox-foreground-muted)]">
-        <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_72%,transparent)] px-4 py-2">
+        <InboxSurface
+          as="span"
+          radius="pill"
+          shadow="none"
+          className="inline-flex items-center gap-2 border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_72%,transparent)] px-4 py-2"
+        >
           <NotebookPen className="h-4 w-4" />
           Cada nova conversa no WhatsApp vira um lead aqui automaticamente.
-        </span>
+        </InboxSurface>
       </div>
       <ButtonGroup className="justify-center">
         <Button onClick={onBackToWhatsApp}>Revisar conexão do WhatsApp</Button>
@@ -33,7 +39,7 @@ const EmptyInboxState = ({ onSelectAgreement, onBackToWhatsApp }) => {
           </Button>
         ) : null}
       </ButtonGroup>
-    </div>
+    </InboxSurface>
   );
 };
 

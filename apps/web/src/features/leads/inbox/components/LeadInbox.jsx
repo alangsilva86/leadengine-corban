@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, MessageSquare, Trophy, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
@@ -14,20 +13,11 @@ import useInboxViewState from '../hooks/useInboxViewState.js';
 import { useManualConversationLauncher } from '../hooks/useManualConversationLauncher.js';
 import useOnboardingStepLabel from '@/features/onboarding/useOnboardingStepLabel.js';
 import {
-  SAVED_FILTERS_STORAGE_KEY,
-  SAVED_VIEWS_STORAGE_KEY,
   SAVED_VIEWS_LIMIT,
-  THIRTY_DAYS_MS,
-  NO_QUEUE_VALUE,
-  defaultFilters,
   TIME_WINDOW_OPTIONS,
-  normalizeFilters,
-  serializeFilters,
   filterAllocationsWithFilters,
-  loadStoredFilters,
-  loadStoredViews,
   resolveQueueValue,
-} from '../utils/filtering.js';
+} from '../utils/index.js';
 import InboxHeader from './InboxHeader.jsx';
 import InboxActions from './InboxActions.jsx';
 import InboxList from './InboxList.jsx';
@@ -35,21 +25,14 @@ import GlobalFiltersBar from './GlobalFiltersBar.jsx';
 import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
+import { InboxSummaryGrid } from './InboxSummaryGrid.jsx';
 
 const InboxPageContainer = ({ children, className }) => (
   <div className={cn('flex min-h-[100dvh] w-full flex-col', className)}>
     {children}
   </div>
 );
-
-const statusMetrics = [
-  { key: 'total', label: 'Total recebido' },
-  { key: 'contacted', label: 'Em conversa', accent: 'text-status-whatsapp', icon: <MessageSquare className="h-4 w-4 text-status-whatsapp" /> },
-  { key: 'won', label: 'Ganhos', accent: 'text-success', icon: <Trophy className="h-4 w-4 text-success" /> },
-  { key: 'lost', label: 'Perdidos', accent: 'text-status-error', icon: <XCircle className="h-4 w-4 text-status-error" /> },
-];
-
-const formatSummaryValue = (value) => value ?? 0;
 
 const statusToastCopy = {
   contacted: {
@@ -76,7 +59,7 @@ const statusToastCopy = {
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
-export const LeadInbox = ({
+const LeadInbox = ({
   selectedAgreement,
   campaign,
   instanceId: instanceIdProp,
@@ -666,7 +649,7 @@ export const LeadInbox = ({
                 style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
               }}
             >
-              <Card className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]">
+              <InboxSurface as={Card}>
                 <CardHeader className="space-y-2 pb-2">
                   <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
                     Resumo
@@ -678,9 +661,12 @@ export const LeadInbox = ({
                 <CardContent>
                   <dl className="grid grid-cols-2 gap-4">
                     {statusMetrics.map(({ key, label, accent, icon }) => (
-                      <div
+                      <InboxSurface
+                        as="div"
+                        radius="md"
+                        shadow="none"
                         key={key}
-                        className="space-y-1 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
+                        className="space-y-1 px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
                       >
                         <dt className="flex items-center gap-2 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">
                           {icon ? icon : null}
@@ -689,11 +675,12 @@ export const LeadInbox = ({
                         <dd className={cn('text-xl font-semibold text-[color:var(--color-inbox-foreground)]', accent ?? '')}>
                           {formatSummaryValue(summary[key])}
                         </dd>
-                      </div>
+                      </InboxSurface>
                     ))}
                   </dl>
                 </CardContent>
-              </Card>
+              </InboxSurface>
+              <InboxSummaryGrid summary={summary} />
 
               <LeadProfilePanel
                 allocation={activeAllocation}
@@ -725,22 +712,6 @@ export const LeadInbox = ({
       </div>
     </InboxPageContainer>
   );
-};
-
-export {
-  SAVED_FILTERS_STORAGE_KEY,
-  SAVED_VIEWS_STORAGE_KEY,
-  SAVED_VIEWS_LIMIT,
-  THIRTY_DAYS_MS,
-  NO_QUEUE_VALUE,
-  defaultFilters,
-  TIME_WINDOW_OPTIONS,
-  normalizeFilters,
-  serializeFilters,
-  filterAllocationsWithFilters,
-  loadStoredFilters,
-  loadStoredViews,
-  resolveQueueValue,
 };
 
 export default LeadInbox;
