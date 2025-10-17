@@ -31,19 +31,15 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
-import { getAuthToken } from '@/lib/auth.js';
-import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
-import sessionStorageAvailable from '@/lib/session-storage.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
-import useInstanceLiveUpdates from './hooks/useInstanceLiveUpdates.js';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import CampaignsPanel from './components/CampaignsPanel.jsx';
 import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
@@ -52,46 +48,7 @@ import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import QrPreview from './components/QrPreview.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
-
-const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
-
-const readInstancesCache = () => {
-  if (!sessionStorageAvailable()) {
-    return null;
-  }
-  try {
-    const raw = sessionStorage.getItem(INSTANCES_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (error) {
-    console.warn('Não foi possível ler o cache de instâncias WhatsApp', error);
-    return null;
-  }
-};
-
-const persistInstancesCache = (list, currentId) => {
-  if (!sessionStorageAvailable()) {
-    return;
-  }
-  try {
-    sessionStorage.setItem(
-      INSTANCES_CACHE_KEY,
-      JSON.stringify({
-        list,
-        currentId,
-        updatedAt: Date.now(),
-      })
-    );
-  } catch (error) {
-    console.warn('Não foi possível armazenar o cache de instâncias WhatsApp', error);
-  }
-};
-
-const clearInstancesCache = () => {
-  if (!sessionStorageAvailable()) {
-    return;
-  }
-  sessionStorage.removeItem(INSTANCES_CACHE_KEY);
-};
+import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.js';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
 const STATUS_TONES = {
@@ -831,304 +788,7 @@ const extractInstanceFromPayload = (payload) => {
   return null;
 };
 
-const ensureArrayOfObjects = (value) =>
-  Array.isArray(value)
-    ? value.filter((item) => item && typeof item === 'object')
-    : [];
-
-const looksLikeWhatsAppJid = (value) =>
-  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
-
-const formatInstanceDisplayId = (value) => {
-  if (typeof value !== 'string') {
-    return '';
-  }
-
-  if (looksLikeWhatsAppJid(value)) {
-    return value.replace(/@s\.whatsapp\.net$/i, '@wa');
-  }
-
-  return value;
-};
-
-const pickStringValue = (...values) => {
-  for (const value of values) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-
-  return null;
-};
-
-const isPlainRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
-
-const mergeInstanceEntries = (previous, next) => {
-  if (!previous) {
-    return next;
-  }
-
-  const previousMetadata = isPlainRecord(previous.metadata) ? previous.metadata : {};
-  const nextMetadata = isPlainRecord(next.metadata) ? next.metadata : {};
-
-  const mergedMetadata = { ...previousMetadata, ...nextMetadata };
-
-  return {
-    ...previous,
-    ...next,
-    metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,
-    connected: Boolean(previous.connected || next.connected),
-    status:
-      next.status ||
-      previous.status ||
-      (previous.connected || next.connected ? 'connected' : 'disconnected'),
-    tenantId: next.tenantId ?? previous.tenantId ?? null,
-    name: next.name ?? previous.name ?? null,
-    phoneNumber: next.phoneNumber ?? previous.phoneNumber ?? null,
-    displayId: next.displayId || previous.displayId || next.id || previous.id,
-    source: next.source || previous.source || null,
-  };
-};
-
-const normalizeInstanceRecord = (entry) => {
-  if (!isPlainRecord(entry)) {
-    return null;
-  }
-
-  const base = entry;
-  const metadata = isPlainRecord(base.metadata) ? base.metadata : {};
-  const profile = isPlainRecord(base.profile) ? base.profile : {};
-  const details = isPlainRecord(base.details) ? base.details : {};
-  const info = isPlainRecord(base.info) ? base.info : {};
-  const mergedMetadata = { ...metadata, ...profile, ...details, ...info };
-
-  const id =
-    pickStringValue(
-      base.id,
-      base.instanceId,
-      base.instance_id,
-      base.sessionId,
-      base.session_id,
-      mergedMetadata.id,
-      mergedMetadata.instanceId,
-      mergedMetadata.instance_id,
-      mergedMetadata.sessionId,
-      mergedMetadata.session_id
-    ) ?? null;
-
-  if (!id) {
-    return null;
-  }
-
-  const rawStatus =
-    pickStringValue(base.status, base.connectionStatus, base.state, mergedMetadata.status, mergedMetadata.state) ??
-    null;
-  const normalizedStatus = rawStatus ? rawStatus.toLowerCase() : null;
-
-  const connectedValue =
-    typeof base.connected === 'boolean'
-      ? base.connected
-      : typeof mergedMetadata.connected === 'boolean'
-        ? mergedMetadata.connected
-        : normalizedStatus === 'connected';
-
-  const tenantId =
-    pickStringValue(
-      base.tenantId,
-      base.tenant_id,
-      mergedMetadata.tenantId,
-      mergedMetadata.tenant_id,
-      base.agreementId,
-      mergedMetadata.agreementId,
-      base.accountId,
-      mergedMetadata.accountId
-    ) ?? null;
-
-  const name =
-    pickStringValue(
-      base.name,
-      base.displayName,
-      base.label,
-      mergedMetadata.name,
-      mergedMetadata.displayName,
-      mergedMetadata.label,
-      mergedMetadata.instanceName,
-      mergedMetadata.sessionName,
-      mergedMetadata.profileName
-    ) ?? null;
-
-  const phoneNumber =
-    pickStringValue(
-      base.phoneNumber,
-      base.phone,
-      base.number,
-      mergedMetadata.phoneNumber,
-      mergedMetadata.phone,
-      mergedMetadata.number
-    ) ?? null;
-
-  const source =
-    pickStringValue(base.source, mergedMetadata.source, mergedMetadata.origin, base.origin) ??
-    (looksLikeWhatsAppJid(id) ? 'broker' : 'db');
-
-  const normalizedStatusValue = normalizedStatus || (connectedValue ? 'connected' : 'disconnected');
-
-  const normalized = {
-    ...base,
-    metadata: mergedMetadata,
-    id,
-    tenantId,
-    name,
-    phoneNumber,
-    status: normalizedStatusValue,
-    connected: Boolean(connectedValue),
-    displayId: formatInstanceDisplayId(id),
-    source,
-  };
-
-  return normalized;
-};
-
-const normalizeInstancesCollection = (rawList, options = {}) => {
-  const allowedTenants = Array.isArray(options.allowedTenants)
-    ? options.allowedTenants
-        .filter((value) => typeof value === 'string')
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-    : [];
-  const shouldFilterByTenant =
-    (options.filterByTenant === true || options.enforceTenantScope === true) &&
-    allowedTenants.length > 0;
-
-  const order = [];
-  const map = new Map();
-
-  if (!Array.isArray(rawList)) {
-    return [];
-  }
-
-  for (const entry of rawList) {
-    const normalized = normalizeInstanceRecord(entry);
-    if (!normalized) {
-      continue;
-    }
-
-    if (
-      shouldFilterByTenant &&
-      normalized.tenantId &&
-      !allowedTenants.includes(normalized.tenantId)
-    ) {
-      continue;
-    }
-
-    const existing = map.get(normalized.id);
-    const merged = mergeInstanceEntries(existing, normalized);
-
-    if (!existing) {
-      order.push(normalized.id);
-    }
-
-    map.set(normalized.id, merged);
-  }
-
-  return order.map((id) => map.get(id)).filter(Boolean);
-};
-
-const unwrapWhatsAppResponse = (payload) => {
-  if (!payload) {
-    return {};
-  }
-
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (payload && typeof payload === 'object') {
-    if (payload.data && typeof payload.data === 'object') {
-      return payload.data;
-    }
-    if (payload.result && typeof payload.result === 'object') {
-      return payload.result;
-    }
-  }
-
-  return payload;
-};
-
-const parseInstancesPayload = (payload) => {
-  const data = unwrapWhatsAppResponse(payload);
-
-  const rootIsObject = data && typeof data === 'object' && !Array.isArray(data);
-
-  let instances = [];
-  if (rootIsObject && Array.isArray(data.instances)) {
-    instances = ensureArrayOfObjects(data.instances);
-  } else if (rootIsObject && Array.isArray(data.items)) {
-    instances = ensureArrayOfObjects(data.items);
-  } else if (rootIsObject && Array.isArray(data.data)) {
-    instances = ensureArrayOfObjects(data.data);
-  } else if (Array.isArray(data)) {
-    instances = ensureArrayOfObjects(data);
-  }
-
-  const instance = extractInstanceFromPayload(rootIsObject ? data : null) || null;
-
-  if (instance && !instances.some((item) => item && item.id === instance.id)) {
-    instances = [...instances, instance];
-  }
-
-  const statusPayload = rootIsObject
-    ? typeof data.status === 'object' && data.status !== null
-      ? data.status
-      : typeof data.instanceStatus === 'object' && data.instanceStatus !== null
-        ? data.instanceStatus
-        : null
-    : null;
-
-  const status =
-    typeof statusPayload?.status === 'string'
-      ? statusPayload.status
-      : typeof data?.status === 'string'
-        ? data.status
-        : typeof instance?.status === 'string'
-          ? instance.status
-          : null;
-
-  const connected =
-    typeof data?.connected === 'boolean'
-      ? data.connected
-      : typeof statusPayload?.connected === 'boolean'
-        ? statusPayload.connected
-        : typeof instance?.connected === 'boolean'
-          ? instance.connected
-          : null;
-
-  const instanceId =
-    typeof data?.instanceId === 'string' && data.instanceId.trim().length > 0
-      ? data.instanceId.trim()
-      : typeof instance?.id === 'string'
-        ? instance.id
-        : null;
-
-  const qr = extractQrPayload(
-    (rootIsObject && data.qr !== undefined ? data.qr : null) ?? statusPayload ?? data
-  );
-
-  return {
-    raw: payload,
-    data,
-    instances,
-    instance,
-    status,
-    statusPayload,
-    connected,
-    instanceId,
-    qr,
-  };
-};
+;
 
 const WhatsAppConnect = ({
   selectedAgreement,
@@ -1141,24 +801,11 @@ const WhatsAppConnect = ({
   onBack,
 }) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
-  const pollIdRef = useRef(0);
-  const [instances, setInstances] = useState([]);
-  const [instance, setInstance] = useState(null);
-  const [instancesReady, setInstancesReady] = useState(false);
   const [showAllInstances, setShowAllInstances] = useState(false);
-  const preferredInstanceIdRef = useRef(null);
-  const [qrData, setQrData] = useState(null);
-  const [secondsLeft, setSecondsLeft] = useState(null);
-  const [loadingInstances, setLoadingInstances] = useState(false);
-  const [loadingQr, setLoadingQr] = useState(false);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
-  const [sessionActive, setSessionActive] = useState(true);
-  const [authDeferred, setAuthDeferred] = useState(false);
-  const [authTokenState, setAuthTokenState] = useState(() => getAuthToken());
   const [errorState, setErrorState] = useState(null);
-  const [localStatus, setLocalStatus] = useState(status);
   const [qrPanelOpen, setQrPanelOpen] = useState(status !== 'connected');
   const [campaign, setCampaign] = useState(activeCampaign || null);
   const [campaigns, setCampaigns] = useState([]);
@@ -1166,62 +813,13 @@ const WhatsAppConnect = ({
   const [campaignError, setCampaignError] = useState(null);
   const [campaignAction, setCampaignAction] = useState(null);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
-  const [deletingInstanceId, setDeletingInstanceId] = useState(null);
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
-  const [liveEvents, setLiveEvents] = useState([]);
   const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
   const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
   const [pendingReassign, setPendingReassign] = useState(null);
   const [reassignIntent, setReassignIntent] = useState('reassign');
   const [persistentWarning, setPersistentWarning] = useState(null);
-  const loadInstancesRef = useRef(() => {});
   const loadCampaignsRef = useRef(() => {});
-  const hasFetchedOnceRef = useRef(false);
-  const loadingInstancesRef = useRef(loadingInstances);
-  const loadingQrRef = useRef(loadingQr);
-
-  const requireAuthMessage =
-    'Não foi possível sincronizar as instâncias de WhatsApp no momento. Tente novamente em instantes.';
-
-  const isAuthError = (error) => {
-    const status = typeof error?.status === 'number' ? error.status : null;
-    return status === 401 || status === 403;
-  };
-
-  const handleAuthFallback = ({ reset = false, error: errorCandidate = null } = {}) => {
-    setLoadingInstances(false);
-    setLoadingQr(false);
-    const status =
-      typeof errorCandidate?.status === 'number'
-        ? errorCandidate.status
-        : typeof errorCandidate?.response?.status === 'number'
-          ? errorCandidate.response.status
-          : null;
-    const shouldDisplayWarning = status === 401 || status === 403;
-
-    if (shouldDisplayWarning || reset) {
-      setErrorMessage(requireAuthMessage, {
-        title: 'Sincronização necessária',
-      });
-    } else if (!authTokenState) {
-      setErrorMessage(null);
-    }
-    if (reset) {
-      setInstances([]);
-      setInstance(null);
-      clearInstancesCache();
-      preferredInstanceIdRef.current = null;
-      setLocalStatus('disconnected');
-      setQrData(null);
-      setSecondsLeft(null);
-      setInstancesReady(true);
-      setAuthTokenState(null);
-    }
-  };
-
-  const enforceAuthPrompt = () => {
-    handleAuthFallback({ reset: true });
-  };
 
   const setErrorMessage = (message, meta = {}) => {
     if (message) {
@@ -1250,6 +848,50 @@ const WhatsAppConnect = ({
     };
   };
 
+  const {
+    instances,
+    instancesReady,
+    currentInstance: instance,
+    status: localStatus,
+    qrData,
+    secondsLeft,
+    loadingInstances,
+    loadingQr,
+    isAuthenticated: hookIsAuthenticated,
+    sessionActive,
+    authDeferred,
+    deletingInstanceId,
+    liveEvents,
+    loadInstances,
+    selectInstance,
+    generateQr,
+    connectInstance,
+    createInstance: createInstanceAction,
+    deleteInstance: deleteInstanceAction,
+    markConnected,
+    handleAuthFallback,
+    setSecondsLeft,
+    setGeneratingQrState,
+    setStatus,
+    realtimeConnected,
+  } = useWhatsAppInstances({
+    selectedAgreement,
+    status,
+    onStatusChange,
+    onError: setErrorMessage,
+    logger: { log, warn, error: logError },
+    campaignInstanceId: campaign?.instanceId ?? null,
+  });
+
+  const enforceAuthPrompt = () => {
+    handleAuthFallback({ reset: true });
+  };
+
+  const isAuthError = (error) => {
+    const statusCode = typeof error?.status === 'number' ? error.status : null;
+    return statusCode === 401 || statusCode === 403;
+  };
+
   const applyErrorMessageFromError = (error, fallbackMessage, meta = {}) => {
     const friendly = resolveFriendlyError(error, fallbackMessage);
     setErrorMessage(friendly.message, {
@@ -1260,32 +902,7 @@ const WhatsAppConnect = ({
     return friendly;
   };
 
-  useEffect(() => {
-    const cached = readInstancesCache();
-    if (!cached) {
-      setInstancesReady(false);
-      preferredInstanceIdRef.current = null;
-      return;
-    }
 
-    const list = Array.isArray(cached.list) ? cached.list : [];
-    if (list.length > 0) {
-      const current = cached.currentId
-        ? list.find((item) => item.id === cached.currentId) || list[0]
-        : list[0];
-      setInstances(list);
-      setInstance(current ?? null);
-      preferredInstanceIdRef.current = current?.id ?? null;
-      if (current?.status) {
-        setLocalStatus(current.status);
-      }
-      setInstancesReady(true);
-    } else {
-      setInstancesReady(false);
-      preferredInstanceIdRef.current = null;
-    }
-    hasFetchedOnceRef.current = false;
-  }, [selectedAgreement?.id]);
 
   useEffect(() => {
     setPairingPhoneInput('');
@@ -1309,10 +926,13 @@ const WhatsAppConnect = ({
   const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
   const hasCampaign = Boolean(campaign);
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
-  const generatingQrRef = useRef(isGeneratingQrImage);
+  useEffect(() => {
+    setGeneratingQrState(isGeneratingQrImage);
+  }, [isGeneratingQrImage, setGeneratingQrState]);
+
   const hasQr = Boolean(qrImageSrc);
   const canSynchronize = sessionActive && !authDeferred;
-  const isAuthenticated = canSynchronize && Boolean(authTokenState);
+  const isAuthenticated = hookIsAuthenticated;
   const canContinue = localStatus === 'connected' && Boolean(instance);
   const statusTone = copy.tone || STATUS_TONES.fallback;
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
@@ -1343,114 +963,6 @@ const WhatsAppConnect = ({
     : 'Sincronizando…';
   const hasRenderableInstances = renderInstances.length > 0;
   const showFilterNotice = instancesReady && hasHiddenInstances && !showAllInstances;
-
-  const handleRealtimeEvent = useCallback((event) => {
-    if (!event || typeof event !== 'object' || !event.payload) {
-      return;
-    }
-
-    const payload = event.payload;
-    const eventInstanceId =
-      payload.id || payload.instanceId || payload.brokerId || payload.sessionId || null;
-
-    if (!eventInstanceId) {
-      return;
-    }
-
-    const timestampCandidate =
-      (typeof payload.syncedAt === 'string' && payload.syncedAt) ||
-      (typeof payload.timestamp === 'string' && payload.timestamp) ||
-      new Date().toISOString();
-
-    const statusCandidate = (() => {
-      if (typeof payload.status === 'string') {
-        return payload.status;
-      }
-      if (payload.status && typeof payload.status === 'object') {
-        if (typeof payload.status.current === 'string') {
-          return payload.status.current;
-        }
-        if (typeof payload.status.status === 'string') {
-          return payload.status.status;
-        }
-      }
-      return null;
-    })();
-
-    const connectedCandidate = (() => {
-      if (typeof payload.connected === 'boolean') {
-        return payload.connected;
-      }
-      if (payload.status && typeof payload.status === 'object') {
-        if (typeof payload.status.connected === 'boolean') {
-          return payload.status.connected;
-        }
-      }
-      return null;
-    })();
-
-    const phoneCandidate = (() => {
-      if (typeof payload.phoneNumber === 'string') {
-        return payload.phoneNumber;
-      }
-      if (payload.metadata && typeof payload.metadata === 'object') {
-        const metadata = payload.metadata;
-        if (typeof metadata.phoneNumber === 'string') {
-          return metadata.phoneNumber;
-        }
-        if (typeof metadata.phone_number === 'string') {
-          return metadata.phone_number;
-        }
-        if (typeof metadata.msisdn === 'string') {
-          return metadata.msisdn;
-        }
-      }
-      return null;
-    })();
-
-    setLiveEvents((previous) => {
-      const next = [
-        {
-          id: `${event.type}-${eventInstanceId}-${timestampCandidate}`,
-          instanceId: eventInstanceId,
-          type: typeof event.type === 'string' && event.type ? event.type : 'updated',
-          status: statusCandidate,
-          connected: connectedCandidate,
-          phoneNumber: phoneCandidate,
-          timestamp: timestampCandidate,
-        },
-        ...previous,
-      ];
-
-      const seen = new Set();
-      const deduped = [];
-      for (const entry of next) {
-        const key = `${entry.instanceId}-${entry.timestamp}-${entry.type}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        deduped.push(entry);
-        if (deduped.length >= 30) {
-          break;
-        }
-      }
-
-      return deduped;
-    });
-  }, []);
-
-  const tenantRoomId = selectedAgreement?.tenantId ?? selectedAgreement?.id ?? null;
-
-  const { connected: realtimeConnected } = useInstanceLiveUpdates({
-    tenantId: tenantRoomId,
-    enabled: Boolean(tenantRoomId),
-    onEvent: handleRealtimeEvent,
-  });
-
-  useEffect(() => {
-    setLiveEvents([]);
-  }, [selectedAgreement?.id]);
 
   const timelineItems = useMemo(() => {
     if (!instance) {
@@ -1497,27 +1009,15 @@ const WhatsAppConnect = ({
   }, [instance, liveEvents]);
 
   const handleRefreshInstances = useCallback(() => {
-    void loadInstancesRef.current?.({ forceRefresh: true });
-  }, []);
+    void loadInstances({ forceRefresh: true });
+  }, [loadInstances]);
 
   useEffect(() => {
     if (!canSynchronize) {
-      setInstancesReady(true);
       return;
     }
     void loadInstances({ forceRefresh: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSynchronize, selectedAgreement?.id]);
-
-  useEffect(() => {
-    if (!canSynchronize) {
-      setInstancesReady(true);
-    }
-  }, [canSynchronize]);
-
-  useEffect(() => {
-    setLocalStatus(status);
-  }, [status]);
 
   useEffect(() => {
     setQrPanelOpen(localStatus !== 'connected');
@@ -1527,97 +1027,11 @@ const WhatsAppConnect = ({
     setCampaign(activeCampaign || null);
   }, [activeCampaign]);
 
-  useEffect(() => {
-    loadingInstancesRef.current = loadingInstances;
-  }, [loadingInstances]);
-
-  useEffect(() => {
-    loadingQrRef.current = loadingQr;
-  }, [loadingQr]);
-
-  useEffect(() => {
-    generatingQrRef.current = isGeneratingQrImage;
-  }, [isGeneratingQrImage]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    let timeoutId;
-
-    const resolveNextDelay = (result) => {
-      if (!result || result.success || result.skipped) {
-        return DEFAULT_POLL_INTERVAL_MS;
-      }
-
-      const retryAfterMs = parseRetryAfterMs(result.error?.retryAfter);
-      if (retryAfterMs !== null) {
-        return retryAfterMs > 0 ? retryAfterMs : DEFAULT_POLL_INTERVAL_MS;
-      }
-
-      if (result.error?.status === 429) {
-        return RATE_LIMIT_COOLDOWN_MS;
-      }
-
-      return DEFAULT_POLL_INTERVAL_MS;
-    };
-
-    const scheduleNext = (delay = DEFAULT_POLL_INTERVAL_MS) => {
-      if (cancelled) {
-        return;
-      }
-
-      const normalizedDelay =
-        typeof delay === 'number' && Number.isFinite(delay) && delay >= 0
-          ? delay
-          : DEFAULT_POLL_INTERVAL_MS;
-
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-
-      timeoutId = setTimeout(runPoll, normalizedDelay);
-    };
-
-    const runPoll = async () => {
-      if (cancelled) {
-        return;
-      }
-
-      if (loadingInstancesRef.current || loadingQrRef.current || generatingQrRef.current) {
-        scheduleNext(DEFAULT_POLL_INTERVAL_MS);
-        return;
-      }
-
-      const result = await Promise.resolve()
-        .then(() => loadInstancesRef.current?.())
-        .catch((error) => ({ success: false, error }));
-
-      if (cancelled) {
-        return;
-      }
-
-      const delay = resolveNextDelay(result);
-      scheduleNext(delay);
-    };
-
-    runPoll();
-
-    return () => {
-      cancelled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
-  }, [selectedAgreement?.id, isAuthenticated]);
 
   useEffect(() => {
     if (!selectedAgreement) {
       setCampaign(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgreement?.id]);
 
   useEffect(() => {
@@ -1630,7 +1044,7 @@ const WhatsAppConnect = ({
       const diff = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setSecondsLeft(diff);
       if (diff === 0) {
-        setLocalStatus('qr_required');
+        setStatus('qr_required');
         onStatusChange?.('disconnected');
       }
     };
@@ -1639,524 +1053,6 @@ const WhatsAppConnect = ({
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [expiresAt, localStatus, onStatusChange]);
-
-  const pickCurrentInstance = (
-    list,
-    { preferredInstanceId, campaignInstanceId } = {}
-  ) => {
-    if (!Array.isArray(list) || list.length === 0) {
-      return null;
-    }
-
-    const findMatch = (targetId) => {
-      if (!targetId) {
-        return null;
-      }
-      return (
-        list.find((item) => item.id === targetId || item.name === targetId) || null
-      );
-    };
-
-    const preferredMatch = findMatch(preferredInstanceId);
-    if (preferredMatch) {
-      return preferredMatch;
-    }
-
-    const campaignMatch = findMatch(campaignInstanceId);
-    if (campaignMatch) {
-      return campaignMatch;
-    }
-
-    const connected = list.find((item) => item.connected === true);
-    return connected || list[0];
-  };
-
-  const connectInstance = async (instanceId = null, options = {}) => {
-    if (!instanceId) {
-      throw new Error('ID da instância é obrigatório para iniciar o pareamento.');
-    }
-
-    const encodedId = encodeURIComponent(instanceId);
-    const { phoneNumber: rawPhoneNumber = null, code: rawCode = null } = options ?? {};
-    const trimmedPhone =
-      typeof rawPhoneNumber === 'string' && rawPhoneNumber.trim().length > 0
-        ? rawPhoneNumber.trim()
-        : null;
-    const trimmedCode =
-      typeof rawCode === 'string' && rawCode.trim().length > 0 ? rawCode.trim() : null;
-
-    if (rawPhoneNumber !== null && !trimmedPhone) {
-      throw new Error('Informe um telefone válido para parear por código.');
-    }
-
-    const shouldRequestPairing = Boolean(trimmedPhone || trimmedCode);
-
-    const response = shouldRequestPairing
-      ? await apiPost(
-          `/api/integrations/whatsapp/instances/${encodedId}/pair`,
-          {
-            ...(trimmedPhone ? { phoneNumber: trimmedPhone } : {}),
-            ...(trimmedCode ? { code: trimmedCode } : {}),
-          }
-        )
-      : await apiGet(`/api/integrations/whatsapp/instances/${encodedId}/status`);
-    setSessionActive(true);
-    setAuthDeferred(false);
-
-    const parsed = parseInstancesPayload(response);
-
-    const resolvedInstanceId = parsed.instanceId || instanceId || null;
-    const resolvedStatus = parsed.status || (parsed.connected === false ? 'disconnected' : null);
-    const resolvedConnected =
-      typeof parsed.connected === 'boolean'
-        ? parsed.connected
-        : resolvedStatus
-        ? resolvedStatus === 'connected'
-        : null;
-
-    let instance = parsed.instance;
-    if (instance && resolvedInstanceId && instance.id !== resolvedInstanceId) {
-      instance = { ...instance, id: resolvedInstanceId };
-    } else if (!instance && resolvedInstanceId) {
-      instance = {
-        id: resolvedInstanceId,
-        status: resolvedStatus ?? undefined,
-        connected: resolvedConnected ?? undefined,
-      };
-    }
-
-    const instances = ensureArrayOfObjects(parsed.instances);
-
-    return {
-      instanceId: resolvedInstanceId,
-      status: resolvedStatus,
-      connected: resolvedConnected,
-      qr: parsed.qr,
-      instance: instance
-        ? {
-            ...instance,
-            status: resolvedStatus ?? instance.status,
-            connected:
-              typeof resolvedConnected === 'boolean'
-                ? resolvedConnected
-                : typeof instance.connected === 'boolean'
-                ? instance.connected
-                : undefined,
-          }
-        : null,
-      instances,
-    };
-  };
-
-  const loadInstances = async (options = {}) => {
-    const {
-      connectResult: providedConnect,
-      preferredInstanceId: explicitPreferredInstanceId,
-      forceRefresh,
-    } = options;
-    const hasExplicitPreference = Object.prototype.hasOwnProperty.call(
-      options,
-      'preferredInstanceId'
-    );
-    const resolvedPreferredInstanceId = hasExplicitPreference
-      ? explicitPreferredInstanceId
-      : preferredInstanceIdRef.current ?? null;
-    const agreementId = selectedAgreement?.id ?? null;
-    const token = getAuthToken();
-    setAuthTokenState(token);
-    if (!hasFetchedOnceRef.current) {
-      setInstancesReady(false);
-    }
-    setLoadingInstances(true);
-    setErrorMessage(null);
-    try {
-      log('🚀 Iniciando sincronização de instâncias WhatsApp', {
-        tenantAgreement: selectedAgreement?.id ?? null,
-        preferredInstanceId: resolvedPreferredInstanceId ?? null,
-      });
-      const shouldForceBrokerSync =
-        typeof forceRefresh === 'boolean' ? forceRefresh : true;
-
-      log('🛰️ Solicitando lista de instâncias', {
-        agreementId,
-        forceRefresh: shouldForceBrokerSync,
-        hasFetchedOnce: hasFetchedOnceRef.current,
-      });
-      const instancesUrl = '/api/integrations/whatsapp/instances?refresh=1';
-      const response = await apiGet(instancesUrl);
-      const parsedResponse = parseInstancesPayload(response);
-      setSessionActive(true);
-      setAuthDeferred(false);
-      let list = ensureArrayOfObjects(parsedResponse.instances);
-      let hasServerList = true;
-      let connectResult = providedConnect || null;
-
-      if (list.length === 0 && !shouldForceBrokerSync) {
-        const refreshed = await apiGet(instancesUrl).catch(
-          () => null
-        );
-        if (refreshed) {
-          const parsedRefreshed = parseInstancesPayload(refreshed);
-          const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
-          if (refreshedList.length > 0) {
-            list = refreshedList;
-          }
-        }
-      }
-
-      if (list.length === 0) {
-        const fallbackInstanceId =
-          resolvedPreferredInstanceId || campaign?.instanceId || null;
-        if (fallbackInstanceId) {
-          connectResult = connectResult || (await connectInstance(fallbackInstanceId));
-        } else {
-          warn('Nenhuma instância padrão disponível para conexão automática', {
-            agreementId,
-            preferredInstanceId: resolvedPreferredInstanceId ?? null,
-            campaignInstanceId: campaign?.instanceId ?? null,
-          });
-        }
-
-        if (connectResult?.instances?.length) {
-          list = ensureArrayOfObjects(connectResult.instances);
-        } else if (connectResult?.instance) {
-          list = ensureArrayOfObjects([connectResult.instance]);
-        }
-      }
-
-      const preferenceOptions = {
-        preferredInstanceId: resolvedPreferredInstanceId,
-        campaignInstanceId: campaign?.instanceId ?? null,
-      };
-
-      let current = pickCurrentInstance(list, preferenceOptions);
-
-      if (!current && connectResult?.instance) {
-        current = connectResult.instance;
-      }
-
-      if (current && (connectResult?.status || connectResult?.instance)) {
-        const merged = {
-          ...current,
-          ...(connectResult?.instance ? connectResult.instance : {}),
-          status: connectResult.status ?? current.status,
-          connected:
-            typeof connectResult?.connected === 'boolean'
-              ? connectResult.connected
-              : typeof current.connected === 'boolean'
-              ? current.connected
-              : false,
-        };
-        current = merged;
-        list = list.map((item) => (item.id === merged.id ? { ...item, ...merged } : item));
-      } else if (connectResult?.instance) {
-        const candidate = connectResult.instance;
-        list = list.map((item) => (item.id === candidate.id ? { ...item, ...candidate } : item));
-      }
-
-      const normalizedList = normalizeInstancesCollection(list);
-      list = normalizedList;
-
-      if (current) {
-        const normalizedCurrent = normalizedList.find((item) => item.id === current.id);
-        if (normalizedCurrent) {
-          current = { ...normalizedCurrent, ...current };
-          list = normalizedList.map((item) => (item.id === current.id ? { ...item, ...current } : item));
-        } else {
-          current = pickCurrentInstance(normalizedList, preferenceOptions);
-        }
-      } else {
-        current = pickCurrentInstance(normalizedList, preferenceOptions);
-      }
-
-      if (!current && connectResult?.instance) {
-        const normalizedConnect = normalizedList.find(
-          (item) => item.id === connectResult.instance.id
-        );
-        current = normalizedConnect || connectResult.instance;
-      }
-
-      const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
-
-      hasFetchedOnceRef.current = true;
-
-      if (Array.isArray(list) && list.length > 0) {
-        setInstances(list);
-        setInstance(current);
-        preferredInstanceIdRef.current = current?.id ?? null;
-        persistInstancesCache(list, current?.id ?? null);
-      } else if (hasServerList) {
-        setInstances([]);
-        setInstance(null);
-        preferredInstanceIdRef.current = null;
-        clearInstancesCache();
-      } else {
-        warn('Servidor não retornou instâncias; reutilizando cache local', {
-          agreementId,
-          preferredInstanceId: resolvedPreferredInstanceId ?? null,
-        });
-      }
-
-      const statusFromInstance =
-        connectResult?.status ||
-        (typeof connectResult?.connected === 'boolean'
-          ? connectResult.connected
-            ? 'connected'
-            : 'disconnected'
-          : null) ||
-        current?.status ||
-        'disconnected';
-      setAuthDeferred(false);
-      setLocalStatus(statusFromInstance);
-      onStatusChange?.(statusFromInstance);
-
-      const connectQr = connectResult?.qr;
-      const shouldShowQrFromConnect =
-        connectResult && connectResult.connected === false && Boolean(connectQr?.qrCode);
-
-      if (shouldShowQrFromConnect) {
-        setQrData(connectQr);
-      } else if (current && statusFromInstance !== 'connected') {
-        await generateQr(current.id, { skipStatus: Boolean(connectResult) });
-      } else {
-        setQrData(null);
-        setSecondsLeft(null);
-      }
-      log('✅ Instâncias sincronizadas', {
-        total: resolvedTotal,
-        status: statusFromInstance,
-        instanceId: current?.id ?? null,
-        forceRefresh: shouldForceBrokerSync,
-      });
-      return { success: true, status: statusFromInstance };
-    } catch (err) {
-      const status = err?.response?.status;
-      const errorCode = err?.response?.data?.code ?? err?.code;
-      const isMissingInstanceError = status === 404 || errorCode === 'INSTANCE_NOT_FOUND';
-
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      } else if (!isMissingInstanceError) {
-        applyErrorMessageFromError(
-          err,
-          'Não foi possível carregar status do WhatsApp'
-        );
-        if (!isMissingInstanceError) {
-          setErrorMessage(
-            err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
-          );
-        } else {
-          setErrorMessage(null);
-        }
-      }
-      warn('Instâncias não puderam ser carregadas', err);
-      return { success: false, error: err, skipped: isAuthError(err) };
-    } finally {
-      setLoadingInstances(false);
-      setInstancesReady(true);
-    }
-  };
-  loadInstancesRef.current = loadInstances;
-
-  const loadCampaigns = async (options = {}) => {
-    setCampaignsLoading(true);
-    setCampaignError(null);
-
-    try {
-      const params = new URLSearchParams();
-      params.set('status', 'active,paused,draft,ended');
-
-      const response = await apiGet(`/api/campaigns?${params.toString()}`);
-      const entries = Array.isArray(response?.items)
-        ? response.items
-        : Array.isArray(response?.data)
-        ? response.data
-        : [];
-      const list = entries.filter((entry) => entry?.status !== 'ended');
-
-      setCampaigns(list);
-
-      const {
-        preferredAgreementId: preferredAgreementIdInput,
-        preferredCampaignId: preferredCampaignIdInput,
-        preferredInstanceId: preferredInstanceIdInput,
-      } = options ?? {};
-
-      const preferredAgreementId =
-        preferredAgreementIdInput ?? selectedAgreement?.id ?? null;
-      const preferredCampaignId = preferredCampaignIdInput ?? campaign?.id ?? null;
-      const preferredInstanceId = preferredInstanceIdInput ?? instance?.id ?? null;
-
-      const scopedList = (() => {
-        if (preferredAgreementId) {
-          const matches = list.filter((entry) => entry.agreementId === preferredAgreementId);
-          if (matches.length > 0) {
-            return matches;
-          }
-        }
-        return list;
-      })();
-      const selectionPool = scopedList.length > 0 ? scopedList : list;
-
-      const findByInstance = (collection) => {
-        if (!preferredInstanceId || !Array.isArray(collection) || collection.length === 0) {
-          return null;
-        }
-        return (
-          collection.find(
-            (entry) => entry.instanceId === preferredInstanceId && entry.status === 'active'
-          ) ??
-          collection.find((entry) => entry.instanceId === preferredInstanceId) ??
-          null
-        );
-      };
-
-      let preferred = null;
-
-      if (preferredCampaignId) {
-        preferred = list.find((entry) => entry.id === preferredCampaignId) ?? null;
-      }
-
-      if (!preferred) {
-        preferred = findByInstance(selectionPool) ?? findByInstance(list);
-      }
-
-      if (!preferred) {
-        preferred =
-          selectionPool.find((entry) => entry.status === 'active') ??
-          selectionPool[0] ??
-          list.find((entry) => entry.status === 'active') ??
-          list[0] ??
-          null;
-      }
-
-      const resolvedPreferred =
-        preferredAgreementId && preferred && preferred.agreementId !== preferredAgreementId
-          ? null
-          : preferred;
-
-      const previousId = campaign?.id ?? null;
-      const nextId = resolvedPreferred?.id ?? null;
-
-      if (nextId !== previousId) {
-        setCampaign(resolvedPreferred ?? null);
-        if (resolvedPreferred) {
-          onCampaignReady?.(resolvedPreferred);
-        }
-      } else if (resolvedPreferred) {
-        onCampaignReady?.(resolvedPreferred);
-      }
-
-      return { success: true, items: list, selectedCampaign: resolvedPreferred ?? null };
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      } else {
-        setCampaignError(
-          err instanceof Error ? err.message : 'Não foi possível carregar campanhas'
-        );
-      }
-      return { success: false, error: err };
-    } finally {
-      setCampaignsLoading(false);
-    }
-  };
-  loadCampaignsRef.current = loadCampaigns;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchCampaigns = async () => {
-      const result = await loadCampaignsRef.current?.({
-        preferredAgreementId: selectedAgreement?.id ?? null,
-        preferredInstanceId: instance?.id ?? null,
-      });
-      if (!cancelled && result?.error && !isAuthError(result.error)) {
-        warn('Falha ao listar campanhas', result.error);
-      }
-    };
-
-    void fetchCampaigns();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAgreement?.id, warn]);
-
-  useEffect(() => {
-    if (!selectedAgreement?.id) {
-      setPersistentWarning(null);
-      if (campaign) {
-        setCampaign(null);
-      }
-      return;
-    }
-
-    const scopedCampaigns = campaigns.filter(
-      (entry) => entry.agreementId === selectedAgreement.id
-    );
-
-    if (!scopedCampaigns.length) {
-      if (campaign?.agreementId === selectedAgreement.id) {
-        setCampaign(null);
-      }
-      const warningMessage =
-        'Nenhuma campanha cadastrada para este convênio. Os leads continuarão chegando pela instância conectada; vincule uma campanha apenas se precisar de roteamento avançado.';
-      setPersistentWarning(warningMessage);
-      return;
-    }
-
-    if (campaign && campaign.agreementId !== selectedAgreement.id) {
-      setCampaign(null);
-    }
-
-    const activeForAgreement = scopedCampaigns.filter((entry) => entry.status === 'active');
-    let warningMessage = null;
-
-    if (activeForAgreement.length === 0) {
-      warningMessage =
-        'Nenhuma campanha ativa para este convênio. Os leads seguirão para a inbox, mas ative ou crie uma campanha se quiser roteamento avançado.';
-    } else if (
-      instance?.id &&
-      !activeForAgreement.some((entry) => entry.instanceId === instance.id)
-    ) {
-      warningMessage =
-        'A instância selecionada não possui campanhas ativas. Os leads continuarão sendo entregues; vincule uma campanha para direcionar filas ou regras específicas.';
-    }
-
-    setPersistentWarning(warningMessage);
-
-    if (instance?.id) {
-      const activeMatch = scopedCampaigns.find(
-        (entry) => entry.instanceId === instance.id && entry.status === 'active'
-      );
-      if (activeMatch && activeMatch.id !== (campaign?.id ?? null)) {
-        setCampaign(activeMatch);
-        onCampaignReady?.(activeMatch);
-        return;
-      }
-
-      const instanceMatch = scopedCampaigns.find(
-        (entry) => entry.instanceId === instance.id
-      );
-      if (instanceMatch && instanceMatch.id !== (campaign?.id ?? null)) {
-        setCampaign(instanceMatch);
-        onCampaignReady?.(instanceMatch);
-        return;
-      }
-    }
-
-    if (!campaign || campaign.agreementId !== selectedAgreement.id) {
-      const fallback =
-        scopedCampaigns.find((entry) => entry.status === 'active') ??
-        scopedCampaigns[0] ??
-        null;
-      if (fallback) {
-        setCampaign(fallback);
-        onCampaignReady?.(fallback);
-      }
-    }
-  }, [campaign, campaigns, instance?.id, onCampaignReady, selectedAgreement?.id]);
 
   const handleCreateInstance = () => {
     setErrorMessage(null);
@@ -2177,112 +1073,15 @@ const WhatsAppConnect = ({
         : id === null || typeof id === 'undefined'
           ? ''
           : `${id}`;
-    const payloadBody = {
-      name: normalizedName,
-      ...(normalizedId ? { id: normalizedId } : {}),
-      ...(selectedAgreement?.id ? { agreementId: selectedAgreement.id } : {}),
-      ...(selectedAgreement?.name ? { agreementName: selectedAgreement.name } : {}),
-      ...(selectedAgreement?.tenantId ? { tenantId: selectedAgreement.tenantId } : {}),
-    };
-
-    setLoadingInstances(true);
-    setErrorMessage(null);
 
     try {
-      log('🧪 Criando nova instância WhatsApp', {
-        agreementId: selectedAgreement?.id ?? null,
-        name: normalizedName,
-      });
-
-      const response = await apiPost('/api/integrations/whatsapp/instances', payloadBody);
-      setSessionActive(true);
-      const payload = response?.data ?? {};
-      const createdInstance = extractInstanceFromPayload(payload);
-      const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
-      const resolvedCreatedInstance = createdInstance
-        ? {
-            ...createdInstance,
-            name: createdInstance.name ?? normalizedName,
-            displayName:
-              createdInstance.displayName ||
-              createdInstance.label ||
-              createdInstance.metadata?.displayName ||
-              normalizedName,
-            label: createdInstance.label ?? createdInstance.displayName ?? undefined,
-          }
-        : null;
-
-      let connectResult = null;
-
-      if (createdInstanceId) {
-        try {
-          const startResult = await connectInstance(createdInstanceId);
-          if (startResult) {
-            connectResult = {
-              ...startResult,
-              instance: {
-                ...(resolvedCreatedInstance || {}),
-                ...(startResult.instance || {}),
-              },
-            };
-          }
-        } catch (startError) {
-          console.warn('Não foi possível iniciar a instância recém-criada', startError);
-          connectResult = {
-            status: createdInstance?.status,
-            connected:
-              typeof createdInstance?.connected === 'boolean'
-                ? createdInstance.connected
-                : createdInstance?.status === 'connected'
-                ? true
-                : undefined,
-            qr: null,
-            instance: resolvedCreatedInstance || null,
-          };
-        }
-      }
-
-      if (!connectResult && resolvedCreatedInstance) {
-        connectResult = {
-          status: resolvedCreatedInstance.status,
-          connected:
-            typeof resolvedCreatedInstance.connected === 'boolean'
-              ? resolvedCreatedInstance.connected
-              : resolvedCreatedInstance.status === 'connected'
-              ? true
-              : undefined,
-          qr: extractQrPayload(payload),
-          instance: resolvedCreatedInstance,
-        };
-      }
-
-      await loadInstances({
-        connectResult: connectResult || undefined,
-        preferredInstanceId: createdInstanceId || normalizedName,
-        forceRefresh: true,
-      });
-
-      log('🎉 Instância criada com sucesso', {
-        instanceId: createdInstanceId,
-        name: normalizedName,
-      });
-
-      return { instanceId: createdInstanceId ?? normalizedName };
+      await createInstanceAction({ name: normalizedName, id: normalizedId });
+      setCreateInstanceOpen(false);
     } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const friendly = applyErrorMessageFromError(
-        err,
-        'Não foi possível criar uma nova instância'
-      );
-      logError('Falha ao criar instância WhatsApp', err);
-      const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
-      throw errorToThrow;
-    } finally {
-      setLoadingInstances(false);
+      const message =
+        err instanceof Error ? err.message : 'Não foi possível criar uma nova instância';
+      setErrorMessage(message);
+      throw err instanceof Error ? err : new Error(message);
     }
   };
 
@@ -2301,7 +1100,7 @@ const WhatsAppConnect = ({
     const targetInstance =
       instances.find((entry) => entry && entry.id === instanceId) ?? null;
     const brokerId =
-      targetInstance && isPlainRecord(targetInstance.metadata)
+      targetInstance && targetInstance.metadata && typeof targetInstance.metadata === 'object'
         ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
         : null;
 
@@ -2397,11 +1196,10 @@ const WhatsAppConnect = ({
       await apiDelete(`/api/campaigns/${encodeURIComponent(target.id)}`);
       await loadCampaignsRef.current?.({
         preferredAgreementId: selectedAgreement?.id ?? null,
-        preferredCampaignId:
-          currentCampaignId && currentCampaignId !== target.id ? currentCampaignId : null,
-        preferredInstanceId: instance?.id ?? null,
+        preferredCampaignId: currentCampaignId === target.id ? null : currentCampaignId,
+        preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
       });
-      toast.success('Campanha encerrada com sucesso.');
+      toast.success('Campanha removida com sucesso.');
     } catch (err) {
       if (isAuthError(err)) {
         handleAuthFallback({ error: err });
@@ -2410,43 +1208,31 @@ const WhatsAppConnect = ({
 
       const message =
         err?.payload?.error?.message ||
-        (err instanceof Error ? err.message : 'Não foi possível encerrar a campanha');
+        (err instanceof Error ? err.message : 'Não foi possível remover a campanha');
       setCampaignError(message);
-      toast.error('Falha ao encerrar campanha', { description: message });
-      logError('Falha ao encerrar campanha WhatsApp', err);
+      toast.error('Falha ao remover campanha', { description: message });
+      logError('Falha ao remover campanha WhatsApp', err);
       throw err instanceof Error ? err : new Error(message);
     } finally {
       setCampaignAction(null);
     }
   };
 
-  const reassignCampaign = async (target, nextInstanceId) => {
+  const reassignCampaign = async (target, requestedInstanceId) => {
     if (!target?.id) {
       return;
-    }
-
-    const normalizedNext =
-      typeof nextInstanceId === 'string'
-        ? nextInstanceId.trim()
-        : nextInstanceId === null
-        ? null
-        : undefined;
-    const requestedInstanceId =
-      normalizedNext === undefined ? null : normalizedNext === '' ? null : normalizedNext;
-    const currentInstanceId = target.instanceId ?? null;
-
-    if ((requestedInstanceId ?? null) === (currentInstanceId ?? null)) {
-      const error = new Error(
-        'Selecione uma opção diferente para concluir ou escolha desvincular a campanha.'
-      );
-      setCampaignError(error.message);
-      throw error;
     }
 
     setCampaignError(null);
     setCampaignAction({ id: target.id, type: 'reassign' });
 
     try {
+      if (requestedInstanceId === target.instanceId) {
+        const error = new Error('Selecione uma opção diferente para concluir ou escolha desvincular a campanha.');
+        setCampaignError(error.message);
+        throw error;
+      }
+
       await apiPatch(`/api/campaigns/${encodeURIComponent(target.id)}`, {
         instanceId: requestedInstanceId ?? null,
       });
@@ -2495,304 +1281,6 @@ const WhatsAppConnect = ({
         handleAuthFallback({ error: err });
       }
       throw err instanceof Error ? err : new Error('Falha ao carregar impacto da campanha');
-    }
-  };
-
-  const handleDeleteInstance = async (target) => {
-    if (!target?.id) {
-      return;
-    }
-
-    const agreementId = selectedAgreement?.id;
-    setDeletingInstanceId(target.id);
-    try {
-      const encodedId = encodeURIComponent(target.id);
-      const isJid = looksLikeWhatsAppJid(target.id);
-      const url = isJid
-        ? `/api/integrations/whatsapp/instances/${encodedId}/disconnect`
-        : `/api/integrations/whatsapp/instances/${encodedId}`;
-      const method = isJid ? 'POST' : 'DELETE';
-
-      log(isJid ? '🔌 Desconectando instância WhatsApp' : '🗑️ Removendo instância WhatsApp', {
-        instanceId: target.id,
-        agreementId,
-        method,
-        url,
-      });
-
-      if (isJid) {
-        await apiPost(url, {});
-      } else {
-        await apiDelete(url);
-      }
-      clearInstancesCache();
-      if (instance?.id === target.id) {
-        setInstance(null);
-        preferredInstanceIdRef.current = null;
-        setLocalStatus('disconnected');
-      }
-      await loadInstances({ preferredInstanceId: null, forceRefresh: true });
-      log(isJid ? '✅ Sessão desconectada' : '✅ Instância removida', {
-        instanceId: target.id,
-        agreementId,
-        method,
-        url,
-      });
-      toast.success(isJid ? 'Sessão desconectada com sucesso' : 'Instância removida com sucesso');
-    } catch (err) {
-      const friendly = applyErrorMessageFromError(
-        err,
-        'Não foi possível remover a instância'
-      );
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      }
-      const encodedId = encodeURIComponent(target.id);
-      const isJid = looksLikeWhatsAppJid(target.id);
-      const url = isJid
-        ? `/api/integrations/whatsapp/instances/${encodedId}/disconnect`
-        : `/api/integrations/whatsapp/instances/${encodedId}`;
-      const method = isJid ? 'POST' : 'DELETE';
-
-      const statusCode =
-        typeof err?.response?.status === 'number'
-          ? err.response.status
-          : typeof err?.status === 'number'
-            ? err.status
-            : null;
-      const responseData = err?.response?.data ?? err?.payload ?? null;
-      const errorCode =
-        (responseData && typeof responseData === 'object' && responseData !== null
-          ? responseData.error?.code || responseData.code
-          : null) || err?.code || null;
-      const isInstanceMissing =
-        statusCode === 404 ||
-        errorCode === 'INSTANCE_NOT_FOUND' ||
-        errorCode === 'BROKER_INSTANCE_NOT_FOUND';
-
-      if (isInstanceMissing) {
-        const nextCurrentId = instance?.id === target.id ? null : instance?.id ?? null;
-        warn('Instância não encontrada no servidor; removendo localmente', {
-          agreementId,
-          instanceId: target.id,
-          method,
-          url,
-          statusCode,
-          errorCode,
-        });
-        clearInstancesCache();
-        setInstances((prev) => {
-          const nextList = Array.isArray(prev)
-            ? prev.filter((item) => item && item.id !== target.id)
-            : [];
-          preferredInstanceIdRef.current = nextCurrentId;
-          persistInstancesCache(nextList, nextCurrentId);
-          return nextList;
-        });
-        if (instance?.id === target.id) {
-          setInstance(null);
-          preferredInstanceIdRef.current = null;
-          setLocalStatus('disconnected');
-        }
-        await loadInstances({ preferredInstanceId: nextCurrentId, forceRefresh: true });
-        toast.success('Instância removida com sucesso.');
-        return;
-      }
-
-      logError('Falha ao remover instância WhatsApp', {
-        error: err,
-        method,
-        url,
-        instanceId: target.id,
-      });
-
-      let bodyPreview = null;
-      if (responseData && typeof responseData === 'object') {
-        try {
-          const serialized = JSON.stringify(responseData);
-          bodyPreview = serialized.length > 200 ? `${serialized.slice(0, 197)}…` : serialized;
-        } catch (serializationError) {
-          console.warn('Não foi possível serializar payload de erro da instância WhatsApp', serializationError);
-        }
-      }
-
-      const detailParts = [
-        `method=${method}`,
-        `url=${url}`,
-        `id=${target.id}`,
-      ];
-
-      if (statusCode !== null) {
-        detailParts.push(`status=${statusCode}`);
-      }
-      if (errorCode) {
-        detailParts.push(`code=${errorCode}`);
-      }
-      if (bodyPreview) {
-        detailParts.push(`body=${bodyPreview}`);
-      }
-
-      const description = detailParts.join(' • ');
-      toast.error('Falha ao remover instância', {
-        description: friendly.message ? `${friendly.message} • ${description}` : description,
-      });
-    } finally {
-      setDeletingInstanceId(null);
-    }
-  };
-
-  useEffect(() => {
-    if (!campaign?.instanceId || instances.length === 0) {
-      return;
-    }
-
-    const matched = instances.find(
-      (item) => item.id === campaign.instanceId || item.name === campaign.instanceId
-    );
-
-    if (!matched || instance?.id === matched.id) {
-      return;
-    }
-
-    setInstance(matched);
-    preferredInstanceIdRef.current = matched.id ?? null;
-    persistInstancesCache(instances, matched.id ?? null);
-    const statusFromInstance = matched.status || 'disconnected';
-    setLocalStatus(statusFromInstance);
-    onStatusChange?.(statusFromInstance);
-  }, [
-    campaign?.instanceId,
-    instance?.id,
-    instances,
-    onStatusChange,
-    selectedAgreement?.id,
-  ]);
-
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  const generateQr = async (id, { skipStatus = false } = {}) => {
-    if (!id) return;
-
-    const myPollId = ++pollIdRef.current;
-    setLoadingQr(true);
-    setErrorMessage(null);
-    try {
-      const encodedId = encodeURIComponent(id);
-      if (!skipStatus) {
-        const connectResult = await connectInstance(id);
-        const nextStatus =
-          connectResult?.status ||
-          (typeof connectResult?.connected === 'boolean'
-            ? connectResult.connected
-              ? 'connected'
-              : 'disconnected'
-            : null);
-
-        if (nextStatus) {
-          setLocalStatus(nextStatus);
-          onStatusChange?.(nextStatus);
-          setInstance((current) => {
-            if (!current || current.id !== id) {
-              return current;
-            }
-            return {
-              ...current,
-              status: nextStatus,
-              connected:
-                typeof connectResult?.connected === 'boolean'
-                  ? connectResult.connected
-                  : nextStatus === 'connected'
-                  ? true
-                  : typeof current.connected === 'boolean'
-                  ? current.connected
-                  : false,
-            };
-          });
-          setInstances((prev) =>
-            prev.map((item) =>
-              item.id === id
-                ? {
-                    ...item,
-                    status: nextStatus,
-                    connected:
-                      typeof connectResult?.connected === 'boolean'
-                        ? connectResult.connected
-                        : nextStatus === 'connected'
-                        ? true
-                        : typeof item.connected === 'boolean'
-                        ? item.connected
-                        : false,
-                  }
-                : item
-            )
-          );
-        }
-
-      const connectQr = connectResult?.qr;
-      if (connectResult?.connected === false && connectQr?.qrCode) {
-        setQrData({
-          ...connectQr,
-          image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
-        });
-        return;
-      }
-
-        if (connectResult?.connected) {
-          setQrData(null);
-          setSecondsLeft(null);
-          return;
-        }
-      }
-
-      setLocalStatus('qr_required');
-      onStatusChange?.('disconnected');
-
-      // Polling por até 60s aguardando o QR
-      const deadline = Date.now() + 60_000;
-      let received = null;
-      while (Date.now() < deadline) {
-        if (pollIdRef.current !== myPollId) {
-          // polling cancelado (nova instância/QR solicitado)
-          return;
-        }
-        let qrResponse = null;
-        try {
-          qrResponse = await apiGet(
-            `/api/integrations/whatsapp/instances/${encodedId}/qr`
-          );
-          setSessionActive(true);
-          setAuthDeferred(false);
-        } catch (error) {
-          if (isAuthError(error)) {
-            handleAuthFallback({ error });
-            return;
-          }
-        }
-        const parsed = parseInstancesPayload(qrResponse);
-        const qrPayload = parsed.qr;
-        if (qrPayload?.qrCode) {
-          received = {
-            ...qrPayload,
-            image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
-          };
-          break;
-        }
-        await sleep(1000);
-      }
-
-      if (!received) {
-        throw new Error('QR não disponível no momento. Tente novamente.');
-      }
-
-      setQrData(received);
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      } else {
-        applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
-      }
-    } finally {
-      setLoadingQr(false);
     }
   };
 
@@ -2854,81 +1342,40 @@ const WhatsAppConnect = ({
 
   const handleInstanceSelect = async (inst, { skipAutoQr = false } = {}) => {
     if (!inst) return;
-    setInstance(inst);
-    const nextInstanceId = inst?.id ?? null;
-    preferredInstanceIdRef.current = nextInstanceId;
-    persistInstancesCache(instances, nextInstanceId);
-    const statusFromInstance = inst.status || 'disconnected';
-    setLocalStatus(statusFromInstance);
-    onStatusChange?.(statusFromInstance);
 
     if (campaign && campaign.instanceId !== inst.id) {
       setCampaign(null);
     }
 
-    if (!skipAutoQr && statusFromInstance !== 'connected') {
-      ++pollIdRef.current; // invalida qualquer polling anterior
-      await generateQr(inst.id);
-    } else {
-      setQrData(null);
-      setSecondsLeft(null);
-    }
+    await selectInstance(inst, { skipAutoQr });
   };
 
   const handleViewQr = async (inst) => {
     if (!inst) return;
-    await handleInstanceSelect(inst, { skipAutoQr: true });
+    await selectInstance(inst, { skipAutoQr: true });
     await generateQr(inst.id);
     setQrDialogOpen(true);
   };
 
   const handleGenerateQr = async () => {
-    if (!instance) return;
+    if (!instance?.id) return;
     await generateQr(instance.id);
   };
 
   const handleMarkConnected = async () => {
-    if (!instance?.id) return;
-    try {
-      // Valida com o servidor, se rota existir
-      const status = await apiGet(`/api/integrations/whatsapp/instances/${instance.id}/status`);
-      setSessionActive(true);
-      setAuthDeferred(false);
-      const parsed = parseInstancesPayload(status);
-      const connected =
-        typeof parsed.connected === 'boolean'
-          ? parsed.connected
-          : parsed.status === 'connected';
-
-      if (parsed.instance) {
-        setInstance((current) =>
-          current && current.id === parsed.instance.id ? { ...current, ...parsed.instance } : current
-        );
-        setInstances((prev) =>
-          prev.map((item) =>
-            item.id === parsed.instance.id ? { ...item, ...parsed.instance } : item
-          )
-        );
-      }
-
-      if (!connected) {
-        setErrorMessage(
-          'A instância ainda não está conectada. Escaneie o QR e tente novamente.'
-        );
-        return;
-      }
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        return;
-      }
-      // Continua em modo otimista caso a rota não exista
+    const success = await markConnected();
+    if (success) {
+      setQrDialogOpen(false);
     }
-    setLocalStatus('connected');
-    setQrData(null);
-    setSecondsLeft(null);
-    setQrDialogOpen(false);
-    onStatusChange?.('connected');
+  };
+
+  const handleDeleteInstance = async (target) => {
+    if (!target?.id) {
+      return;
+    }
+
+    await deleteInstanceAction(target);
+    setInstancePendingDelete(null);
   };
 
   const handleConfirm = () => {
