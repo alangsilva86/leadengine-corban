@@ -1614,40 +1614,7 @@ const WhatsAppConnect = ({
   useEffect(() => {
     if (!selectedAgreement) {
       setCampaign(null);
-      return undefined;
     }
-
-    let cancelled = false;
-
-    const hydrateCampaign = async () => {
-      try {
-        const response = await apiGet('/api/campaigns?status=active');
-        if (cancelled) return;
-        const campaigns = Array.isArray(response?.items)
-          ? response.items
-          : Array.isArray(response?.data)
-          ? response.data
-          : [];
-        const existing =
-          campaigns.find((entry) => entry.agreementId === selectedAgreement.id) ?? null;
-        if (existing) {
-          setCampaign(existing);
-          onCampaignReady?.(existing);
-        } else {
-          setCampaign(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn('Não foi possível carregar campanhas existentes', err);
-        }
-      }
-    };
-
-    void hydrateCampaign();
-
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgreement?.id]);
 
@@ -1989,7 +1956,7 @@ const WhatsAppConnect = ({
   };
   loadInstancesRef.current = loadInstances;
 
-  const loadCampaigns = async () => {
+  const loadCampaigns = async (options = {}) => {
     setCampaignsLoading(true);
     setCampaignError(null);
 
@@ -2007,9 +1974,20 @@ const WhatsAppConnect = ({
 
       setCampaigns(list);
 
+      const {
+        preferredAgreementId: preferredAgreementIdInput,
+        preferredCampaignId: preferredCampaignIdInput,
+        preferredInstanceId: preferredInstanceIdInput,
+      } = options ?? {};
+
+      const preferredAgreementId =
+        preferredAgreementIdInput ?? selectedAgreement?.id ?? null;
+      const preferredCampaignId = preferredCampaignIdInput ?? campaign?.id ?? null;
+      const preferredInstanceId = preferredInstanceIdInput ?? instance?.id ?? null;
+
       const scopedList = (() => {
-        if (selectedAgreement?.id) {
-          const matches = list.filter((entry) => entry.agreementId === selectedAgreement.id);
+        if (preferredAgreementId) {
+          const matches = list.filter((entry) => entry.agreementId === preferredAgreementId);
           if (matches.length > 0) {
             return matches;
           }
@@ -2019,22 +1997,22 @@ const WhatsAppConnect = ({
       const selectionPool = scopedList.length > 0 ? scopedList : list;
 
       const findByInstance = (collection) => {
-        if (!instance?.id || !Array.isArray(collection) || collection.length === 0) {
+        if (!preferredInstanceId || !Array.isArray(collection) || collection.length === 0) {
           return null;
         }
         return (
           collection.find(
-            (entry) => entry.instanceId === instance.id && entry.status === 'active'
+            (entry) => entry.instanceId === preferredInstanceId && entry.status === 'active'
           ) ??
-          collection.find((entry) => entry.instanceId === instance.id) ??
+          collection.find((entry) => entry.instanceId === preferredInstanceId) ??
           null
         );
       };
 
       let preferred = null;
 
-      if (campaign?.id) {
-        preferred = list.find((entry) => entry.id === campaign.id) ?? null;
+      if (preferredCampaignId) {
+        preferred = list.find((entry) => entry.id === preferredCampaignId) ?? null;
       }
 
       if (!preferred) {
@@ -2051,7 +2029,7 @@ const WhatsAppConnect = ({
       }
 
       const resolvedPreferred =
-        selectedAgreement?.id && preferred && preferred.agreementId !== selectedAgreement.id
+        preferredAgreementId && preferred && preferred.agreementId !== preferredAgreementId
           ? null
           : preferred;
 
@@ -2067,7 +2045,7 @@ const WhatsAppConnect = ({
         onCampaignReady?.(resolvedPreferred);
       }
 
-      return { success: true, items: list };
+      return { success: true, items: list, selectedCampaign: resolvedPreferred ?? null };
     } catch (err) {
       if (isAuthError(err)) {
         handleAuthFallback({ error: err });
@@ -2087,7 +2065,10 @@ const WhatsAppConnect = ({
     let cancelled = false;
 
     const fetchCampaigns = async () => {
-      const result = await loadCampaignsRef.current?.();
+      const result = await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredInstanceId: instance?.id ?? null,
+      });
       if (!cancelled && result?.error && !isAuthError(result.error)) {
         warn('Falha ao listar campanhas', result.error);
       }
@@ -2336,12 +2317,12 @@ const WhatsAppConnect = ({
       });
 
       const createdCampaign = payload?.data ?? null;
-      if (createdCampaign) {
-        setCampaign(createdCampaign);
-        onCampaignReady?.(createdCampaign);
-      }
 
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement.id,
+        preferredCampaignId: createdCampaign?.id ?? null,
+        preferredInstanceId: createdCampaign?.instanceId ?? instance?.id ?? null,
+      });
       toast.success('Campanha criada com sucesso.');
       return createdCampaign;
     } catch (err) {
@@ -2375,7 +2356,11 @@ const WhatsAppConnect = ({
         status: nextStatus,
       });
 
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: target?.id ?? null,
+        preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
+      });
       toast.success(
         nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.'
       );
@@ -2404,13 +2389,16 @@ const WhatsAppConnect = ({
 
     setCampaignError(null);
     setCampaignAction({ id: target.id, type: 'delete' });
+    const currentCampaignId = campaign?.id ?? null;
 
     try {
       await apiDelete(`/api/campaigns/${encodeURIComponent(target.id)}`);
-      if (campaign?.id === target.id) {
-        setCampaign(null);
-      }
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId:
+          currentCampaignId && currentCampaignId !== target.id ? currentCampaignId : null,
+        preferredInstanceId: instance?.id ?? null,
+      });
       toast.success('Campanha encerrada com sucesso.');
     } catch (err) {
       if (isAuthError(err)) {
@@ -2461,7 +2449,11 @@ const WhatsAppConnect = ({
         instanceId: requestedInstanceId ?? null,
       });
 
-      await loadCampaignsRef.current?.();
+      await loadCampaignsRef.current?.({
+        preferredAgreementId: selectedAgreement?.id ?? null,
+        preferredCampaignId: target?.id ?? null,
+        preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
+      });
       toast.success(
         requestedInstanceId
           ? 'Campanha reatribuída com sucesso.'
@@ -3383,7 +3375,13 @@ const WhatsAppConnect = ({
           campaigns={campaigns}
           loading={campaignsLoading}
           error={campaignError}
-          onRefresh={() => void loadCampaignsRef.current?.()}
+          onRefresh={() =>
+            void loadCampaignsRef.current?.({
+              preferredAgreementId: selectedAgreement?.id ?? null,
+              preferredCampaignId: campaign?.id ?? null,
+              preferredInstanceId: instance?.id ?? null,
+            })
+          }
           onCreateClick={() => setCreateCampaignOpen(true)}
           onPause={(entry) => void updateCampaignStatus(entry, 'paused')}
           onActivate={(entry) => void updateCampaignStatus(entry, 'active')}
