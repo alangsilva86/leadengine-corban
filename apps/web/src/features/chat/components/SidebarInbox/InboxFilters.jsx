@@ -20,6 +20,16 @@ const outcomeOptions = [
   { value: 'lost', label: 'Sem interesse' },
 ];
 
+const useFilterUpdater = (filterKey, defaultValue, onFiltersChange) =>
+  useCallback(
+    (value) => {
+      if (typeof onFiltersChange === 'function') {
+        onFiltersChange({ [filterKey]: value || defaultValue });
+      }
+    },
+    [defaultValue, filterKey, onFiltersChange]
+  );
+
 export const InboxFilters = ({
   filters,
   onFiltersChange,
@@ -28,32 +38,9 @@ export const InboxFilters = ({
   onRefresh,
   loading,
 }) => {
-  const handleScopeChange = useCallback(
-    (value) => {
-      if (typeof onFiltersChange === 'function') {
-        onFiltersChange({ scope: value || 'team' });
-      }
-    },
-    [onFiltersChange]
-  );
-
-  const handleWindowChange = useCallback(
-    (value) => {
-      if (typeof onFiltersChange === 'function') {
-        onFiltersChange({ window: value || 'in_window' });
-      }
-    },
-    [onFiltersChange]
-  );
-
-  const handleOutcomeChange = useCallback(
-    (value) => {
-      if (typeof onFiltersChange === 'function') {
-        onFiltersChange({ outcome: value || null });
-      }
-    },
-    [onFiltersChange]
-  );
+  const handleScopeChange = useFilterUpdater('scope', 'team', onFiltersChange);
+  const handleWindowChange = useFilterUpdater('window', 'in_window', onFiltersChange);
+  const handleOutcomeChange = useFilterUpdater('outcome', null, onFiltersChange);
 
   return (
     <div className="flex flex-col gap-3">
