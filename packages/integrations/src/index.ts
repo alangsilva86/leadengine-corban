@@ -3,8 +3,6 @@
 // =============================================================================
 
 export const INTEGRATIONS_VERSION = '1.0.0';
-
-export { logger } from './utils/logger';
 export {
   storeMedia,
   type MediaStorageOptions,
