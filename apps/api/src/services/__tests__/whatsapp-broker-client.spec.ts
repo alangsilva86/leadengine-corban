@@ -60,6 +60,8 @@ describe('WhatsAppBrokerClient', () => {
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
       id: 'crm-instance',
+      instanceId: 'crm-instance',
+      name: 'CRM Principal',
       webhookUrl: 'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook',
       verifyToken: 'verify-token',
     });
@@ -234,4 +236,153 @@ describe('WhatsAppBrokerClient', () => {
     expect(result).toEqual({ messages: { sent: 10 } });
   });
 
+  describe('performWhatsAppBrokerRequest', () => {
+    it('applies default headers and resolves JSON responses', async () => {
+      const { Response } = await import('undici');
+      const { performWhatsAppBrokerRequest } = await import('../whatsapp-broker-client');
+
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+      const result = await performWhatsAppBrokerRequest<{ ok: boolean }>('/ping', {
+        method: 'POST',
+        body: JSON.stringify({ hello: 'world' }),
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const headers = init?.headers as Headers;
+      expect(headers.get('Content-Type')).toBe('application/json');
+      expect(headers.get('Accept')).toBe('application/json');
+      expect(headers.get('X-API-Key')).toBe('test-key');
+    });
+
+    it('respects provided headers and idempotency keys', async () => {
+      const { Response } = await import('undici');
+      const { performWhatsAppBrokerRequest } = await import('../whatsapp-broker-client');
+
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ result: 'ok' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+
+      await performWhatsAppBrokerRequest('/custom', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/custom' },
+        body: JSON.stringify({ foo: 'bar' }),
+      }, { idempotencyKey: 'req-42', apiKey: 'custom-key' });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const headers = init?.headers as Headers;
+      expect(headers.get('Content-Type')).toBe('application/custom');
+      expect(headers.get('Idempotency-Key')).toBe('req-42');
+      expect(headers.get('X-API-Key')).toBe('custom-key');
+    });
+
+    it('returns undefined for 204 responses', async () => {
+      const { Response } = await import('undici');
+      const { performWhatsAppBrokerRequest } = await import('../whatsapp-broker-client');
+
+      fetchMock.mockResolvedValue(
+        new Response(null, {
+          status: 204,
+        })
+      );
+
+      const result = await performWhatsAppBrokerRequest('/void');
+      expect(result).toBeUndefined();
+    });
+
+    it('wraps abort errors into WhatsAppBrokerError with timeout metadata', async () => {
+      const { performWhatsAppBrokerRequest, WhatsAppBrokerError } = await import('../whatsapp-broker-client');
+
+      fetchMock.mockRejectedValue(
+        Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+      );
+
+      try {
+        await performWhatsAppBrokerRequest('/timeout');
+        throw new Error('Expected performWhatsAppBrokerRequest to reject');
+      } catch (error) {
+        expect(error).toBeInstanceOf(WhatsAppBrokerError);
+        if (error instanceof WhatsAppBrokerError) {
+          expect(error.code).toBe('REQUEST_TIMEOUT');
+          expect(error.brokerStatus).toBe(408);
+        }
+      }
+    });
   });
+
+  describe('getQrCode', () => {
+    it('falls back to session status normalization when image endpoint returns 404', async () => {
+      const { Response } = await import('undici');
+      const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+      fetchMock
+        .mockResolvedValueOnce(new Response(null, { status: 404 }))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({
+            status: {
+              qr: 'qr-data',
+              qrExpiresAt: '2024-05-01T00:00:00.000Z',
+            },
+          }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        );
+
+      const result = await whatsappBrokerClient.getQrCode('broker-1');
+
+      expect(result).toEqual({
+        qr: 'qr-data',
+        qrCode: 'qr-data',
+        qrExpiresAt: '2024-05-01T00:00:00.000Z',
+        expiresAt: '2024-05-01T00:00:00.000Z',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe('https://broker.test/instances/broker-1/qr.png');
+      expect(fetchMock.mock.calls[1]?.[0]).toBe('https://broker.test/instances/broker-1/status');
+    });
+
+    it('normalizes binary PNG responses into base64 data URLs', async () => {
+      const { Response } = await import('undici');
+      const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+      const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
+      const expectedBase64 = Buffer.from(pngBytes).toString('base64');
+
+      fetchMock.mockResolvedValue(
+        new Response(pngBytes, {
+          status: 200,
+          headers: {
+            'content-type': 'image/png',
+            'x-qr-expires-at': '2024-06-01T12:00:00.000Z',
+          },
+        })
+      );
+
+      const result = await whatsappBrokerClient.getQrCode('broker-2');
+
+      expect(result).toEqual({
+        qr: `data:image/png;base64,${expectedBase64}`,
+        qrCode: `data:image/png;base64,${expectedBase64}`,
+        qrExpiresAt: '2024-06-01T12:00:00.000Z',
+        expiresAt: '2024-06-01T12:00:00.000Z',
+      });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const headers = init?.headers as Headers;
+      expect(headers.get('Accept')).toContain('image/png');
+    });
+  });
+});

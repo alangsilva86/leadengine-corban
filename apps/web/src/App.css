@@ -16,19 +16,31 @@
   }
 
   #chat-scroll,
-  .chat-scroll-area {
+  .chat-scroll-area,
+  [data-slot="scroll-area-viewport"] {
     scrollbar-gutter: stable both-edges;
     -webkit-overflow-scrolling: touch;
   }
 
   #chat-scroll::-webkit-scrollbar,
-  .chat-scroll-area::-webkit-scrollbar {
+  .chat-scroll-area::-webkit-scrollbar,
+  [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
     width: 10px;
   }
 
   #chat-scroll::-webkit-scrollbar-thumb,
-  .chat-scroll-area::-webkit-scrollbar-thumb {
+  .chat-scroll-area::-webkit-scrollbar-thumb,
+  [data-slot="scroll-area-viewport"]::-webkit-scrollbar-thumb {
     background: var(--color-inbox-scrollbar-thumb, #0f172a);
+    border-radius: 9999px;
+  }
+
+  [data-slot="scroll-area-scrollbar"] {
+    --scrollbar-track-color: color-mix(in srgb, var(--surface-overlay-inbox-quiet, transparent) 48%, transparent);
+  }
+
+  [data-slot="scroll-area-thumb"] {
+    background-color: var(--color-inbox-scrollbar-thumb, #94a3b8);
     border-radius: 9999px;
   }
 }
