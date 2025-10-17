@@ -41,16 +41,16 @@ const SavedViewChip = ({ view, isActive, onSelect, onDelete }) => {
         type="button"
         onClick={() => onSelect(view)}
         className={cn(
-          'flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'flex items-center gap-2 rounded-full border border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_82%,transparent)] px-3 py-1 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
           isActive
-            ? 'border-primary/60 bg-primary/10 text-primary-foreground focus-visible:ring-primary'
-            : 'hover:border-primary/40 hover:text-foreground focus-visible:ring-ring'
+            ? 'border-primary/60 bg-primary/12 text-[color:var(--color-inbox-foreground)] shadow-[0_18px_36px_color-mix(in_srgb,var(--color-inbox-border)_52%,transparent)]'
+            : 'hover:border-primary/40 hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_88%,transparent)] hover:text-[color:var(--color-inbox-foreground)]'
         )}
       >
         <span>{view.name}</span>
         <Badge
           variant={isActive ? 'info' : 'outline'}
-          className="border border-[color:var(--color-inbox-border)] px-2 text-xs text-muted-foreground/80"
+          className="border border-[color:var(--color-inbox-border)] px-2 text-xs text-[color:var(--color-inbox-foreground-muted)]"
         >
           {view.count ?? 0}
         </Badge>
@@ -60,7 +60,7 @@ const SavedViewChip = ({ view, isActive, onSelect, onDelete }) => {
           <button
             type="button"
             onClick={() => onDelete(view)}
-            className="rounded-full p-1 text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="rounded-full p-1 text-[color:var(--color-inbox-foreground-muted)] transition hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_86%,transparent)] hover:text-[color:var(--color-inbox-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]"
             aria-label={`Remover visão ${view.name}`}
           >
             <X className="h-3.5 w-3.5" />

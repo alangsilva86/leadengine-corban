@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
@@ -67,5 +67,75 @@ describe('CampaignsPanel', () => {
     expect(disconnectMock).toHaveBeenCalledWith(linkedCampaign);
 
     expect(screen.getByRole('button', { name: /Vincular instância/i })).toBeInTheDocument();
+  });
+
+  it('permite atualizar a lista e desabilita criação quando necessário', async () => {
+    const campaigns = [
+      buildCampaign({ id: 'campaign-1', status: 'active' }),
+      buildCampaign({ id: 'campaign-2', status: 'paused', instanceId: null }),
+    ];
+
+    const onRefresh = vi.fn();
+    const onCreateClick = vi.fn();
+    const user = userEvent.setup();
+
+    const { rerender, container } = render(
+      <CampaignsPanel
+        agreementName="Convênio Controlado"
+        campaigns={campaigns}
+        loading={false}
+        error={null}
+        onRefresh={onRefresh}
+        onCreateClick={onCreateClick}
+        onPause={vi.fn()}
+        onActivate={vi.fn()}
+        onDelete={vi.fn()}
+        onReassign={vi.fn()}
+        onDisconnect={vi.fn()}
+        actionState={null}
+        selectedInstanceId="instance-1"
+        canCreateCampaigns={false}
+      />
+    );
+
+    const getHeaderScope = () => {
+      const panelRoot = container.firstElementChild ?? container;
+      const panelScope = within(panelRoot);
+      const panelTitle = panelScope.getByText(/Painel de campanhas/i);
+      const header = panelTitle.closest('[data-slot="card-header"]');
+      expect(header).toBeTruthy();
+      return within(header);
+    };
+
+    const headerScope = getHeaderScope();
+    const refreshButton = headerScope.getByRole('button', { name: /Atualizar/i });
+    const createButton = headerScope.getByRole('button', { name: /Nova campanha/i });
+
+    expect(createButton).toBeDisabled();
+
+    await user.click(refreshButton);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onCreateClick).not.toHaveBeenCalled();
+
+    rerender(
+      <CampaignsPanel
+        agreementName="Convênio Controlado"
+        campaigns={campaigns}
+        loading
+        error={null}
+        onRefresh={onRefresh}
+        onCreateClick={onCreateClick}
+        onPause={vi.fn()}
+        onActivate={vi.fn()}
+        onDelete={vi.fn()}
+        onReassign={vi.fn()}
+        onDisconnect={vi.fn()}
+        actionState={null}
+        selectedInstanceId="instance-1"
+        canCreateCampaigns={false}
+      />
+    );
+
+    expect(getHeaderScope().getByRole('button', { name: /Atualizar/i })).toBeDisabled();
   });
 });
