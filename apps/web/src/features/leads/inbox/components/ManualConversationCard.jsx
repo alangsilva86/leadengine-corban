@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 
@@ -84,11 +85,7 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
   );
 
   return (
-    <Card
-      ref={cardRef}
-      id="manual-conversation-card"
-      className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]"
-    >
+    <InboxSurface as={Card} ref={cardRef} id="manual-conversation-card">
       <CardHeader className="space-y-2 pb-2">
         <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
           Iniciar conversa manual
@@ -160,7 +157,7 @@ const ManualConversationCard = forwardRef(({ onSubmit, onSuccess, isSubmitting =
           </form>
         </Form>
       </CardContent>
-    </Card>
+    </InboxSurface>
   );
 });
 

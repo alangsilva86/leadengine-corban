@@ -27,6 +27,99 @@ const useWhatsAppCampaignsMock = vi.fn(() => ({
 
 vi.mock('../hooks/useWhatsAppCampaigns.js', () => ({
   default: (...args) => useWhatsAppCampaignsMock(...args),
+import { cloneElement, isValidElement } from 'react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom/vitest';
+
+const {
+  mockApiGet,
+  mockApiPost,
+  mockApiPatch,
+  mockApiDelete,
+  mockGetAuthToken,
+  mockUseInstanceLiveUpdates,
+  toastSpies,
+  createInstanceDialogMock,
+  buttonMock,
+} = vi.hoisted(() => {
+  const mockApiGetFn = vi.fn();
+  const mockApiPostFn = vi.fn();
+  const mockApiPatchFn = vi.fn();
+  const mockApiDeleteFn = vi.fn();
+  const mockTokenFn = vi.fn(() => null);
+  const mockRealtimeHook = vi.fn(() => ({ connected: false }));
+  const toast = {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+  };
+
+  const dialogMock = vi.fn(({ open, onOpenChange, onSubmit }) => {
+    if (!open) {
+      return null;
+    }
+
+    const handleSubmit = async () => {
+      await onSubmit?.({ name: 'WhatsApp Vendas', id: 'WhatsApp Vendas' });
+      onOpenChange?.(false);
+    };
+
+    return (
+      <div>
+        <button type="button" onClick={handleSubmit}>
+          confirmar criação
+        </button>
+      </div>
+    );
+  });
+
+  const button = ({ asChild, children, ...props }) => {
+    if (asChild && isValidElement(children)) {
+      return cloneElement(children, props);
+    }
+    return (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    );
+  };
+
+  return {
+    mockApiGet: mockApiGetFn,
+    mockApiPost: mockApiPostFn,
+    mockApiPatch: mockApiPatchFn,
+    mockApiDelete: mockApiDeleteFn,
+    mockGetAuthToken: mockTokenFn,
+    mockUseInstanceLiveUpdates: mockRealtimeHook,
+    toastSpies: toast,
+    createInstanceDialogMock: dialogMock,
+    buttonMock: button,
+  };
+});
+
+vi.mock('@/lib/api.js', () => ({
+  apiGet: (...args) => mockApiGet(...args),
+  apiPost: (...args) => mockApiPost(...args),
+  apiPatch: (...args) => mockApiPatch(...args),
+  apiDelete: (...args) => mockApiDelete(...args),
+}));
+
+vi.mock('@/lib/auth.js', () => ({
+  getAuthToken: (...args) => mockGetAuthToken(...args),
+}));
+
+vi.mock('@/lib/session-storage.js', () => ({
+  default: () => false,
+}));
+
+vi.mock('qrcode', () => ({
+  toDataURL: vi.fn(() => Promise.resolve('data:image/png;base64,ZmFrZQ==')),
+}));
+
+vi.mock('sonner', () => ({
+  toast: toastSpies,
 }));
 
 vi.mock('../shared/usePlayfulLogger.js', () => ({
@@ -38,19 +131,53 @@ vi.mock('../shared/usePlayfulLogger.js', () => ({
 }));
 
 vi.mock('./hooks/useInstanceLiveUpdates.js', () => ({
-  default: () => ({ connected: false }),
+  default: (...args) => mockUseInstanceLiveUpdates(...args),
 }));
 
 vi.mock('../onboarding/useOnboardingStepLabel.js', () => ({
   default: () => ({ stepLabel: 'Passo 3', nextStage: 'Inbox de Leads' }),
+vi.mock('@/components/ui/notice-banner.jsx', () => ({
+  default: () => null,
 }));
 
-const passthrough = (Tag = 'div') => ({ children, ...props }) => (
-  <Tag {...props}>{children}</Tag>
-);
+vi.mock('../components/CampaignsPanel.jsx', () => ({
+  default: () => null,
+}));
+
+vi.mock('../components/CreateCampaignDialog.jsx', () => ({
+  default: () => null,
+}));
+
+vi.mock('../components/ReassignCampaignDialog.jsx', () => ({
+  default: () => null,
+}));
+
+vi.mock('../components/CampaignHistoryDialog.jsx', () => ({
+  default: () => null,
+}));
+
+vi.mock('../components/QrPreview.jsx', () => ({
+  default: () => (
+    <div data-testid="qr-preview">
+      <img alt="QR Code do WhatsApp" src="data:image/png;base64,mock" />
+    </div>
+  ),
+}));
+
+vi.mock('../components/CreateInstanceDialog.jsx', () => ({
+  default: (...args) => createInstanceDialogMock(...args),
+}));
+
+const passthrough = (Tag = 'div') => ({ asChild, children, ...props }) => {
+  if (asChild && isValidElement(children)) {
+    return cloneElement(children, props);
+  }
+  const Component = Tag;
+  return <Component {...props}>{children}</Component>;
+};
 
 vi.mock('@/components/ui/badge.jsx', () => ({ Badge: passthrough('span') }));
-vi.mock('@/components/ui/button.jsx', () => ({ Button: passthrough('button') }));
+vi.mock('@/components/ui/button.jsx', () => ({ Button: (...args) => buttonMock(...args) }));
 vi.mock('@/components/ui/card.jsx', () => ({
   Card: passthrough('section'),
   CardHeader: passthrough('div'),
@@ -109,6 +236,229 @@ vi.mock('../components/InstancesPanel.jsx', () => ({
     return null;
   },
 }));
+const renderComponent = async (props = {}) => {
+  const defaultProps = {
+    selectedAgreement: { id: 'agreement-1', name: 'Convênio', tenantId: 'tenant-123' },
+    status: 'disconnected',
+    onStatusChange: vi.fn(),
+  };
+
+  const userProps = { ...defaultProps, ...props };
+
+  const Component = (await import('../WhatsAppConnect.jsx')).default;
+
+  return render(<Component {...userProps} />);
+};
+
+beforeEach(() => {
+  mockApiGet.mockReset();
+  mockApiPost.mockReset();
+  mockApiPatch.mockReset();
+  mockApiDelete.mockReset();
+  mockGetAuthToken.mockReset();
+  mockGetAuthToken.mockReturnValue(null);
+  mockUseInstanceLiveUpdates.mockReset();
+  mockUseInstanceLiveUpdates.mockReturnValue({ connected: false });
+  createInstanceDialogMock.mockClear();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe('WhatsAppConnect', () => {
+  it('renders existing instances on first load', async () => {
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              { id: 'inst-1', name: 'Instância Demo', status: 'connected', connected: true },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith(
+        expect.stringContaining('/api/integrations/whatsapp/instances?refresh=1')
+      );
+      expect(mockApiGet).toHaveBeenCalledWith('/api/integrations/whatsapp/instances?refresh=1');
+    });
+
+    const instanceLabels = await screen.findAllByText('Instância Demo');
+    expect(instanceLabels.length).toBeGreaterThan(0);
+  });
+
+  it('fetches campaigns globalmente sem aplicar o convênio por padrão', async () => {
+    const capturedCalls = [];
+
+    mockApiGet.mockImplementation((url) => {
+      capturedCalls.push(url);
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({ data: { instances: [] } });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'camp-1',
+              agreementId: 'agreement-2',
+              agreementName: 'Convênio 2',
+              name: 'Campanha 1',
+              status: 'active',
+              instanceId: null,
+              updatedAt: new Date().toISOString(),
+              metrics: {},
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(
+        capturedCalls.some((entry) => {
+          const url = new URL(entry, 'https://example.test');
+          return (
+            url.pathname === '/api/campaigns' &&
+            url.searchParams.get('status') === 'active,paused,draft,ended'
+          );
+        })
+      ).toBe(true);
+    });
+
+    const globalCall = capturedCalls
+      .map((entry) => new URL(entry, 'https://example.test'))
+      .find(
+        (url) =>
+          url.pathname === '/api/campaigns' &&
+          url.searchParams.get('status') === 'active,paused,draft,ended'
+      );
+    expect(globalCall).toBeDefined();
+    expect(globalCall?.searchParams.has('agreementId')).toBe(false);
+
+    const campaignCalls = capturedCalls.filter((entry) =>
+      entry.startsWith('/api/campaigns')
+    );
+    expect(campaignCalls).toHaveLength(1);
+  });
+
+  it('hides disconnected broker sessions by default but allows showing all', async () => {
+    const user = userEvent.setup();
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              {
+                id: 'inst-1',
+                name: 'Instância Ativa',
+                status: 'connected',
+                connected: true,
+              },
+              {
+                id: '5511999999999@whatsapp.net',
+                name: 'WhatsApp Broker Desconectado',
+                status: 'disconnected',
+                connected: false,
+                source: 'broker',
+              },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    expect(screen.queryByText('WhatsApp Broker Desconectado')).not.toBeInTheDocument();
+
+    const showAllButton = await screen.findByRole('button', { name: /mostrar todas/i });
+    await user.click(showAllButton);
+
+    const brokerInstance = await screen.findAllByText('WhatsApp Broker Desconectado');
+    expect(brokerInstance.length).toBeGreaterThan(0);
+    expect(await screen.findByRole('button', { name: /ocultar desconectadas/i })).toBeInTheDocument();
+  });
+
+  it('keeps connecting sessions visible even when not fully connected', async () => {
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        return Promise.resolve({
+          data: {
+            instances: [
+              { id: 'inst-2', name: 'Instância em Provisionamento', status: 'connecting', connected: false },
+            ],
+          },
+        });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    await renderComponent();
+
+    const connectingInstance = await screen.findAllByText('Instância em Provisionamento');
+    expect(connectingInstance.length).toBeGreaterThan(0);
+  });
+
+  it('creates an instance and keeps the friendly name', async () => {
+    const instancesQueue = [
+      { data: { instances: [] } },
+      {
+        data: {
+          instances: [
+            {
+              id: 'WhatsApp Vendas',
+              name: 'WhatsApp Vendas',
+              status: 'connecting',
+              connected: false,
+            },
+          ],
+        },
+      },
+    ];
+
+    mockApiGet.mockImplementation((url) => {
+      if (url.startsWith('/api/integrations/whatsapp/instances')) {
+        const response = instancesQueue.shift() ?? instancesQueue[0];
+        return Promise.resolve(response);
+      }
+      if (url.includes('/status')) {
+        return Promise.resolve({ data: { status: 'connecting', instanceId: 'WhatsApp Vendas' } });
+      }
+      if (url.startsWith('/api/campaigns')) {
+        return Promise.resolve({ items: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    mockApiPost.mockImplementation((url) => {
+      if (url === '/api/integrations/whatsapp/instances') {
+        return Promise.resolve({
+          data: { id: 'WhatsApp Vendas', status: 'connecting', connected: false },
+        });
+      }
+      return Promise.resolve({});
+    });
 
 const CampaignsPanelMock = vi.fn(() => null);
 vi.mock('../components/CampaignsPanel.jsx', () => ({

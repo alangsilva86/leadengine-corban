@@ -5,7 +5,7 @@ import {
   formatDateTime,
   getFirstString,
   getFirstValidDate,
-} from '../../utils/dateUtils.js';
+} from '../../utils/index.js';
 
 describe('dateUtils.ensureDate', () => {
   it('returns the same instance when value is already a valid Date', () => {
