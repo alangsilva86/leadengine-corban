@@ -13,11 +13,11 @@ import {
 } from 'lucide-react';
 
 const STATUS_ICONS = {
-  PENDING: { icon: Check, tone: 'text-slate-400', label: 'Pendente' },
-  SENT: { icon: Check, tone: 'text-slate-400', label: 'Enviado' },
-  DELIVERED: { icon: CheckCheck, tone: 'text-slate-300', label: 'Entregue' },
-  READ: { icon: BadgeCheck, tone: 'text-emerald-400', label: 'Lido' },
-  FAILED: { icon: AlertTriangle, tone: 'text-rose-400', label: 'Falha no envio' },
+  PENDING: { icon: Check, tone: 'text-foreground-muted', label: 'Pendente' },
+  SENT: { icon: Check, tone: 'text-foreground-muted', label: 'Enviado' },
+  DELIVERED: { icon: CheckCheck, tone: 'text-foreground', label: 'Entregue' },
+  READ: { icon: BadgeCheck, tone: 'text-success', label: 'Lido' },
+  FAILED: { icon: AlertTriangle, tone: 'text-status-error', label: 'Falha no envio' },
 };
 
 const formatTime = (value) => {
@@ -31,8 +31,8 @@ export const MessageBubble = ({ message }) => {
   const rawDirection = typeof message.direction === 'string' ? message.direction.toLowerCase() : 'inbound';
   const outbound = rawDirection === 'outbound';
   const tone = outbound
-    ? 'bg-sky-500/15 text-slate-50 ring-1 ring-sky-500/40'
-    : 'bg-slate-950/30 text-slate-100 ring-1 ring-white/5';
+    ? 'bg-inbox-surface-strong text-inbox-foreground ring-1 ring-inbox-border'
+    : 'bg-inbox-surface text-inbox-foreground ring-1 ring-inbox-border';
   const bubbleClass = cn(
     'max-w-[75%] rounded-[26px] px-4 py-3 text-sm leading-relaxed shadow-[0_20px_45px_-32px_rgba(15,23,42,0.9)] backdrop-blur',
     tone,
@@ -45,11 +45,11 @@ export const MessageBubble = ({ message }) => {
   const remoteJid = metadata.remoteJid ?? metadata.chatId ?? rawKeyMeta.remoteJid ?? null;
   const phoneLabel = metadata.phoneE164 ?? remoteJid ?? message.chatId ?? 'desconhecido';
   const originChipTone = outbound
-    ? 'bg-sky-500/15 text-sky-100 border border-sky-400/40'
-    : 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/40';
+    ? 'border border-accent bg-accent text-accent-foreground'
+    : 'border-success-soft-border bg-success-soft text-success-strong';
   const directionChipTone = outbound
-    ? 'bg-sky-500/40 text-sky-100'
-    : 'bg-emerald-500/40 text-emerald-100';
+    ? 'bg-accent text-accent-foreground'
+    : 'bg-success-soft text-success-strong';
   const directionLabel = outbound ? 'OUT' : 'IN';
   const timestamp = message.createdAt ? new Date(message.createdAt) : null;
   const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
@@ -124,7 +124,7 @@ export const MessageBubble = ({ message }) => {
             alt={caption ?? 'Imagem recebida'}
             className="max-h-64 w-full rounded-lg object-contain"
           />
-          {caption ? <figcaption className="text-xs text-slate-300">{caption}</figcaption> : null}
+          {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
         </figure>
       );
     }
@@ -142,7 +142,7 @@ export const MessageBubble = ({ message }) => {
             className="max-h-64 w-full overflow-hidden rounded-lg"
             preload="metadata"
           />
-          {caption ? <figcaption className="text-xs text-slate-300">{caption}</figcaption> : null}
+          {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
         </figure>
       );
     }
@@ -155,7 +155,7 @@ export const MessageBubble = ({ message }) => {
       return (
         <div className="flex flex-col gap-2">
           <audio controls src={mediaUrl} className="w-full" preload="metadata" />
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -165,11 +165,11 @@ export const MessageBubble = ({ message }) => {
 
       return (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 rounded-lg bg-slate-950/40 px-3 py-2">
-            <FileText className="h-4 w-4 text-slate-200" aria-hidden="true" />
+          <div className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+            <FileText className="h-4 w-4 text-foreground" aria-hidden="true" />
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-slate-100">{fileName}</span>
-              <span className="text-xs text-slate-400">Documento</span>
+              <span className="text-sm font-semibold text-foreground">{fileName}</span>
+              <span className="text-xs text-foreground-muted">Documento</span>
             </div>
           </div>
           {mediaUrl ? (
@@ -177,7 +177,7 @@ export const MessageBubble = ({ message }) => {
               href={mediaUrl}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-slate-100/20"
+              className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
             >
               <Download className="h-3 w-3" aria-hidden="true" />
               Baixar arquivo
@@ -185,7 +185,7 @@ export const MessageBubble = ({ message }) => {
           ) : (
             <span className="text-xs opacity-60">Pré-visualização indisponível</span>
           )}
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -203,15 +203,15 @@ export const MessageBubble = ({ message }) => {
 
       return (
         <div className="flex flex-col gap-3">
-          <div className="flex items-start gap-2 rounded-lg bg-slate-950/40 px-3 py-2">
-            <MapPin className="mt-0.5 h-4 w-4 text-slate-200" aria-hidden="true" />
+          <div className="flex items-start gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+            <MapPin className="mt-0.5 h-4 w-4 text-foreground" aria-hidden="true" />
             <div className="flex flex-col">
-              {location.name ? <span className="font-semibold text-slate-100">{location.name}</span> : null}
+              {location.name ? <span className="font-semibold text-foreground">{location.name}</span> : null}
               {location.address ? (
-                <span className="text-xs text-slate-300">{location.address}</span>
+                <span className="text-xs text-foreground-muted">{location.address}</span>
               ) : null}
               {typeof latitude === 'number' && typeof longitude === 'number' ? (
-                <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
                   {latitude.toFixed(5)}, {longitude.toFixed(5)}
                 </span>
               ) : null}
@@ -222,7 +222,7 @@ export const MessageBubble = ({ message }) => {
               href={mapsUrl}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-slate-100/20"
+              className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
             >
               <MapPin className="h-3 w-3" aria-hidden="true" />
               Abrir no mapa
@@ -230,7 +230,7 @@ export const MessageBubble = ({ message }) => {
           ) : (
             <span className="text-xs opacity-60">Link de mapa indisponível</span>
           )}
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -255,26 +255,26 @@ export const MessageBubble = ({ message }) => {
             return (
               <div
                 key={`${name}-${index}`}
-                className="flex flex-col gap-1 rounded-lg bg-slate-950/40 px-3 py-2"
+                className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2"
               >
                 <div className="flex items-center gap-2">
-                  <Phone className="h-3.5 w-3.5 text-slate-200" aria-hidden="true" />
-                  <span className="text-sm font-medium text-slate-100">{name}</span>
+                  <Phone className="h-3.5 w-3.5 text-foreground" aria-hidden="true" />
+                  <span className="text-sm font-medium text-foreground">{name}</span>
                 </div>
                 {phones.length > 0 ? (
-                  <ul className="ml-5 list-disc text-xs text-slate-300">
+                  <ul className="ml-5 list-disc text-xs text-foreground-muted">
                     {phones.map((phone, phoneIndex) => (
                       <li key={`${name}-${phoneIndex}`}>{phone}</li>
                     ))}
                   </ul>
                 ) : null}
                 {contact?.org ? (
-                  <span className="text-xs text-slate-400">{contact.org}</span>
+                  <span className="text-xs text-foreground-muted">{contact.org}</span>
                 ) : null}
               </div>
             );
           })}
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -287,18 +287,18 @@ export const MessageBubble = ({ message }) => {
 
       return (
         <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-1 rounded-lg bg-slate-950/40 px-3 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <div className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground-muted">
               Mensagem modelo
             </span>
             {interactiveTemplate?.name ? (
-              <span className="text-sm font-medium text-slate-100">{interactiveTemplate.name}</span>
+              <span className="text-sm font-medium text-foreground">{interactiveTemplate.name}</span>
             ) : null}
             {interactiveTemplate?.language ? (
-              <span className="text-xs text-slate-300">Idioma: {interactiveTemplate.language}</span>
+              <span className="text-xs text-foreground-muted">Idioma: {interactiveTemplate.language}</span>
             ) : null}
             {Array.isArray(interactiveTemplate?.components) && interactiveTemplate.components.length > 0 ? (
-              <ul className="ml-4 list-disc text-xs text-slate-300">
+              <ul className="ml-4 list-disc text-xs text-foreground-muted">
                 {interactiveTemplate.components.map((component, index) => (
                   <li key={`component-${index}`}>
                     {component?.type ?? 'Componente'}
@@ -308,7 +308,7 @@ export const MessageBubble = ({ message }) => {
               </ul>
             ) : null}
           </div>
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -328,12 +328,12 @@ export const MessageBubble = ({ message }) => {
 
       return (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <ListChecks className="h-4 w-4" aria-hidden="true" />
             {pollTitle}
           </div>
           {pollOptions.length > 0 ? (
-            <ul className="ml-5 list-disc space-y-1 text-xs text-slate-300">
+            <ul className="ml-5 list-disc space-y-1 text-xs text-foreground-muted">
               {pollOptions.map((option, index) => {
                 const label = option?.title ?? option?.name ?? option?.text ?? `Opção ${index + 1}`;
                 const votes =
@@ -346,7 +346,7 @@ export const MessageBubble = ({ message }) => {
                   <li key={`poll-option-${index}`} className="flex items-center gap-2">
                     <span>{label}</span>
                     {votes !== null ? (
-                      <span className="rounded-full bg-slate-100/10 px-2 py-0.5 text-[10px] text-slate-200">
+                      <span className="rounded-full bg-surface-overlay-quiet px-2 py-0.5 text-[10px] text-foreground">
                         {votes} voto{votes === 1 ? '' : 's'}
                       </span>
                     ) : null}
@@ -358,11 +358,11 @@ export const MessageBubble = ({ message }) => {
             <span className="text-xs opacity-60">Nenhuma opção disponível</span>
           )}
           {typeof poll.totalVotes === 'number' ? (
-            <span className="text-[10px] uppercase tracking-wide text-slate-400">
+            <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
               Total de votos: {poll.totalVotes}
             </span>
           ) : null}
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -375,7 +375,7 @@ export const MessageBubble = ({ message }) => {
             alt={caption ?? 'Imagem recebida'}
             className="max-h-64 w-full rounded-lg object-contain"
           />
-          {caption ? <figcaption className="text-xs text-slate-300">{caption}</figcaption> : null}
+          {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
         </figure>
       );
     }
@@ -383,20 +383,20 @@ export const MessageBubble = ({ message }) => {
     if (mediaUrl) {
       return (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 rounded-lg bg-slate-950/40 px-3 py-2">
-            <Download className="h-4 w-4 text-slate-200" aria-hidden="true" />
-            <span className="text-sm font-semibold text-slate-100">Baixar conteúdo</span>
+          <div className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+            <Download className="h-4 w-4 text-foreground" aria-hidden="true" />
+            <span className="text-sm font-semibold text-foreground">Baixar conteúdo</span>
           </div>
           <a
             href={mediaUrl}
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-slate-100/20"
+            className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
           >
             <Download className="h-3 w-3" aria-hidden="true" />
             Abrir arquivo
           </a>
-          {caption ? <p className="text-xs text-slate-300">{caption}</p> : null}
+          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
     }
@@ -425,7 +425,7 @@ export const MessageBubble = ({ message }) => {
           </Tooltip>
         </div>
         <div className="break-words text-sm leading-relaxed">{renderBody()}</div>
-        <div className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+        <div className="mt-1 flex items-center gap-1 text-xs text-foreground-muted">
           <span>{formatTime(message.createdAt)}</span>
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>

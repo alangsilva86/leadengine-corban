@@ -6,13 +6,13 @@ export const ConsentInfo = ({ consent }) => {
   }
   const grantedAt = consent.grantedAt ? new Date(consent.grantedAt).toLocaleString('pt-BR') : null;
   return (
-    <Card className="border-0 bg-slate-950/25 text-slate-200 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
+    <Card className="border-0 bg-surface-overlay-quiet text-foreground shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
       <CardHeader>
         <CardTitle className="text-sm">Consentimento</CardTitle>
       </CardHeader>
-      <CardContent className="text-xs text-slate-300">
+      <CardContent className="text-xs text-foreground-muted">
         <p>
-          Status: <span className="text-emerald-300">{consent.granted ? 'Ativo' : 'Revogado'}</span>
+          Status: <span className="text-success">{consent.granted ? 'Ativo' : 'Revogado'}</span>
         </p>
         <p>Base legal: {consent.base ?? '—'}</p>
         <p>Concedido em: {grantedAt ?? '—'}</p>

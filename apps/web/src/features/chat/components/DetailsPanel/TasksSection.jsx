@@ -14,22 +14,22 @@ export const TasksSection = ({ ticket, onReopenWindow }) => {
   const tasks = normalizeTasks(ticket);
 
   return (
-    <Card className="border-0 bg-slate-950/25 text-slate-100 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur">
+    <Card className="border-0 bg-surface-overlay-quiet text-foreground shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
-          <CalendarClock className="h-4 w-4 text-sky-300" /> Tasks & Follow-ups
+          <CalendarClock className="h-4 w-4 text-accent" /> Tasks & Follow-ups
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 text-xs text-slate-300">
+      <CardContent className="flex flex-col gap-3 text-xs text-foreground-muted">
         {tasks.length === 0 ? (
-          <p className="text-slate-500">Nenhum follow-up agendado.</p>
+          <p className="text-foreground-muted">Nenhum follow-up agendado.</p>
         ) : (
           tasks.map((task, index) => (
             <div
               key={task.id ?? index}
-              className="flex flex-col gap-1 rounded-2xl bg-slate-900/35 p-3 ring-1 ring-white/5"
+              className="flex flex-col gap-1 rounded-2xl bg-surface-overlay-quiet p-3 ring-1 ring-surface-overlay-glass-border"
             >
-              <div className="flex justify-between text-xs text-slate-400">
+              <div className="flex justify-between text-xs text-foreground-muted">
                 <span>{task.type ?? 'Follow-up'}</span>
                 <span>
                   {task.dueAt
@@ -42,13 +42,13 @@ export const TasksSection = ({ ticket, onReopenWindow }) => {
                     : 'Sem prazo'}
                 </span>
               </div>
-              <p className="text-slate-200">{task.description ?? task.notes ?? 'Sem descrição'}</p>
+              <p className="text-foreground">{task.description ?? task.notes ?? 'Sem descrição'}</p>
             </div>
           ))
         )}
         <Button
           size="sm"
-          className="w-full rounded-full bg-slate-900/40 text-slate-100 ring-1 ring-white/5 hover:bg-slate-900/30"
+          className="w-full rounded-full bg-surface-overlay-quiet text-foreground ring-1 ring-surface-overlay-glass-border hover:bg-surface-overlay-strong"
           onClick={onReopenWindow}
         >
           Reabrir janela com CTA

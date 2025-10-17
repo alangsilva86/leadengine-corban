@@ -6,7 +6,7 @@ export const PipelineStepTag = ({ step }) => {
   }
   const label = step.charAt(0).toUpperCase() + step.slice(1);
   return (
-    <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
+    <Badge variant="outline" className="border border-border bg-transparent text-foreground-muted">
       {label}
     </Badge>
   );

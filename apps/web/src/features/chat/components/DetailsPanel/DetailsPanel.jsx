@@ -58,13 +58,13 @@ export const DetailsPanel = ({
             key={action.label}
             onClick={action.onClick}
             disabled={action.disabled}
-            className="group flex flex-col gap-2 rounded-3xl bg-slate-950/25 p-4 text-left shadow-[0_24px_50px_-32px_rgba(15,23,42,0.9)] ring-1 ring-white/5 backdrop-blur transition hover:bg-slate-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 disabled:cursor-not-allowed disabled:opacity-50"
+            className="group flex flex-col gap-2 rounded-3xl bg-surface-overlay-quiet p-4 text-left shadow-[0_24px_50px_-32px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900/40 text-sky-300 shadow-inner shadow-slate-950/50">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-accent text-accent-foreground shadow-inner shadow-[inset_0_0_0_1px_var(--surface-overlay-glass-border)]">
               <action.icon className="h-4 w-4" />
             </span>
-            <span className="text-sm font-semibold text-slate-100">{action.label}</span>
-            <span className="text-xs text-slate-400">{action.description}</span>
+            <span className="text-sm font-semibold text-foreground">{action.label}</span>
+            <span className="text-xs text-foreground-muted">{action.description}</span>
           </button>
         ))}
       </div>
