@@ -1,5 +1,6 @@
 import sessionStorageAvailable from '@/lib/session-storage.js';
 import { extractQrPayload } from './qr.js';
+import { extractInstanceFromPayload, looksLikeWhatsAppJid } from './instanceIdentifiers.js';
 
 const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
 const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
@@ -68,9 +69,6 @@ export const ensureArrayOfObjects = (value) =>
   Array.isArray(value)
     ? value.filter((item) => item && typeof item === 'object')
     : [];
-
-const looksLikeWhatsAppJid = (value) =>
-  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
 const pickStringValue = (...values) => {
   for (const value of values) {
@@ -289,29 +287,6 @@ export const unwrapWhatsAppResponse = (payload) => {
   }
 
   return payload;
-};
-
-const extractInstanceFromPayload = (payload) => {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return null;
-  }
-
-  if (payload.instance && typeof payload.instance === 'object') {
-    return payload.instance;
-  }
-
-  if (payload.data && typeof payload.data === 'object') {
-    const nested = extractInstanceFromPayload(payload.data);
-    if (nested) {
-      return nested;
-    }
-  }
-
-  if (payload.id || payload.name || payload.status || payload.connected) {
-    return payload;
-  }
-
-  return null;
 };
 
 export const parseInstancesPayload = (payload) => {
