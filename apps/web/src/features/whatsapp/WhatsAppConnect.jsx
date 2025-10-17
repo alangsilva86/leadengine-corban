@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
@@ -13,6 +13,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.jsx';
+import { ArrowLeft, Clock, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
+
+import useWhatsAppInstances from './hooks/useWhatsAppInstances.js';
 import {
   ArrowLeft,
   Clock,
@@ -380,6 +384,97 @@ const WhatsAppConnect = ({
   onContinue,
   onBack,
 }) => {
+  const {
+    warn,
+    logError,
+    surfaceStyles,
+    statusCodeMeta,
+    getStatusInfo,
+    getInstanceMetrics,
+    formatMetricValue,
+    formatPhoneNumber,
+    formatTimestampLabel,
+    humanizeLabel,
+    resolveInstancePhone,
+    statusTone,
+    copy,
+    stepLabel,
+    nextStage,
+    onboardingDescription,
+    hasAgreement,
+    agreementDisplayName,
+    agreementRegion,
+    agreementId,
+    countdownMessage,
+    confirmLabel,
+    confirmDisabled,
+    qrStatusMessage,
+    qrPanelOpen,
+    setQrPanelOpen,
+    qrImageSrc,
+    isGeneratingQrImage,
+    hasQr,
+    isAuthenticated,
+    isBusy,
+    instance,
+    instances,
+    instancesReady,
+    hasHiddenInstances,
+    hasRenderableInstances,
+    renderInstances,
+    showFilterNotice,
+    showAllInstances,
+    setShowAllInstances,
+    instancesCountLabel,
+    errorState,
+    loadingInstances,
+    localStatus,
+    handleMarkConnected,
+    handleRefreshInstances,
+    handleCreateInstance,
+    loadInstances,
+    handleInstanceSelect,
+    setInstancePendingDelete,
+    instancePendingDelete,
+    deletingInstanceId,
+    handleDeleteInstance,
+    submitCreateInstance,
+    isCreateInstanceOpen,
+    setCreateInstanceOpen,
+    defaultInstanceName,
+    isCreateCampaignOpen,
+    setCreateCampaignOpen,
+    pendingReassign,
+    setPendingReassign,
+    reassignIntent,
+    setReassignIntent,
+    removalTargetLabel,
+    removalTargetIsJid,
+    removalDialogTitle,
+    removalDialogAction,
+    qrImageModalOpen,
+    setQrDialogOpen,
+    timelineItems,
+    realtimeConnected,
+    pairingPhoneInput,
+    handlePairingPhoneChange,
+    pairingPhoneError,
+    requestingPairingCode,
+    handleRequestPairingCode,
+    handleAuthFallback,
+    isAuthError,
+    syncCampaignSelection,
+    generateQr,
+    generateQrForInstance,
+    resetQrState,
+    canContinue,
+  } = useWhatsAppInstances({
+    agreement: selectedAgreement,
+    status,
+    onboarding,
+    activeCampaign,
+    onStatusChange,
+  });
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
@@ -467,6 +562,11 @@ const WhatsAppConnect = ({
     logError,
   });
 
+  useEffect(() => {
+    if (campaign) {
+      syncCampaignSelection(campaign);
+    }
+  }, [campaign, syncCampaignSelection]);
   const enforceAuthPrompt = () => {
     handleAuthFallback({ reset: true });
   };
@@ -561,20 +661,13 @@ const WhatsAppConnect = ({
 
   const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
 
-  const expiresAt = useMemo(() => {
-    if (!qrData?.expiresAt) return null;
-    return new Date(qrData.expiresAt).getTime();
-  }, [qrData]);
-
-  const { stepLabel, nextStage } = useOnboardingStepLabel({
-    stages: onboarding?.stages,
-    targetStageId: 'whatsapp',
-    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
-  });
-  const hasAgreement = Boolean(selectedAgreement?.id);
-  const agreementName = selectedAgreement?.name ?? null;
-  const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
   const hasCampaign = Boolean(campaign);
+  const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
+  const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
+  const pairingDisabled = isBusy || !instance || !isAuthenticated;
+
+  const handleConfirm = useCallback(() => {
+    if (!canContinue) {
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   useEffect(() => {
     setGeneratingQrState(isGeneratingQrImage);
@@ -1277,7 +1370,12 @@ const WhatsAppConnect = ({
     if (!target?.id) {
       return;
     }
+    onContinue?.();
+  }, [canContinue, onContinue]);
 
+  const handleSelectInstance = useCallback(
+    async (item, { skipAutoQr = false } = {}) => {
+      if (!item) {
     setCampaignError(null);
     setCampaignAction({ id: target.id, type: 'reassign' });
 
@@ -1432,196 +1530,30 @@ const WhatsAppConnect = ({
         return;
       }
 
-      logError('Falha ao remover instância WhatsApp', {
-        error: err,
-        method,
-        url,
-        instanceId: target.id,
-      });
+      handleInstanceSelect(item);
 
-      let bodyPreview = null;
-      if (responseData && typeof responseData === 'object') {
-        try {
-          const serialized = JSON.stringify(responseData);
-          bodyPreview = serialized.length > 200 ? `${serialized.slice(0, 197)}…` : serialized;
-        } catch (serializationError) {
-          console.warn('Não foi possível serializar payload de erro da instância WhatsApp', serializationError);
-        }
+      if (campaign && campaign.instanceId && campaign.instanceId !== item.id) {
+        clearCampaignSelection();
       }
 
-      const detailParts = [
-        `method=${method}`,
-        `url=${url}`,
-        `id=${target.id}`,
-      ];
-
-      if (statusCode !== null) {
-        detailParts.push(`status=${statusCode}`);
-      }
-      if (errorCode) {
-        detailParts.push(`code=${errorCode}`);
-      }
-      if (bodyPreview) {
-        detailParts.push(`body=${bodyPreview}`);
-      }
-
-      const description = detailParts.join(' • ');
-      toast.error('Falha ao remover instância', {
-        description: friendly.message ? `${friendly.message} • ${description}` : description,
-      });
-    } finally {
-      setDeletingInstanceId(null);
-    }
-  };
-
-  useEffect(() => {
-    if (!campaign?.instanceId || instances.length === 0) {
-      return;
-    }
-
-    const matched = instances.find(
-      (item) => item.id === campaign.instanceId || item.name === campaign.instanceId
-    );
-
-    if (!matched || instance?.id === matched.id) {
-      return;
-    }
-
-    setInstance(matched);
-    preferredInstanceIdRef.current = matched.id ?? null;
-    persistInstancesCache(instances, matched.id ?? null);
-    const statusFromInstance = matched.status || 'disconnected';
-    setLocalStatus(statusFromInstance);
-    onStatusChange?.(statusFromInstance);
-  }, [
-    campaign?.instanceId,
-    instance?.id,
-    instances,
-    onStatusChange,
-    selectedAgreement?.id,
-  ]);
-
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  const generateQr = async (id, { skipStatus = false } = {}) => {
-    if (!id) return;
-
-    const myPollId = ++pollIdRef.current;
-    setLoadingQr(true);
-    setErrorMessage(null);
-    try {
-      const encodedId = encodeURIComponent(id);
-      if (!skipStatus) {
-        const connectResult = await connectInstance(id);
-        const nextStatus =
-          connectResult?.status ||
-          (typeof connectResult?.connected === 'boolean'
-            ? connectResult.connected
-              ? 'connected'
-              : 'disconnected'
-            : null);
-
-        if (nextStatus) {
-          setLocalStatus(nextStatus);
-          onStatusChange?.(nextStatus);
-          setInstance((current) => {
-            if (!current || current.id !== id) {
-              return current;
-            }
-            return {
-              ...current,
-              status: nextStatus,
-              connected:
-                typeof connectResult?.connected === 'boolean'
-                  ? connectResult.connected
-                  : nextStatus === 'connected'
-                  ? true
-                  : typeof current.connected === 'boolean'
-                  ? current.connected
-                  : false,
-            };
-          });
-          setInstances((prev) =>
-            prev.map((item) =>
-              item.id === id
-                ? {
-                    ...item,
-                    status: nextStatus,
-                    connected:
-                      typeof connectResult?.connected === 'boolean'
-                        ? connectResult.connected
-                        : nextStatus === 'connected'
-                        ? true
-                        : typeof item.connected === 'boolean'
-                        ? item.connected
-                        : false,
-                  }
-                : item
-            )
-          );
-        }
-
-      const connectQr = connectResult?.qr;
-      if (connectResult?.connected === false && connectQr?.qrCode) {
-        setQrData({
-          ...connectQr,
-          image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
-        });
+      if (skipAutoQr) {
         return;
       }
 
-        if (connectResult?.connected) {
-          setQrData(null);
-          setSecondsLeft(null);
-          return;
-        }
-      }
-
-      setLocalStatus('qr_required');
-      onStatusChange?.('disconnected');
-
-      // Polling por até 60s aguardando o QR
-      const deadline = Date.now() + 60_000;
-      let received = null;
-      while (Date.now() < deadline) {
-        if (pollIdRef.current !== myPollId) {
-          // polling cancelado (nova instância/QR solicitado)
-          return;
-        }
-        let qrResponse = null;
-        try {
-          qrResponse = await apiGet(
-            `/api/integrations/whatsapp/instances/${encodedId}/qr`
-          );
-          setSessionActive(true);
-          setAuthDeferred(false);
-        } catch (error) {
-          if (isAuthError(error)) {
-            handleAuthFallback({ error });
-            return;
-          }
-        }
-        const parsed = parseInstancesPayload(qrResponse);
-        const qrPayload = parsed.qr;
-        if (qrPayload?.qrCode) {
-          received = {
-            ...qrPayload,
-            image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
-          };
-          break;
-        }
-        await sleep(1000);
-      }
-
-      if (!received) {
-        throw new Error('QR não disponível no momento. Tente novamente.');
-      }
-
-      setQrData(received);
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
+      if (item.status !== 'connected') {
+        await generateQrForInstance(item.id, { skipStatus: false });
       } else {
+        resetQrState();
+      }
+    },
+    [campaign, clearCampaignSelection, generateQrForInstance, handleInstanceSelect, resetQrState]
+  );
+
+  const handleViewQrInstance = useCallback(
+    async (item) => {
+      if (!item) {
+        return;
+      }
         applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
       }
     } finally {
@@ -1836,16 +1768,12 @@ const WhatsAppConnect = ({
     onContinue?.();
   };
 
-  const removalTargetLabel =
-    instancePendingDelete?.name ||
-    instancePendingDelete?.displayId ||
-    instancePendingDelete?.id ||
-    'selecionada';
-  const removalTargetIsJid = instancePendingDelete?.id
-    ? looksLikeWhatsAppJid(instancePendingDelete.id)
-    : false;
-  const removalDialogTitle = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
-  const removalDialogAction = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
+      await handleSelectInstance(item, { skipAutoQr: true });
+      await generateQrForInstance(item.id, { skipStatus: true });
+      setQrDialogOpen(true);
+    },
+    [generateQrForInstance, handleSelectInstance, setQrDialogOpen]
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -1904,12 +1832,12 @@ const WhatsAppConnect = ({
 
       <div className="space-y-6">
         <InstancesPanel
-          surfaceStyles={SURFACE_COLOR_UTILS}
+          surfaceStyles={surfaceStyles}
           hasAgreement={hasAgreement}
           nextStage={nextStage}
           agreementDisplayName={agreementDisplayName}
-          selectedAgreementRegion={selectedAgreement?.region ?? null}
-          selectedAgreementId={selectedAgreement?.id}
+          selectedAgreementRegion={agreementRegion}
+          selectedAgreementId={agreementId}
           selectedInstance={instance}
           selectedInstanceStatusInfo={selectedInstanceStatusInfo}
           selectedInstancePhone={selectedInstancePhone}
@@ -1937,8 +1865,8 @@ const WhatsAppConnect = ({
           onToggleShowAll={() => setShowAllInstances((current) => !current)}
           onShowAll={() => setShowAllInstances(true)}
           onRetry={() => void loadInstances({ forceRefresh: true })}
-          onSelectInstance={(item) => void handleInstanceSelect(item)}
-          onViewQr={(item) => void handleViewQr(item)}
+          onSelectInstance={(item) => void handleSelectInstance(item)}
+          onViewQr={(item) => void handleViewQrInstance(item)}
           onRequestDelete={(item) => setInstancePendingDelete(item)}
           deletingInstanceId={deletingInstanceId}
           statusCodeMeta={statusCodeMeta}
@@ -1978,19 +1906,19 @@ const WhatsAppConnect = ({
           selectedAgreementId={selectedAgreement?.id ?? null}
         />
         <QrSection
-          surfaceStyles={SURFACE_COLOR_UTILS}
+          surfaceStyles={surfaceStyles}
           open={qrPanelOpen}
           onOpenChange={setQrPanelOpen}
           qrImageSrc={qrImageSrc}
           isGeneratingQrImage={isGeneratingQrImage}
           qrStatusMessage={qrStatusMessage}
-          onGenerate={handleGenerateQr}
+          onGenerate={generateQr}
           onOpenQrDialog={() => setQrDialogOpen(true)}
           generateDisabled={isBusy || !instance || !isAuthenticated}
           openDisabled={!hasQr}
           pairingPhoneInput={pairingPhoneInput}
           onPairingPhoneChange={handlePairingPhoneChange}
-          pairingDisabled={isBusy || !instance || !isAuthenticated}
+          pairingDisabled={pairingDisabled}
           requestingPairingCode={requestingPairingCode}
           onRequestPairingCode={() => void handleRequestPairingCode()}
           pairingPhoneError={pairingPhoneError}
@@ -2052,39 +1980,37 @@ const WhatsAppConnect = ({
           }
         }}
       >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{removalDialogTitle}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {removalTargetIsJid ? (
-              <>
-                Esta ação desconecta a sessão <strong>{removalTargetLabel}</strong>. Utilize quando precisar encerrar um
-                dispositivo sincronizado com o broker.
-              </>
-            ) : (
-              <>
-                Esta ação remove permanentemente a instância <strong>{removalTargetLabel}</strong>. Verifique se não há
-                campanhas ativas utilizando este número.
-              </>
-            )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={async () => {
-              if (!instancePendingDelete) return;
-              await handleDeleteInstance(instancePendingDelete);
-              setInstancePendingDelete(null);
-            }}
-          >
-            {removalDialogAction}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{removalDialogTitle}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removalTargetIsJid ? (
+                <>
+                  Esta ação desconecta a sessão <strong>{removalTargetLabel}</strong>. Utilize quando precisar encerrar um dispositivo sincronizado com o broker.
+                </>
+              ) : (
+                <>
+                  Esta ação remove permanentemente a instância <strong>{removalTargetLabel}</strong>. Verifique se não há campanhas ativas utilizando este número.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!instancePendingDelete) return;
+                await handleDeleteInstance(instancePendingDelete);
+                setInstancePendingDelete(null);
+              }}
+            >
+              {removalDialogAction}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <Dialog open={isQrDialogOpen} onOpenChange={setQrDialogOpen}>
+      <Dialog open={qrImageModalOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Escaneie o QR Code</DialogTitle>
@@ -2094,7 +2020,7 @@ const WhatsAppConnect = ({
           </DialogHeader>
           <div className="flex flex-col items-center gap-4">
             <QrPreview
-              illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
+              illustrationClassName={surfaceStyles.qrIllustration}
               src={qrImageSrc}
               isGenerating={isGeneratingQrImage}
               size={64}
