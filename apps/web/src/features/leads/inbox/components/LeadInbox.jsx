@@ -13,9 +13,18 @@ import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
 import useInboxViewState from '../hooks/useInboxViewState.js';
 import { useManualConversationLauncher } from '../hooks/useManualConversationLauncher.js';
 import {
+  SAVED_FILTERS_STORAGE_KEY,
+  SAVED_VIEWS_STORAGE_KEY,
   SAVED_VIEWS_LIMIT,
+  THIRTY_DAYS_MS,
+  NO_QUEUE_VALUE,
+  defaultFilters,
   TIME_WINDOW_OPTIONS,
+  normalizeFilters,
+  serializeFilters,
   filterAllocationsWithFilters,
+  loadStoredFilters,
+  loadStoredViews,
   resolveQueueValue,
 } from '../utils/filtering.js';
 import InboxHeader from './InboxHeader.jsx';
@@ -710,6 +719,22 @@ export const LeadInbox = ({
       </div>
     </InboxPageContainer>
   );
+};
+
+export {
+  SAVED_FILTERS_STORAGE_KEY,
+  SAVED_VIEWS_STORAGE_KEY,
+  SAVED_VIEWS_LIMIT,
+  THIRTY_DAYS_MS,
+  NO_QUEUE_VALUE,
+  defaultFilters,
+  TIME_WINDOW_OPTIONS,
+  normalizeFilters,
+  serializeFilters,
+  filterAllocationsWithFilters,
+  loadStoredFilters,
+  loadStoredViews,
+  resolveQueueValue,
 };
 
 export default LeadInbox;
