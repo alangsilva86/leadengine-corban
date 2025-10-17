@@ -42,22 +42,6 @@ export const resolveSharedFeatureFlags = (env?: EnvSource): SharedFeatureFlags =
   return { whatsappDebug } satisfies SharedFeatureFlags;
 };
 
-const getProcessEnv = (): Record<string, string | undefined> => {
-  if (typeof process === 'undefined' || !process?.env) {
-    return {};
-  }
-
-  return normalizeEnv(process.env);
-};
-
-export const getBackendFeatureFlags = (env?: EnvSource): SharedFeatureFlags => {
-  if (env) {
-    return resolveSharedFeatureFlags(env);
-  }
-
-  return resolveSharedFeatureFlags(getProcessEnv());
-};
-
 export const getFrontendFeatureFlags = (env?: EnvSource): SharedFeatureFlags => {
   if (env) {
     return resolveSharedFeatureFlags(env);
@@ -65,6 +49,3 @@ export const getFrontendFeatureFlags = (env?: EnvSource): SharedFeatureFlags => 
 
   return resolveSharedFeatureFlags();
 };
-
-export const isWhatsappDebugEnabled = (env?: EnvSource): boolean =>
-  resolveSharedFeatureFlags(env).whatsappDebug;

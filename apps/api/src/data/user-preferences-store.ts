@@ -70,13 +70,3 @@ export const updateUserPreferences = (
   return { ...updated };
 };
 
-export const resetUserPreferencesStore = (): void => {
-  userPreferencesStore.clear();
-};
-
-export const getAllUserPreferences = (): Record<string, UserPreferencesRecord> => {
-  return Array.from(userPreferencesStore.entries()).reduce<Record<string, UserPreferencesRecord>>((acc, [key, value]) => {
-    acc[key] = { ...value };
-    return acc;
-  }, {});
-};
