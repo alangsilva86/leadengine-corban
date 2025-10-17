@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { cn } from '@/lib/utils.js';
+import { formatCurrency, formatDocument } from '../utils/formatters.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
 
 const STATUS_META = {
@@ -20,26 +21,6 @@ const STATUS_META = {
   contacted: { label: 'Em conversa', tone: 'info' },
   won: { label: 'Venda realizada', tone: 'success' },
   lost: { label: 'Sem interesse', tone: 'error' },
-};
-
-const formatCurrency = (value) => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return '—';
-  }
-  return value.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
-};
-
-const formatDocument = (value) => {
-  if (!value) return '—';
-  const digits = String(value).replace(/\D/g, '');
-  if (digits.length === 11) {
-    return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-  }
-  return value;
 };
 
 const infoRows = (allocation) => {
