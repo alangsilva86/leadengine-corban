@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { cn } from '@/lib/utils.js';
 import { InboxPrimaryButton } from './shared/InboxPrimaryButton.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 
 const STATUS_META = {
   allocated: { label: 'Aguardando contato', tone: 'neutral' },
@@ -90,11 +91,9 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
   const showSkeleton = Boolean(isLoading);
 
   return (
-    <Card
-      className={cn(
-        'rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)] transition-opacity duration-150 ease-out',
-        isSwitching ? 'opacity-0' : 'opacity-100'
-      )}
+    <InboxSurface
+      as={Card}
+      className={cn('transition-opacity duration-150 ease-out', isSwitching ? 'opacity-0' : 'opacity-100')}
       aria-busy={showSkeleton}
     >
       <CardHeader className="space-y-3 pb-2">
@@ -140,7 +139,12 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
           </div>
         ) : (
           <>
-            <div className={cn('grid grid-cols-1 gap-3 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-4 text-sm text-[color:var(--color-inbox-foreground-muted)]', 'sm:grid-cols-2')}>
+            <InboxSurface
+              radius="md"
+              padding="md"
+              shadow="none"
+              className={cn('grid grid-cols-1 gap-3 text-sm text-[color:var(--color-inbox-foreground-muted)]', 'sm:grid-cols-2')}
+            >
               {infoRows(allocation).map((row) => {
                 const Icon = row.icon;
                 return (
@@ -153,7 +157,7 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
                   </div>
                 );
               })}
-            </div>
+            </InboxSurface>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <InboxPrimaryButton
@@ -187,15 +191,19 @@ const LeadProfilePanel = ({ allocation, onUpdateStatus, onOpenWhatsApp, isLoadin
             </div>
 
             {allocation?.email ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+              <InboxSurface
+                radius="md"
+                shadow="none"
+                className="flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)]"
+              >
                 <Mail className="h-4 w-4 text-[color:var(--color-inbox-foreground-muted)]" />
                 <span>{allocation.email}</span>
-              </div>
+              </InboxSurface>
             ) : null}
           </>
         )}
       </CardContent>
-    </Card>
+    </InboxSurface>
   );
 };
 

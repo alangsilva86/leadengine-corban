@@ -35,6 +35,7 @@ import GlobalFiltersBar from './GlobalFiltersBar.jsx';
 import LeadConversationPanel from './LeadConversationPanel.jsx';
 import LeadProfilePanel from './LeadProfilePanel.jsx';
 import ManualConversationCard from './ManualConversationCard.jsx';
+import { InboxSurface } from './shared/InboxSurface.jsx';
 
 const InboxPageContainer = ({ children, className }) => (
   <div className={cn('flex min-h-[100dvh] w-full flex-col', className)}>
@@ -666,7 +667,7 @@ export const LeadInbox = ({
                 style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
               }}
             >
-              <Card className="rounded-3xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-xl)]">
+              <InboxSurface as={Card}>
                 <CardHeader className="space-y-2 pb-2">
                   <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
                     Resumo
@@ -678,9 +679,12 @@ export const LeadInbox = ({
                 <CardContent>
                   <dl className="grid grid-cols-2 gap-4">
                     {statusMetrics.map(({ key, label, accent, icon }) => (
-                      <div
+                      <InboxSurface
+                        as="div"
+                        radius="md"
+                        shadow="none"
                         key={key}
-                        className="space-y-1 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
+                        className="space-y-1 px-3 py-3 text-[color:var(--color-inbox-foreground-muted)] shadow-[0_14px_30px_color-mix(in_srgb,var(--color-inbox-border)_48%,transparent)]"
                       >
                         <dt className="flex items-center gap-2 text-xs font-medium text-[color:var(--color-inbox-foreground-muted)]">
                           {icon ? icon : null}
@@ -689,11 +693,11 @@ export const LeadInbox = ({
                         <dd className={cn('text-xl font-semibold text-[color:var(--color-inbox-foreground)]', accent ?? '')}>
                           {formatSummaryValue(summary[key])}
                         </dd>
-                      </div>
+                      </InboxSurface>
                     ))}
                   </dl>
                 </CardContent>
-              </Card>
+              </InboxSurface>
 
               <LeadProfilePanel
                 allocation={activeAllocation}
