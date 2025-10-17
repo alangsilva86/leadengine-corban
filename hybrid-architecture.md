@@ -41,25 +41,15 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 - Rotas de integrações invocam `respondWhatsAppNotConfigured` (`apps/api/src/routes/integrations.ts`), retornando `503 WHATSAPP_NOT_CONFIGURED` sempre que a configuração HTTP estiver incompleta.
 - As métricas (`apps/api/src/lib/metrics.ts`) cobrem webhook (`whatsapp_webhook_events_total`), HTTP client (`whatsapp_http_requests_total`), outbound e eventos Socket.IO.
-- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO para o modo HTTP.
+- `scripts/whatsapp-smoke-test.ts` executa smoke tests REST + Socket.IO para o modo HTTP.
 
 ## 🗄️ Persistência de sessão e deploy híbrido
 
 - `docker-compose.yml` e `docker-compose.prod.yml` foram simplificados para operar somente com o broker HTTP.
 - Rotas de integrações invocam `respondWhatsAppNotConfigured` (`apps/api/src/routes/integrations.ts`), retornando `503 WHATSAPP_NOT_CONFIGURED` quando o transporte HTTP não está apto — o circuito permanece fechado até que as variáveis do broker sejam restauradas.
-- As métricas (`apps/api/src/lib/metrics.ts`) cobrem webhook (`whatsapp_webhook_events_total`), HTTP client (`whatsapp_http_requests_total`), outbound e eventos Socket.IO.
-- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO exclusivamente no modo HTTP disponível.
-
-## 🗄️ Persistência de sessão e deploy híbrido
-
 - O runtime sidecar foi aposentado — os manifests `docker-compose*.yml` seguem válidos, mas o volume `whatsapp_sessions_data` deixou de ser pré-requisito para subir a API.
-- O guia `DEPLOY_GUIDE.md` orienta a manter Postgres/Redis gerenciados e reaproveitar o volume entre releases.
-- `scripts/whatsapp-smoke-test.mjs` executa smoke tests REST + Socket.IO garantindo a integridade do pipeline HTTP.
-
-## 🗄️ Persistência de sessão e deploy híbrido
-
-- O deploy padrão depende exclusivamente do broker HTTP externo; não há sidecars locais nem volumes de sessão dedicados.
 - O guia `DEPLOY_GUIDE.md` orienta a manter Postgres/Redis gerenciados e focar na disponibilidade do broker HTTP remoto.
+- `scripts/whatsapp-smoke-test.ts` executa smoke tests REST + Socket.IO garantindo a integridade do pipeline HTTP.
 
 ## 🔁 Operação contínua
 

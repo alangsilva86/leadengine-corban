@@ -168,7 +168,7 @@ pnpm run test         # Vitest e2e da API
 pnpm run lint         # ESLint com regras customizadas
 pnpm run typecheck    # Checagem estrita de tipos
 ```
-O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:whatsapp` para validar o broker com smoke tests (`scripts/whatsapp-smoke-test.mjs`).
+O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:whatsapp` para validar o broker com smoke tests (`scripts/whatsapp-smoke-test.ts`).
 
 ---
 
@@ -291,15 +291,11 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
 - **Scripts** (`/scripts`):
   - `doctor.mjs` – checagem de ambiente.
   - `health-check.sh` – valida endpoints health.
-  - `trace_whatsapp_inbound.sh` e `replay-baileys-log.mjs` – troubleshooting da fila WhatsApp.
+  - `replay-baileys-log.ts` – reproduz eventos do broker em um webhook HTTP para troubleshooting.
   - `build-api-render.sh` / `build-web-render.sh` – builds prontos para hospedar na Render.
   - `deploy.sh` – pipeline automatizada (build + migrações + restart).
-  - `whatsapp-smoke-test.mjs` – valida inbound/webhook no transporte HTTP, escutando Socket.IO e REST.
-- **Circuit breaker & modo de transporte**: `/healthz` retorna o status do transporte WhatsApp via bloco `whatsapp.runtime` (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando a configuração HTTP está incompleta (`apps/api/src/routes/integrations.ts`).
-  - `whatsapp-smoke-test.mjs` – valida inbound/webhook no modo `http` (entrada legada `sidecar` usa o mesmo caminho), escutando Socket.IO e REST.
-- **Circuit breaker & modo de transporte**: `/healthz` retorna o modo ativo do transporte WhatsApp via bloco `whatsapp.runtime` (modo, transport, status, disabled) (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está habilitado (`apps/api/src/routes/integrations.ts`).
-  - `whatsapp-smoke-test.mjs` – valida o pipeline HTTP do webhook, escutando Socket.IO e REST.
-- **Circuit breaker & modo de transporte**: `/healthz` retorna o resumo do transporte WhatsApp via bloco `whatsapp.runtime` (modo, transport, status, disabled) (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando o transporte não está habilitado (`apps/api/src/routes/integrations.ts`).
+  - `whatsapp-smoke-test.ts` – valida inbound/webhook no transporte HTTP, escutando Socket.IO e REST.
+- **Circuit breaker & modo de transporte**: `/healthz` retorna o status do transporte WhatsApp via bloco `whatsapp.runtime` (modo, transport, status, disabled) (`apps/api/src/health.ts`), enquanto as rotas de integrações devolvem `503 WHATSAPP_NOT_CONFIGURED` quando a configuração HTTP está incompleta (`apps/api/src/routes/integrations.ts`). O script `whatsapp-smoke-test.ts` cobre o pipeline HTTP fim a fim.
 
 ---
 
