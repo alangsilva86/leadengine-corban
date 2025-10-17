@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { Input } from '@/components/ui/input.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import {
@@ -13,16 +15,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.jsx';
-import { ArrowLeft, Clock, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner';
-
-import useWhatsAppInstances from './hooks/useWhatsAppInstances.js';
 import {
+  QrCode,
+  CheckCircle2,
+  Link2,
   ArrowLeft,
+  RefreshCcw,
   Clock,
+  AlertCircle,
+  Loader2,
+  Trash2,
+  ChevronDown,
+  History,
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
+import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
@@ -31,36 +40,16 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
-import useWhatsAppCampaigns from './hooks/useWhatsAppCampaigns.js';
-import useWhatsAppInstances from './hooks/useWhatsAppInstances.js';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import CampaignsPanel from './components/CampaignsPanel.jsx';
 import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
 import CreateInstanceDialog from './components/CreateInstanceDialog.jsx';
 import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import QrPreview from './components/QrPreview.jsx';
-import InstancesPanel from './components/InstancesPanel.jsx';
-import QrSection from './components/QrSection.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
-import { looksLikeWhatsAppJid, resolveInstancePhone } from './utils/instanceIdentifiers.js';
+import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.js';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
-import {
-  clearInstancesCache,
-  normalizeInstancesCollection,
-  parseInstancesPayload,
-  persistInstancesCache,
-  readInstancesCache,
-  shouldDisplayInstance,
-} from './utils/instances.js';
-import { getInstanceMetrics } from './utils/metrics.js';
-import {
-  formatMetricValue,
-  formatPhoneNumber,
-  formatTimestampLabel,
-  humanizeLabel,
-} from './utils/formatting.js';
-import useQrImageSource from './hooks/useQrImageSource.js';
 
 const STATUS_TONES = {
   disconnected: 'warning',
@@ -117,15 +106,348 @@ const statusCodeMeta = [
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
+const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
 
+const resolveInstanceStatus = (instance) => {
+  if (!instance || typeof instance !== 'object') {
+    return null;
+  }
 
+  const directStatus = instance.status;
+  if (typeof directStatus === 'string') {
+    return directStatus;
+  }
 
+  if (directStatus && typeof directStatus === 'object') {
+    if (typeof directStatus.current === 'string') {
+      return directStatus.current;
+    }
+    if (typeof directStatus.status === 'string') {
+      return directStatus.status;
+    }
+  }
 
+  return null;
+};
 
+const shouldDisplayInstance = (instance) => {
+  if (!instance || typeof instance !== 'object') {
+    return false;
+  }
 
+  if (instance.connected === true) {
+    return true;
+  }
 
+  const status = resolveInstanceStatus(instance);
+  return status ? VISIBLE_INSTANCE_STATUSES.has(status) : false;
+};
 
+const normalizeKeyName = (value) => `${value}`.toLowerCase().replace(/[^a-z0-9]/g, '');
 
+const pickMetric = (source, keys) => {
+  if (!source) return undefined;
+
+  const normalizedTargets = keys.map(normalizeKeyName);
+  const visited = new Set();
+  const stack = Array.isArray(source) ? [...source] : [source];
+
+  const inspectNested = (value) => {
+    return pickMetric(value, ['total', 'value', 'count', 'quantity']);
+  };
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === null || current === undefined) {
+      continue;
+    }
+
+    if (typeof current !== 'object') {
+      const direct = toNumber(current);
+      if (direct !== null) {
+        return direct;
+      }
+      continue;
+    }
+
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        stack.push(entry);
+      }
+      continue;
+    }
+
+    for (const [propKey, propValue] of Object.entries(current)) {
+      const hasExactMatch = keys.includes(propKey);
+      const normalizedKey = normalizeKeyName(propKey);
+      const fuzzyMatch = normalizedTargets.some((target) =>
+        target.length > 0 && normalizedKey.includes(target)
+      );
+
+      if (hasExactMatch || fuzzyMatch) {
+        const numeric = toNumber(propValue);
+        if (numeric !== null) {
+          return numeric;
+        }
+        if (propValue && typeof propValue === 'object') {
+          const nested = inspectNested(propValue);
+          if (nested !== undefined) {
+            return nested;
+          }
+        }
+      }
+
+      if (propValue && typeof propValue === 'object') {
+        stack.push(propValue);
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric)) {
+      return numeric;
+    }
+  }
+
+  return null;
+};
+
+const findStatusCountsSource = (source) => {
+  if (!source) {
+    return undefined;
+  }
+
+  const keywords = [
+    'statuscounts',
+    'statuscount',
+    'statusmap',
+    'statusmetrics',
+    'statuses',
+    'bystatus',
+    'messagestatuscounts',
+    'messagesstatuscounts',
+    'status',
+  ];
+  const keySet = new Set(['1', '2', '3', '4', '5']);
+
+  const visited = new Set();
+  const queue = Array.isArray(source) ? [...source] : [source];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      if (current.length && current.every((value) => typeof value === 'number')) {
+        return current;
+      }
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    const record = current;
+    const numericKeys = Object.keys(record).filter((key) => keySet.has(key));
+    if (numericKeys.length >= 3) {
+      return record;
+    }
+
+    for (const [propKey, propValue] of Object.entries(record)) {
+      const normalizedKey = normalizeKeyName(propKey);
+      if (keywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (propValue && typeof propValue === 'object') {
+          return propValue;
+        }
+      }
+      if (propValue && typeof propValue === 'object') {
+        queue.push(propValue);
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeStatusCounts = (rawCounts) => {
+  const defaultKeys = ['1', '2', '3', '4', '5'];
+  const normalized = {};
+
+  if (Array.isArray(rawCounts)) {
+    rawCounts.forEach((value, index) => {
+      const numeric = toNumber(value);
+      if (numeric !== null) {
+        normalized[String(index + 1)] = numeric;
+      }
+    });
+  } else if (rawCounts && typeof rawCounts === 'object') {
+    for (const [key, value] of Object.entries(rawCounts)) {
+      const numeric = toNumber(value);
+      if (numeric === null) continue;
+      const keyMatch = `${key}`.match(/\d+/);
+      const normalizedKey = keyMatch ? keyMatch[0] : `${key}`;
+      normalized[normalizedKey] = numeric;
+    }
+  }
+
+  return defaultKeys.reduce((acc, key, index) => {
+    const fallbackKeys = [key, String(index), String(index + 1), `status_${key}`, `status${key}`];
+    const value = fallbackKeys.reduce((current, candidate) => {
+      if (current !== undefined) return current;
+      if (Object.prototype.hasOwnProperty.call(normalized, candidate)) {
+        return normalized[candidate];
+      }
+      return undefined;
+    }, undefined);
+
+    acc[key] = typeof value === 'number' ? value : 0;
+    return acc;
+  }, {});
+};
+
+const findRateSource = (source) => {
+  if (!source) {
+    return undefined;
+  }
+
+  const keywords = ['rateusage', 'ratelimit', 'ratelimiter', 'rate', 'throttle', 'quota'];
+  const visited = new Set();
+  const queue = Array.isArray(source) ? [...source] : [source];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    for (const [propKey, propValue] of Object.entries(current)) {
+      const normalizedKey = normalizeKeyName(propKey);
+      if (keywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (propValue && typeof propValue === 'object') {
+          return propValue;
+        }
+      }
+      if (propValue && typeof propValue === 'object') {
+        queue.push(propValue);
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeRateUsage = (rawRate) => {
+  const defaults = {
+    used: 0,
+    limit: 0,
+    remaining: 0,
+    percentage: 0,
+  };
+
+  if (!rawRate || typeof rawRate !== 'object') {
+    return defaults;
+  }
+
+  const usedCandidate = toNumber(
+    pickMetric(rawRate, ['usage', 'used', 'current', 'value', 'count', 'consumed'])
+  );
+  const limitCandidate = toNumber(pickMetric(rawRate, ['limit', 'max', 'maximum', 'quota', 'total', 'capacity']));
+  const remainingCandidate = toNumber(
+    pickMetric(rawRate, ['remaining', 'left', 'available', 'saldo', 'restante'])
+  );
+
+  let used = usedCandidate !== null ? usedCandidate : null;
+  const limit = limitCandidate !== null ? limitCandidate : null;
+  let remaining = remainingCandidate !== null ? remainingCandidate : null;
+
+  if (used === null && remaining !== null && limit !== null) {
+    used = limit - remaining;
+  }
+
+  if (remaining === null && limit !== null && used !== null) {
+    remaining = limit - used;
+  }
+
+  used = typeof used === 'number' && Number.isFinite(used) ? Math.max(0, used) : 0;
+  const safeLimit = typeof limit === 'number' && Number.isFinite(limit) ? Math.max(0, limit) : 0;
+  remaining = typeof remaining === 'number' && Number.isFinite(remaining) ? Math.max(0, remaining) : safeLimit ? Math.max(safeLimit - used, 0) : 0;
+
+  const percentage = safeLimit > 0 ? Math.min(100, Math.max(0, Math.round((used / safeLimit) * 100))) : used > 0 ? 100 : 0;
+
+  return {
+    used,
+    limit: safeLimit,
+    remaining,
+    percentage,
+  };
+};
+
+const mergeMetricsSources = (...sources) => {
+  return sources.reduce((acc, source) => {
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
+      return { ...acc, ...source };
+    }
+    return acc;
+  }, {});
+};
+
+const getInstanceMetrics = (instance) => {
+  const metricsSource = mergeMetricsSources(
+    instance?.metrics,
+    instance?.stats,
+    instance?.messages,
+    instance?.rawStatus,
+    instance
+  );
+  const sent = pickMetric(metricsSource, ['messagesSent', 'sent', 'totalSent', 'enviadas', 'messages']) ?? 0;
+  const queued = pickMetric(metricsSource, ['queued', 'pending', 'fila', 'queueSize', 'waiting']) ?? 0;
+  const failed = pickMetric(metricsSource, ['failed', 'errors', 'falhas', 'errorCount']) ?? 0;
+  const statusCountsSource =
+    findStatusCountsSource(metricsSource) ||
+    findStatusCountsSource(metricsSource?.status) ||
+    findStatusCountsSource(metricsSource?.messages) ||
+    findStatusCountsSource(instance?.statusMetrics);
+  const status = normalizeStatusCounts(statusCountsSource);
+  const rateUsage = normalizeRateUsage(
+    findRateSource(metricsSource) ||
+      findRateSource(instance?.rate) ||
+      findRateSource(instance?.rawStatus) ||
+      findRateSource(instance)
+  );
+
+  return { sent, queued, failed, status, rateUsage };
+};
 
 const getStatusInfo = (instance) => {
   const rawStatus = instance?.status || (instance?.connected ? 'connected' : 'disconnected');
@@ -139,26 +461,109 @@ const getStatusInfo = (instance) => {
   return map[rawStatus] || { label: rawStatus || 'Indefinido', variant: 'secondary' };
 };
 
+const formatMetricValue = (value) => {
+  if (typeof value === 'number') {
+    return value.toLocaleString('pt-BR');
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    return value;
+  }
+  return '—';
+};
 
+const humanizeLabel = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 'Atualização';
+  }
 
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+};
 
+const formatTimestampLabel = (value) => {
+  if (!value) {
+    return '—';
+  }
 
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
 
+  try {
+    return date.toLocaleString('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  } catch {
+    return date.toISOString();
+  }
+};
 
-const looksLikeWhatsAppJid = (value) =>
-  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
+const isDataUrl = (value) => typeof value === 'string' && value.trim().toLowerCase().startsWith('data:');
 
+const isHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 
-const resolveInstancePhone = (instance) =>
-  instance?.phoneNumber ||
-  instance?.number ||
-  instance?.msisdn ||
-  instance?.metadata?.phoneNumber ||
-  instance?.metadata?.phone_number ||
-  instance?.metadata?.msisdn ||
-  instance?.jid ||
-  instance?.session ||
-  '';
+const isLikelyBase64 = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.replace(/\s+/g, '');
+  if (normalized.length < 16 || normalized.length % 4 !== 0) {
+    return false;
+  }
+  return /^[A-Za-z0-9+/=]+$/.test(normalized);
+};
+
+const isLikelyBaileysString = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
+  const commaCount = (normalized.match(/,/g) || []).length;
+  return normalized.includes('@') || commaCount >= 3 || /::/.test(normalized);
+};
+
+const getQrImageSrc = (qrPayload) => {
+  if (!qrPayload) {
+    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+  }
+
+  const codeCandidate =
+    qrPayload.qrCode ||
+    qrPayload.image ||
+    (typeof qrPayload === 'string' ? qrPayload : null) ||
+    null;
+
+  if (!codeCandidate) {
+    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+  }
+
+  const normalized = `${codeCandidate}`.trim();
+
+  if (isDataUrl(normalized) || isHttpUrl(normalized)) {
+    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false };
+  }
+
+  if (isLikelyBase64(normalized)) {
+    return {
+      code: normalized,
+      immediate: `data:image/png;base64,${normalized}`,
+      needsGeneration: false,
+      isBaileys: false,
+    };
+  }
+
+  const isBaileys = isLikelyBaileysString(normalized);
+
+  return {
+    code: normalized,
+    immediate: null,
+    needsGeneration: true,
+    isBaileys,
+  };
+};
+
 const useQrImageSource = (qrPayload) => {
   const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
   const { code, immediate, needsGeneration } = qrMeta;
@@ -212,6 +617,27 @@ const useQrImageSource = (qrPayload) => {
   return { src, isGenerating };
 };
 
+const formatPhoneNumber = (value) => {
+  if (!value) return '—';
+  const digits = `${value}`.replace(/\D/g, '');
+  if (digits.length < 10) return value;
+  const ddd = digits.slice(0, 2);
+  const nine = digits.length > 10 ? digits.slice(2, 3) : '';
+  const prefix = digits.length > 10 ? digits.slice(3, 7) : digits.slice(2, 6);
+  const suffix = digits.length > 10 ? digits.slice(7) : digits.slice(6);
+  return `(${ddd}) ${nine}${prefix}-${suffix}`;
+};
+
+const resolveInstancePhone = (instance) =>
+  instance?.phoneNumber ||
+  instance?.number ||
+  instance?.msisdn ||
+  instance?.metadata?.phoneNumber ||
+  instance?.metadata?.phone_number ||
+  instance?.metadata?.msisdn ||
+  instance?.jid ||
+  instance?.session ||
+  '';
 
 const extractQrPayload = (payload) => {
   if (!payload) return null;
@@ -364,14 +790,6 @@ const extractInstanceFromPayload = (payload) => {
 
 ;
 
-
-
-
-
-
-
-
-
 const WhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -382,110 +800,18 @@ const WhatsAppConnect = ({
   onContinue,
   onBack,
 }) => {
-  const {
-    warn,
-    logError,
-    surfaceStyles,
-    statusCodeMeta,
-    getStatusInfo,
-    getInstanceMetrics,
-    formatMetricValue,
-    formatPhoneNumber,
-    formatTimestampLabel,
-    humanizeLabel,
-    resolveInstancePhone,
-    statusTone,
-    copy,
-    stepLabel,
-    nextStage,
-    onboardingDescription,
-    hasAgreement,
-    agreementDisplayName,
-    agreementRegion,
-    agreementId,
-    countdownMessage,
-    confirmLabel,
-    confirmDisabled,
-    qrStatusMessage,
-    qrPanelOpen,
-    setQrPanelOpen,
-    qrImageSrc,
-    isGeneratingQrImage,
-    hasQr,
-    isAuthenticated,
-    isBusy,
-    instance,
-    instances,
-    instancesReady,
-    hasHiddenInstances,
-    hasRenderableInstances,
-    renderInstances,
-    showFilterNotice,
-    showAllInstances,
-    setShowAllInstances,
-    instancesCountLabel,
-    errorState,
-    loadingInstances,
-    localStatus,
-    handleMarkConnected,
-    handleRefreshInstances,
-    handleCreateInstance,
-    loadInstances,
-    handleInstanceSelect,
-    setInstancePendingDelete,
-    instancePendingDelete,
-    deletingInstanceId,
-    handleDeleteInstance,
-    submitCreateInstance,
-    isCreateInstanceOpen,
-    setCreateInstanceOpen,
-    defaultInstanceName,
-    isCreateCampaignOpen,
-    setCreateCampaignOpen,
-    pendingReassign,
-    setPendingReassign,
-    reassignIntent,
-    setReassignIntent,
-    removalTargetLabel,
-    removalTargetIsJid,
-    removalDialogTitle,
-    removalDialogAction,
-    qrImageModalOpen,
-    setQrDialogOpen,
-    timelineItems,
-    realtimeConnected,
-    pairingPhoneInput,
-    handlePairingPhoneChange,
-    pairingPhoneError,
-    requestingPairingCode,
-    handleRequestPairingCode,
-    handleAuthFallback,
-    isAuthError,
-    syncCampaignSelection,
-    generateQr,
-    generateQrForInstance,
-    resetQrState,
-    canContinue,
-  } = useWhatsAppInstances({
-    agreement: selectedAgreement,
-    status,
-    onboarding,
-    activeCampaign,
-    onStatusChange,
-  });
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
-  const clearCampaignSelectionRef = useRef(() => {});
-  const authFallbackBridgeRef = useRef(() => {});
-
-  const forwardClearCampaignSelection = useCallback(() => {
-    clearCampaignSelectionRef.current?.();
-  }, []);
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
   const [errorState, setErrorState] = useState(null);
   const [qrPanelOpen, setQrPanelOpen] = useState(status !== 'connected');
+  const [campaign, setCampaign] = useState(activeCampaign || null);
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [campaignError, setCampaignError] = useState(null);
+  const [campaignAction, setCampaignAction] = useState(null);
   const [isQrDialogOpen, setQrDialogOpen] = useState(false);
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
   const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
@@ -494,163 +820,6 @@ const WhatsAppConnect = ({
   const [reassignIntent, setReassignIntent] = useState('reassign');
   const [persistentWarning, setPersistentWarning] = useState(null);
   const loadCampaignsRef = useRef(() => {});
-  const loadInstancesRef = useRef(() => {});
-  const hasFetchedOnceRef = useRef(false);
-  const loadingInstancesRef = useRef(loadingInstances);
-  const loadingQrRef = useRef(loadingQr);
-
-  const forwardAuthFallback = useCallback((payload) => {
-    authFallbackBridgeRef.current?.(payload);
-  }, []);
-
-  const isAuthError = useCallback((error) => {
-    const responseStatus = typeof error?.status === 'number' ? error.status : null;
-    return responseStatus === 401 || responseStatus === 403;
-  }, []);
-
-  const [campaignForInstances, setCampaignForInstances] = useState(activeCampaign ?? null);
-
-  const {
-    state: instanceState,
-    actions: instanceActions,
-    helpers: instanceHelpers,
-  } = useWhatsAppInstances({
-    agreement: selectedAgreement,
-    activeCampaign: campaignForInstances,
-    onStatusChange,
-    onAuthFallback: forwardAuthFallback,
-    toast,
-    logger: { log, warn, error: logError },
-    formatters: {
-      resolveWhatsAppErrorCopy,
-      formatMetricValue,
-      formatTimestampLabel,
-      formatPhoneNumber,
-      humanizeLabel,
-      getInstanceMetrics,
-    },
-    campaignHelpers: {
-      clearCampaignSelection: forwardClearCampaignSelection,
-    },
-    status,
-  });
-
-  authFallbackBridgeRef.current = instanceActions.handleAuthFallback;
-
-  const {
-    instances,
-    instance,
-    instancesReady,
-    showAllInstances,
-    qrData,
-    secondsLeft,
-    loadingInstances,
-    loadingQr,
-    pairingPhoneInput,
-    pairingPhoneError,
-    requestingPairingCode,
-    sessionActive,
-    authDeferred,
-    authTokenState,
-    errorState,
-    localStatus,
-    qrPanelOpen,
-    isQrDialogOpen,
-    deletingInstanceId,
-    instancePendingDelete,
-    timelineItems,
-    realtimeConnected,
-  } = instanceState;
-
-  const {
-    setShowAllInstances,
-    setQrPanelOpen,
-    setQrDialogOpen,
-    setInstancePendingDelete,
-    setDeletingInstanceId,
-    setInstance,
-    loadInstances,
-    connectInstance,
-    generateQr,
-    handleInstanceSelect,
-    handleViewQr,
-    submitCreateInstance,
-    handleDeleteInstance,
-    handleMarkConnected,
-    handlePairingPhoneChange,
-    handleRequestPairingCode,
-    setQrImageGenerating,
-    handleAuthFallback,
-    clearError,
-  } = instanceActions;
-
-  const {
-    shouldDisplayInstance,
-    resolveInstancePhone,
-    formatMetricValue: formatMetricValueHelper,
-    formatTimestampLabel: formatTimestampLabelHelper,
-    formatPhoneNumber: formatPhoneNumberHelper,
-    humanizeLabel: humanizeLabelHelper,
-    getInstanceMetrics: getInstanceMetricsHelper,
-  } = instanceHelpers;
-
-  const {
-    campaign,
-    campaigns,
-    campaignsLoading,
-    campaignError,
-    campaignAction,
-    persistentWarning,
-    loadCampaigns,
-    createCampaign,
-    updateCampaignStatus,
-    deleteCampaign,
-    reassignCampaign,
-    fetchCampaignImpact,
-    clearCampaignSelection,
-  } = useWhatsAppCampaigns({
-    agreement: selectedAgreement,
-    instance: instanceState.instance,
-    instances: instanceState.instances,
-    activeCampaign,
-    onCampaignReady,
-    isAuthError,
-    onAuthError: forwardAuthFallback,
-    onSuccess: (message, options) => toast.success(message, options),
-    onError: (message, options) => toast.error(message, options),
-    warn,
-    logError,
-  });
-
-  clearCampaignSelectionRef.current = clearCampaignSelection;
-
-  useEffect(() => {
-    setCampaignForInstances(campaign ?? activeCampaign ?? null);
-  }, [campaign, activeCampaign]);
-
-  const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
-  const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
-  const [pendingReassign, setPendingReassign] = useState(null);
-  const [reassignIntent, setReassignIntent] = useState('reassign');
-
-  const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
-
-  const { stepLabel, nextStage } = useOnboardingStepLabel({
-    stages: onboarding?.stages,
-    targetStageId: 'whatsapp',
-    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
-  });
-  const hasAgreement = Boolean(selectedAgreement?.id);
-  const agreementName = selectedAgreement?.name ?? null;
-  const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
-  useEffect(() => {
-    if (campaign) {
-      syncCampaignSelection(campaign);
-    }
-  }, [campaign, syncCampaignSelection]);
-  const enforceAuthPrompt = () => {
-    handleAuthFallback({ reset: true });
-  };
 
   const setErrorMessage = (message, meta = {}) => {
     if (message) {
@@ -742,13 +911,20 @@ const WhatsAppConnect = ({
 
   const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
 
-  const hasCampaign = Boolean(campaign);
-  const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
-  const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
-  const pairingDisabled = isBusy || !instance || !isAuthenticated;
+  const expiresAt = useMemo(() => {
+    if (!qrData?.expiresAt) return null;
+    return new Date(qrData.expiresAt).getTime();
+  }, [qrData]);
 
-  const handleConfirm = useCallback(() => {
-    if (!canContinue) {
+  const { stepLabel, nextStage } = useOnboardingStepLabel({
+    stages: onboarding?.stages,
+    targetStageId: 'whatsapp',
+    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
+  });
+  const hasAgreement = Boolean(selectedAgreement?.id);
+  const agreementName = selectedAgreement?.name ?? null;
+  const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
+  const hasCampaign = Boolean(campaign);
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
   useEffect(() => {
     setGeneratingQrState(isGeneratingQrImage);
@@ -788,14 +964,6 @@ const WhatsAppConnect = ({
   const hasRenderableInstances = renderInstances.length > 0;
   const showFilterNotice = instancesReady && hasHiddenInstances && !showAllInstances;
 
-  useEffect(() => {
-    setQrImageGenerating(isGeneratingQrImage);
-  }, [isGeneratingQrImage, setQrImageGenerating]);
-
-  const handleRefreshInstances = useCallback(() => {
-    void loadInstances({ forceRefresh: true });
-  }, [loadInstances]);
-  const handleGenerateQrClick = useCallback(async () => {
   const timelineItems = useMemo(() => {
     if (!instance) {
       return [];
@@ -865,92 +1033,6 @@ const WhatsAppConnect = ({
       setCampaign(null);
     }
   }, [selectedAgreement?.id]);
-
-  useEffect(() => {
-    loadingInstancesRef.current = loadingInstances;
-  }, [loadingInstances]);
-
-  useEffect(() => {
-    loadingQrRef.current = loadingQr;
-  }, [loadingQr]);
-
-  useEffect(() => {
-    generatingQrRef.current = isGeneratingQrImage;
-  }, [isGeneratingQrImage]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    let timeoutId;
-
-    const resolveNextDelay = (result) => {
-      if (!result || result.success || result.skipped) {
-        return DEFAULT_POLL_INTERVAL_MS;
-      }
-
-      const retryAfterMs = parseRetryAfterMs(result.error?.retryAfter);
-      if (retryAfterMs !== null) {
-        return retryAfterMs > 0 ? retryAfterMs : DEFAULT_POLL_INTERVAL_MS;
-      }
-
-      if (result.error?.status === 429) {
-        return RATE_LIMIT_COOLDOWN_MS;
-      }
-
-      return DEFAULT_POLL_INTERVAL_MS;
-    };
-
-    const scheduleNext = (delay = DEFAULT_POLL_INTERVAL_MS) => {
-      if (cancelled) {
-        return;
-      }
-
-      const normalizedDelay =
-        typeof delay === 'number' && Number.isFinite(delay) && delay >= 0
-          ? delay
-          : DEFAULT_POLL_INTERVAL_MS;
-
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-
-      timeoutId = setTimeout(runPoll, normalizedDelay);
-    };
-
-    const runPoll = async () => {
-      if (cancelled) {
-        return;
-      }
-
-      if (loadingInstancesRef.current || loadingQrRef.current || generatingQrRef.current) {
-        scheduleNext(DEFAULT_POLL_INTERVAL_MS);
-        return;
-      }
-
-      const result = await Promise.resolve()
-        .then(() => loadInstancesRef.current?.())
-        .catch((error) => ({ success: false, error }));
-
-      if (cancelled) {
-        return;
-      }
-
-      const delay = resolveNextDelay(result);
-      scheduleNext(delay);
-    };
-
-    runPoll();
-
-    return () => {
-      cancelled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    };
-  }, [selectedAgreement?.id, isAuthenticated]);
 
   useEffect(() => {
     if (!expiresAt || localStatus === 'connected') {
@@ -1137,334 +1219,10 @@ const WhatsAppConnect = ({
   };
 
   const reassignCampaign = async (target, requestedInstanceId) => {
-  const pickCurrentInstance = (
-    list,
-    { preferredInstanceId, campaignInstanceId } = {}
-  ) => {
-    if (!Array.isArray(list) || list.length === 0) {
-      return null;
-    }
-
-    const findMatch = (targetId) => {
-      if (!targetId) {
-        return null;
-      }
-      return (
-        list.find((item) => item.id === targetId || item.name === targetId) || null
-      );
-    };
-
-    const preferredMatch = findMatch(preferredInstanceId);
-    if (preferredMatch) {
-      return preferredMatch;
-    }
-
-    const campaignMatch = findMatch(campaignInstanceId);
-    if (campaignMatch) {
-      return campaignMatch;
-    }
-
-    const connected = list.find((item) => item.connected === true);
-    return connected || list[0];
-  };
-
-  const connectInstance = async (instanceId = null, options = {}) => {
-    if (!instanceId) {
-      throw new Error('ID da instância é obrigatório para iniciar o pareamento.');
-    }
-
-    const encodedId = encodeURIComponent(instanceId);
-    const { phoneNumber: rawPhoneNumber = null, code: rawCode = null } = options ?? {};
-    const trimmedPhone =
-      typeof rawPhoneNumber === 'string' && rawPhoneNumber.trim().length > 0
-        ? rawPhoneNumber.trim()
-        : null;
-    const trimmedCode =
-      typeof rawCode === 'string' && rawCode.trim().length > 0 ? rawCode.trim() : null;
-
-    if (rawPhoneNumber !== null && !trimmedPhone) {
-      throw new Error('Informe um telefone válido para parear por código.');
-    }
-
-    const shouldRequestPairing = Boolean(trimmedPhone || trimmedCode);
-
-    const response = shouldRequestPairing
-      ? await apiPost(
-          `/api/integrations/whatsapp/instances/${encodedId}/pair`,
-          {
-            ...(trimmedPhone ? { phoneNumber: trimmedPhone } : {}),
-            ...(trimmedCode ? { code: trimmedCode } : {}),
-          }
-        )
-      : await apiGet(`/api/integrations/whatsapp/instances/${encodedId}/status`);
-    setSessionActive(true);
-    setAuthDeferred(false);
-
-    const parsed = parseInstancesPayload(response);
-
-    const resolvedInstanceId = parsed.instanceId || instanceId || null;
-    const resolvedStatus = parsed.status || (parsed.connected === false ? 'disconnected' : null);
-    const resolvedConnected =
-      typeof parsed.connected === 'boolean'
-        ? parsed.connected
-        : resolvedStatus
-        ? resolvedStatus === 'connected'
-        : null;
-
-    let instance = parsed.instance;
-    if (instance && resolvedInstanceId && instance.id !== resolvedInstanceId) {
-      instance = { ...instance, id: resolvedInstanceId };
-    } else if (!instance && resolvedInstanceId) {
-      instance = {
-        id: resolvedInstanceId,
-        status: resolvedStatus ?? undefined,
-        connected: resolvedConnected ?? undefined,
-      };
-    }
-
-    const instances = ensureArrayOfObjects(parsed.instances);
-
-    return {
-      instanceId: resolvedInstanceId,
-      status: resolvedStatus,
-      connected: resolvedConnected,
-      qr: parsed.qr,
-      instance: instance
-        ? {
-            ...instance,
-            status: resolvedStatus ?? instance.status,
-            connected:
-              typeof resolvedConnected === 'boolean'
-                ? resolvedConnected
-                : typeof instance.connected === 'boolean'
-                ? instance.connected
-                : undefined,
-          }
-        : null,
-      instances,
-    };
-  };
-
-  const loadInstances = async (options = {}) => {
-    const {
-      connectResult: providedConnect,
-      preferredInstanceId: explicitPreferredInstanceId,
-      forceRefresh,
-    } = options;
-    const hasExplicitPreference = Object.prototype.hasOwnProperty.call(
-      options,
-      'preferredInstanceId'
-    );
-    const resolvedPreferredInstanceId = hasExplicitPreference
-      ? explicitPreferredInstanceId
-      : preferredInstanceIdRef.current ?? null;
-    const agreementId = selectedAgreement?.id ?? null;
-    const token = getAuthToken();
-    setAuthTokenState(token);
-    if (!hasFetchedOnceRef.current) {
-      setInstancesReady(false);
-    }
-    setLoadingInstances(true);
-    setErrorMessage(null);
-    try {
-      log('🚀 Iniciando sincronização de instâncias WhatsApp', {
-        tenantAgreement: selectedAgreement?.id ?? null,
-        preferredInstanceId: resolvedPreferredInstanceId ?? null,
-      });
-      const shouldForceBrokerSync =
-        typeof forceRefresh === 'boolean' ? forceRefresh : true;
-
-      log('🛰️ Solicitando lista de instâncias', {
-        agreementId,
-        forceRefresh: shouldForceBrokerSync,
-        hasFetchedOnce: hasFetchedOnceRef.current,
-      });
-      const instancesUrl = '/api/integrations/whatsapp/instances?refresh=1';
-      const response = await apiGet(instancesUrl);
-      const parsedResponse = parseInstancesPayload(response);
-      setSessionActive(true);
-      setAuthDeferred(false);
-      let list = ensureArrayOfObjects(parsedResponse.instances);
-      let hasServerList = true;
-      let connectResult = providedConnect || null;
-
-      if (list.length === 0 && !shouldForceBrokerSync) {
-        const refreshed = await apiGet(instancesUrl).catch(
-          () => null
-        );
-        if (refreshed) {
-          const parsedRefreshed = parseInstancesPayload(refreshed);
-          const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
-          if (refreshedList.length > 0) {
-            list = refreshedList;
-          }
-        }
-      }
-
-      if (list.length === 0) {
-        const fallbackInstanceId =
-          resolvedPreferredInstanceId || campaign?.instanceId || null;
-        if (fallbackInstanceId) {
-          connectResult = connectResult || (await connectInstance(fallbackInstanceId));
-        } else {
-          warn('Nenhuma instância padrão disponível para conexão automática', {
-            agreementId,
-            preferredInstanceId: resolvedPreferredInstanceId ?? null,
-            campaignInstanceId: campaign?.instanceId ?? null,
-          });
-        }
-
-        if (connectResult?.instances?.length) {
-          list = ensureArrayOfObjects(connectResult.instances);
-        } else if (connectResult?.instance) {
-          list = ensureArrayOfObjects([connectResult.instance]);
-        }
-      }
-
-      const preferenceOptions = {
-        preferredInstanceId: resolvedPreferredInstanceId,
-        campaignInstanceId: campaign?.instanceId ?? null,
-      };
-
-      let current = pickCurrentInstance(list, preferenceOptions);
-
-      if (!current && connectResult?.instance) {
-        current = connectResult.instance;
-      }
-
-      if (current && (connectResult?.status || connectResult?.instance)) {
-        const merged = {
-          ...current,
-          ...(connectResult?.instance ? connectResult.instance : {}),
-          status: connectResult.status ?? current.status,
-          connected:
-            typeof connectResult?.connected === 'boolean'
-              ? connectResult.connected
-              : typeof current.connected === 'boolean'
-              ? current.connected
-              : false,
-        };
-        current = merged;
-        list = list.map((item) => (item.id === merged.id ? { ...item, ...merged } : item));
-      } else if (connectResult?.instance) {
-        const candidate = connectResult.instance;
-        list = list.map((item) => (item.id === candidate.id ? { ...item, ...candidate } : item));
-      }
-
-      const normalizedList = normalizeInstancesCollection(list);
-      list = normalizedList;
-
-      if (current) {
-        const normalizedCurrent = normalizedList.find((item) => item.id === current.id);
-        if (normalizedCurrent) {
-          current = { ...normalizedCurrent, ...current };
-          list = normalizedList.map((item) => (item.id === current.id ? { ...item, ...current } : item));
-        } else {
-          current = pickCurrentInstance(normalizedList, preferenceOptions);
-        }
-      } else {
-        current = pickCurrentInstance(normalizedList, preferenceOptions);
-      }
-
-      if (!current && connectResult?.instance) {
-        const normalizedConnect = normalizedList.find(
-          (item) => item.id === connectResult.instance.id
-        );
-        current = normalizedConnect || connectResult.instance;
-      }
-
-      const resolvedTotal = Array.isArray(list) ? list.length : instances.length;
-
-      hasFetchedOnceRef.current = true;
-
-      if (Array.isArray(list) && list.length > 0) {
-        setInstances(list);
-        setInstance(current);
-        preferredInstanceIdRef.current = current?.id ?? null;
-        persistInstancesCache(list, current?.id ?? null);
-      } else if (hasServerList) {
-        setInstances([]);
-        setInstance(null);
-        preferredInstanceIdRef.current = null;
-        clearInstancesCache();
-      } else {
-        warn('Servidor não retornou instâncias; reutilizando cache local', {
-          agreementId,
-          preferredInstanceId: resolvedPreferredInstanceId ?? null,
-        });
-      }
-
-      const statusFromInstance =
-        connectResult?.status ||
-        (typeof connectResult?.connected === 'boolean'
-          ? connectResult.connected
-            ? 'connected'
-            : 'disconnected'
-          : null) ||
-        current?.status ||
-        'disconnected';
-      setAuthDeferred(false);
-      setLocalStatus(statusFromInstance);
-      onStatusChange?.(statusFromInstance);
-
-      const connectQr = connectResult?.qr;
-      const shouldShowQrFromConnect =
-        connectResult && connectResult.connected === false && Boolean(connectQr?.qrCode);
-
-      if (shouldShowQrFromConnect) {
-        setQrData(connectQr);
-      } else if (current && statusFromInstance !== 'connected') {
-        await generateQr(current.id, { skipStatus: Boolean(connectResult) });
-      } else {
-        setQrData(null);
-        setSecondsLeft(null);
-      }
-      log('✅ Instâncias sincronizadas', {
-        total: resolvedTotal,
-        status: statusFromInstance,
-        instanceId: current?.id ?? null,
-        forceRefresh: shouldForceBrokerSync,
-      });
-      return { success: true, status: statusFromInstance };
-    } catch (err) {
-      const status = err?.response?.status;
-      const errorCode = err?.response?.data?.code ?? err?.code;
-      const isMissingInstanceError = status === 404 || errorCode === 'INSTANCE_NOT_FOUND';
-
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      } else if (!isMissingInstanceError) {
-        applyErrorMessageFromError(
-          err,
-          'Não foi possível carregar status do WhatsApp'
-        );
-        if (!isMissingInstanceError) {
-          setErrorMessage(
-            err instanceof Error ? err.message : 'Não foi possível carregar status do WhatsApp'
-          );
-        } else {
-          setErrorMessage(null);
-        }
-      }
-      warn('Instâncias não puderam ser carregadas', err);
-      return { success: false, error: err, skipped: isAuthError(err) };
-    } finally {
-      setLoadingInstances(false);
-      setInstancesReady(true);
-    }
-  };
-  loadInstancesRef.current = loadInstances;
-
-  const handleDeleteInstance = async (target) => {
     if (!target?.id) {
       return;
     }
-    onContinue?.();
-  }, [canContinue, onContinue]);
 
-  const handleSelectInstance = useCallback(
-    async (item, { skipAutoQr = false } = {}) => {
-      if (!item) {
     setCampaignError(null);
     setCampaignAction({ id: target.id, type: 'reassign' });
 
@@ -1523,130 +1281,6 @@ const WhatsAppConnect = ({
         handleAuthFallback({ error: err });
       }
       throw err instanceof Error ? err : new Error('Falha ao carregar impacto da campanha');
-    const agreementId = selectedAgreement?.id;
-    setDeletingInstanceId(target.id);
-    try {
-      const encodedId = encodeURIComponent(target.id);
-      const isJid = looksLikeWhatsAppJid(target.id);
-      const url = isJid
-        ? `/api/integrations/whatsapp/instances/${encodedId}/disconnect`
-        : `/api/integrations/whatsapp/instances/${encodedId}`;
-      const method = isJid ? 'POST' : 'DELETE';
-
-      log(isJid ? '🔌 Desconectando instância WhatsApp' : '🗑️ Removendo instância WhatsApp', {
-        instanceId: target.id,
-        agreementId,
-        method,
-        url,
-      });
-
-      if (isJid) {
-        await apiPost(url, {});
-      } else {
-        await apiDelete(url);
-      }
-      clearInstancesCache();
-      if (instance?.id === target.id) {
-        setInstance(null);
-        preferredInstanceIdRef.current = null;
-        setLocalStatus('disconnected');
-      }
-      await loadInstances({ preferredInstanceId: null, forceRefresh: true });
-      log(isJid ? '✅ Sessão desconectada' : '✅ Instância removida', {
-        instanceId: target.id,
-        agreementId,
-        method,
-        url,
-      });
-      toast.success(isJid ? 'Sessão desconectada com sucesso' : 'Instância removida com sucesso');
-    } catch (err) {
-      const friendly = applyErrorMessageFromError(
-        err,
-        'Não foi possível remover a instância'
-      );
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-      }
-      const encodedId = encodeURIComponent(target.id);
-      const isJid = looksLikeWhatsAppJid(target.id);
-      const url = isJid
-        ? `/api/integrations/whatsapp/instances/${encodedId}/disconnect`
-        : `/api/integrations/whatsapp/instances/${encodedId}`;
-      const method = isJid ? 'POST' : 'DELETE';
-
-      const statusCode =
-        typeof err?.response?.status === 'number'
-          ? err.response.status
-          : typeof err?.status === 'number'
-            ? err.status
-            : null;
-      const responseData = err?.response?.data ?? err?.payload ?? null;
-      const errorCode =
-        (responseData && typeof responseData === 'object' && responseData !== null
-          ? responseData.error?.code || responseData.code
-          : null) || err?.code || null;
-      const isInstanceMissing =
-        statusCode === 404 ||
-        errorCode === 'INSTANCE_NOT_FOUND' ||
-        errorCode === 'BROKER_INSTANCE_NOT_FOUND';
-
-      if (isInstanceMissing) {
-        const nextCurrentId = instance?.id === target.id ? null : instance?.id ?? null;
-        warn('Instância não encontrada no servidor; removendo localmente', {
-          agreementId,
-          instanceId: target.id,
-          method,
-          url,
-          statusCode,
-          errorCode,
-        });
-        clearInstancesCache();
-        setInstances((prev) => {
-          const nextList = Array.isArray(prev)
-            ? prev.filter((item) => item && item.id !== target.id)
-            : [];
-          preferredInstanceIdRef.current = nextCurrentId;
-          persistInstancesCache(nextList, nextCurrentId);
-          return nextList;
-        });
-        if (instance?.id === target.id) {
-          setInstance(null);
-          preferredInstanceIdRef.current = null;
-          setLocalStatus('disconnected');
-        }
-        await loadInstances({ preferredInstanceId: nextCurrentId, forceRefresh: true });
-        toast.success('Instância removida com sucesso.');
-        return;
-      }
-
-      handleInstanceSelect(item);
-
-      if (campaign && campaign.instanceId && campaign.instanceId !== item.id) {
-        clearCampaignSelection();
-      }
-
-      if (skipAutoQr) {
-        return;
-      }
-
-      if (item.status !== 'connected') {
-        await generateQrForInstance(item.id, { skipStatus: false });
-      } else {
-        resetQrState();
-      }
-    },
-    [campaign, clearCampaignSelection, generateQrForInstance, handleInstanceSelect, resetQrState]
-  );
-
-  const handleViewQrInstance = useCallback(
-    async (item) => {
-      if (!item) {
-        return;
-      }
-        applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
-      }
-    } finally {
-      setLoadingQr(false);
     }
   };
 
@@ -1710,7 +1344,7 @@ const WhatsAppConnect = ({
     if (!inst) return;
 
     if (campaign && campaign.instanceId !== inst.id) {
-      clearCampaignSelection();
+      setCampaign(null);
     }
 
     await selectInstance(inst, { skipAutoQr });
@@ -1726,19 +1360,7 @@ const WhatsAppConnect = ({
   const handleGenerateQr = async () => {
     if (!instance?.id) return;
     await generateQr(instance.id);
-  }, [generateQr, instance?.id]);
-
-  const handleViewQrDialog = useCallback(
-    async (inst) => {
-      await handleViewQr(inst);
-    },
-    [handleViewQr]
-  );
-
-  const handleCreateInstanceOpen = useCallback(() => {
-    clearError();
-    setCreateInstanceOpen(true);
-  }, [clearError]);
+  };
 
   const handleMarkConnected = async () => {
     const success = await markConnected();
@@ -1763,12 +1385,16 @@ const WhatsAppConnect = ({
     onContinue?.();
   };
 
-      await handleSelectInstance(item, { skipAutoQr: true });
-      await generateQrForInstance(item.id, { skipStatus: true });
-      setQrDialogOpen(true);
-    },
-    [generateQrForInstance, handleSelectInstance, setQrDialogOpen]
-  );
+  const removalTargetLabel =
+    instancePendingDelete?.name ||
+    instancePendingDelete?.displayId ||
+    instancePendingDelete?.id ||
+    'selecionada';
+  const removalTargetIsJid = instancePendingDelete?.id
+    ? looksLikeWhatsAppJid(instancePendingDelete.id)
+    : false;
+  const removalDialogTitle = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
+  const removalDialogAction = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -1826,60 +1452,380 @@ const WhatsAppConnect = ({
       ) : null}
 
       <div className="space-y-6">
-        <InstancesPanel
-          surfaceStyles={surfaceStyles}
-          hasAgreement={hasAgreement}
-          nextStage={nextStage}
-          agreementDisplayName={agreementDisplayName}
-          selectedAgreementRegion={agreementRegion}
-          selectedAgreementId={agreementId}
-          selectedInstance={instance}
-          selectedInstanceStatusInfo={selectedInstanceStatusInfo}
-          selectedInstancePhone={selectedInstancePhone}
-          hasCampaign={hasCampaign}
-          campaign={campaign}
-          instancesReady={instancesReady}
-          hasHiddenInstances={hasHiddenInstances}
-          hasRenderableInstances={hasRenderableInstances}
-          renderInstances={renderInstances}
-          showFilterNotice={showFilterNotice}
-          showAllInstances={showAllInstances}
-          instancesCountLabel={instancesCountLabel}
-          errorState={errorState}
-          isBusy={isBusy}
-          isAuthenticated={isAuthenticated}
-          loadingInstances={loadingInstances}
-          copy={copy}
-          localStatus={localStatus}
-          confirmLabel={confirmLabel}
-          confirmDisabled={confirmDisabled}
-          onConfirm={() => void handleConfirm()}
-          onMarkConnected={() => void handleMarkConnected()}
-          onRefresh={() => void handleRefreshInstances()}
-          onCreateInstance={() => void handleCreateInstanceOpen()}
-          onToggleShowAll={() => setShowAllInstances((current) => !current)}
-          onShowAll={() => setShowAllInstances(true)}
-          onRetry={() => void loadInstances({ forceRefresh: true })}
-          onSelectInstance={(item) => void handleInstanceSelect(item)}
-          onViewQr={(item) => void handleViewQrDialog(item)}
-          onSelectInstance={(item) => void handleSelectInstance(item)}
-          onViewQr={(item) => void handleViewQrInstance(item)}
-          onRequestDelete={(item) => setInstancePendingDelete(item)}
-          deletingInstanceId={deletingInstanceId}
-          statusCodeMeta={statusCodeMeta}
-          getStatusInfo={getStatusInfo}
-          getInstanceMetrics={getInstanceMetricsHelper}
-          formatMetricValue={formatMetricValueHelper}
-          resolveInstancePhone={resolveInstancePhone}
-          formatPhoneNumber={formatPhoneNumberHelper}
-        />
+        <Card className={cn(SURFACE_COLOR_UTILS.instancesPanel)}>
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>Painel de instâncias</CardTitle>
+              <CardDescription>
+                {hasAgreement
+                  ? `Vincule o número certo ao convênio e confirme para avançar para ${nextStage}. Campanhas permanecem opcionais para quem precisa de regras avançadas.`
+                  : 'Conecte um número do WhatsApp e avance. Se quiser regras de roteamento, crie campanhas opcionais quando fizer sentido.'}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <CampaignHistoryDialog agreementId={selectedAgreement?.id} />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleRefreshInstances()}
+                disabled={loadingInstances || !isAuthenticated}
+              >
+                <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar lista
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleCreateInstance()}
+              >
+                + Nova instância
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+                <div
+                  className={cn(
+                    'grid gap-4 rounded-[var(--radius)] p-4 text-sm',
+                    SURFACE_COLOR_UTILS.glassTile
+                  )}
+                >
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">
+                    {agreementDisplayName}
+                  </p>
+                  {selectedAgreement?.region ? (
+                    <p className="text-xs text-muted-foreground">{selectedAgreement.region}</p>
+                  ) : null}
+                </div>
+                <div className="max-w-[260px] sm:max-w-full">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância selecionada</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground">
+                      {instance?.name || instance?.id || 'Escolha uma instância'}
+                    </p>
+                    {selectedInstanceStatusInfo ? (
+                      <Badge variant={selectedInstanceStatusInfo.variant} className="px-2 py-0 text-[0.65rem]">
+                        {selectedInstanceStatusInfo.label}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {instance ? `Telefone: ${formatPhoneNumber(selectedInstancePhone)}` : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Campanha</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">
+                    {hasCampaign ? campaign.name : 'Será criada após a confirmação'}
+                  </p>
+                  {hasCampaign && campaign.updatedAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Atualizada em {new Date(campaign.updatedAt).toLocaleString('pt-BR')}
+                    </p>
+                  ) : hasCampaign ? (
+                    <p className="text-xs text-muted-foreground">
+                      Instância vinculada: {campaign.instanceName || campaign.instanceId}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Será ligada ao número selecionado.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
+                <span>Instâncias disponíveis</span>
+                <div className="flex items-center gap-2">
+                  {instancesReady && hasHiddenInstances && hasRenderableInstances ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="link"
+                      className="h-auto px-0 text-[0.65rem] uppercase"
+                      onClick={() => setShowAllInstances((current) => !current)}
+                    >
+                      {showAllInstances ? 'Ocultar desconectadas' : 'Mostrar todas'}
+                    </Button>
+                  ) : null}
+                  <span>{instancesCountLabel}</span>
+                </div>
+              </div>
+              {showFilterNotice ? (
+                <p className="text-[0.7rem] text-muted-foreground">
+                  Mostrando apenas instâncias conectadas. Use “Mostrar todas” para acessar sessões desconectadas.
+                </p>
+              ) : null}
+              {!instancesReady ? (
+                <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                  {Array.from({ length: 2 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className={cn(
+                        'flex h-full w-full flex-col rounded-2xl p-4',
+                        SURFACE_COLOR_UTILS.glassTile
+                      )}
+                    >
+                      <Skeleton className="h-5 w-3/4" />
+                      <Skeleton className="mt-2 h-4 w-1/2" />
+                      <Skeleton className="mt-2 h-4 w-2/3" />
+                      <div className="mt-4 grid gap-2">
+                        <Skeleton className="h-16 w-full" />
+                        <Skeleton className="h-16 w-full" />
+                      </div>
+                      <Skeleton className="mt-4 h-10 w-24" />
+                    </div>
+                  ))}
+                </div>
+              ) : hasRenderableInstances ? (
+                <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                  {renderInstances.map((item, index) => {
+                    const isCurrent = instance?.id === item.id;
+                    const statusInfo = getStatusInfo(item);
+                    const metrics = getInstanceMetrics(item);
+                    const statusValues = metrics.status || {};
+                    const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
+                    const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
+                    const phoneLabel = resolveInstancePhone(item);
+                    const addressLabel = item.address || item.jid || item.session || '';
+                    const lastUpdated = item.updatedAt || item.lastSeen || item.connectedAt;
+                    const lastUpdatedLabel = lastUpdated
+                      ? new Date(lastUpdated).toLocaleString('pt-BR')
+                      : '—';
+
+                    return (
+                      <div
+                        key={item.id || item.name || index}
+                        className={cn(
+                          'flex h-full w-full flex-col rounded-2xl border p-4 transition-colors',
+                          isCurrent
+                            ? SURFACE_COLOR_UTILS.glassTileActive
+                            : SURFACE_COLOR_UTILS.glassTileIdle
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground">{item.name || item.id}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatPhoneNumber(phoneLabel) || '—'}
+                        </p>
+                        {addressLabel && addressLabel !== phoneLabel ? (
+                          <p className="text-xs text-muted-foreground">{addressLabel}</p>
+                        ) : null}
+                      </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Remover instância"
+                            title="Remover instância"
+                            disabled={deletingInstanceId === item.id}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setInstancePendingDelete(item);
+                            }}
+                          >
+                            {deletingInstanceId === item.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                          <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
+                            <div
+                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                            >
+                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
+                              <p className="mt-1 text-base font-semibold text-foreground">
+                                {formatMetricValue(metrics.sent)}
+                              </p>
+                            </div>
+                            <div
+                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                            >
+                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
+                              <p className="mt-1 text-base font-semibold text-foreground">
+                                {formatMetricValue(metrics.queued)}
+                              </p>
+                            </div>
+                            <div
+                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                            >
+                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
+                              <p className="mt-1 text-base font-semibold text-foreground">
+                                {formatMetricValue(metrics.failed)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-2 text-center sm:grid-cols-3 lg:grid-cols-5">
+                            {statusCodeMeta.map((meta) => (
+                              <div
+                                key={meta.code}
+                                className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
+                                title={meta.description}
+                              >
+                                <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                                  {meta.label}
+                                </p>
+                                <p className="mt-1 text-base font-semibold text-foreground">
+                                  {formatMetricValue(statusValues[meta.code])}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div
+                            className={cn(
+                              'rounded-lg p-3 text-left',
+                              SURFACE_COLOR_UTILS.glassTile
+                            )}
+                            title="Uso do limite de envio reportado pelo broker."
+                          >
+                            <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+                              <span>Utilização do limite</span>
+                              <span>{ratePercentage}%</span>
+                            </div>
+                            <div
+                              className={cn(
+                                'mt-2 h-2 w-full overflow-hidden rounded-full',
+                                SURFACE_COLOR_UTILS.progressTrack
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  'h-full rounded-full transition-all',
+                                  SURFACE_COLOR_UTILS.progressIndicator
+                                )}
+                                style={{ width: `${ratePercentage}%` }}
+                              />
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                              <span>Usadas: {formatMetricValue(rateUsage.used)}</span>
+                              <span>Disponível: {formatMetricValue(rateUsage.remaining)}</span>
+                              <span>Limite: {formatMetricValue(rateUsage.limit)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span>Atualizado: {lastUpdatedLabel}</span>
+                          {item.user ? <span>Operador: {item.user}</span> : null}
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant={isCurrent ? 'default' : 'outline'}
+                            onClick={() => void handleInstanceSelect(item)}
+                            disabled={isBusy}
+                          >
+                            {isCurrent ? 'Instância selecionada' : 'Selecionar'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void handleViewQr(item)}
+                            disabled={isBusy || !isAuthenticated}
+                          >
+                            <QrCode className="mr-2 h-3.5 w-3.5" /> Ver QR
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : hasHiddenInstances ? (
+                <div
+                  className={cn(
+                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
+                    SURFACE_COLOR_UTILS.glassTileDashed
+                  )}
+                >
+                  <p>Nenhuma instância conectada no momento. Mostre todas para gerenciar sessões desconectadas.</p>
+                  <Button
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => setShowAllInstances(true)}
+                    disabled={isBusy}
+                  >
+                    Mostrar todas
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
+                    SURFACE_COLOR_UTILS.glassTileDashed
+                  )}
+                >
+                  <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o Lead Engine.</p>
+                  <Button
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => void handleCreateInstance()}
+                  >
+                    Criar instância agora
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {errorState ? (
+              <div
+                className={cn(
+                  'flex flex-wrap items-start gap-3 rounded-[var(--radius)] p-3 text-xs',
+                  SURFACE_COLOR_UTILS.destructiveBanner
+                )}
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4" />
+                <div className="flex-1 space-y-1">
+                  <p className="font-medium">{errorState.title ?? 'Algo deu errado'}</p>
+                  <p>{errorState.message}</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void loadInstances({ forceRefresh: true })}
+                  >
+                    Tentar novamente
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+          <CardFooter className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Link2 className="h-4 w-4" />
+              Status atual: <span className="font-medium text-foreground">{copy.badge}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {localStatus !== 'connected' ? (
+                <Button onClick={handleMarkConnected} disabled={isBusy || !isAuthenticated}>
+                  Marcar como conectado
+                </Button>
+              ) : null}
+              <Button onClick={() => void handleConfirm()} disabled={confirmDisabled}>
+                {confirmLabel}
+              </Button>
+            </div>
+          </CardFooter>
+        </Card>
         <CampaignsPanel
           agreementName={selectedAgreement?.name ?? null}
           campaigns={campaigns}
           loading={campaignsLoading}
           error={campaignError}
           onRefresh={() =>
-            void loadCampaigns({
+            void loadCampaignsRef.current?.({
               preferredAgreementId: selectedAgreement?.id ?? null,
               preferredCampaignId: campaign?.id ?? null,
               preferredInstanceId: instance?.id ?? null,
@@ -1902,30 +1848,170 @@ const WhatsAppConnect = ({
           canCreateCampaigns={hasAgreement}
           selectedAgreementId={selectedAgreement?.id ?? null}
         />
-        <QrSection
-          surfaceStyles={surfaceStyles}
-          open={qrPanelOpen}
-          onOpenChange={setQrPanelOpen}
-          qrImageSrc={qrImageSrc}
-          isGeneratingQrImage={isGeneratingQrImage}
-          qrStatusMessage={qrStatusMessage}
-          onGenerate={handleGenerateQrClick}
-          onGenerate={generateQr}
-          onOpenQrDialog={() => setQrDialogOpen(true)}
-          generateDisabled={isBusy || !instance || !isAuthenticated}
-          openDisabled={!hasQr}
-          pairingPhoneInput={pairingPhoneInput}
-          onPairingPhoneChange={handlePairingPhoneChange}
-          pairingDisabled={pairingDisabled}
-          requestingPairingCode={requestingPairingCode}
-          onRequestPairingCode={() => void handleRequestPairingCode()}
-          pairingPhoneError={pairingPhoneError}
-          timelineItems={timelineItems}
-          realtimeConnected={realtimeConnected}
-          humanizeLabel={humanizeLabelHelper}
-          formatPhoneNumber={formatPhoneNumberHelper}
-          formatTimestampLabel={formatTimestampLabelHelper}
-        />
+        <Card className={cn(SURFACE_COLOR_UTILS.qrInstructionsPanel)}>
+          <Collapsible open={qrPanelOpen} onOpenChange={setQrPanelOpen}>
+            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <QrCode className="h-5 w-5" />
+                  QR Code e instruções
+                </CardTitle>
+                <CardDescription>Escaneie com o aplicativo oficial para ativar a sessão.</CardDescription>
+              </div>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'ml-auto inline-flex items-center gap-2 text-xs uppercase tracking-wide transition-transform',
+                    qrPanelOpen ? 'rotate-180' : ''
+                  )}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                  {qrPanelOpen ? 'Recolher' : 'Expandir'}
+                </Button>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-6">
+                <QrPreview
+                  className={cn('rounded-xl p-6', SURFACE_COLOR_UTILS.glassTileDashed)}
+                  illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
+                  src={qrImageSrc}
+                  isGenerating={isGeneratingQrImage}
+                  statusMessage={qrStatusMessage}
+                  onGenerate={handleGenerateQr}
+                  onOpen={() => setQrDialogOpen(true)}
+                  generateDisabled={isBusy || !instance || !isAuthenticated}
+                  openDisabled={!hasQr}
+                />
+
+                <div className="space-y-3 text-sm text-muted-foreground">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                    <p>Use o número que já interage com os clientes. Não é necessário chip ou aparelho adicional.</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                    <p>O Lead Engine garante distribuição automática. Você só recebe quando o servidor responde “quero falar”.</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                    <p>Se perder a conexão, repita o processo — seus leads permanecem reservados na sua inbox.</p>
+                  </div>
+                </div>
+
+                <div
+                  className={cn(
+                    'space-y-3 rounded-xl p-4',
+                    SURFACE_COLOR_UTILS.glassTile
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <span className="flex items-center gap-2">
+                      <Link2 className="h-4 w-4" /> Pareamento por código
+                    </span>
+                    <span className="text-[0.65rem] text-muted-foreground">Opcional</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Receba um código de 8 dígitos no aplicativo oficial para vincular sem escanear o QR Code.
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      value={pairingPhoneInput}
+                      onChange={handlePairingPhoneChange}
+                      placeholder="DDD + número"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      disabled={isBusy || !instance || !isAuthenticated}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => void handleRequestPairingCode()}
+                      disabled={isBusy || !instance || !isAuthenticated}
+                    >
+                      {requestingPairingCode ? (
+                        <>
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Solicitando…
+                        </>
+                      ) : (
+                        <>
+                          <Link2 className="mr-2 h-3.5 w-3.5" /> Parear por código
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {pairingPhoneError ? (
+                    <p className="text-xs text-destructive">{pairingPhoneError}</p>
+                  ) : (
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      No WhatsApp: Configurações &gt; Dispositivos conectados &gt; Conectar com código.
+                    </p>
+                  )}
+                </div>
+
+                <div
+                  className={cn(
+                    'space-y-3 rounded-xl p-4',
+                    SURFACE_COLOR_UTILS.glassTile
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-300/70">
+                    <span className="flex items-center gap-2">
+                      <History className="h-4 w-4" /> Atividade recente
+                    </span>
+                    <span className={cn('text-[0.65rem]', realtimeConnected ? 'text-emerald-300' : 'text-muted-foreground')}>
+                      {realtimeConnected ? 'Tempo real ativo' : 'Tempo real offline'}
+                    </span>
+                  </div>
+                  {timelineItems.length > 0 ? (
+                    <ul className="space-y-2 text-sm">
+                      {timelineItems.map((item) => (
+                        <li
+                          key={item.id}
+                          className={cn(
+                            'flex flex-wrap justify-between gap-3 rounded-lg px-3 py-2',
+                            SURFACE_COLOR_UTILS.glassTile
+                          )}
+                        >
+                          <div className="space-y-1">
+                            <p className="font-medium text-foreground">{humanizeLabel(item.type)}</p>
+                            {item.status ? (
+                              <p className="text-xs text-muted-foreground">
+                                Status: {humanizeLabel(item.status)}
+                                {typeof item.connected === 'boolean'
+                                  ? ` • ${item.connected ? 'Conectado' : 'Desconectado'}`
+                                  : ''}
+                              </p>
+                            ) : null}
+                            {item.phoneNumber ? (
+                              <p className="text-xs text-muted-foreground">
+                                Telefone: {formatPhoneNumber(item.phoneNumber)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {formatTimestampLabel(item.timestamp)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Aguardando atividades desta instância. As sincronizações e mudanças de status aparecem aqui em tempo real.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+              <CardFooter className="rounded-lg bg-muted/40 px-6 py-4 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Dica para evitar bloqueios</p>
+                <p className="mt-1">
+                  Mantenha o aplicativo oficial aberto e responda às mensagens em até 15 minutos. A inteligência do Lead Engine cuida do aquecimento automático do número.
+                </p>
+              </CardFooter>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
       </div>
 
       <CreateInstanceDialog
@@ -1978,37 +2064,39 @@ const WhatsAppConnect = ({
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{removalDialogTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {removalTargetIsJid ? (
-                <>
-                  Esta ação desconecta a sessão <strong>{removalTargetLabel}</strong>. Utilize quando precisar encerrar um dispositivo sincronizado com o broker.
-                </>
-              ) : (
-                <>
-                  Esta ação remove permanentemente a instância <strong>{removalTargetLabel}</strong>. Verifique se não há campanhas ativas utilizando este número.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!instancePendingDelete) return;
-                await handleDeleteInstance(instancePendingDelete);
-                setInstancePendingDelete(null);
-              }}
-            >
-              {removalDialogAction}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{removalDialogTitle}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {removalTargetIsJid ? (
+              <>
+                Esta ação desconecta a sessão <strong>{removalTargetLabel}</strong>. Utilize quando precisar encerrar um
+                dispositivo sincronizado com o broker.
+              </>
+            ) : (
+              <>
+                Esta ação remove permanentemente a instância <strong>{removalTargetLabel}</strong>. Verifique se não há
+                campanhas ativas utilizando este número.
+              </>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={async () => {
+              if (!instancePendingDelete) return;
+              await handleDeleteInstance(instancePendingDelete);
+              setInstancePendingDelete(null);
+            }}
+          >
+            {removalDialogAction}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
-      <Dialog open={qrImageModalOpen} onOpenChange={setQrDialogOpen}>
+      <Dialog open={isQrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Escaneie o QR Code</DialogTitle>
@@ -2018,7 +2106,7 @@ const WhatsAppConnect = ({
           </DialogHeader>
           <div className="flex flex-col items-center gap-4">
             <QrPreview
-              illustrationClassName={surfaceStyles.qrIllustration}
+              illustrationClassName={SURFACE_COLOR_UTILS.qrIllustration}
               src={qrImageSrc}
               isGenerating={isGeneratingQrImage}
               size={64}

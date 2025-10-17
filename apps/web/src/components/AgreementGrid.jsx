@@ -1,80 +1,18 @@
-import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { apiGet } from '@/lib/api.js';
-import AgreementCard from '@/components/agreements/AgreementCard.jsx';
-import AgreementCardSkeleton from '@/components/agreements/AgreementCardSkeleton.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { apiGet } from '@/lib/api.js';
 import { AgreementCard, AgreementCardSkeleton } from './agreements/index.js';
-import { MapPin, ArrowRight, AlertCircle } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { apiGet } from '@/lib/api.js';
-import { cn } from '@/lib/utils.js';
-import { Skeleton } from '@/components/ui/skeleton.jsx';
+import useAgreements from '@/features/agreements/useAgreements.js';
 import useOnboardingStepLabel from '@/features/onboarding/useOnboardingStepLabel.js';
 
 const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
-  const [agreements, setAgreements] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const load = async () => {
-      try {
-        setLoading(true);
-        const payload = await apiGet('/api/lead-engine/agreements');
-        if (!mounted) return;
-        setAgreements(payload.data || []);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Falha ao carregar convênios');
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const { agreements, isLoading, error, retry } = useAgreements();
   const { stepLabel, nextStage } = useOnboardingStepLabel({
     stages: onboarding?.stages,
     targetStageId: 'agreements',
     fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'WhatsApp' },
   });
-  const isLoading = loading && agreements.length === 0;
 
-  const handleRetry = async () => {
-    try {
-      setError(null);
-      setLoading(true);
-      const payload = await apiGet('/api/lead-engine/agreements');
-      setAgreements(payload.data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar convênios');
-    } finally {
-      setLoading(false);
-    }
-  };
-import useAgreements from '@/features/agreements/useAgreements.js';
-
-const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
-  const { agreements, isLoading, error, retry } = useAgreements();
-  const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'agreements') ?? 1;
-  const totalStages = onboarding?.stages?.length ?? 0;
-  const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 2;
-  const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : 'Passo 2';
-  const nextStage = onboarding?.stages?.[Math.min(stageIndex + 1, totalStages - 1)]?.label ?? 'WhatsApp';
   const showSkeletons = isLoading && agreements.length === 0;
 
   return (
@@ -89,8 +27,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
         </div>
         {selectedAgreement ? (
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2 rounded-full bg-primary-soft px-3 py-1 font-medium text-primary-foreground">
-            <span className="inline-flex items-center gap-2 rounded-full border borderToneInfoBorder bgToneInfoSurface px-3 py-1 font-medium textToneInfoForeground">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-medium text-primary">
               Convênio ativo
             </span>
             <strong className="text-foreground">{selectedAgreement.name}</strong>
@@ -101,7 +38,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
         ) : (
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Badge variant="secondary">{stepLabel}</Badge>
-            <span>Próximo: {nextStage}</span>
+            {nextStage ? <span>Próximo: {nextStage}</span> : null}
           </div>
         )}
       </header>
@@ -120,121 +57,17 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {isLoading
-          ? Array.from({ length: 3 }).map((_, index) => <AgreementCardSkeleton key={`skeleton-${index}`} />)
-          : agreements.map((agreement) => (
-              <AgreementCard
-                key={agreement.id}
-                {...agreement}
-                tags={agreement.tags ?? []}
         {showSkeletons
-          ? Array.from({ length: 3 }).map((_, index) => (
-              <Card key={`skeleton-${index}`} className="borderBorder">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <Skeleton className="h-5 w-32" />
-                      <Skeleton className="h-4 w-44" />
-                    </div>
-                    <Skeleton className="h-6 w-20 rounded-full" />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="space-y-2">
-                      <Skeleton className="h-3 w-24" />
-                      <Skeleton className="h-5 w-16" />
-                    </div>
-                    <div className="space-y-2 text-right">
-                      <Skeleton className="h-3 w-24" />
-                      <Skeleton className="h-5 w-16" />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Skeleton className="h-6 w-16 rounded-full" />
-                    <Skeleton className="h-6 w-20 rounded-full" />
-                    <Skeleton className="h-6 w-24 rounded-full" />
-                  </div>
-                </CardContent>
-                <CardFooter className="flex items-center justify-between">
-                  <Skeleton className="h-3 w-32" />
-                  <Skeleton className="h-9 w-32 rounded-full" />
-                </CardFooter>
-              </Card>
-            ))
-          : agreements.map((agreement) => {
-              const isSelected = selectedAgreement?.id === agreement.id;
-              return (
-                <Card
-                  key={agreement.id}
-                  className={cn(
-                    'transition-colors duration-200',
-                    isSelected
-                      ? 'border-primary-soft-border shadow-none shadow-focus-primary'
-                      : 'border-border'
-                  )}
-                  className={`transition-colors duration-200 ${
-                    isSelected ? 'borderToneInfoBorder shadow-brand-ring' : 'borderBorder'
-                  }`}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-lg font-semibold">{agreement.name}</CardTitle>
-                        <CardDescription>{agreement.description}</CardDescription>
-                      </div>
-                      <Badge variant={isSelected ? 'secondary' : 'info'}>
-                        <MapPin className="mr-1 h-3 w-3" />
-                        {agreement.region}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Leads disponíveis</p>
-                        <p className="text-lg font-semibold text-foreground">{agreement.availableLeads}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-muted-foreground">Leads quentes</p>
-                        <p className="text-lg font-semibold text-foreground">{agreement.hotLeads}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {agreement.tags?.map((tag) => (
-                        <Badge key={tag} variant="outline">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex items-center justify-between">
-                    <div className="text-xs text-muted-foreground">
-                      Atualizado em {agreement.lastSyncAt ? new Date(agreement.lastSyncAt).toLocaleString() : '—'}
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => onSelect?.(agreement)}
-                      variant={isSelected ? 'default' : 'outline'}
-                    >
-                      {isSelected ? 'Convênio selecionado' : 'Ativar leads'}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })}
-              <AgreementCardSkeleton key={`skeleton-${index}`} className="border-[var(--border)]" />
-            ))
-          : agreements.map((agreement) => (
+          ? Array.from({ length: 3 }).map((_, index) => <AgreementCardSkeleton key={`skeleton-${index}`} />)
+          : agreements.map((agreement, index) => (
               <AgreementCard
-                key={agreement.id}
+                key={agreement.id ?? `${agreement.name ?? 'agreement'}-${index}`}
                 name={agreement.name}
                 description={agreement.description}
                 region={agreement.region}
                 availableLeads={agreement.availableLeads}
                 hotLeads={agreement.hotLeads}
-                tags={agreement.tags}
+                tags={agreement.tags ?? []}
                 lastSyncAt={agreement.lastSyncAt}
                 isSelected={selectedAgreement?.id === agreement.id}
                 onSelect={() => onSelect?.(agreement)}

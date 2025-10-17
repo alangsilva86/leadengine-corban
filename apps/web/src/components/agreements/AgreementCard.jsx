@@ -28,30 +28,14 @@ const AgreementCard = ({
   isSelected = false,
   onSelect,
   actionLabel,
-  className = '',
+  className,
   badgeVariant,
   ...cardProps
 }) => {
-  const formattedLastSync = lastSyncAt ? new Date(lastSyncAt).toLocaleString() : '—';
+  const formattedLastSync = formatLastSync(lastSyncAt);
   const resolvedActionLabel = actionLabel ?? (isSelected ? 'Convênio selecionado' : 'Ativar leads');
   const resolvedBadgeVariant = badgeVariant ?? (isSelected ? 'secondary' : 'info');
 
-  return (
-    <Card
-      className={`transition-colors duration-200 ${
-        isSelected
-          ? 'border-[color-mix(in_oklab,_var(--primary)_55%,_transparent)] shadow-[0_0_0_1px_rgba(99,102,241,0.35)]'
-          : 'border-[var(--border)]'
-      } ${className}`}
-      {...cardProps}
-  availableLeads,
-  hotLeads,
-  tags = [],
-  lastSyncAt,
-  isSelected = false,
-  onSelect,
-  className,
-}) => {
   return (
     <Card
       className={cn(
@@ -61,6 +45,7 @@ const AgreementCard = ({
           : 'border-[var(--border)]',
         className
       )}
+      {...cardProps}
     >
       <CardHeader>
         <div className="flex items-start justify-between">
@@ -70,10 +55,6 @@ const AgreementCard = ({
           </div>
           {region ? (
             <Badge variant={resolvedBadgeVariant}>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          {region ? (
-            <Badge variant={isSelected ? 'secondary' : 'info'}>
               <MapPin className="mr-1 h-3 w-3" />
               {region}
             </Badge>
@@ -91,7 +72,7 @@ const AgreementCard = ({
             <p className="text-lg font-semibold text-foreground">{hotLeads}</p>
           </div>
         </div>
-        {tags?.length ? (
+        {tags.length ? (
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => (
               <Badge key={tag} variant="outline">
@@ -105,9 +86,6 @@ const AgreementCard = ({
         <div className="text-xs text-muted-foreground">Atualizado em {formattedLastSync}</div>
         <Button size="sm" onClick={onSelect} variant={isSelected ? 'default' : 'outline'}>
           {resolvedActionLabel}
-        <div className="text-xs text-muted-foreground">Atualizado em {formatLastSync(lastSyncAt)}</div>
-        <Button size="sm" onClick={onSelect} variant={isSelected ? 'default' : 'outline'}>
-          {isSelected ? 'Convênio selecionado' : 'Ativar leads'}
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </CardFooter>
