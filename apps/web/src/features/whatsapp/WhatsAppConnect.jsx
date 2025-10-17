@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
@@ -23,7 +23,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
-import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
@@ -44,7 +43,7 @@ import InstancesPanel from './components/InstancesPanel.jsx';
 import QrSection from './components/QrSection.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
-import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.js';
+import { looksLikeWhatsAppJid, resolveInstancePhone } from './utils/instanceIdentifiers.js';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 import {
   clearInstancesCache,
@@ -61,7 +60,7 @@ import {
   formatTimestampLabel,
   humanizeLabel,
 } from './utils/formatting.js';
-import { getQrImageSrc } from './utils/qr.js';
+import useQrImageSource from './hooks/useQrImageSource.js';
 
 const STATUS_TONES = {
   disconnected: 'warning',
@@ -146,6 +145,20 @@ const getStatusInfo = (instance) => {
 
 
 
+const looksLikeWhatsAppJid = (value) =>
+  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
+
+
+const resolveInstancePhone = (instance) =>
+  instance?.phoneNumber ||
+  instance?.number ||
+  instance?.msisdn ||
+  instance?.metadata?.phoneNumber ||
+  instance?.metadata?.phone_number ||
+  instance?.metadata?.msisdn ||
+  instance?.jid ||
+  instance?.session ||
+  '';
 const useQrImageSource = (qrPayload) => {
   const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
   const { code, immediate, needsGeneration } = qrMeta;
@@ -199,21 +212,6 @@ const useQrImageSource = (qrPayload) => {
   return { src, isGenerating };
 };
 
-
-const looksLikeWhatsAppJid = (value) =>
-  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
-
-
-const resolveInstancePhone = (instance) =>
-  instance?.phoneNumber ||
-  instance?.number ||
-  instance?.msisdn ||
-  instance?.metadata?.phoneNumber ||
-  instance?.metadata?.phone_number ||
-  instance?.metadata?.msisdn ||
-  instance?.jid ||
-  instance?.session ||
-  '';
 
 const extractQrPayload = (payload) => {
   if (!payload) return null;
