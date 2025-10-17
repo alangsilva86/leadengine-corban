@@ -1,3 +1,9 @@
+import { useEffect, useState } from 'react';
+import { AlertCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge.jsx';
+import { Button } from '@/components/ui/button.jsx';
+import { apiGet } from '@/lib/api.js';
+import { AgreementCard, AgreementCardSkeleton } from './agreements/index.js';
 import { MapPin, ArrowRight, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -108,97 +114,22 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {showSkeletons
           ? Array.from({ length: 3 }).map((_, index) => (
-              <Card key={`skeleton-${index}`} className="border-[var(--border)]">
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <Skeleton className="h-5 w-32" />
-                      <Skeleton className="h-4 w-44" />
-                    </div>
-                    <Skeleton className="h-6 w-20 rounded-full" />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="space-y-2">
-                      <Skeleton className="h-3 w-24" />
-                      <Skeleton className="h-5 w-16" />
-                    </div>
-                    <div className="space-y-2 text-right">
-                      <Skeleton className="h-3 w-24" />
-                      <Skeleton className="h-5 w-16" />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Skeleton className="h-6 w-16 rounded-full" />
-                    <Skeleton className="h-6 w-20 rounded-full" />
-                    <Skeleton className="h-6 w-24 rounded-full" />
-                  </div>
-                </CardContent>
-                <CardFooter className="flex items-center justify-between">
-                  <Skeleton className="h-3 w-32" />
-                  <Skeleton className="h-9 w-32 rounded-full" />
-                </CardFooter>
-              </Card>
+              <AgreementCardSkeleton key={`skeleton-${index}`} className="border-[var(--border)]" />
             ))
-          : agreements.map((agreement) => {
-              const isSelected = selectedAgreement?.id === agreement.id;
-              return (
-                <Card
-                  key={agreement.id}
-                  className={`transition-colors duration-200 ${
-                    isSelected
-                      ? 'border-[color-mix(in_oklab,_var(--primary)_55%,_transparent)] shadow-[0_0_0_1px_rgba(99,102,241,0.35)]'
-                      : 'border-[var(--border)]'
-                  }`}
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-lg font-semibold">{agreement.name}</CardTitle>
-                        <CardDescription>{agreement.description}</CardDescription>
-                      </div>
-                      <Badge variant={isSelected ? 'secondary' : 'info'}>
-                        <MapPin className="mr-1 h-3 w-3" />
-                        {agreement.region}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Leads disponíveis</p>
-                        <p className="text-lg font-semibold text-foreground">{agreement.availableLeads}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-muted-foreground">Leads quentes</p>
-                        <p className="text-lg font-semibold text-foreground">{agreement.hotLeads}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {agreement.tags?.map((tag) => (
-                        <Badge key={tag} variant="outline">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex items-center justify-between">
-                    <div className="text-xs text-muted-foreground">
-                      Atualizado em {agreement.lastSyncAt ? new Date(agreement.lastSyncAt).toLocaleString() : '—'}
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => onSelect?.(agreement)}
-                      variant={isSelected ? 'default' : 'outline'}
-                    >
-                      {isSelected ? 'Convênio selecionado' : 'Ativar leads'}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-              );
-            })}
+          : agreements.map((agreement) => (
+              <AgreementCard
+                key={agreement.id}
+                name={agreement.name}
+                description={agreement.description}
+                region={agreement.region}
+                availableLeads={agreement.availableLeads}
+                hotLeads={agreement.hotLeads}
+                tags={agreement.tags}
+                lastSyncAt={agreement.lastSyncAt}
+                isSelected={selectedAgreement?.id === agreement.id}
+                onSelect={() => onSelect?.(agreement)}
+              />
+            ))}
       </div>
 
       {!isLoading && !error && agreements.length === 0 ? (
