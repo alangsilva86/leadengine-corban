@@ -22,11 +22,7 @@ import {
   Clock,
   AlertTriangle,
 } from 'lucide-react';
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
 import { cn } from '@/lib/utils.js';
-import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
-import { getAuthToken } from '@/lib/auth.js';
-import { parseRetryAfterMs } from '@/lib/rate-limit.js';
 import { toDataURL as generateQrDataUrl } from 'qrcode';
 import usePlayfulLogger from '../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
@@ -36,8 +32,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
-import useInstanceLiveUpdates from './hooks/useInstanceLiveUpdates.js';
 import useWhatsAppCampaigns from './hooks/useWhatsAppCampaigns.js';
+import useWhatsAppInstances from './hooks/useWhatsAppInstances.js';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import CampaignsPanel from './components/CampaignsPanel.jsx';
 import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
@@ -65,7 +61,7 @@ import {
   formatTimestampLabel,
   humanizeLabel,
 } from './utils/formatting.js';
-import { extractQrPayload, getQrImageSrc } from './utils/qr.js';
+import { getQrImageSrc } from './utils/qr.js';
 
 const STATUS_TONES = {
   disconnected: 'warning',
@@ -202,6 +198,10 @@ const useQrImageSource = (qrPayload) => {
 
   return { src, isGenerating };
 };
+
+
+const looksLikeWhatsAppJid = (value) =>
+  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
 
 const resolveInstancePhone = (instance) =>
@@ -476,6 +476,12 @@ const WhatsAppConnect = ({
     onStatusChange,
   });
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
+  const clearCampaignSelectionRef = useRef(() => {});
+  const authFallbackBridgeRef = useRef(() => {});
+
+  const forwardClearCampaignSelection = useCallback(() => {
+    clearCampaignSelectionRef.current?.();
+  }, []);
   const [showAllInstances, setShowAllInstances] = useState(false);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
@@ -495,44 +501,100 @@ const WhatsAppConnect = ({
   const loadingInstancesRef = useRef(loadingInstances);
   const loadingQrRef = useRef(loadingQr);
 
-  const requireAuthMessage =
-    'Não foi possível sincronizar as instâncias de WhatsApp no momento. Tente novamente em instantes.';
+  const forwardAuthFallback = useCallback((payload) => {
+    authFallbackBridgeRef.current?.(payload);
+  }, []);
 
-  const isAuthError = (error) => {
-    const status = typeof error?.status === 'number' ? error.status : null;
-    return status === 401 || status === 403;
-  };
+  const isAuthError = useCallback((error) => {
+    const responseStatus = typeof error?.status === 'number' ? error.status : null;
+    return responseStatus === 401 || responseStatus === 403;
+  }, []);
 
-  const handleAuthFallback = ({ reset = false, error: errorCandidate = null } = {}) => {
-    setLoadingInstances(false);
-    setLoadingQr(false);
-    const status =
-      typeof errorCandidate?.status === 'number'
-        ? errorCandidate.status
-        : typeof errorCandidate?.response?.status === 'number'
-          ? errorCandidate.response.status
-          : null;
-    const shouldDisplayWarning = status === 401 || status === 403;
+  const [campaignForInstances, setCampaignForInstances] = useState(activeCampaign ?? null);
 
-    if (shouldDisplayWarning || reset) {
-      setErrorMessage(requireAuthMessage, {
-        title: 'Sincronização necessária',
-      });
-    } else if (!authTokenState) {
-      setErrorMessage(null);
-    }
-    if (reset) {
-      setInstances([]);
-      setInstance(null);
-      clearInstancesCache();
-      preferredInstanceIdRef.current = null;
-      setLocalStatus('disconnected');
-      setQrData(null);
-      setSecondsLeft(null);
-      setInstancesReady(true);
-      setAuthTokenState(null);
-    }
-  };
+  const {
+    state: instanceState,
+    actions: instanceActions,
+    helpers: instanceHelpers,
+  } = useWhatsAppInstances({
+    agreement: selectedAgreement,
+    activeCampaign: campaignForInstances,
+    onStatusChange,
+    onAuthFallback: forwardAuthFallback,
+    toast,
+    logger: { log, warn, error: logError },
+    formatters: {
+      resolveWhatsAppErrorCopy,
+      formatMetricValue,
+      formatTimestampLabel,
+      formatPhoneNumber,
+      humanizeLabel,
+      getInstanceMetrics,
+    },
+    campaignHelpers: {
+      clearCampaignSelection: forwardClearCampaignSelection,
+    },
+    status,
+  });
+
+  authFallbackBridgeRef.current = instanceActions.handleAuthFallback;
+
+  const {
+    instances,
+    instance,
+    instancesReady,
+    showAllInstances,
+    qrData,
+    secondsLeft,
+    loadingInstances,
+    loadingQr,
+    pairingPhoneInput,
+    pairingPhoneError,
+    requestingPairingCode,
+    sessionActive,
+    authDeferred,
+    authTokenState,
+    errorState,
+    localStatus,
+    qrPanelOpen,
+    isQrDialogOpen,
+    deletingInstanceId,
+    instancePendingDelete,
+    timelineItems,
+    realtimeConnected,
+  } = instanceState;
+
+  const {
+    setShowAllInstances,
+    setQrPanelOpen,
+    setQrDialogOpen,
+    setInstancePendingDelete,
+    setDeletingInstanceId,
+    setInstance,
+    loadInstances,
+    connectInstance,
+    generateQr,
+    handleInstanceSelect,
+    handleViewQr,
+    submitCreateInstance,
+    handleDeleteInstance,
+    handleMarkConnected,
+    handlePairingPhoneChange,
+    handleRequestPairingCode,
+    setQrImageGenerating,
+    handleAuthFallback,
+    clearError,
+  } = instanceActions;
+
+  const {
+    shouldDisplayInstance,
+    resolveInstancePhone,
+    formatMetricValue: formatMetricValueHelper,
+    formatTimestampLabel: formatTimestampLabelHelper,
+    formatPhoneNumber: formatPhoneNumberHelper,
+    humanizeLabel: humanizeLabelHelper,
+    getInstanceMetrics: getInstanceMetricsHelper,
+  } = instanceHelpers;
 
   const {
     campaign,
@@ -550,18 +612,39 @@ const WhatsAppConnect = ({
     clearCampaignSelection,
   } = useWhatsAppCampaigns({
     agreement: selectedAgreement,
-    instance,
-    instances,
+    instance: instanceState.instance,
+    instances: instanceState.instances,
     activeCampaign,
     onCampaignReady,
     isAuthError,
-    onAuthError: handleAuthFallback,
+    onAuthError: forwardAuthFallback,
     onSuccess: (message, options) => toast.success(message, options),
     onError: (message, options) => toast.error(message, options),
     warn,
     logError,
   });
 
+  clearCampaignSelectionRef.current = clearCampaignSelection;
+
+  useEffect(() => {
+    setCampaignForInstances(campaign ?? activeCampaign ?? null);
+  }, [campaign, activeCampaign]);
+
+  const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
+  const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
+  const [pendingReassign, setPendingReassign] = useState(null);
+  const [reassignIntent, setReassignIntent] = useState('reassign');
+
+  const copy = statusCopy[localStatus] ?? statusCopy.disconnected;
+
+  const { stepLabel, nextStage } = useOnboardingStepLabel({
+    stages: onboarding?.stages,
+    targetStageId: 'whatsapp',
+    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
+  });
+  const hasAgreement = Boolean(selectedAgreement?.id);
+  const agreementName = selectedAgreement?.name ?? null;
+  const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
   useEffect(() => {
     if (campaign) {
       syncCampaignSelection(campaign);
@@ -707,6 +790,14 @@ const WhatsAppConnect = ({
   const hasRenderableInstances = renderInstances.length > 0;
   const showFilterNotice = instancesReady && hasHiddenInstances && !showAllInstances;
 
+  useEffect(() => {
+    setQrImageGenerating(isGeneratingQrImage);
+  }, [isGeneratingQrImage, setQrImageGenerating]);
+
+  const handleRefreshInstances = useCallback(() => {
+    void loadInstances({ forceRefresh: true });
+  }, [loadInstances]);
+  const handleGenerateQrClick = useCallback(async () => {
   const timelineItems = useMemo(() => {
     if (!instance) {
       return [];
@@ -1637,113 +1728,19 @@ const WhatsAppConnect = ({
   const handleGenerateQr = async () => {
     if (!instance?.id) return;
     await generateQr(instance.id);
-  };
+  }, [generateQr, instance?.id]);
 
-  const handleCreateInstance = () => {
-    setErrorMessage(null);
+  const handleViewQrDialog = useCallback(
+    async (inst) => {
+      await handleViewQr(inst);
+    },
+    [handleViewQr]
+  );
+
+  const handleCreateInstanceOpen = useCallback(() => {
+    clearError();
     setCreateInstanceOpen(true);
-  };
-
-  const submitCreateInstance = async ({ name, id }) => {
-    const normalizedName = `${name ?? ''}`.trim();
-    if (!normalizedName) {
-      const error = new Error('Informe um nome válido para a nova instância.');
-      setErrorMessage(error.message);
-      throw error;
-    }
-
-    const normalizedId =
-      typeof id === 'string'
-        ? id
-        : id === null || typeof id === 'undefined'
-          ? ''
-          : `${id}`;
-    const payloadBody = {
-      name: normalizedName,
-      ...(normalizedId ? { id: normalizedId } : {}),
-      ...(selectedAgreement?.id ? { agreementId: selectedAgreement.id } : {}),
-      ...(selectedAgreement?.name ? { agreementName: selectedAgreement.name } : {}),
-      ...(selectedAgreement?.tenantId ? { tenantId: selectedAgreement.tenantId } : {}),
-    };
-
-    setLoadingInstances(true);
-    setErrorMessage(null);
-
-    try {
-      log('🧪 Criando nova instância WhatsApp', {
-        agreementId: selectedAgreement?.id ?? null,
-        name: normalizedName,
-      });
-
-      const response = await apiPost('/api/integrations/whatsapp/instances', payloadBody);
-      setSessionActive(true);
-      const payload = response?.data ?? {};
-      const createdInstance = extractInstanceFromPayload(payload);
-      const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
-      const resolvedCreatedInstance = createdInstance
-        ? {
-            ...createdInstance,
-            name: createdInstance.name ?? normalizedName,
-            displayName:
-              createdInstance.displayName ||
-              createdInstance.label ||
-              createdInstance.metadata?.displayName ||
-              normalizedName,
-            label: createdInstance.label ?? createdInstance.displayName ?? undefined,
-          }
-        : null;
-
-      let connectResult = null;
-
-      if (createdInstanceId) {
-        try {
-          const startResult = await connectInstance(createdInstanceId);
-          if (startResult) {
-            connectResult = {
-              ...startResult,
-              instance: {
-                ...(resolvedCreatedInstance || {}),
-                ...(startResult.instance || {}),
-              },
-            };
-          }
-        } catch (startError) {
-          console.warn('Não foi possível iniciar a instância recém-criada', startError);
-        }
-      }
-
-      await loadInstances({
-        preferredInstanceId: createdInstanceId,
-        connectResult: connectResult || undefined,
-        forceRefresh: true,
-      });
-
-      if (resolvedCreatedInstance) {
-        setInstance(resolvedCreatedInstance);
-        preferredInstanceIdRef.current = resolvedCreatedInstance.id ?? null;
-        persistInstancesCache(instances, resolvedCreatedInstance.id ?? null);
-      }
-
-      toast.success('Instância criada com sucesso. Escaneie o QR Code para concluir a conexão.');
-      setCreateInstanceOpen(false);
-    } catch (err) {
-      if (isAuthError(err)) {
-        handleAuthFallback({ error: err });
-        throw err;
-      }
-
-      const friendly = resolveFriendlyError(
-        err,
-        'Não foi possível criar a instância. Tente novamente em instantes.'
-      );
-      setErrorMessage(friendly.message);
-      logError('Falha ao criar instância WhatsApp', err);
-      const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
-      throw errorToThrow;
-    } finally {
-      setLoadingInstances(false);
-    }
-  };
+  }, [clearError]);
 
   const handleMarkConnected = async () => {
     const success = await markConnected();
@@ -1859,22 +1856,24 @@ const WhatsAppConnect = ({
           confirmLabel={confirmLabel}
           confirmDisabled={confirmDisabled}
           onConfirm={() => void handleConfirm()}
-          onMarkConnected={handleMarkConnected}
+          onMarkConnected={() => void handleMarkConnected()}
           onRefresh={() => void handleRefreshInstances()}
-          onCreateInstance={() => void handleCreateInstance()}
+          onCreateInstance={() => void handleCreateInstanceOpen()}
           onToggleShowAll={() => setShowAllInstances((current) => !current)}
           onShowAll={() => setShowAllInstances(true)}
           onRetry={() => void loadInstances({ forceRefresh: true })}
+          onSelectInstance={(item) => void handleInstanceSelect(item)}
+          onViewQr={(item) => void handleViewQrDialog(item)}
           onSelectInstance={(item) => void handleSelectInstance(item)}
           onViewQr={(item) => void handleViewQrInstance(item)}
           onRequestDelete={(item) => setInstancePendingDelete(item)}
           deletingInstanceId={deletingInstanceId}
           statusCodeMeta={statusCodeMeta}
           getStatusInfo={getStatusInfo}
-          getInstanceMetrics={getInstanceMetrics}
-          formatMetricValue={formatMetricValue}
+          getInstanceMetrics={getInstanceMetricsHelper}
+          formatMetricValue={formatMetricValueHelper}
           resolveInstancePhone={resolveInstancePhone}
-          formatPhoneNumber={formatPhoneNumber}
+          formatPhoneNumber={formatPhoneNumberHelper}
         />
         <CampaignsPanel
           agreementName={selectedAgreement?.name ?? null}
@@ -1912,6 +1911,7 @@ const WhatsAppConnect = ({
           qrImageSrc={qrImageSrc}
           isGeneratingQrImage={isGeneratingQrImage}
           qrStatusMessage={qrStatusMessage}
+          onGenerate={handleGenerateQrClick}
           onGenerate={generateQr}
           onOpenQrDialog={() => setQrDialogOpen(true)}
           generateDisabled={isBusy || !instance || !isAuthenticated}
@@ -1924,9 +1924,9 @@ const WhatsAppConnect = ({
           pairingPhoneError={pairingPhoneError}
           timelineItems={timelineItems}
           realtimeConnected={realtimeConnected}
-          humanizeLabel={humanizeLabel}
-          formatPhoneNumber={formatPhoneNumber}
-          formatTimestampLabel={formatTimestampLabel}
+          humanizeLabel={humanizeLabelHelper}
+          formatPhoneNumber={formatPhoneNumberHelper}
+          formatTimestampLabel={formatTimestampLabelHelper}
         />
       </div>
 
