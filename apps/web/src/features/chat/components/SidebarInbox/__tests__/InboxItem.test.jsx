@@ -93,7 +93,8 @@ describe('InboxItem', () => {
     renderComponent({ selected: true, onSelect });
 
     const button = screen.getByRole('button');
-    expect(button).toHaveClass('border-sky-500/80');
+    expect(button).toHaveClass('border-primary/60');
+    expect(button).toHaveClass('bg-surface-overlay-strong');
 
     fireEvent.click(button);
 

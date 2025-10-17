@@ -85,26 +85,29 @@ export const InboxItem = ({
       type="button"
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'flex w-full flex-col gap-4 rounded-xl border border-slate-800/70 bg-slate-950/75 p-4 text-left text-slate-200 transition hover:border-sky-500/40 hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
-        selected && 'border-sky-500/80 bg-slate-900'
+        'flex w-full flex-col gap-4 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet p-4 text-left text-foreground transition hover:border-primary/40 hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]',
+        selected && 'border-primary/60 bg-surface-overlay-strong'
       )}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/80 text-sky-300">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
             <ChannelIcon className="h-4 w-4" />
           </span>
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <span className="max-w-[160px] truncate" title={name}>
                 {name}
               </span>
               <StatusBadge status={ticket.status} />
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
               <PipelineStepTag step={ticket.pipelineStep ?? ticket.metadata?.pipelineStep} />
               {ticket.timeline?.unreadInboundCount ? (
-                <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
+                <Badge
+                  variant="outline"
+                  className="border border-primary/40 bg-primary/10 text-primary"
+                >
                   {ticket.timeline.unreadInboundCount} novas
                 </Badge>
               ) : null}
@@ -120,34 +123,40 @@ export const InboxItem = ({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
         <SlaBadge window={ticket.window} />
         {ticket.qualityScore !== null && ticket.qualityScore !== undefined ? (
-          <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
+          <Badge
+            variant="outline"
+            className="border border-success-soft-border bg-success-soft text-success-strong"
+          >
             Qualidade {ticket.qualityScore}%
           </Badge>
         ) : null}
         {ticket.lead?.probability ? (
-          <Badge variant="outline" className="border border-slate-700 bg-transparent text-slate-300">
+          <Badge
+            variant="outline"
+            className="border border-warning-soft-border bg-warning-soft text-warning-strong"
+          >
             {ticket.lead.probability}% chance
           </Badge>
         ) : null}
       </div>
 
-      <div className="text-sm text-slate-300">
-        {typingLabel ? <span className="text-slate-100">{typingLabel}</span> : preview}
+      <div className="text-sm text-foreground-muted">
+        {typingLabel ? <span className="text-foreground">{typingLabel}</span> : preview}
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center gap-4 text-xs text-foreground-muted">
         <div className="flex items-center gap-2">
-          <Avatar className="h-8 w-8 border border-slate-800/70">
+          <Avatar className="h-8 w-8 border border-surface-overlay-glass-border">
             <AvatarImage src={ticket.contact?.avatar} alt={name} />
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          <span className="text-[13px] text-slate-300">{assignmentLabel}</span>
+          <span className="text-[13px] text-foreground-muted">{assignmentLabel}</span>
         </div>
-        {phoneLabel ? <span className="text-xs text-slate-400">{phoneLabel}</span> : null}
-        {lastInboundLabel ? <span className="text-xs text-slate-400">{lastInboundLabel}</span> : null}
+        {phoneLabel ? <span className="text-xs text-foreground-muted">{phoneLabel}</span> : null}
+        {lastInboundLabel ? <span className="text-xs text-foreground-muted">{lastInboundLabel}</span> : null}
       </div>
     </button>
   );
