@@ -4,10 +4,6 @@
     "reason": "Stories legadas ainda usam a paleta neutra antiga; serão migradas para tokens semânticos após a estabilização do novo glass panel."
   },
   {
-    "pattern": "apps/web/src/features/leads/inbox/components/**/*",
-    "reason": "Área de inbox legada aguardando refatoração para tokens do design system."
-  },
-  {
     "pattern": "apps/web/src/features/chat/components/**/*",
     "reason": "Fluxo de chat original com dependências externas ainda não compatíveis com os tokens."
   },

@@ -1,9 +1,11 @@
 # QA Review – Evolução da Inbox de Leads
 
+> **Atualização (jan/2025):** o módulo legado `LeadInbox` citado nesta revisão foi removido e substituído pelo `ChatCommandCenter`. O documento permanece como registro histórico das lacunas identificadas antes da migração.
+
 ## Escopo e abordagem
-- **Contexto analisado**: revisão da implementação atual da Inbox de Leads após a inclusão da barra de filtros globais, views salvas com contadores e ajustes no painel de ações.
+- **Contexto analisado**: revisão da implementação da Inbox de Leads antes da migração para o `ChatCommandCenter`, após a inclusão da barra de filtros globais, views salvas com contadores e ajustes no painel de ações.
 - **Metodologia**: análise estática de código, revisão do plano evolutivo (Epics A–G) e verificação dos fluxos críticos descritos nas histórias B1 e B2. Execução de lint para validar a saúde do pacote web (falha por dívida preexistente).
-- **Ambiente**: repositório `apps/web`, componentes `LeadInbox`, `GlobalFiltersBar`, `InboxActions`, `StatusFilter` e tokens de tema em `App.css`.
+- **Ambiente**: repositório `apps/web`, componentes legados `LeadInbox`, `GlobalFiltersBar`, `InboxActions`, `StatusFilter` e tokens de tema em `App.css`.
 
 ## Passo a passo por épico
 
@@ -13,13 +15,13 @@
 
 ### EPIC B — Cabeçalho de filtros globais
 - **História B1 – Views salvas e contadores**
-  - **Implementado parcialmente**: `LeadInbox` armazena filtros e views em `localStorage`, reconcilia automaticamente a view ativa e calcula contadores em tempo real a partir da lista filtrada.【F:apps/web/src/features/leads/inbox/components/LeadInbox.jsx†L308-L451】
+  - **Implementado parcialmente (legado)**: `LeadInbox` armazenava filtros e views em `localStorage`, reconciliava automaticamente a view ativa e calculava contadores em tempo real a partir da lista filtrada (componente removido na migração para o `ChatCommandCenter`).
   - **Observações de QA**:
     - O nome da visão depende de `window.prompt`, o que não atende requisitos de UX acessível nem previsibilidade para cadastros corporativos.
     - Falta feedback sobre expiração automática: views removidas após 30 dias são apenas podadas silenciosamente.
 - **História B2 – Progressive disclosure de filtros**
-  - **Implementado**: barra rápida com status/filas/janela + drawer "Mais filtros" com campos avançados e persistência por usuário.【F:apps/web/src/features/leads/inbox/components/GlobalFiltersBar.jsx†L72-L228】
-  - **Gap**: filtro de status cobre somente quatro estados (`Todos`, `Em conversa`, `Venda realizada`, `Sem interesse`), enquanto as regras de negócio listam sete estados (Novo, Em atendimento, Aguardando cliente, Aguardando terceiro, Pausado, Ganho, Perdido).【F:apps/web/src/features/leads/inbox/components/StatusFilter.jsx†L3-L27】
+  - **Implementado (legado)**: barra rápida com status/filas/janela + drawer "Mais filtros" com campos avançados e persistência por usuário.
+  - **Gap**: filtro de status cobria somente quatro estados (`Todos`, `Em conversa`, `Venda realizada`, `Sem interesse`), enquanto as regras de negócio listavam sete estados (Novo, Em atendimento, Aguardando cliente, Aguardando terceiro, Pausado, Ganho, Perdido).
 
 ### EPIC C — Lista / Inbox
 - **Resultado**: Não há modos de visualização alternativos (Lista/Kanban/SLA lanes) nem ações em lote implementadas. O componente `InboxList` continua renderizando apenas cartões lineares sem seleção múltipla ou tooltips de SLA.
