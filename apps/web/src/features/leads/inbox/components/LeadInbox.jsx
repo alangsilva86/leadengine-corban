@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { GlassPanel } from '@/components/ui/glass-panel.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn } from '@/lib/utils.js';
 
 import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiveUpdates.js';
@@ -550,14 +549,12 @@ const LeadInbox = ({
               />
             </div>
 
-            <ScrollArea
-              className="flex-1 min-h-0"
-              viewportRef={registerInboxScrollViewport}
-              viewportClassName="h-full space-y-5 px-5 pb-6 pr-6 pt-5 overscroll-contain scroll-smooth"
-              viewportProps={{
-                style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
-              }}
+            <div
+              ref={registerInboxScrollViewport}
+              className="flex-1 min-h-0 overflow-y-auto"
+              style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
             >
+              <div className="h-full space-y-5 px-5 pb-6 pr-6 pt-5 overscroll-contain scroll-smooth">
               <InboxList
                 allocations={allocations}
                 filteredAllocations={filteredAllocations}
@@ -616,7 +613,8 @@ const LeadInbox = ({
                   ) : null}
                 </div>
               ) : null}
-            </ScrollArea>
+              </div>
+            </div>
 
             <div className="pointer-events-none absolute inset-y-6 -right-4 hidden xl:block">
               <span className="block h-full w-px rounded-full bg-[color:var(--color-inbox-border)] shadow-[1px_0_18px_color-mix(in_srgb,var(--color-inbox-border)_55%,transparent)]" />
@@ -643,13 +641,11 @@ const LeadInbox = ({
             shadow="xl"
             className="flex min-w-0 flex-col overflow-hidden xl:h-full xl:min-h-0"
           >
-            <ScrollArea
-              className="flex-1 min-h-0"
-              viewportClassName="h-full space-y-5 px-5 pb-6 pt-5 overscroll-contain"
-              viewportProps={{
-                style: { WebkitOverflowScrolling: 'touch', contain: 'content' },
-              }}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto"
+              style={{ WebkitOverflowScrolling: 'touch', contain: 'content' }}
             >
+              <div className="h-full space-y-5 px-5 pb-6 pt-5 overscroll-contain">
               <InboxSurface as={Card}>
                 <CardHeader className="space-y-2 pb-2">
                   <CardTitle className="text-sm font-semibold uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground)]">
@@ -707,7 +703,8 @@ const LeadInbox = ({
                 autoRefreshSeconds={autoRefreshSeconds}
                 lastUpdatedAt={lastUpdatedAt}
               />
-            </ScrollArea>
+              </div>
+            </div>
           </GlassPanel>
         </div>
       </div>

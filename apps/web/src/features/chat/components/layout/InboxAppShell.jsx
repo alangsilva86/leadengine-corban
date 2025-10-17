@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
 import { cn } from '@/lib/utils.js';
 import ContextDrawer from './ContextDrawer.jsx';
@@ -145,7 +144,7 @@ const InboxAppShell = ({
             </SheetClose>
           ) : null}
         </div>
-        <ScrollArea className="flex-1 px-3 py-4">{sidebar}</ScrollArea>
+        <div className="flex-1 overflow-y-auto px-3 py-4">{sidebar}</div>
         <div className="border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
           <p className="font-medium">⌥ L alterna lista</p>
           <p className="mt-1 uppercase tracking-wide">
