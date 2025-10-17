@@ -12,6 +12,7 @@ import useInboxLiveUpdates from '@/features/whatsapp-inbound/sockets/useInboxLiv
 import { useLeadAllocations } from '../hooks/useLeadAllocations.js';
 import useInboxViewState from '../hooks/useInboxViewState.js';
 import { useManualConversationLauncher } from '../hooks/useManualConversationLauncher.js';
+import useOnboardingStepLabel from '@/features/onboarding/useOnboardingStepLabel.js';
 import {
   SAVED_FILTERS_STORAGE_KEY,
   SAVED_VIEWS_STORAGE_KEY,
@@ -178,10 +179,15 @@ export const LeadInbox = ({
     previousContextRef.current = current;
   }, [agreementId, campaignId, resolvedInstanceId, resetFilters]);
 
-  const stageIndex = onboarding?.stages?.findIndex((stage) => stage.id === 'inbox') ?? onboarding?.activeStep ?? 3;
-  const totalStages = onboarding?.stages?.length ?? 0;
-  const stepNumber = stageIndex >= 0 ? stageIndex + 1 : 4;
-  const stepLabel = totalStages ? `Passo ${Math.min(stepNumber, totalStages)} de ${totalStages}` : `Passo ${stepNumber}`;
+  const inboxFallbackNumber = Math.max(
+    1,
+    typeof onboarding?.activeStep === 'number' ? onboarding.activeStep + 1 : 4
+  );
+  const { stepLabel } = useOnboardingStepLabel({
+    stages: onboarding?.stages,
+    targetStageId: 'inbox',
+    fallbackStep: { number: inboxFallbackNumber, label: `Passo ${inboxFallbackNumber}` },
+  });
 
   useEffect(() => {
     if (!nextRefreshAt) {
