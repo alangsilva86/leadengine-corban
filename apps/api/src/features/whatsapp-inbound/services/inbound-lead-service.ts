@@ -1336,16 +1336,14 @@ const processStandardInboundEvent = async (
       continue;
     }
 
-    const brokerLead = {
+    const brokerLead: BrokerLeadRecord & {
+      raw: Record<string, unknown>;
+    } = {
       id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
       fullName: leadName,
       document,
       registrations,
       agreementId,
-      phone: normalizedPhone,
-      margin: undefined,
-      netMargin: undefined,
-      score: undefined,
       tags: ['inbound-whatsapp'],
       raw: {
         from: contact,
@@ -1355,11 +1353,17 @@ const processStandardInboundEvent = async (
       },
     };
 
+    if (normalizedPhone) {
+      brokerLead.phone = normalizedPhone;
+    }
+
     try {
       const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
       await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
+
       if (newlyAllocated.length > 0) {
         const allocation = newlyAllocated[0];
+
         logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
           tenantId,
           campaignId: allocation.campaignId ?? campaignId,
@@ -1369,38 +1373,6 @@ const processStandardInboundEvent = async (
           leadId: allocation.leadId,
         });
 
-        const brokerLead: BrokerLeadRecord = {
-          id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
-          fullName: leadName,
-          document,
-          registrations,
-          agreementId,
-          tags: ['inbound-whatsapp'],
-          raw: {
-            from: contact,
-            message,
-            metadata: event.metadata ?? {},
-            receivedAt: timestamp ?? new Date(now).toISOString(),
-          },
-        };
-
-        if (normalizedPhone) {
-          brokerLead.phone = normalizedPhone;
-        }
-
-      try {
-        const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
-        await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
-        if (newlyAllocated.length > 0) {
-          const allocation = newlyAllocated[0];
-          logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
-            tenantId,
-            campaignId: allocation.campaignId ?? campaignId,
-            instanceId,
-            allocationId: allocation.allocationId,
-            phone: maskPhone(normalizedPhone ?? null),
-            leadId: allocation.leadId,
-          });
         const realtimePayload = {
           tenantId,
           campaignId: allocation.campaignId ?? null,
@@ -1411,6 +1383,7 @@ const processStandardInboundEvent = async (
         };
 
         emitToTenant(tenantId, 'leadAllocations.new', realtimePayload);
+
         if (allocation.agreementId && allocation.agreementId !== 'unknown') {
           emitToAgreement(allocation.agreementId, 'leadAllocations.new', realtimePayload);
         }
