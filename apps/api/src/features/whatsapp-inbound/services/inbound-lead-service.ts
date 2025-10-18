@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
+import type { BrokerLeadRecord } from '../../../config/lead-engine';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import {
   isWhatsappInboundSimpleModeEnabled,
@@ -18,59 +19,13 @@ import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
 } from '../../../services/ticket-service';
-import { ensureTenantRecord } from '../../../services/tenant-service';
-import {
-  findOrCreateOpenTicketByChat,
-  upsertMessageByExternalId,
-  type PassthroughMessage,
-} from '@ticketz/storage';
 import {
   emitToAgreement,
   emitToTenant,
   emitToTicket,
-  getSocketServer,
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
-<<<<<<< Updated upstream
-import { createPassthroughHandler } from './passthrough-handler';
-
-const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_DEDUPE_CACHE_SIZE = 10_000;
-
-type DedupeCacheEntry = {
-  expiresAt: number;
-};
-
-const dedupeCache = new Map<string, DedupeCacheEntry>();
-
-export interface InboundDedupeBackend {
-  has(key: string): Promise<boolean>;
-  set(key: string, ttlMs: number): Promise<void>;
-}
-
-let dedupeBackend: InboundDedupeBackend | null = null;
-
-export const configureInboundDedupeBackend = (backend: InboundDedupeBackend | null): void => {
-  dedupeBackend = backend;
-};
-
-const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
-const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
-  'Fila criada automaticamente para mensagens inbound do WhatsApp.';
-
-const DEFAULT_CAMPAIGN_FALLBACK_NAME = 'WhatsApp • Inbound';
-const DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX = 'whatsapp-instance-fallback';
-
-const DEFAULT_TENANT_ID = (() => {
-  const envValue = process.env.AUTH_MVP_TENANT_ID;
-  if (typeof envValue === 'string' && envValue.trim().length > 0) {
-    return envValue.trim();
-  }
-  return 'demo-tenant';
-})();
-=======
 import {
   DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX,
   DEFAULT_CAMPAIGN_FALLBACK_NAME,
@@ -125,7 +80,6 @@ import {
   type InboundWhatsAppEnvelopeMessage,
   type InboundWhatsAppEvent,
 } from './types';
->>>>>>> Stashed changes
 
 const toRecord = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -134,13 +88,6 @@ const toRecord = (value: unknown): Record<string, unknown> => {
   return {};
 };
 
-type QueueCacheEntry = {
-  id: string;
-  expires: number;
-};
-
-const queueCacheByTenant = new Map<string, QueueCacheEntry>();
-
 export const resetInboundLeadServiceTestState = (): void => {
   resetDedupeState();
   queueCacheByTenant.clear();
@@ -148,499 +95,13 @@ export const resetInboundLeadServiceTestState = (): void => {
 
 
 
-type WhatsAppInstanceRecord = Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
-
-type AutoProvisionMetadataPayload = {
-  autopProvisionedAt: string;
-  autopProvisionSource: string;
-  autopProvisionRequestId: string | null;
-  autopProvisionTenantIdentifiers: string[];
-  autopProvisionSessionId: string | null;
-  autopProvisionBrokerId: string;
-};
-
-type AutoProvisionResult = {
-  instance: WhatsAppInstanceRecord;
-  wasCreated: boolean;
-  brokerId: string;
-};
-
-const ensureAutopProvisionMetadata = async (
-  instance: WhatsAppInstanceRecord,
-  {
-    autopProvisionedAt,
-    autopProvisionSource,
-    autopProvisionRequestId,
-    autopProvisionTenantIdentifiers,
-    autopProvisionSessionId,
-    autopProvisionBrokerId,
-  }: AutoProvisionMetadataPayload
-): Promise<WhatsAppInstanceRecord> => {
-  if (!instance) {
-    return instance;
-  }
-
-  const existingMetadata =
-    instance.metadata && typeof instance.metadata === 'object' && !Array.isArray(instance.metadata)
-      ? { ...(instance.metadata as Record<string, unknown>) }
-      : {};
-
-  const nextMetadata: Record<string, unknown> = { ...existingMetadata };
-  let needsUpdate = false;
-
-  if (!nextMetadata.autopProvisionedAt) {
-    nextMetadata.autopProvisionedAt = autopProvisionedAt;
-    needsUpdate = true;
-  }
-
-  if (nextMetadata.autopProvisionSource !== autopProvisionSource) {
-    nextMetadata.autopProvisionSource = autopProvisionSource;
-    needsUpdate = true;
-  }
-
-  if (autopProvisionRequestId && nextMetadata.autopProvisionRequestId !== autopProvisionRequestId) {
-    nextMetadata.autopProvisionRequestId = autopProvisionRequestId;
-    needsUpdate = true;
-  }
-
-  const existingTenantIdentifiers = Array.isArray(nextMetadata.autopProvisionTenantIdentifiers)
-    ? (nextMetadata.autopProvisionTenantIdentifiers as unknown[])
-    : [];
-  const normalizedExisting = existingTenantIdentifiers.filter((value): value is string => typeof value === 'string');
-  const mergedTenantIdentifiers = Array.from(
-    new Set([...normalizedExisting, ...autopProvisionTenantIdentifiers])
-  );
-
-  if (mergedTenantIdentifiers.length !== normalizedExisting.length) {
-    nextMetadata.autopProvisionTenantIdentifiers = mergedTenantIdentifiers;
-    needsUpdate = true;
-  }
-
-  if (
-    autopProvisionSessionId &&
-    nextMetadata.autopProvisionSessionId !== autopProvisionSessionId
-  ) {
-    nextMetadata.autopProvisionSessionId = autopProvisionSessionId;
-    needsUpdate = true;
-  }
-
-  if (nextMetadata.autopProvisionBrokerId !== autopProvisionBrokerId) {
-    nextMetadata.autopProvisionBrokerId = autopProvisionBrokerId;
-    needsUpdate = true;
-  }
-
-  if (!needsUpdate) {
-    return instance;
-  }
-
-  const updated = await prisma.whatsAppInstance.update({
-    where: { id: instance.id },
-    data: { metadata: nextMetadata },
-  });
-
-  return updated;
-};
-
-const attemptAutoProvisionWhatsAppInstance = async ({
-  instanceId,
-  metadata,
-  requestId,
-  simpleMode,
-}: {
-  instanceId: string;
-  metadata: Record<string, unknown>;
-  requestId: string | null;
-  simpleMode: boolean;
-}): Promise<AutoProvisionResult | null> => {
-  const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
-
-  if (tenantIdentifiers.length === 0) {
-    logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Instância inbound sem tenant identificável', {
-      instanceId,
-      requestId,
-    });
-    return null;
-  }
-
-  const tenant = await prisma.tenant.findFirst({
-    where: {
-      OR: tenantIdentifiers.flatMap((identifier) => [
-        { id: identifier },
-        { slug: identifier },
-      ]),
-    },
-  });
-
-  if (!tenant) {
-    logger.warn('🎯 LeadEngine • WhatsApp :: 🔍 Tenant não localizado para autoprov de instância', {
-      instanceId,
-      requestId,
-      tenantIdentifiers,
-    });
-    return null;
-  }
-
-  const brokerId = resolveBrokerIdFromMetadata(metadata) ?? instanceId;
-  const sessionId = resolveSessionIdFromMetadata(metadata);
-  const displayName = resolveInstanceDisplayNameFromMetadata(metadata, tenant.name, instanceId);
-  const autopProvisionMetadataPayload: AutoProvisionMetadataPayload = {
-    autopProvisionedAt: new Date().toISOString(),
-    autopProvisionSource: simpleMode ? 'inbound-simple-mode' : 'inbound-auto',
-    autopProvisionRequestId: requestId ?? null,
-    autopProvisionTenantIdentifiers: tenantIdentifiers,
-    autopProvisionSessionId: sessionId ?? null,
-    autopProvisionBrokerId: brokerId,
-  };
-
-  const brokerLookupWhere: Prisma.WhatsAppInstanceWhereInput = { brokerId };
-
-  if (tenant.id) {
-    brokerLookupWhere.tenantId = tenant.id;
-  }
-
-  const existingByBroker = await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere });
-
-  if (existingByBroker) {
-    const enriched = await ensureAutopProvisionMetadata(existingByBroker, autopProvisionMetadataPayload);
-    logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada localizada por broker', {
-      instanceId,
-      tenantId: enriched?.tenantId,
-      brokerId,
-      requestId,
-    });
-    return { instance: enriched, wasCreated: false, brokerId };
-  }
-
-  try {
-    const created = await prisma.whatsAppInstance.create({
-      data: {
-        id: instanceId,
-        tenantId: tenant.id,
-        name: displayName,
-        brokerId,
-        status: 'connected',
-        connected: true,
-        metadata: autopProvisionMetadataPayload,
-      },
-    });
-
-    logger.info('🎯 LeadEngine • WhatsApp :: 🆕 Instância provisionada automaticamente', {
-      instanceId,
-      tenantId: tenant.id,
-      brokerId,
-      requestId,
-    });
-
-    return { instance: created, wasCreated: true, brokerId };
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      const existingById = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-      if (existingById) {
-        const enriched = await ensureAutopProvisionMetadata(existingById, autopProvisionMetadataPayload);
-        logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada após colisão de id', {
-          instanceId,
-          tenantId: enriched?.tenantId,
-          brokerId,
-          requestId,
-        });
-        return { instance: enriched, wasCreated: false, brokerId };
-      }
-
-      const existing =
-        (await prisma.whatsAppInstance.findUnique({
-          where: {
-            tenantId_brokerId: {
-              tenantId: tenant.id,
-              brokerId,
-            },
-          },
-        })) ??
-        (await prisma.whatsAppInstance.findUnique({ where: { brokerId } })) ??
-        (await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere }));
-      if (existing) {
-        const enriched = await ensureAutopProvisionMetadata(existing, autopProvisionMetadataPayload);
-        logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada após colisão de broker', {
-          instanceId,
-          tenantId: enriched?.tenantId,
-          brokerId,
-          requestId,
-        });
-        return { instance: enriched, wasCreated: false, brokerId };
-      }
-    }
-
-    logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao autoprov instância', {
-      error: mapErrorForLog(error),
-      instanceId,
-      tenantId: tenant.id,
-      brokerId,
-      requestId,
-    });
-    return null;
-  }
-};
-
 const isMessageEnvelope = (
   envelope: InboundWhatsAppEnvelope
 ): envelope is InboundWhatsAppEnvelopeMessage => envelope.message.kind === 'message';
 
-const emitPassthroughRealtimeUpdates = async ({
-  tenantId,
-  ticketId,
-  instanceId,
-  message,
-  ticketWasCreated,
-}: {
-  tenantId: string;
-  ticketId: string;
-  instanceId: string | null;
-  message: PassthroughMessage;
-  ticketWasCreated: boolean;
-}) => {
-  try {
-    const ticketRecord = await prisma.ticket.findUnique({ where: { id: ticketId } });
+// Passthrough handlers are provided by ./passthrough
 
-    if (!ticketRecord) {
-      logger.warn('passthrough: skipped realtime updates due to missing ticket record', {
-        tenantId,
-        ticketId,
-      });
-      return;
-    }
-
-    const agreementId = resolveTicketAgreementId(ticketRecord);
-
-    const ticketPayload = {
-      tenantId,
-      ticketId: ticketRecord.id,
-      agreementId,
-      instanceId: instanceId ?? null,
-      messageId: message.id,
-      providerMessageId: message.externalId ?? null,
-      ticketStatus: ticketRecord.status,
-      ticketUpdatedAt: ticketRecord.updatedAt?.toISOString?.() ?? new Date().toISOString(),
-      ticket: ticketRecord,
-    };
-
-    emitToTicket(ticketRecord.id, 'tickets.updated', ticketPayload);
-    emitToTenant(tenantId, 'tickets.updated', ticketPayload);
-    if (agreementId) {
-      emitToAgreement(agreementId, 'tickets.updated', ticketPayload);
-    }
-
-    if (ticketWasCreated) {
-      emitToTicket(ticketRecord.id, 'tickets.new', ticketPayload);
-      emitToTenant(tenantId, 'tickets.new', ticketPayload);
-      if (agreementId) {
-        emitToAgreement(agreementId, 'tickets.new', ticketPayload);
-      }
-    }
-  } catch (error) {
-    logger.error('passthrough: failed to emit ticket realtime events', {
-      error: mapErrorForLog(error),
-      tenantId,
-      ticketId,
-    });
-  }
-};
-
-const handlePassthroughIngest = createPassthroughHandler({
-  defaultTenantId: DEFAULT_TENANT_ID,
-  findOrCreateOpenTicketByChat,
-  upsertMessageByExternalId,
-  emitPassthroughRealtimeUpdates,
-  getSocketServer,
-  inboundMessagesProcessedCounter,
-  logger,
-  helpers: {
-    toRecord,
-    normalizeInboundMessage,
-    sanitizePhone,
-    sanitizeDocument,
-    resolveDeterministicContactIdentifier,
-    pickPreferredName,
-    readString,
-  },
-});
-
-const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string> => {
-  const upsertFallbackQueue = async () =>
-    prisma.queue.upsert({
-      where: {
-        tenantId_name: {
-          tenantId,
-          name: DEFAULT_QUEUE_FALLBACK_NAME,
-        },
-      },
-      update: {
-        description: DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
-        isActive: true,
-      },
-      create: {
-        tenantId,
-        name: DEFAULT_QUEUE_FALLBACK_NAME,
-        description: DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
-        color: '#2563EB',
-        orderIndex: 0,
-      },
-    });
-
-  const refreshCache = (queueId: string) => {
-    queueCacheByTenant.set(tenantId, {
-      id: queueId,
-      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
-    });
-  };
-
-  try {
-    const queue = await upsertFallbackQueue();
-    refreshCache(queue.id);
-    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada automaticamente', {
-      tenantId,
-      queueId: queue.id,
-      ensuredTenant: false,
-    });
-    return queue.id;
-  } catch (error) {
-    if (isForeignKeyError(error)) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: 🧱 Provisionamento de fila falhou — tenant ausente, tentando garantir', {
-        tenantId,
-      });
-
-      try {
-        await ensureTenantRecord(tenantId, {
-          source: 'whatsapp-inbound-auto-queue',
-          action: 'ensure-tenant',
-        });
-
-        const queue = await upsertFallbackQueue();
-        refreshCache(queue.id);
-        logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada após criar tenant automaticamente', {
-          tenantId,
-          queueId: queue.id,
-          ensuredTenant: true,
-        });
-
-        return queue.id;
-      } catch (retryError) {
-        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão mesmo após garantir tenant', {
-          error: mapErrorForLog(retryError),
-          tenantId,
-        });
-
-        throw new QueueFallbackProvisionError(
-          'Tenant ausente impede o provisionamento automático da fila padrão.',
-          'TENANT_NOT_FOUND',
-          { cause: retryError }
-        );
-      }
-    }
-
-    logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão', {
-      error: mapErrorForLog(error),
-      tenantId,
-    });
-
-    throw new QueueFallbackProvisionError(
-      'Erro desconhecido ao provisionar fila padrão.',
-      'UNKNOWN',
-      { cause: error }
-    );
-  }
-};
-
-const provisionFallbackCampaignForInstance = async (
-  tenantId: string,
-  instanceId: string
-) => {
-  try {
-    const campaign = await prisma.campaign.upsert({
-      where: {
-        tenantId_agreementId_whatsappInstanceId: {
-          tenantId,
-          agreementId: `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`,
-          whatsappInstanceId: instanceId,
-        },
-      },
-      update: {
-        status: 'active',
-        name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        metadata: {
-          fallback: true,
-          source: 'whatsapp-inbound',
-        } as Prisma.InputJsonValue,
-      },
-      create: {
-        tenantId,
-        name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        agreementId: `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`,
-        agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        whatsappInstanceId: instanceId,
-        status: 'active',
-        metadata: {
-          fallback: true,
-          source: 'whatsapp-inbound',
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Campanha fallback provisionada automaticamente', {
-      tenantId,
-      instanceId,
-      campaignId: campaign.id,
-    });
-
-    return campaign;
-  } catch (error) {
-    logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar campanha fallback', {
-      error: mapErrorForLog(error),
-      tenantId,
-      instanceId,
-    });
-    return null;
-  }
-};
-
-const isForeignKeyError = (error: unknown): boolean => {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
-    return true;
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    const code = (error as { code?: unknown }).code;
-    if (code === 'P2003') {
-      return true;
-    }
-
-    const cause = (error as { cause?: unknown }).cause;
-    if (cause && cause !== error && isForeignKeyError(cause)) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const isUniqueViolation = (error: unknown): boolean => {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-    return true;
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    const code = (error as { code?: unknown }).code;
-    if (code === 'P2002') {
-      return true;
-    }
-
-    const cause = (error as { cause?: unknown }).cause;
-    if (cause && cause !== error && isUniqueViolation(cause)) {
-      return true;
-    }
-  }
-
-  return false;
-};
+// Queue provisioning helpers provided by ./provisioning
 
 const isMissingQueueError = (error: unknown): boolean => {
   if (!error) {
@@ -669,169 +130,9 @@ const isMissingQueueError = (error: unknown): boolean => {
   return false;
 };
 
-type QueueFallbackErrorReason = 'TENANT_NOT_FOUND' | 'UNKNOWN';
+// Default queue resolution provided by ./provisioning
 
-class QueueFallbackProvisionError extends Error {
-  public readonly reason: QueueFallbackErrorReason;
-
-  constructor(message: string, reason: QueueFallbackErrorReason, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'QueueFallbackProvisionError';
-    this.reason = reason;
-  }
-}
-
-const getDefaultQueueId = async (
-  tenantId: string,
-  { provisionIfMissing = true }: { provisionIfMissing?: boolean } = {}
-): Promise<string | null> => {
-  const now = Date.now();
-  const cached = queueCacheByTenant.get(tenantId);
-
-  if (cached) {
-    if (cached.expires <= now) {
-      queueCacheByTenant.delete(tenantId);
-    } else {
-      const existingQueue = await prisma.queue.findUnique({ where: { id: cached.id } });
-      if (existingQueue) {
-        return cached.id;
-      }
-      queueCacheByTenant.delete(tenantId);
-    }
-  }
-
-  const queue = await prisma.queue.findFirst({
-    where: { tenantId },
-    orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-  });
-
-  if (!queue) {
-    queueCacheByTenant.delete(tenantId);
-
-    if (!provisionIfMissing) {
-      return null;
-    }
-
-    try {
-      const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
-      return provisionedQueueId;
-    } catch (error) {
-      if (error instanceof QueueFallbackProvisionError) {
-        throw error;
-      }
-
-      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha inesperada ao obter fila padrão', {
-        error: mapErrorForLog(error),
-        tenantId,
-      });
-
-      throw error;
-    }
-  }
-
-  queueCacheByTenant.set(tenantId, {
-    id: queue.id,
-    expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
-  });
-  return queue.id;
-};
-
-type EnsureInboundQueueParams = {
-  tenantId: string;
-  requestId: string | null;
-  instanceId: string | null;
-  simpleMode: boolean;
-};
-
-type EnsureInboundQueueErrorReason = 'TENANT_NOT_FOUND' | 'PROVISIONING_FAILED';
-
-type EnsureInboundQueueError = {
-  reason: EnsureInboundQueueErrorReason;
-  recoverable: boolean;
-  message: string;
-};
-
-type EnsureInboundQueueResult = {
-  queueId: string | null;
-  wasProvisioned: boolean;
-  error?: EnsureInboundQueueError;
-};
-
-const ensureInboundQueueForInboundMessage = async ({
-  tenantId,
-  requestId,
-  instanceId,
-  simpleMode,
-}: EnsureInboundQueueParams): Promise<EnsureInboundQueueResult> => {
-  const existingQueueId = await getDefaultQueueId(tenantId, { provisionIfMissing: false });
-
-  if (existingQueueId) {
-    return { queueId: existingQueueId, wasProvisioned: false };
-  }
-
-  logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Provisionando fila padrão automaticamente', {
-    requestId,
-    tenantId,
-    instanceId,
-    simpleMode,
-  });
-
-  try {
-    const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
-
-    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão disponível para mensagens inbound', {
-      requestId,
-      tenantId,
-      instanceId,
-      queueId: provisionedQueueId,
-      simpleMode,
-    });
-
-    emitToTenant(tenantId, 'whatsapp.queue.autoProvisioned', {
-      tenantId,
-      instanceId,
-      queueId: provisionedQueueId,
-      message: 'Fila padrão criada automaticamente para mensagens inbound do WhatsApp.',
-    });
-
-    return { queueId: provisionedQueueId, wasProvisioned: true };
-  } catch (error) {
-    const provisionError = (() => {
-      if (error instanceof QueueFallbackProvisionError) {
-        return {
-          reason: error.reason === 'TENANT_NOT_FOUND' ? 'TENANT_NOT_FOUND' : 'PROVISIONING_FAILED',
-          recoverable: error.reason === 'TENANT_NOT_FOUND',
-          message: error.message,
-        } satisfies EnsureInboundQueueError;
-      }
-
-      return {
-        reason: 'PROVISIONING_FAILED' as const,
-        recoverable: false,
-        message: 'Falha desconhecida ao provisionar fila padrão.',
-      } satisfies EnsureInboundQueueError;
-    })();
-
-    logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático', {
-      requestId,
-      tenantId,
-      instanceId,
-      simpleMode,
-      error: mapErrorForLog(error),
-      reason: provisionError.reason,
-    });
-
-    emitToTenant(tenantId, 'whatsapp.queue.missing', {
-      tenantId,
-      instanceId,
-      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
-      reason: provisionError.reason,
-      recoverable: provisionError.recoverable,
-    });
-
-    return { queueId: null, wasProvisioned: false, error: provisionError };
-  }
-};
+// Queue ensuring handled by ./provisioning
 
 const ensureContact = async (
   tenantId: string,
@@ -843,12 +144,12 @@ const ensureContact = async (
     timestamp,
     avatar,
   }: {
-    phone?: string;
-    name?: string | null;
-    document?: string;
-    registrations?: string[];
-    timestamp?: string | null;
-    avatar?: string | null;
+    phone?: string | null | undefined;
+    name?: string | null | undefined;
+    document?: string | null | undefined;
+    registrations?: string[] | null | undefined;
+    timestamp?: string | null | undefined;
+    avatar?: string | null | undefined;
   }
 ) => {
   const interactionDate = timestamp ? new Date(timestamp) : new Date();
@@ -1929,37 +1230,23 @@ const processStandardInboundEvent = async (
     return true;
   }
 
-  let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+    let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
 
-  const normalizedMessageMedia =
-    normalizedMessage.media && typeof normalizedMessage.media === 'object'
-      ? (normalizedMessage.media as Record<string, unknown>)
-      : null;
-  const timelineMessageType = (() => {
-    if (normalizedMessage.type === 'media') {
-      const mediaType = readString(normalizedMessageMedia?.mediaType) ?? '';
-      if (mediaType === 'image' || mediaType === 'sticker') {
-        return 'IMAGE';
+    const timelineMessageType = (() => {
+      switch (normalizedMessage.type) {
+        case 'IMAGE':
+        case 'VIDEO':
+        case 'AUDIO':
+        case 'DOCUMENT':
+        case 'LOCATION':
+        case 'CONTACT':
+        case 'TEMPLATE':
+          return normalizedMessage.type;
+        case 'TEXT':
+        default:
+          return 'TEXT';
       }
-      if (mediaType === 'video') {
-        return 'VIDEO';
-      }
-      if (mediaType === 'audio') {
-        return 'AUDIO';
-      }
-      return 'DOCUMENT';
-    }
-
-    if (normalizedMessage.type === 'text') {
-      return 'TEXT';
-    }
-
-    if (normalizedMessage.type === 'unknown') {
-      return 'TEXT';
-    }
-
-    return normalizedMessage.type;
-  })();
+    })();
 
   try {
     persistedMessage = await sendMessageService(tenantId, undefined, {
@@ -2103,24 +1390,24 @@ const processStandardInboundEvent = async (
         continue;
       }
 
-      const brokerLead = {
-        id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
-        fullName: leadName,
-        document,
-        registrations,
-        agreementId,
-        phone: normalizedPhone,
-        margin: undefined,
-        netMargin: undefined,
-        score: undefined,
-        tags: ['inbound-whatsapp'],
-        raw: {
-          from: contact,
-          message,
-          metadata: event.metadata ?? {},
-          receivedAt: timestamp ?? new Date(now).toISOString(),
-        },
-      };
+        const brokerLead: BrokerLeadRecord = {
+          id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
+          fullName: leadName,
+          document,
+          registrations,
+          agreementId,
+          tags: ['inbound-whatsapp'],
+          raw: {
+            from: contact,
+            message,
+            metadata: event.metadata ?? {},
+            receivedAt: timestamp ?? new Date(now).toISOString(),
+          },
+        };
+
+        if (normalizedPhone) {
+          brokerLead.phone = normalizedPhone;
+        }
 
       try {
         const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);

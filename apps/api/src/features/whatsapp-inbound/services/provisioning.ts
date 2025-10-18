@@ -131,7 +131,10 @@ export const provisionDefaultQueueForTenant = async (tenantId: string): Promise<
   }
 };
 
-const provisionFallbackCampaignForInstance = async (tenantId: string, instanceId: string) => {
+export const provisionFallbackCampaignForInstance = async (
+  tenantId: string,
+  instanceId: string
+) => {
   try {
     const campaign = await prisma.campaign.upsert({
       where: {
