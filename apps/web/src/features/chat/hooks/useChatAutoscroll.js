@@ -1,19 +1,31 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Keeps the chat timeline pinned to the bottom when the user is close to it.
  * Prevents hijacking the scroll position if the user is reading older messages.
  *
- * @returns {{ scrollRef: import('react').MutableRefObject<HTMLElement | null>, scrollToBottom: () => void }}
+ * @returns {{
+ *   scrollRef: import('react').MutableRefObject<HTMLElement | null>,
+ *   scrollToBottom: (options?: { behavior?: ScrollBehavior, force?: boolean }) => void,
+ *   isNearBottom: boolean
+ * }}
  */
 export const useChatAutoscroll = () => {
   const scrollRef = useRef(null);
   const atBottomRef = useRef(true);
+  const [isNearBottom, setIsNearBottom] = useState(true);
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback(({ behavior = 'auto', force = false } = {}) => {
     const element = scrollRef.current;
-    if (!element || !atBottomRef.current) return;
-    element.scrollTop = element.scrollHeight;
+    if (!element) return;
+    if (!force && !atBottomRef.current) return;
+
+    const target = element.scrollHeight;
+    if (typeof element.scrollTo === 'function') {
+      element.scrollTo({ top: target, behavior });
+    } else {
+      element.scrollTop = target;
+    }
   }, []);
 
   useEffect(() => {
@@ -23,7 +35,9 @@ export const useChatAutoscroll = () => {
     const handleScroll = () => {
       const threshold = 96; // pixels from the bottom
       const distanceFromBottom = element.scrollHeight - element.clientHeight - element.scrollTop;
-      atBottomRef.current = distanceFromBottom <= threshold;
+      const nearBottom = distanceFromBottom <= threshold;
+      atBottomRef.current = nearBottom;
+      setIsNearBottom(nearBottom);
     };
 
     handleScroll();
@@ -52,6 +66,7 @@ export const useChatAutoscroll = () => {
   return {
     scrollRef,
     scrollToBottom,
+    isNearBottom,
   };
 };
 

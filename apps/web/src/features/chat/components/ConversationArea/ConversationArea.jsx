@@ -1,9 +1,11 @@
-import { useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useEffect, useCallback, useRef, useState } from 'react';
 import ConversationHeader from './ConversationHeader.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
 import useAiSuggestions from '../../hooks/useAiSuggestions.js';
 import useChatAutoscroll from '../../hooks/useChatAutoscroll.js';
+
+const conversationScrollMemory = new Map();
 
 export const ConversationArea = ({
   ticket,
@@ -22,7 +24,10 @@ export const ConversationArea = ({
 }) => {
   const disabled = false;
   const ai = useAiSuggestions();
-  const { scrollRef, scrollToBottom } = useChatAutoscroll();
+  const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
+  const [composerOffset, setComposerOffset] = useState(96);
+  const composerRef = useRef(null);
+  const ticketId = ticket?.id ?? null;
 
   const timelineItems = useMemo(() => {
     const pages = messagesQuery.data?.pages ?? [];
@@ -74,33 +79,80 @@ export const ConversationArea = ({
     fetchNextPage?.();
   }, [hasMore, isLoadingMore, fetchNextPage]);
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return undefined;
-
-    const handleScroll = () => {
-      if (element.scrollTop < 80) {
-        handleLoadMore();
-      }
-    };
-
-    element.addEventListener('scroll', handleScroll, { passive: true });
-    return () => element.removeEventListener('scroll', handleScroll);
-  }, [scrollRef, handleLoadMore]);
-
   const lastEntryKey = timelineItems?.length ? timelineItems[timelineItems.length - 1]?.id ?? timelineItems.length : 0;
 
   useEffect(() => {
     scrollToBottom();
   }, [lastEntryKey, typingIndicator?.agentsTyping?.length, scrollToBottom]);
 
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+
+    const savedPosition = ticketId ? conversationScrollMemory.get(ticketId) : undefined;
+
+    requestAnimationFrame(() => {
+      if (typeof savedPosition === 'number') {
+        element.scrollTop = savedPosition;
+      } else {
+        scrollToBottom({ force: true });
+      }
+    });
+  }, [scrollRef, scrollToBottom, ticketId]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+
+    const handleScroll = () => {
+      if (ticketId) {
+        conversationScrollMemory.set(ticketId, element.scrollTop);
+      }
+      if (element.scrollTop < 80) {
+        handleLoadMore();
+      }
+    };
+
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      if (ticketId) {
+        conversationScrollMemory.set(ticketId, element.scrollTop);
+      }
+      element.removeEventListener('scroll', handleScroll);
+    };
+  }, [scrollRef, handleLoadMore, ticketId]);
+
+  useEffect(() => {
+    const element = composerRef.current;
+    if (!element) return undefined;
+
+    const updateOffset = () => {
+      setComposerOffset(element.offsetHeight + 16);
+    };
+
+    updateOffset();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ticketId]);
+
+  const handleScrollToBottom = useCallback(() => {
+    scrollToBottom({ behavior: 'smooth', force: true });
+  }, [scrollToBottom]);
+  const showNewMessagesHint = !isNearBottom;
+
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+    <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex-1 min-h-0 overflow-hidden [overflow-clip-margin:24px]">
         <div
           id="ticketViewport"
           ref={scrollRef}
-          className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain scroll-smooth [scrollbar-gutter:stable_both-edges]"
+          className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
         >
           <div className="sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-6 sm:py-5">
             <ConversationHeader
@@ -124,7 +176,10 @@ export const ConversationArea = ({
             />
           </div>
 
-          <div className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-4 sm:px-6 sm:py-5">
+          <div
+            ref={composerRef}
+            className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-4 sm:px-6 sm:py-5"
+          >
             <Composer
               disabled={disabled}
               onSend={(payload) => onSendMessage?.(payload)}
@@ -152,6 +207,16 @@ export const ConversationArea = ({
           </div>
         </div>
       </div>
+      {showNewMessagesHint ? (
+        <button
+          type="button"
+          onClick={handleScrollToBottom}
+          className="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-2 text-xs font-medium text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-md)] transition hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+          style={{ bottom: composerOffset }}
+        >
+          Novas mensagens
+        </button>
+      ) : null}
     </section>
   );
 };

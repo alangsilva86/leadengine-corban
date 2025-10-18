@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
@@ -13,6 +13,8 @@ import useInboxLayoutPreferences, {
 import useUpdateInboxLayoutPreferences from '../../api/useUpdateInboxLayoutPreferences.js';
 
 const CONTEXT_PREFERENCE_KEY = 'inbox_context_open';
+const LIST_SCROLL_STORAGE_KEY = 'inbox:queue-list';
+const listScrollMemory = new Map();
 
 const readPreference = (key, fallback) => {
   if (typeof window === 'undefined') {
@@ -80,18 +82,49 @@ const ListPanelFooter = ({ canPersistPreferences }) => (
   </div>
 );
 
-const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) => (
-  <div className="flex h-full min-h-0 min-w-0 flex-col">
-    <div
-      className="chat-scroll-area flex flex-1 min-h-0 flex-col overflow-y-auto overscroll-contain"
-      style={{ scrollbarGutter: 'stable' }}
-    >
-      <ListPanelHeader showCloseButton={showCloseButton} />
-      <ListPanelContent>{sidebar}</ListPanelContent>
+const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) => {
+  const viewportRef = useRef(null);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return undefined;
+
+    const restore = () => {
+      const saved = listScrollMemory.get(LIST_SCROLL_STORAGE_KEY);
+      if (typeof saved === 'number') {
+        requestAnimationFrame(() => {
+          element.scrollTop = saved;
+        });
+      }
+    };
+
+    restore();
+
+    const handleScroll = () => {
+      listScrollMemory.set(LIST_SCROLL_STORAGE_KEY, element.scrollTop);
+    };
+
+    element.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      listScrollMemory.set(LIST_SCROLL_STORAGE_KEY, element.scrollTop);
+      element.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div
+        ref={viewportRef}
+        className="chat-scroll-area flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
+      >
+        <ListPanelHeader showCloseButton={showCloseButton} />
+        <ListPanelContent>{sidebar}</ListPanelContent>
+      </div>
+      <ListPanelFooter canPersistPreferences={canPersistPreferences} />
     </div>
-    <ListPanelFooter canPersistPreferences={canPersistPreferences} />
-  </div>
-);
+  );
+};
 
 const DesktopToolbar = ({
   onToggleListVisibility,
