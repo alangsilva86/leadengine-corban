@@ -19,19 +19,28 @@ import {
   sendMessage as sendMessageService,
 } from '../../../services/ticket-service';
 import { ensureTenantRecord } from '../../../services/tenant-service';
-import {
-  findOrCreateOpenTicketByChat,
-  upsertMessageByExternalId,
-  type PassthroughMessage,
-} from '@ticketz/storage';
-import {
-  emitToAgreement,
-  emitToTenant,
-  emitToTicket,
-  getSocketServer,
-} from '../../../lib/socket-registry';
+import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
+import { DEFAULT_TENANT_ID } from './constants';
+import {
+  pickPreferredName,
+  readNestedString,
+  readString,
+  resolveDeterministicContactIdentifier,
+  resolveTicketAgreementId,
+  sanitizeDocument,
+  sanitizePhone,
+  toRecord,
+} from './identifiers';
+import { emitPassthroughRealtimeUpdates, handlePassthroughIngest } from './passthrough-service';
+import {
+  InboundWhatsAppEnvelope,
+  InboundWhatsAppEnvelopeMessage,
+  InboundWhatsAppEnvelopeUpdate,
+  isMessageEnvelope,
+} from './types';
+import type { InboundMessageDetails, InboundWhatsAppEvent } from './types';
 
 const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
@@ -61,214 +70,6 @@ const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
 const DEFAULT_CAMPAIGN_FALLBACK_NAME = 'WhatsApp • Inbound';
 const DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX = 'whatsapp-instance-fallback';
 
-const DEFAULT_TENANT_ID = (() => {
-  const envValue = process.env.AUTH_MVP_TENANT_ID;
-  if (typeof envValue === 'string' && envValue.trim().length > 0) {
-    return envValue.trim();
-  }
-  return 'demo-tenant';
-})();
-
-const toRecord = (value: unknown): Record<string, unknown> => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return { ...(value as Record<string, unknown>) };
-  }
-  return {};
-};
-
-const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<void> => {
-  const toRecord = (value: unknown): Record<string, unknown> => {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return { ...(value as Record<string, unknown>) };
-    }
-    return {};
-  };
-
-  const {
-    instanceId,
-    contact,
-    message,
-    timestamp,
-    direction,
-    chatId,
-    externalId,
-    tenantId: eventTenantId,
-    sessionId: eventSessionId,
-  } = event;
-
-  const effectiveTenantId =
-    (typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null) ??
-    DEFAULT_TENANT_ID;
-  const instanceIdentifier =
-    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
-  const metadataRecord = toRecord(event.metadata);
-  const metadataContact = toRecord(metadataRecord.contact);
-  const messageRecord = toRecord(message);
-
-  const contactPhone = readString(contact.phone);
-  const metadataContactPhone = readString(metadataContact.phone);
-  const metadataRecordPhone = readString(metadataRecord.phone);
-  const normalizedPhone =
-    sanitizePhone(contactPhone) ??
-    sanitizePhone(metadataContactPhone) ??
-    sanitizePhone(metadataRecordPhone);
-  const deterministicIdentifiers = resolveDeterministicContactIdentifier({
-    instanceId: instanceIdentifier,
-    metadataRecord,
-    metadataContact,
-    sessionId: readString(eventSessionId) ?? readString(metadataRecord.sessionId) ?? readString(metadataRecord.session_id),
-    externalId,
-  });
-  const document = sanitizeDocument(readString(contact.document), [
-    normalizedPhone,
-    deterministicIdentifiers.deterministicId,
-    deterministicIdentifiers.contactId,
-    deterministicIdentifiers.sessionId,
-    instanceIdentifier,
-  ]);
-
-  const normalizedMessage = normalizeInboundMessage(message as InboundMessageDetails);
-  const passthroughDirection =
-    typeof direction === 'string' && direction.toUpperCase() === 'OUTBOUND' ? 'outbound' : 'inbound';
-
-  const remoteJidCandidate =
-    readString(chatId) ??
-    readString(messageRecord.chatId) ??
-    readString(metadataRecord.chatId) ??
-    readString(metadataRecord.remoteJid) ??
-    readString(metadataContact.remoteJid) ??
-    readString(contact.phone);
-
-  const resolvedChatId =
-    remoteJidCandidate ??
-    normalizedPhone ??
-    document ??
-    deterministicIdentifiers.deterministicId ??
-    readString(externalId) ??
-    normalizedMessage.id ??
-    event.id ??
-    randomUUID();
-
-  const externalIdForUpsert =
-    readString(externalId) ??
-    readString(messageRecord.id) ??
-    normalizedMessage.id ??
-    event.id ??
-    randomUUID();
-
-  const normalizedType = normalizedMessage.type;
-  let passthroughType: 'text' | 'media' | 'unknown' = 'unknown';
-  let passthroughText: string | null = null;
-  let passthroughMedia: {
-    mediaType: string;
-    url?: string | null;
-    mimeType?: string | null;
-    fileName?: string | null;
-    size?: number | null;
-    caption?: string | null;
-  } | null = null;
-
-  if (normalizedType === 'IMAGE' || normalizedType === 'VIDEO' || normalizedType === 'AUDIO' || normalizedType === 'DOCUMENT') {
-    passthroughType = 'media';
-    const mediaType = normalizedType.toLowerCase();
-    passthroughText = normalizedMessage.caption ?? normalizedMessage.text ?? null;
-    passthroughMedia = {
-      mediaType,
-      url: normalizedMessage.mediaUrl ?? null,
-      mimeType: normalizedMessage.mimetype ?? null,
-      size: normalizedMessage.fileSize ?? null,
-      caption: normalizedMessage.caption ?? null,
-    };
-  } else if (
-    normalizedType === 'TEXT' ||
-    normalizedType === 'TEMPLATE' ||
-    normalizedType === 'CONTACT' ||
-    normalizedType === 'LOCATION'
-  ) {
-    passthroughType = 'text';
-    passthroughText = normalizedMessage.text ?? null;
-  } else {
-    passthroughType = 'unknown';
-    passthroughText = normalizedMessage.text ?? null;
-  }
-
-  const metadataForUpsert = {
-    ...metadataRecord,
-    tenantId: effectiveTenantId,
-    chatId: resolvedChatId,
-    direction: passthroughDirection,
-    sourceInstance: instanceIdentifier,
-    remoteJid: remoteJidCandidate ?? resolvedChatId,
-    phoneE164: normalizedPhone ?? null,
-  };
-
-  const displayName = pickPreferredName(
-    contact.name,
-    contact.pushName,
-    readString(metadataContact.pushName)
-  ) ?? 'Contato WhatsApp';
-
-  const { ticket: passthroughTicket, wasCreated: ticketWasCreated } = await findOrCreateOpenTicketByChat({
-    tenantId: effectiveTenantId,
-    chatId: resolvedChatId,
-    displayName,
-    phone: normalizedPhone ?? deterministicIdentifiers.deterministicId ?? document ?? resolvedChatId,
-    instanceId: instanceIdentifier,
-  });
-
-  const { message: passthroughMessage, wasCreated: messageWasCreated } = await upsertMessageByExternalId({
-    tenantId: effectiveTenantId,
-    ticketId: passthroughTicket.id,
-    chatId: resolvedChatId,
-    direction: passthroughDirection,
-    externalId: externalIdForUpsert,
-    type: passthroughType,
-    text: passthroughText,
-    media: passthroughMedia,
-    metadata: metadataForUpsert,
-    timestamp: (() => {
-      if (typeof normalizedMessage.brokerMessageTimestamp === 'number') {
-        return normalizedMessage.brokerMessageTimestamp;
-      }
-      if (typeof timestamp === 'string') {
-        const parsed = Date.parse(timestamp);
-        if (!Number.isNaN(parsed)) {
-          return parsed;
-        }
-      }
-      return Date.now();
-    })(),
-  });
-
-  const socket = getSocketServer();
-  if (socket) {
-    socket.to(`tenant:${effectiveTenantId}`).emit('messages.new', passthroughMessage);
-    socket.to(`ticket:${passthroughTicket.id}`).emit('messages.new', passthroughMessage);
-  }
-
-  logger.info('passthrough: persisted + emitted messages.new', {
-    tenantId: effectiveTenantId,
-    ticketId: passthroughTicket.id,
-    direction: passthroughDirection,
-    externalId: externalIdForUpsert,
-    messageWasCreated,
-    ticketWasCreated,
-  });
-
-  await emitPassthroughRealtimeUpdates({
-    tenantId: effectiveTenantId,
-    ticketId: passthroughTicket.id,
-    instanceId: instanceIdentifier,
-    message: passthroughMessage,
-    ticketWasCreated,
-  });
-
-  inboundMessagesProcessedCounter.inc({
-    origin: 'passthrough',
-    tenantId: effectiveTenantId,
-    instanceId: instanceIdentifier ?? 'unknown',
-  });
-};
 
 type QueueCacheEntry = {
   id: string;
@@ -283,169 +84,8 @@ export const resetInboundLeadServiceTestState = (): void => {
   dedupeBackend = null;
 };
 
-const readString = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
 
-const readNestedString = (source: Record<string, unknown>, path: string[]): string | null => {
-  let current: unknown = source;
-
-  for (const key of path) {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) {
-      return null;
-    }
-
-    current = (current as Record<string, unknown>)[key];
-  }
-
-  return readString(current);
-};
-
-const composeDeterministicId = (
-  parts: Array<string | null | undefined>,
-  { minParts = 1 }: { minParts?: number } = {}
-): string | null => {
-  const normalizedParts: string[] = [];
-  const seen = new Set<string>();
-
-  for (const part of parts) {
-    if (typeof part !== 'string') {
-      continue;
-    }
-
-    const trimmed = part.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-
-    normalizedParts.push(trimmed);
-    seen.add(trimmed);
-  }
-
-  if (normalizedParts.length < minParts) {
-    return null;
-  }
-
-  return normalizedParts.join(':');
-};
-
-const resolveDeterministicContactIdentifier = ({
-  instanceId,
-  metadataRecord,
-  metadataContact,
-  sessionId,
-  externalId,
-}: {
-  instanceId?: string | null;
-  metadataRecord: Record<string, unknown>;
-  metadataContact: Record<string, unknown>;
-  sessionId?: string | null;
-  externalId?: string | null;
-}): { deterministicId: string | null; contactId: string | null; sessionId: string | null } => {
-  const instanceIdentifier =
-    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
-
-  const contactIdentifiers: string[] = [];
-  const sessionIdentifiers: string[] = [];
-
-  const pushCandidate = (collection: string[], value: unknown) => {
-    if (typeof value !== 'string') {
-      return;
-    }
-
-    const trimmed = value.trim();
-    if (!trimmed || collection.includes(trimmed)) {
-      return;
-    }
-
-    collection.push(trimmed);
-  };
-
-  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['id']);
-  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['contactId']);
-  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['contact_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['contactId']);
-  pushCandidate(contactIdentifiers, metadataRecord['contact_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['customerId']);
-  pushCandidate(contactIdentifiers, metadataRecord['customer_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['profileId']);
-  pushCandidate(contactIdentifiers, metadataRecord['profile_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['contactIdentifier']);
-  pushCandidate(contactIdentifiers, metadataRecord['contact_identifier']);
-  pushCandidate(contactIdentifiers, metadataRecord['id']);
-
-  pushCandidate(sessionIdentifiers, metadataRecord['sessionId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['session_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['threadId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['thread_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['conversationId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['conversation_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['roomId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['room_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['chatId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['chat_id']);
-  pushCandidate(sessionIdentifiers, sessionId);
-
-  const normalizedExternalId =
-    typeof externalId === 'string' && externalId.trim().length > 0 ? externalId.trim() : null;
-
-  const primaryContactId = contactIdentifiers[0] ?? null;
-  const primarySessionId = sessionIdentifiers[0] ?? null;
-
-  let deterministicId: string | null = null;
-
-  if (primaryContactId) {
-    deterministicId =
-      composeDeterministicId([instanceIdentifier, primaryContactId], {
-        minParts: instanceIdentifier ? 2 : 1,
-      }) ?? primaryContactId;
-  } else if (primarySessionId) {
-    deterministicId =
-      composeDeterministicId([instanceIdentifier, primarySessionId], {
-        minParts: instanceIdentifier ? 2 : 1,
-      }) ??
-      (sessionIdentifiers.length > 1
-        ? composeDeterministicId(sessionIdentifiers, { minParts: 2 })
-        : primarySessionId);
-  } else if (instanceIdentifier && normalizedExternalId) {
-    deterministicId = composeDeterministicId([instanceIdentifier, normalizedExternalId], { minParts: 2 });
-  }
-
-  return {
-    deterministicId,
-    contactId: primaryContactId,
-    sessionId: primarySessionId,
-  };
-};
-
-const resolveTicketAgreementId = (ticket: unknown): string | null => {
-  if (!ticket || typeof ticket !== 'object') {
-    return null;
-  }
-
-  const ticketRecord = ticket as Record<string, unknown> & {
-    metadata?: Prisma.JsonValue | null;
-  };
-
-  const directAgreement = readString(ticketRecord['agreementId']);
-  if (directAgreement) {
-    return directAgreement;
-  }
-
-  const metadataRecord = toRecord(ticketRecord.metadata);
-  return (
-    readString(metadataRecord.agreementId) ??
-    readString(metadataRecord.agreement_id) ??
-    readNestedString(metadataRecord, ['agreement', 'id']) ??
-    readNestedString(metadataRecord, ['agreement', 'agreementId']) ??
-    null
-  );
-};
 
 const pushUnique = (collection: string[], candidate: string | null): void => {
   if (!candidate) {
@@ -796,132 +436,7 @@ const pruneDedupeCache = (now: number): void => {
   }
 };
 
-interface InboundContactDetails {
-  phone?: string | null;
-  name?: string | null;
-  document?: string | null;
-  registrations?: string[] | null;
-  avatarUrl?: string | null;
-  pushName?: string | null;
-}
 
-interface InboundMessageDetails {
-  id?: string | null;
-  type?: string | null;
-  text?: unknown;
-  metadata?: Record<string, unknown> | null;
-  conversation?: unknown;
-  extendedTextMessage?: unknown;
-  imageMessage?: unknown;
-  videoMessage?: unknown;
-  audioMessage?: unknown;
-  documentMessage?: unknown;
-  contactsArrayMessage?: unknown;
-  locationMessage?: unknown;
-  templateButtonReplyMessage?: unknown;
-  buttonsResponseMessage?: unknown;
-  stickerMessage?: unknown;
-  key?: {
-    id?: string | null;
-    remoteJid?: string | null;
-  } | null;
-  messageTimestamp?: number | null;
-}
-
-export interface InboundWhatsAppEvent {
-  id: string;
-  instanceId: string;
-  direction: 'INBOUND' | 'OUTBOUND';
-  chatId: string | null;
-  externalId?: string | null;
-  timestamp: string | null;
-  contact: InboundContactDetails;
-  message: InboundMessageDetails;
-  metadata?: Record<string, unknown> | null;
-  tenantId?: string | null;
-  sessionId?: string | null;
-}
-
-export interface InboundWhatsAppEnvelopeBase {
-  origin: string;
-  instanceId: string;
-  chatId: string | null;
-  tenantId: string | null;
-  dedupeTtlMs?: number;
-  raw?: Record<string, unknown> | null;
-}
-
-export interface InboundWhatsAppEnvelopeMessage extends InboundWhatsAppEnvelopeBase {
-  message: {
-    kind: 'message';
-    id: string | null;
-    externalId?: string | null;
-    brokerMessageId?: string | null;
-    timestamp: string | null;
-    direction: 'INBOUND' | 'OUTBOUND';
-    contact: InboundContactDetails;
-    payload: InboundMessageDetails;
-    metadata?: Record<string, unknown> | null;
-  };
-}
-
-export interface InboundWhatsAppEnvelopeUpdate extends InboundWhatsAppEnvelopeBase {
-  message: {
-    kind: 'update';
-    id: string;
-    status?: string | null;
-    timestamp?: string | null;
-    metadata?: Record<string, unknown> | null;
-  };
-}
-
-export type InboundWhatsAppEnvelope = InboundWhatsAppEnvelopeMessage | InboundWhatsAppEnvelopeUpdate;
-
-const isMessageEnvelope = (
-  envelope: InboundWhatsAppEnvelope
-): envelope is InboundWhatsAppEnvelopeMessage => envelope.message.kind === 'message';
-
-const sanitizePhone = (value?: string | null): string | undefined => {
-  if (!value) {
-    return undefined;
-  }
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 10) {
-    return undefined;
-  }
-  return `+${digits.replace(/^\+/, '')}`;
-};
-
-const sanitizeDocument = (value?: string | null, fallbacks: Array<string | null | undefined> = []): string => {
-  const candidateDigits = typeof value === 'string' ? value.replace(/\D/g, '') : '';
-  if (candidateDigits.length >= 4) {
-    return candidateDigits;
-  }
-
-  for (const fallback of fallbacks) {
-    if (typeof fallback !== 'string') {
-      continue;
-    }
-
-    const digits = fallback.replace(/\D/g, '');
-    if (digits.length >= 4) {
-      return digits;
-    }
-  }
-
-  for (const fallback of fallbacks) {
-    if (typeof fallback !== 'string') {
-      continue;
-    }
-
-    const trimmed = fallback.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-
-  return `wa-${randomUUID()}`;
-};
 
 const uniqueStringList = (values?: string[] | null): string[] => {
   if (!Array.isArray(values)) {
@@ -946,18 +461,6 @@ const uniqueStringList = (values?: string[] | null): string[] => {
   return normalized;
 };
 
-const pickPreferredName = (...values: Array<unknown>): string | null => {
-  for (const value of values) {
-    if (typeof value !== 'string') {
-      continue;
-    }
-    const trimmed = value.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-  return null;
-};
 
 const shouldSkipByLocalDedupe = (key: string, now: number): boolean => {
   pruneDedupeCache(now);
@@ -1024,65 +527,6 @@ const registerDedupeKey = async (key: string, now: number, ttlMs = DEFAULT_DEDUP
 const mapErrorForLog = (error: unknown) =>
   error instanceof Error ? { message: error.message, stack: error.stack } : error;
 
-const emitPassthroughRealtimeUpdates = async ({
-  tenantId,
-  ticketId,
-  instanceId,
-  message,
-  ticketWasCreated,
-}: {
-  tenantId: string;
-  ticketId: string;
-  instanceId: string | null;
-  message: PassthroughMessage;
-  ticketWasCreated: boolean;
-}) => {
-  try {
-    const ticketRecord = await prisma.ticket.findUnique({ where: { id: ticketId } });
-
-    if (!ticketRecord) {
-      logger.warn('passthrough: skipped realtime updates due to missing ticket record', {
-        tenantId,
-        ticketId,
-      });
-      return;
-    }
-
-    const agreementId = resolveTicketAgreementId(ticketRecord);
-
-    const ticketPayload = {
-      tenantId,
-      ticketId: ticketRecord.id,
-      agreementId,
-      instanceId: instanceId ?? null,
-      messageId: message.id,
-      providerMessageId: message.externalId ?? null,
-      ticketStatus: ticketRecord.status,
-      ticketUpdatedAt: ticketRecord.updatedAt?.toISOString?.() ?? new Date().toISOString(),
-      ticket: ticketRecord,
-    };
-
-    emitToTicket(ticketRecord.id, 'tickets.updated', ticketPayload);
-    emitToTenant(tenantId, 'tickets.updated', ticketPayload);
-    if (agreementId) {
-      emitToAgreement(agreementId, 'tickets.updated', ticketPayload);
-    }
-
-    if (ticketWasCreated) {
-      emitToTicket(ticketRecord.id, 'tickets.new', ticketPayload);
-      emitToTenant(tenantId, 'tickets.new', ticketPayload);
-      if (agreementId) {
-        emitToAgreement(agreementId, 'tickets.new', ticketPayload);
-      }
-    }
-  } catch (error) {
-    logger.error('passthrough: failed to emit ticket realtime events', {
-      error: mapErrorForLog(error),
-      tenantId,
-      ticketId,
-    });
-  }
-};
 
 const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string> => {
   const upsertFallbackQueue = async () =>
@@ -2817,6 +2261,5 @@ export const __testing = {
   emitRealtimeUpdatesForInbound,
   provisionFallbackCampaignForInstance,
   ensureInboundQueueForInboundMessage,
-  handlePassthroughIngest,
   processStandardInboundEvent,
 };

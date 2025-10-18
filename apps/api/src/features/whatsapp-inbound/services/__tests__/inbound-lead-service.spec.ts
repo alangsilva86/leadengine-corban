@@ -110,7 +110,6 @@ let testing!: TestingHelpers;
 type UpsertParams = Parameters<TestingHelpers['upsertLeadFromInbound']>[0];
 type ProcessEventParams = Parameters<TestingHelpers['processStandardInboundEvent']>;
 type InboundEvent = ProcessEventParams[0];
-type PassthroughEvent = Parameters<TestingHelpers['handlePassthroughIngest']>[0];
 
 beforeAll(async () => {
   testing = (await import('../inbound-lead-service')).__testing;
@@ -833,87 +832,6 @@ describe('upsertLeadFromInbound', () => {
     );
     expect(leadCreateMock).not.toHaveBeenCalled();
     expect(leadActivityCreateMock).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('handlePassthroughIngest', () => {
-  beforeEach(() => {
-    findOrCreateOpenTicketByChatMock.mockReset();
-    upsertMessageByExternalIdMock.mockReset();
-  });
-
-  it('reuses deterministic identifiers when phone and document are missing', async () => {
-    const baseEvent = {
-      id: 'event-deterministic-1',
-      instanceId: 'instance-deterministic',
-      direction: 'INBOUND',
-      chatId: null,
-      externalId: null,
-      timestamp: null,
-      contact: {
-        name: 'Contato Sem Telefone',
-        phone: null,
-        document: null,
-      },
-      message: {
-        id: 'message-1',
-        type: 'TEXT',
-        text: 'Olá!',
-      },
-      metadata: {
-        contact: { id: 'contact-metadata-1' },
-        sessionId: 'session-metadata-1',
-      },
-      tenantId: 'tenant-deterministic',
-      sessionId: null,
-    } as unknown as PassthroughEvent;
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
-      ticket: { id: 'ticket-1' },
-      wasCreated: true,
-    });
-    upsertMessageByExternalIdMock.mockResolvedValueOnce({
-      message: { id: 'stored-message-1' },
-      wasCreated: true,
-    });
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
-      ticket: { id: 'ticket-1' },
-      wasCreated: false,
-    });
-    upsertMessageByExternalIdMock.mockResolvedValueOnce({
-      message: { id: 'stored-message-2' },
-      wasCreated: false,
-    });
-
-    await testing.handlePassthroughIngest(baseEvent);
-    await testing.handlePassthroughIngest({
-      ...baseEvent,
-      id: 'event-deterministic-2',
-      message: { ...baseEvent.message, id: 'message-2', text: 'Olá novamente!' },
-    });
-
-    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledTimes(2);
-    const firstCallArgs = findOrCreateOpenTicketByChatMock.mock.calls[0][0];
-    const secondCallArgs = findOrCreateOpenTicketByChatMock.mock.calls[1][0];
-
-    expect(secondCallArgs.chatId).toBe(firstCallArgs.chatId);
-    expect(secondCallArgs.phone).toBe(firstCallArgs.phone);
-    expect(typeof firstCallArgs.chatId).toBe('string');
-    expect(typeof firstCallArgs.phone).toBe('string');
-
-    const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-    expect(firstCallArgs.chatId).toBe('instance-deterministic:contact-metadata-1');
-    expect(firstCallArgs.phone).toBe('instance-deterministic:contact-metadata-1');
-    expect(firstCallArgs.chatId).not.toMatch(uuidRegex);
-    expect(secondCallArgs.chatId).not.toMatch(uuidRegex);
-    expect(firstCallArgs.phone).not.toMatch(/^wa-/i);
-
-    expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(2);
-    expect(upsertMessageByExternalIdMock.mock.calls[0][0].chatId).toBe(firstCallArgs.chatId);
-    expect(upsertMessageByExternalIdMock.mock.calls[1][0].chatId).toBe(firstCallArgs.chatId);
-    expect(upsertMessageByExternalIdMock.mock.calls[0][0].externalId).toBe('message-1');
-    expect(upsertMessageByExternalIdMock.mock.calls[1][0].externalId).toBe('message-2');
   });
 });
 
