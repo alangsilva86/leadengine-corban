@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
+import type { BrokerLeadRecord } from '../../../config/lead-engine';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import {
   inboundMessagesProcessedCounter,
@@ -77,6 +78,45 @@ export const resetInboundLeadServiceTestState = (): void => {
 
 
 
+const isMessageEnvelope = (
+  envelope: InboundWhatsAppEnvelope
+): envelope is InboundWhatsAppEnvelopeMessage => envelope.message.kind === 'message';
+
+// Passthrough handlers are provided by ./passthrough
+
+// Queue provisioning helpers provided by ./provisioning
+
+const isMissingQueueError = (error: unknown): boolean => {
+  if (!error) {
+    return false;
+  }
+
+  if (error instanceof NotFoundError) {
+    return true;
+  }
+
+  if (isForeignKeyError(error)) {
+    return true;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    if (error instanceof Error && error.name === 'NotFoundError') {
+      return true;
+    }
+
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause && cause !== error) {
+      return isMissingQueueError(cause);
+    }
+  }
+
+  return false;
+};
+
+// Default queue resolution provided by ./provisioning
+
+// Queue ensuring handled by ./provisioning
+
 const ensureContact = async (
   tenantId: string,
   {
@@ -87,12 +127,12 @@ const ensureContact = async (
     timestamp,
     avatar,
   }: {
-    phone?: string;
-    name?: string | null;
-    document?: string;
-    registrations?: string[];
-    timestamp?: string | null;
-    avatar?: string | null;
+    phone?: string | null | undefined;
+    name?: string | null | undefined;
+    document?: string | null | undefined;
+    registrations?: string[] | null | undefined;
+    timestamp?: string | null | undefined;
+    avatar?: string | null | undefined;
   }
 ) => {
   const interactionDate = timestamp ? new Date(timestamp) : new Date();
@@ -1144,37 +1184,23 @@ const processStandardInboundEvent = async (
     return true;
   }
 
-  let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+    let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
 
-  const normalizedMessageMedia =
-    normalizedMessage.media && typeof normalizedMessage.media === 'object'
-      ? (normalizedMessage.media as Record<string, unknown>)
-      : null;
-  const timelineMessageType = (() => {
-    if (normalizedMessage.type === 'media') {
-      const mediaType = readString(normalizedMessageMedia?.mediaType) ?? '';
-      if (mediaType === 'image' || mediaType === 'sticker') {
-        return 'IMAGE';
+    const timelineMessageType = (() => {
+      switch (normalizedMessage.type) {
+        case 'IMAGE':
+        case 'VIDEO':
+        case 'AUDIO':
+        case 'DOCUMENT':
+        case 'LOCATION':
+        case 'CONTACT':
+        case 'TEMPLATE':
+          return normalizedMessage.type;
+        case 'TEXT':
+        default:
+          return 'TEXT';
       }
-      if (mediaType === 'video') {
-        return 'VIDEO';
-      }
-      if (mediaType === 'audio') {
-        return 'AUDIO';
-      }
-      return 'DOCUMENT';
-    }
-
-    if (normalizedMessage.type === 'text') {
-      return 'TEXT';
-    }
-
-    if (normalizedMessage.type === 'unknown') {
-      return 'TEXT';
-    }
-
-    return normalizedMessage.type;
-  })();
+    })();
 
   try {
     persistedMessage = await sendMessageService(tenantId, undefined, {
@@ -1343,6 +1369,38 @@ const processStandardInboundEvent = async (
           leadId: allocation.leadId,
         });
 
+        const brokerLead: BrokerLeadRecord = {
+          id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
+          fullName: leadName,
+          document,
+          registrations,
+          agreementId,
+          tags: ['inbound-whatsapp'],
+          raw: {
+            from: contact,
+            message,
+            metadata: event.metadata ?? {},
+            receivedAt: timestamp ?? new Date(now).toISOString(),
+          },
+        };
+
+        if (normalizedPhone) {
+          brokerLead.phone = normalizedPhone;
+        }
+
+      try {
+        const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
+        await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
+        if (newlyAllocated.length > 0) {
+          const allocation = newlyAllocated[0];
+          logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
+            tenantId,
+            campaignId: allocation.campaignId ?? campaignId,
+            instanceId,
+            allocationId: allocation.allocationId,
+            phone: maskPhone(normalizedPhone ?? null),
+            leadId: allocation.leadId,
+          });
         const realtimePayload = {
           tenantId,
           campaignId: allocation.campaignId ?? null,
