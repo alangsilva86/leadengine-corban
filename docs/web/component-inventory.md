@@ -114,7 +114,6 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 - `features/onboarding/useOnboardingJourney.js`
 - `features/onboarding/useOnboardingStepLabel.js`
 - `features/shared/usePlayfulLogger.js`
-- `features/whatsapp-inbound/sockets/useInboxLiveUpdates.js`
 - `features/whatsapp/hooks/useInstanceLiveUpdates.js`
 - `features/whatsapp/hooks/useQrImageSource.js`
 - `features/whatsapp/hooks/useWhatsAppCampaigns.js`
