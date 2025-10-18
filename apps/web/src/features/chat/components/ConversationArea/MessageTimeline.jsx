@@ -40,11 +40,11 @@ export const MessageTimeline = ({
   }, [lastEntryKey, typingAgents.length, scrollToBottom]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1">
+    <div className="flex h-full min-h-0 min-w-0 flex-1">
       <section
         id="chat-scroll"
         ref={containerRef}
-        className="chat-scroll-area min-h-0 flex-1 max-h-[calc(100vh-12rem)] overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
+        className="chat-scroll-area h-full min-h-0 w-full flex-1 overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
         role="log"
         aria-live="polite"
         aria-relevant="additions"

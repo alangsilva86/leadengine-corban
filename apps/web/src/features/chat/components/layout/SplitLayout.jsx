@@ -40,8 +40,8 @@ const SplitLayout = ({
 
   const gridTemplateColumns = isListVisible
     ? listPosition === 'left'
-      ? `minmax(${minListWidth}px, ${listColumnWidth}) 1fr`
-      : `1fr minmax(${minListWidth}px, ${listColumnWidth})`
+      ? `minmax(${minListWidth}px, ${listColumnWidth}) minmax(0, 1fr)`
+      : `minmax(0, 1fr) minmax(${minListWidth}px, ${listColumnWidth})`
     : '1fr';
 
   const gridTemplateAreas = isListVisible
