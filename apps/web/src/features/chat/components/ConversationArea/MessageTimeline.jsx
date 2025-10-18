@@ -11,15 +11,7 @@ const Divider = ({ label }) => (
   </div>
 );
 
-export const MessageTimeline = ({
-  items,
-  loading,
-  hasMore,
-  onLoadMore,
-  typingAgents = [],
-  topSlot,
-  bottomSlot,
-}) => {
+export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAgents = [] }) => {
   const { scrollRef: containerRef, scrollToBottom } = useChatAutoscroll();
   const lastEntryKey = items?.length ? items[items.length - 1]?.id ?? items.length : 0;
 
@@ -42,53 +34,45 @@ export const MessageTimeline = ({
   }, [lastEntryKey, typingAgents.length, scrollToBottom]);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
-      <section
-        id="chat-scroll"
-        ref={containerRef}
-        className="chat-scroll-area flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain scroll-smooth"
-        style={{ scrollbarGutter: 'stable' }}
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions"
-      >
-        {topSlot}
+    <div
+      id="ticketViewport"
+      ref={containerRef}
+      className="chat-scroll-area h-full min-h-0 w-full overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
+      style={{ scrollbarGutter: 'stable', overflowClipMargin: '24px' }}
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions"
+    >
+      <div className="flex flex-col gap-4">
+        {hasMore ? (
+          <button
+            type="button"
+            onClick={() => onLoadMore?.()}
+            className="mx-auto mt-2 rounded-full bg-surface-overlay-quiet px-4 py-1 text-xs text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong"
+          >
+            {loading ? 'Carregando...' : 'Carregar anteriores'}
+          </button>
+        ) : null}
 
-        <div className="flex-1 min-h-0 px-6 py-6">
-          <div className="flex h-full min-h-0 flex-col gap-4">
-            {hasMore ? (
-              <button
-                type="button"
-                onClick={() => onLoadMore?.()}
-                className="mx-auto mt-2 rounded-full bg-surface-overlay-quiet px-4 py-1 text-xs text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong"
-              >
-                {loading ? 'Carregando...' : 'Carregar anteriores'}
-              </button>
-            ) : null}
+        {items?.map((entry) => {
+          if (entry.type === 'divider') {
+            return <Divider key={entry.id} label={entry.label} />;
+          }
 
-            {items?.map((entry) => {
-              if (entry.type === 'divider') {
-                return <Divider key={entry.id} label={entry.label} />;
-              }
+          if (entry.type === 'message') {
+            return <MessageBubble key={entry.id} message={entry.payload} />;
+          }
 
-              if (entry.type === 'message') {
-                return <MessageBubble key={entry.id} message={entry.payload} />;
-              }
+          return <EventCard key={entry.id} entry={entry} />;
+        })}
 
-              return <EventCard key={entry.id} entry={entry} />;
-            })}
-
-            {typingAgents.length > 0 ? (
-              <div className="flex items-center gap-2 rounded-full bg-success-soft px-3 py-1 text-xs text-success-strong">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-success" />
-                {typingAgents[0].userName ?? 'Agente'} digitando…
-              </div>
-            ) : null}
+        {typingAgents.length > 0 ? (
+          <div className="flex items-center gap-2 rounded-full bg-success-soft px-3 py-1 text-xs text-success-strong">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-success" />
+            {typingAgents[0].userName ?? 'Agente'} digitando…
           </div>
-        </div>
-
-        {bottomSlot}
-      </section>
+        ) : null}
+      </div>
     </div>
   );
 };
