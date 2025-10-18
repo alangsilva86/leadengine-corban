@@ -25,11 +25,8 @@
   3. Update generated declaration files and re-run `pnpm --filter @ticketz/core build` plus workspace type-check.
 
 ### 2. Legacy feature flag helpers (`apps/api/src/config/feature-flags.ts`)
-- Exports such as `isWhatsappInboundSimpleModeEnabled` and `refreshFeatureFlags` are no longer referenced in the API layer.  
-- **Plan**:
-  1. Verify via `rg "whatsappInboundSimpleMode" apps/api/src` to ensure no runtime usage.  
-  2. Remove dead branches and simplify the feature flag object.  
-  3. Adjust configuration docs under `docs/environments/` to match the reduced surface area.
+- ✅ `isWhatsappInboundSimpleModeEnabled`/`isWhatsappPassthroughModeEnabled` removed; WhatsApp ingest now always follows the standard path (2025 cleanup).
+- **Next:** audit remaining flags (`whatsappRawFallbackEnabled`, `whatsappBrokerStrictConfig`) after the rollout to confirm they are still necessary.
 
 ### 3. Unused middleware helpers (`apps/api/src/middleware/auth.ts`)
 - Demo-only guards `requirePermission`, `requireRole`, and `optionalAuth` are exported but not wired to routes.  

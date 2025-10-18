@@ -68,7 +68,6 @@ import type {
   OutboundMessageError,
   OutboundMessageResponse,
 } from '@ticketz/contracts';
-import { isWhatsappPassthroughModeEnabled } from '../config/feature-flags';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
@@ -1278,7 +1277,6 @@ export const sendMessage = async (
   let wasDuplicate = false;
   const direction = input.direction;
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
-  const passthroughMode = isWhatsappPassthroughModeEnabled();
   const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
 
   try {
@@ -1334,7 +1332,7 @@ export const sendMessage = async (
 
   const providerMessageId = resolveProviderMessageId(message.metadata);
 
-  if (!wasDuplicate || passthroughMode) {
+  if (!wasDuplicate) {
     emitMessageCreatedEvents(tenantId, ticketSnapshot, message, {
       userId: userId ?? null,
       instanceId: effectiveInstanceId ?? null,
