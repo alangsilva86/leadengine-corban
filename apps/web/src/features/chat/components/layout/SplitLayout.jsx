@@ -36,12 +36,15 @@ const SplitLayout = ({
     [maxListWidthToken, maxListWidthPx]
   );
 
+  const resolvedWidth = numericWidth ?? minListWidth;
   const listColumnWidth = numericWidth ? `${numericWidth}px` : fallbackWidth;
+  const shouldFixWidth = !resizable || !onListWidthChange;
+  const listColumnDefinition = shouldFixWidth ? `${resolvedWidth}px` : `minmax(${minListWidth}px, ${listColumnWidth})`;
 
   const gridTemplateColumns = isListVisible
     ? listPosition === 'left'
-      ? `minmax(${minListWidth}px, ${listColumnWidth}) minmax(0, 1fr)`
-      : `minmax(0, 1fr) minmax(${minListWidth}px, ${listColumnWidth})`
+      ? `${listColumnDefinition} minmax(0, 1fr)`
+      : `minmax(0, 1fr) ${listColumnDefinition}`
     : '1fr';
 
   const gridTemplateAreas = isListVisible
