@@ -267,7 +267,7 @@ const InboxAppShell = ({
         ) : null}
       </div>
       <div className="flex min-h-0 flex-1">
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-1">
+        <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0">
           {isDesktop ? (
             <SplitLayout
               className="h-full w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
