@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
-import { addAllocations } from '../../../data/lead-allocation-store';
 import { maskDocument, maskPhone } from '../../../lib/pii';
 import {
   isWhatsappInboundSimpleModeEnabled,
@@ -32,6 +31,7 @@ import {
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
+import { buildAllocationTargets, processAllocationTargets } from './allocation-service';
 
 const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEDUPE_CACHE_SIZE = 10_000;
@@ -2697,101 +2697,33 @@ const processStandardInboundEvent = async (
   }
 
   if (!simpleMode && !passthroughMode) {
-    const allocationTargets = campaigns.length
-      ? campaigns.map((campaign) => ({
-          campaign,
-          target: { campaignId: campaign.id, instanceId },
-        }))
-      : [{ campaign: null as const, target: { instanceId } }];
+    const allocationTargets = buildAllocationTargets({ campaigns, instanceId });
 
-    for (const { campaign, target } of allocationTargets) {
-      const campaignId = campaign?.id ?? null;
-      const agreementId = campaign?.agreementId || 'unknown';
-      const allocationDedupeKey = campaignId
-        ? `${tenantId}:${campaignId}:${document || normalizedPhone || leadIdBase}`
-        : `${tenantId}:${instanceId}:${document || normalizedPhone || leadIdBase}`;
-
-      if (campaignId && (await shouldSkipByDedupe(allocationDedupeKey, now))) {
-        logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
-          requestId,
-          tenantId,
-          campaignId,
-          instanceId,
-          messageId: message.id ?? null,
-          phone: maskPhone(normalizedPhone ?? null),
-          dedupeKey: allocationDedupeKey,
-        });
-        continue;
-      }
-
-      const brokerLead = {
-        id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
-        fullName: leadName,
+    await processAllocationTargets(
+      {
+        tenantId,
+        instanceId,
+        allocationTargets,
+        leadIdBase,
         document,
+        normalizedPhone,
+        leadName,
         registrations,
-        agreementId,
-        phone: normalizedPhone,
-        margin: undefined,
-        netMargin: undefined,
-        score: undefined,
-        tags: ['inbound-whatsapp'],
-        raw: {
-          from: contact,
-          message,
-          metadata: event.metadata ?? {},
-          receivedAt: timestamp ?? new Date(now).toISOString(),
-        },
-      };
-
-      try {
-        const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
-        await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
-        if (newlyAllocated.length > 0) {
-          const allocation = newlyAllocated[0];
-          logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
-            tenantId,
-            campaignId: allocation.campaignId ?? campaignId,
-            instanceId,
-            allocationId: allocation.allocationId,
-            phone: maskPhone(normalizedPhone ?? null),
-            leadId: allocation.leadId,
-          });
-
-          const realtimePayload = {
-            tenantId,
-            campaignId: allocation.campaignId ?? null,
-            agreementId: allocation.agreementId ?? null,
-            instanceId: allocation.instanceId,
-            allocation,
-            summary,
-          };
-
-          emitToTenant(tenantId, 'leadAllocations.new', realtimePayload);
-          if (allocation.agreementId && allocation.agreementId !== 'unknown') {
-            emitToAgreement(allocation.agreementId, 'leadAllocations.new', realtimePayload);
-          }
-        }
-      } catch (error) {
-        if (isUniqueViolation(error)) {
-          logger.debug('🎯 LeadEngine • WhatsApp :: ⛔ Lead inbound já alocado recentemente — ignorando duplicidade', {
-            tenantId,
-            campaignId: campaignId ?? undefined,
-            instanceId,
-            phone: maskPhone(normalizedPhone ?? null),
-          });
-          await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
-          continue;
-        }
-
-        logger.error('🎯 LeadEngine • WhatsApp :: 🚨 Falha ao alocar lead inbound', {
-          error: mapErrorForLog(error),
-          tenantId,
-          campaignId: campaignId ?? undefined,
-          instanceId,
-          phone: maskPhone(normalizedPhone ?? null),
-        });
+        contact,
+        message,
+        metadata: event.metadata ?? {},
+        timestamp,
+        requestId,
+        now,
+        dedupeTtlMs: DEFAULT_DEDUPE_TTL_MS,
+      },
+      {
+        shouldSkipByDedupe,
+        registerDedupeKey,
+        mapErrorForLog,
+        isUniqueViolation,
       }
-    }
+    );
   }
   return !!persistedMessage;
 };
@@ -2818,5 +2750,4 @@ export const __testing = {
   provisionFallbackCampaignForInstance,
   ensureInboundQueueForInboundMessage,
   handlePassthroughIngest,
-  processStandardInboundEvent,
 };

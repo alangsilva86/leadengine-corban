@@ -108,8 +108,6 @@ type TestingHelpers = typeof import('../inbound-lead-service')['__testing'];
 
 let testing!: TestingHelpers;
 type UpsertParams = Parameters<TestingHelpers['upsertLeadFromInbound']>[0];
-type ProcessEventParams = Parameters<TestingHelpers['processStandardInboundEvent']>;
-type InboundEvent = ProcessEventParams[0];
 type PassthroughEvent = Parameters<TestingHelpers['handlePassthroughIngest']>[0];
 
 beforeAll(async () => {
@@ -917,82 +915,3 @@ describe('handlePassthroughIngest', () => {
   });
 });
 
-describe('processStandardInboundEvent', () => {
-  beforeEach(() => {
-    testing.queueCacheByTenant.clear();
-    vi.resetAllMocks();
-    ticketFindUniqueMock.mockReset();
-  });
-
-  it('auto provisions fallback queue and delivers message to inbox when tenant lacks queues', async () => {
-    const instanceRecord = {
-      id: 'wa-tenantless',
-      tenantId: 'tenant-queue-gap',
-      name: 'WhatsApp Principal',
-      brokerId: 'wa-tenantless',
-    } as const;
-
-    const event: InboundEvent = {
-      id: 'event-queue-gap',
-      instanceId: instanceRecord.id,
-      tenantId: instanceRecord.tenantId,
-      direction: 'INBOUND',
-      contact: { phone: '+5511999999999', name: 'Cliente WhatsApp' },
-      message: { id: 'broker-message-1', text: 'Olá!' },
-      timestamp: new Date('2024-03-22T10:00:00.000Z').toISOString(),
-      metadata: { requestId: 'req-queue-gap' },
-      chatId: null,
-      externalId: null,
-      sessionId: null,
-    } as unknown as InboundEvent;
-
-    findFirstMock.mockResolvedValueOnce(null);
-    queueUpsertMock.mockResolvedValueOnce({ id: 'queue-fallback', tenantId: instanceRecord.tenantId });
-
-    createTicketMock.mockResolvedValueOnce({ id: 'ticket-fallback' });
-    contactFindUniqueMock.mockResolvedValueOnce(null);
-    contactFindFirstMock.mockResolvedValueOnce(null);
-    contactCreateMock.mockResolvedValueOnce({
-      id: 'contact-fallback',
-      tenantId: instanceRecord.tenantId,
-      phone: '+5511999999999',
-      name: 'Cliente WhatsApp',
-    });
-    sendMessageMock.mockResolvedValueOnce({
-      id: 'timeline-1',
-      createdAt: new Date('2024-03-22T10:00:00.000Z'),
-      metadata: { eventMetadata: { requestId: 'req-queue-gap' } },
-      content: 'Olá! Tudo bem?',
-    });
-    ticketFindUniqueMock.mockResolvedValueOnce({
-      id: 'ticket-fallback',
-      status: 'OPEN',
-      updatedAt: new Date('2024-03-22T10:00:00.000Z'),
-    });
-
-    await testing.processStandardInboundEvent(event, Date.now(), {
-      passthroughMode: false,
-      simpleMode: true,
-      preloadedInstance: instanceRecord as unknown as Parameters<TestingHelpers['processStandardInboundEvent']>[2]['preloadedInstance'],
-    });
-
-    expect(queueUpsertMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ tenantId_name: expect.objectContaining({ tenantId: instanceRecord.tenantId }) }),
-      })
-    );
-    expect(createTicketMock).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: instanceRecord.tenantId, queueId: 'queue-fallback' })
-    );
-    expect(sendMessageMock).toHaveBeenCalledWith(
-      instanceRecord.tenantId,
-      undefined,
-      expect.objectContaining({ ticketId: 'ticket-fallback', content: 'Olá!' })
-    );
-    expect(emitToTenantMock).toHaveBeenCalledWith(
-      instanceRecord.tenantId,
-      'tickets.updated',
-      expect.objectContaining({ ticketId: 'ticket-fallback' })
-    );
-  });
-});

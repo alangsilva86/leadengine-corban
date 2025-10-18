@@ -22,12 +22,13 @@ const prismaMock = {
   leadActivity: { findFirst: vi.fn(), create: vi.fn() },
 };
 
-const addAllocationsMock = vi.fn();
 const emitToTenantMock = vi.fn();
 const emitToTicketMock = vi.fn();
 const emitToAgreementMock = vi.fn();
 const createTicketMock = vi.fn();
 const sendMessageMock = vi.fn();
+const buildAllocationTargetsMock = vi.fn();
+const processAllocationTargetsMock = vi.fn();
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -47,8 +48,9 @@ vi.mock('../../../../lib/prisma', () => ({
   prisma: prismaMock,
 }));
 
-vi.mock('../../../../data/lead-allocation-store', () => ({
-  addAllocations: addAllocationsMock,
+vi.mock('../allocation-service', () => ({
+  buildAllocationTargets: buildAllocationTargetsMock,
+  processAllocationTargets: processAllocationTargetsMock,
 }));
 
 vi.mock('../../../../lib/socket-registry', () => ({
@@ -168,7 +170,6 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     isWhatsappPassthroughModeEnabledMock.mockReset();
     isWhatsappInboundSimpleModeEnabledMock.mockReset();
     resetPrismaMocks();
-    addAllocationsMock.mockReset();
     emitToTenantMock.mockReset();
     emitToTicketMock.mockReset();
     emitToAgreementMock.mockReset();
@@ -178,9 +179,16 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     loggerMock.warn.mockReset();
     loggerMock.error.mockReset();
     loggerMock.debug.mockReset();
+    buildAllocationTargetsMock.mockReset();
+    processAllocationTargetsMock.mockReset();
 
     isWhatsappPassthroughModeEnabledMock.mockReturnValue(true);
     isWhatsappInboundSimpleModeEnabledMock.mockReturnValue(false);
+
+    buildAllocationTargetsMock.mockImplementation(({ instanceId }) => [
+      { campaign: null, target: { instanceId } },
+    ]);
+    processAllocationTargetsMock.mockResolvedValue(undefined);
 
     findOrCreateOpenTicketByChatMock.mockResolvedValue({
       ticket: {
@@ -331,36 +339,30 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
         createdAt: new Date('2024-05-10T12:00:01.000Z'),
       });
 
-      addAllocationsMock.mockResolvedValue({
-        newlyAllocated: [
-          {
-            allocationId: 'alloc-1',
-            leadId: 'lead-1',
-            campaignId: null,
-            agreementId: null,
-            instanceId: 'instance-1',
-          },
-        ],
-        summary: { total: 1, contacted: 0, won: 0, lost: 0 },
-      });
     });
 
-    it('allocates leads indexed by instance when no campaigns exist', async () => {
+    it('delegates allocation handling to the allocation service when no campaigns exist', async () => {
+      const allocationTargets = [{ campaign: null, target: { instanceId: 'instance-1' } }];
+      buildAllocationTargetsMock.mockReturnValueOnce(allocationTargets);
       const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
 
       expect(processed).toBe(true);
-      expect(addAllocationsMock).toHaveBeenCalledWith(
-        'tenant-1',
-        { instanceId: 'instance-1' },
-        expect.any(Array)
-      );
+      expect(buildAllocationTargetsMock).toHaveBeenCalledWith({
+        campaigns: [],
+        instanceId: 'instance-1',
+      });
 
-      expect(emitToTenantMock).toHaveBeenCalledWith(
-        'tenant-1',
-        'leadAllocations.new',
+      expect(processAllocationTargetsMock).toHaveBeenCalledWith(
         expect.objectContaining({
+          tenantId: 'tenant-1',
           instanceId: 'instance-1',
-          campaignId: null,
+          allocationTargets,
+        }),
+        expect.objectContaining({
+          shouldSkipByDedupe: expect.any(Function),
+          registerDedupeKey: expect.any(Function),
+          mapErrorForLog: expect.any(Function),
+          isUniqueViolation: expect.any(Function),
         })
       );
 
@@ -379,12 +381,14 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(firstAttempt).toBe(false);
       expect(sendMessageMock).not.toHaveBeenCalled();
       expect(testingInternals.dedupeCache.size).toBe(0);
+      expect(processAllocationTargetsMock).not.toHaveBeenCalled();
 
       const secondAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
       expect(secondAttempt).toBe(true);
       expect(sendMessageMock).toHaveBeenCalledTimes(1);
       expect(prismaMock.queue.upsert).toHaveBeenCalledTimes(1);
       expect(testingInternals.dedupeCache.size).toBeGreaterThan(0);
+      expect(processAllocationTargetsMock).toHaveBeenCalledTimes(1);
     });
 
     it('reuses instance resolved via broker identifier matching the envelope instance id', async () => {
