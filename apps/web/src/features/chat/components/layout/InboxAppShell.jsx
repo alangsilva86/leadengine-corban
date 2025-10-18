@@ -134,7 +134,7 @@ const DesktopToolbar = ({
     <Button
       variant="outline"
       size="sm"
-      className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell lg:inline-flex"
+      className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell xl:inline-flex"
       onClick={onToggleListVisibility}
     >
       {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
@@ -171,24 +171,25 @@ const InboxAppShell = ({
     writePreference(CONTEXT_PREFERENCE_KEY, contextOpen);
   }, [contextOpen]);
 
-  const isNarrowViewport = useMediaQuery('(max-width: 1024px)');
-  const isDesktop = !isNarrowViewport;
+  const isTablet = useMediaQuery('(min-width: 1024px)');
+  const isDesktop = useMediaQuery('(min-width: 1280px)');
+  const shouldRenderSplitLayout = isTablet;
 
   useEffect(() => {
-    if (isDesktop) {
+    if (shouldRenderSplitLayout) {
       setMobileListOpen(false);
     }
-  }, [isDesktop]);
+  }, [shouldRenderSplitLayout]);
 
   const canPersistPreferences = Boolean(currentUser?.id);
 
   const toggleListVisibility = useCallback(() => {
     if (isDesktop) {
       setDesktopListVisible((previous) => !previous);
-    } else {
+    } else if (!isTablet) {
       setMobileListOpen((previous) => !previous);
     }
-  }, [isDesktop]);
+  }, [isDesktop, isTablet]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -205,8 +206,9 @@ const InboxAppShell = ({
   }, [toggleListVisibility]);
 
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
+  const effectiveContextOpen = isDesktop && contextOpen;
   const renderDetailSurface = () => {
-    const detailGap = contextOpen ? 'lg:gap-6' : 'lg:gap-0';
+    const detailGap = effectiveContextOpen ? 'lg:gap-6' : 'lg:gap-0';
 
     return (
       <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
@@ -217,7 +219,7 @@ const InboxAppShell = ({
             </div>
           </section>
         </div>
-        <ContextDrawer open={contextOpen} onOpenChange={setContextOpen} desktopContentClassName="px-4 py-5">
+        <ContextDrawer open={effectiveContextOpen} onOpenChange={setContextOpen} desktopContentClassName="px-4 py-5">
           {context}
         </ContextDrawer>
       </div>
@@ -257,7 +259,7 @@ const InboxAppShell = ({
           <DesktopToolbar
             onToggleListVisibility={toggleListVisibility}
             onToggleContext={() => setContextOpen((previous) => !previous)}
-            contextOpen={contextOpen}
+            contextOpen={effectiveContextOpen}
             desktopListVisible={desktopListVisible}
             headerListButtonLabel={headerListButtonLabel}
           />
@@ -270,7 +272,7 @@ const InboxAppShell = ({
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0">
-          {isDesktop ? (
+          {shouldRenderSplitLayout ? (
             <SplitLayout
               className="h-full min-h-0 w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
               list={listContent}
@@ -280,7 +282,7 @@ const InboxAppShell = ({
               )}
               detailClassName="flex min-h-0 min-w-0 flex-col"
               listWidth={360}
-              isListVisible={desktopListVisible && Boolean(sidebar)}
+              isListVisible={Boolean(sidebar) && (isDesktop ? desktopListVisible : true)}
               minListWidth={360}
               maxListWidthPx={360}
               maxListWidthToken="360px"
