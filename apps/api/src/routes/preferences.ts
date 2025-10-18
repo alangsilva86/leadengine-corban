@@ -4,7 +4,6 @@ import { z, ZodError } from 'zod';
 import { asyncHandler } from '../middleware/error-handler';
 import { respondWithValidationError } from '../utils/http-validation';
 import {
-  DEFAULT_INBOX_LIST_POSITION,
   DEFAULT_INBOX_LIST_WIDTH,
   MAX_INBOX_LIST_WIDTH,
   MIN_INBOX_LIST_WIDTH,
@@ -26,7 +25,6 @@ const widthSchema = z
 
 const updatePreferencesSchema = z
   .object({
-    inboxListPosition: z.enum(['left', 'right']).optional(),
     inboxListWidth: widthSchema,
   })
   .strict();
@@ -120,7 +118,7 @@ router.patch(
       throw error;
     }
 
-    if (parsed.inboxListPosition === undefined && parsed.inboxListWidth === undefined) {
+    if (parsed.inboxListWidth === undefined) {
       const current = getUserPreferences(userId);
       res.json({
         success: true,
@@ -144,7 +142,6 @@ router.get(
     res.json({
       success: true,
       data: {
-        inboxListPosition: DEFAULT_INBOX_LIST_POSITION,
         inboxListWidth: DEFAULT_INBOX_LIST_WIDTH,
         minInboxListWidth: MIN_INBOX_LIST_WIDTH,
         maxInboxListWidth: MAX_INBOX_LIST_WIDTH,
