@@ -135,6 +135,7 @@ export const provisionFallbackCampaignForInstance = async (
   tenantId: string,
   instanceId: string
 ) => {
+export const provisionFallbackCampaignForInstance = async (tenantId: string, instanceId: string) => {
   try {
     const campaign = await prisma.campaign.upsert({
       where: {
@@ -235,7 +236,6 @@ type EnsureInboundQueueParams = {
   tenantId: string;
   requestId: string | null;
   instanceId: string | null;
-  simpleMode: boolean;
 };
 
 type EnsureInboundQueueErrorReason = 'TENANT_NOT_FOUND' | 'PROVISIONING_FAILED';
@@ -256,7 +256,6 @@ export const ensureInboundQueueForInboundMessage = async ({
   tenantId,
   requestId,
   instanceId,
-  simpleMode,
 }: EnsureInboundQueueParams): Promise<EnsureInboundQueueResult> => {
   const existingQueueId = await getDefaultQueueId(tenantId, { provisionIfMissing: false });
 
@@ -268,7 +267,6 @@ export const ensureInboundQueueForInboundMessage = async ({
     requestId,
     tenantId,
     instanceId,
-    simpleMode,
   });
 
   try {
@@ -279,7 +277,6 @@ export const ensureInboundQueueForInboundMessage = async ({
       tenantId,
       instanceId,
       queueId: provisionedQueueId,
-      simpleMode,
     });
 
     emitToTenant(tenantId, 'whatsapp.queue.autoProvisioned', {
@@ -311,7 +308,6 @@ export const ensureInboundQueueForInboundMessage = async ({
       requestId,
       tenantId,
       instanceId,
-      simpleMode,
       error: mapErrorForLog(error),
       reason: provisionError.reason,
     });
@@ -417,12 +413,10 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
   instanceId,
   metadata,
   requestId,
-  simpleMode,
 }: {
   instanceId: string;
   metadata: Record<string, unknown>;
   requestId: string | null;
-  simpleMode: boolean;
 }): Promise<AutoProvisionResult | null> => {
   const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
 
@@ -457,7 +451,7 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
   const displayName = resolveInstanceDisplayNameFromMetadata(metadata, tenant.name, instanceId);
   const autopProvisionMetadataPayload: AutoProvisionMetadataPayload = {
     autopProvisionedAt: new Date().toISOString(),
-    autopProvisionSource: simpleMode ? 'inbound-simple-mode' : 'inbound-auto',
+    autopProvisionSource: 'inbound-auto',
     autopProvisionRequestId: requestId ?? null,
     autopProvisionTenantIdentifiers: tenantIdentifiers,
     autopProvisionSessionId: sessionId ?? null,

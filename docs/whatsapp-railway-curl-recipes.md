@@ -12,16 +12,13 @@ export API_URL="https://ticketzapi-production.up.railway.app"          # replace
 export WHATSAPP_WEBHOOK_API_KEY="$(cat /etc/secrets/whatsapp_webhook_api_key)"
 export TENANT_ID="demo-tenant"
 export INSTANCE_ID="alan"
-export WHATSAPP_INBOUND_SIMPLE_MODE="true"                             # optional: disables dedupe/CRM to focus on chat visibility
 # Optional: only needed if MVP auth bypass is disabled
 # export AUTH_TOKEN="<jwt-token>"
 ```
 
 > ℹ️ With `MVP_AUTH_BYPASS=true` (enabled in demos), the API injects the bypass user automatically and you **do not** need the `Authorization` header. Keep the header enabled in production environments.
 
-> 🔐 Default (strict) mode requires the `x-api-key` header and, when configured, the `x-signature-sha256` HMAC. If the deployment
-> enables `WHATSAPP_PASSTHROUGH_MODE=true`, both validations are skipped and you may omit these headers—only do so in trusted
-> environments where webhook traffic is already controlled.
+> 🔐 O webhook sempre valida `x-api-key` e, quando configurado, `x-signature-sha256`. Certifique-se de exportar as credenciais corretas antes de testar.
 
 ## Inbound webhook check
 

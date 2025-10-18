@@ -46,8 +46,6 @@ type FeatureFlags = {
   useRealData: boolean;
   mvpAuthBypass: boolean;
   whatsappRawFallbackEnabled: boolean;
-  whatsappInboundSimpleMode: boolean;
-  whatsappPassthroughMode: boolean;
   whatsappBrokerStrictConfig: boolean;
   whatsappDebugToolsEnabled: boolean;
 } & SharedFeatureFlags;
@@ -83,18 +81,6 @@ const computeFlags = (): FeatureFlags => {
     logger.info('[config] WhatsApp raw fallback normalizer habilitado');
   }
 
-  const whatsappInboundSimpleMode = parseBoolean(process.env.WHATSAPP_INBOUND_SIMPLE_MODE, false);
-  if (whatsappInboundSimpleMode) {
-    logger.warn('[config] WhatsApp inbound mensagens em modo simplificado (sem dedupe/lead sync)');
-  }
-
-  const whatsappPassthroughMode = parseBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, false);
-  if (whatsappPassthroughMode) {
-    logger.warn(
-      '[config] WhatsApp passthrough habilitado (WHATSAPP_PASSTHROUGH_MODE=true) — ingestão sem filtros'
-    );
-  }
-
   const whatsappBrokerStrictConfig = parseBoolean(process.env.WHATSAPP_BROKER_STRICT_CONFIG, false);
   if (whatsappBrokerStrictConfig) {
     logger.warn('[config] WhatsApp broker strict config habilitado — bloqueando se faltar URL/API key');
@@ -114,8 +100,6 @@ const computeFlags = (): FeatureFlags => {
     useRealData,
     mvpAuthBypass,
     whatsappRawFallbackEnabled,
-    whatsappInboundSimpleMode,
-    whatsappPassthroughMode,
     whatsappBrokerStrictConfig,
     whatsappDebugToolsEnabled,
     ...sharedFlags,
@@ -132,10 +116,6 @@ export const isMvpAuthBypassEnabled = (): boolean => cachedFlags.mvpAuthBypass;
 
 export const isWhatsappRawFallbackEnabled = (): boolean => cachedFlags.whatsappRawFallbackEnabled;
 
-export const isWhatsappInboundSimpleModeEnabled = (): boolean => cachedFlags.whatsappInboundSimpleMode;
-
-export const isWhatsappPassthroughModeEnabled = (): boolean => cachedFlags.whatsappPassthroughMode;
-
 export const isWhatsappBrokerStrictConfigEnabled = (): boolean => cachedFlags.whatsappBrokerStrictConfig;
 
 export const isWhatsappDebugToolsEnabled = (): boolean => cachedFlags.whatsappDebugToolsEnabled;
@@ -146,8 +126,6 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
   const useRealDataChanged = next.useRealData !== cachedFlags.useRealData;
   const mvpAuthBypassChanged = next.mvpAuthBypass !== cachedFlags.mvpAuthBypass;
   const whatsappFallbackChanged = next.whatsappRawFallbackEnabled !== cachedFlags.whatsappRawFallbackEnabled;
-  const whatsappSimpleChanged = next.whatsappInboundSimpleMode !== cachedFlags.whatsappInboundSimpleMode;
-  const whatsappPassthroughChanged = next.whatsappPassthroughMode !== cachedFlags.whatsappPassthroughMode;
   const whatsappStrictChanged = next.whatsappBrokerStrictConfig !== cachedFlags.whatsappBrokerStrictConfig;
   const whatsappDebugToolsChanged =
     next.whatsappDebugToolsEnabled !== cachedFlags.whatsappDebugToolsEnabled;
@@ -157,8 +135,6 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     useRealDataChanged ||
     mvpAuthBypassChanged ||
     whatsappFallbackChanged ||
-    whatsappSimpleChanged ||
-    whatsappPassthroughChanged ||
     whatsappStrictChanged ||
     whatsappDebugToolsChanged ||
     whatsappDebugFeatureChanged
@@ -167,8 +143,6 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
       useRealData: next.useRealData,
       mvpAuthBypass: next.mvpAuthBypass,
       whatsappRawFallbackEnabled: next.whatsappRawFallbackEnabled,
-      whatsappInboundSimpleMode: next.whatsappInboundSimpleMode,
-      whatsappPassthroughMode: next.whatsappPassthroughMode,
       whatsappBrokerStrictConfig: next.whatsappBrokerStrictConfig,
       whatsappDebugToolsEnabled: next.whatsappDebugToolsEnabled,
       whatsappDebug: next.whatsappDebug,
@@ -178,14 +152,6 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
     }
     if (next.whatsappRawFallbackEnabled && !cachedFlags.whatsappRawFallbackEnabled) {
       logger.info('[config] WhatsApp raw fallback normalizer habilitado (refresh)');
-    }
-    if (next.whatsappInboundSimpleMode && !cachedFlags.whatsappInboundSimpleMode) {
-      logger.warn('[config] WhatsApp inbound simples habilitado (refresh)');
-    }
-    if (next.whatsappPassthroughMode && !cachedFlags.whatsappPassthroughMode) {
-      logger.warn(
-        '[config] WhatsApp passthrough habilitado (refresh, WHATSAPP_PASSTHROUGH_MODE=true)'
-      );
     }
     if (next.whatsappBrokerStrictConfig && !cachedFlags.whatsappBrokerStrictConfig) {
       logger.warn('[config] WhatsApp broker strict config habilitado (refresh)');

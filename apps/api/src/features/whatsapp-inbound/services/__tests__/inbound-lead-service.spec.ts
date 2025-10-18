@@ -1,6 +1,15 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { NotFoundError } from '@ticketz/core';
+import { DEFAULT_QUEUE_CACHE_TTL_MS } from '../constants';
+import {
+  attemptAutoProvisionWhatsAppInstance,
+  ensureInboundQueueForInboundMessage,
+  getDefaultQueueId,
+  queueCacheByTenant,
+} from '../provisioning';
+import { resolveTenantIdentifiersFromMetadata } from '../identifiers';
+import type { InboundWhatsAppEvent } from '../types';
 
 const findUniqueMock = vi.fn();
 const findFirstMock = vi.fn();
@@ -26,8 +35,6 @@ const contactFindFirstMock = vi.fn();
 const contactUpdateMock = vi.fn();
 const contactCreateMock = vi.fn();
 const ticketFindUniqueMock = vi.fn();
-const findOrCreateOpenTicketByChatMock = vi.fn();
-const upsertMessageByExternalIdMock = vi.fn();
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -81,11 +88,6 @@ vi.mock('../../../../services/ticket-service', () => ({
   sendMessage: sendMessageMock,
 }));
 
-vi.mock('@ticketz/storage', () => ({
-  findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
-  upsertMessageByExternalId: upsertMessageByExternalIdMock,
-}));
-
 vi.mock('../../../../lib/socket-registry', () => ({
   emitToTenant: emitToTenantMock,
   emitToTicket: emitToTicketMock,
@@ -110,7 +112,6 @@ let testing!: TestingHelpers;
 type UpsertParams = Parameters<TestingHelpers['upsertLeadFromInbound']>[0];
 type ProcessEventParams = Parameters<TestingHelpers['processStandardInboundEvent']>;
 type InboundEvent = ProcessEventParams[0];
-type PassthroughEvent = Parameters<TestingHelpers['handlePassthroughIngest']>[0];
 
 beforeAll(async () => {
   testing = (await import('../inbound-lead-service')).__testing;
@@ -118,20 +119,20 @@ beforeAll(async () => {
 
 describe('getDefaultQueueId', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    queueCacheByTenant.clear();
     vi.resetAllMocks();
     queueUpsertMock.mockReset();
   });
 
   it('returns cached queue id when entry is valid and queue exists', async () => {
-    testing.queueCacheByTenant.set('tenant-1', {
+    queueCacheByTenant.set('tenant-1', {
       id: 'queue-1',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     findUniqueMock.mockResolvedValueOnce({ id: 'queue-1' });
 
-    const queueId = await testing.getDefaultQueueId('tenant-1');
+    const queueId = await getDefaultQueueId('tenant-1');
 
     expect(queueId).toBe('queue-1');
     expect(findUniqueMock).toHaveBeenCalledTimes(1);
@@ -140,20 +141,20 @@ describe('getDefaultQueueId', () => {
   });
 
   it('refetches queue when cached id is missing', async () => {
-    testing.queueCacheByTenant.set('tenant-2', {
+    queueCacheByTenant.set('tenant-2', {
       id: 'queue-old',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     findUniqueMock.mockResolvedValueOnce(null);
     findFirstMock.mockResolvedValueOnce({ id: 'queue-new' });
 
-    const queueId = await testing.getDefaultQueueId('tenant-2');
+    const queueId = await getDefaultQueueId('tenant-2');
 
     expect(queueId).toBe('queue-new');
     expect(findUniqueMock).toHaveBeenCalledWith({ where: { id: 'queue-old' } });
     expect(findFirstMock).toHaveBeenCalledTimes(1);
-    expect(testing.queueCacheByTenant.get('tenant-2')).toMatchObject({ id: 'queue-new' });
+    expect(queueCacheByTenant.get('tenant-2')).toMatchObject({ id: 'queue-new' });
     expect(queueUpsertMock).not.toHaveBeenCalled();
   });
 
@@ -161,7 +162,7 @@ describe('getDefaultQueueId', () => {
     findFirstMock.mockResolvedValueOnce(null);
     queueUpsertMock.mockResolvedValueOnce({ id: 'queue-fallback' });
 
-    const queueId = await testing.getDefaultQueueId('tenant-3');
+    const queueId = await getDefaultQueueId('tenant-3');
 
     expect(queueId).toBe('queue-fallback');
     expect(queueUpsertMock).toHaveBeenCalledWith(
@@ -181,7 +182,7 @@ describe('getDefaultQueueId', () => {
         }),
       })
     );
-    expect(testing.queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fallback' });
+    expect(queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fallback' });
   });
 });
 
@@ -198,7 +199,7 @@ describe('metadata helpers', () => {
       context: { tenantId: 'tenant-ctx', tenant: { slug: 'tenant-slug-ctx' } },
     };
 
-    const result = testing.resolveTenantIdentifiersFromMetadata(metadata);
+    const result = resolveTenantIdentifiersFromMetadata(metadata);
 
     expect(result).toEqual([
       'tenant-1',
@@ -227,11 +228,10 @@ describe('metadata helpers', () => {
     });
 
     it('returns null when tenant identifiers cannot be resolved', async () => {
-      const result = await testing.attemptAutoProvisionWhatsAppInstance({
+      const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
         metadata: { sessionId: 'session-1' },
         requestId: 'req-1',
-        simpleMode: true,
       });
 
       expect(result).toBeNull();
@@ -259,11 +259,10 @@ describe('metadata helpers', () => {
       whatsappInstanceFindFirstMock.mockResolvedValueOnce(null);
       whatsappInstanceCreateMock.mockResolvedValueOnce(instanceRecord);
 
-      const result = await testing.attemptAutoProvisionWhatsAppInstance({
+      const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
         metadata: baseMetadata,
         requestId: 'req-2',
-        simpleMode: true,
       });
 
       expect(tenantFindFirstMock).toHaveBeenCalledWith({
@@ -303,7 +302,7 @@ describe('metadata helpers', () => {
       );
     });
 
-    it('creates a WhatsApp instance with inbound-auto source when simple mode is disabled', async () => {
+    it('creates a WhatsApp instance with inbound-auto source', async () => {
       const tenantRecord = { id: 'tenant-autoprov', name: 'Tenant Demo', slug: 'tenant-autoprov' };
       const instanceRecord = {
         id: 'wa-auto',
@@ -328,11 +327,10 @@ describe('metadata helpers', () => {
         brokerId: 'wa-friendly',
       };
 
-      const result = await testing.attemptAutoProvisionWhatsAppInstance({
+      const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
         metadata: metadataWithBroker,
         requestId: 'req-2',
-        simpleMode: false,
       });
 
       expect(whatsappInstanceCreateMock).toHaveBeenCalledWith(
@@ -376,11 +374,10 @@ describe('metadata helpers', () => {
       whatsappInstanceFindFirstMock.mockResolvedValueOnce(existingRecord);
       whatsappInstanceUpdateMock.mockResolvedValueOnce(existingRecord);
 
-      const result = await testing.attemptAutoProvisionWhatsAppInstance({
+      const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
         metadata: metadataWithoutInstance,
         requestId: 'req-3',
-        simpleMode: true,
       });
 
       expect(whatsappInstanceFindFirstMock).toHaveBeenCalledWith({
@@ -420,11 +417,10 @@ describe('metadata helpers', () => {
       whatsappInstanceFindUniqueMock.mockResolvedValueOnce(existingRecord);
       whatsappInstanceUpdateMock.mockResolvedValue(existingRecord);
 
-      const result = await testing.attemptAutoProvisionWhatsAppInstance({
+      const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
         metadata: baseMetadata,
         requestId: 'req-3',
-        simpleMode: true,
       });
 
       expect(whatsappInstanceFindFirstMock).toHaveBeenNthCalledWith(1, {
@@ -452,7 +448,7 @@ describe('metadata helpers', () => {
 
 describe('ensureInboundQueueForInboundMessage', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    queueCacheByTenant.clear();
     vi.resetAllMocks();
   });
 
@@ -468,11 +464,10 @@ describe('ensureInboundQueueForInboundMessage', () => {
     });
     ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
 
-    const result = await testing.ensureInboundQueueForInboundMessage({
+    const result = await ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-missing',
       requestId: 'req-tenant',
       instanceId: 'instance-tenant',
-      simpleMode: true,
     });
 
     expect(result.queueId).toBe('queue-after-tenant');
@@ -498,11 +493,10 @@ describe('ensureInboundQueueForInboundMessage', () => {
     queueUpsertMock.mockRejectedValueOnce(fkError).mockRejectedValueOnce(fkError);
     ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
 
-    const result = await testing.ensureInboundQueueForInboundMessage({
+    const result = await ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-missing',
       requestId: 'req-tenant',
       instanceId: 'instance-tenant',
-      simpleMode: false,
     });
 
     expect(result.queueId).toBeNull();
@@ -518,13 +512,13 @@ describe('ensureInboundQueueForInboundMessage', () => {
         recoverable: true,
       })
     );
-    expect(testing.queueCacheByTenant.has('tenant-missing')).toBe(false);
+    expect(queueCacheByTenant.has('tenant-missing')).toBe(false);
   });
 });
 
 describe('ensureTicketForContact', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    queueCacheByTenant.clear();
     vi.resetAllMocks();
   });
 
@@ -532,17 +526,16 @@ describe('ensureTicketForContact', () => {
     findFirstMock.mockResolvedValueOnce(null);
     queueUpsertMock.mockResolvedValueOnce({ id: 'queue-auto', tenantId: 'tenant-queue-less' });
 
-    const queueResolution = await testing.ensureInboundQueueForInboundMessage({
+    const queueResolution = await ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-queue-less',
       requestId: 'req-queue',
       instanceId: 'instance-queue',
-      simpleMode: false,
     });
 
     expect(queueResolution.queueId).toBe('queue-auto');
     expect(queueResolution.wasProvisioned).toBe(true);
     expect(queueResolution.error).toBeUndefined();
-    expect(testing.queueCacheByTenant.get('tenant-queue-less')).toMatchObject({ id: 'queue-auto' });
+    expect(queueCacheByTenant.get('tenant-queue-less')).toMatchObject({ id: 'queue-auto' });
     expect(emitToTenantMock).toHaveBeenCalledWith(
       'tenant-queue-less',
       'whatsapp.queue.autoProvisioned',
@@ -574,9 +567,9 @@ describe('ensureTicketForContact', () => {
   });
 
   it('clears cache and retries with refreshed queue when NotFoundError is thrown', async () => {
-    testing.queueCacheByTenant.set('tenant-3', {
+    queueCacheByTenant.set('tenant-3', {
       id: 'queue-stale',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     createTicketMock.mockRejectedValueOnce(new NotFoundError('Queue', 'queue-stale'));
@@ -586,7 +579,7 @@ describe('ensureTicketForContact', () => {
     const result = await testing.ensureTicketForContact('tenant-3', 'contact-1', 'queue-stale', 'Subject', {});
 
     expect(result).toBe('ticket-123');
-    expect(testing.queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fresh' });
+    expect(queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fresh' });
     expect(createTicketMock).toHaveBeenCalledTimes(2);
     expect(createTicketMock).toHaveBeenNthCalledWith(
       2,
@@ -595,9 +588,9 @@ describe('ensureTicketForContact', () => {
   });
 
   it('retries when foreign key error is present in error cause', async () => {
-    testing.queueCacheByTenant.set('tenant-4', {
+    queueCacheByTenant.set('tenant-4', {
       id: 'queue-deleted',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     const prismaError = new Prisma.PrismaClientKnownRequestError('Missing queue', {
@@ -614,7 +607,7 @@ describe('ensureTicketForContact', () => {
     const result = await testing.ensureTicketForContact('tenant-4', 'contact-9', 'queue-deleted', 'Subject', {});
 
     expect(result).toBe('ticket-456');
-    expect(testing.queueCacheByTenant.get('tenant-4')).toMatchObject({ id: 'queue-recreated' });
+    expect(queueCacheByTenant.get('tenant-4')).toMatchObject({ id: 'queue-recreated' });
     expect(createTicketMock).toHaveBeenCalledTimes(2);
     expect(createTicketMock).toHaveBeenNthCalledWith(
       2,
@@ -836,90 +829,9 @@ describe('upsertLeadFromInbound', () => {
   });
 });
 
-describe('handlePassthroughIngest', () => {
-  beforeEach(() => {
-    findOrCreateOpenTicketByChatMock.mockReset();
-    upsertMessageByExternalIdMock.mockReset();
-  });
-
-  it('reuses deterministic identifiers when phone and document are missing', async () => {
-    const baseEvent = {
-      id: 'event-deterministic-1',
-      instanceId: 'instance-deterministic',
-      direction: 'INBOUND',
-      chatId: null,
-      externalId: null,
-      timestamp: null,
-      contact: {
-        name: 'Contato Sem Telefone',
-        phone: null,
-        document: null,
-      },
-      message: {
-        id: 'message-1',
-        type: 'TEXT',
-        text: 'Olá!',
-      },
-      metadata: {
-        contact: { id: 'contact-metadata-1' },
-        sessionId: 'session-metadata-1',
-      },
-      tenantId: 'tenant-deterministic',
-      sessionId: null,
-    } as unknown as PassthroughEvent;
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
-      ticket: { id: 'ticket-1' },
-      wasCreated: true,
-    });
-    upsertMessageByExternalIdMock.mockResolvedValueOnce({
-      message: { id: 'stored-message-1' },
-      wasCreated: true,
-    });
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
-      ticket: { id: 'ticket-1' },
-      wasCreated: false,
-    });
-    upsertMessageByExternalIdMock.mockResolvedValueOnce({
-      message: { id: 'stored-message-2' },
-      wasCreated: false,
-    });
-
-    await testing.handlePassthroughIngest(baseEvent);
-    await testing.handlePassthroughIngest({
-      ...baseEvent,
-      id: 'event-deterministic-2',
-      message: { ...baseEvent.message, id: 'message-2', text: 'Olá novamente!' },
-    });
-
-    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledTimes(2);
-    const firstCallArgs = findOrCreateOpenTicketByChatMock.mock.calls[0][0];
-    const secondCallArgs = findOrCreateOpenTicketByChatMock.mock.calls[1][0];
-
-    expect(secondCallArgs.chatId).toBe(firstCallArgs.chatId);
-    expect(secondCallArgs.phone).toBe(firstCallArgs.phone);
-    expect(typeof firstCallArgs.chatId).toBe('string');
-    expect(typeof firstCallArgs.phone).toBe('string');
-
-    const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-    expect(firstCallArgs.chatId).toBe('instance-deterministic:contact-metadata-1');
-    expect(firstCallArgs.phone).toBe('instance-deterministic:contact-metadata-1');
-    expect(firstCallArgs.chatId).not.toMatch(uuidRegex);
-    expect(secondCallArgs.chatId).not.toMatch(uuidRegex);
-    expect(firstCallArgs.phone).not.toMatch(/^wa-/i);
-
-    expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(2);
-    expect(upsertMessageByExternalIdMock.mock.calls[0][0].chatId).toBe(firstCallArgs.chatId);
-    expect(upsertMessageByExternalIdMock.mock.calls[1][0].chatId).toBe(firstCallArgs.chatId);
-    expect(upsertMessageByExternalIdMock.mock.calls[0][0].externalId).toBe('message-1');
-    expect(upsertMessageByExternalIdMock.mock.calls[1][0].externalId).toBe('message-2');
-  });
-});
-
 describe('processStandardInboundEvent', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    queueCacheByTenant.clear();
     vi.resetAllMocks();
     ticketFindUniqueMock.mockReset();
   });
@@ -971,8 +883,6 @@ describe('processStandardInboundEvent', () => {
     });
 
     await testing.processStandardInboundEvent(event, Date.now(), {
-      passthroughMode: false,
-      simpleMode: true,
       preloadedInstance: instanceRecord as unknown as Parameters<TestingHelpers['processStandardInboundEvent']>[2]['preloadedInstance'],
     });
 

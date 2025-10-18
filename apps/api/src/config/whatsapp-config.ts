@@ -24,10 +24,6 @@ type WhatsAppDefaultsConfig = {
   tenantId: string;
 };
 
-type WhatsAppFeatureFlags = {
-  passthroughMode: boolean;
-};
-
 type WhatsAppRuntimeConfig = {
   mode: WhatsAppTransportMode;
   correlationSeed: string;
@@ -38,7 +34,6 @@ type WhatsAppConfig = {
   webhook: WhatsAppWebhookConfig;
   defaults: WhatsAppDefaultsConfig;
   runtime: WhatsAppRuntimeConfig;
-  flags: WhatsAppFeatureFlags;
 };
 
 const DEFAULT_TENANT_FALLBACK = 'demo-tenant';
@@ -156,9 +151,6 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     runtime: {
       mode: 'http',
       correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
-    },
-    flags: {
-      passthroughMode: normalizeBoolean(process.env.WHATSAPP_PASSTHROUGH_MODE, false),
     },
   };
 };

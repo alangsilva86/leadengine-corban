@@ -92,10 +92,6 @@ vi.mock('../../utils/circuit-breaker', () => ({
   recordCircuitSuccess,
 }));
 
-vi.mock('../../config/feature-flags', () => ({
-  isWhatsappPassthroughModeEnabled: () => false,
-}));
-
 describe('ticket-service logging', () => {
   beforeEach(() => {
     vi.clearAllMocks();

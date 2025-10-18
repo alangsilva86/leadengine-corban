@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictError, NotFoundError } from '@ticketz/core';
+import { ConflictError } from '@ticketz/core';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../lib/prisma';
@@ -7,10 +7,6 @@ import { logger } from '../../../config/logger';
 import { addAllocations } from '../../../data/lead-allocation-store';
 import type { BrokerLeadRecord } from '../../../config/lead-engine';
 import { maskDocument, maskPhone } from '../../../lib/pii';
-import {
-  isWhatsappInboundSimpleModeEnabled,
-  isWhatsappPassthroughModeEnabled,
-} from '../../../config/feature-flags';
 import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
@@ -34,11 +30,8 @@ import {
   DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
   DEFAULT_QUEUE_FALLBACK_NAME,
   DEFAULT_TENANT_ID,
-  MAX_DEDUPE_CACHE_SIZE,
 } from './constants';
 import {
-  dedupeCache,
-  configureInboundDedupeBackend,
   registerDedupeKey,
   resetDedupeState,
   shouldSkipByDedupe,
@@ -46,35 +39,25 @@ import {
 import { mapErrorForLog } from './logging';
 import {
   pickPreferredName,
-  readNestedString,
   readString,
   resolveBrokerIdFromMetadata,
   resolveDeterministicContactIdentifier,
-  resolveInstanceDisplayNameFromMetadata,
-  resolveSessionIdFromMetadata,
   resolveTenantIdentifiersFromMetadata,
   sanitizeDocument,
   sanitizePhone,
   uniqueStringList,
 } from './identifiers';
-import {
-  emitPassthroughRealtimeUpdates,
-  handlePassthroughIngest,
-} from './passthrough';
 import { resolveTicketAgreementId } from './ticket-utils';
 import {
   attemptAutoProvisionWhatsAppInstance,
   ensureInboundQueueForInboundMessage,
   getDefaultQueueId,
-  isForeignKeyError,
   isUniqueViolation,
   provisionDefaultQueueForTenant,
+  provisionFallbackCampaignForInstance,
   queueCacheByTenant,
-  QueueFallbackProvisionError,
-  __testing as provisioningTesting,
 } from './provisioning';
 import {
-  type InboundContactDetails,
   type InboundMessageDetails,
   type InboundWhatsAppEnvelope,
   type InboundWhatsAppEnvelopeMessage,
@@ -762,55 +745,41 @@ export const ingestInboundWhatsAppMessage = async (
     sessionId: readString(metadata.sessionId),
   };
 
-  const passthroughMode = isWhatsappPassthroughModeEnabled();
-  const simpleMode = passthroughMode || isWhatsappInboundSimpleModeEnabled();
   let preloadedInstance: WhatsAppInstanceRecord | null = null;
 
-  if (!passthroughMode) {
-    if (!metadata.tenantId && tenantId) {
-      metadata.tenantId = tenantId;
-    }
+  if (!metadata.tenantId && tenantId) {
+    metadata.tenantId = tenantId;
+  }
 
-    const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
+  const tenantIdentifiers = resolveTenantIdentifiersFromMetadata(metadata);
 
-    if (tenantIdentifiers.length > 0) {
-      const requestIdForProvision = readString(metadata.requestId);
-      const autoProvisionResult = await attemptAutoProvisionWhatsAppInstance({
-        instanceId: messageEnvelope.instanceId,
-        metadata,
-        requestId: requestIdForProvision,
-        simpleMode,
-      });
+  if (tenantIdentifiers.length > 0) {
+    const requestIdForProvision = readString(metadata.requestId);
+    const autoProvisionResult = await attemptAutoProvisionWhatsAppInstance({
+      instanceId: messageEnvelope.instanceId,
+      metadata,
+      requestId: requestIdForProvision,
+    });
 
-      if (autoProvisionResult) {
-        preloadedInstance = autoProvisionResult.instance;
+    if (autoProvisionResult) {
+      preloadedInstance = autoProvisionResult.instance;
 
-        if (!metadata.brokerId) {
-          metadata.brokerId = autoProvisionResult.brokerId;
-        }
+      if (!metadata.brokerId) {
+        metadata.brokerId = autoProvisionResult.brokerId;
+      }
 
-        if (
-          autoProvisionResult.instance?.tenantId &&
-          (!event.tenantId || event.tenantId !== autoProvisionResult.instance.tenantId)
-        ) {
-          event.tenantId = autoProvisionResult.instance.tenantId;
-        }
+      if (
+        autoProvisionResult.instance?.tenantId &&
+        (!event.tenantId || event.tenantId !== autoProvisionResult.instance.tenantId)
+      ) {
+        event.tenantId = autoProvisionResult.instance.tenantId;
       }
     }
   }
 
-  let messagePersisted = false;
-
-  if (passthroughMode) {
-    await handlePassthroughIngest(event);
-    messagePersisted = true;
-  } else {
-    messagePersisted = await processStandardInboundEvent(event, now, {
-      passthroughMode,
-      simpleMode,
-      preloadedInstance,
-    });
-  }
+  const messagePersisted = await processStandardInboundEvent(event, now, {
+    preloadedInstance,
+  });
 
   if (messagePersisted) {
     await registerDedupeKey(dedupeKey, now, dedupeTtlMs);
@@ -836,8 +805,6 @@ export const ingestInboundWhatsAppMessage = async (
       origin: messageEnvelope.origin,
       dedupeKey,
       dedupeTtlMs,
-      passthroughMode,
-      simpleMode,
       persisted: messagePersisted,
     },
     payload: {
@@ -852,12 +819,8 @@ const processStandardInboundEvent = async (
   event: InboundWhatsAppEvent,
   now: number,
   {
-    passthroughMode,
-    simpleMode,
     preloadedInstance,
   }: {
-    passthroughMode: boolean;
-    simpleMode: boolean;
     preloadedInstance?: WhatsAppInstanceRecord | null;
   }
 ): Promise<boolean> => {
@@ -1007,7 +970,6 @@ const processStandardInboundEvent = async (
       instanceId,
       metadata: metadataRecord,
       requestId,
-      simpleMode,
     });
 
     if (autoProvisionResult) {
@@ -1073,17 +1035,15 @@ const processStandardInboundEvent = async (
 
   const tenantId = instance.tenantId;
 
-  const campaigns = simpleMode
-    ? []
-    : await prisma.campaign.findMany({
-        where: {
-          tenantId,
-          whatsappInstanceId: instanceId,
-          status: 'active',
-        },
-      });
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      tenantId,
+      whatsappInstanceId: instanceId,
+      status: 'active',
+    },
+  });
 
-  if (!campaigns.length && !simpleMode && !passthroughMode) {
+  if (!campaigns.length) {
     const fallbackCampaign = await provisionFallbackCampaignForInstance(tenantId, instanceId);
 
     if (fallbackCampaign) {
@@ -1113,7 +1073,6 @@ const processStandardInboundEvent = async (
     tenantId,
     requestId: requestId ?? null,
     instanceId: instanceId ?? null,
-    simpleMode,
   });
 
   if (!queueResolution.queueId) {
@@ -1214,12 +1173,7 @@ const processStandardInboundEvent = async (
   })();
 
   const dedupeKey = `${tenantId}:${messageExternalId ?? normalizedMessage.id}`;
-  if (
-    !simpleMode &&
-    !passthroughMode &&
-    direction === 'INBOUND' &&
-    (await shouldSkipByDedupe(dedupeKey, now))
-  ) {
+  if (direction === 'INBOUND' && (await shouldSkipByDedupe(dedupeKey, now))) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       requestId,
       tenantId,
@@ -1312,7 +1266,7 @@ const processStandardInboundEvent = async (
 
     let inboundLeadId: string | null = null;
 
-    if (!simpleMode && !passthroughMode && direction === 'INBOUND') {
+    if (direction === 'INBOUND') {
       try {
         const { lead } = await upsertLeadFromInbound({
           tenantId,
@@ -1335,13 +1289,6 @@ const processStandardInboundEvent = async (
           providerMessageId,
         });
       }
-    } else {
-      logger.debug('🎯 LeadEngine • WhatsApp :: ℹ️ Modo simples ativo — pulando sincronização de leads/CRM', {
-        requestId,
-        tenantId,
-        ticketId,
-        messageId: persistedMessage.id,
-      });
     }
 
     inboundMessagesProcessedCounter.inc({
@@ -1362,33 +1309,65 @@ const processStandardInboundEvent = async (
     });
   }
 
-  if (!simpleMode && !passthroughMode) {
-    const allocationTargets = campaigns.length
-      ? campaigns.map((campaign) => ({
-          campaign,
-          target: { campaignId: campaign.id, instanceId },
-        }))
-      : [{ campaign: null as const, target: { instanceId } }];
+  const allocationTargets = campaigns.length
+    ? campaigns.map((campaign) => ({
+        campaign,
+        target: { campaignId: campaign.id, instanceId },
+      }))
+    : [{ campaign: null as const, target: { instanceId } }];
 
-    for (const { campaign, target } of allocationTargets) {
-      const campaignId = campaign?.id ?? null;
-      const agreementId = campaign?.agreementId || 'unknown';
-      const allocationDedupeKey = campaignId
-        ? `${tenantId}:${campaignId}:${document || normalizedPhone || leadIdBase}`
-        : `${tenantId}:${instanceId}:${document || normalizedPhone || leadIdBase}`;
+  for (const { campaign, target } of allocationTargets) {
+    const campaignId = campaign?.id ?? null;
+    const agreementId = campaign?.agreementId || 'unknown';
+    const allocationDedupeKey = campaignId
+      ? `${tenantId}:${campaignId}:${document || normalizedPhone || leadIdBase}`
+      : `${tenantId}:${instanceId}:${document || normalizedPhone || leadIdBase}`;
 
-      if (campaignId && (await shouldSkipByDedupe(allocationDedupeKey, now))) {
-        logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
-          requestId,
+    if (campaignId && (await shouldSkipByDedupe(allocationDedupeKey, now))) {
+      logger.info('🎯 LeadEngine • WhatsApp :: ⏱️ Mensagem já tratada nas últimas 24h — evitando duplicidade', {
+        requestId,
+        tenantId,
+        campaignId,
+        instanceId,
+        messageId: message.id ?? null,
+        phone: maskPhone(normalizedPhone ?? null),
+        dedupeKey: allocationDedupeKey,
+      });
+      continue;
+    }
+
+    const brokerLead = {
+      id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
+      fullName: leadName,
+      document,
+      registrations,
+      agreementId,
+      phone: normalizedPhone,
+      margin: undefined,
+      netMargin: undefined,
+      score: undefined,
+      tags: ['inbound-whatsapp'],
+      raw: {
+        from: contact,
+        message,
+        metadata: event.metadata ?? {},
+        receivedAt: timestamp ?? new Date(now).toISOString(),
+      },
+    };
+
+    try {
+      const { newlyAllocated, summary } = await addAllocations(tenantId, target, [brokerLead]);
+      await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
+      if (newlyAllocated.length > 0) {
+        const allocation = newlyAllocated[0];
+        logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
           tenantId,
-          campaignId,
+          campaignId: allocation.campaignId ?? campaignId,
           instanceId,
-          messageId: message.id ?? null,
+          allocationId: allocation.allocationId,
           phone: maskPhone(normalizedPhone ?? null),
-          dedupeKey: allocationDedupeKey,
+          leadId: allocation.leadId,
         });
-        continue;
-      }
 
         const brokerLead: BrokerLeadRecord = {
           id: campaignId ? `${leadIdBase}:${campaignId}` : `${leadIdBase}:instance:${instanceId}`,
@@ -1422,66 +1401,47 @@ const processStandardInboundEvent = async (
             phone: maskPhone(normalizedPhone ?? null),
             leadId: allocation.leadId,
           });
+        const realtimePayload = {
+          tenantId,
+          campaignId: allocation.campaignId ?? null,
+          agreementId: allocation.agreementId ?? null,
+          instanceId: allocation.instanceId,
+          allocation,
+          summary,
+        };
 
-          const realtimePayload = {
-            tenantId,
-            campaignId: allocation.campaignId ?? null,
-            agreementId: allocation.agreementId ?? null,
-            instanceId: allocation.instanceId,
-            allocation,
-            summary,
-          };
-
-          emitToTenant(tenantId, 'leadAllocations.new', realtimePayload);
-          if (allocation.agreementId && allocation.agreementId !== 'unknown') {
-            emitToAgreement(allocation.agreementId, 'leadAllocations.new', realtimePayload);
-          }
+        emitToTenant(tenantId, 'leadAllocations.new', realtimePayload);
+        if (allocation.agreementId && allocation.agreementId !== 'unknown') {
+          emitToAgreement(allocation.agreementId, 'leadAllocations.new', realtimePayload);
         }
-      } catch (error) {
-        if (isUniqueViolation(error)) {
-          logger.debug('🎯 LeadEngine • WhatsApp :: ⛔ Lead inbound já alocado recentemente — ignorando duplicidade', {
-            tenantId,
-            campaignId: campaignId ?? undefined,
-            instanceId,
-            phone: maskPhone(normalizedPhone ?? null),
-          });
-          await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
-          continue;
-        }
-
-        logger.error('🎯 LeadEngine • WhatsApp :: 🚨 Falha ao alocar lead inbound', {
-          error: mapErrorForLog(error),
+      }
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        logger.debug('🎯 LeadEngine • WhatsApp :: ⛔ Lead inbound já alocado recentemente — ignorando duplicidade', {
           tenantId,
           campaignId: campaignId ?? undefined,
           instanceId,
           phone: maskPhone(normalizedPhone ?? null),
         });
+        await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
+        continue;
       }
+
+      logger.error('🎯 LeadEngine • WhatsApp :: 🚨 Falha ao alocar lead inbound', {
+        error: mapErrorForLog(error),
+        tenantId,
+        campaignId: campaignId ?? undefined,
+        instanceId,
+        phone: maskPhone(normalizedPhone ?? null),
+      });
     }
   }
   return !!persistedMessage;
 };
 
 export const __testing = {
-  DEFAULT_DEDUPE_TTL_MS,
-  MAX_DEDUPE_CACHE_SIZE,
-  DEFAULT_QUEUE_CACHE_TTL_MS,
-  dedupeCache,
-  configureInboundDedupeBackend,
-  queueCacheByTenant,
-  resolveTenantIdentifiersFromMetadata,
-  resolveBrokerIdFromMetadata,
-  resolveSessionIdFromMetadata,
-  resolveInstanceDisplayNameFromMetadata,
-  resolveDeterministicContactIdentifier,
-  attemptAutoProvisionWhatsAppInstance,
-  getDefaultQueueId,
   ensureTicketForContact,
   upsertLeadFromInbound,
-  emitPassthroughRealtimeUpdates,
   emitRealtimeUpdatesForInbound,
-  provisionFallbackCampaignForInstance,
-  ensureInboundQueueForInboundMessage,
-  handlePassthroughIngest,
   processStandardInboundEvent,
 };

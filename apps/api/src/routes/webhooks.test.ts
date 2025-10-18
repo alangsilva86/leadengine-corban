@@ -320,10 +320,9 @@ describe('WhatsApp webhook (integration)', () => {
     findMessageByExternalIdMock.mockReset();
     applyBrokerAckMock.mockReset();
     process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
-    delete process.env.WHATSAPP_PASSTHROUGH_MODE;
     delete process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE;
     refreshWhatsAppEnv();
-    refreshFeatureFlags({ whatsappPassthroughMode: false });
+    refreshFeatureFlags();
 
     (prisma.queue.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'queue-1',
@@ -374,10 +373,9 @@ describe('WhatsApp webhook (integration)', () => {
   afterEach(() => {
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
     delete process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET;
-    delete process.env.WHATSAPP_PASSTHROUGH_MODE;
     delete process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE;
     refreshWhatsAppEnv();
-    refreshFeatureFlags({ whatsappPassthroughMode: false });
+    refreshFeatureFlags();
   });
 
   it('rejects webhook without API key when it is required', async () => {
@@ -628,19 +626,6 @@ describe('WhatsApp webhook (integration)', () => {
 
   });
 
-  it('accepts webhook without credentials when passthrough mode is enabled', async () => {
-    stubInboundSuccessMocks();
-    (prisma.whatsAppInstance.upsert as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'inst-1',
-      tenantId: 'tenant-1',
-      brokerId: 'inst-1',
-      name: 'Baileys inst-1',
-      connected: true,
-      status: 'connected',
-      metadata: {},
-    });
-
-    refreshFeatureFlags({ whatsappPassthroughMode: true });
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
     refreshWhatsAppEnv();
 

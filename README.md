@@ -122,7 +122,6 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
 - **Backend**: crie `apps/api/.env` (ou `.env.local`) baseado nas chaves usadas em produção.
   - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
   - Configure os limites de falha do circuito outbound via `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` para personalizar tolerância e cooldown de envio.
-  - Mantenha `WHATSAPP_PASSTHROUGH_MODE=false` em produção e QA. Isso força a API a validar `x-api-key`/`x-signature-sha256` para cada evento e garante que apenas instâncias autorizadas — identificadas pelo `instanceId` — consigam movimentar leads.
   - O modo HTTP é fixo: a variável legada `WHATSAPP_MODE` foi removida e a API aborta a inicialização caso ela esteja definida.
   - Use `docs/environments/ticketzapi-production.env` como referência de produção.
 - **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000` e `VITE_WS_URL=ws://localhost:4000`.
@@ -257,7 +256,7 @@ curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/alloca
   -o allocations-$INSTANCE_ID.csv
 ```
 
-- Substitua `$ACCESS_TOKEN` pelo JWT do operador autenticado e `$INSTANCE_ID` pelo identificador provisionado na criação da instância WhatsApp. O backend exige que a instância esteja com `WHATSAPP_PASSTHROUGH_MODE=false` para validar credenciais antes de processar o filtro.
+- Substitua `$ACCESS_TOKEN` pelo JWT do operador autenticado e `$INSTANCE_ID` pelo identificador provisionado na criação da instância WhatsApp. O backend valida sempre `x-api-key`/`x-signature-sha256` antes de processar o filtro, portanto mantenha as credenciais alinhadas com o broker configurado.
 
 ### Campanhas e pipeline comercial
 - `/api/lead-engine/campaigns` – sincronização com upstream, filtros por `agreementId` e `status`.
