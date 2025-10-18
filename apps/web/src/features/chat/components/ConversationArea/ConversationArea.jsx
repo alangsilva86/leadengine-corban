@@ -1,8 +1,9 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import ConversationHeader from './ConversationHeader.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
 import useAiSuggestions from '../../hooks/useAiSuggestions.js';
+import useChatAutoscroll from '../../hooks/useChatAutoscroll.js';
 
 export const ConversationArea = ({
   ticket,
@@ -21,6 +22,7 @@ export const ConversationArea = ({
 }) => {
   const disabled = false;
   const ai = useAiSuggestions();
+  const { scrollRef, scrollToBottom } = useChatAutoscroll();
 
   const timelineItems = useMemo(() => {
     const pages = messagesQuery.data?.pages ?? [];
@@ -61,55 +63,94 @@ export const ConversationArea = ({
     ai.reset();
   }, [ai, ticket?.id]);
 
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = messagesQuery;
+  const hasMore = Boolean(hasNextPage);
+  const isLoadingMore = isFetchingNextPage;
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || isLoadingMore) {
+      return;
+    }
+
+    fetchNextPage?.();
+  }, [hasMore, isLoadingMore, fetchNextPage]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return undefined;
+
+    const handleScroll = () => {
+      if (element.scrollTop < 80) {
+        handleLoadMore();
+      }
+    };
+
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => element.removeEventListener('scroll', handleScroll);
+  }, [scrollRef, handleLoadMore]);
+
+  const lastEntryKey = timelineItems?.length ? timelineItems[timelineItems.length - 1]?.id ?? timelineItems.length : 0;
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [lastEntryKey, typingIndicator?.agentsTyping?.length, scrollToBottom]);
+
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      <div className="sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-6 sm:py-5">
-        <ConversationHeader
-          ticket={ticket}
-          onRegisterResult={onRegisterResult}
-          onAssign={onAssign}
-          onGenerateProposal={onGenerateProposal}
-          onScheduleFollowUp={onScheduleFollowUp}
-          isRegisteringResult={isRegisteringResult}
-          typingAgents={typingIndicator?.agentsTyping ?? []}
-        />
-      </div>
+      <div className="flex-1 min-h-0 overflow-hidden [overflow-clip-margin:24px]">
+        <div
+          id="ticketViewport"
+          ref={scrollRef}
+          className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain scroll-smooth [scrollbar-gutter:stable_both-edges]"
+        >
+          <div className="sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-6 sm:py-5">
+            <ConversationHeader
+              ticket={ticket}
+              onRegisterResult={onRegisterResult}
+              onAssign={onAssign}
+              onGenerateProposal={onGenerateProposal}
+              onScheduleFollowUp={onScheduleFollowUp}
+              isRegisteringResult={isRegisteringResult}
+              typingAgents={typingIndicator?.agentsTyping ?? []}
+            />
+          </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <MessageTimeline
-          items={timelineItems}
-          loading={messagesQuery.isFetchingNextPage}
-          hasMore={Boolean(messagesQuery.hasNextPage)}
-          onLoadMore={() => messagesQuery.fetchNextPage?.()}
-          typingAgents={typingIndicator?.agentsTyping ?? []}
-        />
-      </div>
+          <div className="flex-1 min-h-0 px-6 py-6">
+            <MessageTimeline
+              items={timelineItems}
+              loading={isLoadingMore}
+              hasMore={hasMore}
+              onLoadMore={handleLoadMore}
+              typingAgents={typingIndicator?.agentsTyping ?? []}
+            />
+          </div>
 
-      <div className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-4 sm:px-6 sm:py-5">
-        <Composer
-          disabled={disabled}
-          onSend={(payload) => onSendMessage?.(payload)}
-          onTemplate={(template) => {
-            if (!template) return;
-            const text = template.body ?? template.content ?? template;
-            onSendMessage?.({
-              content: text,
-              template,
-            });
-          }}
-          onCreateNote={(note) => onCreateNote?.(note)}
-          onTyping={() => typingIndicator?.broadcastTyping?.({ ticketId: ticket?.id })}
-          isSending={isSending}
-          sendError={sendError}
-          onRequestSuggestion={handleRequestSuggestion}
-          aiLoading={ai.isLoading}
-          aiSuggestions={ai.suggestions}
-          onApplySuggestion={(suggestion) => {
-            onSendMessage?.({ content: suggestion });
-            ai.reset();
-          }}
-          onDiscardSuggestion={() => ai.reset()}
-        />
+          <div className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-4 sm:px-6 sm:py-5">
+            <Composer
+              disabled={disabled}
+              onSend={(payload) => onSendMessage?.(payload)}
+              onTemplate={(template) => {
+                if (!template) return;
+                const text = template.body ?? template.content ?? template;
+                onSendMessage?.({
+                  content: text,
+                  template,
+                });
+              }}
+              onCreateNote={(note) => onCreateNote?.(note)}
+              onTyping={() => typingIndicator?.broadcastTyping?.({ ticketId: ticket?.id })}
+              isSending={isSending}
+              sendError={sendError}
+              onRequestSuggestion={handleRequestSuggestion}
+              aiLoading={ai.isLoading}
+              aiSuggestions={ai.suggestions}
+              onApplySuggestion={(suggestion) => {
+                onSendMessage?.({ content: suggestion });
+                ai.reset();
+              }}
+              onDiscardSuggestion={() => ai.reset()}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );

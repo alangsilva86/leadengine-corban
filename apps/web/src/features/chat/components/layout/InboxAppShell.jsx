@@ -206,9 +206,11 @@ const InboxAppShell = ({
     return (
       <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
         <div className="flex min-h-0 min-w-0 flex-1">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
-            {children}
-          </div>
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
+              {children}
+            </div>
+          </section>
         </div>
         <ContextDrawer
           open={contextOpen}
@@ -270,13 +272,13 @@ const InboxAppShell = ({
         <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0">
           {isDesktop ? (
             <SplitLayout
-              className="h-full w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
+              className="h-full min-h-0 w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
               list={listContent}
               detail={renderDetailSurface()}
               listClassName={cn(
-                'flex min-h-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]'
+                'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]'
               )}
-              detailClassName="min-h-0 min-w-0"
+              detailClassName="flex min-h-0 min-w-0 flex-col"
               listWidth={listWidth}
               isListVisible={desktopListVisible && Boolean(sidebar)}
               onListWidthChange={handleListWidthChange}
