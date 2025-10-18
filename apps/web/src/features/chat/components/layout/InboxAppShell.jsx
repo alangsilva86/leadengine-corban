@@ -6,11 +6,6 @@ import { cn } from '@/lib/utils.js';
 import ContextDrawer from './ContextDrawer.jsx';
 import SplitLayout from './SplitLayout.jsx';
 import { useMediaQuery } from '@/hooks/use-media-query.js';
-import useInboxLayoutPreferences, {
-  DEFAULT_INBOX_LIST_WIDTH,
-  DEFAULT_INBOX_LAYOUT_PREFERENCES,
-} from '../../api/useInboxLayoutPreferences.js';
-import useUpdateInboxLayoutPreferences from '../../api/useUpdateInboxLayoutPreferences.js';
 
 const CONTEXT_PREFERENCE_KEY = 'inbox_context_open';
 const LIST_SCROLL_STORAGE_KEY = 'inbox:queue-list';
@@ -113,10 +108,12 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-pane="sidebar">
       <div
         ref={viewportRef}
-        className="chat-scroll-area flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
+        id="listViewport"
+        className="chat-scroll-area flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges] [overflow-clip-margin:24px]"
+        style={{ overscrollBehavior: 'contain' }}
       >
         <ListPanelHeader showCloseButton={showCloseButton} />
         <ListPanelContent>{sidebar}</ListPanelContent>
@@ -169,7 +166,6 @@ const InboxAppShell = ({
   const [contextOpen, setContextOpen] = useState(() => readPreference(CONTEXT_PREFERENCE_KEY, defaultContextOpen));
   const [desktopListVisible, setDesktopListVisible] = useState(true);
   const [mobileListOpen, setMobileListOpen] = useState(false);
-  const [listWidth, setListWidth] = useState(DEFAULT_INBOX_LIST_WIDTH);
 
   useEffect(() => {
     writePreference(CONTEXT_PREFERENCE_KEY, contextOpen);
@@ -184,18 +180,7 @@ const InboxAppShell = ({
     }
   }, [isDesktop]);
 
-  const preferencesQuery = useInboxLayoutPreferences();
-  const preferences = preferencesQuery.data ?? DEFAULT_INBOX_LAYOUT_PREFERENCES;
-
-  useEffect(() => {
-    if (typeof preferences?.inboxListWidth === 'number' && Number.isFinite(preferences.inboxListWidth)) {
-      setListWidth(preferences.inboxListWidth);
-    }
-  }, [preferences?.inboxListWidth]);
-
   const canPersistPreferences = Boolean(currentUser?.id);
-
-  const updatePreferences = useUpdateInboxLayoutPreferences({ userId: currentUser?.id });
 
   const toggleListVisibility = useCallback(() => {
     if (isDesktop) {
@@ -218,19 +203,6 @@ const InboxAppShell = ({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [toggleListVisibility]);
-
-  const handleListWidthChange = useCallback((nextWidth) => {
-    setListWidth(nextWidth);
-  }, []);
-
-  const handleListWidthCommit = useCallback(
-    (nextWidth) => {
-      if (canPersistPreferences) {
-        updatePreferences.mutate({ inboxListWidth: nextWidth });
-      }
-    },
-    [canPersistPreferences, updatePreferences]
-  );
 
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
   const renderDetailSurface = () => {
@@ -304,14 +276,15 @@ const InboxAppShell = ({
               list={listContent}
               detail={renderDetailSurface()}
               listClassName={cn(
-                'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]'
+                'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0'
               )}
               detailClassName="flex min-h-0 min-w-0 flex-col"
-              listWidth={listWidth}
+              listWidth={360}
               isListVisible={desktopListVisible && Boolean(sidebar)}
-              onListWidthChange={handleListWidthChange}
-              onListWidthCommit={handleListWidthCommit}
-              resizable={desktopListVisible && Boolean(sidebar)}
+              minListWidth={360}
+              maxListWidthPx={360}
+              maxListWidthToken="360px"
+              resizable={false}
             />
           ) : (
             <div className="flex h-full w-full px-4 py-4 sm:px-6 sm:py-6">
