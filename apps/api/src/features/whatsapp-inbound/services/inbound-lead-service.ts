@@ -32,6 +32,7 @@ import {
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
+<<<<<<< Updated upstream
 import { createPassthroughHandler } from './passthrough-handler';
 
 const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -69,6 +70,62 @@ const DEFAULT_TENANT_ID = (() => {
   }
   return 'demo-tenant';
 })();
+=======
+import {
+  DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX,
+  DEFAULT_CAMPAIGN_FALLBACK_NAME,
+  DEFAULT_DEDUPE_TTL_MS,
+  DEFAULT_QUEUE_CACHE_TTL_MS,
+  DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
+  DEFAULT_QUEUE_FALLBACK_NAME,
+  DEFAULT_TENANT_ID,
+  MAX_DEDUPE_CACHE_SIZE,
+} from './constants';
+import {
+  dedupeCache,
+  configureInboundDedupeBackend,
+  registerDedupeKey,
+  resetDedupeState,
+  shouldSkipByDedupe,
+} from './dedupe';
+import { mapErrorForLog } from './logging';
+import {
+  pickPreferredName,
+  readNestedString,
+  readString,
+  resolveBrokerIdFromMetadata,
+  resolveDeterministicContactIdentifier,
+  resolveInstanceDisplayNameFromMetadata,
+  resolveSessionIdFromMetadata,
+  resolveTenantIdentifiersFromMetadata,
+  sanitizeDocument,
+  sanitizePhone,
+  uniqueStringList,
+} from './identifiers';
+import {
+  emitPassthroughRealtimeUpdates,
+  handlePassthroughIngest,
+} from './passthrough';
+import { resolveTicketAgreementId } from './ticket-utils';
+import {
+  attemptAutoProvisionWhatsAppInstance,
+  ensureInboundQueueForInboundMessage,
+  getDefaultQueueId,
+  isForeignKeyError,
+  isUniqueViolation,
+  provisionDefaultQueueForTenant,
+  queueCacheByTenant,
+  QueueFallbackProvisionError,
+  __testing as provisioningTesting,
+} from './provisioning';
+import {
+  type InboundContactDetails,
+  type InboundMessageDetails,
+  type InboundWhatsAppEnvelope,
+  type InboundWhatsAppEnvelopeMessage,
+  type InboundWhatsAppEvent,
+} from './types';
+>>>>>>> Stashed changes
 
 const toRecord = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -85,266 +142,11 @@ type QueueCacheEntry = {
 const queueCacheByTenant = new Map<string, QueueCacheEntry>();
 
 export const resetInboundLeadServiceTestState = (): void => {
-  dedupeCache.clear();
+  resetDedupeState();
   queueCacheByTenant.clear();
-  dedupeBackend = null;
 };
 
-const readString = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const readNestedString = (source: Record<string, unknown>, path: string[]): string | null => {
-  let current: unknown = source;
-
-  for (const key of path) {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) {
-      return null;
-    }
-
-    current = (current as Record<string, unknown>)[key];
-  }
-
-  return readString(current);
-};
-
-const composeDeterministicId = (
-  parts: Array<string | null | undefined>,
-  { minParts = 1 }: { minParts?: number } = {}
-): string | null => {
-  const normalizedParts: string[] = [];
-  const seen = new Set<string>();
-
-  for (const part of parts) {
-    if (typeof part !== 'string') {
-      continue;
-    }
-
-    const trimmed = part.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-
-    normalizedParts.push(trimmed);
-    seen.add(trimmed);
-  }
-
-  if (normalizedParts.length < minParts) {
-    return null;
-  }
-
-  return normalizedParts.join(':');
-};
-
-const resolveDeterministicContactIdentifier = ({
-  instanceId,
-  metadataRecord,
-  metadataContact,
-  sessionId,
-  externalId,
-}: {
-  instanceId?: string | null;
-  metadataRecord: Record<string, unknown>;
-  metadataContact: Record<string, unknown>;
-  sessionId?: string | null;
-  externalId?: string | null;
-}): { deterministicId: string | null; contactId: string | null; sessionId: string | null } => {
-  const instanceIdentifier =
-    typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
-
-  const contactIdentifiers: string[] = [];
-  const sessionIdentifiers: string[] = [];
-
-  const pushCandidate = (collection: string[], value: unknown) => {
-    if (typeof value !== 'string') {
-      return;
-    }
-
-    const trimmed = value.trim();
-    if (!trimmed || collection.includes(trimmed)) {
-      return;
-    }
-
-    collection.push(trimmed);
-  };
-
-  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['id']);
-  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['contactId']);
-  pushCandidate(contactIdentifiers, (metadataContact as Record<string, unknown>)['contact_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['contactId']);
-  pushCandidate(contactIdentifiers, metadataRecord['contact_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['customerId']);
-  pushCandidate(contactIdentifiers, metadataRecord['customer_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['profileId']);
-  pushCandidate(contactIdentifiers, metadataRecord['profile_id']);
-  pushCandidate(contactIdentifiers, metadataRecord['contactIdentifier']);
-  pushCandidate(contactIdentifiers, metadataRecord['contact_identifier']);
-  pushCandidate(contactIdentifiers, metadataRecord['id']);
-
-  pushCandidate(sessionIdentifiers, metadataRecord['sessionId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['session_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['threadId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['thread_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['conversationId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['conversation_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['roomId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['room_id']);
-  pushCandidate(sessionIdentifiers, metadataRecord['chatId']);
-  pushCandidate(sessionIdentifiers, metadataRecord['chat_id']);
-  pushCandidate(sessionIdentifiers, sessionId);
-
-  const normalizedExternalId =
-    typeof externalId === 'string' && externalId.trim().length > 0 ? externalId.trim() : null;
-
-  const primaryContactId = contactIdentifiers[0] ?? null;
-  const primarySessionId = sessionIdentifiers[0] ?? null;
-
-  let deterministicId: string | null = null;
-
-  if (primaryContactId) {
-    deterministicId =
-      composeDeterministicId([instanceIdentifier, primaryContactId], {
-        minParts: instanceIdentifier ? 2 : 1,
-      }) ?? primaryContactId;
-  } else if (primarySessionId) {
-    deterministicId =
-      composeDeterministicId([instanceIdentifier, primarySessionId], {
-        minParts: instanceIdentifier ? 2 : 1,
-      }) ??
-      (sessionIdentifiers.length > 1
-        ? composeDeterministicId(sessionIdentifiers, { minParts: 2 })
-        : primarySessionId);
-  } else if (instanceIdentifier && normalizedExternalId) {
-    deterministicId = composeDeterministicId([instanceIdentifier, normalizedExternalId], { minParts: 2 });
-  }
-
-  return {
-    deterministicId,
-    contactId: primaryContactId,
-    sessionId: primarySessionId,
-  };
-};
-
-const resolveTicketAgreementId = (ticket: unknown): string | null => {
-  if (!ticket || typeof ticket !== 'object') {
-    return null;
-  }
-
-  const ticketRecord = ticket as Record<string, unknown> & {
-    metadata?: Prisma.JsonValue | null;
-  };
-
-  const directAgreement = readString(ticketRecord['agreementId']);
-  if (directAgreement) {
-    return directAgreement;
-  }
-
-  const metadataRecord = toRecord(ticketRecord.metadata);
-  return (
-    readString(metadataRecord.agreementId) ??
-    readString(metadataRecord.agreement_id) ??
-    readNestedString(metadataRecord, ['agreement', 'id']) ??
-    readNestedString(metadataRecord, ['agreement', 'agreementId']) ??
-    null
-  );
-};
-
-const pushUnique = (collection: string[], candidate: string | null): void => {
-  if (!candidate) {
-    return;
-  }
-
-  if (!collection.includes(candidate)) {
-    collection.push(candidate);
-  }
-};
-
-const resolveTenantIdentifiersFromMetadata = (metadata: Record<string, unknown>): string[] => {
-  const identifiers: string[] = [];
-
-  const directKeys = ['tenantId', 'tenant_id', 'tenantSlug', 'tenant'];
-  directKeys.forEach((key) => pushUnique(identifiers, readString(metadata[key])));
-
-  const nestedPaths: string[][] = [
-    ['tenant', 'id'],
-    ['tenant', 'tenantId'],
-    ['tenant', 'slug'],
-    ['tenant', 'code'],
-    ['tenant', 'slugId'],
-    ['context', 'tenantId'],
-    ['context', 'tenant', 'id'],
-    ['context', 'tenant', 'slug'],
-    ['context', 'tenant', 'tenantId'],
-    ['context', 'tenantSlug'],
-    ['broker', 'tenantId'],
-    ['integration', 'tenantId'],
-    ['integration', 'tenant', 'id'],
-    ['integration', 'tenant', 'slug'],
-    ['integration', 'tenant', 'tenantId'],
-    ['session', 'tenantId'],
-  ];
-
-  nestedPaths.forEach((path) => pushUnique(identifiers, readNestedString(metadata, path)));
-
-  return identifiers;
-};
-
-const resolveSessionIdFromMetadata = (metadata: Record<string, unknown>): string | null => {
-  const candidates: Array<string | null> = [
-    readString(metadata['sessionId']),
-    readString(metadata['session_id']),
-    readNestedString(metadata, ['session', 'id']),
-    readNestedString(metadata, ['session', 'sessionId']),
-    readNestedString(metadata, ['connection', 'sessionId']),
-    readNestedString(metadata, ['broker', 'sessionId']),
-  ];
-
-  return candidates.find((candidate) => Boolean(candidate)) ?? null;
-};
-
-const resolveBrokerIdFromMetadata = (metadata: Record<string, unknown>): string | null => {
-  const candidates: Array<string | null> = [
-    readString(metadata['brokerId']),
-    readString(metadata['broker_id']),
-    readNestedString(metadata, ['broker', 'id']),
-    readNestedString(metadata, ['broker', 'sessionId']),
-    readString(metadata['instanceId']),
-    readString(metadata['instance_id']),
-    readNestedString(metadata, ['broker', 'instanceId']),
-    readNestedString(metadata, ['instance', 'id']),
-    readNestedString(metadata, ['instance', 'instanceId']),
-    resolveSessionIdFromMetadata(metadata),
-  ];
-
-  return candidates.find((candidate) => Boolean(candidate)) ?? null;
-};
-
-const resolveInstanceDisplayNameFromMetadata = (
-  metadata: Record<string, unknown>,
-  tenantName: string | null | undefined,
-  instanceId: string
-): string => {
-  const candidates: Array<string | null> = [
-    readString(metadata['instanceName']),
-    readString(metadata['instanceFriendlyName']),
-    readString(metadata['instanceDisplayName']),
-    readNestedString(metadata, ['instance', 'name']),
-    readNestedString(metadata, ['instance', 'displayName']),
-    readNestedString(metadata, ['instance', 'friendlyName']),
-    readNestedString(metadata, ['connection', 'name']),
-    readNestedString(metadata, ['session', 'name']),
-    readString(metadata['connectionName']),
-    tenantName ? `WhatsApp • ${tenantName}` : null,
-    `WhatsApp • ${instanceId}`,
-  ];
-
-  return candidates.find((candidate) => Boolean(candidate)) ?? `WhatsApp • ${instanceId}`;
-};
 
 type WhatsAppInstanceRecord = Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
 
@@ -578,258 +380,9 @@ const attemptAutoProvisionWhatsAppInstance = async ({
   }
 };
 
-const pruneDedupeCache = (now: number): void => {
-  if (dedupeCache.size === 0) {
-    return;
-  }
-
-  let removedExpiredEntries = 0;
-
-  for (const [key, storedAt] of dedupeCache.entries()) {
-    if (storedAt.expiresAt <= now) {
-      dedupeCache.delete(key);
-      removedExpiredEntries += 1;
-    }
-  }
-
-  if (dedupeCache.size > MAX_DEDUPE_CACHE_SIZE) {
-    const sizeBefore = dedupeCache.size;
-    dedupeCache.clear();
-    logger.warn('whatsappInbound.dedupeCache.massivePurge', {
-      maxSize: MAX_DEDUPE_CACHE_SIZE,
-      removedExpiredEntries,
-      sizeBefore,
-    });
-  }
-};
-
-interface InboundContactDetails {
-  phone?: string | null;
-  name?: string | null;
-  document?: string | null;
-  registrations?: string[] | null;
-  avatarUrl?: string | null;
-  pushName?: string | null;
-}
-
-interface InboundMessageDetails {
-  id?: string | null;
-  type?: string | null;
-  text?: unknown;
-  metadata?: Record<string, unknown> | null;
-  conversation?: unknown;
-  extendedTextMessage?: unknown;
-  imageMessage?: unknown;
-  videoMessage?: unknown;
-  audioMessage?: unknown;
-  documentMessage?: unknown;
-  contactsArrayMessage?: unknown;
-  locationMessage?: unknown;
-  templateButtonReplyMessage?: unknown;
-  buttonsResponseMessage?: unknown;
-  stickerMessage?: unknown;
-  key?: {
-    id?: string | null;
-    remoteJid?: string | null;
-  } | null;
-  messageTimestamp?: number | null;
-}
-
-export interface InboundWhatsAppEvent {
-  id: string;
-  instanceId: string;
-  direction: 'INBOUND' | 'OUTBOUND';
-  chatId: string | null;
-  externalId?: string | null;
-  timestamp: string | null;
-  contact: InboundContactDetails;
-  message: InboundMessageDetails;
-  metadata?: Record<string, unknown> | null;
-  tenantId?: string | null;
-  sessionId?: string | null;
-}
-
-export interface InboundWhatsAppEnvelopeBase {
-  origin: string;
-  instanceId: string;
-  chatId: string | null;
-  tenantId: string | null;
-  dedupeTtlMs?: number;
-  raw?: Record<string, unknown> | null;
-}
-
-export interface InboundWhatsAppEnvelopeMessage extends InboundWhatsAppEnvelopeBase {
-  message: {
-    kind: 'message';
-    id: string | null;
-    externalId?: string | null;
-    brokerMessageId?: string | null;
-    timestamp: string | null;
-    direction: 'INBOUND' | 'OUTBOUND';
-    contact: InboundContactDetails;
-    payload: InboundMessageDetails;
-    metadata?: Record<string, unknown> | null;
-  };
-}
-
-export interface InboundWhatsAppEnvelopeUpdate extends InboundWhatsAppEnvelopeBase {
-  message: {
-    kind: 'update';
-    id: string;
-    status?: string | null;
-    timestamp?: string | null;
-    metadata?: Record<string, unknown> | null;
-  };
-}
-
-export type InboundWhatsAppEnvelope = InboundWhatsAppEnvelopeMessage | InboundWhatsAppEnvelopeUpdate;
-
 const isMessageEnvelope = (
   envelope: InboundWhatsAppEnvelope
 ): envelope is InboundWhatsAppEnvelopeMessage => envelope.message.kind === 'message';
-
-const sanitizePhone = (value?: string | null): string | undefined => {
-  if (!value) {
-    return undefined;
-  }
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 10) {
-    return undefined;
-  }
-  return `+${digits.replace(/^\+/, '')}`;
-};
-
-const sanitizeDocument = (value?: string | null, fallbacks: Array<string | null | undefined> = []): string => {
-  const candidateDigits = typeof value === 'string' ? value.replace(/\D/g, '') : '';
-  if (candidateDigits.length >= 4) {
-    return candidateDigits;
-  }
-
-  for (const fallback of fallbacks) {
-    if (typeof fallback !== 'string') {
-      continue;
-    }
-
-    const digits = fallback.replace(/\D/g, '');
-    if (digits.length >= 4) {
-      return digits;
-    }
-  }
-
-  for (const fallback of fallbacks) {
-    if (typeof fallback !== 'string') {
-      continue;
-    }
-
-    const trimmed = fallback.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-
-  return `wa-${randomUUID()}`;
-};
-
-const uniqueStringList = (values?: string[] | null): string[] => {
-  if (!Array.isArray(values)) {
-    return [];
-  }
-
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-
-  values.forEach((entry) => {
-    if (typeof entry !== 'string') {
-      return;
-    }
-    const trimmed = entry.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      return;
-    }
-    seen.add(trimmed);
-    normalized.push(trimmed);
-  });
-
-  return normalized;
-};
-
-const pickPreferredName = (...values: Array<unknown>): string | null => {
-  for (const value of values) {
-    if (typeof value !== 'string') {
-      continue;
-    }
-    const trimmed = value.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-  return null;
-};
-
-const shouldSkipByLocalDedupe = (key: string, now: number): boolean => {
-  pruneDedupeCache(now);
-
-  const entry = dedupeCache.get(key);
-  return !!entry && entry.expiresAt > now;
-};
-
-const registerLocalDedupe = (key: string, now: number, ttlMs: number): void => {
-  if (ttlMs <= 0) {
-    return;
-  }
-
-  pruneDedupeCache(now);
-
-  const expiresAt = now + ttlMs;
-  dedupeCache.set(key, { expiresAt });
-};
-
-export const shouldSkipByDedupe = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<boolean> => {
-  if (ttlMs <= 0) {
-    return false;
-  }
-
-  if (dedupeBackend) {
-    try {
-      if (await dedupeBackend.has(key)) {
-        return true;
-      }
-    } catch (error) {
-      logger.warn('whatsappInbound.dedupeCache.redisHasFallback', {
-        key,
-        ttlMs,
-        error: mapErrorForLog(error),
-      });
-      return shouldSkipByLocalDedupe(key, now);
-    }
-  }
-
-  return shouldSkipByLocalDedupe(key, now);
-};
-
-const registerDedupeKey = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<void> => {
-  if (ttlMs <= 0) {
-    return;
-  }
-
-  if (dedupeBackend) {
-    try {
-      await dedupeBackend.set(key, ttlMs);
-      return;
-    } catch (error) {
-      logger.warn('whatsappInbound.dedupeCache.redisSetFallback', {
-        key,
-        ttlMs,
-        error: mapErrorForLog(error),
-      });
-    }
-  }
-
-  registerLocalDedupe(key, now, ttlMs);
-};
-
-const mapErrorForLog = (error: unknown) =>
-  error instanceof Error ? { message: error.message, stack: error.stack } : error;
 
 const emitPassthroughRealtimeUpdates = async ({
   tenantId,
@@ -2635,7 +2188,6 @@ export const __testing = {
   resolveInstanceDisplayNameFromMetadata,
   resolveDeterministicContactIdentifier,
   attemptAutoProvisionWhatsAppInstance,
-  pruneDedupeCache,
   getDefaultQueueId,
   ensureTicketForContact,
   upsertLeadFromInbound,
