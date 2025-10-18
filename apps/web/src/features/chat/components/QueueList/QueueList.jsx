@@ -2,7 +2,6 @@ import { Fragment, useMemo } from 'react';
 import { Loader2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { cn, formatPhoneNumber } from '@/lib/utils.js';
 import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 
@@ -168,7 +167,7 @@ const QueueList = ({
 
       <QueueMetrics metrics={metrics} />
 
-      <ScrollArea className="flex-1 min-h-0">
+      <div className="chat-scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-[inherit]">
         <div className="space-y-2 px-1 pb-6">
           {tickets.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-6 text-center text-sm text-[color:var(--color-inbox-foreground-muted)]">
@@ -193,7 +192,7 @@ const QueueList = ({
             ))
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 };
