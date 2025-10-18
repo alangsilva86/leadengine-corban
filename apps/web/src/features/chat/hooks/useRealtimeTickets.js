@@ -25,12 +25,8 @@ export const useRealtimeTickets = ({
   enabled = true,
   onTicketEvent,
   onTicketUpdated,
-  onTicketStatusChanged,
-  onTicketAssigned,
-  onTicketClosed,
   onMessageCreated,
   onMessageStatusChanged,
-  onNoteCreated,
   onTyping,
   onQueueMissing,
 } = {}) => {
@@ -136,7 +132,6 @@ export const useRealtimeTickets = ({
           }
         };
 
-        registerHandler(socket, 'ticket.created', handleTicketEvent);
         const handleTicketUpdated = (payload) => {
           handleTicketEvent(payload);
           if (typeof onTicketUpdated === 'function') {
@@ -144,50 +139,7 @@ export const useRealtimeTickets = ({
           }
         };
 
-        registerHandler(socket, 'ticket.updated', handleTicketUpdated);
         registerHandler(socket, 'tickets.updated', handleTicketUpdated);
-        registerHandler(socket, 'ticket.status.changed', (payload) => {
-          console.info('🎯 LeadEngine • Chat :: 🔄 Status do ticket atualizado', {
-            tenantId,
-            ticketId: ticketRoomRef.current,
-            status: payload?.ticket?.status ?? payload?.ticketStatus ?? null,
-          });
-          handleTicketEvent(payload);
-          if (typeof onTicketStatusChanged === 'function') {
-            onTicketStatusChanged(payload);
-          }
-        });
-        registerHandler(socket, 'ticket.assigned', (payload) => {
-          console.info('🎯 LeadEngine • Chat :: 🧑‍🚀 Ticket atribuído', {
-            tenantId,
-            ticketId: ticketRoomRef.current,
-            assignedTo: payload?.assigneeId ?? null,
-          });
-          handleTicketEvent(payload);
-          if (typeof onTicketAssigned === 'function') {
-            onTicketAssigned(payload);
-          }
-        });
-        registerHandler(socket, 'ticket.closed', (payload) => {
-          console.info('🎯 LeadEngine • Chat :: ✅ Ticket fechado', {
-            tenantId,
-            ticketId: ticketRoomRef.current,
-          });
-          handleTicketEvent(payload);
-          if (typeof onTicketClosed === 'function') {
-            onTicketClosed(payload);
-          }
-        });
-        registerHandler(socket, 'ticket.note.created', (payload) => {
-          console.info('🎯 LeadEngine • Chat :: 📝 Nova nota registrada', {
-            tenantId,
-            ticketId: ticketRoomRef.current,
-          });
-          handleTicketEvent(payload);
-          if (typeof onNoteCreated === 'function') {
-            onNoteCreated(payload);
-          }
-        });
         const handleMessageCreated = (payload) => {
           console.info('🎯 LeadEngine • Chat :: 💬 Mensagem recebida', {
             tenantId,
@@ -200,8 +152,6 @@ export const useRealtimeTickets = ({
           }
         };
 
-        registerHandler(socket, 'ticket.message.created', handleMessageCreated);
-        registerHandler(socket, 'ticket.message', handleMessageCreated);
         registerHandler(socket, 'messages.new', handleMessageCreated);
         registerHandler(socket, 'message.status.changed', (payload) => {
           console.info('🎯 LeadEngine • Chat :: 📬 Status de mensagem atualizado', {
@@ -253,7 +203,7 @@ export const useRealtimeTickets = ({
       socketRef.current = null;
       ticketRoomRef.current = null;
     };
-  }, [enabled, onMessageCreated, onMessageStatusChanged, onNoteCreated, onQueueMissing, onTicketAssigned, onTicketClosed, onTicketEvent, onTicketStatusChanged, onTicketUpdated, onTyping, tenantId, userId]);
+  }, [enabled, onMessageCreated, onMessageStatusChanged, onQueueMissing, onTicketEvent, onTicketUpdated, onTyping, tenantId, userId]);
 
   useEffect(() => {
     const socket = socketRef.current;

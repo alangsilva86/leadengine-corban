@@ -156,16 +156,6 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     [queryClient]
   );
 
-  const handleNoteCreated = useCallback(
-    (payload) => {
-      if (!payload?.ticketId) {
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
-    },
-    [queryClient]
-  );
-
   const handleQueueMissing = useCallback((payload) => {
     setQueueAlerts((current) => {
       const timestamp = Date.now();
@@ -184,10 +174,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     ticketId: selectedTicketId,
     enabled: Boolean(tenantId),
     onTicketUpdated: handleTicketInvalidation,
-    onTicketAssigned: handleTicketInvalidation,
-    onTicketStatusChanged: handleTicketInvalidation,
     onMessageCreated: handleMessageCreated,
-    onNoteCreated: handleNoteCreated,
     onQueueMissing: handleQueueMissing,
   });
 
