@@ -5,7 +5,6 @@ export const MIN_INBOX_LIST_WIDTH = 320;
 export const MAX_INBOX_LIST_WIDTH = 560;
 export const DEFAULT_INBOX_LIST_WIDTH = 384;
 export const DEFAULT_INBOX_LAYOUT_PREFERENCES = Object.freeze({
-  inboxListPosition: 'left',
   inboxListWidth: DEFAULT_INBOX_LIST_WIDTH,
 });
 
@@ -16,8 +15,6 @@ const sanitizePreferences = (raw) => {
     return { ...DEFAULT_INBOX_LAYOUT_PREFERENCES };
   }
 
-  const position = raw.inboxListPosition === 'right' ? 'right' : 'left';
-
   let width = Number(raw.inboxListWidth);
   if (!Number.isFinite(width)) {
     width = DEFAULT_INBOX_LIST_WIDTH;
@@ -25,7 +22,6 @@ const sanitizePreferences = (raw) => {
   width = Math.min(Math.max(width, MIN_INBOX_LIST_WIDTH), MAX_INBOX_LIST_WIDTH);
 
   return {
-    inboxListPosition: position,
     inboxListWidth: width,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : undefined,
   };

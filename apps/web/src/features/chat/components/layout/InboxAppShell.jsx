@@ -157,8 +157,6 @@ const InboxAppShell = ({
 
   const canPersistPreferences = Boolean(currentUser?.id);
 
-  const effectiveListPosition = 'left';
-
   const updatePreferences = useUpdateInboxLayoutPreferences({ userId: currentUser?.id });
 
   const toggleListVisibility = useCallback(() => {
@@ -270,7 +268,6 @@ const InboxAppShell = ({
               className="h-full w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
               list={listContent}
               detail={renderDetailSurface()}
-              listPosition={effectiveListPosition}
               listClassName={cn(
                 'flex min-h-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]'
               )}
