@@ -18,7 +18,6 @@ import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
 } from '../../../services/ticket-service';
-import { ensureTenantRecord } from '../../../services/tenant-service';
 import {
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
@@ -32,31 +31,25 @@ import {
 } from '../../../lib/socket-registry';
 import { normalizeInboundMessage } from '../utils/normalize';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
-
-const DEFAULT_DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_DEDUPE_CACHE_SIZE = 10_000;
-
-type DedupeCacheEntry = {
-  expiresAt: number;
-};
-
-const dedupeCache = new Map<string, DedupeCacheEntry>();
-
-export interface InboundDedupeBackend {
-  has(key: string): Promise<boolean>;
-  set(key: string, ttlMs: number): Promise<void>;
-}
-
-let dedupeBackend: InboundDedupeBackend | null = null;
-
-export const configureInboundDedupeBackend = (backend: InboundDedupeBackend | null): void => {
-  dedupeBackend = backend;
-};
-
-const DEFAULT_QUEUE_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_QUEUE_FALLBACK_NAME = 'Atendimento Geral';
-const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
-  'Fila criada automaticamente para mensagens inbound do WhatsApp.';
+import {
+  configureInboundDedupeBackend,
+  DEFAULT_DEDUPE_TTL_MS,
+  MAX_DEDUPE_CACHE_SIZE,
+  pruneDedupeCache,
+  registerDedupeKey,
+  shouldSkipByDedupe,
+  reset as resetDedupeState,
+} from './dedupe';
+import {
+  DEFAULT_QUEUE_CACHE_TTL_MS,
+  ensureInboundQueueForInboundMessage,
+  getDefaultQueueId,
+  isForeignKeyError,
+  provisionDefaultQueueForTenant,
+  queueCacheByTenant,
+  reset as resetQueueCacheState,
+} from './queue-cache';
+import { mapErrorForLog } from './errors';
 
 const DEFAULT_CAMPAIGN_FALLBACK_NAME = 'WhatsApp • Inbound';
 const DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX = 'whatsapp-instance-fallback';
@@ -270,17 +263,9 @@ const handlePassthroughIngest = async (event: InboundWhatsAppEvent): Promise<voi
   });
 };
 
-type QueueCacheEntry = {
-  id: string;
-  expires: number;
-};
-
-const queueCacheByTenant = new Map<string, QueueCacheEntry>();
-
 export const resetInboundLeadServiceTestState = (): void => {
-  dedupeCache.clear();
-  queueCacheByTenant.clear();
-  dedupeBackend = null;
+  resetDedupeState();
+  resetQueueCacheState();
 };
 
 const readString = (value: unknown): string | null => {
@@ -771,31 +756,6 @@ const attemptAutoProvisionWhatsAppInstance = async ({
   }
 };
 
-const pruneDedupeCache = (now: number): void => {
-  if (dedupeCache.size === 0) {
-    return;
-  }
-
-  let removedExpiredEntries = 0;
-
-  for (const [key, storedAt] of dedupeCache.entries()) {
-    if (storedAt.expiresAt <= now) {
-      dedupeCache.delete(key);
-      removedExpiredEntries += 1;
-    }
-  }
-
-  if (dedupeCache.size > MAX_DEDUPE_CACHE_SIZE) {
-    const sizeBefore = dedupeCache.size;
-    dedupeCache.clear();
-    logger.warn('whatsappInbound.dedupeCache.massivePurge', {
-      maxSize: MAX_DEDUPE_CACHE_SIZE,
-      removedExpiredEntries,
-      sizeBefore,
-    });
-  }
-};
-
 interface InboundContactDetails {
   phone?: string | null;
   name?: string | null;
@@ -959,71 +919,6 @@ const pickPreferredName = (...values: Array<unknown>): string | null => {
   return null;
 };
 
-const shouldSkipByLocalDedupe = (key: string, now: number): boolean => {
-  pruneDedupeCache(now);
-
-  const entry = dedupeCache.get(key);
-  return !!entry && entry.expiresAt > now;
-};
-
-const registerLocalDedupe = (key: string, now: number, ttlMs: number): void => {
-  if (ttlMs <= 0) {
-    return;
-  }
-
-  pruneDedupeCache(now);
-
-  const expiresAt = now + ttlMs;
-  dedupeCache.set(key, { expiresAt });
-};
-
-export const shouldSkipByDedupe = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<boolean> => {
-  if (ttlMs <= 0) {
-    return false;
-  }
-
-  if (dedupeBackend) {
-    try {
-      if (await dedupeBackend.has(key)) {
-        return true;
-      }
-    } catch (error) {
-      logger.warn('whatsappInbound.dedupeCache.redisHasFallback', {
-        key,
-        ttlMs,
-        error: mapErrorForLog(error),
-      });
-      return shouldSkipByLocalDedupe(key, now);
-    }
-  }
-
-  return shouldSkipByLocalDedupe(key, now);
-};
-
-const registerDedupeKey = async (key: string, now: number, ttlMs = DEFAULT_DEDUPE_TTL_MS): Promise<void> => {
-  if (ttlMs <= 0) {
-    return;
-  }
-
-  if (dedupeBackend) {
-    try {
-      await dedupeBackend.set(key, ttlMs);
-      return;
-    } catch (error) {
-      logger.warn('whatsappInbound.dedupeCache.redisSetFallback', {
-        key,
-        ttlMs,
-        error: mapErrorForLog(error),
-      });
-    }
-  }
-
-  registerLocalDedupe(key, now, ttlMs);
-};
-
-const mapErrorForLog = (error: unknown) =>
-  error instanceof Error ? { message: error.message, stack: error.stack } : error;
-
 const emitPassthroughRealtimeUpdates = async ({
   tenantId,
   ticketId,
@@ -1084,92 +979,6 @@ const emitPassthroughRealtimeUpdates = async ({
   }
 };
 
-const provisionDefaultQueueForTenant = async (tenantId: string): Promise<string> => {
-  const upsertFallbackQueue = async () =>
-    prisma.queue.upsert({
-      where: {
-        tenantId_name: {
-          tenantId,
-          name: DEFAULT_QUEUE_FALLBACK_NAME,
-        },
-      },
-      update: {
-        description: DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
-        isActive: true,
-      },
-      create: {
-        tenantId,
-        name: DEFAULT_QUEUE_FALLBACK_NAME,
-        description: DEFAULT_QUEUE_FALLBACK_DESCRIPTION,
-        color: '#2563EB',
-        orderIndex: 0,
-      },
-    });
-
-  const refreshCache = (queueId: string) => {
-    queueCacheByTenant.set(tenantId, {
-      id: queueId,
-      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
-    });
-  };
-
-  try {
-    const queue = await upsertFallbackQueue();
-    refreshCache(queue.id);
-    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada automaticamente', {
-      tenantId,
-      queueId: queue.id,
-      ensuredTenant: false,
-    });
-    return queue.id;
-  } catch (error) {
-    if (isForeignKeyError(error)) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: 🧱 Provisionamento de fila falhou — tenant ausente, tentando garantir', {
-        tenantId,
-      });
-
-      try {
-        await ensureTenantRecord(tenantId, {
-          source: 'whatsapp-inbound-auto-queue',
-          action: 'ensure-tenant',
-        });
-
-        const queue = await upsertFallbackQueue();
-        refreshCache(queue.id);
-        logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão provisionada após criar tenant automaticamente', {
-          tenantId,
-          queueId: queue.id,
-          ensuredTenant: true,
-        });
-
-        return queue.id;
-      } catch (retryError) {
-        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão mesmo após garantir tenant', {
-          error: mapErrorForLog(retryError),
-          tenantId,
-        });
-
-        throw new QueueFallbackProvisionError(
-          'Tenant ausente impede o provisionamento automático da fila padrão.',
-          'TENANT_NOT_FOUND',
-          { cause: retryError }
-        );
-      }
-    }
-
-    logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao provisionar fila padrão', {
-      error: mapErrorForLog(error),
-      tenantId,
-    });
-
-    throw new QueueFallbackProvisionError(
-      'Erro desconhecido ao provisionar fila padrão.',
-      'UNKNOWN',
-      { cause: error }
-    );
-  }
-};
-
 const provisionFallbackCampaignForInstance = async (
   tenantId: string,
   instanceId: string
@@ -1224,7 +1033,8 @@ const provisionFallbackCampaignForInstance = async (
 };
 
 const isForeignKeyError = (error: unknown): boolean => {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+  const KnownRequestError = Prisma.PrismaClientKnownRequestError;
+  if (typeof KnownRequestError === 'function' && error instanceof KnownRequestError && error.code === 'P2003') {
     return true;
   }
 
@@ -1244,7 +1054,8 @@ const isForeignKeyError = (error: unknown): boolean => {
 };
 
 const isUniqueViolation = (error: unknown): boolean => {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+  const KnownRequestError = Prisma.PrismaClientKnownRequestError;
+  if (typeof KnownRequestError === 'function' && error instanceof KnownRequestError && error.code === 'P2002') {
     return true;
   }
 
@@ -1288,170 +1099,6 @@ const isMissingQueueError = (error: unknown): boolean => {
   }
 
   return false;
-};
-
-type QueueFallbackErrorReason = 'TENANT_NOT_FOUND' | 'UNKNOWN';
-
-class QueueFallbackProvisionError extends Error {
-  public readonly reason: QueueFallbackErrorReason;
-
-  constructor(message: string, reason: QueueFallbackErrorReason, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'QueueFallbackProvisionError';
-    this.reason = reason;
-  }
-}
-
-const getDefaultQueueId = async (
-  tenantId: string,
-  { provisionIfMissing = true }: { provisionIfMissing?: boolean } = {}
-): Promise<string | null> => {
-  const now = Date.now();
-  const cached = queueCacheByTenant.get(tenantId);
-
-  if (cached) {
-    if (cached.expires <= now) {
-      queueCacheByTenant.delete(tenantId);
-    } else {
-      const existingQueue = await prisma.queue.findUnique({ where: { id: cached.id } });
-      if (existingQueue) {
-        return cached.id;
-      }
-      queueCacheByTenant.delete(tenantId);
-    }
-  }
-
-  const queue = await prisma.queue.findFirst({
-    where: { tenantId },
-    orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-  });
-
-  if (!queue) {
-    queueCacheByTenant.delete(tenantId);
-
-    if (!provisionIfMissing) {
-      return null;
-    }
-
-    try {
-      const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
-      return provisionedQueueId;
-    } catch (error) {
-      if (error instanceof QueueFallbackProvisionError) {
-        throw error;
-      }
-
-      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha inesperada ao obter fila padrão', {
-        error: mapErrorForLog(error),
-        tenantId,
-      });
-
-      throw error;
-    }
-  }
-
-  queueCacheByTenant.set(tenantId, {
-    id: queue.id,
-    expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
-  });
-  return queue.id;
-};
-
-type EnsureInboundQueueParams = {
-  tenantId: string;
-  requestId: string | null;
-  instanceId: string | null;
-  simpleMode: boolean;
-};
-
-type EnsureInboundQueueErrorReason = 'TENANT_NOT_FOUND' | 'PROVISIONING_FAILED';
-
-type EnsureInboundQueueError = {
-  reason: EnsureInboundQueueErrorReason;
-  recoverable: boolean;
-  message: string;
-};
-
-type EnsureInboundQueueResult = {
-  queueId: string | null;
-  wasProvisioned: boolean;
-  error?: EnsureInboundQueueError;
-};
-
-const ensureInboundQueueForInboundMessage = async ({
-  tenantId,
-  requestId,
-  instanceId,
-  simpleMode,
-}: EnsureInboundQueueParams): Promise<EnsureInboundQueueResult> => {
-  const existingQueueId = await getDefaultQueueId(tenantId, { provisionIfMissing: false });
-
-  if (existingQueueId) {
-    return { queueId: existingQueueId, wasProvisioned: false };
-  }
-
-  logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Provisionando fila padrão automaticamente', {
-    requestId,
-    tenantId,
-    instanceId,
-    simpleMode,
-  });
-
-  try {
-    const provisionedQueueId = await provisionDefaultQueueForTenant(tenantId);
-
-    logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Fila padrão disponível para mensagens inbound', {
-      requestId,
-      tenantId,
-      instanceId,
-      queueId: provisionedQueueId,
-      simpleMode,
-    });
-
-    emitToTenant(tenantId, 'whatsapp.queue.autoProvisioned', {
-      tenantId,
-      instanceId,
-      queueId: provisionedQueueId,
-      message: 'Fila padrão criada automaticamente para mensagens inbound do WhatsApp.',
-    });
-
-    return { queueId: provisionedQueueId, wasProvisioned: true };
-  } catch (error) {
-    const provisionError = (() => {
-      if (error instanceof QueueFallbackProvisionError) {
-        return {
-          reason: error.reason === 'TENANT_NOT_FOUND' ? 'TENANT_NOT_FOUND' : 'PROVISIONING_FAILED',
-          recoverable: error.reason === 'TENANT_NOT_FOUND',
-          message: error.message,
-        } satisfies EnsureInboundQueueError;
-      }
-
-      return {
-        reason: 'PROVISIONING_FAILED' as const,
-        recoverable: false,
-        message: 'Falha desconhecida ao provisionar fila padrão.',
-      } satisfies EnsureInboundQueueError;
-    })();
-
-    logger.error('🎯 LeadEngine • WhatsApp :: 🛎️ Fila padrão ausente após tentativa de provisionamento automático', {
-      requestId,
-      tenantId,
-      instanceId,
-      simpleMode,
-      error: mapErrorForLog(error),
-      reason: provisionError.reason,
-    });
-
-    emitToTenant(tenantId, 'whatsapp.queue.missing', {
-      tenantId,
-      instanceId,
-      message: 'Nenhuma fila padrão configurada para receber mensagens inbound.',
-      reason: provisionError.reason,
-      recoverable: provisionError.recoverable,
-    });
-
-    return { queueId: null, wasProvisioned: false, error: provisionError };
-  }
 };
 
 const ensureContact = async (
@@ -2800,9 +2447,7 @@ export const __testing = {
   DEFAULT_DEDUPE_TTL_MS,
   MAX_DEDUPE_CACHE_SIZE,
   DEFAULT_QUEUE_CACHE_TTL_MS,
-  dedupeCache,
   configureInboundDedupeBackend,
-  queueCacheByTenant,
   resolveTenantIdentifiersFromMetadata,
   resolveBrokerIdFromMetadata,
   resolveSessionIdFromMetadata,

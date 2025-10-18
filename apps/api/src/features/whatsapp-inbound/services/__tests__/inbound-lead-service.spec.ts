@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Prisma } from '@prisma/client';
 import { NotFoundError } from '@ticketz/core';
+
 
 const findUniqueMock = vi.fn();
 const findFirstMock = vi.fn();
@@ -112,26 +112,41 @@ type ProcessEventParams = Parameters<TestingHelpers['processStandardInboundEvent
 type InboundEvent = ProcessEventParams[0];
 type PassthroughEvent = Parameters<TestingHelpers['handlePassthroughIngest']>[0];
 
+type QueueCacheModule = typeof import('../queue-cache');
+let DEFAULT_QUEUE_CACHE_TTL_MS: QueueCacheModule['DEFAULT_QUEUE_CACHE_TTL_MS'];
+let ensureInboundQueueForInboundMessage: QueueCacheModule['ensureInboundQueueForInboundMessage'];
+let getDefaultQueueId: QueueCacheModule['getDefaultQueueId'];
+let queueCacheByTenant: QueueCacheModule['queueCacheByTenant'];
+let resetQueueCache: QueueCacheModule['reset'];
+
 beforeAll(async () => {
   testing = (await import('../inbound-lead-service')).__testing;
+  const queueModule = await import('../queue-cache');
+  ({
+    DEFAULT_QUEUE_CACHE_TTL_MS,
+    ensureInboundQueueForInboundMessage,
+    getDefaultQueueId,
+    queueCacheByTenant,
+    reset: resetQueueCache,
+  } = queueModule);
 });
 
 describe('getDefaultQueueId', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    resetQueueCache();
     vi.resetAllMocks();
     queueUpsertMock.mockReset();
   });
 
   it('returns cached queue id when entry is valid and queue exists', async () => {
-    testing.queueCacheByTenant.set('tenant-1', {
+    queueCacheByTenant.set('tenant-1', {
       id: 'queue-1',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     findUniqueMock.mockResolvedValueOnce({ id: 'queue-1' });
 
-    const queueId = await testing.getDefaultQueueId('tenant-1');
+    const queueId = await getDefaultQueueId('tenant-1');
 
     expect(queueId).toBe('queue-1');
     expect(findUniqueMock).toHaveBeenCalledTimes(1);
@@ -140,20 +155,20 @@ describe('getDefaultQueueId', () => {
   });
 
   it('refetches queue when cached id is missing', async () => {
-    testing.queueCacheByTenant.set('tenant-2', {
+    queueCacheByTenant.set('tenant-2', {
       id: 'queue-old',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     findUniqueMock.mockResolvedValueOnce(null);
     findFirstMock.mockResolvedValueOnce({ id: 'queue-new' });
 
-    const queueId = await testing.getDefaultQueueId('tenant-2');
+    const queueId = await getDefaultQueueId('tenant-2');
 
     expect(queueId).toBe('queue-new');
     expect(findUniqueMock).toHaveBeenCalledWith({ where: { id: 'queue-old' } });
     expect(findFirstMock).toHaveBeenCalledTimes(1);
-    expect(testing.queueCacheByTenant.get('tenant-2')).toMatchObject({ id: 'queue-new' });
+    expect(queueCacheByTenant.get('tenant-2')).toMatchObject({ id: 'queue-new' });
     expect(queueUpsertMock).not.toHaveBeenCalled();
   });
 
@@ -161,7 +176,7 @@ describe('getDefaultQueueId', () => {
     findFirstMock.mockResolvedValueOnce(null);
     queueUpsertMock.mockResolvedValueOnce({ id: 'queue-fallback' });
 
-    const queueId = await testing.getDefaultQueueId('tenant-3');
+    const queueId = await getDefaultQueueId('tenant-3');
 
     expect(queueId).toBe('queue-fallback');
     expect(queueUpsertMock).toHaveBeenCalledWith(
@@ -181,7 +196,7 @@ describe('getDefaultQueueId', () => {
         }),
       })
     );
-    expect(testing.queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fallback' });
+    expect(queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fallback' });
   });
 });
 
@@ -452,23 +467,20 @@ describe('metadata helpers', () => {
 
 describe('ensureInboundQueueForInboundMessage', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    resetQueueCache();
     vi.resetAllMocks();
   });
 
   it('ensures tenant automatically when foreign key errors occur', async () => {
     findFirstMock.mockResolvedValueOnce(null);
-    const fkError = new Prisma.PrismaClientKnownRequestError('Missing tenant', {
-      code: 'P2003',
-      clientVersion: '5.0.0',
-    });
+    const fkError = Object.assign(new Error('Missing tenant'), { code: 'P2003' as const });
     queueUpsertMock.mockRejectedValueOnce(fkError).mockResolvedValueOnce({
       id: 'queue-after-tenant',
       tenantId: 'tenant-missing',
     });
     ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
 
-    const result = await testing.ensureInboundQueueForInboundMessage({
+    const result = await ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-missing',
       requestId: 'req-tenant',
       instanceId: 'instance-tenant',
@@ -491,14 +503,11 @@ describe('ensureInboundQueueForInboundMessage', () => {
 
   it('returns recoverable error when tenant cannot be provisioned automatically', async () => {
     findFirstMock.mockResolvedValueOnce(null);
-    const fkError = new Prisma.PrismaClientKnownRequestError('Missing tenant', {
-      code: 'P2003',
-      clientVersion: '5.0.0',
-    });
+    const fkError = Object.assign(new Error('Missing tenant'), { code: 'P2003' as const });
     queueUpsertMock.mockRejectedValueOnce(fkError).mockRejectedValueOnce(fkError);
     ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
 
-    const result = await testing.ensureInboundQueueForInboundMessage({
+    const result = await ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-missing',
       requestId: 'req-tenant',
       instanceId: 'instance-tenant',
@@ -518,13 +527,13 @@ describe('ensureInboundQueueForInboundMessage', () => {
         recoverable: true,
       })
     );
-    expect(testing.queueCacheByTenant.has('tenant-missing')).toBe(false);
+    expect(queueCacheByTenant.has('tenant-missing')).toBe(false);
   });
 });
 
 describe('ensureTicketForContact', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    resetQueueCache();
     vi.resetAllMocks();
   });
 
@@ -532,7 +541,7 @@ describe('ensureTicketForContact', () => {
     findFirstMock.mockResolvedValueOnce(null);
     queueUpsertMock.mockResolvedValueOnce({ id: 'queue-auto', tenantId: 'tenant-queue-less' });
 
-    const queueResolution = await testing.ensureInboundQueueForInboundMessage({
+    const queueResolution = await ensureInboundQueueForInboundMessage({
       tenantId: 'tenant-queue-less',
       requestId: 'req-queue',
       instanceId: 'instance-queue',
@@ -542,7 +551,7 @@ describe('ensureTicketForContact', () => {
     expect(queueResolution.queueId).toBe('queue-auto');
     expect(queueResolution.wasProvisioned).toBe(true);
     expect(queueResolution.error).toBeUndefined();
-    expect(testing.queueCacheByTenant.get('tenant-queue-less')).toMatchObject({ id: 'queue-auto' });
+    expect(queueCacheByTenant.get('tenant-queue-less')).toMatchObject({ id: 'queue-auto' });
     expect(emitToTenantMock).toHaveBeenCalledWith(
       'tenant-queue-less',
       'whatsapp.queue.autoProvisioned',
@@ -574,9 +583,9 @@ describe('ensureTicketForContact', () => {
   });
 
   it('clears cache and retries with refreshed queue when NotFoundError is thrown', async () => {
-    testing.queueCacheByTenant.set('tenant-3', {
+    queueCacheByTenant.set('tenant-3', {
       id: 'queue-stale',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
     createTicketMock.mockRejectedValueOnce(new NotFoundError('Queue', 'queue-stale'));
@@ -586,7 +595,7 @@ describe('ensureTicketForContact', () => {
     const result = await testing.ensureTicketForContact('tenant-3', 'contact-1', 'queue-stale', 'Subject', {});
 
     expect(result).toBe('ticket-123');
-    expect(testing.queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fresh' });
+    expect(queueCacheByTenant.get('tenant-3')).toMatchObject({ id: 'queue-fresh' });
     expect(createTicketMock).toHaveBeenCalledTimes(2);
     expect(createTicketMock).toHaveBeenNthCalledWith(
       2,
@@ -595,15 +604,12 @@ describe('ensureTicketForContact', () => {
   });
 
   it('retries when foreign key error is present in error cause', async () => {
-    testing.queueCacheByTenant.set('tenant-4', {
+    queueCacheByTenant.set('tenant-4', {
       id: 'queue-deleted',
-      expires: Date.now() + testing.DEFAULT_QUEUE_CACHE_TTL_MS,
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
-    const prismaError = new Prisma.PrismaClientKnownRequestError('Missing queue', {
-      code: 'P2003',
-      clientVersion: '5.0.0',
-    });
+    const prismaError = Object.assign(new Error('Missing queue'), { code: 'P2003' as const });
     const wrappedError = new Error('Failed to create ticket');
     (wrappedError as { cause?: unknown }).cause = prismaError;
 
@@ -614,7 +620,7 @@ describe('ensureTicketForContact', () => {
     const result = await testing.ensureTicketForContact('tenant-4', 'contact-9', 'queue-deleted', 'Subject', {});
 
     expect(result).toBe('ticket-456');
-    expect(testing.queueCacheByTenant.get('tenant-4')).toMatchObject({ id: 'queue-recreated' });
+    expect(queueCacheByTenant.get('tenant-4')).toMatchObject({ id: 'queue-recreated' });
     expect(createTicketMock).toHaveBeenCalledTimes(2);
     expect(createTicketMock).toHaveBeenNthCalledWith(
       2,
@@ -919,7 +925,7 @@ describe('handlePassthroughIngest', () => {
 
 describe('processStandardInboundEvent', () => {
   beforeEach(() => {
-    testing.queueCacheByTenant.clear();
+    resetQueueCache();
     vi.resetAllMocks();
     ticketFindUniqueMock.mockReset();
   });
