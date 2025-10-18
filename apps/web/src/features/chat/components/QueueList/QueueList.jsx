@@ -148,7 +148,7 @@ const QueueList = ({
   const typingTicketIds = useMemo(() => new Set(typingAgents.map((agent) => agent.ticketId)), [typingAgents]);
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex min-h-0 flex-col gap-3">
       <div className="space-y-2 px-1">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">Filas de atendimento</h2>
@@ -167,31 +167,29 @@ const QueueList = ({
 
       <QueueMetrics metrics={metrics} />
 
-      <div className="chat-scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-[inherit]">
-        <div className="space-y-2 px-1 pb-6">
-          {tickets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-6 text-center text-sm text-[color:var(--color-inbox-foreground-muted)]">
-              <AlertTriangle className="h-5 w-5 text-[color:var(--color-inbox-foreground-muted)]" />
-              <p>Nenhum ticket encontrado com os filtros atuais.</p>
-            </div>
-          ) : (
-            tickets.map((ticket) => (
-              <Fragment key={ticket.id}>
-                <QueueListItem
-                  ticket={{
-                    ...ticket,
-                    timeline: {
-                      ...ticket.timeline,
-                      typing: typingTicketIds.has(ticket.id),
-                    },
-                  }}
-                  selected={ticket.id === selectedTicketId}
-                  onSelect={onSelectTicket}
-                />
-              </Fragment>
-            ))
-          )}
-        </div>
+      <div className="space-y-2 px-1 pb-6">
+        {tickets.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-6 text-center text-sm text-[color:var(--color-inbox-foreground-muted)]">
+            <AlertTriangle className="h-5 w-5 text-[color:var(--color-inbox-foreground-muted)]" />
+            <p>Nenhum ticket encontrado com os filtros atuais.</p>
+          </div>
+        ) : (
+          tickets.map((ticket) => (
+            <Fragment key={ticket.id}>
+              <QueueListItem
+                ticket={{
+                  ...ticket,
+                  timeline: {
+                    ...ticket.timeline,
+                    typing: typingTicketIds.has(ticket.id),
+                  },
+                }}
+                selected={ticket.id === selectedTicketId}
+                onSelect={onSelectTicket}
+              />
+            </Fragment>
+          ))
+        )}
       </div>
     </div>
   );

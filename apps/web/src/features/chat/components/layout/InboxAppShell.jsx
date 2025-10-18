@@ -67,7 +67,9 @@ const ListPanelHeader = ({ showCloseButton = false }) => (
   </div>
 );
 
-const ListPanelContent = ({ children }) => <div className="min-w-0 px-3 py-4">{children}</div>;
+const ListPanelContent = ({ children }) => (
+  <div className="flex min-h-0 min-w-0 flex-col px-3 py-4">{children}</div>
+);
 
 const ListPanelFooter = ({ canPersistPreferences }) => (
   <div className="shrink-0 border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
@@ -80,11 +82,12 @@ const ListPanelFooter = ({ canPersistPreferences }) => (
 
 const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) => (
   <div className="flex h-full min-h-0 min-w-0 flex-col">
-    <div className="flex-1 min-h-0 overflow-hidden">
-      <div className="h-full min-w-0 overflow-y-auto overscroll-contain">
-        <ListPanelHeader showCloseButton={showCloseButton} />
-        <ListPanelContent>{sidebar}</ListPanelContent>
-      </div>
+    <div
+      className="chat-scroll-area flex flex-1 min-h-0 flex-col overflow-y-auto overscroll-contain"
+      style={{ scrollbarGutter: 'stable' }}
+    >
+      <ListPanelHeader showCloseButton={showCloseButton} />
+      <ListPanelContent>{sidebar}</ListPanelContent>
     </div>
     <ListPanelFooter canPersistPreferences={canPersistPreferences} />
   </div>
@@ -203,8 +206,8 @@ const InboxAppShell = ({
     return (
       <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
         <div className="flex min-h-0 min-w-0 flex-1">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
+            {children}
           </div>
         </div>
         <ContextDrawer
@@ -234,7 +237,7 @@ const InboxAppShell = ({
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-surface-shell text-foreground">
+    <div className="flex flex-1 min-h-0 flex-col bg-surface-shell text-foreground">
       <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
         <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-3">

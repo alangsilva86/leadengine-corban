@@ -234,65 +234,67 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         isSubmitting={manualConversationPending}
       />
 
-      <InboxAppShell
-        currentUser={currentUser}
-        sidebar={
-          <QueueList
-            tickets={controller.tickets}
-            selectedTicketId={controller.selectedTicketId}
-            onSelectTicket={controller.selectTicket}
-            loading={controller.ticketsQuery.isFetching}
-            onRefresh={handleManualSync}
-            typingAgents={controller.typingIndicator?.agentsTyping ?? []}
-            metrics={metrics}
-          />
-        }
-        context={
-          <DetailsPanel
+      <div className="flex flex-1 min-h-0 w-full">
+        <InboxAppShell
+          currentUser={currentUser}
+          sidebar={
+            <QueueList
+              tickets={controller.tickets}
+              selectedTicketId={controller.selectedTicketId}
+              onSelectTicket={controller.selectTicket}
+              loading={controller.ticketsQuery.isFetching}
+              onRefresh={handleManualSync}
+              typingAgents={controller.typingIndicator?.agentsTyping ?? []}
+              metrics={metrics}
+            />
+          }
+          context={
+            <DetailsPanel
+              ticket={controller.selectedTicket}
+              onCreateNote={createNote}
+              notesLoading={controller.notesMutation.isPending}
+              onGenerateProposal={() =>
+                toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
+              }
+              onReopenWindow={() =>
+                toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
+              }
+              onOpenAudit={() =>
+                toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
+              }
+            />
+          }
+          defaultContextOpen={false}
+          toolbar={
+            <FilterToolbar
+              search={filters.search ?? ''}
+              onSearchChange={controller.setSearch}
+              filters={filters}
+              onFiltersChange={controller.setFilters}
+              loading={controller.ticketsQuery.isFetching}
+              onRefresh={handleManualSync}
+              onStartManualConversation={() => setManualConversationOpen(true)}
+              manualConversationPending={manualConversationPending}
+            />
+          }
+        >
+          <ConversationArea
             ticket={controller.selectedTicket}
+            conversation={controller.conversation}
+            messagesQuery={controller.messagesQuery}
+            onSendMessage={sendMessage}
             onCreateNote={createNote}
-            notesLoading={controller.notesMutation.isPending}
-            onGenerateProposal={() =>
-              toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
-            }
-            onReopenWindow={() =>
-              toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
-            }
-            onOpenAudit={() =>
-              toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
-            }
+            onRegisterResult={registerResult}
+            onAssign={() => assignToMe(controller.selectedTicket)}
+            onGenerateProposal={handleGenerateProposal}
+            onScheduleFollowUp={handleScheduleFollowUp}
+            isRegisteringResult={controller.statusMutation.isPending}
+            typingIndicator={controller.typingIndicator}
+            isSending={controller.sendMessageMutation.isPending}
+            sendError={controller.sendMessageMutation.error}
           />
-        }
-        defaultContextOpen={false}
-        toolbar={
-          <FilterToolbar
-            search={filters.search ?? ''}
-            onSearchChange={controller.setSearch}
-            filters={filters}
-            onFiltersChange={controller.setFilters}
-            loading={controller.ticketsQuery.isFetching}
-            onRefresh={handleManualSync}
-            onStartManualConversation={() => setManualConversationOpen(true)}
-            manualConversationPending={manualConversationPending}
-          />
-        }
-      >
-        <ConversationArea
-          ticket={controller.selectedTicket}
-          conversation={controller.conversation}
-          messagesQuery={controller.messagesQuery}
-          onSendMessage={sendMessage}
-          onCreateNote={createNote}
-          onRegisterResult={registerResult}
-          onAssign={() => assignToMe(controller.selectedTicket)}
-          onGenerateProposal={handleGenerateProposal}
-          onScheduleFollowUp={handleScheduleFollowUp}
-          isRegisteringResult={controller.statusMutation.isPending}
-          typingIndicator={controller.typingIndicator}
-          isSending={controller.sendMessageMutation.isPending}
-          sendError={controller.sendMessageMutation.error}
-        />
-      </InboxAppShell>
+        </InboxAppShell>
+      </div>
     </>
   );
 };

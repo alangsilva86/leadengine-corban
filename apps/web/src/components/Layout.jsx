@@ -83,7 +83,7 @@ const LayoutHeader = ({ children, className }) => (
 );
 
 const LayoutContent = ({ children, className }) => (
-  <div className={cn('page-content flex-1 min-h-0 overflow-y-auto', className)}>
+  <div className={cn('page-content flex-1 min-h-0', className)}>
     <div className="page-content-inner mx-auto flex w-full max-w-7xl min-h-0 flex-col gap-6 p-6 md:p-8">
       {children}
     </div>
