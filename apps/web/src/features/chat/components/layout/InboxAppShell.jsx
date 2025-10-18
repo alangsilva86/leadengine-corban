@@ -245,12 +245,7 @@ const InboxAppShell = ({
             </div>
           </section>
         </div>
-        <ContextDrawer
-          open={contextOpen}
-          onOpenChange={setContextOpen}
-          desktopClassName="rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]"
-          desktopContentClassName="px-4 py-5"
-        >
+        <ContextDrawer open={contextOpen} onOpenChange={setContextOpen} desktopContentClassName="px-4 py-5">
           {context}
         </ContextDrawer>
       </div>

@@ -7,14 +7,13 @@ import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktopContentClassName }) => {
   const isMobile = useIsMobile();
 
-  const content = useMemo(
-    () => (
-      <ScrollArea className="h-full">
-        <div className={cn('min-h-full px-4 py-6 sm:px-5', desktopContentClassName)}>{children}</div>
+  const content = useMemo(() => {
+    return (
+      <ScrollArea className="flex-1" viewportClassName="min-h-0">
+        <div className={cn('px-4 py-6 sm:px-5', desktopContentClassName)}>{children}</div>
       </ScrollArea>
-    ),
-    [children, desktopContentClassName]
-  );
+    );
+  }, [children, desktopContentClassName]);
 
   if (isMobile) {
     return (
@@ -29,16 +28,14 @@ const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktop
     );
   }
 
+  if (!open) {
+    return null;
+  }
+
   return (
-    <aside
-      className={cn(
-        'relative hidden h-full min-w-0 flex-col transition-all duration-200 ease-linear lg:flex',
-        desktopClassName,
-        open ? 'w-[360px] opacity-100' : 'pointer-events-none w-0 opacity-0'
-      )}
-    >
-      <div className="pointer-events-auto h-full overflow-hidden">
-        {open ? content : null}
+    <aside className="hidden h-full min-h-0 flex-shrink-0 lg:flex">
+      <div className={cn('flex h-full min-h-0 w-[360px] flex-col overflow-hidden rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]', desktopClassName)}>
+        {content}
       </div>
     </aside>
   );
