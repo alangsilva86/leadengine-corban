@@ -67,7 +67,9 @@ const ListPanelHeader = ({ showCloseButton = false }) => (
   </div>
 );
 
-const ListPanelContent = ({ children }) => <div className="min-w-0 px-3 py-4">{children}</div>;
+const ListPanelContent = ({ children }) => (
+  <div className="flex min-h-0 min-w-0 flex-col px-3 py-4">{children}</div>
+);
 
 const ListPanelFooter = ({ canPersistPreferences }) => (
   <div className="shrink-0 border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
@@ -80,11 +82,12 @@ const ListPanelFooter = ({ canPersistPreferences }) => (
 
 const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) => (
   <div className="flex h-full min-h-0 min-w-0 flex-col">
-    <div className="flex-1 min-h-0 overflow-hidden">
-      <div className="h-full min-w-0 overflow-y-auto overscroll-contain">
-        <ListPanelHeader showCloseButton={showCloseButton} />
-        <ListPanelContent>{sidebar}</ListPanelContent>
-      </div>
+    <div
+      className="chat-scroll-area flex-1 min-h-0 overscroll-contain"
+      style={{ scrollbarGutter: 'stable' }}
+    >
+      <ListPanelHeader showCloseButton={showCloseButton} />
+      <ListPanelContent>{sidebar}</ListPanelContent>
     </div>
     <ListPanelFooter canPersistPreferences={canPersistPreferences} />
   </div>

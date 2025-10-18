@@ -40,11 +40,12 @@ export const MessageTimeline = ({
   }, [lastEntryKey, typingAgents.length, scrollToBottom]);
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1">
       <section
         id="chat-scroll"
         ref={containerRef}
-        className="chat-scroll-area h-full min-h-0 w-full flex-1 overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
+        className="chat-scroll-area flex-1 min-h-0 w-full overflow-y-auto overscroll-contain scroll-smooth px-6 py-6"
+        style={{ scrollbarGutter: 'stable' }}
         role="log"
         aria-live="polite"
         aria-relevant="additions"
@@ -81,7 +82,7 @@ export const MessageTimeline = ({
         </div>
       </section>
     </div>
-    );
-  };
+  );
+};
 
 export default MessageTimeline;
