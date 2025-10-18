@@ -206,8 +206,10 @@ const InboxAppShell = ({
     return (
       <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
         <div className="flex min-h-0 min-w-0 flex-1">
-          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
-            {children}
+          <div className="flex min-h-0 min-w-0 flex-1 rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
+              {children}
+            </div>
           </div>
         </div>
         <ContextDrawer
