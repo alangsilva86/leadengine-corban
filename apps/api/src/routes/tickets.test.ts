@@ -209,11 +209,13 @@ describe('Tickets routes', () => {
 
       const emittedEvents = mockSocket.events.map((item) => item.event);
       expect(emittedEvents).toContain('ticket.created');
-      expect(emittedEvents).toContain('ticket.updated');
-      expect(emittedEvents).toContain('ticket.assigned');
-      expect(emittedEvents).toContain('ticket.message');
+      expect(emittedEvents).not.toContain('ticket.updated');
+      expect(emittedEvents).not.toContain('ticket.assigned');
+      expect(emittedEvents).not.toContain('ticket.message');
       expect(emittedEvents).toContain('messages.new');
-      expect(emittedEvents).toContain('ticket.closed');
+      expect(emittedEvents).not.toContain('ticket.closed');
+      const ticketsUpdatedCount = emittedEvents.filter((event) => event === 'tickets.updated').length;
+      expect(ticketsUpdatedCount).toBeGreaterThanOrEqual(4);
     } finally {
       await stopTestServer(server);
     }

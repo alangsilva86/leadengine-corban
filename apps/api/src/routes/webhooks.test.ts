@@ -117,7 +117,7 @@ const createTicketSpy = vi.spyOn(ticketsModule, 'createTicket');
 const sendMessageSpy = vi.spyOn(ticketsModule, 'sendMessage');
 const emitMessageUpdatedEventsSpy = vi
   .spyOn(ticketsModule, 'emitMessageUpdatedEvents')
-  .mockImplementation(() => {});
+  .mockResolvedValue(undefined);
 const socketModule = await import('../lib/socket-registry');
 const emitToTenantSpy = vi.spyOn(socketModule, 'emitToTenant').mockImplementation(() => {});
 

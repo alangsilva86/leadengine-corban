@@ -11,11 +11,13 @@ vi.mock('../../config/logger', () => ({
   logger,
 }));
 
+const emitToAgreement = vi.fn();
 const emitToTenant = vi.fn();
 const emitToTicket = vi.fn();
 const emitToUser = vi.fn();
 
 vi.mock('../../lib/socket-registry', () => ({
+  emitToAgreement,
   emitToTenant,
   emitToTicket,
   emitToUser,

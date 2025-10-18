@@ -465,7 +465,7 @@ const processMessagesUpdate = async (
 
       if (updated) {
         persisted += 1;
-        emitMessageUpdatedEvents(lookup.tenantId, updated.ticketId, updated, null);
+        await emitMessageUpdatedEvents(lookup.tenantId, updated.ticketId, updated, null);
         whatsappWebhookEventsCounter.inc({
           origin: 'webhook',
           tenantId: lookup.tenantId ?? 'unknown',

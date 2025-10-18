@@ -26,7 +26,7 @@ import {
   updateMessage as storageUpdateMessage,
   updateTicket as storageUpdateTicket,
 } from '@ticketz/storage';
-import { emitToTenant, emitToTicket, emitToUser } from '../lib/socket-registry';
+import { emitToAgreement, emitToTenant, emitToTicket, emitToUser } from '../lib/socket-registry';
 import { prisma } from '../lib/prisma';
 import {
   createTicketNote,
@@ -382,10 +382,14 @@ const emitTicketEvent = (
   ticketId: string,
   event: string,
   payload: unknown,
-  userId?: string | null
+  userId?: string | null,
+  agreementId?: string | null
 ) => {
   emitToTenant(tenantId, event, payload);
   emitToTicket(ticketId, event, payload);
+  if (agreementId) {
+    emitToAgreement(agreementId, event, payload);
+  }
   if (userId) {
     emitToUser(userId, event, payload);
   }
@@ -403,6 +407,87 @@ type MessageRealtimeEnvelope = {
   message: Message;
 };
 
+type TicketRealtimeEnvelope = {
+  tenantId: string;
+  ticketId: string;
+  agreementId: string | null;
+  instanceId: string | null;
+  messageId: string | null;
+  providerMessageId: string | null;
+  ticketStatus: TicketStatus;
+  ticketUpdatedAt: string;
+  ticket: Ticket;
+};
+
+const resolveTicketAgreementId = (ticket: Ticket): string | null => {
+  const agreementId = (ticket as Ticket & { agreementId?: string | null }).agreementId;
+  if (typeof agreementId === 'string' && agreementId.trim().length > 0) {
+    return agreementId.trim();
+  }
+
+  if (ticket.metadata && typeof ticket.metadata === 'object') {
+    const metadata = ticket.metadata as Record<string, unknown>;
+    const direct = metadata['agreementId'];
+    if (typeof direct === 'string' && direct.trim().length > 0) {
+      return direct.trim();
+    }
+
+    const snakeCase = metadata['agreement_id'];
+    if (typeof snakeCase === 'string' && snakeCase.trim().length > 0) {
+      return snakeCase.trim();
+    }
+
+    const nested = metadata['agreement'];
+    if (nested && typeof nested === 'object') {
+      const nestedId = (nested as Record<string, unknown>)['id'];
+      if (typeof nestedId === 'string' && nestedId.trim().length > 0) {
+        return nestedId.trim();
+      }
+
+      const nestedAgreementId = (nested as Record<string, unknown>)['agreementId'];
+      if (typeof nestedAgreementId === 'string' && nestedAgreementId.trim().length > 0) {
+        return nestedAgreementId.trim();
+      }
+    }
+  }
+
+  return null;
+};
+
+const buildRealtimeEnvelopeBase = ({
+  tenantId,
+  ticket,
+  message,
+  messageId,
+  providerMessageId,
+  instanceId,
+}: {
+  tenantId: string;
+  ticket: Ticket;
+  message?: Message | null;
+  messageId?: string | null;
+  providerMessageId?: string | null;
+  instanceId?: string | null;
+}): Omit<TicketRealtimeEnvelope, 'ticket'> => {
+  const agreementId = resolveTicketAgreementId(ticket);
+  const resolvedMessageId = message?.id ?? messageId ?? null;
+  const resolvedProviderMessageId = providerMessageId ?? null;
+  const resolvedInstanceId = instanceId ?? message?.instanceId ?? resolveWhatsAppInstanceId(ticket) ?? null;
+  const updatedAtIso =
+    (ticket.updatedAt instanceof Date ? ticket.updatedAt : null)?.toISOString() ?? new Date().toISOString();
+
+  return {
+    tenantId,
+    ticketId: ticket.id,
+    agreementId,
+    instanceId: resolvedInstanceId,
+    messageId: resolvedMessageId,
+    providerMessageId: resolvedProviderMessageId,
+    ticketStatus: ticket.status,
+    ticketUpdatedAt: updatedAtIso,
+  };
+};
+
 const buildMessageRealtimeEnvelope = ({
   tenantId,
   ticket,
@@ -416,22 +501,59 @@ const buildMessageRealtimeEnvelope = ({
   instanceId?: string | null;
   providerMessageId?: string | null;
 }): MessageRealtimeEnvelope => {
-  const updatedAtIso =
-    (ticket.updatedAt instanceof Date ? ticket.updatedAt : null)?.toISOString() ??
-    (message.updatedAt instanceof Date ? message.updatedAt.toISOString() : undefined) ??
-    new Date().toISOString();
+  const base = buildRealtimeEnvelopeBase({
+    tenantId,
+    ticket,
+    message,
+    messageId: message.id,
+    providerMessageId,
+    instanceId,
+  });
 
   return {
-    tenantId,
-    ticketId: ticket.id,
-    agreementId: ticket.agreementId ?? null,
-    instanceId: instanceId ?? resolveWhatsAppInstanceId(ticket) ?? null,
-    messageId: message.id,
-    providerMessageId: providerMessageId ?? null,
-    ticketStatus: ticket.status,
-    ticketUpdatedAt: updatedAtIso,
+    ...base,
     message,
   };
+};
+
+const buildTicketRealtimeEnvelope = ({
+  tenantId,
+  ticket,
+  message,
+  messageId,
+  providerMessageId,
+  instanceId,
+}: {
+  tenantId: string;
+  ticket: Ticket;
+  message?: Message | null;
+  messageId?: string | null;
+  providerMessageId?: string | null;
+  instanceId?: string | null;
+}): TicketRealtimeEnvelope => {
+  const base = buildRealtimeEnvelopeBase({
+    tenantId,
+    ticket,
+    message,
+    messageId,
+    providerMessageId,
+    instanceId,
+  });
+
+  return {
+    ...base,
+    ticket,
+  };
+};
+
+const emitTicketRealtimeEnvelope = (
+  tenantId: string,
+  ticket: Ticket,
+  envelope: TicketRealtimeEnvelope,
+  userId?: string | null
+) => {
+  const agreementId = resolveTicketAgreementId(ticket);
+  emitTicketEvent(tenantId, ticket.id, 'tickets.updated', envelope, userId ?? null, agreementId);
 };
 
 const emitMessageCreatedEvents = (
@@ -452,17 +574,32 @@ const emitMessageCreatedEvents = (
     providerMessageId: options.providerMessageId ?? null,
   });
 
-  emitTicketEvent(tenantId, ticket.id, 'messages.new', envelope, options.userId);
-  emitTicketEvent(tenantId, ticket.id, 'message:created', message, options.userId);
-  emitTicketEvent(tenantId, ticket.id, 'ticket.message.created', message, options.userId);
-  emitTicketEvent(tenantId, ticket.id, 'ticket.message', message, options.userId);
+  emitTicketEvent(
+    tenantId,
+    ticket.id,
+    'messages.new',
+    envelope,
+    options.userId,
+    resolveTicketAgreementId(ticket)
+  );
+
+  const ticketEnvelope = buildTicketRealtimeEnvelope({
+    tenantId,
+    ticket,
+    message,
+    instanceId: options.instanceId ?? null,
+    providerMessageId: options.providerMessageId ?? null,
+  });
+
+  emitTicketRealtimeEnvelope(tenantId, ticket, ticketEnvelope, options.userId ?? null);
 };
 
-export const emitMessageUpdatedEvents = (
+export const emitMessageUpdatedEvents = async (
   tenantId: string,
   ticketId: string,
   message: Message,
-  userId?: string | null
+  userId?: string | null,
+  ticket?: Ticket | null
 ) => {
   emitTicketEvent(tenantId, ticketId, 'message:updated', message, userId);
   emitTicketEvent(
@@ -476,7 +613,21 @@ export const emitMessageUpdatedEvents = (
     },
     userId
   );
-  emitTicketEvent(tenantId, ticketId, 'ticket.message', message, userId);
+
+  const resolvedTicket =
+    ticket ?? (await storageFindTicketById(tenantId, ticketId).catch(() => Promise.resolve(null)));
+
+  if (resolvedTicket) {
+    const ticketEnvelope = buildTicketRealtimeEnvelope({
+      tenantId,
+      ticket: resolvedTicket,
+      message,
+      instanceId: message.instanceId ?? null,
+      providerMessageId: resolveProviderMessageId(message.metadata),
+    });
+
+    emitTicketRealtimeEnvelope(tenantId, resolvedTicket, ticketEnvelope, userId ?? null);
+  }
 };
 
 const resolveWhatsAppInstanceId = (ticket: Ticket | null | undefined): string | null => {
@@ -1092,17 +1243,14 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   try {
     const ticket = await storageCreateTicket(input);
     emitTicketEvent(input.tenantId, ticket.id, 'ticket.created', ticket, ticket.userId ?? null);
-    emitTicketEvent(
-      input.tenantId,
-      ticket.id,
-      'ticket.status.changed',
-      {
-        ticketId: ticket.id,
-        status: ticket.status,
-        previousStatus: null,
-      },
-      ticket.userId ?? null
-    );
+
+    const ticketEnvelope = buildTicketRealtimeEnvelope({
+      tenantId: input.tenantId,
+      ticket,
+      instanceId: resolveWhatsAppInstanceId(ticket),
+    });
+
+    emitTicketRealtimeEnvelope(input.tenantId, ticket, ticketEnvelope, ticket.userId ?? null);
     return ticket;
   } catch (error) {
     if (isForeignKeyViolation(error, 'contactId')) {
@@ -1127,7 +1275,6 @@ export const updateTicket = async (
   ticketId: string,
   input: UpdateTicketDTO
 ): Promise<Ticket> => {
-  const previous = await storageFindTicketById(tenantId, ticketId);
   let updated: Ticket | null;
 
   try {
@@ -1147,21 +1294,13 @@ export const updateTicket = async (
     throw new NotFoundError('Ticket', ticketId);
   }
 
-  emitTicketEvent(tenantId, ticketId, 'ticket.updated', updated, updated.userId ?? null);
+  const ticketEnvelope = buildTicketRealtimeEnvelope({
+    tenantId,
+    ticket: updated,
+    instanceId: resolveWhatsAppInstanceId(updated),
+  });
 
-  if (previous && previous.status !== updated.status) {
-    emitTicketEvent(
-      tenantId,
-      ticketId,
-      'ticket.status.changed',
-      {
-        ticketId,
-        status: updated.status,
-        previousStatus: previous.status,
-      },
-      updated.userId ?? null
-    );
-  }
+  emitTicketRealtimeEnvelope(tenantId, updated, ticketEnvelope, updated.userId ?? null);
   return updated;
 };
 
@@ -1170,7 +1309,6 @@ export const assignTicket = async (
   ticketId: string,
   userId: string
 ): Promise<Ticket> => {
-  const previous = await storageFindTicketById(tenantId, ticketId);
   let updated: Ticket | null;
 
   try {
@@ -1187,21 +1325,13 @@ export const assignTicket = async (
     throw new NotFoundError('Ticket', ticketId);
   }
 
-  emitTicketEvent(tenantId, ticketId, 'ticket.assigned', updated, userId);
+  const ticketEnvelope = buildTicketRealtimeEnvelope({
+    tenantId,
+    ticket: updated,
+    instanceId: resolveWhatsAppInstanceId(updated),
+  });
 
-  if (previous && previous.status !== updated.status) {
-    emitTicketEvent(
-      tenantId,
-      ticketId,
-      'ticket.status.changed',
-      {
-        ticketId,
-        status: updated.status,
-        previousStatus: previous.status,
-      },
-      userId
-    );
-  }
+  emitTicketRealtimeEnvelope(tenantId, updated, ticketEnvelope, userId ?? null);
   return updated;
 };
 
@@ -1211,7 +1341,6 @@ export const closeTicket = async (
   reason: string | undefined,
   userId: string | undefined
 ): Promise<Ticket> => {
-  const previous = await storageFindTicketById(tenantId, ticketId);
   let updated: Ticket | null;
 
   try {
@@ -1228,21 +1357,13 @@ export const closeTicket = async (
   }
 
   const actorId = userId ?? updated.userId ?? null;
-  emitTicketEvent(tenantId, ticketId, 'ticket.closed', updated, actorId);
+  const ticketEnvelope = buildTicketRealtimeEnvelope({
+    tenantId,
+    ticket: updated,
+    instanceId: resolveWhatsAppInstanceId(updated),
+  });
 
-  if (previous && previous.status !== updated.status) {
-    emitTicketEvent(
-      tenantId,
-      ticketId,
-      'ticket.status.changed',
-      {
-        ticketId,
-        status: updated.status,
-        previousStatus: previous.status,
-      },
-      actorId
-    );
-  }
+  emitTicketRealtimeEnvelope(tenantId, updated, ticketEnvelope, actorId);
   return updated;
 };
 
@@ -1607,12 +1728,7 @@ export const sendMessage = async (
   }
 
   if (statusChanged) {
-    emitMessageUpdatedEvents(tenantId, input.ticketId, message, userId ?? null);
-  }
-
-  const refreshedTicket = await storageFindTicketById(tenantId, input.ticketId);
-  if (refreshedTicket) {
-    emitTicketEvent(tenantId, refreshedTicket.id, 'ticket.updated', refreshedTicket, refreshedTicket.userId ?? null);
+    await emitMessageUpdatedEvents(tenantId, input.ticketId, message, userId ?? null);
   }
 
   return message;
@@ -2001,6 +2117,17 @@ export const addTicketNote = async (
   });
 
   emitTicketEvent(tenantId, ticketId, 'ticket.note.created', note, author.id);
+
+  const ticket = await storageFindTicketById(tenantId, ticketId);
+  if (ticket) {
+    const ticketEnvelope = buildTicketRealtimeEnvelope({
+      tenantId,
+      ticket,
+      instanceId: resolveWhatsAppInstanceId(ticket),
+    });
+
+    emitTicketRealtimeEnvelope(tenantId, ticket, ticketEnvelope, author.id);
+  }
 
   return note;
 };
