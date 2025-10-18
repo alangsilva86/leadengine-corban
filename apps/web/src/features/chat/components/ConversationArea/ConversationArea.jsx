@@ -1,9 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import ConversationHeader from './ConversationHeader.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
 import useAiSuggestions from '../../hooks/useAiSuggestions.js';
-import { useEffect } from 'react';
 
 export const ConversationArea = ({
   ticket,
@@ -84,27 +83,6 @@ export const ConversationArea = ({
           onLoadMore={() => messagesQuery.fetchNextPage?.()}
           typingAgents={typingIndicator?.agentsTyping ?? []}
         />
-    <div className="flex min-h-0 flex-1 flex-col gap-4 sm:gap-5">
-      <ConversationHeader
-        ticket={ticket}
-        onRegisterResult={onRegisterResult}
-        onAssign={onAssign}
-        onGenerateProposal={onGenerateProposal}
-        onScheduleFollowUp={onScheduleFollowUp}
-        isRegisteringResult={isRegisteringResult}
-        typingAgents={typingIndicator?.agentsTyping ?? []}
-      />
-
-      <div className="flex min-h-0 flex-1 rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] shadow-[var(--shadow-lg)]">
-        <div className="flex-1 min-h-0">
-          <MessageTimeline
-            items={timelineItems}
-            loading={messagesQuery.isFetchingNextPage}
-            hasMore={Boolean(messagesQuery.hasNextPage)}
-            onLoadMore={() => messagesQuery.fetchNextPage?.()}
-            typingAgents={typingIndicator?.agentsTyping ?? []}
-          />
-        </div>
       </div>
 
       <div className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-4 sm:px-6 sm:py-5">
