@@ -84,6 +84,7 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
   <div className="flex h-full min-h-0 min-w-0 flex-col">
     <div
       className="chat-scroll-area flex flex-1 min-h-0 flex-col overflow-y-auto overscroll-contain"
+      className="chat-scroll-area flex-1 min-h-0 overscroll-contain"
       style={{ scrollbarGutter: 'stable' }}
     >
       <ListPanelHeader showCloseButton={showCloseButton} />
