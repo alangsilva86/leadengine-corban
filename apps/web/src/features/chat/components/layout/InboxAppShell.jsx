@@ -211,10 +211,10 @@ const InboxAppShell = ({
     const detailGap = effectiveContextOpen ? 'lg:gap-6' : 'lg:gap-0';
 
     return (
-      <div className={cn('flex h-full min-h-0 w-full flex-col lg:flex-row', detailGap)}>
-        <div className="flex min-h-0 min-w-0 flex-1">
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
+      <div className={cn('flex h-full min-h-0 w-full flex-col items-stretch lg:flex-row', detailGap)}>
+        <div className="flex h-full min-h-0 min-w-0 flex-1">
+          <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
+            <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
               {children}
             </div>
           </section>
