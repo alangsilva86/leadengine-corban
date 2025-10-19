@@ -159,7 +159,7 @@ const SplitLayout = ({
   return (
     <div
       className={cn('relative grid h-full min-h-0 w-full gap-0 items-stretch', className)}
-      style={{ gridTemplateColumns, gridTemplateAreas }}
+      style={{ gridTemplateColumns, gridTemplateAreas, gridTemplateRows: '1fr' }}
       data-list-position={listPosition}
       {...props}
     >
