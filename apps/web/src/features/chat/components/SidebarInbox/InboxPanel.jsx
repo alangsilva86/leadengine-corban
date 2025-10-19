@@ -77,7 +77,7 @@ export const InboxPanel = ({
   const typingMap = buildTypingMap(typingAgents);
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <InboxFilters
         filters={filters}
         onFiltersChange={(partial) => onFiltersChange?.((current) => ({ ...current, ...partial }))}
@@ -89,7 +89,7 @@ export const InboxPanel = ({
 
       <MetricsCard metrics={metrics} />
 
-      <div className="chat-scroll-area flex-1 overflow-y-auto pr-1">
+      <div className="chat-scroll-area flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable_both-edges]">
         {tickets.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-800/70 bg-slate-950/70 p-6 text-center text-[13px] text-muted-foreground/80">
             <p className="text-base font-bold text-foreground">Nada por aqui ainda</p>
