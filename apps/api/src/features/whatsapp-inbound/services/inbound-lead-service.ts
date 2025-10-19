@@ -342,13 +342,40 @@ const emitRealtimeUpdatesForInbound = async ({
   instanceId,
   message,
   providerMessageId,
+  emitTicketRealtimeEvents = true,
 }: {
   tenantId: string;
   ticketId: string;
   instanceId: string;
   message: Awaited<ReturnType<typeof sendMessageService>>;
   providerMessageId: string | null;
+  emitTicketRealtimeEvents?: boolean;
 }) => {
+  const messageMetadata =
+    message.metadata && typeof message.metadata === 'object'
+      ? (message.metadata as Record<string, unknown>)
+      : {};
+  const eventMetadata =
+    messageMetadata.eventMetadata && typeof messageMetadata.eventMetadata === 'object'
+      ? (messageMetadata.eventMetadata as Record<string, unknown>)
+      : {};
+  const requestId =
+    typeof eventMetadata.requestId === 'string' && eventMetadata.requestId.trim().length > 0
+      ? eventMetadata.requestId
+      : null;
+
+  if (!emitTicketRealtimeEvents) {
+    logger.info('🎯 LeadEngine • WhatsApp :: 🔕 Eventos realtime já propagados na criação da mensagem', {
+      requestId,
+      tenantId,
+      ticketId,
+      messageId: message.id,
+      providerMessageId,
+      agreementId: null,
+    });
+    return;
+  }
+
   try {
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
 
@@ -380,19 +407,6 @@ const emitRealtimeUpdatesForInbound = async ({
     if (agreementId) {
       emitToAgreement(agreementId, 'tickets.updated', ticketPayload);
     }
-
-    const messageMetadata =
-      message.metadata && typeof message.metadata === 'object'
-        ? (message.metadata as Record<string, unknown>)
-        : {};
-    const eventMetadata =
-      messageMetadata.eventMetadata && typeof messageMetadata.eventMetadata === 'object'
-        ? (messageMetadata.eventMetadata as Record<string, unknown>)
-        : {};
-    const requestId =
-      typeof eventMetadata.requestId === 'string' && eventMetadata.requestId.trim().length > 0
-        ? eventMetadata.requestId
-        : null;
 
     logger.info('🎯 LeadEngine • WhatsApp :: 🔔 Eventos realtime propagados', {
       requestId,
@@ -1262,6 +1276,7 @@ const processStandardInboundEvent = async (
       instanceId,
       message: persistedMessage,
       providerMessageId,
+      emitTicketRealtimeEvents: false,
     });
 
     let inboundLeadId: string | null = null;
