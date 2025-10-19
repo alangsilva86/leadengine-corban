@@ -21,6 +21,14 @@ import {
 } from '@/components/ui/form.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select.jsx';
+import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.js';
 
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 
@@ -32,7 +40,33 @@ const ManualConversationDialog = ({
   isSubmitting = false,
 }) => {
   const phoneInputRef = useRef(null);
-  const defaultValues = useMemo(() => ({ phone: '', message: '' }), []);
+  const { instances = [] } = useWhatsAppInstances({});
+  const availableInstances = useMemo(
+    () =>
+      Array.isArray(instances)
+        ? instances.filter((instance) => {
+            if (!instance || typeof instance.id !== 'string' || instance.id.trim().length === 0) {
+              return false;
+            }
+            if (instance.connected === true) {
+              return true;
+            }
+            if (typeof instance.status === 'string') {
+              return instance.status.toLowerCase() === 'connected';
+            }
+            return false;
+          })
+        : [],
+    [instances]
+  );
+  const defaultValues = useMemo(
+    () => ({
+      phone: '',
+      message: '',
+      instanceId: '',
+    }),
+    []
+  );
   const form = useForm({
     defaultValues,
   });
@@ -56,6 +90,7 @@ const ManualConversationDialog = ({
   const handleSubmit = form.handleSubmit(async (values) => {
     const digits = sanitizePhone(values.phone);
     const message = typeof values.message === 'string' ? values.message.trim() : '';
+    const instanceId = typeof values.instanceId === 'string' ? values.instanceId.trim() : '';
 
     let hasError = false;
 
@@ -75,11 +110,20 @@ const ManualConversationDialog = ({
       hasError = true;
     }
 
+    if (!instanceId) {
+      const errorMessage = 'Selecione uma instância conectada.';
+      form.setError('instanceId', { type: 'manual', message: errorMessage });
+      if (!hasError) {
+        toast.error(errorMessage);
+      }
+      hasError = true;
+    }
+
     if (hasError) {
       return;
     }
 
-    const payload = { phone: digits, message };
+    const payload = { phone: digits, message, instanceId };
 
     try {
       const result = await onSubmit?.(payload);
@@ -156,6 +200,46 @@ const ManualConversationDialog = ({
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="instanceId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
+                    Instância do WhatsApp
+                  </FormLabel>
+                  <Select
+                    disabled={isProcessing || availableInstances.length === 0}
+                    onValueChange={field.onChange}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="h-9 w-full rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
+                        <SelectValue placeholder="Selecione a instância conectada" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
+                      {availableInstances.map((instance) => {
+                        const identifier = instance.id.trim();
+                        const label =
+                          typeof instance.name === 'string' && instance.name.trim().length > 0
+                            ? instance.name.trim()
+                            : typeof instance.displayId === 'string' && instance.displayId.trim().length > 0
+                              ? instance.displayId.trim()
+                              : identifier;
+                        return (
+                          <SelectItem key={identifier} value={identifier}>
+                            {label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {rootError ? <p className="text-sm font-medium text-destructive">{rootError}</p> : null}
 
             <DialogFooter>
@@ -171,7 +255,7 @@ const ManualConversationDialog = ({
               <Button
                 type="submit"
                 className="rounded-xl bg-success px-4 text-xs font-semibold uppercase tracking-[0.28em] text-success-foreground shadow-[var(--shadow-md)] transition hover:bg-success/90 disabled:opacity-70"
-                disabled={isProcessing}
+                disabled={isProcessing || availableInstances.length === 0}
               >
                 Iniciar conversa
               </Button>
