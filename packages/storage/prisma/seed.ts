@@ -129,52 +129,393 @@ async function main() {
     },
   });
 
-  // Criar contatos demo
-  const contact1 = await prisma.contact.upsert({
-    where: {
-      tenantId_phone: {
-        tenantId: demoTenant.id,
-        phone: '+5562999887766'
-      }
-    },
-    update: {},
-    create: {
-      tenantId: demoTenant.id,
-      name: 'Maria Helena Souza',
-      phone: '+5562999887766',
-      email: 'maria.helena@email.com',
-      document: '09941751919',
-      tags: ['lead', 'whatsapp'],
-      customFields: {
-        cidade: 'Goiânia',
-        estado: 'GO',
+  // Criar tags base para contatos
+  const tagDefinitions = [
+    { name: 'whatsapp', color: '#22C55E', description: 'Contato que interage via WhatsApp' },
+    { name: 'passthrough', color: '#6366F1', description: 'Criado automaticamente pelo modo passthrough' },
+    { name: 'lead', color: '#F97316', description: 'Contato classificado como lead ativo' },
+    { name: 'sms', color: '#3B82F6', description: 'Contato que prefere SMS' },
+  ];
+
+  const tagRecords = await Promise.all(
+    tagDefinitions.map((definition) =>
+      prisma.tag.upsert({
+        where: {
+          tenantId_name: {
+            tenantId: demoTenant.id,
+            name: definition.name,
+          },
+        },
+        update: {
+          color: definition.color,
+          description: definition.description,
+        },
+        create: {
+          tenantId: demoTenant.id,
+          name: definition.name,
+          color: definition.color,
+          description: definition.description,
+        },
+      })
+    )
+  );
+
+  const tagsByName = Object.fromEntries(tagRecords.map((tag) => [tag.name, tag]));
+
+  // Criar contatos demo com relacionamentos completos
+  const contact1 = await prisma.$transaction(async (tx) => {
+    const baseDate = new Date();
+    const contact = await tx.contact.upsert({
+      where: {
+        tenantId_primaryPhone: {
+          tenantId: demoTenant.id,
+          primaryPhone: '+5562999887766',
+        },
       },
-    },
+      update: {
+        fullName: 'Maria Helena Souza',
+        displayName: 'Maria Helena',
+        primaryPhone: '+5562999887766',
+        primaryEmail: 'maria.helena@email.com',
+        document: '09941751919',
+        status: 'ACTIVE',
+        lifecycleStage: 'CUSTOMER',
+        ownerId: agentUser.id,
+        lastInteractionAt: baseDate,
+        lastActivityAt: baseDate,
+        customFields: {
+          cidade: 'Goiânia',
+          estado: 'GO',
+        },
+        metadata: {
+          seed: true,
+          channel: 'whatsapp',
+        },
+        notes: 'Cliente estratégico atendido pelo agente demo.',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        fullName: 'Maria Helena Souza',
+        displayName: 'Maria Helena',
+        primaryPhone: '+5562999887766',
+        primaryEmail: 'maria.helena@email.com',
+        document: '09941751919',
+        status: 'ACTIVE',
+        lifecycleStage: 'LEAD',
+        source: 'CAMPAIGN',
+        ownerId: agentUser.id,
+        isVip: true,
+        lastInteractionAt: baseDate,
+        lastActivityAt: baseDate,
+        customFields: {
+          cidade: 'Goiânia',
+          estado: 'GO',
+        },
+        metadata: {
+          seed: true,
+          channel: 'whatsapp',
+        },
+        notes: 'Contato importado da campanha SAEC Goiânia.',
+      },
+    });
+
+    await tx.contactPhone.upsert({
+      where: {
+        tenantId_phoneNumber: {
+          tenantId: demoTenant.id,
+          phoneNumber: '+5562999887766',
+        },
+      },
+      update: {
+        contactId: contact.id,
+        isPrimary: true,
+        label: 'Celular principal',
+        type: 'MOBILE',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        phoneNumber: '+5562999887766',
+        label: 'Celular principal',
+        type: 'MOBILE',
+        isPrimary: true,
+      },
+    });
+
+    await tx.contactPhone.upsert({
+      where: {
+        tenantId_phoneNumber: {
+          tenantId: demoTenant.id,
+          phoneNumber: '+5562999123456',
+        },
+      },
+      update: {
+        contactId: contact.id,
+        isPrimary: false,
+        label: 'Telefone residencial',
+        type: 'HOME',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        phoneNumber: '+5562999123456',
+        label: 'Telefone residencial',
+        type: 'HOME',
+        isPrimary: false,
+      },
+    });
+
+    await tx.contactEmail.upsert({
+      where: {
+        tenantId_email: {
+          tenantId: demoTenant.id,
+          email: 'maria.helena@email.com',
+        },
+      },
+      update: {
+        contactId: contact.id,
+        isPrimary: true,
+        label: 'E-mail corporativo',
+        type: 'WORK',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        email: 'maria.helena@email.com',
+        label: 'E-mail corporativo',
+        type: 'WORK',
+        isPrimary: true,
+      },
+    });
+
+    await Promise.all(
+      ['lead', 'whatsapp', 'passthrough'].map((tagName) =>
+        tx.contactTag.upsert({
+          where: {
+            contactId_tagId: {
+              contactId: contact.id,
+              tagId: tagsByName[tagName].id,
+            },
+          },
+          update: {
+            addedAt: baseDate,
+            addedById: agentUser.id,
+          },
+          create: {
+            tenantId: demoTenant.id,
+            contactId: contact.id,
+            tagId: tagsByName[tagName].id,
+            addedAt: baseDate,
+            addedById: agentUser.id,
+          },
+        })
+      )
+    );
+
+    await tx.interaction.create({
+      data: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        userId: agentUser.id,
+        type: 'MESSAGE',
+        direction: 'INBOUND',
+        channel: 'WHATSAPP',
+        subject: 'Primeiro contato via WhatsApp',
+        content: 'Contato respondeu positivamente à campanha SAEC Goiânia.',
+        metadata: {
+          seed: true,
+          campaign: 'saec-goiania',
+        },
+        occurredAt: new Date(baseDate.getTime() - 60 * 60 * 1000),
+      },
+    });
+
+    await tx.task.create({
+      data: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        createdById: agentUser.id,
+        assigneeId: agentUser.id,
+        type: 'FOLLOW_UP',
+        status: 'OPEN',
+        priority: 'HIGH',
+        title: 'Agendar retorno com Maria Helena',
+        description: 'Confirmar documentação pendente e enviar proposta atualizada.',
+        dueAt: new Date(baseDate.getTime() + 2 * 60 * 60 * 1000),
+        metadata: {
+          seed: true,
+        },
+      },
+    });
+
+    return contact;
   });
 
-  const contact2 = await prisma.contact.upsert({
-    where: {
-      tenantId_phone: {
-        tenantId: demoTenant.id,
-        phone: '+5562999776655'
-      }
-    },
-    update: {},
-    create: {
-      tenantId: demoTenant.id,
-      name: 'Carlos Henrique Lima',
-      phone: '+5562999776655',
-      email: 'carlos.henrique@email.com',
-      document: '82477214500',
-      tags: ['lead', 'sms'],
-      customFields: {
-        cidade: 'Goiânia',
-        estado: 'GO',
+  const contact2 = await prisma.$transaction(async (tx) => {
+    const baseDate = new Date();
+    const contact = await tx.contact.upsert({
+      where: {
+        tenantId_primaryPhone: {
+          tenantId: demoTenant.id,
+          primaryPhone: '+5562999776655',
+        },
       },
-    },
+      update: {
+        fullName: 'Carlos Henrique Lima',
+        displayName: 'Carlos Henrique',
+        primaryPhone: '+5562999776655',
+        primaryEmail: 'carlos.henrique@email.com',
+        document: '82477214500',
+        status: 'ACTIVE',
+        lifecycleStage: 'PROSPECT',
+        ownerId: agentUser.id,
+        lastInteractionAt: baseDate,
+        lastActivityAt: baseDate,
+        customFields: {
+          cidade: 'Goiânia',
+          estado: 'GO',
+        },
+        metadata: {
+          seed: true,
+          channel: 'sms',
+        },
+        notes: 'Preferência por comunicação via SMS.',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        fullName: 'Carlos Henrique Lima',
+        displayName: 'Carlos Henrique',
+        primaryPhone: '+5562999776655',
+        primaryEmail: 'carlos.henrique@email.com',
+        document: '82477214500',
+        status: 'ACTIVE',
+        lifecycleStage: 'LEAD',
+        source: 'CAMPAIGN',
+        ownerId: agentUser.id,
+        lastInteractionAt: baseDate,
+        lastActivityAt: baseDate,
+        customFields: {
+          cidade: 'Goiânia',
+          estado: 'GO',
+        },
+        metadata: {
+          seed: true,
+          channel: 'sms',
+        },
+        notes: 'Contato interessado em conhecer ofertas de consignado.',
+      },
+    });
+
+    await tx.contactPhone.upsert({
+      where: {
+        tenantId_phoneNumber: {
+          tenantId: demoTenant.id,
+          phoneNumber: '+5562999776655',
+        },
+      },
+      update: {
+        contactId: contact.id,
+        isPrimary: true,
+        label: 'Celular principal',
+        type: 'MOBILE',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        phoneNumber: '+5562999776655',
+        label: 'Celular principal',
+        type: 'MOBILE',
+        isPrimary: true,
+      },
+    });
+
+    await tx.contactEmail.upsert({
+      where: {
+        tenantId_email: {
+          tenantId: demoTenant.id,
+          email: 'carlos.henrique@email.com',
+        },
+      },
+      update: {
+        contactId: contact.id,
+        isPrimary: true,
+        label: 'E-mail pessoal',
+        type: 'PERSONAL',
+      },
+      create: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        email: 'carlos.henrique@email.com',
+        label: 'E-mail pessoal',
+        type: 'PERSONAL',
+        isPrimary: true,
+      },
+    });
+
+    await Promise.all(
+      ['lead', 'sms'].map((tagName) =>
+        tx.contactTag.upsert({
+          where: {
+            contactId_tagId: {
+              contactId: contact.id,
+              tagId: tagsByName[tagName].id,
+            },
+          },
+          update: {
+            addedAt: baseDate,
+            addedById: agentUser.id,
+          },
+          create: {
+            tenantId: demoTenant.id,
+            contactId: contact.id,
+            tagId: tagsByName[tagName].id,
+            addedAt: baseDate,
+            addedById: agentUser.id,
+          },
+        })
+      )
+    );
+
+    await tx.interaction.create({
+      data: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        userId: agentUser.id,
+        type: 'CALL',
+        direction: 'OUTBOUND',
+        channel: 'PHONE',
+        subject: 'Ligação de apresentação',
+        content: 'Agente realizou ligação para apresentar oferta personalizada.',
+        metadata: {
+          seed: true,
+          outcome: 'sem-resposta',
+        },
+        occurredAt: new Date(baseDate.getTime() - 30 * 60 * 1000),
+      },
+    });
+
+    await tx.task.create({
+      data: {
+        tenantId: demoTenant.id,
+        contactId: contact.id,
+        createdById: agentUser.id,
+        assigneeId: agentUser.id,
+        type: 'CALL',
+        status: 'IN_PROGRESS',
+        priority: 'NORMAL',
+        title: 'Retornar ligação para Carlos Henrique',
+        description: 'Reagendar contato para confirmar interesse e enviar proposta.',
+        dueAt: new Date(baseDate.getTime() + 24 * 60 * 60 * 1000),
+        metadata: {
+          seed: true,
+        },
+      },
+    });
+
+    return contact;
   });
 
-  console.log('✅ Contatos demo criados');
+  console.log('✅ Contatos demo criados com relacionamentos enriquecidos');
 
   // Criar instância WhatsApp demo
   const demoInstance = await prisma.whatsAppInstance.upsert({

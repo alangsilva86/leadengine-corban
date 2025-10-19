@@ -6,6 +6,17 @@ export type ChannelType = $Enums.ChannelType;
 export type MessageStatus = $Enums.MessageStatus;
 export type MessageType = $Enums.MessageType | 'TEMPLATE';
 export type MessageDirection = $Enums.MessageDirection;
+export type ContactStatus = $Enums.ContactStatus;
+export type ContactLifecycleStage = $Enums.ContactLifecycleStage;
+export type ContactSource = $Enums.ContactSource;
+export type ContactPhoneType = $Enums.ContactPhoneType;
+export type ContactEmailType = $Enums.ContactEmailType;
+export type InteractionType = $Enums.InteractionType;
+export type InteractionDirection = $Enums.InteractionDirection;
+export type InteractionChannel = $Enums.InteractionChannel;
+export type TaskType = $Enums.TaskType;
+export type TaskStatus = $Enums.TaskStatus;
+export type TaskPriority = $Enums.TaskPriority;
 
 export type SortOrder = 'asc' | 'desc';
 
@@ -135,19 +146,125 @@ export interface Message {
   updatedAt: Date;
 }
 
-export interface Contact {
+export interface Tag {
   id: string;
   tenantId: string;
   name: string;
+  color?: string | undefined;
+  description?: string | undefined;
+  isSystem: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ContactPhone {
+  id: string;
+  tenantId: string;
+  contactId: string;
+  phoneNumber: string;
+  type?: ContactPhoneType | undefined;
+  label?: string | undefined;
+  waId?: string | undefined;
+  isPrimary: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ContactEmail {
+  id: string;
+  tenantId: string;
+  contactId: string;
+  email: string;
+  type?: ContactEmailType | undefined;
+  label?: string | undefined;
+  isPrimary: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ContactTag {
+  id: string;
+  tenantId: string;
+  contactId: string;
+  tagId: string;
+  addedById?: string | undefined;
+  addedAt: Date;
+  tag: Tag;
+}
+
+export interface Interaction {
+  id: string;
+  tenantId: string;
+  contactId: string;
+  userId?: string | undefined;
+  type: InteractionType;
+  direction: InteractionDirection;
+  channel?: InteractionChannel | undefined;
+  subject?: string | undefined;
+  content?: string | undefined;
+  metadata: Record<string, unknown>;
+  occurredAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Task {
+  id: string;
+  tenantId: string;
+  contactId: string;
+  createdById?: string | undefined;
+  assigneeId?: string | undefined;
+  type: TaskType;
+  status: TaskStatus;
+  priority: TaskPriority;
+  title: string;
+  description?: string | undefined;
+  dueAt?: Date | undefined;
+  completedAt?: Date | undefined;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Contact {
+  id: string;
+  tenantId: string;
+  fullName: string;
+  name: string;
+  displayName?: string | undefined;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+  organization?: string | undefined;
+  jobTitle?: string | undefined;
+  department?: string | undefined;
   phone?: string | undefined;
   email?: string | undefined;
+  primaryPhone?: string | undefined;
+  primaryEmail?: string | undefined;
   document?: string | undefined;
   avatar?: string | undefined;
+  status: ContactStatus;
+  lifecycleStage: ContactLifecycleStage;
+  source: ContactSource;
+  ownerId?: string | undefined;
   isBlocked: boolean;
-  tags: string[];
-  customFields: Record<string, unknown>;
+  isVip: boolean;
+  timezone?: string | undefined;
+  locale?: string | undefined;
+  birthDate?: Date | undefined;
   lastInteractionAt?: Date | undefined;
+  lastActivityAt?: Date | undefined;
   notes?: string | undefined;
+  customFields: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  tags: string[];
+  tagAssignments: ContactTag[];
+  phones: string[];
+  phoneDetails: ContactPhone[];
+  emails: string[];
+  emailDetails: ContactEmail[];
+  interactions: Interaction[];
+  tasks: Task[];
   createdAt: Date;
   updatedAt: Date;
 }

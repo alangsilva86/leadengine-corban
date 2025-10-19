@@ -4,11 +4,21 @@ import {
   type Message as PrismaMessage,
   type Ticket as PrismaTicket,
   type Contact as PrismaContact,
+  type ContactPhone as PrismaContactPhone,
+  type ContactEmail as PrismaContactEmail,
+  type ContactTag as PrismaContactTag,
+  type Tag as PrismaTag,
+  type Interaction as PrismaInteraction,
+  type Task as PrismaTask,
   type Queue as PrismaQueue,
 } from '@prisma/client';
 import type {
   Contact,
+  ContactEmail,
+  ContactPhone,
+  ContactTag,
   CreateTicketDTO,
+  Interaction,
   Message,
   MessageType,
   MessageFilters,
@@ -16,6 +26,8 @@ import type {
   PaginatedResult,
   SendMessageDTO,
   SortOrder,
+  Tag,
+  Task,
   Ticket,
   TicketFilters,
   TicketStatus,
@@ -69,6 +81,22 @@ type UpsertPassthroughMessageInput = {
   timestamp?: number | string | Date | null;
 };
 
+type PrismaContactWithRelations = PrismaContact & {
+  phones: PrismaContactPhone[];
+  emails: PrismaContactEmail[];
+  tags: Array<PrismaContactTag & { tag: PrismaTag }>;
+  interactions: PrismaInteraction[];
+  tasks: PrismaTask[];
+};
+
+const CONTACT_INCLUDE = {
+  phones: true,
+  emails: true,
+  tags: { include: { tag: true } },
+  interactions: true,
+  tasks: true,
+} satisfies Prisma.ContactInclude;
+
 const mapPrismaMessageTypeToDomain = (
   type: PrismaMessageType
 ): MessageType => {
@@ -121,6 +149,94 @@ const defaultPagination = (pagination: Pagination): NormalizedPagination => ({
   sortOrder: pagination.sortOrder ?? 'desc',
 });
 
+const mapTagRecord = (record: PrismaTag): Tag => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  name: record.name,
+  color: record.color ?? undefined,
+  description: record.description ?? undefined,
+  isSystem: record.isSystem,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const mapContactPhoneRecord = (record: PrismaContactPhone): ContactPhone => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  phoneNumber: record.phoneNumber,
+  type: record.type ?? undefined,
+  label: record.label ?? undefined,
+  waId: record.waId ?? undefined,
+  isPrimary: record.isPrimary,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const mapContactEmailRecord = (record: PrismaContactEmail): ContactEmail => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  email: record.email,
+  type: record.type ?? undefined,
+  label: record.label ?? undefined,
+  isPrimary: record.isPrimary,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const mapContactTagRecord = (
+  record: PrismaContactTag & { tag: PrismaTag | null }
+): ContactTag | null => {
+  if (!record.tag) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    tenantId: record.tenantId,
+    contactId: record.contactId,
+    tagId: record.tagId,
+    addedById: record.addedById ?? undefined,
+    addedAt: record.addedAt,
+    tag: mapTagRecord(record.tag),
+  } satisfies ContactTag;
+};
+
+const mapInteractionRecord = (record: PrismaInteraction): Interaction => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  userId: record.userId ?? undefined,
+  type: record.type,
+  direction: record.direction,
+  channel: record.channel ?? undefined,
+  subject: record.subject ?? undefined,
+  content: record.content ?? undefined,
+  metadata: asRecord(record.metadata) ?? {},
+  occurredAt: record.occurredAt,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const mapTaskRecord = (record: PrismaTask): Task => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  createdById: record.createdById ?? undefined,
+  assigneeId: record.assigneeId ?? undefined,
+  type: record.type,
+  status: record.status,
+  priority: record.priority,
+  title: record.title,
+  description: record.description ?? undefined,
+  dueAt: record.dueAt ?? undefined,
+  completedAt: record.completedAt ?? undefined,
+  metadata: asRecord(record.metadata) ?? {},
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
 const mapTicket = (record: PrismaTicket): Ticket => ({
   id: record.id,
   tenantId: record.tenantId,
@@ -142,22 +258,56 @@ const mapTicket = (record: PrismaTicket): Ticket => ({
   updatedAt: record.updatedAt,
 });
 
-const mapContact = (record: PrismaContact): Contact => ({
-  id: record.id,
-  tenantId: record.tenantId,
-  name: record.name,
-  phone: record.phone ?? undefined,
-  email: record.email ?? undefined,
-  document: record.document ?? undefined,
-  avatar: record.avatar ?? undefined,
-  isBlocked: record.isBlocked,
-  tags: [...record.tags],
-  customFields: (record.customFields as Record<string, unknown>) ?? {},
-  lastInteractionAt: record.lastInteractionAt ?? undefined,
-  notes: record.notes ?? undefined,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
-});
+const mapContact = (record: PrismaContactWithRelations): Contact => {
+  const phoneDetails = record.phones.map(mapContactPhoneRecord);
+  const emailDetails = record.emails.map(mapContactEmailRecord);
+  const tagAssignments = record.tags
+    .map(mapContactTagRecord)
+    .filter((value): value is ContactTag => value !== null);
+
+  return {
+    id: record.id,
+    tenantId: record.tenantId,
+    fullName: record.fullName,
+    name: record.fullName,
+    displayName: record.displayName ?? undefined,
+    firstName: record.firstName ?? undefined,
+    lastName: record.lastName ?? undefined,
+    organization: record.organization ?? undefined,
+    jobTitle: record.jobTitle ?? undefined,
+    department: record.department ?? undefined,
+    phone: record.primaryPhone ?? undefined,
+    email: record.primaryEmail ?? undefined,
+    primaryPhone: record.primaryPhone ?? undefined,
+    primaryEmail: record.primaryEmail ?? undefined,
+    document: record.document ?? undefined,
+    avatar: record.avatar ?? undefined,
+    status: record.status,
+    lifecycleStage: record.lifecycleStage,
+    source: record.source,
+    ownerId: record.ownerId ?? undefined,
+    isBlocked: record.isBlocked,
+    isVip: record.isVip,
+    timezone: record.timezone ?? undefined,
+    locale: record.locale ?? undefined,
+    birthDate: record.birthDate ?? undefined,
+    lastInteractionAt: record.lastInteractionAt ?? undefined,
+    lastActivityAt: record.lastActivityAt ?? undefined,
+    notes: record.notes ?? undefined,
+    customFields: asRecord(record.customFields) ?? {},
+    metadata: asRecord(record.metadata) ?? {},
+    tags: tagAssignments.map((assignment) => assignment.tag.name),
+    tagAssignments,
+    phones: phoneDetails.map((phone) => phone.phoneNumber),
+    phoneDetails,
+    emails: emailDetails.map((email) => email.email),
+    emailDetails,
+    interactions: record.interactions.map(mapInteractionRecord),
+    tasks: record.tasks.map(mapTaskRecord),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  } satisfies Contact;
+};
 
 const mapMessage = (record: PrismaMessage): Message => ({
   id: record.id,
@@ -1038,28 +1188,110 @@ export const findOrCreateOpenTicketByChat = async (
   const displayName = input.displayName && input.displayName.trim().length > 0 ? input.displayName.trim() : normalizedChatId;
   const phone = input.phone && input.phone.trim().length > 0 ? input.phone.trim() : normalizedChatId;
 
-  const contactRecord = await prisma.contact.upsert({
-    where: {
-      tenantId_phone: {
+  const contactRecord = await prisma.$transaction(async (tx) => {
+    const contact = await tx.contact.upsert({
+      where: {
+        tenantId_primaryPhone: {
+          tenantId: input.tenantId,
+          primaryPhone: phone,
+        },
+      },
+      update: {
+        fullName: displayName,
+        displayName,
+        primaryPhone: phone,
+        lastInteractionAt: now,
+        lastActivityAt: now,
+      },
+      create: {
         tenantId: input.tenantId,
-        phone,
+        fullName: displayName,
+        displayName,
+        primaryPhone: phone,
+        status: 'ACTIVE',
+        source: 'CHAT',
+        lastInteractionAt: now,
+        lastActivityAt: now,
+        customFields: {
+          passthroughChatId: normalizedChatId,
+        },
+        metadata: {
+          passthrough: true,
+          chatId: normalizedChatId,
+        },
       },
-    },
-    update: {
-      name: displayName,
-      phone,
-      lastInteractionAt: now,
-    },
-    create: {
-      tenantId: input.tenantId,
-      name: displayName,
-      phone,
-      tags: ['whatsapp', 'passthrough'],
-      lastInteractionAt: now,
-      customFields: {
-        passthroughChatId: normalizedChatId,
-      },
-    },
+    });
+
+    if (phone) {
+      await tx.contactPhone.upsert({
+        where: {
+          tenantId_phoneNumber: {
+            tenantId: input.tenantId,
+            phoneNumber: phone,
+          },
+        },
+        update: {
+          contactId: contact.id,
+          isPrimary: true,
+        },
+        create: {
+          tenantId: input.tenantId,
+          contactId: contact.id,
+          phoneNumber: phone,
+          type: 'MOBILE',
+          label: 'WhatsApp',
+          isPrimary: true,
+        },
+      });
+    }
+
+    const tagNames = ['whatsapp', 'passthrough'];
+    const tags = await Promise.all(
+      tagNames.map((tagName) =>
+        tx.tag.upsert({
+          where: {
+            tenantId_name: {
+              tenantId: input.tenantId,
+              name: tagName,
+            },
+          },
+          update: {},
+          create: {
+            tenantId: input.tenantId,
+            name: tagName,
+          },
+        })
+      )
+    );
+
+    await Promise.all(
+      tags.map((tag) =>
+        tx.contactTag.upsert({
+          where: {
+            contactId_tagId: {
+              contactId: contact.id,
+              tagId: tag.id,
+            },
+          },
+          update: {
+            addedAt: now,
+          },
+          create: {
+            tenantId: input.tenantId,
+            contactId: contact.id,
+            tagId: tag.id,
+            addedAt: now,
+          },
+        })
+      )
+    );
+
+    const contactWithRelations = await tx.contact.findUniqueOrThrow({
+      where: { id: contact.id },
+      include: CONTACT_INCLUDE,
+    });
+
+    return contactWithRelations as PrismaContactWithRelations;
   });
 
   let wasCreated = false;
