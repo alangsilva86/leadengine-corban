@@ -150,6 +150,7 @@ const mapContact = (record: PrismaContact): Contact => ({
   email: record.email ?? undefined,
   document: record.document ?? undefined,
   avatar: record.avatar ?? undefined,
+  status: record.status,
   isBlocked: record.isBlocked,
   tags: [...record.tags],
   customFields: (record.customFields as Record<string, unknown>) ?? {},

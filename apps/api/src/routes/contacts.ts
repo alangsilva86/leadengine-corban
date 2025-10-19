@@ -1,161 +1,208 @@
-import { Router, Request, Response } from 'express';
-import { body, query } from 'express-validator';
-import { asyncHandler } from '../middleware/error-handler';
-import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
-import { validateRequest } from '../middleware/validation';
-import { prisma } from '../lib/prisma';
-import { ConflictError, ValidationError } from '@ticketz/core';
+import { Router, type Request, type Response } from 'express';
+import { ZodError, z } from 'zod';
+
 import {
-  buildPaginatedResponse,
-  buildPaginationValidators,
-  parsePaginationParams,
-} from '../utils/pagination';
+  BulkContactsActionSchema,
+  ContactStatusSchema,
+  ContactTaskStatusSchema,
+  CreateContactInteractionPayloadSchema,
+  CreateContactPayloadSchema,
+  CreateContactTaskPayloadSchema,
+  MergeContactsDTOSchema,
+  UpdateContactPayloadSchema,
+  UpdateContactTaskPayloadSchema,
+  WhatsappActionPayloadSchema,
+} from '@ticketz/core';
+import { normalizePayload } from '@ticketz/contracts';
+import {
+  applyBulkContactsAction,
+  createContact,
+  createContactTask,
+  findContactsByIds,
+  getContactById,
+  listContactInteractions,
+  listContactTags,
+  listContactTasks,
+  listContacts,
+  logContactInteraction,
+  mergeContacts,
+  updateContact,
+  updateContactTask,
+} from '@ticketz/storage';
 
-const paginationValidation = [
-  ...buildPaginationValidators(),
-  query('search').optional().isString(),
-];
+import { asyncHandler } from '../middleware/error-handler';
+import { requireTenant } from '../middleware/auth';
+import { respondWithValidationError } from '../utils/http-validation';
+import { sendToContact } from '../services/ticket-service';
+import { ConflictError, NotFoundError } from '@ticketz/core';
 
-const createContactValidation = [
-  body('name').isString().isLength({ min: 1 }).withMessage('name is required'),
-  body('phone').optional().isString(),
-  body('email').optional().isEmail().withMessage('email must be valid'),
-  body('document').optional().isString(),
-  body('tags').optional().isArray().withMessage('tags must be an array'),
-  body('customFields').optional().isObject().withMessage('customFields must be an object'),
-];
+const router = Router();
+const tasksRouter = Router();
 
-const isPrismaKnownError = (error: unknown): error is { code?: string; meta?: Record<string, unknown> } =>
-  typeof error === 'object' && error !== null;
-
-const parseTags = (value: unknown): string[] | undefined => {
-  if (value === undefined) {
-    return undefined;
+const TagsParamSchema = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    const tags = value
+      .map((item) => (typeof item === 'string' ? item : String(item)))
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return tags.length ? tags : undefined;
   }
 
-  if (!Array.isArray(value)) {
-    throw new ValidationError('tags must be an array of strings');
+  if (typeof value === 'string') {
+    const tags = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return tags.length ? tags : undefined;
   }
 
-  const tags = value.map((item) => String(item).trim()).filter(Boolean);
+  return undefined;
+}, z.array(z.string()).optional());
 
-  return tags.length > 0 ? tags : undefined;
+const StatusParamSchema = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.split(',').map((item) => item.trim());
+  }
+
+  return undefined;
+}, z.array(ContactStatusSchema).optional());
+
+const DateParamSchema = z.preprocess((value) => {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}, z.date().optional());
+
+const BooleanParamSchema = z.preprocess((value) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') {
+      return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+
+  return undefined;
+}, z.boolean().optional());
+
+const PaginationQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
+  sortBy: z.string().optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional(),
+});
+
+const ListContactsQuerySchema = PaginationQuerySchema.extend({
+  search: z.string().optional(),
+  status: StatusParamSchema,
+  tags: TagsParamSchema,
+  lastInteractionFrom: DateParamSchema,
+  lastInteractionTo: DateParamSchema,
+  hasOpenTickets: BooleanParamSchema,
+});
+
+const TaskStatusParamSchema = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.split(',').map((item) => item.trim());
+  }
+
+  return undefined;
+}, z.array(ContactTaskStatusSchema).optional());
+
+const ListContactTasksQuerySchema = PaginationQuerySchema.extend({
+  status: TaskStatusParamSchema,
+});
+
+const ContactIdParamSchema = z.object({ contactId: z.string().uuid() });
+const TaskIdParamSchema = z.object({ taskId: z.string().uuid() });
+
+const parseOrRespond = <T>(schema: z.ZodSchema<T>, payload: unknown, res: Response): T | null => {
+  try {
+    return schema.parse(payload);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      respondWithValidationError(res, error.issues);
+      return null;
+    }
+    throw error;
+  }
 };
 
-const router: Router = Router();
-
-// GET /api/contacts - Listar contatos
 router.get(
   '/',
-  paginationValidation,
-  validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
-    const { page, limit, skip } = parsePaginationParams(req.query as Record<string, unknown>);
-    const { search, phone } = req.query as Partial<{ search: string; phone: string }>;
-
-    const normalizedPhone = typeof phone === 'string' && phone.trim().length > 0 ? phone.trim() : undefined;
-
-    if (normalizedPhone) {
-      const contact = await prisma.contact.findFirst({
-        where: {
-          tenantId,
-          phone: normalizedPhone,
-        },
-      });
-
-      res.json({
-        success: true,
-        data: {
-          items: contact ? [contact] : [],
-          total: contact ? 1 : 0,
-          page: 1,
-          limit: 1,
-          totalPages: contact ? 1 : 0,
-          hasNext: false,
-          hasPrev: false,
-        },
-      });
+    const query = parseOrRespond(ListContactsQuerySchema, req.query, res);
+    if (!query) {
       return;
     }
 
-    const searchTerm = typeof search === 'string' && search.trim().length > 0 ? search.trim() : undefined;
+    const tenantId = req.user!.tenantId;
+    const { page, limit, sortBy, sortOrder, search, status, tags, lastInteractionFrom, lastInteractionTo, hasOpenTickets } =
+      query;
 
-    const where = {
+    const response = await listContacts(
       tenantId,
-      ...(searchTerm
-        ? {
-            OR: [
-              { name: { contains: searchTerm, mode: 'insensitive' as const } },
-              { email: { contains: searchTerm, mode: 'insensitive' as const } },
-              { phone: { contains: searchTerm, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
-    };
+      { page, limit, sortBy, sortOrder },
+      {
+        search: search?.trim() ? search.trim() : undefined,
+        status: status && status.length ? status : undefined,
+        tags,
+        lastInteractionFrom,
+        lastInteractionTo,
+        hasOpenTickets,
+      }
+    );
 
-    const [items, total] = await Promise.all([
-      prisma.contact.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.contact.count({ where }),
-    ]);
-
-    res.json({
-      success: true,
-      data: buildPaginatedResponse({ items, total, page, limit }),
-    });
+    res.json({ success: true, data: response });
   })
 );
 
-// POST /api/contacts - Criar novo contato
 router.post(
   '/',
-  createContactValidation,
-  validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
-    const tags = parseTags(req.body.tags);
+    const body = parseOrRespond(CreateContactPayloadSchema, req.body, res);
+    if (!body) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
 
     try {
-      const contact = await prisma.contact.create({
-        data: {
-          tenantId,
-          name: req.body.name,
-          phone: typeof req.body.phone === 'string' ? req.body.phone : undefined,
-          email: typeof req.body.email === 'string' ? req.body.email : undefined,
-          document: typeof req.body.document === 'string' ? req.body.document : undefined,
-          avatar: typeof req.body.avatar === 'string' ? req.body.avatar : undefined,
-          isBlocked: typeof req.body.isBlocked === 'boolean' ? req.body.isBlocked : undefined,
-          tags: tags ?? [],
-          customFields:
-            typeof req.body.customFields === 'object' && req.body.customFields !== null
-              ? req.body.customFields
-              : undefined,
-          notes: typeof req.body.notes === 'string' ? req.body.notes : undefined,
-        },
-      });
-
-      res.status(201).json({
-        success: true,
-        data: contact,
-      });
+      const contact = await createContact({ tenantId, payload: body });
+      res.status(201).json({ success: true, data: contact });
     } catch (error) {
-      if (isPrismaKnownError(error) && (error as { code?: string }).code === 'P2002') {
-        throw new ConflictError('Contact already exists for this tenant', {
-          target: (error as { meta?: Record<string, unknown> }).meta?.target,
-        });
+      if (error instanceof ZodError) {
+        respondWithValidationError(res, error.issues);
+        return;
       }
 
-      if (isPrismaKnownError(error) && (error as { code?: string }).code === 'P2003') {
-        throw new ValidationError('Related record not found', {
-          target: (error as { meta?: Record<string, unknown> }).meta?.field_name,
-        });
+      if (error instanceof ConflictError) {
+        throw error;
       }
 
       throw error;
@@ -163,4 +210,245 @@ router.post(
   })
 );
 
-export { router as contactsRouter };
+router.get(
+  '/:contactId',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const contact = await getContactById(tenantId, params.contactId);
+
+    if (!contact) {
+      throw new NotFoundError('Contact', params.contactId);
+    }
+
+    res.json({ success: true, data: contact });
+  })
+);
+
+router.patch(
+  '/:contactId',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const body = parseOrRespond(UpdateContactPayloadSchema, req.body, res);
+    if (!body) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const contact = await updateContact({ tenantId, contactId: params.contactId, payload: body });
+
+    if (!contact) {
+      throw new NotFoundError('Contact', params.contactId);
+    }
+
+    res.json({ success: true, data: contact });
+  })
+);
+
+router.post(
+  '/merge',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const payload = parseOrRespond(MergeContactsDTOSchema.omit({ tenantId: true }), req.body, res);
+    if (!payload) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const result = await mergeContacts({ tenantId, ...payload });
+
+    if (!result) {
+      throw new NotFoundError('Contact', payload.targetId);
+    }
+
+    res.json({ success: true, data: result });
+  })
+);
+
+router.get(
+  '/tags',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const tags = await listContactTags(tenantId);
+    res.json({ success: true, data: tags });
+  })
+);
+
+router.post(
+  '/actions/bulk',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const payload = parseOrRespond(BulkContactsActionSchema.omit({ tenantId: true }), req.body, res);
+    if (!payload) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const contacts = await applyBulkContactsAction({ tenantId, ...payload });
+    res.json({ success: true, data: contacts });
+  })
+);
+
+router.post(
+  '/actions/whatsapp',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const payload = parseOrRespond(WhatsappActionPayloadSchema, req.body, res);
+    if (!payload) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const operatorId = req.user!.id;
+
+    const contacts = await findContactsByIds(tenantId, payload.contactIds);
+
+    if (!contacts.length) {
+      throw new NotFoundError('Contact', payload.contactIds.join(','));
+    }
+
+    const responses = [] as Array<{ contactId: string; status: string }>;
+
+    for (const contact of contacts) {
+      const resolvedText = payload.message?.text ?? payload.template?.name ?? undefined;
+
+      if (!resolvedText) {
+        throw new ConflictError('Whatsapp action requires a message payload.');
+      }
+
+      const normalizedPayload = normalizePayload({
+        type: 'text',
+        text: resolvedText,
+      });
+
+      const response = await sendToContact({
+        tenantId,
+        operatorId,
+        contactId: contact.id,
+        payload: normalizedPayload,
+      });
+
+      responses.push({ contactId: contact.id, status: response.status });
+    }
+
+    res.status(202).json({ success: true, data: { results: responses } });
+  })
+);
+
+router.get(
+  '/:contactId/interactions',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const query = parseOrRespond(PaginationQuerySchema, req.query, res);
+    if (!query) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const result = await listContactInteractions({ tenantId, contactId: params.contactId, ...query });
+    res.json({ success: true, data: result });
+  })
+);
+
+router.post(
+  '/:contactId/interactions',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const body = parseOrRespond(CreateContactInteractionPayloadSchema, req.body, res);
+    if (!body) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const interaction = await logContactInteraction({ tenantId, contactId: params.contactId, payload: body });
+    res.status(201).json({ success: true, data: interaction });
+  })
+);
+
+router.get(
+  '/:contactId/tasks',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const query = parseOrRespond(ListContactTasksQuerySchema, req.query, res);
+    if (!query) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const result = await listContactTasks({ tenantId, contactId: params.contactId, ...query });
+    res.json({ success: true, data: result });
+  })
+);
+
+router.post(
+  '/:contactId/tasks',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const body = parseOrRespond(CreateContactTaskPayloadSchema, req.body, res);
+    if (!body) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const task = await createContactTask({ tenantId, contactId: params.contactId, payload: body });
+    res.status(201).json({ success: true, data: task });
+  })
+);
+
+tasksRouter.patch(
+  '/tasks/:taskId',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const params = parseOrRespond(TaskIdParamSchema, req.params, res);
+    if (!params) {
+      return;
+    }
+
+    const body = parseOrRespond(UpdateContactTaskPayloadSchema, req.body, res);
+    if (!body) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const task = await updateContactTask({ tenantId, taskId: params.taskId, payload: body });
+
+    if (!task) {
+      throw new NotFoundError('Task', params.taskId);
+    }
+
+    res.json({ success: true, data: task });
+  })
+);
+
+export { router as contactsRouter, tasksRouter as contactTasksRouter };

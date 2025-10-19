@@ -143,6 +143,7 @@ export interface Contact {
   email?: string | undefined;
   document?: string | undefined;
   avatar?: string | undefined;
+  status: string;
   isBlocked: boolean;
   tags: string[];
   customFields: Record<string, unknown>;

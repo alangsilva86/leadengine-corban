@@ -1,0 +1,189 @@
+import express, { type RequestHandler } from 'express';
+import request from 'supertest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const listContactsMock = vi.fn();
+const createContactMock = vi.fn();
+const getContactByIdMock = vi.fn();
+const updateContactMock = vi.fn();
+const listContactTagsMock = vi.fn();
+const applyBulkContactsActionMock = vi.fn();
+const findContactsByIdsMock = vi.fn();
+const listContactInteractionsMock = vi.fn();
+const logContactInteractionMock = vi.fn();
+const listContactTasksMock = vi.fn();
+const createContactTaskMock = vi.fn();
+const updateContactTaskMock = vi.fn();
+const mergeContactsMock = vi.fn();
+
+const sendToContactMock = vi.fn();
+
+vi.mock('@ticketz/storage', () => ({
+  listContacts: listContactsMock,
+  createContact: createContactMock,
+  getContactById: getContactByIdMock,
+  updateContact: updateContactMock,
+  listContactTags: listContactTagsMock,
+  applyBulkContactsAction: applyBulkContactsActionMock,
+  findContactsByIds: findContactsByIdsMock,
+  listContactInteractions: listContactInteractionsMock,
+  logContactInteraction: logContactInteractionMock,
+  listContactTasks: listContactTasksMock,
+  createContactTask: createContactTaskMock,
+  updateContactTask: updateContactTaskMock,
+  mergeContacts: mergeContactsMock,
+}));
+
+vi.mock('../../services/ticket-service', () => ({
+  sendToContact: sendToContactMock,
+}));
+
+let contactsRouter: express.Router;
+let contactTasksRouter: express.Router;
+let errorHandler: RequestHandler;
+
+beforeAll(async () => {
+  ({ contactsRouter, contactTasksRouter } = await import('../contacts'));
+  ({ errorHandler } = await import('../../middleware/error-handler'));
+});
+
+const withTenant: RequestHandler = (req, _res, next) => {
+  (req as express.Request & { user?: unknown }).user = {
+    id: 'user-1',
+    tenantId: 'tenant-1',
+    email: 'user@example.com',
+    name: 'User',
+    role: 'ADMIN',
+    isActive: true,
+    permissions: [],
+  };
+  next();
+};
+
+const buildContactsApp = () => {
+  const app = express();
+  app.use(express.json());
+  app.use(withTenant);
+  app.use('/', contactsRouter);
+  app.use(errorHandler as unknown as RequestHandler);
+  return app;
+};
+
+const buildTasksApp = () => {
+  const app = express();
+  app.use(express.json());
+  app.use(withTenant);
+  app.use('/', contactTasksRouter);
+  app.use(errorHandler as unknown as RequestHandler);
+  return app;
+};
+
+describe('Contacts routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listContactsMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+      hasNext: false,
+      hasPrev: false,
+    });
+    createContactMock.mockResolvedValue({ id: 'contact-1' });
+    getContactByIdMock.mockResolvedValue(null);
+    updateContactMock.mockResolvedValue(null);
+    listContactTagsMock.mockResolvedValue([]);
+    applyBulkContactsActionMock.mockResolvedValue([]);
+    findContactsByIdsMock.mockResolvedValue([]);
+    listContactInteractionsMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+      hasNext: false,
+      hasPrev: false,
+    });
+    logContactInteractionMock.mockResolvedValue({ id: 'interaction-1' });
+    listContactTasksMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+      hasNext: false,
+      hasPrev: false,
+    });
+    createContactTaskMock.mockResolvedValue({ id: 'task-1' });
+    updateContactTaskMock.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
+    mergeContactsMock.mockResolvedValue({ id: 'contact-1' });
+    sendToContactMock.mockResolvedValue({ status: 'ENQUEUED' });
+  });
+
+  it('lists contacts with tenant filters applied', async () => {
+    const app = buildContactsApp();
+    await request(app).get('/?page=2&limit=5&status=ACTIVE&tags=vip').expect(200);
+
+    expect(listContactsMock).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ page: 2, limit: 5 }),
+      expect.objectContaining({ status: ['ACTIVE'], tags: ['vip'] })
+    );
+  });
+
+  it('returns 404 when contact is not found', async () => {
+    const app = buildContactsApp();
+    getContactByIdMock.mockResolvedValueOnce(null);
+
+    const response = await request(app).get('/11111111-1111-1111-1111-111111111111');
+    expect(response.status).toBe(404);
+  });
+
+  it('sends whatsapp action for each contact', async () => {
+    const app = buildContactsApp();
+
+    findContactsByIdsMock.mockResolvedValueOnce([
+      { id: '22222222-2222-2222-2222-222222222222', phone: '+5511999999999', tenantId: 'tenant-1', name: 'Ana' },
+    ]);
+
+    const response = await request(app)
+      .post('/actions/whatsapp')
+      .send({
+        contactIds: ['22222222-2222-2222-2222-222222222222'],
+        message: { type: 'text', text: 'Hello' },
+      });
+
+    expect(response.status).toBe(202);
+    expect(sendToContactMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contactId: '22222222-2222-2222-2222-222222222222',
+        operatorId: 'user-1',
+        tenantId: 'tenant-1',
+      })
+    );
+  });
+
+  it('returns validation error when whatsapp payload missing message', async () => {
+    const app = buildContactsApp();
+    findContactsByIdsMock.mockResolvedValueOnce([
+      { id: '22222222-2222-2222-2222-222222222222', tenantId: 'tenant-1' },
+    ]);
+
+    const response = await request(app)
+      .post('/actions/whatsapp')
+      .send({ contactIds: ['22222222-2222-2222-2222-222222222222'] });
+
+    expect(response.status).toBe(409);
+  });
+
+  it('returns 404 when updating nonexistent task', async () => {
+    const app = buildTasksApp();
+    updateContactTaskMock.mockResolvedValueOnce(null);
+
+    const response = await request(app)
+      .patch('/tasks/33333333-3333-3333-3333-333333333333')
+      .send({ status: 'COMPLETED' });
+    expect(response.status).toBe(404);
+  });
+});
