@@ -75,7 +75,7 @@ const LayoutHeader = ({ children, className }) => (
 
 const LayoutContent = ({ children, className }) => (
   <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
-    <div className="page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 p-6 md:p-8">
+    <div className="page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-hidden p-6 md:p-8">
       {children}
     </div>
   </div>
@@ -161,7 +161,7 @@ const LayoutShell = ({
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-background text-foreground">
+    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background text-foreground">
       <Sidebar collapsible="icon" variant="inset">
         <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
           <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
@@ -214,7 +214,7 @@ const LayoutShell = ({
           </div>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset className="flex min-h-screen flex-1 flex-col">
+      <SidebarInset className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <LayoutHeader>
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button
@@ -288,7 +288,7 @@ const LayoutShell = ({
             />
           </div>
         </div>
-        <LayoutContent>
+        <LayoutContent className="h-full min-h-0 overflow-hidden">
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
           ) : null}
