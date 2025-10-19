@@ -203,7 +203,12 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
         return;
       }
 
-      const ticketId = incoming.ticketId;
+      const message = incoming.message ?? incoming;
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+
+      const ticketId = incoming.ticketId ?? message.ticketId;
       if (!ticketId) {
         return;
       }
@@ -214,9 +219,18 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
           return current;
         }
 
+        const alreadyExists = current.pages.some((page) =>
+          Array.isArray(page?.items) &&
+          page.items.some((item) => item?.id === message.id || (item?.externalId && item.externalId === message.externalId))
+        );
+
+        if (alreadyExists) {
+          return current;
+        }
+
         const [firstPage = {}, ...restPages] = current.pages;
         const existingItems = Array.isArray(firstPage.items) ? firstPage.items : [];
-        const nextItems = [incoming, ...existingItems].slice(0, DEFAULT_MESSAGES_PAGE_SIZE);
+        const nextItems = [message, ...existingItems].slice(0, DEFAULT_MESSAGES_PAGE_SIZE);
 
         return {
           ...current,

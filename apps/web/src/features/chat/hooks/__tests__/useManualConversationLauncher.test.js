@@ -3,17 +3,12 @@ import '@testing-library/jest-dom/vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-const { mockApiPost } = vi.hoisted(() => ({
-  mockApiPost: vi.fn(),
-}));
-
-vi.mock('@/lib/api.js', () => ({
-  apiPost: (...args) => mockApiPost(...args),
-}));
-
-let useManualConversationLauncher;
+import {
+  MANUAL_CONVERSATION_DEPRECATION_MESSAGE,
+  useManualConversationLauncher,
+} from '../useManualConversationLauncher.js';
 
 describe('useManualConversationLauncher', () => {
   const createWrapper = () => {
@@ -21,36 +16,25 @@ describe('useManualConversationLauncher', () => {
     return ({ children }) => createElement(QueryClientProvider, { client }, children);
   };
 
-  afterEach(() => {
-    mockApiPost.mockReset();
-  });
-
-  it('inclui o instanceId no payload enviado para a API', async () => {
-    mockApiPost.mockResolvedValueOnce({ data: { instanceId: 'instance-123' } });
-    const module = await import('../useManualConversationLauncher.js');
-    useManualConversationLauncher = module.useManualConversationLauncher;
-
+  it('rejeita imediatamente informando que o fluxo manual foi aposentado', async () => {
     const { result } = renderHook(() => useManualConversationLauncher(), {
       wrapper: createWrapper(),
     });
 
-    const response = await result.current.launch({
-      phone: '(11) 98888-7766',
-      message: '  Olá  ',
-      instanceId: 'instance-123',
-    });
+    await expect(
+      result.current.launch({
+        phone: '(11) 98888-7766',
+        message: '  Olá  ',
+        instanceId: 'instance-123',
+      })
+    ).rejects.toThrowError(MANUAL_CONVERSATION_DEPRECATION_MESSAGE);
 
     await waitFor(() => {
-      expect(mockApiPost).toHaveBeenCalledTimes(1);
+      expect(result.current.error).toBeInstanceOf(Error);
     });
 
-    expect(mockApiPost).toHaveBeenCalledWith('/api/manual-conversations', {
-      phone: '11988887766',
-      message: 'Olá',
-      instanceId: 'instance-123',
-    });
-
-    expect(result.current.data.instanceId).toBe('instance-123');
-    expect(response.instanceId).toBe('instance-123');
+    expect(result.current.error.message).toBe(MANUAL_CONVERSATION_DEPRECATION_MESSAGE);
+    expect(result.current.isAvailable).toBe(false);
+    expect(result.current.unavailableReason).toBe(MANUAL_CONVERSATION_DEPRECATION_MESSAGE);
   });
 });

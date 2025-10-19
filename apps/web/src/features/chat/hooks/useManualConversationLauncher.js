@@ -1,40 +1,15 @@
 import { useMutation } from '@tanstack/react-query';
 
-import { apiPost } from '@/lib/api.js';
-
-const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
+export const MANUAL_CONVERSATION_DEPRECATION_MESSAGE =
+  'O fluxo manual de novas conversas foi aposentado. Utilize o canal oficial de abertura de tickets.';
 
 export const useManualConversationLauncher = () => {
   const mutation = useMutation({
     mutationKey: ['lead-inbox', 'manual-conversation'],
-    mutationFn: async ({ phone, message, instanceId }) => {
-      const digits = sanitizePhone(phone);
-      const trimmedMessage = typeof message === 'string' ? message.trim() : '';
-      const normalizedInstanceId =
-        typeof instanceId === 'string' ? instanceId.trim() : '';
-
-      if (!digits) {
-        throw new Error('Informe um telefone válido.');
-      }
-
-      const response = await apiPost('/api/manual-conversations', {
-        phone: digits,
-        message: trimmedMessage,
-        instanceId: normalizedInstanceId,
-      });
-
-      const payload = response?.data ?? {};
-
-      return {
-        contact: payload.contact ?? null,
-        lead: payload.lead ?? null,
-        ticket: payload.ticket ?? null,
-        messageRecord: payload.messageRecord ?? null,
-        phone: payload.phone ?? digits,
-        message: payload.message ?? trimmedMessage,
-        instanceId: payload.instanceId ?? normalizedInstanceId,
-      };
+    mutationFn: async () => {
+      throw new Error(MANUAL_CONVERSATION_DEPRECATION_MESSAGE);
     },
+    retry: false,
   });
 
   return {
@@ -43,6 +18,8 @@ export const useManualConversationLauncher = () => {
     error: mutation.error,
     data: mutation.data,
     reset: mutation.reset,
+    isAvailable: false,
+    unavailableReason: MANUAL_CONVERSATION_DEPRECATION_MESSAGE,
   };
 };
 

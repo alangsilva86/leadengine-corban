@@ -19,6 +19,11 @@ const NORMALIZED_WHATSAPP_ERRORS = {
     title: 'Tempo limite excedido',
     description: 'O broker não respondeu a tempo. Tente novamente em alguns segundos.',
   },
+  BROKER_NOT_CONFIGURED: {
+    code: 'BROKER_NOT_CONFIGURED',
+    title: 'WhatsApp não configurado',
+    description: 'Conecte uma instância do WhatsApp para habilitar novos envios.',
+  },
 };
 
 export const normalizeWhatsAppErrorCode = (code) => {

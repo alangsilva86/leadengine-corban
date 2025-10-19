@@ -2,7 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
@@ -33,6 +33,18 @@ model Tenant {
   leads               Lead[]
   campaigns           Campaign[]
   queues              Queue[]
+  users         User[]
+  contacts      Contact[]
+  contactPhones ContactPhone[]
+  contactEmails ContactEmail[]
+  contactTags   ContactTag[]
+  tags          Tag[]
+  interactions  Interaction[]
+  tasks         Task[]
+  tickets       Ticket[]
+  leads         Lead[]
+  campaigns     Campaign[]
+  queues        Queue[]
 
   @@map("tenants")
 }
@@ -84,20 +96,30 @@ model User {
   assignedLeads    Lead[]    @relation("LeadAssignee")
   userQueues       UserQueue[]
   contactTasks     ContactTask[]
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedTickets Ticket[]      @relation("TicketAssignee")
+  sentMessages    Message[]     @relation("MessageSender")
+  assignedLeads   Lead[]        @relation("LeadAssignee")
+  userQueues      UserQueue[]
+  ownedContacts   Contact[]     @relation("ContactOwner")
+  contactTags     ContactTag[]  @relation("ContactTagAddedBy")
+  interactions    Interaction[]
+  createdTasks    Task[]        @relation("TaskCreatedBy")
+  assignedTasks   Task[]        @relation("TaskAssignee")
 
   @@unique([tenantId, email])
   @@map("users")
 }
 
 model Queue {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   tenantId    String
   name        String
   description String?
   color       String?
-  isActive    Boolean @default(true)
-  orderIndex  Int     @default(0)
-  settings    Json    @default("{}")
+  isActive    Boolean  @default(true)
+  orderIndex  Int      @default(0)
+  settings    Json     @default("{}")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -111,9 +133,9 @@ model Queue {
 }
 
 model UserQueue {
-  id       String @id @default(cuid())
-  userId   String
-  queueId  String
+  id        String   @id @default(cuid())
+  userId    String
+  queueId   String
   createdAt DateTime @default(now())
 
   // Relations
@@ -148,10 +170,189 @@ model Contact {
   leads         Lead[]
   interactions  ContactInteraction[]
   tasks         ContactTask[]
+  id                String                @id @default(cuid())
+  tenantId          String
+  fullName          String
+  displayName       String?
+  firstName         String?
+  lastName          String?
+  organization      String?
+  jobTitle          String?
+  department        String?
+  primaryPhone      String?
+  primaryEmail      String?
+  document          String?
+  avatar            String?
+  status            ContactStatus         @default(ACTIVE)
+  lifecycleStage    ContactLifecycleStage @default(LEAD)
+  source            ContactSource         @default(MANUAL)
+  ownerId           String?
+  isBlocked         Boolean               @default(false)
+  isVip             Boolean               @default(false)
+  timezone          String?
+  locale            String?
+  birthDate         DateTime?
+  lastInteractionAt DateTime?
+  lastActivityAt    DateTime?
+  notes             String?
+  customFields      Json                  @default("{}")
+  metadata          Json                  @default("{}")
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
-  @@unique([tenantId, phone])
-  @@unique([tenantId, email])
+  // Relations
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?          @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  phones       ContactPhone[]
+  emails       ContactEmail[]
+  tags         ContactTag[]
+  interactions Interaction[]
+  tasks        Task[]
+  tickets      Ticket[]
+  messages     Message[]
+  leads        Lead[]
+
+  @@unique([tenantId, primaryPhone])
+  @@unique([tenantId, primaryEmail])
+  @@index([tenantId, fullName])
+  @@index([tenantId, primaryPhone])
+  @@index([tenantId, primaryEmail])
+  @@index([tenantId, status])
+  @@index([tenantId, ownerId])
+  @@index([tenantId, lifecycleStage])
   @@map("contacts")
+}
+
+model ContactPhone {
+  id          String            @id @default(cuid())
+  tenantId    String
+  contactId   String
+  phoneNumber String
+  type        ContactPhoneType?
+  label       String?
+  waId        String?
+  isPrimary   Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, phoneNumber])
+  @@index([tenantId, contactId])
+  @@map("contact_phones")
+}
+
+model ContactEmail {
+  id        String            @id @default(cuid())
+  tenantId  String
+  contactId String
+  email     String
+  type      ContactEmailType?
+  label     String?
+  isPrimary Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, contactId])
+  @@map("contact_emails")
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  color       String?
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts ContactTag[]
+
+  @@unique([tenantId, name])
+  @@map("tags")
+}
+
+model ContactTag {
+  id        String   @id @default(cuid())
+  tenantId  String
+  contactId String
+  tagId     String
+  addedById String?
+  addedAt   DateTime @default(now())
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  addedBy User?   @relation("ContactTagAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([contactId, tagId])
+  @@index([tenantId, tagId])
+  @@map("contact_tags")
+}
+
+model Interaction {
+  id         String               @id @default(cuid())
+  tenantId   String
+  contactId  String
+  userId     String?
+  type       InteractionType
+  direction  InteractionDirection
+  channel    InteractionChannel?
+  subject    String?
+  content    String?
+  metadata   Json                 @default("{}")
+  occurredAt DateTime
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, contactId])
+  @@index([tenantId, occurredAt])
+  @@map("interactions")
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  tenantId    String
+  contactId   String
+  createdById String?
+  assigneeId  String?
+  type        TaskType
+  status      TaskStatus   @default(OPEN)
+  priority    TaskPriority @default(NORMAL)
+  title       String
+  description String?
+  dueAt       DateTime?
+  completedAt DateTime?
+  metadata    Json         @default("{}")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assignee  User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, contactId])
+  @@index([tenantId, status])
+  @@index([tenantId, assigneeId])
+  @@map("tasks")
 }
 
 model ContactInteraction {
@@ -197,24 +398,24 @@ model ContactTask {
 }
 
 model Ticket {
-  id                   String        @id @default(cuid())
-  tenantId             String
-  contactId            String
-  queueId              String
-  userId               String?
-  status               TicketStatus  @default(OPEN)
-  priority             TicketPriority @default(NORMAL)
-  subject              String?
-  channel              ChannelType
-  lastMessageAt        DateTime?
-  lastMessagePreview   String?
-  tags                 String[]      @default([])
-  metadata             Json          @default("{}")
-  closedAt             DateTime?
-  closedBy             String?
-  closeReason          String?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  id                 String         @id @default(cuid())
+  tenantId           String
+  contactId          String
+  queueId            String
+  userId             String?
+  status             TicketStatus   @default(OPEN)
+  priority           TicketPriority @default(NORMAL)
+  subject            String?
+  channel            ChannelType
+  lastMessageAt      DateTime?
+  lastMessagePreview String?
+  tags               String[]       @default([])
+  metadata           Json           @default("{}")
+  closedAt           DateTime?
+  closedBy           String?
+  closeReason        String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   // Relations
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -227,35 +428,35 @@ model Ticket {
 }
 
 model Message {
-  id               String          @id @default(cuid())
-  tenantId         String
-  ticketId         String
-  contactId        String
-  userId           String?
-  instanceId       String?
-  direction        MessageDirection
-  type             MessageType     @default(TEXT)
-  content          String
-  caption          String?
-  mediaUrl         String?
-  mediaFileName    String?
-  mediaType        String?
-  mediaSize        Int?
-  status           MessageStatus   @default(PENDING)
-  externalId       String?
-  quotedMessageId  String?
-  metadata         Json            @default("{}")
-  idempotencyKey   String?
-  deliveredAt      DateTime?
-  readAt           DateTime?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id              String           @id @default(cuid())
+  tenantId        String
+  ticketId        String
+  contactId       String
+  userId          String?
+  instanceId      String?
+  direction       MessageDirection
+  type            MessageType      @default(TEXT)
+  content         String
+  caption         String?
+  mediaUrl        String?
+  mediaFileName   String?
+  mediaType       String?
+  mediaSize       Int?
+  status          MessageStatus    @default(PENDING)
+  externalId      String?
+  quotedMessageId String?
+  metadata        Json             @default("{}")
+  idempotencyKey  String?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   // Relations
-  ticket        Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  contact       Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  sender        User?    @relation("MessageSender", fields: [userId], references: [id], onDelete: SetNull)
-  quotedMessage Message? @relation("MessageQuote", fields: [quotedMessageId], references: [id])
+  ticket        Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sender        User?     @relation("MessageSender", fields: [userId], references: [id], onDelete: SetNull)
+  quotedMessage Message?  @relation("MessageQuote", fields: [quotedMessageId], references: [id])
   quotes        Message[] @relation("MessageQuote")
 
   @@unique([tenantId, externalId], map: "messages_tenant_external_id_unique")
@@ -266,80 +467,80 @@ model Message {
 }
 
 model Lead {
-  id                 String      @id @default(cuid())
-  tenantId           String
-  contactId          String
-  campaignId         String?
-  userId             String?
-  status             LeadStatus  @default(NEW)
-  source             LeadSource
-  score              Json?
-  value              Float?
-  probability        Int?
-  expectedCloseDate  DateTime?
-  actualCloseDate    DateTime?
-  lostReason         String?
-  tags               String[]    @default([])
-  customFields       Json        @default("{}")
-  lastContactAt      DateTime?
-  nextFollowUpAt     DateTime?
-  notes              String?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id                String     @id @default(cuid())
+  tenantId          String
+  contactId         String
+  campaignId        String?
+  userId            String?
+  status            LeadStatus @default(NEW)
+  source            LeadSource
+  score             Json?
+  value             Float?
+  probability       Int?
+  expectedCloseDate DateTime?
+  actualCloseDate   DateTime?
+  lostReason        String?
+  tags              String[]   @default([])
+  customFields      Json       @default("{}")
+  lastContactAt     DateTime?
+  nextFollowUpAt    DateTime?
+  notes             String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   // Relations
-  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact    Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  campaign   Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  assignee   User?         @relation("LeadAssignee", fields: [userId], references: [id], onDelete: SetNull)
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact    Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  campaign   Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  assignee   User?          @relation("LeadAssignee", fields: [userId], references: [id], onDelete: SetNull)
   activities LeadActivity[]
 
-  @@map("leads")
   @@unique([tenantId, contactId], map: "leads_tenant_contact_unique")
+  @@map("leads")
 }
 
 model Campaign {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   tenantId           String
   name               String
   agreementId        String
   agreementName      String?
   whatsappInstanceId String?
-  status             String   @default("draft")
+  status             String    @default("draft")
   startDate          DateTime?
   endDate            DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   metadata           Json?
 
   // Relations
-  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   leads            Lead[]
   whatsappInstance WhatsAppInstance? @relation(fields: [whatsappInstanceId], references: [id])
   allocations      LeadAllocation[]
 
+  @@unique([tenantId, agreementId, whatsappInstanceId], map: "campaigns_tenant_agreement_instance_unique")
   @@index([tenantId, status])
   @@index([tenantId, agreementId])
-  @@unique([tenantId, agreementId, whatsappInstanceId], map: "campaigns_tenant_agreement_instance_unique")
   @@map("campaigns")
 }
 
 model BrokerLead {
-  id           String   @id @default(cuid())
-  tenantId     String
-  agreementId  String
-  fullName     String
-  document     String
-  matricula    String?
-  phone        String?
+  id            String   @id @default(cuid())
+  tenantId      String
+  agreementId   String
+  fullName      String
+  document      String
+  matricula     String?
+  phone         String?
   registrations String[] @default([])
-  tags         String[] @default([])
-  margin       Float?
-  netMargin    Float?
-  score        Float?
-  raw          Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  tags          String[] @default([])
+  margin        Float?
+  netMargin     Float?
+  score         Float?
+  raw           Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   allocations LeadAllocation[]
 
@@ -355,15 +556,15 @@ enum LeadAllocationStatus {
 }
 
 model LeadAllocation {
-  id         String              @id @default(cuid())
+  id         String               @id @default(cuid())
   tenantId   String
   campaignId String
   leadId     String
   status     LeadAllocationStatus @default(allocated)
   notes      String?
   payload    Json?
-  receivedAt DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
+  receivedAt DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
 
   lead     BrokerLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
   campaign Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -421,24 +622,24 @@ enum WhatsAppInstanceStatus {
 }
 
 model WhatsAppInstance {
-  id          String                   @id
+  id          String                 @id
   tenantId    String
   name        String
   brokerId    String
   phoneNumber String?
-  status      WhatsAppInstanceStatus   @default(pending)
-  connected   Boolean                  @default(false)
+  status      WhatsAppInstanceStatus @default(pending)
+  connected   Boolean                @default(false)
   lastSeenAt  DateTime?
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
   metadata    Json?
 
-  campaigns   Campaign[]
+  campaigns Campaign[]
 
-  @@index([tenantId])
   @@unique([tenantId, id])
   @@unique([tenantId, brokerId])
   @@unique([brokerId])
+  @@index([tenantId])
   @@map("whatsapp_instances")
 }
 
@@ -454,6 +655,91 @@ model WhatsAppSession {
 // ============================================================================
 // Enums
 // ============================================================================
+
+enum ContactStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ContactLifecycleStage {
+  LEAD
+  PROSPECT
+  CUSTOMER
+  PARTNER
+  OTHER
+}
+
+enum ContactSource {
+  MANUAL
+  IMPORT
+  CAMPAIGN
+  CHAT
+  API
+  OTHER
+}
+
+enum ContactPhoneType {
+  MOBILE
+  HOME
+  WORK
+  OTHER
+}
+
+enum ContactEmailType {
+  WORK
+  PERSONAL
+  BILLING
+  OTHER
+}
+
+enum InteractionType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  MESSAGE
+  TASK
+  OTHER
+}
+
+enum InteractionDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum InteractionChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+  PHONE
+  MEETING
+  OTHER
+}
+
+enum TaskType {
+  FOLLOW_UP
+  CALL
+  MEETING
+  EMAIL
+  CHECKIN
+  OTHER
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
 
 enum UserRole {
   ADMIN

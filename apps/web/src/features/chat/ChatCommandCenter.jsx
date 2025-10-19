@@ -17,12 +17,38 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
 
   const controller = useChatController({ tenantId, currentUser });
-  const { launch: launchManualConversation, isPending: manualConversationPending } =
-    useManualConversationLauncher();
+  const {
+    launch: launchManualConversation,
+    isPending: manualConversationPending,
+    isAvailable: manualConversationAvailable,
+    unavailableReason: manualConversationUnavailableReason,
+  } = useManualConversationLauncher();
   const [manualConversationOpen, setManualConversationOpen] = useState(false);
+  const [whatsAppUnavailable, setWhatsAppUnavailable] = useState(null);
+
+  const applyWhatsAppErrorCopy = useCallback((code, fallbackMessage) => {
+    const copy = resolveWhatsAppErrorCopy(code, fallbackMessage);
+    setWhatsAppUnavailable(copy.code === 'BROKER_NOT_CONFIGURED' ? copy : null);
+    return copy;
+  }, []);
+
+  useEffect(() => {
+    setWhatsAppUnavailable(null);
+  }, [controller.selectedTicketId]);
 
   const handleManualConversationSubmit = useCallback(
     async (payload) => {
+      if (!manualConversationAvailable) {
+        const message =
+          manualConversationUnavailableReason ??
+          'Este fluxo foi descontinuado. Utilize o canal oficial de abertura de tickets.';
+        toast.error(message, {
+          id: MANUAL_CONVERSATION_TOAST_ID,
+          position: 'bottom-right',
+        });
+        throw new Error(message);
+      }
+
       toast.loading('Iniciando conversa…', {
         id: MANUAL_CONVERSATION_TOAST_ID,
         position: 'bottom-right',
@@ -34,15 +60,24 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Não foi possível iniciar a conversa.';
+        const description =
+          manualConversationUnavailableReason &&
+          manualConversationUnavailableReason !== message
+            ? manualConversationUnavailableReason
+            : undefined;
         toast.error(message, {
           id: MANUAL_CONVERSATION_TOAST_ID,
-          description: 'Verifique os dados e tente novamente.',
+          description,
           position: 'bottom-right',
         });
         throw error;
       }
     },
-    [launchManualConversation]
+    [
+      launchManualConversation,
+      manualConversationAvailable,
+      manualConversationUnavailableReason,
+    ]
   );
 
   const handleManualConversationSuccess = useCallback(
@@ -103,15 +138,19 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         onSuccess: (result) => {
           const error = result?.error;
           if (error) {
-            const copy = resolveWhatsAppErrorCopy(error.code, error.message);
+            const copy = applyWhatsAppErrorCopy(error?.payload?.code ?? error?.code, error?.message);
             toast.error(copy.title ?? 'Falha ao enviar mensagem', {
-              description: copy.description ?? error.message ?? 'Não foi possível enviar a mensagem.',
+              description: copy.description ?? error?.message ?? 'Não foi possível enviar a mensagem.',
             });
+            return;
           }
+          setWhatsAppUnavailable(null);
         },
         onError: (error) => {
-          toast.error('Falha ao enviar mensagem', {
-            description: error?.message ?? 'Erro inesperado ao enviar',
+          const fallbackMessage = error?.message ?? 'Erro inesperado ao enviar';
+          const copy = applyWhatsAppErrorCopy(error?.payload?.code ?? error?.code, fallbackMessage);
+          toast.error(copy.title ?? 'Falha ao enviar mensagem', {
+            description: copy.description ?? fallbackMessage,
           });
         },
       }
@@ -224,15 +263,23 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       });
   };
 
+  useEffect(() => {
+    if (!manualConversationAvailable) {
+      setManualConversationOpen(false);
+    }
+  }, [manualConversationAvailable]);
+
   return (
     <>
-      <ManualConversationDialog
-        open={manualConversationOpen}
-        onOpenChange={setManualConversationOpen}
-        onSubmit={handleManualConversationSubmit}
-        onSuccess={handleManualConversationSuccess}
-        isSubmitting={manualConversationPending}
-      />
+      {manualConversationAvailable ? (
+        <ManualConversationDialog
+          open={manualConversationOpen}
+          onOpenChange={setManualConversationOpen}
+          onSubmit={handleManualConversationSubmit}
+          onSuccess={handleManualConversationSuccess}
+          isSubmitting={manualConversationPending}
+        />
+      ) : null}
 
       <div className="flex flex-1 min-h-0 w-full">
         <InboxAppShell
@@ -273,8 +320,13 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               onFiltersChange={controller.setFilters}
               loading={controller.ticketsQuery.isFetching}
               onRefresh={handleManualSync}
-              onStartManualConversation={() => setManualConversationOpen(true)}
+              onStartManualConversation={
+                manualConversationAvailable
+                  ? () => setManualConversationOpen(true)
+                  : undefined
+              }
               manualConversationPending={manualConversationPending}
+              manualConversationUnavailableReason={manualConversationUnavailableReason}
             />
           }
         >
@@ -292,6 +344,8 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             typingIndicator={controller.typingIndicator}
             isSending={controller.sendMessageMutation.isPending}
             sendError={controller.sendMessageMutation.error}
+            composerDisabled={Boolean(whatsAppUnavailable)}
+            composerDisabledReason={whatsAppUnavailable}
           />
         </InboxAppShell>
       </div>

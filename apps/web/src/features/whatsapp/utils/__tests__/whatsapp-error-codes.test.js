@@ -13,6 +13,7 @@ describe('WhatsApp error copy helpers', () => {
     expect(codes).toContain('INVALID_TO');
     expect(codes).toContain('RATE_LIMITED');
     expect(codes).toContain('BROKER_TIMEOUT');
+    expect(codes).toContain('BROKER_NOT_CONFIGURED');
   });
 
   it('normalizes codes regardless of casing and spacing', () => {
@@ -32,6 +33,15 @@ describe('WhatsApp error copy helpers', () => {
       code: 'INVALID_TO',
       title: expect.stringContaining('Número de destino'),
       description: expect.stringContaining('Revise o número informado'),
+    });
+  });
+
+  it('guides agents when the broker is not configured', () => {
+    const copy = resolveWhatsAppErrorCopy('broker_not_configured');
+    expect(copy).toMatchObject({
+      code: 'BROKER_NOT_CONFIGURED',
+      title: expect.stringContaining('não configurado'),
+      description: expect.stringContaining('Conecte uma instância'),
     });
   });
 
