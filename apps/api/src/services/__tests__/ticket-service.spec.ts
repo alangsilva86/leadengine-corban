@@ -191,7 +191,16 @@ describe('ticket-service logging', () => {
       status: 'PENDING',
       instanceId: 'inst-2',
     };
-    const failedMessage = { ...messageRecord, status: 'FAILED' };
+    const failedMessage = {
+      ...messageRecord,
+      status: 'FAILED',
+      metadata: {
+        ...messageRecord.metadata,
+        broker: {
+          error: { message: 'network failure' },
+        },
+      },
+    };
 
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
@@ -203,20 +212,43 @@ describe('ticket-service logging', () => {
       sendMessage: vi.fn().mockRejectedValue(new Error('network failure')),
     };
 
-    const { sendMessage } = await import('../ticket-service');
+    const ticketService = await import('../ticket-service');
+    const emitMessageUpdatedEventsMock = vi.fn().mockResolvedValue(undefined);
 
-    await sendMessage(
+    await expect(
+      ticketService.sendMessage(
+        'tenant-2',
+        'user-2',
+        {
+          ticketId: ticket.id,
+          type: 'text',
+          instanceId: 'inst-2',
+          direction: 'OUTBOUND',
+          content: 'hello again',
+          metadata: {},
+        },
+        { transport, emitMessageUpdatedEvents: emitMessageUpdatedEventsMock }
+      )
+    ).rejects.toThrow('network failure');
+
+    expect(storageUpdateMessage).toHaveBeenCalledWith(
       'tenant-2',
-      'user-2',
-      {
-        ticketId: ticket.id,
-        type: 'text',
-        instanceId: 'inst-2',
-        direction: 'OUTBOUND',
-        content: 'hello again',
-        metadata: {},
-      },
-      { transport }
+      'message-2',
+      expect.objectContaining({
+        status: 'FAILED',
+        metadata: expect.objectContaining({
+          broker: expect.objectContaining({
+            error: expect.objectContaining({ message: 'network failure' }),
+          }),
+        }),
+      })
+    );
+
+    expect(emitMessageUpdatedEventsMock).toHaveBeenCalledWith(
+      'tenant-2',
+      ticket.id,
+      failedMessage,
+      'user-2'
     );
 
     expect(logger.error).toHaveBeenCalledWith('whatsapp.outbound.dispatch.failed', {
@@ -232,5 +264,6 @@ describe('ticket-service logging', () => {
       resolvedDispatchId: 'broker-77',
       brokerId: 'broker-77',
     });
+
   });
 });

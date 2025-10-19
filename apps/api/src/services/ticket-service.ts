@@ -73,6 +73,7 @@ const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
 type WhatsAppTransportDependencies = {
   transport?: WhatsAppTransport;
+  emitMessageUpdatedEvents?: typeof emitMessageUpdatedEvents;
 };
 
 type WhatsAppInstanceForDispatch = {
@@ -1441,6 +1442,18 @@ export const sendMessage = async (
   let message = messageRecord;
   let statusChanged = false;
 
+  const emitMessageUpdate =
+    dependencies.emitMessageUpdatedEvents ?? emitMessageUpdatedEvents;
+
+  const emitUpdatesIfNeeded = async (): Promise<void> => {
+    if (!statusChanged) {
+      return;
+    }
+
+    statusChanged = false;
+    await emitMessageUpdate(tenantId, input.ticketId, message, userId ?? null);
+  };
+
   const ticketSnapshot: Ticket = {
     ...ticket,
     updatedAt: message.updatedAt ?? ticket.updatedAt,
@@ -1723,15 +1736,14 @@ export const sendMessage = async (
             }
           }
 
+          await emitUpdatesIfNeeded();
           throw error;
         }
       }
     }
   }
 
-  if (statusChanged) {
-    await emitMessageUpdatedEvents(tenantId, input.ticketId, message, userId ?? null);
-  }
+  await emitUpdatesIfNeeded();
 
   return message;
 };
