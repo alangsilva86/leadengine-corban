@@ -109,13 +109,13 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col" data-pane="sidebar">
+      <ListPanelHeader showCloseButton={showCloseButton} />
       <div
         ref={viewportRef}
         id="listViewport"
-        className="chat-scroll-area flex h-full flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges] [overflow-clip-margin:24px]"
+        className="chat-scroll-area min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges] [overflow-clip-margin:24px]"
         style={{ overscrollBehavior: 'contain' }}
       >
-        <ListPanelHeader showCloseButton={showCloseButton} />
         <ListPanelContent>{sidebar}</ListPanelContent>
       </div>
       <ListPanelFooter canPersistPreferences={canPersistPreferences} />
