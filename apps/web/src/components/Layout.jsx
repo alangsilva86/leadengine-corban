@@ -45,6 +45,7 @@ import { getFrontendFeatureFlags } from '../../../../config/feature-flags.ts';
 
 const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
 const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;
+const showWhatsappDebug = isWhatsAppDebugEnabled() || shouldShowWhatsappDebug;
 
 const NAVIGATION_ITEMS = (() => {
   const items = [
@@ -53,21 +54,11 @@ const NAVIGATION_ITEMS = (() => {
   { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare },
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
-  ...(isWhatsAppDebugEnabled()
-    ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }]
-    : []),
+  ...(showWhatsappDebug ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }] : []),
   { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
   { id: 'settings', label: 'Configurações', icon: Settings },
   ];
-
-  if (shouldShowWhatsappDebug) {
-    items.splice(items.length - 1, 0, {
-      id: 'whatsapp-debug',
-      label: 'Debug WhatsApp',
-      icon: Bug,
-    });
-  }
-
+ 
   return items;
 })();
 

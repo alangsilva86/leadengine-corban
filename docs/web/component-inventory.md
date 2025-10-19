@@ -87,9 +87,7 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 
 - `use-media-query.js`
 - `use-mobile.js`
-- `use-scroll-viewport.js`
 - `use-status-tone-classes.js`
-- `useRateLimitBanner.js`
 
 ### Feature hooks
 
