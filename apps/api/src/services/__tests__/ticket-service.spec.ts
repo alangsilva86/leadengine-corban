@@ -267,3 +267,153 @@ describe('ticket-service logging', () => {
 
   });
 });
+
+describe('ticket-service dispatch guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('dispatches outbound WhatsApp messages without a userId', async () => {
+    const ticket = {
+      id: 'ticket-out-1',
+      tenantId: 'tenant-out-1',
+      contactId: 'contact-out-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'inst-out-1' },
+      updatedAt: new Date(),
+      lastMessageAt: new Date(),
+      lastMessagePreview: 'preview',
+    };
+    const messageRecord = {
+      id: 'message-out-1',
+      ticketId: ticket.id,
+      type: 'text',
+      direction: 'OUTBOUND',
+      content: 'hello automation',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'SENT',
+      instanceId: 'inst-out-1',
+    };
+    const brokerTimestamp = new Date().toISOString();
+    const updatedMessage = {
+      ...messageRecord,
+      status: 'SENT',
+      metadata: {
+        broker: {
+          provider: 'whatsapp',
+          instanceId: 'inst-out-1',
+          externalId: 'external-out-1',
+          status: 'SENT',
+          dispatchedAt: brokerTimestamp,
+        },
+      },
+    };
+
+    storageFindTicketById.mockResolvedValue(ticket);
+    storageCreateMessage.mockResolvedValue(messageRecord);
+    storageUpdateMessage.mockResolvedValue(updatedMessage);
+    prisma.contact.findUnique.mockResolvedValue({ id: 'contact-out-1', phone: '5511988887777' });
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-out-1', brokerId: 'broker-out-1' });
+
+    const transport = {
+      sendMessage: vi.fn().mockResolvedValue({
+        externalId: 'external-out-1',
+        status: 'SENT',
+        timestamp: brokerTimestamp,
+      }),
+    };
+
+    const { sendMessage } = await import('../ticket-service');
+
+    await sendMessage(
+      'tenant-out-1',
+      undefined,
+      {
+        ticketId: ticket.id,
+        type: 'text',
+        instanceId: 'inst-out-1',
+        direction: 'OUTBOUND',
+        content: 'hello automation',
+        metadata: {},
+      },
+      { transport }
+    );
+
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1);
+    expect(transport.sendMessage).toHaveBeenCalledWith(
+      'broker-out-1',
+      expect.objectContaining({
+        to: '5511988887777',
+        externalId: 'message-out-1',
+      }),
+      { idempotencyKey: 'message-out-1' }
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      'whatsapp.outbound.dispatch.attempt',
+      expect.objectContaining({
+        tenantId: 'tenant-out-1',
+        ticketId: 'ticket-out-1',
+        messageId: 'message-out-1',
+        requestedInstanceId: 'inst-out-1',
+        resolvedDispatchId: 'broker-out-1',
+        brokerId: 'broker-out-1',
+      })
+    );
+  });
+
+  it('skips dispatch for inbound WhatsApp messages', async () => {
+    const ticket = {
+      id: 'ticket-in-1',
+      tenantId: 'tenant-in-1',
+      contactId: 'contact-in-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'inst-in-1' },
+      updatedAt: new Date(),
+      lastMessageAt: new Date(),
+      lastMessagePreview: 'preview',
+    };
+    const messageRecord = {
+      id: 'message-in-1',
+      ticketId: ticket.id,
+      type: 'text',
+      direction: 'INBOUND',
+      content: 'hello from contact',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'SENT',
+      instanceId: null,
+    };
+
+    storageFindTicketById.mockResolvedValue(ticket);
+    storageCreateMessage.mockResolvedValue(messageRecord);
+
+    const transport = {
+      sendMessage: vi.fn(),
+    };
+
+    const { sendMessage } = await import('../ticket-service');
+
+    await sendMessage(
+      'tenant-in-1',
+      'user-inbound-1',
+      {
+        ticketId: ticket.id,
+        type: 'text',
+        direction: 'INBOUND',
+        content: 'hello from contact',
+        metadata: {},
+      },
+      { transport }
+    );
+
+    expect(transport.sendMessage).not.toHaveBeenCalled();
+    expect(prisma.contact.findUnique).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalledWith(
+      'whatsapp.outbound.dispatch.attempt',
+      expect.anything()
+    );
+  });
+});
