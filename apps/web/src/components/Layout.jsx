@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Menu,
   Home,
+  Users,
   Briefcase,
   QrCode,
   MessageSquare,
@@ -49,14 +50,15 @@ const showWhatsappDebug = isWhatsAppDebugEnabled() || shouldShowWhatsappDebug;
 
 const NAVIGATION_ITEMS = (() => {
   const items = [
-  { id: 'dashboard', label: 'Visão Geral', icon: Home },
-  { id: 'agreements', label: 'Convênios', icon: Briefcase },
-  { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
-  { id: 'inbox', label: 'Inbox', icon: MessageSquare },
-  { id: 'reports', label: 'Relatórios', icon: BarChart3 },
-  ...(showWhatsappDebug ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }] : []),
-  { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
-  { id: 'settings', label: 'Configurações', icon: Settings },
+    { id: 'dashboard', label: 'Visão Geral', icon: Home },
+    { id: 'contacts', label: 'Contatos', icon: Users },
+    { id: 'agreements', label: 'Convênios', icon: Briefcase },
+    { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
+    { id: 'inbox', label: 'Inbox', icon: MessageSquare },
+    { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+    ...(showWhatsappDebug ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }] : []),
+    { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
+    { id: 'settings', label: 'Configurações', icon: Settings },
   ];
  
   return items;
