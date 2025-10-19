@@ -1547,7 +1547,7 @@ export const sendMessage = async (
     return failed;
   };
 
-  if (userId && ticket.channel === 'WHATSAPP') {
+  if (ticket.channel === 'WHATSAPP' && direction === 'OUTBOUND') {
     const instanceId = effectiveInstanceId;
 
     if (!instanceId) {
@@ -1579,6 +1579,14 @@ export const sendMessage = async (
           if (!dispatchInstanceId) {
             throw new NotFoundError('WhatsAppInstance', instanceId ?? 'unknown');
           }
+          logger.info('whatsapp.outbound.dispatch.attempt', {
+            tenantId,
+            ticketId: ticket.id,
+            messageId: message.id,
+            requestedInstanceId: instanceId,
+            resolvedDispatchId: dispatchInstanceId,
+            brokerId: dispatchBrokerId,
+          });
           const locationMetadata = normalizeLocationPayload(messageMetadata.location);
           const templateMetadata = normalizeTemplatePayload(messageMetadata.template);
           const contactsMetadata = normalizeContactsPayload(messageMetadata.contacts);
