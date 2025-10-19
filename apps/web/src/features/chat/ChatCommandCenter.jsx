@@ -17,12 +17,27 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
 
   const controller = useChatController({ tenantId, currentUser });
-  const { launch: launchManualConversation, isPending: manualConversationPending } =
-    useManualConversationLauncher();
+  const {
+    launch: launchManualConversation,
+    isPending: manualConversationPending,
+    isAvailable: manualConversationAvailable,
+    unavailableReason: manualConversationUnavailableReason,
+  } = useManualConversationLauncher();
   const [manualConversationOpen, setManualConversationOpen] = useState(false);
 
   const handleManualConversationSubmit = useCallback(
     async (payload) => {
+      if (!manualConversationAvailable) {
+        const message =
+          manualConversationUnavailableReason ??
+          'Este fluxo foi descontinuado. Utilize o canal oficial de abertura de tickets.';
+        toast.error(message, {
+          id: MANUAL_CONVERSATION_TOAST_ID,
+          position: 'bottom-right',
+        });
+        throw new Error(message);
+      }
+
       toast.loading('Iniciando conversa…', {
         id: MANUAL_CONVERSATION_TOAST_ID,
         position: 'bottom-right',
@@ -34,15 +49,24 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Não foi possível iniciar a conversa.';
+        const description =
+          manualConversationUnavailableReason &&
+          manualConversationUnavailableReason !== message
+            ? manualConversationUnavailableReason
+            : undefined;
         toast.error(message, {
           id: MANUAL_CONVERSATION_TOAST_ID,
-          description: 'Verifique os dados e tente novamente.',
+          description,
           position: 'bottom-right',
         });
         throw error;
       }
     },
-    [launchManualConversation]
+    [
+      launchManualConversation,
+      manualConversationAvailable,
+      manualConversationUnavailableReason,
+    ]
   );
 
   const handleManualConversationSuccess = useCallback(
@@ -224,15 +248,23 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       });
   };
 
+  useEffect(() => {
+    if (!manualConversationAvailable) {
+      setManualConversationOpen(false);
+    }
+  }, [manualConversationAvailable]);
+
   return (
     <>
-      <ManualConversationDialog
-        open={manualConversationOpen}
-        onOpenChange={setManualConversationOpen}
-        onSubmit={handleManualConversationSubmit}
-        onSuccess={handleManualConversationSuccess}
-        isSubmitting={manualConversationPending}
-      />
+      {manualConversationAvailable ? (
+        <ManualConversationDialog
+          open={manualConversationOpen}
+          onOpenChange={setManualConversationOpen}
+          onSubmit={handleManualConversationSubmit}
+          onSuccess={handleManualConversationSuccess}
+          isSubmitting={manualConversationPending}
+        />
+      ) : null}
 
       <div className="flex flex-1 min-h-0 w-full">
         <InboxAppShell
@@ -273,8 +305,13 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               onFiltersChange={controller.setFilters}
               loading={controller.ticketsQuery.isFetching}
               onRefresh={handleManualSync}
-              onStartManualConversation={() => setManualConversationOpen(true)}
+              onStartManualConversation={
+                manualConversationAvailable
+                  ? () => setManualConversationOpen(true)
+                  : undefined
+              }
               manualConversationPending={manualConversationPending}
+              manualConversationUnavailableReason={manualConversationUnavailableReason}
             />
           }
         >

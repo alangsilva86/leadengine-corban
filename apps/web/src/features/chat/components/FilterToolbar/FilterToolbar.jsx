@@ -10,7 +10,15 @@ import {
 } from '@/components/ui/select.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { cn } from '@/lib/utils.js';
-import { Filter, Loader2, MessageSquarePlus, RefreshCw, Search, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Filter,
+  Loader2,
+  MessageSquarePlus,
+  RefreshCw,
+  Search,
+  X,
+} from 'lucide-react';
 
 const DEFAULT_FILTERS = {
   scope: 'team',
@@ -51,6 +59,7 @@ const FilterToolbar = ({
   onRefresh,
   onStartManualConversation,
   manualConversationPending = false,
+  manualConversationUnavailableReason,
 }) => {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -268,6 +277,15 @@ const FilterToolbar = ({
           </Button>
         ) : null}
       </div>
+
+      {manualConversationUnavailableReason ? (
+        <div className="flex items-start gap-3 rounded-lg border border-dashed border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_80%,transparent)] px-4 py-3 text-xs text-[color:var(--color-inbox-foreground)]">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-[color:var(--accent-inbox-primary)]" />
+          <div className="flex-1 leading-relaxed text-[color:var(--color-inbox-foreground-muted)]">
+            {manualConversationUnavailableReason}
+          </div>
+        </div>
+      ) : null}
 
       {activeFilterSummaries.length ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
