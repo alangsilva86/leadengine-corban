@@ -241,7 +241,7 @@ const InboxAppShell = ({
   );
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col bg-surface-shell text-foreground">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-shell text-foreground">
       <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
         <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-3">
@@ -270,8 +270,8 @@ const InboxAppShell = ({
           </div>
         ) : null}
       </div>
-      <div className="flex min-h-0 flex-1">
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-hidden">
           {shouldRenderSplitLayout ? (
             <SplitLayout
               className="h-full min-h-0 w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
