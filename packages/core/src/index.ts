@@ -6,3 +6,5 @@ export {
   UnauthorizedError,
   ForbiddenError,
 } from './common/types';
+
+export * from './contacts/types';

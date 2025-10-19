@@ -13,7 +13,7 @@ import { requestLogger } from './middleware/request-logger';
 import { authMiddleware, requireTenant } from './middleware/auth';
 import { ticketsRouter } from './routes/tickets';
 import { leadsRouter } from './routes/leads';
-import { contactsRouter } from './routes/contacts';
+import { contactsRouter, contactTasksRouter } from './routes/contacts';
 import { authRouter } from './routes/auth';
 import { integrationWebhooksRouter, webhooksRouter } from './routes/webhooks';
 import { integrationsRouter } from './routes/integrations';
@@ -373,6 +373,7 @@ if (debugMessagesRouter) {
 app.use('/api/tickets', authMiddleware, ticketsRouter);
 app.use('/api/leads', authMiddleware, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
+app.use('/api/tasks', authMiddleware, contactTasksRouter);
 app.use('/api', authMiddleware, ticketMessagesRouter);
 app.use('/api', authMiddleware, contactMessagesRouter);
 app.use('/api', authMiddleware, whatsappMessagesRouter);

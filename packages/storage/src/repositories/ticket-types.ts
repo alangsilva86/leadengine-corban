@@ -243,6 +243,7 @@ export interface Contact {
   primaryEmail?: string | undefined;
   document?: string | undefined;
   avatar?: string | undefined;
+  status: string;
   status: ContactStatus;
   lifecycleStage: ContactLifecycleStage;
   source: ContactSource;

@@ -1,0 +1,606 @@
+import {
+  Prisma,
+  type Contact as PrismaContact,
+  type ContactInteraction as PrismaContactInteraction,
+  type ContactTask as PrismaContactTask,
+  $Enums,
+} from '@prisma/client';
+
+import {
+  BulkContactsAction,
+  Contact,
+  ContactDetails,
+  ContactFilters,
+  ContactInteraction,
+  ContactInteractionChannel,
+  ContactInteractionDirection,
+  ContactListItem,
+  ContactStatus,
+  ContactTagAggregation,
+  ContactTask,
+  ContactTaskStatus,
+  ContactsPaginatedResult,
+  CreateContactDTO,
+  CreateContactInteractionDTO,
+  CreateContactTaskDTO,
+  ListContactInteractionsQuery,
+  ListContactTasksQuery,
+  MergeContactsDTO,
+  PaginatedResult,
+  UpdateContactDTO,
+  UpdateContactTaskDTO,
+} from '@ticketz/core';
+
+import { getPrismaClient } from '../prisma-client';
+
+const OPEN_TICKET_STATUSES = [
+  $Enums.TicketStatus.OPEN,
+  $Enums.TicketStatus.PENDING,
+  $Enums.TicketStatus.ASSIGNED,
+];
+
+const PENDING_TASK_STATUS = $Enums.ContactTaskStatus.PENDING;
+
+const toRecord = (value: Prisma.JsonValue | null | undefined): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const mapContact = (record: PrismaContact): Contact => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  name: record.name,
+  phone: record.phone ?? undefined,
+  email: record.email ?? undefined,
+  document: record.document ?? undefined,
+  avatar: record.avatar ?? undefined,
+  status: record.status as ContactStatus,
+  isBlocked: record.isBlocked,
+  tags: [...record.tags],
+  customFields: toRecord(record.customFields),
+  lastInteractionAt: record.lastInteractionAt ?? undefined,
+  notes: record.notes ?? undefined,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const mapInteraction = (record: PrismaContactInteraction): ContactInteraction => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  channel: record.channel as ContactInteractionChannel,
+  direction: record.direction as ContactInteractionDirection,
+  summary: record.summary,
+  payload: toRecord(record.payload),
+  occurredAt: record.occurredAt,
+  createdAt: record.createdAt,
+});
+
+const mapTask = (record: PrismaContactTask): ContactTask => ({
+  id: record.id,
+  tenantId: record.tenantId,
+  contactId: record.contactId,
+  title: record.title,
+  description: record.description ?? undefined,
+  dueAt: record.dueAt ?? undefined,
+  status: record.status as ContactTaskStatus,
+  assigneeId: record.assigneeId ?? undefined,
+  metadata: toRecord(record.metadata),
+  completedAt: record.completedAt ?? undefined,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
+
+const buildPaginationMeta = (
+  total: number,
+  page: number,
+  limit: number
+): Pick<ContactsPaginatedResult, 'total' | 'page' | 'limit' | 'totalPages' | 'hasNext' | 'hasPrev'> => {
+  const totalPages = Math.ceil(total / limit) || 0;
+  return {
+    total,
+    page,
+    limit,
+    totalPages,
+    hasNext: page < totalPages,
+    hasPrev: page > 1,
+  };
+};
+
+const normalizeStatusFilter = (status: ContactStatus[] | undefined): $Enums.ContactStatus[] => {
+  if (!status?.length) {
+    return [];
+  }
+
+  const valid = new Set(Object.values($Enums.ContactStatus));
+  return status
+    .map((value) => (valid.has(value as $Enums.ContactStatus) ? (value as $Enums.ContactStatus) : null))
+    .filter((value): value is $Enums.ContactStatus => value !== null);
+};
+
+const buildContactWhere = (
+  tenantId: string,
+  filters?: ContactFilters
+): Prisma.ContactWhereInput => {
+  const where: Prisma.ContactWhereInput = { tenantId };
+
+  if (!filters) {
+    return where;
+  }
+
+  if (filters.search) {
+    const term = filters.search.trim();
+    if (term) {
+      where.OR = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+        { phone: { contains: term, mode: 'insensitive' } },
+        { document: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+  }
+
+  const normalizedStatuses = normalizeStatusFilter(filters.status);
+  if (normalizedStatuses.length) {
+    where.status = { in: normalizedStatuses };
+  }
+
+  if (filters.tags?.length) {
+    where.tags = { hasSome: filters.tags };
+  }
+
+  if (filters.lastInteractionFrom || filters.lastInteractionTo) {
+    where.lastInteractionAt = {
+      ...(filters.lastInteractionFrom ? { gte: filters.lastInteractionFrom } : {}),
+      ...(filters.lastInteractionTo ? { lte: filters.lastInteractionTo } : {}),
+    };
+  }
+
+  if (typeof filters.hasOpenTickets === 'boolean') {
+    where.tickets = filters.hasOpenTickets
+      ? {
+          some: {
+            status: { in: OPEN_TICKET_STATUSES },
+          },
+        }
+      : {
+          none: {
+            status: { in: OPEN_TICKET_STATUSES },
+          },
+        };
+  }
+
+  return where;
+};
+
+export const listContacts = async (
+  tenantId: string,
+  {
+    page = 1,
+    limit = 20,
+    sortBy,
+    sortOrder = 'desc',
+  }: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' },
+  filters?: ContactFilters
+): Promise<ContactsPaginatedResult> => {
+  const prisma = getPrismaClient();
+  const where = buildContactWhere(tenantId, filters);
+  const skip = (page - 1) * limit;
+
+  const [records, total] = await Promise.all([
+    prisma.contact.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: sortBy ? { [sortBy]: sortOrder } : { updatedAt: sortOrder },
+    }),
+    prisma.contact.count({ where }),
+  ]);
+
+  const contactIds = records.map((record) => record.id);
+
+  const [openTicketCounts, pendingTaskCounts] = contactIds.length
+    ? await Promise.all([
+        prisma.ticket.groupBy({
+          by: ['contactId'],
+          where: { tenantId, contactId: { in: contactIds }, status: { in: OPEN_TICKET_STATUSES } },
+          _count: { _all: true },
+        }),
+        prisma.contactTask.groupBy({
+          by: ['contactId'],
+          where: { tenantId, contactId: { in: contactIds }, status: PENDING_TASK_STATUS },
+          _count: { _all: true },
+        }),
+      ])
+    : [[], []];
+
+  const contactItems: ContactListItem[] = records.map((record) => {
+    const openTickets = openTicketCounts.find((item) => item.contactId === record.id)?._count._all ?? 0;
+    const pendingTasks = pendingTaskCounts.find((item) => item.contactId === record.id)?._count._all ?? 0;
+
+    return {
+      ...mapContact(record),
+      openTickets,
+      pendingTasks,
+    };
+  });
+
+  return {
+    items: contactItems,
+    ...buildPaginationMeta(total, page, limit),
+  };
+};
+
+export const getContactById = async (tenantId: string, contactId: string): Promise<ContactDetails | null> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.contact.findFirst({
+    where: { tenantId, id: contactId },
+    include: {
+      interactions: { orderBy: { occurredAt: 'desc' }, take: 20 },
+      tasks: { orderBy: { createdAt: 'desc' }, take: 20 },
+      _count: {
+        select: {
+          tickets: { where: { status: { in: OPEN_TICKET_STATUSES } } },
+        },
+      },
+    },
+  });
+
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...mapContact(record),
+    interactions: record.interactions.map(mapInteraction),
+    tasks: record.tasks.map(mapTask),
+    openTickets: record._count?.tickets ?? 0,
+  };
+};
+
+export const createContact = async ({ tenantId, payload }: CreateContactDTO): Promise<Contact> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.contact.create({
+    data: {
+      tenantId,
+      name: payload.name,
+      phone: payload.phone ?? null,
+      email: payload.email ?? null,
+      document: payload.document ?? null,
+      avatar: payload.avatar ?? null,
+      status: (payload.status as $Enums.ContactStatus | undefined) ?? $Enums.ContactStatus.ACTIVE,
+      isBlocked: payload.isBlocked ?? false,
+      tags: payload.tags ?? [],
+      customFields: payload.customFields ?? {},
+      lastInteractionAt: payload.lastInteractionAt ?? null,
+      notes: payload.notes ?? null,
+    },
+  });
+
+  return mapContact(record);
+};
+
+export const updateContact = async ({ tenantId, contactId, payload }: UpdateContactDTO): Promise<Contact | null> => {
+  const prisma = getPrismaClient();
+  try {
+    const record = await prisma.contact.update({
+      where: { id: contactId, tenantId },
+      data: {
+        ...(payload.name !== undefined ? { name: payload.name } : {}),
+        ...(payload.phone !== undefined ? { phone: payload.phone ?? null } : {}),
+        ...(payload.email !== undefined ? { email: payload.email ?? null } : {}),
+        ...(payload.document !== undefined ? { document: payload.document ?? null } : {}),
+        ...(payload.avatar !== undefined ? { avatar: payload.avatar ?? null } : {}),
+        ...(payload.status !== undefined ? { status: payload.status as $Enums.ContactStatus } : {}),
+        ...(payload.isBlocked !== undefined ? { isBlocked: payload.isBlocked } : {}),
+        ...(payload.tags !== undefined ? { tags: payload.tags } : {}),
+        ...(payload.customFields !== undefined ? { customFields: payload.customFields } : {}),
+        ...(payload.lastInteractionAt !== undefined
+          ? { lastInteractionAt: payload.lastInteractionAt ?? null }
+          : {}),
+        ...(payload.notes !== undefined ? { notes: payload.notes ?? null } : {}),
+      },
+    });
+
+    return mapContact(record);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return null;
+    }
+    throw error;
+  }
+};
+
+export const deleteContacts = async (tenantId: string, contactIds: string[]): Promise<number> => {
+  const prisma = getPrismaClient();
+  const result = await prisma.contact.deleteMany({ where: { tenantId, id: { in: contactIds } } });
+  return result.count;
+};
+
+export const listContactTags = async (tenantId: string): Promise<ContactTagAggregation[]> => {
+  const prisma = getPrismaClient();
+  const records = await prisma.contact.findMany({ where: { tenantId }, select: { tags: true } });
+  const counts = new Map<string, number>();
+
+  for (const record of records) {
+    for (const tag of record.tags) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries()).map(([tag, count]) => ({ tag, count }));
+};
+
+export const logContactInteraction = async ({
+  tenantId,
+  contactId,
+  payload,
+}: CreateContactInteractionDTO): Promise<ContactInteraction> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.contactInteraction.create({
+    data: {
+      tenantId,
+      contactId,
+      channel: payload.channel as $Enums.ContactInteractionChannel,
+      direction: payload.direction as $Enums.ContactInteractionDirection,
+      summary: payload.summary,
+      payload: payload.payload ?? {},
+      occurredAt: payload.occurredAt ?? new Date(),
+    },
+  });
+
+  await prisma.contact.update({
+    where: { id: contactId, tenantId },
+    data: { lastInteractionAt: record.occurredAt },
+  });
+
+  return mapInteraction(record);
+};
+
+export const listContactInteractions = async ({
+  tenantId,
+  contactId,
+  page = 1,
+  limit = 20,
+  sortBy,
+  sortOrder = 'desc',
+}: ListContactInteractionsQuery & { tenantId: string }): Promise<PaginatedResult<ContactInteraction>> => {
+  const prisma = getPrismaClient();
+  const skip = (page - 1) * limit;
+
+  const [records, total] = await Promise.all([
+    prisma.contactInteraction.findMany({
+      where: { tenantId, contactId },
+      orderBy: sortBy ? { [sortBy]: sortOrder } : { occurredAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.contactInteraction.count({ where: { tenantId, contactId } }),
+  ]);
+
+  return {
+    items: records.map(mapInteraction),
+    ...buildPaginationMeta(total, page, limit),
+  };
+};
+
+export const createContactTask = async ({
+  tenantId,
+  contactId,
+  payload,
+}: CreateContactTaskDTO): Promise<ContactTask> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.contactTask.create({
+    data: {
+      tenantId,
+      contactId,
+      title: payload.title,
+      description: payload.description ?? null,
+      dueAt: payload.dueAt ?? null,
+      status: PENDING_TASK_STATUS,
+      assigneeId: payload.assigneeId ?? null,
+      metadata: payload.metadata ?? {},
+    },
+  });
+
+  return mapTask(record);
+};
+
+export const listContactTasks = async ({
+  tenantId,
+  contactId,
+  page = 1,
+  limit = 20,
+  status,
+  sortBy,
+  sortOrder = 'desc',
+}: ListContactTasksQuery & { tenantId: string }): Promise<PaginatedResult<ContactTask>> => {
+  const prisma = getPrismaClient();
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.ContactTaskWhereInput = {
+    tenantId,
+    contactId,
+    ...(status?.length ? { status: { in: status as $Enums.ContactTaskStatus[] } } : {}),
+  };
+
+  const [records, total] = await Promise.all([
+    prisma.contactTask.findMany({
+      where,
+      orderBy: sortBy ? { [sortBy]: sortOrder } : { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.contactTask.count({ where }),
+  ]);
+
+  return {
+    items: records.map(mapTask),
+    ...buildPaginationMeta(total, page, limit),
+  };
+};
+
+export const updateContactTask = async ({
+  tenantId,
+  taskId,
+  payload,
+}: UpdateContactTaskDTO): Promise<ContactTask | null> => {
+  const prisma = getPrismaClient();
+  try {
+    const record = await prisma.contactTask.update({
+      where: { id: taskId, tenantId },
+      data: {
+        ...(payload.title ? { title: payload.title } : {}),
+        ...(payload.description !== undefined ? { description: payload.description ?? null } : {}),
+        ...(payload.dueAt !== undefined ? { dueAt: payload.dueAt ?? null } : {}),
+        ...(payload.status ? { status: payload.status as $Enums.ContactTaskStatus } : {}),
+        ...(payload.assigneeId !== undefined ? { assigneeId: payload.assigneeId ?? null } : {}),
+        ...(payload.metadata ? { metadata: payload.metadata } : {}),
+        ...(payload.completedAt !== undefined ? { completedAt: payload.completedAt ?? null } : {}),
+      },
+    });
+
+    return mapTask(record);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return null;
+    }
+    throw error;
+  }
+};
+
+export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }: MergeContactsDTO): Promise<Contact | null> => {
+  const prisma = getPrismaClient();
+  const uniqueSourceIds = Array.from(new Set(sourceIds.filter((id) => id !== targetId)));
+  if (!uniqueSourceIds.length) {
+    return getContactById(tenantId, targetId);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const target = await tx.contact.findFirst({ where: { tenantId, id: targetId } });
+    if (!target) {
+      return null;
+    }
+
+    const sources = await tx.contact.findMany({ where: { tenantId, id: { in: uniqueSourceIds } } });
+
+    if (!sources.length) {
+      return mapContact(target);
+    }
+
+    const mergedTags =
+      preserve?.tags === false
+        ? target.tags
+        : Array.from(new Set([...target.tags, ...sources.flatMap((s) => s.tags)]));
+
+    const baseCustomFields = toRecord(target.customFields);
+    const mergedCustomFields =
+      preserve?.customFields === false
+        ? baseCustomFields
+        : sources.reduce<Record<string, unknown>>((acc, source) => ({
+            ...acc,
+            ...toRecord(source.customFields),
+          }), baseCustomFields);
+
+    const mergedNotes = (() => {
+      if (preserve?.notes === false) {
+        return target.notes ?? null;
+      }
+
+      const notes = [target.notes, ...sources.map((source) => source.notes)]
+        .filter((note): note is string => typeof note === 'string' && note.trim().length > 0)
+        .map((note) => note.trim());
+
+      return notes.length > 0 ? notes.join('\n') : target.notes ?? null;
+    })();
+
+    await Promise.all([
+      tx.ticket.updateMany({
+        where: { tenantId, contactId: { in: uniqueSourceIds } },
+        data: { contactId: targetId },
+      }),
+      tx.lead.updateMany({
+        where: { tenantId, contactId: { in: uniqueSourceIds } },
+        data: { contactId: targetId },
+      }),
+      tx.message.updateMany({
+        where: { tenantId, contactId: { in: uniqueSourceIds } },
+        data: { contactId: targetId },
+      }),
+      tx.contactTask.updateMany({
+        where: { tenantId, contactId: { in: uniqueSourceIds } },
+        data: { contactId: targetId },
+      }),
+      tx.contactInteraction.updateMany({
+        where: { tenantId, contactId: { in: uniqueSourceIds } },
+        data: { contactId: targetId },
+      }),
+    ]);
+
+    await tx.contact.update({
+      where: { id: targetId, tenantId },
+      data: {
+        tags: mergedTags,
+        customFields: mergedCustomFields,
+        notes: mergedNotes,
+      },
+    });
+
+    await tx.contact.deleteMany({ where: { tenantId, id: { in: uniqueSourceIds } } });
+
+    const updated = await tx.contact.findFirst({ where: { tenantId, id: targetId } });
+    return updated ? mapContact(updated) : null;
+  });
+};
+
+export const applyBulkContactsAction = async ({
+  tenantId,
+  contactIds,
+  status,
+  addTags,
+  removeTags,
+  block,
+}: BulkContactsAction): Promise<Contact[]> => {
+  const prisma = getPrismaClient();
+  const contacts = await prisma.contact.findMany({ where: { tenantId, id: { in: contactIds } } });
+
+  const tagsToAdd = addTags ?? [];
+  const tagsToRemove = new Set(removeTags ?? []);
+
+  const updated = await Promise.all(
+    contacts.map(async (contact) => {
+      const nextTags = Array.from(
+        new Set([
+          ...contact.tags.filter((tag) => !tagsToRemove.has(tag)),
+          ...tagsToAdd,
+        ])
+      );
+
+      const record = await prisma.contact.update({
+        where: { id: contact.id, tenantId },
+        data: {
+          ...(status ? { status: status as $Enums.ContactStatus } : {}),
+          ...(block !== undefined ? { isBlocked: block } : {}),
+          ...(tagsToAdd.length || tagsToRemove.size ? { tags: nextTags } : {}),
+        },
+      });
+
+      return mapContact(record);
+    })
+  );
+
+  return updated;
+};
+
+export const findContactsByIds = async (tenantId: string, contactIds: string[]): Promise<Contact[]> => {
+  if (!contactIds.length) {
+    return [];
+  }
+
+  const prisma = getPrismaClient();
+  const records = await prisma.contact.findMany({ where: { tenantId, id: { in: contactIds } } });
+  return records.map(mapContact);
+};

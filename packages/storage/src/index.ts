@@ -54,3 +54,20 @@ export type {
 
 export { resetTicketStore } from './repositories/ticket-repository';
 
+export {
+  listContacts,
+  getContactById,
+  createContact,
+  updateContact,
+  deleteContacts,
+  listContactTags,
+  logContactInteraction,
+  listContactInteractions,
+  createContactTask,
+  listContactTasks,
+  updateContactTask,
+  mergeContacts,
+  applyBulkContactsAction,
+  findContactsByIds,
+} from './repositories/contact-repository';
+
