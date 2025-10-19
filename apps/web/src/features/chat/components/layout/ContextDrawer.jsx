@@ -9,7 +9,7 @@ const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktop
 
   const content = useMemo(() => {
     return (
-      <ScrollArea className="flex-1" viewportClassName="min-h-0 overscroll-contain">
+      <ScrollArea className="flex-1 min-h-0" viewportClassName="min-h-0 overscroll-contain">
         <div className={cn('px-4 py-6 sm:px-5', desktopContentClassName)}>{children}</div>
       </ScrollArea>
     );
