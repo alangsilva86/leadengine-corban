@@ -50,7 +50,7 @@ export const DetailsPanel = ({
   ];
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto pr-1">
+    <div className="flex flex-col gap-4 pr-1">
       <section className="space-y-3">
         <header>
           <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-muted">Ações rápidas</h3>
