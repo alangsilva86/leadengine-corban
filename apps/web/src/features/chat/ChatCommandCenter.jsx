@@ -24,6 +24,17 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     unavailableReason: manualConversationUnavailableReason,
   } = useManualConversationLauncher();
   const [manualConversationOpen, setManualConversationOpen] = useState(false);
+  const [whatsAppUnavailable, setWhatsAppUnavailable] = useState(null);
+
+  const applyWhatsAppErrorCopy = useCallback((code, fallbackMessage) => {
+    const copy = resolveWhatsAppErrorCopy(code, fallbackMessage);
+    setWhatsAppUnavailable(copy.code === 'BROKER_NOT_CONFIGURED' ? copy : null);
+    return copy;
+  }, []);
+
+  useEffect(() => {
+    setWhatsAppUnavailable(null);
+  }, [controller.selectedTicketId]);
 
   const handleManualConversationSubmit = useCallback(
     async (payload) => {
@@ -127,15 +138,19 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         onSuccess: (result) => {
           const error = result?.error;
           if (error) {
-            const copy = resolveWhatsAppErrorCopy(error.code, error.message);
+            const copy = applyWhatsAppErrorCopy(error?.payload?.code ?? error?.code, error?.message);
             toast.error(copy.title ?? 'Falha ao enviar mensagem', {
-              description: copy.description ?? error.message ?? 'Não foi possível enviar a mensagem.',
+              description: copy.description ?? error?.message ?? 'Não foi possível enviar a mensagem.',
             });
+            return;
           }
+          setWhatsAppUnavailable(null);
         },
         onError: (error) => {
-          toast.error('Falha ao enviar mensagem', {
-            description: error?.message ?? 'Erro inesperado ao enviar',
+          const fallbackMessage = error?.message ?? 'Erro inesperado ao enviar';
+          const copy = applyWhatsAppErrorCopy(error?.payload?.code ?? error?.code, fallbackMessage);
+          toast.error(copy.title ?? 'Falha ao enviar mensagem', {
+            description: copy.description ?? fallbackMessage,
           });
         },
       }
@@ -329,6 +344,8 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             typingIndicator={controller.typingIndicator}
             isSending={controller.sendMessageMutation.isPending}
             sendError={controller.sendMessageMutation.error}
+            composerDisabled={Boolean(whatsAppUnavailable)}
+            composerDisabledReason={whatsAppUnavailable}
           />
         </InboxAppShell>
       </div>

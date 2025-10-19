@@ -21,8 +21,11 @@ export const ConversationArea = ({
   typingIndicator,
   isSending,
   sendError,
+  composerDisabled = false,
+  composerDisabledReason = null,
 }) => {
-  const disabled = false;
+  const disabled = Boolean(composerDisabled);
+  const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
   const ai = useAiSuggestions();
   const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
   const [composerOffset, setComposerOffset] = useState(96);
@@ -181,6 +184,14 @@ export const ConversationArea = ({
           ref={composerRef}
           className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-3 sm:px-5 sm:py-4"
         >
+          {composerNotice ? (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-[0_6px_20px_-12px_rgba(217,119,6,0.55)]">
+              <p className="font-medium">{composerNotice.title ?? 'Envio indisponível'}</p>
+              {composerNotice.description ? (
+                <p className="mt-1 text-amber-800">{composerNotice.description}</p>
+              ) : null}
+            </div>
+          ) : null}
           <Composer
             disabled={disabled}
             onSend={(payload) => onSendMessage?.(payload)}
