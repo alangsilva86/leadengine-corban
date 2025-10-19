@@ -47,6 +47,18 @@ beforeAll(async () => {
 
 
 describe('emitRealtimeUpdatesForInbound', () => {
+  const baseMessage = {
+    id: 'message-cross',
+    ticketId: 'ticket-cross',
+    tenantId: 'tenant-event',
+    direction: 'INBOUND',
+    status: 'SENT',
+    content: 'Olá cross tenant',
+    metadata: { eventMetadata: { requestId: 'req-cross' } },
+    createdAt: new Date('2024-01-03T09:00:00.000Z'),
+    updatedAt: new Date('2024-01-03T09:00:00.000Z'),
+  } as SendMessageResult;
+
   beforeEach(() => {
     resetInboundLeadServiceTestState();
     emitToTenantMock.mockClear();
@@ -55,7 +67,7 @@ describe('emitRealtimeUpdatesForInbound', () => {
     (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
   });
 
-  it('emits realtime updates even when ticket tenant differs from event tenant', async () => {
+  it('emits realtime updates even when ticket tenant differs from event tenant when enabled', async () => {
     (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'ticket-cross',
       tenantId: 'tenant-database',
@@ -67,23 +79,11 @@ describe('emitRealtimeUpdatesForInbound', () => {
       metadata: {},
     });
 
-    const message = {
-      id: 'message-cross',
-      ticketId: 'ticket-cross',
-      tenantId: 'tenant-event',
-      direction: 'INBOUND',
-      status: 'SENT',
-      content: 'Olá cross tenant',
-      metadata: { eventMetadata: { requestId: 'req-cross' } },
-      createdAt: new Date('2024-01-03T09:00:00.000Z'),
-      updatedAt: new Date('2024-01-03T09:00:00.000Z'),
-    } as SendMessageResult;
-
     await emitRealtimeUpdatesForInbound({
       tenantId: 'tenant-event',
       ticketId: 'ticket-cross',
       instanceId: 'inst-cross',
-      message,
+      message: baseMessage,
       providerMessageId: 'wamid.cross',
     });
 
@@ -94,5 +94,21 @@ describe('emitRealtimeUpdatesForInbound', () => {
       'tickets.updated',
       expect.any(Object)
     );
+  });
+
+  it('skips redundant realtime updates when message creation already emitted them', async () => {
+    await emitRealtimeUpdatesForInbound({
+      tenantId: 'tenant-event',
+      ticketId: 'ticket-cross',
+      instanceId: 'inst-cross',
+      message: baseMessage,
+      providerMessageId: 'wamid.cross',
+      emitTicketRealtimeEvents: false,
+    });
+
+    expect(emitToTenantMock).not.toHaveBeenCalled();
+    expect(emitToTicketMock).not.toHaveBeenCalled();
+    expect(emitToAgreementMock).not.toHaveBeenCalled();
+    expect(prismaClientMock.ticket.findUnique).not.toHaveBeenCalled();
   });
 });
