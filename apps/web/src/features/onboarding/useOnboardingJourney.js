@@ -111,6 +111,31 @@ export function useOnboardingJourney() {
     }
   }, [currentPage, selectedAgreement, whatsappStatus, activeCampaign]);
 
+  useEffect(() => {
+    const handleExternalNavigation = (event) => {
+      const targetPage = typeof event?.detail === 'string' ? event.detail : null;
+      if (!targetPage) {
+        return;
+      }
+
+      if (targetPage === 'contacts') {
+        return;
+      }
+
+      setCurrentPage(targetPage);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('leadengine:navigate', handleExternalNavigation);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('leadengine:navigate', handleExternalNavigation);
+      }
+    };
+  }, []);
+
   const onboardingStages = useMemo(() => {
     if (selectedAgreement || currentPage === 'agreements') {
       return journeyStages;
