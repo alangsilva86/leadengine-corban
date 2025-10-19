@@ -7,9 +7,11 @@ const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 export const useManualConversationLauncher = () => {
   const mutation = useMutation({
     mutationKey: ['lead-inbox', 'manual-conversation'],
-    mutationFn: async ({ phone, message }) => {
+    mutationFn: async ({ phone, message, instanceId }) => {
       const digits = sanitizePhone(phone);
       const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+      const normalizedInstanceId =
+        typeof instanceId === 'string' ? instanceId.trim() : '';
 
       if (!digits) {
         throw new Error('Informe um telefone válido.');
@@ -18,6 +20,7 @@ export const useManualConversationLauncher = () => {
       const response = await apiPost('/api/manual-conversations', {
         phone: digits,
         message: trimmedMessage,
+        instanceId: normalizedInstanceId,
       });
 
       const payload = response?.data ?? {};
@@ -29,6 +32,7 @@ export const useManualConversationLauncher = () => {
         messageRecord: payload.messageRecord ?? null,
         phone: payload.phone ?? digits,
         message: payload.message ?? trimmedMessage,
+        instanceId: payload.instanceId ?? normalizedInstanceId,
       };
     },
   });
