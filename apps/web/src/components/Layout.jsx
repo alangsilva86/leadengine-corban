@@ -73,9 +73,14 @@ const LayoutHeader = ({ children, className }) => (
   </header>
 );
 
-const LayoutContent = ({ children, className }) => (
+const LayoutContent = ({ children, className, stickyFooterPaddingClass }) => (
   <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
-    <div className="page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-hidden p-6 md:p-8">
+    <div
+      className={cn(
+        'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto p-6 md:p-8',
+        stickyFooterPaddingClass
+      )}
+    >
       {children}
     </div>
   </div>
@@ -288,7 +293,7 @@ const LayoutShell = ({
             />
           </div>
         </div>
-        <LayoutContent className="h-full min-h-0 overflow-hidden">
+        <LayoutContent className="h-full min-h-0">
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
           ) : null}
