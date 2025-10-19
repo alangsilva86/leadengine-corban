@@ -183,19 +183,35 @@ const InboxAppShell = ({
 
   const canPersistPreferences = Boolean(currentUser?.id);
 
-  const toggleListVisibility = useCallback(() => {
+  const handleToggleListVisibility = useCallback(() => {
     if (isDesktop) {
-      setDesktopListVisible((previous) => !previous);
+      setDesktopListVisible((previous) => {
+        const next = !previous;
+        if (next) {
+          setContextOpen(false);
+        }
+        return next;
+      });
     } else if (!isTablet) {
       setMobileListOpen((previous) => !previous);
     }
   }, [isDesktop, isTablet]);
 
+  const handleToggleContext = useCallback(() => {
+    setContextOpen((previous) => {
+      const next = !previous;
+      if (next && isDesktop) {
+        setDesktopListVisible(false);
+      }
+      return next;
+    });
+  }, [isDesktop]);
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       if ((event.key === 'l' || event.key === 'L') && event.altKey && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
-        toggleListVisibility();
+        handleToggleListVisibility();
       }
     };
 
@@ -203,7 +219,7 @@ const InboxAppShell = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [toggleListVisibility]);
+  }, [handleToggleListVisibility]);
 
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
   const effectiveContextOpen = isDesktop && contextOpen;
@@ -270,8 +286,8 @@ const InboxAppShell = ({
               </div>
             ) : null}
             <DesktopToolbar
-              onToggleListVisibility={toggleListVisibility}
-              onToggleContext={() => setContextOpen((previous) => !previous)}
+              onToggleListVisibility={handleToggleListVisibility}
+              onToggleContext={handleToggleContext}
               contextOpen={effectiveContextOpen}
               desktopListVisible={desktopListVisible}
               headerListButtonLabel={headerListButtonLabel}
