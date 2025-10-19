@@ -67,10 +67,12 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
   return (
     <button
       type="button"
+      data-active={selected ? 'true' : 'false'}
+      aria-pressed={selected}
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'w-full rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-left transition hover:border-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)] min-h-[44px]',
-        selected && 'border-[color:var(--accent-inbox-primary)] bg-[color:var(--surface-overlay-inbox-bold)]'
+        'group w-full min-h-[44px] rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-left transition duration-150 hover:border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_35%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_88%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
+        selected && 'border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)]'
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -84,19 +86,25 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
           </div>
           <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
         </div>
-        <Badge variant="status" tone={slaToneClasses.badgeTone} className={slaToneClasses.badgeClassName}>
+        <Badge
+          variant="status"
+          tone={slaToneClasses.badgeTone}
+          className={cn(slaToneClasses.badgeClassName, 'rounded-full px-2 py-0.5 text-[11px]')}
+        >
           {slaLabel}
         </Badge>
       </div>
-      <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-        <span className="flex items-center gap-1 text-[color:var(--color-inbox-foreground-muted)]">
+      <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--color-inbox-foreground-muted)] opacity-80 transition-opacity group-hover:opacity-100">
+        <span className="flex items-center gap-1">
           <Clock className="h-3.5 w-3.5 text-[color:var(--color-inbox-foreground-muted)]" />
           Último cliente: {lastInbound ?? '—'}
         </span>
         <span className="text-[color:var(--color-inbox-foreground-muted)]">•</span>
         <span className="text-[color:var(--color-inbox-foreground-muted)]">Você: {lastOutbound ?? '—'}</span>
       </div>
-      <p className="mt-2 line-clamp-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">{formatPreview(ticket)}</p>
+      <p className="mt-2 line-clamp-2 text-xs text-[color:var(--color-inbox-foreground-muted)] transition-[max-height] duration-200 ease-out group-hover:line-clamp-none">
+        {formatPreview(ticket)}
+      </p>
       {agentTyping ? (
         <div className="mt-2 text-xs text-[color:var(--accent-inbox-primary)]">Agente digitando…</div>
       ) : null}

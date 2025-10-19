@@ -10,10 +10,11 @@ import {
   MapPin,
   Phone,
   ListChecks,
+  Loader2,
 } from 'lucide-react';
 
 const STATUS_ICONS = {
-  PENDING: { icon: Check, tone: 'text-foreground-muted', label: 'Pendente' },
+  PENDING: { icon: Loader2, tone: 'text-foreground-muted', label: 'Enviando' },
   SENT: { icon: Check, tone: 'text-foreground-muted', label: 'Enviado' },
   DELIVERED: { icon: CheckCheck, tone: 'text-foreground', label: 'Entregue' },
   READ: { icon: BadgeCheck, tone: 'text-success', label: 'Lido' },
@@ -27,16 +28,29 @@ const formatTime = (value) => {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
-export const MessageBubble = ({ message }) => {
+export const MessageBubble = ({
+  message,
+  isContinuation = false,
+  isTail = true,
+  isFirst = false,
+  showMetadata = true,
+}) => {
   const rawDirection = typeof message.direction === 'string' ? message.direction.toLowerCase() : 'inbound';
   const outbound = rawDirection === 'outbound';
   const tone = outbound
     ? 'bg-inbox-surface-strong text-inbox-foreground ring-1 ring-inbox-border'
     : 'bg-inbox-surface text-inbox-foreground ring-1 ring-inbox-border';
   const bubbleClass = cn(
-    'max-w-[75%] rounded-[26px] px-4 py-3 text-sm leading-relaxed shadow-[0_20px_45px_-32px_rgba(15,23,42,0.9)] backdrop-blur',
+    'max-w-[72%] rounded-2xl px-3 py-2 text-sm leading-tight shadow-[0_10px_30px_-18px_rgba(15,23,42,0.6)] backdrop-blur transition-colors duration-150',
     tone,
-    outbound ? 'self-end rounded-tr-sm' : 'self-start rounded-tl-sm'
+    outbound ? 'self-end' : 'self-start',
+    isContinuation && (outbound ? 'rounded-tr-md' : 'rounded-tl-md'),
+    !isTail && (outbound ? 'rounded-br-md' : 'rounded-bl-md')
+  );
+  const containerClass = cn(
+    'flex w-full flex-col gap-0.5',
+    outbound ? 'items-end' : 'items-start',
+    isContinuation ? 'mt-1' : isFirst ? 'mt-0' : 'mt-3'
   );
   const metadata = (message.metadata && typeof message.metadata === 'object' ? message.metadata : {}) ?? {};
   const brokerMetadata = metadata?.broker && typeof metadata.broker === 'object' ? metadata.broker : {};
@@ -55,6 +69,10 @@ export const MessageBubble = ({ message }) => {
   const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
 
   const ack = STATUS_ICONS[message.status ?? 'SENT'] ?? STATUS_ICONS.SENT;
+  const AckIcon = ack.icon;
+  const normalizedStatus = typeof message.status === 'string' ? message.status.toUpperCase() : 'SENT';
+  const isPendingStatus = normalizedStatus === 'PENDING';
+  const isFailedStatus = normalizedStatus === 'FAILED';
 
   const messageType = typeof message.type === 'string' ? message.type.toLowerCase() : 'text';
   const media = message.media && typeof message.media === 'object' ? message.media : null;
@@ -113,7 +131,7 @@ export const MessageBubble = ({ message }) => {
 
   const renderBody = () => {
     if (resolvedType === 'text') {
-      return <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{textContent}</p>;
+      return <p className="whitespace-pre-wrap break-words text-sm leading-tight">{textContent}</p>;
     }
 
     if (resolvedType === 'image' && mediaUrl) {
@@ -405,39 +423,64 @@ export const MessageBubble = ({ message }) => {
   };
 
   return (
-    <div className={cn('flex w-full flex-col gap-1', outbound ? 'items-end' : 'items-start')}>
+    <div
+      className={containerClass}
+      data-direction={outbound ? 'outbound' : 'inbound'}
+      data-status={(message.status ?? 'sent').toString().toLowerCase()}
+    >
       <div className={bubbleClass}>
-        <div className={cn('mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide', outbound ? 'justify-end' : 'justify-start')}>
-          <span className={cn('rounded-full px-2 py-0.5', directionChipTone)}>{directionLabel}</span>
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <span className={cn('rounded-full px-2 py-0.5 lowercase normal-case', originChipTone)}>
-                {`via ${sourceInstance} • ${phoneLabel}`}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="space-y-1">
-              <p className="font-semibold">Instância: {sourceInstance}</p>
-              {remoteJid ? <p className="text-xs text-muted-foreground">remoteJid: {remoteJid}</p> : null}
-              {tooltipTimestamp ? (
-                <p className="text-xs text-muted-foreground">timestamp: {tooltipTimestamp}</p>
-              ) : null}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <div className="break-words text-sm leading-relaxed">{renderBody()}</div>
-        <div className="mt-1 flex items-center gap-1 text-xs text-foreground-muted">
+        {showMetadata ? (
+          <div
+            className={cn(
+              'mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide',
+              outbound ? 'justify-end' : 'justify-start'
+            )}
+          >
+            <span className={cn('rounded-full px-2 py-0.5', directionChipTone)}>{directionLabel}</span>
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium normal-case',
+                    originChipTone
+                  )}
+                >
+                  via {sourceInstance}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="space-y-1">
+                <p className="font-semibold">Instância: {sourceInstance}</p>
+                <p className="text-xs text-muted-foreground">Contato: {phoneLabel}</p>
+                {remoteJid ? <p className="text-xs text-muted-foreground">remoteJid: {remoteJid}</p> : null}
+                {tooltipTimestamp ? (
+                  <p className="text-xs text-muted-foreground">timestamp: {tooltipTimestamp}</p>
+                ) : null}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null}
+
+        <div className="break-words whitespace-pre-wrap text-sm leading-tight">{renderBody()}</div>
+        <div
+          className={cn(
+            'mt-1 flex items-center gap-2 text-[11px] text-foreground-muted',
+            outbound ? 'justify-end' : 'justify-start'
+          )}
+        >
           <span>{formatTime(message.createdAt)}</span>
           <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full px-1.5 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  ack.tone
+                  'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--accent-inbox-primary)]',
+                  ack.tone,
+                  isFailedStatus && 'text-status-error focus-visible:ring-status-error/60'
                 )}
                 aria-label={ack.label}
               >
-                <ack.icon className="h-3 w-3" aria-hidden="true" />
+                <AckIcon className={cn('h-3 w-3', isPendingStatus && 'animate-spin')} aria-hidden="true" />
+                <span className="sr-only">{ack.label}</span>
               </button>
             </TooltipTrigger>
             <TooltipContent>{ack.label}</TooltipContent>

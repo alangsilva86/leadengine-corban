@@ -9,9 +9,27 @@ const Divider = ({ label }) => (
   </div>
 );
 
+const resolveAuthorKey = (payload = {}) => {
+  const direction = typeof payload.direction === 'string' ? payload.direction.toLowerCase() : 'inbound';
+  const authorCandidate =
+    payload.authorId ??
+    payload.userId ??
+    payload.agentId ??
+    payload.contactId ??
+    payload.contact?.id ??
+    payload.metadata?.whatsapp?.remoteJid ??
+    payload.metadata?.remoteJid ??
+    payload.metadata?.contactPhone ??
+    payload.remoteJid ??
+    payload.chatId ??
+    payload.contact?.phone ??
+    '';
+  return `${direction}|${authorCandidate}`;
+};
+
 export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAgents = [] }) => (
   <div
-    className="chat-scroll-content flex h-full min-h-0 flex-col gap-4"
+    className="chat-scroll-content flex h-full min-h-0 flex-col gap-3"
     role="log"
     aria-live="polite"
     aria-relevant="additions"
@@ -26,13 +44,30 @@ export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAge
       </button>
     ) : null}
 
-    {items?.map((entry) => {
+    {items?.map((entry, index) => {
       if (entry.type === 'divider') {
         return <Divider key={entry.id} label={entry.label} />;
       }
 
       if (entry.type === 'message') {
-        return <MessageBubble key={entry.id} message={entry.payload} />;
+        const payload = entry.payload;
+        const previousEntry = index > 0 ? items[index - 1] : null;
+        const nextEntry = index < items.length - 1 ? items[index + 1] : null;
+        const previousPayload = previousEntry?.type === 'message' ? previousEntry.payload : null;
+        const nextPayload = nextEntry?.type === 'message' ? nextEntry.payload : null;
+        const currentKey = resolveAuthorKey(payload);
+        const sameAsPrevious = previousPayload ? resolveAuthorKey(previousPayload) === currentKey : false;
+        const sameAsNext = nextPayload ? resolveAuthorKey(nextPayload) === currentKey : false;
+        return (
+          <MessageBubble
+            key={entry.id}
+            message={payload}
+            isContinuation={sameAsPrevious}
+            isTail={!sameAsNext}
+            isFirst={!previousPayload}
+            showMetadata={!sameAsPrevious}
+          />
+        );
       }
 
       return <EventCard key={entry.id} entry={entry} />;

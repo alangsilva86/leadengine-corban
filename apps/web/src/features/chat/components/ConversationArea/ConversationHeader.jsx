@@ -371,29 +371,35 @@ export const ConversationHeader = ({
       open={isExpanded}
       onOpenChange={setIsExpanded}
       className={cn(
-        'rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong p-4 shadow-[0_4px_24px_rgba(15,23,42,0.45)] backdrop-blur transition-opacity duration-150',
+        'rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-[18px] font-semibold tracking-[0.2px] text-foreground">
-            {title}
-          </h3>
-          <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Chip tone={expirationInfo.tone} className="cursor-default select-none">
-                {expirationInfo.label}
-              </Chip>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="start">
-              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-            </TooltipContent>
-          </Tooltip>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="truncate text-base font-semibold leading-tight text-foreground">
+              {title}
+            </h3>
+            <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
+              {statusInfo.label}
+            </Chip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Chip tone={expirationInfo.tone} className="cursor-default select-none px-2.5 py-1 text-[11px]">
+                  {expirationInfo.label}
+                </Chip>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start">
+                <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <p className="truncate text-xs text-foreground-muted">{subtitle}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <TypingIndicator agents={typingAgents} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -401,7 +407,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => onGenerateProposal?.(ticket)}
-                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Gerar proposta"
               >
                 <FileText className="size-4" aria-hidden />
@@ -417,7 +423,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => onAssign?.(ticket)}
-                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Atribuir"
               >
                 <UserPlus className="size-4" aria-hidden />
@@ -433,7 +439,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={() => onScheduleFollowUp?.(ticket)}
-                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Agendar follow-up"
               >
                 <CalendarClock className="size-4" aria-hidden />
@@ -451,7 +457,7 @@ export const ConversationHeader = ({
                     variant="ghost"
                     size="icon"
                     aria-label="Registrar resultado"
-                    className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                     disabled={isRegisteringResult}
                   >
                     <ClipboardList className="size-4" aria-hidden />
@@ -485,7 +491,7 @@ export const ConversationHeader = ({
                     variant="ghost"
                     size="icon"
                     aria-label="Opções de telefone"
-                    className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     <Phone className="size-4" aria-hidden />
                   </Button>
@@ -513,7 +519,7 @@ export const ConversationHeader = ({
                 variant="ghost"
                 size="icon"
                 onClick={handleCopyDocument}
-                className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Copiar documento"
               >
                 <IdCard className="size-4" aria-hidden />
@@ -528,7 +534,7 @@ export const ConversationHeader = ({
               variant="ghost"
               size="icon"
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-10 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
             >
               <ChevronDown
                 className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
@@ -540,33 +546,33 @@ export const ConversationHeader = ({
       </div>
 
       <CollapsibleContent>
-        <div className="mt-4 space-y-4 border-t border-surface-overlay-glass-border pt-4">
-          <p className="text-[13px] font-medium text-foreground-muted">{subtitle}</p>
+        <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
+          <p className="text-xs text-foreground-muted">{subtitle}</p>
 
-          <section className="flex flex-wrap items-center gap-3">
+          <section className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              size="lg"
+              size="sm"
               onClick={() => onGenerateProposal?.(ticket)}
-              className="min-h-[44px] rounded-xl bg-sky-500 text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
+              className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
             >
               Gerar proposta
             </Button>
             <Button
               type="button"
-              size="lg"
+              size="sm"
               variant="outline"
               onClick={() => onAssign?.(ticket)}
-              className="min-h-[44px] rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
             >
               Atribuir
             </Button>
             <Button
               type="button"
-              size="lg"
+              size="sm"
               variant="outline"
               onClick={() => onScheduleFollowUp?.(ticket)}
-              className="min-h-[44px] rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
             >
               Agendar follow-up
             </Button>
@@ -574,9 +580,9 @@ export const ConversationHeader = ({
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
-                  size="lg"
+                  size="sm"
                   aria-label="Registrar resultado"
-                  className="min-h-[44px] rounded-xl bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
+                  className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
                   disabled={isRegisteringResult}
                 >
                   <span className="mr-1">Registrar resultado</span>
@@ -589,7 +595,7 @@ export const ConversationHeader = ({
                     <DropdownMenuRadioItem
                       key={item.value}
                       value={item.value}
-                      className="min-h-[44px]"
+                      className="min-h-[40px]"
                       disabled={isRegisteringResult}
                     >
                       {item.label}
@@ -598,7 +604,6 @@ export const ConversationHeader = ({
                 </DropdownMenuRadioGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-            <TypingIndicator agents={typingAgents} />
           </section>
 
           <footer className="flex flex-wrap items-center gap-2 pt-1">

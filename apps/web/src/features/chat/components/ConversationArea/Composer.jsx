@@ -127,9 +127,9 @@ export const Composer = ({
   };
 
   return (
-    <div className="rounded-[26px] bg-surface-overlay-quiet p-4 shadow-[0_24px_56px_-34px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
+    <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/90 p-3 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.6)] backdrop-blur-sm">
       {attachments.length > 0 ? (
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-2 flex flex-wrap gap-2">
           {attachments.map((file) => (
             <Badge
               key={file.id}
@@ -151,7 +151,7 @@ export const Composer = ({
         </div>
       ) : null}
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <QuickReplyMenu
@@ -168,12 +168,12 @@ export const Composer = ({
                   return [...current, reply];
                 });
               }}
-              className="h-10 w-10 rounded-full bg-surface-overlay-quiet ring-1 ring-surface-overlay-glass-border"
+              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet ring-1 ring-surface-overlay-glass-border"
             />
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
+              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={handleAttachmentClick}
             >
               <Paperclip className="h-4 w-4" />
@@ -189,7 +189,7 @@ export const Composer = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
+              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={() => setTemplatePickerOpen((open) => !open)}
             >
               <Smile className="h-4 w-4" />
@@ -198,7 +198,7 @@ export const Composer = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
+              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={() => onRequestSuggestion?.()}
               disabled={aiLoading}
             >
@@ -208,7 +208,7 @@ export const Composer = ({
           </div>
         </div>
 
-        <div className="flex items-end gap-3">
+        <div className="flex items-end gap-2">
           <Textarea
             value={value}
             onChange={(event) => {
@@ -229,12 +229,12 @@ export const Composer = ({
             }}
             disabled={disabled || isSending}
             placeholder={placeholder}
-            className="min-h-[88px] flex-1 resize-none rounded-[22px] border-none bg-surface-overlay-quiet px-4 py-3 text-foreground placeholder:text-foreground-muted ring-1 ring-surface-overlay-glass-border"
+            className="min-h-[56px] max-h-40 flex-1 resize-none rounded-xl border border-transparent bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-0"
           />
           <Button
             variant="default"
             size="icon"
-            className="h-12 w-12 rounded-full bg-sky-500 text-white shadow-[0_18px_36px_-24px_rgba(14,165,233,0.7)] transition hover:bg-sky-400"
+            className="h-11 w-11 rounded-xl bg-[color:var(--accent-inbox-primary)] text-white shadow-[0_16px_28px_-20px_rgba(14,165,233,0.7)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]"
             disabled={disabled || isSending}
             onClick={handleSend}
           >

@@ -253,8 +253,9 @@ const FilterToolbar = ({
 
         {onStartManualConversation ? (
           <Button
+            variant="outline"
             size="sm"
-            className="h-9 rounded-lg bg-success px-3 text-xs font-semibold text-success-foreground hover:bg-success/90 disabled:opacity-70"
+            className="h-9 rounded-lg border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)] px-3 text-xs font-semibold text-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] disabled:opacity-70"
             onClick={onStartManualConversation}
             disabled={manualConversationPending}
           >
