@@ -118,20 +118,29 @@ const QueueMetrics = ({ metrics }) => {
   const slaRate = metrics.firstResponse?.underFiveMinutesRate ?? null;
   const qualityTier = metrics.whatsappQuality?.qualityTier ?? null;
 
+  const summary = [
+    {
+      label: '1ª resposta',
+      value: median !== null ? `${median} min` : '—',
+    },
+    {
+      label: 'Dentro de 5 min',
+      value: slaRate !== null ? `${Math.round(slaRate * 100)}%` : '—',
+    },
+    {
+      label: 'Qualidade WA',
+      value: (qualityTier ?? '—').toUpperCase(),
+    },
+  ];
+
   return (
-    <div className="grid grid-cols-1 gap-2 rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-      <div className="flex items-center justify-between">
-        <span>1ª resposta (mediana)</span>
-        <span className="font-medium text-[color:var(--color-inbox-foreground)]">{median !== null ? `${median} min` : '—'}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span>Dentro de 5 min</span>
-        <span className="font-medium text-[color:var(--color-inbox-foreground)]">{slaRate !== null ? `${Math.round(slaRate * 100)}%` : '—'}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span>Qualidade WA</span>
-        <span className="uppercase tracking-wide text-[color:var(--color-inbox-foreground)]">{qualityTier ?? '—'}</span>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+      {summary.map((item) => (
+        <div key={item.label} className="flex items-center gap-1">
+          <span className="font-medium text-[color:var(--color-inbox-foreground-muted)]">{item.label}:</span>
+          <span className="font-semibold text-[color:var(--color-inbox-foreground)]">{item.value}</span>
+        </div>
+      ))}
     </div>
   );
 };

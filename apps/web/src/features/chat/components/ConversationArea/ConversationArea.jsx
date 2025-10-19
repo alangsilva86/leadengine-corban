@@ -149,7 +149,7 @@ export const ConversationArea = ({
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
-        <header className="sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-6 sm:py-5">
+        <header className="sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-5 sm:py-3">
           <ConversationHeader
             ticket={ticket}
             onRegisterResult={onRegisterResult}
@@ -166,7 +166,7 @@ export const ConversationArea = ({
           ref={scrollRef}
           className="flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges] [overflow-clip-margin:24px]"
         >
-          <div className="min-h-0 min-w-0 px-4 py-6 sm:px-6 sm:py-6">
+          <div className="min-h-0 min-w-0 px-4 py-4 sm:px-5 sm:py-5">
             <MessageTimeline
               items={timelineItems}
               loading={isLoadingMore}
@@ -179,7 +179,7 @@ export const ConversationArea = ({
 
         <footer
           ref={composerRef}
-          className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-4 sm:px-6 sm:py-5"
+          className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-3 sm:px-5 sm:py-4"
         >
           <Composer
             disabled={disabled}

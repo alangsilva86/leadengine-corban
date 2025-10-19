@@ -243,7 +243,7 @@ const InboxAppShell = ({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-shell text-foreground">
       <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
-        <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+        <header className="flex flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -254,21 +254,30 @@ const InboxAppShell = ({
             >
               <PanelLeftOpen className="h-5 w-5" />
             </Button>
-            <h1 className="text-base font-semibold text-foreground sm:text-lg">{title}</h1>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold text-foreground sm:text-base">{title}</h1>
+              {!effectiveContextOpen ? (
+                <p className="mt-0.5 hidden text-xs text-[color:var(--text-shell-muted)] sm:block">
+                  Foco total nas conversas com clientes.
+                </p>
+              ) : null}
+            </div>
           </div>
-          <DesktopToolbar
-            onToggleListVisibility={toggleListVisibility}
-            onToggleContext={() => setContextOpen((previous) => !previous)}
-            contextOpen={effectiveContextOpen}
-            desktopListVisible={desktopListVisible}
-            headerListButtonLabel={headerListButtonLabel}
-          />
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
+            {toolbar ? (
+              <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+                {toolbar}
+              </div>
+            ) : null}
+            <DesktopToolbar
+              onToggleListVisibility={toggleListVisibility}
+              onToggleContext={() => setContextOpen((previous) => !previous)}
+              contextOpen={effectiveContextOpen}
+              desktopListVisible={desktopListVisible}
+              headerListButtonLabel={headerListButtonLabel}
+            />
+          </div>
         </header>
-        {toolbar ? (
-          <div className="border-t border-[color:var(--border-shell)] px-4 py-3 sm:px-5">
-            <div className="mx-auto w-full max-w-6xl">{toolbar}</div>
-          </div>
-        ) : null}
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-hidden">
