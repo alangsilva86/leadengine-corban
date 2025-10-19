@@ -1722,6 +1722,8 @@ export const sendMessage = async (
               });
             }
           }
+
+          throw error;
         }
       }
     }

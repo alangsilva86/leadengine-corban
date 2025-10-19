@@ -2,8 +2,14 @@ import express, { type Request } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../types/tickets';
+import {
+  WhatsAppBrokerError,
+  WhatsAppBrokerNotConfiguredError,
+} from '../../services/whatsapp-broker-client';
 
 const sendMessageMock = vi.fn();
+
+vi.mock('@ticketz/storage', () => import('../../test-utils/storage-mock'));
 
 vi.mock('../../services/ticket-service', async () => {
   const actual = await vi.importActual<typeof import('../../services/ticket-service')>(
@@ -173,5 +179,37 @@ describe('POST /api/tickets/messages validations', () => {
     expect(response.status).toBe(400);
     expect(response.body?.error?.code).toBe('VALIDATION_ERROR');
     expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 502 when the broker rejects the send request', async () => {
+    const app = buildApp();
+    const ticketId = '00000000-0000-4000-8000-000000000007';
+    const brokerError = new WhatsAppBrokerError('broker rejected message', { code: 'INSTANCE_NOT_CONNECTED' });
+    sendMessageMock.mockRejectedValueOnce(brokerError);
+
+    const response = await request(app).post('/api/tickets/messages').send({
+      ticketId,
+      type: 'TEXT',
+      content: 'Hello!',
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toMatchObject({ code: 'BROKER_ERROR' });
+  });
+
+  it('returns 503 when the broker is not configured', async () => {
+    const app = buildApp();
+    const ticketId = '00000000-0000-4000-8000-000000000008';
+    const configurationError = new WhatsAppBrokerNotConfiguredError();
+    sendMessageMock.mockRejectedValueOnce(configurationError);
+
+    const response = await request(app).post('/api/tickets/messages').send({
+      ticketId,
+      type: 'TEXT',
+      content: 'Hello!',
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ code: 'BROKER_NOT_CONFIGURED' });
   });
 });
