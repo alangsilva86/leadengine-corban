@@ -233,16 +233,47 @@ DO $$ BEGIN
         "priority" "TaskPriority" NOT NULL DEFAULT 'NORMAL',
         "title" TEXT NOT NULL,
         "description" TEXT,
-        "dueDate" TIMESTAMP(3),
+        "dueAt" TIMESTAMP(3),
         "completedAt" TIMESTAMP(3),
         "assigneeId" TEXT,
         "createdById" TEXT,
+        "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL,
         CONSTRAINT "tasks_pkey" PRIMARY KEY ("id")
     );
 EXCEPTION
     WHEN duplicate_table THEN NULL;
+END $$;
+
+-- Ensure existing tasks table aligns with the latest schema
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'tasks'
+          AND column_name = 'dueDate'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'tasks'
+          AND column_name = 'dueAt'
+    ) THEN
+        ALTER TABLE "tasks" RENAME COLUMN "dueDate" TO "dueAt";
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'tasks'
+          AND column_name = 'metadata'
+    ) THEN
+        ALTER TABLE "tasks" ADD COLUMN "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb;
+    END IF;
 END $$;
 
 -- CreateIndex
