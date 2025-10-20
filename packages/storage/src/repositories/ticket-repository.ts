@@ -258,23 +258,6 @@ const mapTicket = (record: PrismaTicket): Ticket => ({
   updatedAt: record.updatedAt,
 });
 
-const mapContact = (record: PrismaContact): Contact => ({
-  id: record.id,
-  tenantId: record.tenantId,
-  name: record.name,
-  phone: record.phone ?? undefined,
-  email: record.email ?? undefined,
-  document: record.document ?? undefined,
-  avatar: record.avatar ?? undefined,
-  status: record.status,
-  isBlocked: record.isBlocked,
-  tags: [...record.tags],
-  customFields: (record.customFields as Record<string, unknown>) ?? {},
-  lastInteractionAt: record.lastInteractionAt ?? undefined,
-  notes: record.notes ?? undefined,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
-});
 const mapContact = (record: PrismaContactWithRelations): Contact => {
   const phoneDetails = record.phones.map(mapContactPhoneRecord);
   const emailDetails = record.emails.map(mapContactEmailRecord);
