@@ -240,6 +240,72 @@ describe('WhatsApp webhook Baileys event logging', () => {
     expect(typeof payload?.rawPayload).toBe('string');
     expect(payload?.rawPayload as string).toContain('WHATSAPP_MESSAGES_UPSERT');
   });
+
+  it('processes broker contract inbound message events with shared instrumentation', async () => {
+    normalizeUpsertEventMock.mockClear();
+    const app = buildApp();
+
+    const eventPayload = {
+      id: 'broker-event-1',
+      type: 'MESSAGE_INBOUND',
+      tenantId: 'tenant-42',
+      instanceId: 'instance-1',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      payload: {
+        instanceId: 'instance-1',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        direction: 'INBOUND',
+        contact: { phone: '+55 11 99999-9999', name: 'Maria' },
+        message: { id: 'wamid-1', type: 'text', text: 'Olá!' },
+        metadata: {
+          contact: { remoteJid: '5511999999999@s.whatsapp.net' },
+          broker: { brokerId: 'broker-1' },
+        },
+      },
+    } satisfies Record<string, unknown>;
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
+
+    expect(response.status).toBe(204);
+    await inboundQueueTesting.waitForIdle();
+
+    expect(normalizeUpsertEventMock).not.toHaveBeenCalled();
+    expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
+    expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
+
+    const createArgs = processedIntegrationEventCreateMock.mock.calls[0]?.[0];
+    const debugPayload = (createArgs?.data as { payload?: unknown })?.payload as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(debugPayload).toMatchObject({
+      tenantId: 'tenant-42',
+      instanceId: 'instance-1',
+      chatId: '5511999999999@s.whatsapp.net',
+      messageId: 'wamid-1',
+      direction: 'INBOUND',
+      normalizedIndex: 0,
+    });
+
+    const [envelope] = ingestInboundWhatsAppMessageMock.mock.calls[0] ?? [];
+    expect(envelope).toMatchObject({
+      origin: 'webhook',
+      instanceId: 'instance-1',
+      tenantId: 'tenant-42',
+      message: {
+        kind: 'message',
+        id: 'wamid-1',
+        direction: 'INBOUND',
+        payload: expect.objectContaining({ text: 'Olá!' }),
+        metadata: expect.objectContaining({
+          chatId: '5511999999999@s.whatsapp.net',
+          tenantId: 'tenant-42',
+          instanceId: 'instance-1',
+          broker: expect.objectContaining({ brokerId: 'broker-1' }),
+        }),
+      },
+    });
+  });
 });
 
 describe('WhatsApp webhook instance resolution', () => {
