@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
+import { apiPost } from '@/lib/api.js';
 import ConversationArea from './components/ConversationArea/ConversationArea.jsx';
 import DetailsPanel from './components/DetailsPanel/DetailsPanel.jsx';
 import InboxAppShell from './components/layout/InboxAppShell.jsx';
@@ -10,6 +11,7 @@ import useChatController from './hooks/useChatController.js';
 import { resolveWhatsAppErrorCopy } from '../whatsapp/utils/whatsapp-error-codes.js';
 import ManualConversationDialog from './components/ManualConversationDialog.jsx';
 import { useManualConversationLauncher } from './hooks/useManualConversationLauncher.js';
+import emitInboxTelemetry from './utils/telemetry.js';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
@@ -127,7 +129,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
   const sendMessage = ({ content, attachments = [], template, caption }) => {
     const trimmed = (content ?? '').trim();
-    if (!trimmed && attachments.length === 0) {
+    if (!trimmed && attachments.length === 0 && !template) {
       return;
     }
 
@@ -162,11 +164,14 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       metadata.template = {
         id: template.id ?? template.name ?? 'template',
         label: template.label ?? template.name ?? template.id ?? 'template',
+        body: template.body ?? template.content ?? undefined,
       };
     }
 
     const hasAttachments = attachments.length > 0;
-    const payloadContent = hasAttachments ? trimmed || '[Anexo enviado]' : trimmed;
+    const payloadContent = hasAttachments
+      ? trimmed || '[Anexo enviado]'
+      : trimmed || metadata.template?.body || metadata.template?.label || (template ? 'Template enviado' : '');
     const normalizedCaption = hasAttachments
       ? caption ?? (trimmed.length > 0 ? trimmed : undefined)
       : caption;
@@ -217,12 +222,22 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             return;
           }
           setWhatsAppUnavailable(null);
+          emitInboxTelemetry('chat.outbound_message', {
+            ticketId: controller.selectedTicketId,
+            hasTemplate: Boolean(template),
+            hasAttachments,
+          });
         },
         onError: (error) => {
           const fallbackMessage = error?.message ?? 'Erro inesperado ao enviar';
           const copy = applyWhatsAppErrorCopy(error?.payload?.code ?? error?.code, fallbackMessage);
           toast.error(copy.title ?? 'Falha ao enviar mensagem', {
             description: copy.description ?? fallbackMessage,
+          });
+          emitInboxTelemetry('chat.outbound_error', {
+            ticketId: controller.selectedTicketId,
+            error: error?.message,
+            hasTemplate: Boolean(template),
           });
         },
       }
@@ -238,6 +253,10 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
         },
         onError: (error) => {
           toast.error('Erro ao registrar nota', { description: error?.message });
+          emitInboxTelemetry('chat.note.autosave_error', {
+            ticketId: controller.selectedTicketId,
+            message: error?.message,
+          });
         },
       }
     );
@@ -287,6 +306,63 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     toast.info('Agendar follow-up', {
       description: 'Conecte um calendário para programar o próximo contato.',
     });
+    emitInboxTelemetry('chat.follow_up.requested', {
+      ticketId: controller.selectedTicketId,
+    });
+  };
+
+  const handleSendTemplate = (template) => {
+    if (!template) return;
+    sendMessage({ content: template.body ?? template.content ?? '', template });
+  };
+
+  const handleCreateNextStep = async ({ description, dueAt }) => {
+    const contactId = controller.selectedTicket?.contact?.id;
+    const ticketId = controller.selectedTicketId;
+    if (!contactId || !description) {
+      toast.error('Preencha a descrição do próximo passo.');
+      return;
+    }
+
+    try {
+      const payload = {
+        description,
+        type: 'follow_up',
+        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+        metadata: {
+          ticketId,
+        },
+      };
+      const response = await apiPost(`/api/contacts/${contactId}/tasks`, payload);
+      toast.success('Próximo passo registrado');
+      emitInboxTelemetry('chat.next_step.created', {
+        ticketId,
+        contactId,
+        dueAt: payload.dueAt,
+      });
+      return response?.data ?? response ?? null;
+    } catch (error) {
+      const message = error?.message ?? 'Não foi possível criar o próximo passo.';
+      toast.error('Não foi possível criar o próximo passo', { description: message });
+      emitInboxTelemetry('chat.next_step.error', {
+        ticketId,
+        contactId,
+        message,
+      });
+      throw error;
+    }
+  };
+
+  const handleRegisterCallResult = ({ outcome, notes }) => {
+    const ticketId = controller.selectedTicketId;
+    emitInboxTelemetry('chat.call.result_logged', {
+      ticketId,
+      outcome,
+    });
+    toast.success('Resultado da chamada registrado');
+    if (notes) {
+      createNote(`📞 ${outcome}: ${notes}`);
+    }
   };
 
   const metrics = controller.metrics;
@@ -372,6 +448,9 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               ticket={controller.selectedTicket}
               onCreateNote={createNote}
               notesLoading={controller.notesMutation.isPending}
+              onSendTemplate={handleSendTemplate}
+              onCreateNextStep={handleCreateNextStep}
+              onRegisterCallResult={handleRegisterCallResult}
               onGenerateProposal={() =>
                 toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
               }
@@ -412,6 +491,9 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             onAssign={() => assignToMe(controller.selectedTicket)}
             onGenerateProposal={handleGenerateProposal}
             onScheduleFollowUp={handleScheduleFollowUp}
+            onSendTemplate={handleSendTemplate}
+            onCreateNextStep={handleCreateNextStep}
+            onRegisterCallResult={handleRegisterCallResult}
             isRegisteringResult={controller.statusMutation.isPending}
             typingIndicator={controller.typingIndicator}
             isSending={controller.sendMessageMutation.isPending}

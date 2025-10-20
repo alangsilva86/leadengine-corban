@@ -43,6 +43,8 @@ import {
   Phone,
   UserPlus,
 } from 'lucide-react';
+import QuickComposer from './QuickComposer.jsx';
+import emitInboxTelemetry from '../../utils/telemetry.js';
 
 const LOSS_REASONS = [
   { value: 'sem_interesse', label: 'Sem interesse' },
@@ -200,12 +202,34 @@ const MetadataBadge = ({ icon: Icon, children, className, ...props }) => (
   </button>
 );
 
+export const CardBody = ({ children, className }) => (
+  <div
+    className={cn(
+      'mt-3 grid gap-4 border-t border-surface-overlay-glass-border pt-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]',
+      className,
+    )}
+  >
+    {children}
+  </div>
+);
+
+CardBody.Left = function CardBodyLeft({ children, className }) {
+  return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
+};
+
+CardBody.Right = function CardBodyRight({ children, className }) {
+  return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
+};
+
 export const ConversationHeader = ({
   ticket,
   onRegisterResult,
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
+  onSendTemplate,
+  onCreateNextStep,
+  onRegisterCallResult,
   typingAgents = [],
   isRegisteringResult = false,
 }) => {
@@ -224,6 +248,13 @@ export const ConversationHeader = ({
     const frame = requestAnimationFrame(() => setIsFadeIn(true));
     return () => cancelAnimationFrame(frame);
   }, [ticket?.id, ticket]);
+
+  useEffect(() => {
+    emitInboxTelemetry('chat.header.toggle', {
+      ticketId: ticket?.id ?? null,
+      open: isExpanded,
+    });
+  }, [isExpanded, ticket?.id]);
 
   const name = ticket?.contact?.name ?? ticket?.subject ?? 'Contato sem nome';
   const company = ticket?.metadata?.company ?? ticket?.contact?.company;
@@ -546,94 +577,104 @@ export const ConversationHeader = ({
       </div>
 
       <CollapsibleContent>
-        <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
-          <p className="text-xs text-foreground-muted">{subtitle}</p>
+        <CardBody>
+          <CardBody.Left>
+            <QuickComposer
+              ticket={ticket}
+              onSendTemplate={onSendTemplate}
+              onCreateNextStep={onCreateNextStep}
+              onRegisterCallResult={onRegisterCallResult}
+            />
+          </CardBody.Left>
+          <CardBody.Right>
+            <p className="text-xs text-foreground-muted">{subtitle}</p>
 
-          <section className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onGenerateProposal?.(ticket)}
-              className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-            >
-              Gerar proposta
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => onAssign?.(ticket)}
-              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-            >
-              Atribuir
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => onScheduleFollowUp?.(ticket)}
-              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-            >
-              Agendar follow-up
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  aria-label="Registrar resultado"
-                  className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
-                  disabled={isRegisteringResult}
-                >
-                  <span className="mr-1">Registrar resultado</span>
-                  <ChevronDown className="size-4" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                  {RESULT_ITEMS.map((item) => (
-                    <DropdownMenuRadioItem
-                      key={item.value}
-                      value={item.value}
-                      className="min-h-[40px]"
-                      disabled={isRegisteringResult}
-                    >
-                      {item.label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </section>
+            <section className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onGenerateProposal?.(ticket)}
+                className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
+              >
+                Gerar proposta
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onAssign?.(ticket)}
+                className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+              >
+                Atribuir
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onScheduleFollowUp?.(ticket)}
+                className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+              >
+                Agendar follow-up
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    aria-label="Registrar resultado"
+                    className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
+                    disabled={isRegisteringResult}
+                  >
+                    <span className="mr-1">Registrar resultado</span>
+                    <ChevronDown className="size-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                    {RESULT_ITEMS.map((item) => (
+                      <DropdownMenuRadioItem
+                        key={item.value}
+                        value={item.value}
+                        className="min-h-[40px]"
+                        disabled={isRegisteringResult}
+                      >
+                        {item.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </section>
 
-          <footer className="flex flex-wrap items-center gap-2 pt-1">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <MetadataBadge icon={Phone} aria-label="Telefone">
-                  {phoneDisplay}
-                </MetadataBadge>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-                  Ligar
-                </DropdownMenuItem>
-                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-                  Abrir WhatsApp
-                </DropdownMenuItem>
-                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-                  Copiar
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <MetadataBadge
-              icon={IdCard}
-              aria-label="Copiar documento"
-              onClick={handleCopyDocument}
-            >
-              Doc: {document}
-            </MetadataBadge>
-          </footer>
-        </div>
+            <footer className="flex flex-wrap items-center gap-2 pt-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <MetadataBadge icon={Phone} aria-label="Telefone">
+                    {phoneDisplay}
+                  </MetadataBadge>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                    Ligar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                    Abrir WhatsApp
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+                    Copiar
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <MetadataBadge
+                icon={IdCard}
+                aria-label="Copiar documento"
+                onClick={handleCopyDocument}
+              >
+                Doc: {document}
+              </MetadataBadge>
+            </footer>
+          </CardBody.Right>
+        </CardBody>
       </CollapsibleContent>
 
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
