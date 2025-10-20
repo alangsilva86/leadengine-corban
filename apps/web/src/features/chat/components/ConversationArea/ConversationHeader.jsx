@@ -32,7 +32,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion.jsx';
-import { CardBody } from '@/components/ui/card.jsx';
 import {
   Select,
   SelectContent,
@@ -237,7 +236,7 @@ const MetadataBadge = ({ icon: Icon, children, className, ...props }) => (
   </button>
 );
 
-export const CardBody = ({ children, className }) => (
+export const ConversationCardBody = ({ children, className }) => (
   <div
     className={cn(
       'mt-3 grid gap-4 border-t border-surface-overlay-glass-border pt-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]',
@@ -248,12 +247,15 @@ export const CardBody = ({ children, className }) => (
   </div>
 );
 
-CardBody.Left = function CardBodyLeft({ children, className }) {
+ConversationCardBody.Left = function ConversationCardBodyLeft({ children, className }) {
   return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
 };
 
-CardBody.Right = function CardBodyRight({ children, className }) {
+ConversationCardBody.Right = function ConversationCardBodyRight({ children, className }) {
   return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
+};
+
+export { ConversationCardBody as CardBody };
 const InfoRow = ({ label, children }) => (
   <div className="flex flex-col gap-1">
     <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
@@ -1177,16 +1179,16 @@ export const ConversationHeader = ({
       </div>
 
       <CollapsibleContent>
-        <CardBody>
-          <CardBody.Left>
+        <ConversationCardBody>
+          <ConversationCardBody.Left>
             <QuickComposer
               ticket={ticket}
               onSendTemplate={onSendTemplate}
               onCreateNextStep={onCreateNextStep}
               onRegisterCallResult={onRegisterCallResult}
             />
-          </CardBody.Left>
-          <CardBody.Right>
+          </ConversationCardBody.Left>
+          <ConversationCardBody.Right>
             <p className="text-xs text-foreground-muted">{subtitle}</p>
 
             <section className="flex flex-wrap items-center gap-2">
@@ -1273,8 +1275,9 @@ export const ConversationHeader = ({
                 Doc: {document}
               </MetadataBadge>
             </footer>
-          </CardBody.Right>
-        <CardBody className="mt-4 border-t border-surface-overlay-glass-border pt-4">
+          </ConversationCardBody.Right>
+        </ConversationCardBody>
+        <ConversationCardBody className="mt-4 border-t border-surface-overlay-glass-border pt-4">
           <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
             <section className="space-y-4">
               <div className="grid gap-2">
@@ -1447,7 +1450,7 @@ export const ConversationHeader = ({
               </div>
             </section>
           </div>
-        </CardBody>
+        </ConversationCardBody>
       </CollapsibleContent>
 
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
