@@ -173,23 +173,6 @@ export const ConversationArea = ({
               </header>
             )}
           />
-        <ConversationHeader
-          ticket={ticket}
-          onRegisterResult={onRegisterResult}
-          onAssign={onAssign}
-          onGenerateProposal={onGenerateProposal}
-          onScheduleFollowUp={onScheduleFollowUp}
-          onSendTemplate={onSendTemplate}
-          onCreateNextStep={onCreateNextStep}
-          onRegisterCallResult={onRegisterCallResult}
-          isRegisteringResult={isRegisteringResult}
-          typingAgents={typingIndicator?.agentsTyping ?? []}
-          renderSummary={(summary) => (
-            <header className="sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-5 sm:py-3">
-              {summary}
-            </header>
-          )}
-        />
         </div>
 
         <div
