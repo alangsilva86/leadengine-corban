@@ -265,345 +265,6 @@ const InfoRow = ({ label, children }) => (
 const ACTION_BUTTON_STYLES =
   'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
 
-const HeaderMinimized = ({
-  title,
-  initials,
-  statusInfo,
-  expirationInfo,
-  slaTooltip,
-  remainingMinutes,
-  lastInteractionLabel,
-  typingAgents = [],
-  isExpanded,
-  isRegisteringResult,
-  resultSelection,
-  onResultChange,
-  onGenerateProposal,
-  onAssign,
-  onScheduleFollowUp,
-  onPhoneAction,
-  onCopyDocument,
-}) => {
-  const containerRef = useRef(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const node = containerRef.current;
-    if (!node || !window.ResizeObserver) {
-      return undefined;
-    }
-    const observer = new ResizeObserver((entries) => {
-      const [entry] = entries;
-      if (entry) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(node);
-    setContainerWidth(node.getBoundingClientRect().width);
-    return () => observer.disconnect();
-  }, []);
-
-  const numericRemaining = useMemo(() => {
-    if (remainingMinutes === null || remainingMinutes === undefined) return null;
-    if (typeof remainingMinutes === 'number') return remainingMinutes;
-    const parsed = Number(remainingMinutes);
-    return Number.isNaN(parsed) ? null : parsed;
-  }, [remainingMinutes]);
-
-  const hasSlaBadge = numericRemaining !== null && numericRemaining < 2880;
-  const showSla = hasSlaBadge && containerWidth >= 600;
-  const showLastInteraction = Boolean(lastInteractionLabel) && containerWidth >= 720;
-  const showTyping = typingAgents.length > 0 && containerWidth >= 920;
-
-  const actions = [
-    onGenerateProposal && {
-      id: 'proposal',
-      type: 'button',
-      minWidth: 700,
-      label: 'Gerar proposta',
-      icon: FileText,
-      onClick: onGenerateProposal,
-    },
-    onAssign && {
-      id: 'assign',
-      type: 'button',
-      minWidth: 760,
-      label: 'Atribuir',
-      icon: UserPlus,
-      onClick: onAssign,
-    },
-    onScheduleFollowUp && {
-      id: 'follow-up',
-      type: 'button',
-      minWidth: 820,
-      label: 'Agendar follow-up',
-      icon: CalendarClock,
-      onClick: onScheduleFollowUp,
-    },
-    onResultChange && {
-      id: 'result',
-      type: 'result',
-      minWidth: 880,
-      label: 'Registrar resultado',
-    },
-    onPhoneAction && {
-      id: 'phone',
-      type: 'phone',
-      minWidth: 940,
-      label: 'Opções de telefone',
-    },
-    onCopyDocument && {
-      id: 'document',
-      type: 'button',
-      minWidth: 1000,
-      label: 'Copiar documento',
-      icon: IdCard,
-      onClick: onCopyDocument,
-    },
-  ].filter(Boolean);
-
-  const visibleActions = actions.filter((action) => containerWidth >= action.minWidth);
-  const hiddenActions = actions.filter((action) => containerWidth < action.minWidth);
-
-  const renderOverflowItem = useCallback(
-    (action) => {
-      if (!action) return null;
-      if (action.type === 'button') {
-        return (
-          <DropdownMenuItem
-            key={action.id}
-            onSelect={() => {
-              action.onClick?.();
-            }}
-          >
-            {action.label}
-          </DropdownMenuItem>
-        );
-      }
-      if (action.type === 'result') {
-        return (
-          <DropdownMenuSub key={action.id}>
-            <DropdownMenuSubTrigger disabled={isRegisteringResult}>
-              {action.label}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
-              <DropdownMenuRadioGroup
-                value={resultSelection || undefined}
-                onValueChange={onResultChange}
-                className="max-h-60 overflow-y-auto"
-              >
-                {RESULT_ITEMS.map((item) => (
-                  <DropdownMenuRadioItem
-                    key={item.value}
-                    value={item.value}
-                    className="min-h-[40px]"
-                    disabled={isRegisteringResult}
-                  >
-                    {item.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        );
-      }
-      if (action.type === 'phone') {
-        return (
-          <DropdownMenuSub key={action.id}>
-            <DropdownMenuSubTrigger>{action.label}</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-52">
-              <DropdownMenuItem onSelect={() => onPhoneAction('call')}>Ligar</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onPhoneAction('whatsapp')}>
-                Abrir WhatsApp
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onPhoneAction('copy')}>Copiar</DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        );
-      }
-      return null;
-    },
-    [isRegisteringResult, onPhoneAction, onResultChange, resultSelection],
-  );
-
-  return (
-    <div
-      ref={containerRef}
-      className="flex w-full items-center gap-2 overflow-hidden whitespace-nowrap"
-    >
-      <Avatar className="h-8 w-8 flex-shrink-0 border border-surface-overlay-glass-border bg-surface-overlay-quiet">
-        <AvatarFallback className="text-[13px] font-semibold uppercase text-foreground">
-          {initials}
-        </AvatarFallback>
-      </Avatar>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="flex-1 min-w-0 truncate text-sm font-semibold leading-tight text-foreground" title={title}>
-          {title}
-        </span>
-        <Chip tone={statusInfo.tone} className="flex-shrink-0 px-2.5 py-1 text-[11px]">
-          {statusInfo.label}
-        </Chip>
-        {showSla ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Chip tone={expirationInfo.tone} className="flex-shrink-0 px-2.5 py-1 text-[11px]">
-                {expirationInfo.label}
-              </Chip>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="start">
-              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-        {showLastInteraction ? (
-          <div className="flex flex-shrink-0 items-center gap-1 text-xs text-foreground-muted">
-            <Clock3 className="size-3.5" aria-hidden />
-            <span className="truncate">Último contato há {lastInteractionLabel}</span>
-          </div>
-        ) : null}
-      </div>
-      {showTyping ? (
-        <div className="flex-shrink-0">
-          <TypingIndicator agents={typingAgents} />
-        </div>
-      ) : null}
-      <div className="flex flex-shrink-0 items-center gap-1">
-        {visibleActions.map((action) => {
-          if (action.type === 'button') {
-            const Icon = action.icon;
-            return (
-              <Tooltip key={action.id}>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={action.onClick}
-                    className={ACTION_BUTTON_STYLES}
-                    aria-label={action.label}
-                  >
-                    {Icon ? <Icon className="size-4" aria-hidden /> : null}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{action.label}</TooltipContent>
-              </Tooltip>
-            );
-          }
-          if (action.type === 'result') {
-            return (
-              <DropdownMenu key={action.id}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className={ACTION_BUTTON_STYLES}
-                        aria-label={action.label}
-                        disabled={isRegisteringResult}
-                      >
-                        <ClipboardList className="size-4" aria-hidden />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{action.label}</TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={onResultChange}>
-                    {RESULT_ITEMS.map((item) => (
-                      <DropdownMenuRadioItem
-                        key={item.value}
-                        value={item.value}
-                        className="min-h-[44px]"
-                        disabled={isRegisteringResult}
-                      >
-                        {item.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            );
-          }
-          if (action.type === 'phone') {
-            return (
-              <DropdownMenu key={action.id}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className={ACTION_BUTTON_STYLES}
-                        aria-label={action.label}
-                      >
-                        <Phone className="size-4" aria-hidden />
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">{action.label}</TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent align="end" className="w-52">
-                  <DropdownMenuItem onSelect={() => onPhoneAction('call')}>Ligar</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onPhoneAction('whatsapp')}>
-                    Abrir WhatsApp
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onPhoneAction('copy')}>Copiar</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            );
-          }
-          return null;
-        })}
-
-        {hiddenActions.length ? (
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className={ACTION_BUTTON_STYLES}
-                    aria-label="Mais ações"
-                  >
-                    <span aria-hidden className="text-base leading-none">☰</span>
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Mais ações</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-60 space-y-1">
-              {hiddenActions.map((action) => renderOverflowItem(action))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-
-        <CollapsibleTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={ACTION_BUTTON_STYLES}
-            aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-          >
-            <span
-              aria-hidden
-              className={cn('block text-base leading-none transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
-            >
-              ⌄
-            </span>
-          </Button>
-        </CollapsibleTrigger>
-      </div>
-    </div>
-  );
-};
-
 export const ConversationHeader = ({
   ticket,
   onRegisterResult,
@@ -625,7 +286,6 @@ export const ConversationHeader = ({
   const [lossReason, setLossReason] = useState('');
   const [lossNotes, setLossNotes] = useState('');
   const [lossSubmitted, setLossSubmitted] = useState(false);
-  const [resultMenuOpen, setResultMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!ticket) return;
@@ -733,7 +393,6 @@ export const ConversationHeader = ({
   const handleResultChange = useCallback(async (value) => {
     if (!value) return;
     if (value === 'lost') {
-      setResultMenuOpen(false);
       setLossDialogOpen(true);
       return;
     }
@@ -745,7 +404,6 @@ export const ConversationHeader = ({
     };
     const reason = reasonMap[value];
     await handleResult(value, reason);
-    setResultMenuOpen(false);
   }, [handleResult]);
 
   const handleConfirmLoss = useCallback(async () => {
@@ -758,7 +416,6 @@ export const ConversationHeader = ({
     try {
       await handleResult('lost', finalReason);
       setLossDialogOpen(false);
-      setResultMenuOpen(false);
       resetLossState();
     } catch {
       // feedback handled upstream
@@ -1289,130 +946,8 @@ export const ConversationHeader = ({
                 Doc: {document}
               </MetadataBadge>
             </footer>
-          </ConversationCardBody.Right>
-        </ConversationCardBody>
-        <ConversationCardBody className="mt-4 border-t border-surface-overlay-glass-border pt-4">
-          <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
-            <section className="space-y-4">
-              <div className="grid gap-2">
-                <HeaderMinimized
-                  title={title}
-                  initials={initials}
-                  statusInfo={statusInfo}
-                  expirationInfo={expirationInfo}
-                  slaTooltip={slaTooltip}
-                  remainingMinutes={remainingMinutes}
-                  lastInteractionLabel={lastInteractionLabel}
-                  typingAgents={typingAgents}
-                  isExpanded={isExpanded}
-                  isRegisteringResult={isRegisteringResult}
-                  resultSelection={resultSelection}
-                  onResultChange={handleResultChange}
-                  onGenerateProposal={handleGenerateProposal}
-                  onAssign={handleAssign}
-                  onScheduleFollowUp={handleScheduleFollowUp}
-                  onPhoneAction={handlePhoneAction}
-                  onCopyDocument={handleCopyDocument}
-                />
 
-                <CollapsibleContent>
-                  <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
-                    <p className="text-xs text-foreground-muted">{subtitle}</p>
-
-                    <section className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleGenerateProposal}
-                        className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-                      >
-                        Gerar proposta
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={handleAssign}
-                        className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-                      >
-                        Atribuir
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={handleScheduleFollowUp}
-                        className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-                      >
-                        Agendar follow-up
-                      </Button>
-                      <div className="grid gap-2">
-                        <Button
-                          type="button"
-                          size="lg"
-                          onClick={() => onGenerateProposal?.(ticket)}
-                          className="w-full"
-                        >
-                          Gerar proposta
-                        </Button>
-                        <Button
-                          type="button"
-                          size="lg"
-                          variant="outline"
-                          onClick={() => onAssign?.(ticket)}
-                          className="w-full"
-                          aria-keyshortcuts="n"
-                          accessKey="n"
-                        >
-                          Atribuir
-                        </Button>
-                        <Button
-                          type="button"
-                          size="lg"
-                          variant="outline"
-                          onClick={() => onScheduleFollowUp?.(ticket)}
-                          className="w-full"
-                          aria-keyshortcuts="x"
-                          accessKey="x"
-                        >
-                          Agendar follow-up
-                        </Button>
-                        <DropdownMenu open={resultMenuOpen} onOpenChange={setResultMenuOpen}>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              size="lg"
-                              variant="outline"
-                              className="w-full justify-between"
-                              disabled={isRegisteringResult}
-                            >
-                              Registrar resultado
-                              <ChevronDown className="size-4" aria-hidden />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-56">
-                            <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                              {RESULT_ITEMS.map((item) => (
-                                <DropdownMenuRadioItem
-                                  key={item.value}
-                                  value={item.value}
-                                  className="min-h-[40px]"
-                                  disabled={isRegisteringResult}
-                                >
-                                  {item.label}
-                                </DropdownMenuRadioItem>
-                              ))}
-                            </DropdownMenuRadioGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </section>
-                  </div>
-                </CollapsibleContent>
-              </div>
-            </section>
-
-            <section className="space-y-4">
+            <div className="mt-6 space-y-4">
               <div className="hidden md:flex flex-col gap-4">
                 <Tabs defaultValue="contato" className="flex flex-col gap-4">
                   <TabsList className="w-full flex-wrap justify-start gap-2">
@@ -1453,11 +988,10 @@ export const ConversationHeader = ({
                   </AccordionItem>
                 </Accordion>
               </div>
-            </section>
-          </div>
+            </div>
+          </ConversationCardBody.Right>
         </ConversationCardBody>
       </CollapsibleContent>
-
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
