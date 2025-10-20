@@ -31,12 +31,49 @@ import {
 } from './types';
 import { resolveTicketAgreementId } from './ticket-utils';
 import { downloadInboundMediaFromBroker } from './media-downloader';
-import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
+import {
+  getWhatsAppUploadsBaseUrl,
+  saveWhatsAppMedia,
+} from '../../../services/whatsapp-media-service';
 
 type PassthroughMetadata = Record<string, unknown>;
 
-const isHttpUrl = (value: string | null | undefined): boolean =>
-  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+const isPersistedMediaUrl = (value: string | null | undefined): boolean => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const baseUrl = getWhatsAppUploadsBaseUrl().trim().replace(/\/$/, '');
+  if (!baseUrl) {
+    return false;
+  }
+
+  const normalizedBase = baseUrl.startsWith('/') ? baseUrl : `/${baseUrl}`;
+
+  if (trimmed.startsWith(normalizedBase)) {
+    return true;
+  }
+
+  if (/^https?:\/\//i.test(baseUrl) && trimmed.startsWith(baseUrl)) {
+    return true;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.pathname.startsWith(normalizedBase);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+};
 
 const toRecord = (value: unknown): PassthroughMetadata => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -303,11 +340,11 @@ export const handlePassthroughIngest = async (
 
   if (passthroughType === 'media' && passthroughMedia) {
     const existingUrl = passthroughMedia.url ?? null;
-    const hasHttpUrl = isHttpUrl(existingUrl);
+    const hasPersistedUrl = isPersistedMediaUrl(existingUrl);
     let descriptor: Awaited<ReturnType<typeof saveWhatsAppMedia>> | null = null;
 
     try {
-      if (!hasHttpUrl) {
+      if (!hasPersistedUrl) {
         if (passthroughMedia.base64) {
           const trimmed = passthroughMedia.base64.trim();
           if (trimmed.length > 0) {
@@ -399,7 +436,7 @@ export const handlePassthroughIngest = async (
         mediaType: normalizedType,
         mediaUrl: descriptor.mediaUrl,
       });
-    } else if (!hasHttpUrl) {
+    } else if (!hasPersistedUrl) {
       logger.warn('passthrough: could not resolve media url for inbound message', {
         tenantId: effectiveTenantId,
         instanceId: instanceIdentifier,
