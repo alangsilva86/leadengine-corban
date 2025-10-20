@@ -681,6 +681,22 @@ export const ConversationHeader = ({
     }
   }, [timeline.lastDirection]);
   const unreadInboundCount = timeline.unreadInboundCount ?? 0;
+  const subtitle = useMemo(() => {
+    const parts = [];
+    if (stage && stage !== '—') {
+      parts.push(`Etapa: ${stage}`);
+    }
+    if (lastInteractionLabel) {
+      parts.push(`Último contato há ${lastInteractionLabel}`);
+    }
+    if (unreadInboundCount > 0) {
+      const hasMany = unreadInboundCount > 1;
+      parts.push(
+        `${unreadInboundCount} mensagem${hasMany ? 's' : ''} pendente${hasMany ? 's' : ''}`,
+      );
+    }
+    return parts.join(' • ');
+  }, [stage, lastInteractionLabel, unreadInboundCount]);
 
   const attachments = useMemo(() => {
     if (Array.isArray(ticket?.metadata?.attachments)) {
