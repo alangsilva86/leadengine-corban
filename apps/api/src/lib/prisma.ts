@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { setPrismaClient } from '@ticketz/storage';
 import { logger } from '../config/logger';
 
 export interface DatabaseDisabledErrorContext {
@@ -147,10 +148,20 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
+const linkPrismaToStorage = (client: PrismaClient, context: string) => {
+  try {
+    setPrismaClient(client);
+  } catch (error) {
+    logger.warn(`[Prisma] Failed to link storage client (${context})`, { error });
+  }
+};
+
 const createPrismaClient = (): PrismaClient => {
   if (!isDatabaseEnabled) {
     logger.warn('[Prisma] Database URL missing — running in demo mode with storage disabled.');
-    return buildDisabledClient();
+    const disabledClient = buildDisabledClient();
+    linkPrismaToStorage(disabledClient, 'disabled');
+    return disabledClient;
   }
 
   const connectionLimit = parsePositiveInteger(
@@ -180,13 +191,7 @@ const createPrismaClient = (): PrismaClient => {
 
   const existingClient = globalForPrisma.prisma;
   if (existingClient) {
-    void import('@ticketz/storage')
-      .then(({ setPrismaClient }) => {
-        setPrismaClient(existingClient);
-      })
-      .catch((error) => {
-        logger.warn('[Prisma] Failed to link storage client (reuse)', { error });
-      });
+    linkPrismaToStorage(existingClient, 'reuse');
     return existingClient;
   }
 
@@ -208,14 +213,7 @@ const createPrismaClient = (): PrismaClient => {
   }
 
   const client = new PrismaClient(prismaOptions);
-
-  void import('@ticketz/storage')
-    .then(({ setPrismaClient }) => {
-      setPrismaClient(client);
-    })
-    .catch((error) => {
-      logger.warn('[Prisma] Failed to link storage client', { error });
-    });
+  linkPrismaToStorage(client, 'create');
 
   return client;
 };
