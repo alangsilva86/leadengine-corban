@@ -10,6 +10,7 @@ import AuditTrailLink from './AuditTrailLink.jsx';
 import QuickComposer from '../ConversationArea/QuickComposer.jsx';
 import { CardBody } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
+import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 
 const formatDateTime = (value) => {
   if (!value) return '—';
@@ -123,7 +124,7 @@ export const DetailsPanel = ({
         <ConsentInfo consent={ticket?.contact?.consent} />
       </section>
           <TabsContent value="contact" className="space-y-3">
-            <ContactDetailsCard contact={ticket?.contact} />
+            <ContactSummary contact={ticket?.contact} />
             <ConsentInfo consent={ticket?.contact?.consent} />
           </TabsContent>
 
