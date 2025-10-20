@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { FileText, Repeat2, ShieldCheck, StickyNote } from 'lucide-react';
 import LeadSummaryCard from './LeadSummaryCard.jsx';
-import ContactDetailsCard from './ContactDetailsCard.jsx';
+import LeadDetailsTabs from './LeadDetailsTabs.jsx';
 import ConsentInfo from './ConsentInfo.jsx';
 import ProposalMiniSim from './ProposalMiniSim.jsx';
 import NotesSection from './NotesSection.jsx';
@@ -79,7 +79,7 @@ export const DetailsPanel = ({
           <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-muted">Informações do lead</h3>
         </header>
         <LeadSummaryCard lead={ticket?.lead} />
-        <ContactDetailsCard contact={ticket?.contact} />
+        <LeadDetailsTabs ticket={ticket} />
         <ConsentInfo consent={ticket?.contact?.consent} />
       </section>
 
