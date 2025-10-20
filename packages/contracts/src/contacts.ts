@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const ContactStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'BLOCKED']);
+const ContactStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']);
 const ContactTaskStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELLED']);
 const ContactInteractionChannelSchema = z.enum(['WHATSAPP', 'EMAIL', 'PHONE', 'WEB', 'OTHER']);
 const ContactInteractionDirectionSchema = z.enum(['INBOUND', 'OUTBOUND']);

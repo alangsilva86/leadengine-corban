@@ -307,6 +307,10 @@ const buildContactWhere = (
     };
   }
 
+  if (typeof filters.isBlocked === 'boolean') {
+    where.isBlocked = filters.isBlocked;
+  }
+
   if (filters.lastInteractionFrom || filters.lastInteractionTo) {
     where.lastInteractionAt = {
       ...(filters.lastInteractionFrom ? { gte: filters.lastInteractionFrom } : {}),
@@ -324,6 +328,24 @@ const buildContactWhere = (
       : {
           none: {
             status: { in: OPEN_TICKET_STATUSES },
+          },
+        };
+  }
+
+  if (typeof filters.hasWhatsapp === 'boolean') {
+    where.phones = filters.hasWhatsapp
+      ? {
+          some: {
+            waId: {
+              not: null,
+            },
+          },
+        }
+      : {
+          none: {
+            waId: {
+              not: null,
+            },
           },
         };
   }

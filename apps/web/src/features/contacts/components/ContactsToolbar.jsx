@@ -15,9 +15,14 @@ import { Badge } from '@/components/ui/badge.jsx';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
-  { value: 'active', label: 'Ativos' },
-  { value: 'blocked', label: 'Bloqueados' },
-  { value: 'whatsapp', label: 'Com WhatsApp' },
+  { value: 'ACTIVE', label: 'Ativos' },
+  { value: 'INACTIVE', label: 'Inativos' },
+  { value: 'ARCHIVED', label: 'Arquivados' },
+];
+
+const QUICK_FILTERS = [
+  { id: 'isBlocked', label: 'Bloqueados' },
+  { id: 'hasWhatsapp', label: 'Com WhatsApp' },
 ];
 
 const ContactsToolbar = ({
@@ -50,6 +55,14 @@ const ContactsToolbar = ({
       });
     }
 
+    if (filters.isBlocked) {
+      badges.push({ id: 'isBlocked', label: 'Bloqueados' });
+    }
+
+    if (filters.hasWhatsapp) {
+      badges.push({ id: 'hasWhatsapp', label: 'Com WhatsApp' });
+    }
+
     if (filters.ownerId) {
       badges.push({ id: 'owner', label: 'Com responsável' });
     }
@@ -70,8 +83,16 @@ const ContactsToolbar = ({
     }
   };
 
+  const handleQuickFilterToggle = (key, value) => {
+    const isEnabled = value === true;
+    onFiltersChange?.({
+      ...filters,
+      [key]: isEnabled ? true : undefined,
+    });
+  };
+
   const handleReset = () => {
-    onFiltersChange?.({ status: 'all', tags: [], ownerId: null });
+    onFiltersChange?.({ status: 'all', tags: [], ownerId: null, isBlocked: undefined, hasWhatsapp: undefined });
     onClearFilters?.();
   };
 
@@ -133,6 +154,17 @@ const ContactsToolbar = ({
                   onCheckedChange={() => handleTagToggle(tag)}
                 >
                   {tag}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Filtros rápidos</DropdownMenuLabel>
+              {QUICK_FILTERS.map((filterOption) => (
+                <DropdownMenuCheckboxItem
+                  key={filterOption.id}
+                  checked={Boolean(filters[filterOption.id])}
+                  onCheckedChange={(checked) => handleQuickFilterToggle(filterOption.id, checked)}
+                >
+                  {filterOption.label}
                 </DropdownMenuCheckboxItem>
               ))}
               <DropdownMenuSeparator />
@@ -207,6 +239,10 @@ const ContactsToolbar = ({
                   }
                   if (filter.id.startsWith('tag:')) {
                     handleTagToggle(filter.id.replace('tag:', ''));
+                    return;
+                  }
+                  if (filter.id === 'isBlocked' || filter.id === 'hasWhatsapp') {
+                    handleQuickFilterToggle(filter.id, false);
                     return;
                   }
                   handleReset();

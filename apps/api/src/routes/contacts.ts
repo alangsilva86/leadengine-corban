@@ -126,6 +126,8 @@ const ListContactsQuerySchema = PaginationQuerySchema.extend({
   lastInteractionFrom: DateParamSchema,
   lastInteractionTo: DateParamSchema,
   hasOpenTickets: BooleanParamSchema,
+  isBlocked: BooleanParamSchema,
+  hasWhatsapp: BooleanParamSchema,
 });
 
 const TaskStatusParamSchema = z.preprocess((value) => {
@@ -169,8 +171,20 @@ router.get(
     }
 
     const tenantId = req.user!.tenantId;
-    const { page, limit, sortBy, sortOrder, search, status, tags, lastInteractionFrom, lastInteractionTo, hasOpenTickets } =
-      query;
+    const {
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      search,
+      status,
+      tags,
+      lastInteractionFrom,
+      lastInteractionTo,
+      hasOpenTickets,
+      isBlocked,
+      hasWhatsapp,
+    } = query;
 
     const response = await listContacts(
       tenantId,
@@ -182,6 +196,8 @@ router.get(
         lastInteractionFrom,
         lastInteractionTo,
         hasOpenTickets,
+        isBlocked,
+        hasWhatsapp,
       }
     );
 
