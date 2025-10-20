@@ -1281,129 +1281,134 @@ export const ConversationHeader = ({
           <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
             <section className="space-y-4">
               <div className="grid gap-2">
-      <HeaderMinimized
-        title={title}
-        initials={initials}
-        statusInfo={statusInfo}
-        expirationInfo={expirationInfo}
-        slaTooltip={slaTooltip}
-        remainingMinutes={remainingMinutes}
-        lastInteractionLabel={lastInteractionLabel}
-        typingAgents={typingAgents}
-        isExpanded={isExpanded}
-        isRegisteringResult={isRegisteringResult}
-        resultSelection={resultSelection}
-        onResultChange={handleResultChange}
-        onGenerateProposal={handleGenerateProposal}
-        onAssign={handleAssign}
-        onScheduleFollowUp={handleScheduleFollowUp}
-        onPhoneAction={handlePhoneAction}
-        onCopyDocument={handleCopyDocument}
-      />
+                <HeaderMinimized
+                  title={title}
+                  initials={initials}
+                  statusInfo={statusInfo}
+                  expirationInfo={expirationInfo}
+                  slaTooltip={slaTooltip}
+                  remainingMinutes={remainingMinutes}
+                  lastInteractionLabel={lastInteractionLabel}
+                  typingAgents={typingAgents}
+                  isExpanded={isExpanded}
+                  isRegisteringResult={isRegisteringResult}
+                  resultSelection={resultSelection}
+                  onResultChange={handleResultChange}
+                  onGenerateProposal={handleGenerateProposal}
+                  onAssign={handleAssign}
+                  onScheduleFollowUp={handleScheduleFollowUp}
+                  onPhoneAction={handlePhoneAction}
+                  onCopyDocument={handleCopyDocument}
+                />
 
-      <CollapsibleContent>
-        <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
-          <p className="text-xs text-foreground-muted">{subtitle}</p>
+                <CollapsibleContent>
+                  <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
+                    <p className="text-xs text-foreground-muted">{subtitle}</p>
 
-          <section className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleGenerateProposal}
-              className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-            >
-              Gerar proposta
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleAssign}
-              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-            >
-              Atribuir
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleScheduleFollowUp}
-              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-            >
-              Agendar follow-up
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={() => onGenerateProposal?.(ticket)}
-                  className="w-full"
-                >
-                  Gerar proposta
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  onClick={() => onAssign?.(ticket)}
-                  className="w-full"
-                  aria-keyshortcuts="n"
-                  accessKey="n"
-                >
-                  Atribuir
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  onClick={() => onScheduleFollowUp?.(ticket)}
-                  className="w-full"
-                  aria-keyshortcuts="x"
-                  accessKey="x"
-                >
-                  Agendar follow-up
-                </Button>
-                <DropdownMenu open={resultMenuOpen} onOpenChange={setResultMenuOpen}>
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                    <Button
-                      type="button"
-                      size="lg"
-                      variant="outline"
-                      className="w-full justify-between"
-                      onClick={() => setResultMenuOpen(true)}
-                      disabled={isRegisteringResult}
-                    >
-                      Registrar resultado
-                    </Button>
-                    <DropdownMenuTrigger asChild>
+                    <section className="flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
-                        size="lg"
-                        variant="outline"
-                        className="px-3"
-                        aria-label="Abrir opções de resultado"
-                        disabled={isRegisteringResult}
+                        size="sm"
+                        onClick={handleGenerateProposal}
+                        className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
                       >
-                        <ChevronDown className="size-4" aria-hidden />
+                        Gerar proposta
                       </Button>
-                    </DropdownMenuTrigger>
-                  </div>
-                  <DropdownMenuContent align="start" className="w-56">
-                    <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                      {RESULT_ITEMS.map((item) => (
-                        <DropdownMenuRadioItem
-                          key={item.value}
-                          value={item.value}
-                          className="min-h-[40px]"
-                          disabled={isRegisteringResult}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleAssign}
+                        className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+                      >
+                        Atribuir
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleScheduleFollowUp}
+                        className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+                      >
+                        Agendar follow-up
+                      </Button>
+                      <DropdownMenu>
+                        <Button
+                          type="button"
+                          size="lg"
+                          onClick={() => onGenerateProposal?.(ticket)}
+                          className="w-full"
                         >
-                          {item.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                          Gerar proposta
+                        </Button>
+                        <Button
+                          type="button"
+                          size="lg"
+                          variant="outline"
+                          onClick={() => onAssign?.(ticket)}
+                          className="w-full"
+                          aria-keyshortcuts="n"
+                          accessKey="n"
+                        >
+                          Atribuir
+                        </Button>
+                        <Button
+                          type="button"
+                          size="lg"
+                          variant="outline"
+                          onClick={() => onScheduleFollowUp?.(ticket)}
+                          className="w-full"
+                          aria-keyshortcuts="x"
+                          accessKey="x"
+                        >
+                          Agendar follow-up
+                        </Button>
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              size="lg"
+                              variant="outline"
+                              className="w-full justify-between"
+                              onClick={() => setResultMenuOpen(true)}
+                              disabled={isRegisteringResult}
+                            >
+                              Registrar resultado
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenu open={resultMenuOpen} onOpenChange={setResultMenuOpen}>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                size="lg"
+                                variant="outline"
+                                className="px-3"
+                                aria-label="Abrir opções de resultado"
+                                disabled={isRegisteringResult}
+                              >
+                                <ChevronDown className="size-4" aria-hidden />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                              <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                                {RESULT_ITEMS.map((item) => (
+                                  <DropdownMenuRadioItem
+                                    key={item.value}
+                                    value={item.value}
+                                    className="min-h-[40px]"
+                                    disabled={isRegisteringResult}
+                                  >
+                                    {item.label}
+                                  </DropdownMenuRadioItem>
+                                ))}
+                              </DropdownMenuRadioGroup>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </DropdownMenu>
+                    </section>
+                  </div>
+                </CollapsibleContent>
               </div>
             </section>
 
