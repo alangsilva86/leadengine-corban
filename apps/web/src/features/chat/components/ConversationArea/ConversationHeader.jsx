@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
 import {
@@ -38,6 +41,7 @@ import {
   CalendarClock,
   ChevronDown,
   ClipboardList,
+  Clock3,
   FileText,
   IdCard,
   Phone,
@@ -200,6 +204,348 @@ const MetadataBadge = ({ icon: Icon, children, className, ...props }) => (
   </button>
 );
 
+const ACTION_BUTTON_STYLES =
+  'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
+
+const HeaderMinimized = ({
+  title,
+  initials,
+  statusInfo,
+  expirationInfo,
+  slaTooltip,
+  remainingMinutes,
+  lastInteractionLabel,
+  typingAgents = [],
+  isExpanded,
+  isRegisteringResult,
+  resultSelection,
+  onResultChange,
+  onGenerateProposal,
+  onAssign,
+  onScheduleFollowUp,
+  onPhoneAction,
+  onCopyDocument,
+}) => {
+  const containerRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const node = containerRef.current;
+    if (!node || !window.ResizeObserver) {
+      return undefined;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const [entry] = entries;
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(node);
+    setContainerWidth(node.getBoundingClientRect().width);
+    return () => observer.disconnect();
+  }, []);
+
+  const numericRemaining = useMemo(() => {
+    if (remainingMinutes === null || remainingMinutes === undefined) return null;
+    if (typeof remainingMinutes === 'number') return remainingMinutes;
+    const parsed = Number(remainingMinutes);
+    return Number.isNaN(parsed) ? null : parsed;
+  }, [remainingMinutes]);
+
+  const hasSlaBadge = numericRemaining !== null && numericRemaining < 2880;
+  const showSla = hasSlaBadge && containerWidth >= 600;
+  const showLastInteraction = Boolean(lastInteractionLabel) && containerWidth >= 720;
+  const showTyping = typingAgents.length > 0 && containerWidth >= 920;
+
+  const actions = [
+    onGenerateProposal && {
+      id: 'proposal',
+      type: 'button',
+      minWidth: 700,
+      label: 'Gerar proposta',
+      icon: FileText,
+      onClick: onGenerateProposal,
+    },
+    onAssign && {
+      id: 'assign',
+      type: 'button',
+      minWidth: 760,
+      label: 'Atribuir',
+      icon: UserPlus,
+      onClick: onAssign,
+    },
+    onScheduleFollowUp && {
+      id: 'follow-up',
+      type: 'button',
+      minWidth: 820,
+      label: 'Agendar follow-up',
+      icon: CalendarClock,
+      onClick: onScheduleFollowUp,
+    },
+    onResultChange && {
+      id: 'result',
+      type: 'result',
+      minWidth: 880,
+      label: 'Registrar resultado',
+    },
+    onPhoneAction && {
+      id: 'phone',
+      type: 'phone',
+      minWidth: 940,
+      label: 'Opções de telefone',
+    },
+    onCopyDocument && {
+      id: 'document',
+      type: 'button',
+      minWidth: 1000,
+      label: 'Copiar documento',
+      icon: IdCard,
+      onClick: onCopyDocument,
+    },
+  ].filter(Boolean);
+
+  const visibleActions = actions.filter((action) => containerWidth >= action.minWidth);
+  const hiddenActions = actions.filter((action) => containerWidth < action.minWidth);
+
+  const renderOverflowItem = useCallback(
+    (action) => {
+      if (!action) return null;
+      if (action.type === 'button') {
+        return (
+          <DropdownMenuItem
+            key={action.id}
+            onSelect={() => {
+              action.onClick?.();
+            }}
+          >
+            {action.label}
+          </DropdownMenuItem>
+        );
+      }
+      if (action.type === 'result') {
+        return (
+          <DropdownMenuSub key={action.id}>
+            <DropdownMenuSubTrigger disabled={isRegisteringResult}>
+              {action.label}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <DropdownMenuRadioGroup
+                value={resultSelection || undefined}
+                onValueChange={onResultChange}
+                className="max-h-60 overflow-y-auto"
+              >
+                {RESULT_ITEMS.map((item) => (
+                  <DropdownMenuRadioItem
+                    key={item.value}
+                    value={item.value}
+                    className="min-h-[40px]"
+                    disabled={isRegisteringResult}
+                  >
+                    {item.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        );
+      }
+      if (action.type === 'phone') {
+        return (
+          <DropdownMenuSub key={action.id}>
+            <DropdownMenuSubTrigger>{action.label}</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-52">
+              <DropdownMenuItem onSelect={() => onPhoneAction('call')}>Ligar</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onPhoneAction('whatsapp')}>
+                Abrir WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onPhoneAction('copy')}>Copiar</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        );
+      }
+      return null;
+    },
+    [isRegisteringResult, onPhoneAction, onResultChange, resultSelection],
+  );
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex w-full items-center gap-2 overflow-hidden whitespace-nowrap"
+    >
+      <Avatar className="h-8 w-8 flex-shrink-0 border border-surface-overlay-glass-border bg-surface-overlay-quiet">
+        <AvatarFallback className="text-[13px] font-semibold uppercase text-foreground">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="flex-1 min-w-0 truncate text-sm font-semibold leading-tight text-foreground" title={title}>
+          {title}
+        </span>
+        <Chip tone={statusInfo.tone} className="flex-shrink-0 px-2.5 py-1 text-[11px]">
+          {statusInfo.label}
+        </Chip>
+        {showSla ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Chip tone={expirationInfo.tone} className="flex-shrink-0 px-2.5 py-1 text-[11px]">
+                {expirationInfo.label}
+              </Chip>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start">
+              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        {showLastInteraction ? (
+          <div className="flex flex-shrink-0 items-center gap-1 text-xs text-foreground-muted">
+            <Clock3 className="size-3.5" aria-hidden />
+            <span className="truncate">Último contato há {lastInteractionLabel}</span>
+          </div>
+        ) : null}
+      </div>
+      {showTyping ? (
+        <div className="flex-shrink-0">
+          <TypingIndicator agents={typingAgents} />
+        </div>
+      ) : null}
+      <div className="flex flex-shrink-0 items-center gap-1">
+        {visibleActions.map((action) => {
+          if (action.type === 'button') {
+            const Icon = action.icon;
+            return (
+              <Tooltip key={action.id}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={action.onClick}
+                    className={ACTION_BUTTON_STYLES}
+                    aria-label={action.label}
+                  >
+                    {Icon ? <Icon className="size-4" aria-hidden /> : null}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{action.label}</TooltipContent>
+              </Tooltip>
+            );
+          }
+          if (action.type === 'result') {
+            return (
+              <DropdownMenu key={action.id}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={ACTION_BUTTON_STYLES}
+                        aria-label={action.label}
+                        disabled={isRegisteringResult}
+                      >
+                        <ClipboardList className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{action.label}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={onResultChange}>
+                    {RESULT_ITEMS.map((item) => (
+                      <DropdownMenuRadioItem
+                        key={item.value}
+                        value={item.value}
+                        className="min-h-[44px]"
+                        disabled={isRegisteringResult}
+                      >
+                        {item.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          }
+          if (action.type === 'phone') {
+            return (
+              <DropdownMenu key={action.id}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={ACTION_BUTTON_STYLES}
+                        aria-label={action.label}
+                      >
+                        <Phone className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{action.label}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onSelect={() => onPhoneAction('call')}>Ligar</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onPhoneAction('whatsapp')}>
+                    Abrir WhatsApp
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onPhoneAction('copy')}>Copiar</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          }
+          return null;
+        })}
+
+        {hiddenActions.length ? (
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={ACTION_BUTTON_STYLES}
+                    aria-label="Mais ações"
+                  >
+                    <span aria-hidden className="text-base leading-none">☰</span>
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Mais ações</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-60 space-y-1">
+              {hiddenActions.map((action) => renderOverflowItem(action))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={ACTION_BUTTON_STYLES}
+            aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
+          >
+            <span
+              aria-hidden
+              className={cn('block text-base leading-none transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+            >
+              ⌄
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+    </div>
+  );
+};
+
 export const ConversationHeader = ({
   ticket,
   onRegisterResult,
@@ -235,6 +581,12 @@ export const ConversationHeader = ({
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const expirationInfo = useMemo(() => getExpirationInfo(ticket?.window), [ticket?.window]);
   const slaTooltip = useMemo(() => buildSlaTooltip(ticket?.window), [ticket?.window]);
+  const initials = useMemo(() => buildInitials(name, 'CT'), [name]);
+  const remainingMinutes = ticket?.window?.remainingMinutes ?? null;
+  const lastInteractionLabel = useMemo(
+    () => minutesToHoursLabel(ticket?.window?.lastInteractionMinutes),
+    [ticket?.window?.lastInteractionMinutes],
+  );
 
   const subtitle = useMemo(() => {
     const id = ticket?.lead?.id ?? ticket?.id ?? '—';
@@ -358,6 +710,18 @@ export const ConversationHeader = ({
     }
   }, [document]);
 
+  const handleGenerateProposal = useCallback(() => {
+    onGenerateProposal?.(ticket);
+  }, [onGenerateProposal, ticket]);
+
+  const handleAssign = useCallback(() => {
+    onAssign?.(ticket);
+  }, [onAssign, ticket]);
+
+  const handleScheduleFollowUp = useCallback(() => {
+    onScheduleFollowUp?.(ticket);
+  }, [onScheduleFollowUp, ticket]);
+
   if (!ticket) {
     return (
       <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
@@ -375,175 +739,25 @@ export const ConversationHeader = ({
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-base font-semibold leading-tight text-foreground">
-              {title}
-            </h3>
-            <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
-              {statusInfo.label}
-            </Chip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Chip tone={expirationInfo.tone} className="cursor-default select-none px-2.5 py-1 text-[11px]">
-                  {expirationInfo.label}
-                </Chip>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="start">
-                <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <p className="truncate text-xs text-foreground-muted">{subtitle}</p>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <TypingIndicator agents={typingAgents} />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onGenerateProposal?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-                aria-label="Gerar proposta"
-              >
-                <FileText className="size-4" aria-hidden />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Gerar proposta</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onAssign?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-                aria-label="Atribuir"
-              >
-                <UserPlus className="size-4" aria-hidden />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Atribuir</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onScheduleFollowUp?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-                aria-label="Agendar follow-up"
-              >
-                <CalendarClock className="size-4" aria-hidden />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Agendar follow-up</TooltipContent>
-          </Tooltip>
-
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Registrar resultado"
-                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-                    disabled={isRegisteringResult}
-                  >
-                    <ClipboardList className="size-4" aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Registrar resultado</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                {RESULT_ITEMS.map((item) => (
-                  <DropdownMenuRadioItem
-                    key={item.value}
-                    value={item.value}
-                    className="min-h-[44px]"
-                    disabled={isRegisteringResult}
-                  >
-                    {item.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Opções de telefone"
-                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-                  >
-                    <Phone className="size-4" aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Opções de telefone</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-                Ligar
-              </DropdownMenuItem>
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-                Abrir WhatsApp
-              </DropdownMenuItem>
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-                Copiar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={handleCopyDocument}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-                aria-label="Copiar documento"
-              >
-                <IdCard className="size-4" aria-hidden />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Copiar documento</TooltipContent>
-          </Tooltip>
-
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
-            >
-              <ChevronDown
-                className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
-                aria-hidden
-              />
-            </Button>
-          </CollapsibleTrigger>
-        </div>
-      </div>
+      <HeaderMinimized
+        title={title}
+        initials={initials}
+        statusInfo={statusInfo}
+        expirationInfo={expirationInfo}
+        slaTooltip={slaTooltip}
+        remainingMinutes={remainingMinutes}
+        lastInteractionLabel={lastInteractionLabel}
+        typingAgents={typingAgents}
+        isExpanded={isExpanded}
+        isRegisteringResult={isRegisteringResult}
+        resultSelection={resultSelection}
+        onResultChange={handleResultChange}
+        onGenerateProposal={handleGenerateProposal}
+        onAssign={handleAssign}
+        onScheduleFollowUp={handleScheduleFollowUp}
+        onPhoneAction={handlePhoneAction}
+        onCopyDocument={handleCopyDocument}
+      />
 
       <CollapsibleContent>
         <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
@@ -553,7 +767,7 @@ export const ConversationHeader = ({
             <Button
               type="button"
               size="sm"
-              onClick={() => onGenerateProposal?.(ticket)}
+              onClick={handleGenerateProposal}
               className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
             >
               Gerar proposta
@@ -562,7 +776,7 @@ export const ConversationHeader = ({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => onAssign?.(ticket)}
+              onClick={handleAssign}
               className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
             >
               Atribuir
@@ -571,7 +785,7 @@ export const ConversationHeader = ({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => onScheduleFollowUp?.(ticket)}
+              onClick={handleScheduleFollowUp}
               className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
             >
               Agendar follow-up
