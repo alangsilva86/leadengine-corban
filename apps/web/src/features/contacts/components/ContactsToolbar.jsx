@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Filter, RefreshCw, Search, X } from 'lucide-react';
+import { Filter, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import {
@@ -38,6 +38,8 @@ const ContactsToolbar = ({
   onRefresh,
   isRefreshing = false,
   availableTags = [],
+  totalCount,
+  onCreateContact,
 }) => {
   const activeFilters = useMemo(() => {
     const badges = [];
@@ -70,6 +72,14 @@ const ContactsToolbar = ({
     return badges;
   }, [filters]);
 
+  const totalLabel = useMemo(() => {
+    if (typeof totalCount !== 'number') {
+      return null;
+    }
+    const formatted = new Intl.NumberFormat('pt-BR').format(totalCount);
+    return `${formatted} ${totalCount === 1 ? 'contato' : 'contatos'}`;
+  }, [totalCount]);
+
   const handleStatusChange = (status) => {
     onFiltersChange?.({ ...filters, status });
   };
@@ -100,10 +110,10 @@ const ContactsToolbar = ({
   const hasSelection = selectedCount > 0;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 items-center gap-2">
-          <div className="relative flex-1 min-w-0">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex flex-1 flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+          <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={searchValue}
@@ -182,48 +192,72 @@ const ContactsToolbar = ({
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </Button>
+          {totalLabel ? <span className="text-xs text-muted-foreground">Exibindo {totalLabel}</span> : null}
         </div>
-        <div className="flex items-center gap-2">
-          {hasSelection ? (
+        <div className="flex items-center gap-2 self-start">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="lg:hidden"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            aria-label="Recarregar lista"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button type="button" size="sm" className="gap-2" onClick={onCreateContact}>
+            <Plus className="h-4 w-4" />
+            Novo contato
+          </Button>
+        </div>
+      </div>
+      {hasSelection ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3 text-sm text-primary sm:flex-row sm:items-center sm:justify-between">
+          <div className="font-semibold">
+            {selectedCount === 1 ? '1 contato selecionado' : `${selectedCount} contatos selecionados`}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isBulkProcessing}
+              onClick={onClearSelection}
+              aria-label="Limpar seleção"
+            >
+              Limpar seleção
+            </Button>
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              onClick={onClearSelection}
-              aria-label="Limpar seleção"
+              disabled={isBulkProcessing}
+              onClick={() => onBulkAction?.('mergeDuplicates')}
             >
-              Limpar seleção ({selectedCount})
+              Deduplicar
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            disabled={!hasSelection || isBulkProcessing}
-            onClick={() => onBulkAction?.('mergeDuplicates')}
-          >
-            Deduplicar
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!hasSelection || isBulkProcessing}
-            onClick={() => onBulkAction?.('sendWhatsApp')}
-          >
-            Disparar WhatsApp
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!hasSelection || isBulkProcessing}
-            onClick={() => onBulkAction?.('createTask')}
-          >
-            Criar tarefa
-          </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isBulkProcessing}
+              onClick={() => onBulkAction?.('sendWhatsApp')}
+            >
+              Disparar WhatsApp
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isBulkProcessing}
+              onClick={() => onBulkAction?.('createTask')}
+            >
+              Criar tarefa
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
       {hasFilters ? (
         <div className="flex flex-wrap items-center gap-2">
           {activeFilters.map((filter) => (
@@ -256,6 +290,10 @@ const ContactsToolbar = ({
           <Button variant="ghost" size="sm" onClick={handleReset} className="text-muted-foreground">
             Limpar todos
           </Button>
+        </div>
+      ) : totalLabel ? (
+        <div className="text-xs text-muted-foreground">
+          Ajuste os filtros para refinar os {totalLabel} disponíveis.
         </div>
       ) : null}
     </div>

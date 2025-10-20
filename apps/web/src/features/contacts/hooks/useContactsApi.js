@@ -109,6 +109,20 @@ export const useContactsQuery = ({ filters = {}, pageSize = DEFAULT_PAGE_SIZE, e
   });
 };
 
+export const useCreateContactMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload) => {
+      const response = await apiPost('/api/contacts', payload);
+      return response?.data ?? response ?? null;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    },
+  });
+};
+
 export const useContactDetailsQuery = (contactId, { enabled = true } = {}) =>
   useQuery({
     queryKey: ['contacts', 'details', contactId],
