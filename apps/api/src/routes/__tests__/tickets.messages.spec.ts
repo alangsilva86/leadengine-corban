@@ -7,9 +7,26 @@ import {
   WhatsAppBrokerNotConfiguredError,
 } from '../../services/whatsapp-broker-client';
 
+const {
+  findOrCreateOpenTicketByChatMock,
+  upsertMessageByExternalIdMock,
+  transportSendMessageMock,
+} = vi.hoisted(() => ({
+  findOrCreateOpenTicketByChatMock: vi.fn(),
+  upsertMessageByExternalIdMock: vi.fn(),
+  transportSendMessageMock: vi.fn(),
+}));
+
 const sendMessageMock = vi.fn();
 
-vi.mock('@ticketz/storage', () => import('../../test-utils/storage-mock'));
+vi.mock('@ticketz/storage', async () => {
+  const actual = await import('../../test-utils/storage-mock');
+  return {
+    ...actual,
+    findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
+    upsertMessageByExternalId: upsertMessageByExternalIdMock,
+  };
+});
 
 vi.mock('../../services/ticket-service', async () => {
   const actual = await vi.importActual<typeof import('../../services/ticket-service')>(
@@ -28,6 +45,12 @@ vi.mock('../../middleware/auth', async () => {
     requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
   };
 });
+
+vi.mock('../../features/whatsapp-transport', () => ({
+  getWhatsAppTransport: () => ({
+    sendMessage: transportSendMessageMock,
+  }),
+}));
 
 import { ticketsRouter } from '../tickets';
 import { errorHandler } from '../../middleware/error-handler';
@@ -55,6 +78,25 @@ const buildApp = () => {
 describe('POST /api/tickets/messages validations', () => {
   beforeEach(() => {
     sendMessageMock.mockReset();
+    findOrCreateOpenTicketByChatMock.mockReset();
+    upsertMessageByExternalIdMock.mockReset();
+    transportSendMessageMock.mockReset();
+
+    findOrCreateOpenTicketByChatMock.mockResolvedValue({
+      ticket: { id: 'ticket-mock' },
+      wasCreated: false,
+    });
+
+    upsertMessageByExternalIdMock.mockResolvedValue({
+      message: { id: 'message-mock', externalId: 'wamid-mock' },
+      wasCreated: true,
+    });
+
+    transportSendMessageMock.mockResolvedValue({
+      externalId: 'wamid-mock',
+      status: 'SENT',
+      timestamp: new Date().toISOString(),
+    });
   });
 
   it('accepts location messages with latitude/longitude metadata', async () => {
@@ -179,6 +221,43 @@ describe('POST /api/tickets/messages validations', () => {
     expect(response.status).toBe(400);
     expect(response.body?.error?.code).toBe('VALIDATION_ERROR');
     expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('normalizes uppercase media types when sending outbound chat messages', async () => {
+    const app = buildApp();
+
+    const response = await request(app).post('/api/tickets/messages').send({
+      chatId: '5511999999999',
+      iid: 'instance-abc',
+      type: 'IMAGE',
+      media: {
+        mediaType: 'IMAGE',
+        mediaUrl: 'https://cdn.example.com/image.jpg',
+        caption: '  Check this out  ',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(transportSendMessageMock).toHaveBeenCalledTimes(1);
+
+    const [instanceId, transportPayload] = transportSendMessageMock.mock.calls[0];
+    expect(instanceId).toBe('instance-abc');
+    expect(transportPayload).toMatchObject({
+      type: 'image',
+      caption: 'Check this out',
+      media: expect.objectContaining({
+        mediaType: 'image',
+        mediaUrl: 'https://cdn.example.com/image.jpg',
+      }),
+    });
+
+    expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
+    const storagePayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
+    expect(storagePayload.media).toMatchObject({
+      mediaType: 'image',
+      url: 'https://cdn.example.com/image.jpg',
+      caption: 'Check this out',
+    });
   });
 
   it('returns 502 when the broker rejects the send request', async () => {
