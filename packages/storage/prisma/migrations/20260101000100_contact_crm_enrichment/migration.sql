@@ -37,16 +37,14 @@ DROP INDEX "contacts_tenantId_phone_key";
 -- DropIndex
 DROP INDEX "contacts_tenantId_email_key";
 
--- AlterTable
 ALTER TABLE "contacts" DROP COLUMN "email",
-DROP COLUMN "name",
 DROP COLUMN "phone",
 DROP COLUMN "tags",
 ADD COLUMN     "birthDate" TIMESTAMP(3),
 ADD COLUMN     "department" TEXT,
 ADD COLUMN     "displayName" TEXT,
 ADD COLUMN     "firstName" TEXT,
-ADD COLUMN     "fullName" TEXT NOT NULL,
+ADD COLUMN     "fullName" TEXT,
 ADD COLUMN     "isVip" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "jobTitle" TEXT,
 ADD COLUMN     "lastActivityAt" TIMESTAMP(3),
@@ -61,6 +59,12 @@ ADD COLUMN     "primaryPhone" TEXT,
 ADD COLUMN     "source" "ContactSource" NOT NULL DEFAULT 'MANUAL',
 ADD COLUMN     "status" "ContactStatus" NOT NULL DEFAULT 'ACTIVE',
 ADD COLUMN     "timezone" TEXT;
+
+UPDATE "contacts" SET "fullName" = COALESCE("name", '');
+
+ALTER TABLE "contacts" ALTER COLUMN "fullName" SET NOT NULL;
+
+ALTER TABLE "contacts" DROP COLUMN "name";
 
 -- CreateTable
 CREATE TABLE "contact_phones" (
