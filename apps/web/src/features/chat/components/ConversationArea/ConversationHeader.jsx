@@ -1348,7 +1348,7 @@ export const ConversationHeader = ({
                       >
                         Agendar follow-up
                       </Button>
-                      <DropdownMenu>
+                      <div className="grid gap-2">
                         <Button
                           type="button"
                           size="lg"
@@ -1379,49 +1379,35 @@ export const ConversationHeader = ({
                         >
                           Agendar follow-up
                         </Button>
-                        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                        <DropdownMenu open={resultMenuOpen} onOpenChange={setResultMenuOpen}>
                           <DropdownMenuTrigger asChild>
                             <Button
                               type="button"
                               size="lg"
                               variant="outline"
                               className="w-full justify-between"
-                              onClick={() => setResultMenuOpen(true)}
                               disabled={isRegisteringResult}
                             >
                               Registrar resultado
+                              <ChevronDown className="size-4" aria-hidden />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenu open={resultMenuOpen} onOpenChange={setResultMenuOpen}>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                size="lg"
-                                variant="outline"
-                                className="px-3"
-                                aria-label="Abrir opções de resultado"
-                                disabled={isRegisteringResult}
-                              >
-                                <ChevronDown className="size-4" aria-hidden />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-56">
-                              <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                                {RESULT_ITEMS.map((item) => (
-                                  <DropdownMenuRadioItem
-                                    key={item.value}
-                                    value={item.value}
-                                    className="min-h-[40px]"
-                                    disabled={isRegisteringResult}
-                                  >
-                                    {item.label}
-                                  </DropdownMenuRadioItem>
-                                ))}
-                              </DropdownMenuRadioGroup>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </DropdownMenu>
+                          <DropdownMenuContent align="start" className="w-56">
+                            <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                              {RESULT_ITEMS.map((item) => (
+                                <DropdownMenuRadioItem
+                                  key={item.value}
+                                  value={item.value}
+                                  className="min-h-[40px]"
+                                  disabled={isRegisteringResult}
+                                >
+                                  {item.label}
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </section>
                   </div>
                 </CollapsibleContent>
