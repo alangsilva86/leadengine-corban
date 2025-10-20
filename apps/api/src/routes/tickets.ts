@@ -824,7 +824,10 @@ router.post(
         res.status(201).json({
           success: true,
           message: 'Mensagem enviada com sucesso',
-          data: message,
+          data: {
+            ...message,
+            ticketId: message.ticketId,
+          },
         });
       } catch (error) {
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -951,8 +954,14 @@ router.post(
       emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
 
       res.status(200).json({
-        messageId: message.id,
-        externalId: message.externalId ?? externalId,
+        success: true,
+        data: {
+          messageId: message.id,
+          externalId: message.externalId ?? externalId,
+          ticketId: ticketContext.ticket.id,
+          ticket: ticketContext.ticket,
+          message,
+        },
       });
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {

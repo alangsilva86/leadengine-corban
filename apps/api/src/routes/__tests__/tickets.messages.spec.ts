@@ -226,6 +226,15 @@ describe('POST /api/tickets/messages validations', () => {
   it('normalizes uppercase media types when sending outbound chat messages', async () => {
     const app = buildApp();
 
+    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
+      ticket: { id: 'ticket-chat-123', contactId: 'contact-1' },
+      wasCreated: true,
+    });
+    upsertMessageByExternalIdMock.mockResolvedValueOnce({
+      message: { id: 'message-chat-1', ticketId: 'ticket-chat-123', externalId: 'wamid-chat' },
+      wasCreated: true,
+    });
+
     const response = await request(app).post('/api/tickets/messages').send({
       chatId: '5511999999999',
       iid: 'instance-abc',
@@ -257,6 +266,13 @@ describe('POST /api/tickets/messages validations', () => {
       mediaType: 'image',
       url: 'https://cdn.example.com/image.jpg',
       caption: 'Check this out',
+    });
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toMatchObject({
+      ticketId: 'ticket-chat-123',
+      messageId: 'message-chat-1',
+      externalId: 'wamid-chat',
     });
   });
 

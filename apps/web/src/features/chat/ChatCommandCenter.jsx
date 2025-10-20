@@ -61,7 +61,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       if (!manualConversationAvailable) {
         const message =
           manualConversationUnavailableReason ??
-          'Este fluxo foi descontinuado. Utilize o canal oficial de abertura de tickets.';
+          'Fluxo manual indisponível no momento. Utilize os canais oficiais de abertura ou tente novamente em instantes.';
         toast.error(message, {
           id: MANUAL_CONVERSATION_TOAST_ID,
           position: 'bottom-right',
@@ -110,7 +110,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
       setManualConversationOpen(false);
 
-      const ticketId = result?.ticket?.id ?? result?.messageRecord?.ticketId ?? result?.message?.ticketId ?? null;
+      const ticketId = result?.ticketId ?? result?.ticket?.id ?? result?.message?.ticketId ?? null;
 
       try {
         await controller.ticketsQuery?.refetch?.({ cancelRefetch: false });

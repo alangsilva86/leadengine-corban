@@ -1,14 +1,15 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { MANUAL_CONVERSATION_DEPRECATION_MESSAGE } from '../../hooks/useManualConversationLauncher.js';
 import FilterToolbar from '../FilterToolbar/FilterToolbar.jsx';
 
 describe('FilterToolbar', () => {
   afterEach(() => {
     cleanup();
+    vi.clearAllMocks();
   });
 
   const defaultProps = {
@@ -20,17 +21,37 @@ describe('FilterToolbar', () => {
     onRefresh: () => {},
   };
 
-  it('omite a ação de nova conversa e exibe aviso quando o fluxo manual está indisponível', () => {
-    const { container } = render(
+  it('exibe o botão circular com ícone de WhatsApp para iniciar conversa manual', async () => {
+    const onStartManualConversation = vi.fn();
+    render(
       <FilterToolbar
         {...defaultProps}
-        manualConversationUnavailableReason={MANUAL_CONVERSATION_DEPRECATION_MESSAGE}
+        onStartManualConversation={onStartManualConversation}
+        manualConversationPending={false}
       />
     );
 
-    expect(screen.queryByRole('button', { name: /nova conversa/i })).not.toBeInTheDocument();
-    expect(screen.getByText(MANUAL_CONVERSATION_DEPRECATION_MESSAGE)).toBeInTheDocument();
+    const button = screen.getByRole('button', {
+      name: /iniciar nova conversa manual no whatsapp/i,
+    });
+    expect(button).toBeInTheDocument();
 
-    expect(container).toMatchSnapshot();
+    await userEvent.click(button);
+
+    expect(onStartManualConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('exibe aviso quando a conversa manual está indisponível', () => {
+    const reason = 'Fluxo indisponível para o tenant atual.';
+    render(
+      <FilterToolbar
+        {...defaultProps}
+        manualConversationUnavailableReason={reason}
+      />
+    );
+
+    expect(
+      screen.getByText(reason, { exact: false })
+    ).toBeInTheDocument();
   });
 });

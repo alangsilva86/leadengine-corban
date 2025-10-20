@@ -10,15 +10,7 @@ import {
 } from '@/components/ui/select.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { cn } from '@/lib/utils.js';
-import {
-  AlertTriangle,
-  Filter,
-  Loader2,
-  MessageSquarePlus,
-  RefreshCw,
-  Search,
-  X,
-} from 'lucide-react';
+import { AlertTriangle, Filter, Loader2, RefreshCw, Search, X } from 'lucide-react';
 
 const DEFAULT_FILTERS = {
   scope: 'team',
@@ -49,6 +41,19 @@ const OUTCOME_OPTIONS = [
   { value: 'won', label: 'Ganhos' },
   { value: 'lost', label: 'Perdidos' },
 ];
+
+const WhatsAppGlyph = (props) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    role="img"
+    aria-hidden="true"
+    focusable="false"
+    {...props}
+  >
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.1-.47-.149-.67.149-.198.297-.767.966-.94 1.164-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.447-.52.149-.173.198-.297.298-.495.1-.198.05-.371-.025-.52-.075-.148-.669-1.61-.916-2.2-.242-.579-.487-.502-.669-.512-.173-.009-.371-.011-.57-.011-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.227 1.36.195 1.872.118.571-.085 1.758-.718 2.006-1.413.248-.695.248-1.29.173-1.413-.074-.123-.272-.198-.57-.347m-5.421 4.768h-.004a8.856 8.856 0 01-4.487-1.227l-.321-.191-3.333.874.894-3.257-.209-.334a8.86 8.86 0 01-1.362-4.722c.003-4.858 3.966-8.82 8.824-8.82 2.361 0 4.577.92 6.241 2.585a8.78 8.78 0 012.585 6.234c-.003 4.858-3.966 8.82-8.828 8.82m7.545-16.37A10.63 10.63 0 0012.05 0C5.495 0 .16 5.335.156 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.305-1.655a10.56 10.56 0 005.717 1.67h.005c6.554 0 11.89-5.335 11.893-11.892A11.81 11.81 0 0019.596 2.78" />
+  </svg>
+);
 
 const FilterToolbar = ({
   search,
@@ -263,17 +268,17 @@ const FilterToolbar = ({
         {onStartManualConversation ? (
           <Button
             variant="outline"
-            size="sm"
-            className="h-9 rounded-lg border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)] px-3 text-xs font-semibold text-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] disabled:opacity-70"
+            size="icon"
+            className="h-9 w-9 rounded-full border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)] shadow-sm transition hover:bg-[color:color-mix(in_srgb,var(--color-status-whatsapp-surface)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-status-whatsapp-border)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)] disabled:opacity-70"
             onClick={onStartManualConversation}
             disabled={manualConversationPending}
+            aria-label="Iniciar nova conversa manual no WhatsApp"
           >
             {manualConversationPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              <MessageSquarePlus className="h-4 w-4" />
+              <WhatsAppGlyph className="h-5 w-5" />
             )}
-            <span className="ml-2 hidden sm:inline">Nova conversa</span>
           </Button>
         ) : null}
       </div>
