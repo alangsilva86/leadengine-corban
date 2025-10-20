@@ -1558,7 +1558,7 @@ export const sendMessage = async (
       await markAsFailed({ message: 'whatsapp_instance_missing' });
     } else {
       const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
-      const phone = (contact?.phone ?? '').trim();
+      const phone = (contact?.primaryPhone ?? contact?.phone ?? '').trim();
 
       if (!phone) {
         logger.warn('whatsapp.outbound.contactPhoneMissing', {

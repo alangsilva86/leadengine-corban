@@ -268,6 +268,110 @@ describe('ticket-service logging', () => {
   });
 });
 
+describe('ticket-service phone normalization', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('dispatches outbound WhatsApp messages using a trimmed primary phone', async () => {
+    const ticket = {
+      id: 'ticket-primary-1',
+      tenantId: 'tenant-primary-1',
+      contactId: 'contact-primary-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'inst-primary-1' },
+      userId: 'user-primary-1',
+      updatedAt: new Date(),
+      lastMessageAt: new Date(),
+      lastMessagePreview: 'preview',
+    };
+    const messageRecord = {
+      id: 'message-primary-1',
+      ticketId: ticket.id,
+      type: 'text',
+      direction: 'OUTBOUND',
+      content: 'hello primary phone',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'PENDING',
+      instanceId: 'inst-primary-1',
+    };
+    const brokerTimestamp = new Date().toISOString();
+    const updatedMessage = {
+      ...messageRecord,
+      status: 'SENT',
+      metadata: {
+        broker: {
+          provider: 'whatsapp',
+          instanceId: 'inst-primary-1',
+          externalId: 'external-primary-1',
+          status: 'SENT',
+          dispatchedAt: brokerTimestamp,
+        },
+      },
+    };
+
+    storageFindTicketById.mockResolvedValue(ticket);
+    storageCreateMessage.mockResolvedValue(messageRecord);
+    storageUpdateMessage.mockResolvedValue(updatedMessage);
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-primary-1',
+      primaryPhone: ' 5511987654321 ',
+      phone: null,
+    });
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({
+      id: 'inst-primary-1',
+      brokerId: 'broker-primary-1',
+    });
+
+    const transport = {
+      sendMessage: vi.fn().mockResolvedValue({
+        externalId: 'external-primary-1',
+        status: 'SENT',
+        timestamp: brokerTimestamp,
+      }),
+    };
+
+    const { sendMessage } = await import('../ticket-service');
+
+    await sendMessage(
+      'tenant-primary-1',
+      'user-primary-1',
+      {
+        ticketId: ticket.id,
+        type: 'text',
+        instanceId: 'inst-primary-1',
+        direction: 'OUTBOUND',
+        content: 'hello primary phone',
+        metadata: {},
+      },
+      { transport }
+    );
+
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1);
+    expect(transport.sendMessage).toHaveBeenCalledWith(
+      'broker-primary-1',
+      expect.objectContaining({
+        to: '5511987654321',
+        externalId: 'message-primary-1',
+      }),
+      { idempotencyKey: 'message-primary-1' }
+    );
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'whatsapp.outbound.contactPhoneMissing',
+      expect.anything()
+    );
+
+    expect(storageUpdateMessage).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ status: 'FAILED' })
+    );
+  });
+});
+
 describe('ticket-service dispatch guard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
