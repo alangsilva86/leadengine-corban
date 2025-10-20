@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import {
   findOrCreateOpenTicketByChat,
@@ -29,8 +30,13 @@ import {
   type InboundWhatsAppEvent,
 } from './types';
 import { resolveTicketAgreementId } from './ticket-utils';
+import { downloadInboundMediaFromBroker } from './media-downloader';
+import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
 
 type PassthroughMetadata = Record<string, unknown>;
+
+const isHttpUrl = (value: string | null | undefined): boolean =>
+  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 
 const toRecord = (value: unknown): PassthroughMetadata => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -122,6 +128,7 @@ export const handlePassthroughIngest = async (
     typeof instanceId === 'string' && instanceId.trim().length > 0 ? instanceId.trim() : null;
   const metadataRecord = toRecord(event.metadata);
   const metadataContact = toRecord(metadataRecord.contact);
+  const metadataIntegration = toRecord(metadataRecord.integration);
   const messageRecord = toRecord(message);
 
   const contactPhone = readString(contact.phone);
@@ -292,6 +299,114 @@ export const handlePassthroughIngest = async (
   } else {
     passthroughType = 'unknown';
     passthroughText = normalizedMessage.text ?? null;
+  }
+
+  if (passthroughType === 'media' && passthroughMedia) {
+    const existingUrl = passthroughMedia.url ?? null;
+    const hasHttpUrl = isHttpUrl(existingUrl);
+    let descriptor: Awaited<ReturnType<typeof saveWhatsAppMedia>> | null = null;
+
+    try {
+      if (!hasHttpUrl) {
+        if (passthroughMedia.base64) {
+          const trimmed = passthroughMedia.base64.trim();
+          if (trimmed.length > 0) {
+            const normalizedBase64 = trimmed.startsWith('data:')
+              ? trimmed.substring(trimmed.indexOf(',') + 1)
+              : trimmed;
+            const buffer = Buffer.from(normalizedBase64, 'base64');
+            descriptor = await saveWhatsAppMedia({
+              buffer,
+              tenantId: effectiveTenantId,
+              originalName: passthroughMedia.fileName ?? undefined,
+              mimeType: passthroughMedia.mimeType ?? undefined,
+            });
+          }
+        } else if (passthroughMedia.directPath || passthroughMedia.mediaKey) {
+          const downloadResult = await downloadInboundMediaFromBroker({
+            brokerId:
+              readString(metadataRecord.brokerId) ??
+              readString(metadataIntegration.brokerId) ??
+              null,
+            instanceId: instanceIdentifier,
+            tenantId: effectiveTenantId,
+            mediaKey: passthroughMedia.mediaKey ?? null,
+            directPath: passthroughMedia.directPath ?? null,
+            messageId: externalIdForUpsert ?? null,
+            mediaType: normalizedType,
+          });
+
+          if (downloadResult && downloadResult.buffer.length > 0) {
+            descriptor = await saveWhatsAppMedia({
+              buffer: downloadResult.buffer,
+              tenantId: effectiveTenantId,
+              originalName: passthroughMedia.fileName ?? undefined,
+              mimeType:
+                passthroughMedia.mimeType ??
+                downloadResult.mimeType ??
+                undefined,
+            });
+
+            if (!passthroughMedia.mimeType && downloadResult.mimeType) {
+              passthroughMedia.mimeType = downloadResult.mimeType;
+            }
+            if (!passthroughMedia.size) {
+              passthroughMedia.size = downloadResult.size ?? downloadResult.buffer.length;
+            }
+          } else {
+            logger.warn('passthrough: broker returned empty payload for media download', {
+              tenantId: effectiveTenantId,
+              instanceId: instanceIdentifier,
+              messageId: externalIdForUpsert,
+              mediaType: normalizedType,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('passthrough: failed to persist inbound media', {
+        tenantId: effectiveTenantId,
+        instanceId: instanceIdentifier,
+        messageId: externalIdForUpsert,
+        mediaType: normalizedType,
+        error: mapErrorForLog(error),
+      });
+    }
+
+    if (descriptor) {
+      passthroughMedia.url = descriptor.mediaUrl;
+      passthroughMedia.mimeType = passthroughMedia.mimeType ?? descriptor.mimeType;
+      passthroughMedia.size = passthroughMedia.size ?? descriptor.size;
+      passthroughMedia.base64 = null;
+
+      const metadataMedia = toRecord(metadataRecord.media);
+      metadataMedia.url = descriptor.mediaUrl;
+      if (passthroughMedia.mimeType) {
+        metadataMedia.mimetype = passthroughMedia.mimeType;
+      }
+      if (passthroughMedia.size !== null && passthroughMedia.size !== undefined) {
+        metadataMedia.size = passthroughMedia.size;
+      }
+      if (passthroughMedia.caption) {
+        metadataMedia.caption = passthroughMedia.caption;
+      }
+      metadataRecord.media = metadataMedia;
+
+      logger.info('passthrough: inbound media stored successfully', {
+        tenantId: effectiveTenantId,
+        instanceId: instanceIdentifier,
+        messageId: externalIdForUpsert,
+        mediaType: normalizedType,
+        mediaUrl: descriptor.mediaUrl,
+      });
+    } else if (!hasHttpUrl) {
+      logger.warn('passthrough: could not resolve media url for inbound message', {
+        tenantId: effectiveTenantId,
+        instanceId: instanceIdentifier,
+        messageId: externalIdForUpsert,
+        mediaType: normalizedType,
+      });
+    }
   }
 
   const metadataForUpsert = {
