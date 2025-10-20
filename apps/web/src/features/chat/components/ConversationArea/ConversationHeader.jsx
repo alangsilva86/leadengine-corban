@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
 import {
@@ -24,6 +27,13 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion.jsx';
+import { CardBody } from '@/components/ui/card.jsx';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -32,12 +42,14 @@ import {
 } from '@/components/ui/select.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
 import {
   CalendarClock,
   ChevronDown,
   ClipboardList,
+  Clock3,
   FileText,
   IdCard,
   Phone,
@@ -114,6 +126,17 @@ const getStatusInfo = (status) => {
   };
 };
 
+const buildShortId = (value) => {
+  if (!value) return null;
+  const normalized = String(value);
+  if (normalized.length <= 8) return normalized;
+  if (normalized.includes('-')) {
+    const segments = normalized.split('-');
+    return segments[segments.length - 1].slice(0, 8).toUpperCase();
+  }
+  return normalized.slice(-8).toUpperCase();
+};
+
 const minutesToHoursLabel = (minutes) => {
   if (minutes === undefined || minutes === null) return null;
   if (minutes < 60) {
@@ -158,6 +181,18 @@ const buildSlaTooltip = (windowInfo = {}) => {
     return 'Prazo para primeira resposta.';
   }
   return `Prazo para primeira resposta. Último contato há ${lastInteraction}.`;
+};
+
+const formatDateTime = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const Chip = ({ tone = 'neutral', className, children, ...props }) => (
@@ -219,6 +254,352 @@ CardBody.Left = function CardBodyLeft({ children, className }) {
 
 CardBody.Right = function CardBodyRight({ children, className }) {
   return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
+const InfoRow = ({ label, children }) => (
+  <div className="flex flex-col gap-1">
+    <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
+    <span className="text-sm text-foreground">{children ?? '—'}</span>
+  </div>
+);
+const ACTION_BUTTON_STYLES =
+  'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
+
+const HeaderMinimized = ({
+  title,
+  initials,
+  statusInfo,
+  expirationInfo,
+  slaTooltip,
+  remainingMinutes,
+  lastInteractionLabel,
+  typingAgents = [],
+  isExpanded,
+  isRegisteringResult,
+  resultSelection,
+  onResultChange,
+  onGenerateProposal,
+  onAssign,
+  onScheduleFollowUp,
+  onPhoneAction,
+  onCopyDocument,
+}) => {
+  const containerRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const node = containerRef.current;
+    if (!node || !window.ResizeObserver) {
+      return undefined;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const [entry] = entries;
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(node);
+    setContainerWidth(node.getBoundingClientRect().width);
+    return () => observer.disconnect();
+  }, []);
+
+  const numericRemaining = useMemo(() => {
+    if (remainingMinutes === null || remainingMinutes === undefined) return null;
+    if (typeof remainingMinutes === 'number') return remainingMinutes;
+    const parsed = Number(remainingMinutes);
+    return Number.isNaN(parsed) ? null : parsed;
+  }, [remainingMinutes]);
+
+  const hasSlaBadge = numericRemaining !== null && numericRemaining < 2880;
+  const showSla = hasSlaBadge && containerWidth >= 600;
+  const showLastInteraction = Boolean(lastInteractionLabel) && containerWidth >= 720;
+  const showTyping = typingAgents.length > 0 && containerWidth >= 920;
+
+  const actions = [
+    onGenerateProposal && {
+      id: 'proposal',
+      type: 'button',
+      minWidth: 700,
+      label: 'Gerar proposta',
+      icon: FileText,
+      onClick: onGenerateProposal,
+    },
+    onAssign && {
+      id: 'assign',
+      type: 'button',
+      minWidth: 760,
+      label: 'Atribuir',
+      icon: UserPlus,
+      onClick: onAssign,
+    },
+    onScheduleFollowUp && {
+      id: 'follow-up',
+      type: 'button',
+      minWidth: 820,
+      label: 'Agendar follow-up',
+      icon: CalendarClock,
+      onClick: onScheduleFollowUp,
+    },
+    onResultChange && {
+      id: 'result',
+      type: 'result',
+      minWidth: 880,
+      label: 'Registrar resultado',
+    },
+    onPhoneAction && {
+      id: 'phone',
+      type: 'phone',
+      minWidth: 940,
+      label: 'Opções de telefone',
+    },
+    onCopyDocument && {
+      id: 'document',
+      type: 'button',
+      minWidth: 1000,
+      label: 'Copiar documento',
+      icon: IdCard,
+      onClick: onCopyDocument,
+    },
+  ].filter(Boolean);
+
+  const visibleActions = actions.filter((action) => containerWidth >= action.minWidth);
+  const hiddenActions = actions.filter((action) => containerWidth < action.minWidth);
+
+  const renderOverflowItem = useCallback(
+    (action) => {
+      if (!action) return null;
+      if (action.type === 'button') {
+        return (
+          <DropdownMenuItem
+            key={action.id}
+            onSelect={() => {
+              action.onClick?.();
+            }}
+          >
+            {action.label}
+          </DropdownMenuItem>
+        );
+      }
+      if (action.type === 'result') {
+        return (
+          <DropdownMenuSub key={action.id}>
+            <DropdownMenuSubTrigger disabled={isRegisteringResult}>
+              {action.label}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <DropdownMenuRadioGroup
+                value={resultSelection || undefined}
+                onValueChange={onResultChange}
+                className="max-h-60 overflow-y-auto"
+              >
+                {RESULT_ITEMS.map((item) => (
+                  <DropdownMenuRadioItem
+                    key={item.value}
+                    value={item.value}
+                    className="min-h-[40px]"
+                    disabled={isRegisteringResult}
+                  >
+                    {item.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        );
+      }
+      if (action.type === 'phone') {
+        return (
+          <DropdownMenuSub key={action.id}>
+            <DropdownMenuSubTrigger>{action.label}</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-52">
+              <DropdownMenuItem onSelect={() => onPhoneAction('call')}>Ligar</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onPhoneAction('whatsapp')}>
+                Abrir WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onPhoneAction('copy')}>Copiar</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        );
+      }
+      return null;
+    },
+    [isRegisteringResult, onPhoneAction, onResultChange, resultSelection],
+  );
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex w-full items-center gap-2 overflow-hidden whitespace-nowrap"
+    >
+      <Avatar className="h-8 w-8 flex-shrink-0 border border-surface-overlay-glass-border bg-surface-overlay-quiet">
+        <AvatarFallback className="text-[13px] font-semibold uppercase text-foreground">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="flex-1 min-w-0 truncate text-sm font-semibold leading-tight text-foreground" title={title}>
+          {title}
+        </span>
+        <Chip tone={statusInfo.tone} className="flex-shrink-0 px-2.5 py-1 text-[11px]">
+          {statusInfo.label}
+        </Chip>
+        {showSla ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Chip tone={expirationInfo.tone} className="flex-shrink-0 px-2.5 py-1 text-[11px]">
+                {expirationInfo.label}
+              </Chip>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start">
+              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+        {showLastInteraction ? (
+          <div className="flex flex-shrink-0 items-center gap-1 text-xs text-foreground-muted">
+            <Clock3 className="size-3.5" aria-hidden />
+            <span className="truncate">Último contato há {lastInteractionLabel}</span>
+          </div>
+        ) : null}
+      </div>
+      {showTyping ? (
+        <div className="flex-shrink-0">
+          <TypingIndicator agents={typingAgents} />
+        </div>
+      ) : null}
+      <div className="flex flex-shrink-0 items-center gap-1">
+        {visibleActions.map((action) => {
+          if (action.type === 'button') {
+            const Icon = action.icon;
+            return (
+              <Tooltip key={action.id}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={action.onClick}
+                    className={ACTION_BUTTON_STYLES}
+                    aria-label={action.label}
+                  >
+                    {Icon ? <Icon className="size-4" aria-hidden /> : null}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{action.label}</TooltipContent>
+              </Tooltip>
+            );
+          }
+          if (action.type === 'result') {
+            return (
+              <DropdownMenu key={action.id}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={ACTION_BUTTON_STYLES}
+                        aria-label={action.label}
+                        disabled={isRegisteringResult}
+                      >
+                        <ClipboardList className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{action.label}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={onResultChange}>
+                    {RESULT_ITEMS.map((item) => (
+                      <DropdownMenuRadioItem
+                        key={item.value}
+                        value={item.value}
+                        className="min-h-[44px]"
+                        disabled={isRegisteringResult}
+                      >
+                        {item.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          }
+          if (action.type === 'phone') {
+            return (
+              <DropdownMenu key={action.id}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={ACTION_BUTTON_STYLES}
+                        aria-label={action.label}
+                      >
+                        <Phone className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{action.label}</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onSelect={() => onPhoneAction('call')}>Ligar</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onPhoneAction('whatsapp')}>
+                    Abrir WhatsApp
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onPhoneAction('copy')}>Copiar</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            );
+          }
+          return null;
+        })}
+
+        {hiddenActions.length ? (
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={ACTION_BUTTON_STYLES}
+                    aria-label="Mais ações"
+                  >
+                    <span aria-hidden className="text-base leading-none">☰</span>
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Mais ações</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-60 space-y-1">
+              {hiddenActions.map((action) => renderOverflowItem(action))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={ACTION_BUTTON_STYLES}
+            aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
+          >
+            <span
+              aria-hidden
+              className={cn('block text-base leading-none transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+            >
+              ⌄
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+    </div>
+  );
 };
 
 export const ConversationHeader = ({
@@ -240,6 +621,7 @@ export const ConversationHeader = ({
   const [lossReason, setLossReason] = useState('');
   const [lossNotes, setLossNotes] = useState('');
   const [lossSubmitted, setLossSubmitted] = useState(false);
+  const [resultMenuOpen, setResultMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!ticket) return;
@@ -257,23 +639,56 @@ export const ConversationHeader = ({
   }, [isExpanded, ticket?.id]);
 
   const name = ticket?.contact?.name ?? ticket?.subject ?? 'Contato sem nome';
-  const company = ticket?.metadata?.company ?? ticket?.contact?.company;
+  const company = ticket?.metadata?.company ?? ticket?.contact?.company ?? null;
   const title = company ? `${name} | ${company}` : name;
+  const leadIdentifier = ticket?.lead?.id ?? ticket?.id ?? null;
+  const shortId = useMemo(() => buildShortId(leadIdentifier), [leadIdentifier]);
   const phoneDisplay = formatPhoneNumber(ticket?.contact?.phone || ticket?.metadata?.contactPhone);
   const rawPhone = ticket?.contact?.phone || ticket?.metadata?.contactPhone || null;
-  const document = ticket?.contact?.document ?? '—';
+  const document = ticket?.contact?.document ?? null;
+  const email = ticket?.contact?.email ?? ticket?.metadata?.contactEmail ?? null;
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const expirationInfo = useMemo(() => getExpirationInfo(ticket?.window), [ticket?.window]);
   const slaTooltip = useMemo(() => buildSlaTooltip(ticket?.window), [ticket?.window]);
+  const initials = useMemo(() => buildInitials(name, 'CT'), [name]);
+  const remainingMinutes = ticket?.window?.remainingMinutes ?? null;
+  const lastInteractionLabel = useMemo(
+    () => minutesToHoursLabel(ticket?.window?.lastInteractionMinutes),
+    [ticket?.window?.lastInteractionMinutes],
+  );
 
-  const subtitle = useMemo(() => {
-    const id = ticket?.lead?.id ?? ticket?.id ?? '—';
-    const potential = formatPotential(ticket?.lead?.value);
-    const probability = formatProbability(ticket?.lead?.probability);
-    const stage = ticket?.pipelineStep ?? ticket?.metadata?.pipelineStep ?? '—';
-    return `ID #${id} • Potencial ${potential} • Prob. ${probability} • Etapa: ${stage}`;
-  }, [ticket?.lead?.id, ticket?.lead?.value, ticket?.lead?.probability, ticket?.pipelineStep, ticket?.metadata?.pipelineStep, ticket?.id]);
+  const potential = useMemo(() => formatPotential(ticket?.lead?.value), [ticket?.lead?.value]);
+  const probability = useMemo(() => formatProbability(ticket?.lead?.probability), [ticket?.lead?.probability]);
+  const stage = useMemo(
+    () => ticket?.pipelineStep ?? ticket?.metadata?.pipelineStep ?? '—',
+    [ticket?.pipelineStep, ticket?.metadata?.pipelineStep],
+  );
+
+  const timeline = ticket?.timeline ?? {};
+  const lastInboundLabel = useMemo(() => formatDateTime(timeline.lastInboundAt), [timeline.lastInboundAt]);
+  const lastOutboundLabel = useMemo(() => formatDateTime(timeline.lastOutboundAt), [timeline.lastOutboundAt]);
+  const directionMeta = useMemo(() => {
+    switch (timeline.lastDirection) {
+      case 'INBOUND':
+        return { tone: 'warning', label: 'Cliente aguardando resposta' };
+      case 'OUTBOUND':
+        return { tone: 'info', label: 'Aguardando cliente' };
+      default:
+        return { tone: 'neutral', label: 'Sem interações recentes' };
+    }
+  }, [timeline.lastDirection]);
+  const unreadInboundCount = timeline.unreadInboundCount ?? 0;
+
+  const attachments = useMemo(() => {
+    if (Array.isArray(ticket?.metadata?.attachments)) {
+      return ticket.metadata.attachments;
+    }
+    if (Array.isArray(ticket?.attachments)) {
+      return ticket.attachments;
+    }
+    return [];
+  }, [ticket?.metadata?.attachments, ticket?.attachments]);
 
   const resetLossState = useCallback(() => {
     setLossReason('');
@@ -298,6 +713,7 @@ export const ConversationHeader = ({
   const handleResultChange = useCallback(async (value) => {
     if (!value) return;
     if (value === 'lost') {
+      setResultMenuOpen(false);
       setLossDialogOpen(true);
       return;
     }
@@ -309,6 +725,7 @@ export const ConversationHeader = ({
     };
     const reason = reasonMap[value];
     await handleResult(value, reason);
+    setResultMenuOpen(false);
   }, [handleResult]);
 
   const handleConfirmLoss = useCallback(async () => {
@@ -321,6 +738,7 @@ export const ConversationHeader = ({
     try {
       await handleResult('lost', finalReason);
       setLossDialogOpen(false);
+      setResultMenuOpen(false);
       resetLossState();
     } catch {
       // feedback handled upstream
@@ -389,6 +807,54 @@ export const ConversationHeader = ({
     }
   }, [document]);
 
+  useEffect(() => {
+    if (!ticket) {
+      return undefined;
+    }
+
+    const handleShortcut = (event) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      const key = event.key?.toLowerCase();
+      switch (key) {
+        case 'e':
+          setIsExpanded((previous) => !previous);
+          event.preventDefault();
+          break;
+        case 'n':
+          onAssign?.(ticket);
+          event.preventDefault();
+          break;
+        case 'w':
+          handlePhoneAction('whatsapp');
+          event.preventDefault();
+          break;
+        case 'x':
+          onScheduleFollowUp?.(ticket);
+          event.preventDefault();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [ticket, onAssign, onScheduleFollowUp, handlePhoneAction]);
+  const handleGenerateProposal = useCallback(() => {
+    onGenerateProposal?.(ticket);
+  }, [onGenerateProposal, ticket]);
+
+  const handleAssign = useCallback(() => {
+    onAssign?.(ticket);
+  }, [onAssign, ticket]);
+
+  const handleScheduleFollowUp = useCallback(() => {
+    onScheduleFollowUp?.(ticket);
+  }, [onScheduleFollowUp, ticket]);
+
   if (!ticket) {
     return (
       <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
@@ -396,6 +862,116 @@ export const ConversationHeader = ({
       </div>
     );
   }
+
+  const contactContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Nome">{name}</InfoRow>
+        {company ? <InfoRow label="Empresa">{company}</InfoRow> : null}
+        <InfoRow label="Telefone">{phoneDisplay ?? '—'}</InfoRow>
+        <InfoRow label="E-mail">{email ?? '—'}</InfoRow>
+        <InfoRow label="Documento">{document ?? '—'}</InfoRow>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <MetadataBadge icon={Phone} aria-label="Telefone" aria-keyshortcuts="w" accessKey="w">
+              {phoneDisplay ?? 'Telefone indisponível'}
+            </MetadataBadge>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52">
+            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+              Ligar
+            </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+              Abrir WhatsApp
+            </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+              Copiar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {document ? (
+          <MetadataBadge icon={IdCard} aria-label="Copiar documento" onClick={handleCopyDocument}>
+            Doc: {document}
+          </MetadataBadge>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const opportunityContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Potencial">{potential}</InfoRow>
+        <InfoRow label="Probabilidade">{probability}</InfoRow>
+        <InfoRow label="Etapa">
+          {stage && stage !== '—' ? <Chip tone="neutral" className="px-2.5 py-1 text-xs">{stage}</Chip> : '—'}
+        </InfoRow>
+        <InfoRow label="ID completo">{leadIdentifier ? String(leadIdentifier) : '—'}</InfoRow>
+        <InfoRow label="Status">{statusInfo.label}</InfoRow>
+        <InfoRow label="Janela SLA">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help text-foreground">{expirationInfo.label}</span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start">
+              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
+            </TooltipContent>
+          </Tooltip>
+        </InfoRow>
+      </div>
+      {unreadInboundCount ? (
+        <p className="text-sm text-foreground-muted">
+          {unreadInboundCount} mensagem{unreadInboundCount > 1 ? 's' : ''} pendente{unreadInboundCount > 1 ? 's' : ''} do cliente.
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const timelineContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Último cliente">{lastInboundLabel}</InfoRow>
+        <InfoRow label="Último agente">{lastOutboundLabel}</InfoRow>
+        <InfoRow label="Status atual">
+          <Chip tone={directionMeta.tone} className="px-2.5 py-1 text-xs">{directionMeta.label}</Chip>
+        </InfoRow>
+        <InfoRow label="Direção mais recente">{timeline.lastDirection ? timeline.lastDirection.toLowerCase() : '—'}</InfoRow>
+      </div>
+      <p className="text-xs text-foreground-muted">
+        Histórico detalhado disponível na linha do tempo da conversa.
+      </p>
+    </div>
+  );
+
+  const attachmentsContent = attachments.length > 0
+    ? (
+        <ul className="space-y-2 text-sm text-foreground">
+          {attachments.map((item, index) => {
+            const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
+            const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
+            return (
+              <li
+                key={key}
+                className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2"
+              >
+                <span className="truncate">{label}</span>
+                {item?.url ? (
+                  <Button variant="link" size="sm" asChild>
+                    <a href={item.url} target="_blank" rel="noreferrer">
+                      Abrir
+                    </a>
+                  </Button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )
+    : (
+        <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
+      );
 
   return (
     <Collapsible
@@ -406,12 +982,30 @@ export const ConversationHeader = ({
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-base font-semibold leading-tight text-foreground">
-              {title}
-            </h3>
+          {leadIdentifier ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex min-w-0 items-center gap-2">
+                  <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
+                  {shortId ? (
+                    <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
+                      #{shortId}
+                    </span>
+                  ) : null}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start">
+                <p className="max-w-[220px] text-xs text-foreground-muted">ID completo: {String(leadIdentifier)}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="flex min-w-0 items-center gap-2">
+              <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
             <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
               {statusInfo.label}
             </Chip>
@@ -426,7 +1020,6 @@ export const ConversationHeader = ({
               </TooltipContent>
             </Tooltip>
           </div>
-          <p className="truncate text-xs text-foreground-muted">{subtitle}</p>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -440,6 +1033,7 @@ export const ConversationHeader = ({
                 onClick={() => onGenerateProposal?.(ticket)}
                 className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Gerar proposta"
+                aria-keyshortcuts="g"
               >
                 <FileText className="size-4" aria-hidden />
               </Button>
@@ -456,6 +1050,8 @@ export const ConversationHeader = ({
                 onClick={() => onAssign?.(ticket)}
                 className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Atribuir"
+                aria-keyshortcuts="n"
+                accessKey="n"
               >
                 <UserPlus className="size-4" aria-hidden />
               </Button>
@@ -472,6 +1068,8 @@ export const ConversationHeader = ({
                 onClick={() => onScheduleFollowUp?.(ticket)}
                 className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Agendar follow-up"
+                aria-keyshortcuts="x"
+                accessKey="x"
               >
                 <CalendarClock className="size-4" aria-hidden />
               </Button>
@@ -566,6 +1164,8 @@ export const ConversationHeader = ({
               size="icon"
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
               className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+              aria-keyshortcuts="e"
+              accessKey="e"
             >
               <ChevronDown
                 className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
@@ -674,6 +1274,179 @@ export const ConversationHeader = ({
               </MetadataBadge>
             </footer>
           </CardBody.Right>
+        <CardBody className="mt-4 border-t border-surface-overlay-glass-border pt-4">
+          <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+            <section className="space-y-4">
+              <div className="grid gap-2">
+      <HeaderMinimized
+        title={title}
+        initials={initials}
+        statusInfo={statusInfo}
+        expirationInfo={expirationInfo}
+        slaTooltip={slaTooltip}
+        remainingMinutes={remainingMinutes}
+        lastInteractionLabel={lastInteractionLabel}
+        typingAgents={typingAgents}
+        isExpanded={isExpanded}
+        isRegisteringResult={isRegisteringResult}
+        resultSelection={resultSelection}
+        onResultChange={handleResultChange}
+        onGenerateProposal={handleGenerateProposal}
+        onAssign={handleAssign}
+        onScheduleFollowUp={handleScheduleFollowUp}
+        onPhoneAction={handlePhoneAction}
+        onCopyDocument={handleCopyDocument}
+      />
+
+      <CollapsibleContent>
+        <div className="mt-3 space-y-3 border-t border-surface-overlay-glass-border pt-3">
+          <p className="text-xs text-foreground-muted">{subtitle}</p>
+
+          <section className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleGenerateProposal}
+              className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
+            >
+              Gerar proposta
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleAssign}
+              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+            >
+              Atribuir
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleScheduleFollowUp}
+              className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+            >
+              Agendar follow-up
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={() => onGenerateProposal?.(ticket)}
+                  className="w-full"
+                >
+                  Gerar proposta
+                </Button>
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  onClick={() => onAssign?.(ticket)}
+                  className="w-full"
+                  aria-keyshortcuts="n"
+                  accessKey="n"
+                >
+                  Atribuir
+                </Button>
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  onClick={() => onScheduleFollowUp?.(ticket)}
+                  className="w-full"
+                  aria-keyshortcuts="x"
+                  accessKey="x"
+                >
+                  Agendar follow-up
+                </Button>
+                <DropdownMenu open={resultMenuOpen} onOpenChange={setResultMenuOpen}>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      className="w-full justify-between"
+                      onClick={() => setResultMenuOpen(true)}
+                      disabled={isRegisteringResult}
+                    >
+                      Registrar resultado
+                    </Button>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="outline"
+                        className="px-3"
+                        aria-label="Abrir opções de resultado"
+                        disabled={isRegisteringResult}
+                      >
+                        <ChevronDown className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </div>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                      {RESULT_ITEMS.map((item) => (
+                        <DropdownMenuRadioItem
+                          key={item.value}
+                          value={item.value}
+                          className="min-h-[40px]"
+                          disabled={isRegisteringResult}
+                        >
+                          {item.label}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div className="hidden md:flex flex-col gap-4">
+                <Tabs defaultValue="contato" className="flex flex-col gap-4">
+                  <TabsList className="w-full flex-wrap justify-start gap-2">
+                    <TabsTrigger value="contato">Contato</TabsTrigger>
+                    <TabsTrigger value="oportunidade">Oportunidade</TabsTrigger>
+                    <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                    <TabsTrigger value="anexos">Anexos</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="contato">{contactContent}</TabsContent>
+                  <TabsContent value="oportunidade">{opportunityContent}</TabsContent>
+                  <TabsContent value="timeline">{timelineContent}</TabsContent>
+                  <TabsContent value="anexos">{attachmentsContent}</TabsContent>
+                </Tabs>
+              </div>
+
+              <div className="md:hidden">
+                <Accordion
+                  type="single"
+                  collapsible
+                  defaultValue="contato"
+                  className="divide-y divide-surface-overlay-glass-border rounded-2xl border border-surface-overlay-glass-border"
+                >
+                  <AccordionItem value="contato">
+                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Contato</AccordionTrigger>
+                    <AccordionContent className="px-3 pb-4 pt-0">{contactContent}</AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="oportunidade">
+                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Oportunidade</AccordionTrigger>
+                    <AccordionContent className="px-3 pb-4 pt-0">{opportunityContent}</AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="timeline">
+                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Timeline</AccordionTrigger>
+                    <AccordionContent className="px-3 pb-4 pt-0">{timelineContent}</AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="anexos">
+                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Anexos</AccordionTrigger>
+                    <AccordionContent className="px-3 pb-4 pt-0">{attachmentsContent}</AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
+            </section>
+          </div>
         </CardBody>
       </CollapsibleContent>
 
