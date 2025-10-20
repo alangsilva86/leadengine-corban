@@ -11,6 +11,9 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
       content,
       type = 'TEXT',
       mediaUrl,
+      mediaMimeType,
+      mediaFileName,
+      caption,
       quotedMessageId,
       metadata,
     }) => {
@@ -24,6 +27,9 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
         content,
         type,
         mediaUrl,
+        mediaMimeType,
+        mediaFileName,
+        caption,
         quotedMessageId,
         metadata,
       });

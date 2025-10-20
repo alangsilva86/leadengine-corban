@@ -5,6 +5,7 @@ import { Brain, Paperclip, Smile, Send, Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
+import { useUploadWhatsAppMedia } from '../../api/useUploadWhatsAppMedia.js';
 
 const DEFAULT_REPLIES = [
   { id: 'hello', label: 'Saudação', text: 'Olá! Aqui é da Corban, tudo bem?' },
@@ -47,6 +48,11 @@ export const Composer = ({
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const [quickReplies, setQuickReplies] = useState(() => [...DEFAULT_REPLIES]);
+  const [uploadError, setUploadError] = useState(null);
+  const {
+    mutateAsync: uploadMedia,
+    isPending: isUploading,
+  } = useUploadWhatsAppMedia();
 
   const placeholder = useMemo(() => {
     if (disabled) {
@@ -64,15 +70,22 @@ export const Composer = ({
     }
   }, [value]);
 
+  useEffect(() => {
+    if (attachments.length === 0 && uploadError) {
+      setUploadError(null);
+    }
+  }, [attachments.length, uploadError]);
+
   const resetComposer = () => {
     setValue('');
     setAttachments([]);
     setTemplatePickerOpen(false);
+    setUploadError(null);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0) || disabled || isSending) {
+    if ((!trimmed && attachments.length === 0) || disabled || isSending || isUploading) {
       return;
     }
 
@@ -95,11 +108,47 @@ export const Composer = ({
       return;
     }
 
-    const payloadContent = trimmed || '[Anexo enviado]';
+    let normalizedAttachments = attachments;
+
+    if (attachments.length > 0) {
+      try {
+        const uploaded = [];
+        for (const item of attachments) {
+          const descriptor = await uploadMedia({
+            file: item.file,
+            fileName: item.name,
+            mimeType: item.type,
+          });
+
+          uploaded.push({
+            id: item.id,
+            name: item.name,
+            size: item.size,
+            type: item.type,
+            mediaUrl: descriptor.mediaUrl,
+            mimeType: descriptor.mimeType ?? item.type,
+            fileName: descriptor.fileName ?? item.name,
+            mediaSize: descriptor.size ?? item.size,
+          });
+        }
+        normalizedAttachments = uploaded;
+        setUploadError(null);
+      } catch (error) {
+        console.error('Falha ao enviar anexo', error);
+        const message = error instanceof Error ? error.message : 'Falha ao enviar anexo.';
+        setUploadError({ message });
+        return;
+      }
+    }
+
+    const hasAttachments = normalizedAttachments.length > 0;
+    const payloadContent = trimmed;
+    const caption = hasAttachments ? trimmed || undefined : undefined;
 
     onSend?.({
       content: payloadContent,
-      attachments,
+      attachments: normalizedAttachments,
+      caption,
     });
     resetComposer();
   };
@@ -227,7 +276,7 @@ export const Composer = ({
                 setTemplatePickerOpen(false);
               }
             }}
-            disabled={disabled || isSending}
+            disabled={disabled || isSending || isUploading}
             placeholder={placeholder}
             className="min-h-[56px] max-h-40 flex-1 resize-none rounded-xl border border-transparent bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-0"
           />
@@ -235,10 +284,10 @@ export const Composer = ({
             variant="default"
             size="icon"
             className="h-11 w-11 rounded-xl bg-[color:var(--accent-inbox-primary)] text-white shadow-[0_16px_28px_-20px_rgba(14,165,233,0.7)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]"
-            disabled={disabled || isSending}
+            disabled={disabled || isSending || isUploading}
             onClick={handleSend}
           >
-            {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {isSending || isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             <span className="sr-only">Enviar mensagem</span>
           </Button>
         </div>
@@ -247,6 +296,12 @@ export const Composer = ({
       {sendError ? (
         <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">
           {sendError.message ?? 'Falha ao enviar mensagem.'}
+        </div>
+      ) : null}
+
+      {uploadError ? (
+        <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">
+          {uploadError.message ?? 'Falha ao enviar anexo.'}
         </div>
       ) : null}
 

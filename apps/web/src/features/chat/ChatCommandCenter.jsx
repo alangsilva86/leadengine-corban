@@ -13,6 +13,26 @@ import { useManualConversationLauncher } from './hooks/useManualConversationLaun
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
+const inferMessageTypeFromMime = (mimeType) => {
+  if (typeof mimeType !== 'string') {
+    return 'DOCUMENT';
+  }
+
+  const normalized = mimeType.toLowerCase();
+
+  if (normalized.startsWith('image/')) {
+    return 'IMAGE';
+  }
+  if (normalized.startsWith('video/')) {
+    return 'VIDEO';
+  }
+  if (normalized.startsWith('audio/')) {
+    return 'AUDIO';
+  }
+
+  return 'DOCUMENT';
+};
+
 export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
 
@@ -105,7 +125,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     [controller.selectTicket, controller.ticketsQuery]
   );
 
-  const sendMessage = ({ content, attachments = [], template }) => {
+  const sendMessage = ({ content, attachments = [], template, caption }) => {
     const trimmed = (content ?? '').trim();
     if (!trimmed && attachments.length === 0) {
       return;
@@ -114,11 +134,28 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     const metadata = {};
 
     if (attachments.length > 0) {
-      metadata.attachments = attachments.map((file) => ({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      }));
+      const normalizedAttachments = attachments.map((file) => {
+        const normalizedMime = file.mimeType ?? file.mediaMimeType ?? file.type ?? null;
+        const normalizedName = file.fileName ?? file.mediaFileName ?? file.name ?? null;
+        const record = {
+          id: file.id,
+          name: file.name ?? normalizedName ?? undefined,
+          size: file.size ?? file.mediaSize ?? undefined,
+          type: file.type ?? undefined,
+          mimeType: normalizedMime ?? undefined,
+          fileName: normalizedName ?? undefined,
+          mediaUrl: file.mediaUrl ?? undefined,
+        };
+        const normalizedRecord = Object.fromEntries(
+          Object.entries(record).filter(([, value]) => value !== undefined && value !== null)
+        );
+        return normalizedRecord;
+      });
+
+      const filtered = normalizedAttachments.filter((entry) => Object.keys(entry).length > 0);
+      if (filtered.length > 0) {
+        metadata.attachments = filtered;
+      }
     }
 
     if (template) {
@@ -128,12 +165,47 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       };
     }
 
+    const hasAttachments = attachments.length > 0;
+    const payloadContent = hasAttachments ? trimmed || '[Anexo enviado]' : trimmed;
+    const normalizedCaption = hasAttachments
+      ? caption ?? (trimmed.length > 0 ? trimmed : undefined)
+      : caption;
+
+    const [primaryAttachment] = attachments;
+    const primaryMetadata = metadata.attachments?.[0];
+
+    const mutationPayload = {
+      ticketId: controller.selectedTicketId,
+      content: payloadContent,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    };
+
+    if (hasAttachments) {
+      const mime =
+        primaryAttachment?.mimeType ??
+        primaryAttachment?.mediaMimeType ??
+        primaryAttachment?.type ??
+        primaryMetadata?.mimeType ??
+        primaryMetadata?.type ??
+        null;
+      mutationPayload.type = inferMessageTypeFromMime(mime ?? undefined);
+      mutationPayload.mediaUrl = primaryAttachment?.mediaUrl ?? primaryMetadata?.mediaUrl;
+      mutationPayload.mediaMimeType = mime ?? undefined;
+      mutationPayload.mediaFileName =
+        primaryAttachment?.fileName ??
+        primaryAttachment?.mediaFileName ??
+        primaryAttachment?.name ??
+        primaryMetadata?.fileName ??
+        undefined;
+      if (normalizedCaption) {
+        mutationPayload.caption = normalizedCaption;
+      }
+    } else if (normalizedCaption) {
+      mutationPayload.caption = normalizedCaption;
+    }
+
     controller.sendMessageMutation.mutate(
-      {
-        ticketId: controller.selectedTicketId,
-        content: trimmed,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      },
+      mutationPayload,
       {
         onSuccess: (result) => {
           const error = result?.error;
