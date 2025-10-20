@@ -427,7 +427,7 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
     return null;
   }
 
-  const tenant = await prisma.tenant.findFirst({
+  let tenant = await prisma.tenant.findFirst({
     where: {
       OR: tenantIdentifiers.flatMap((identifier) => [
         { id: identifier },
@@ -442,7 +442,45 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
       requestId,
       tenantIdentifiers,
     });
-    return null;
+
+    const ensureIdentifier = tenantIdentifiers[0];
+
+    try {
+      const ensuredTenant = await ensureTenantRecord(ensureIdentifier, {
+        source: 'whatsapp-inbound-auto',
+        action: 'ensure-tenant',
+        instanceId,
+        requestId,
+      });
+
+      tenant =
+        (await prisma.tenant.findFirst({
+          where: {
+            OR: tenantIdentifiers.flatMap((identifier) => [
+              { id: identifier },
+              { slug: identifier },
+            ]),
+          },
+        })) ?? ensuredTenant;
+    } catch (error) {
+      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao garantir tenant para autoprov de instância', {
+        instanceId,
+        requestId,
+        tenantIdentifiers,
+        ensureIdentifier,
+        error: mapErrorForLog(error),
+      });
+      return null;
+    }
+
+    if (!tenant) {
+      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Tenant indisponível mesmo após tentativa de garantia', {
+        instanceId,
+        requestId,
+        tenantIdentifiers,
+      });
+      return null;
+    }
   }
 
   const brokerId = resolveBrokerIdFromMetadata(metadata) ?? instanceId;

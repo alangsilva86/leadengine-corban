@@ -9,32 +9,78 @@ import {
   queueCacheByTenant,
 } from '../provisioning';
 import { resolveTenantIdentifiersFromMetadata } from '../identifiers';
-import type { InboundWhatsAppEvent } from '../types';
+import type { InboundWhatsAppEnvelope, InboundWhatsAppEvent } from '../types';
 
-const findUniqueMock = vi.fn();
-const findFirstMock = vi.fn();
-const queueUpsertMock = vi.fn();
-const createTicketMock = vi.fn();
-const sendMessageMock = vi.fn();
-const leadUpsertMock = vi.fn();
-const leadFindFirstMock = vi.fn();
-const leadUpdateMock = vi.fn();
-const leadCreateMock = vi.fn();
-const leadActivityFindFirstMock = vi.fn();
-const leadActivityCreateMock = vi.fn();
-const emitToTenantMock = vi.fn();
-const emitToTicketMock = vi.fn();
-const leadLastContactGaugeSetMock = vi.fn();
-const whatsappInstanceFindUniqueMock = vi.fn();
-const whatsappInstanceCreateMock = vi.fn();
-const whatsappInstanceFindFirstMock = vi.fn();
-const whatsappInstanceUpdateMock = vi.fn();
-const tenantFindFirstMock = vi.fn();
-const contactFindUniqueMock = vi.fn();
-const contactFindFirstMock = vi.fn();
-const contactUpdateMock = vi.fn();
-const contactCreateMock = vi.fn();
-const ticketFindUniqueMock = vi.fn();
+const prismaMock = vi.hoisted(() => ({
+  queue: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    upsert: vi.fn(),
+  },
+  whatsAppInstance: {
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    findFirst: vi.fn(),
+    update: vi.fn(),
+  },
+  tenant: {
+    findFirst: vi.fn(),
+  },
+  campaign: {
+    findMany: vi.fn(),
+    upsert: vi.fn(),
+  },
+  contact: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    update: vi.fn(),
+    create: vi.fn(),
+  },
+  lead: {
+    findFirst: vi.fn(),
+    upsert: vi.fn(),
+    update: vi.fn(),
+    create: vi.fn(),
+  },
+  leadActivity: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+  },
+  ticket: {
+    findUnique: vi.fn(),
+  },
+}));
+
+const findUniqueMock = prismaMock.queue.findUnique;
+const findFirstMock = prismaMock.queue.findFirst;
+const queueUpsertMock = prismaMock.queue.upsert;
+const whatsappInstanceFindUniqueMock = prismaMock.whatsAppInstance.findUnique;
+const whatsappInstanceCreateMock = prismaMock.whatsAppInstance.create;
+const whatsappInstanceFindFirstMock = prismaMock.whatsAppInstance.findFirst;
+const whatsappInstanceUpdateMock = prismaMock.whatsAppInstance.update;
+const tenantFindFirstMock = prismaMock.tenant.findFirst;
+const campaignFindManyMock = prismaMock.campaign.findMany;
+const campaignUpsertMock = prismaMock.campaign.upsert;
+const contactFindUniqueMock = prismaMock.contact.findUnique;
+const contactFindFirstMock = prismaMock.contact.findFirst;
+const contactUpdateMock = prismaMock.contact.update;
+const contactCreateMock = prismaMock.contact.create;
+const leadFindFirstMock = prismaMock.lead.findFirst;
+const leadUpsertMock = prismaMock.lead.upsert;
+const leadUpdateMock = prismaMock.lead.update;
+const leadCreateMock = prismaMock.lead.create;
+const leadActivityFindFirstMock = prismaMock.leadActivity.findFirst;
+const leadActivityCreateMock = prismaMock.leadActivity.create;
+const ticketFindUniqueMock = prismaMock.ticket.findUnique;
+
+const allocateBrokerLeadsMock = vi.hoisted(() => vi.fn());
+const listAllocationsMock = vi.hoisted(() => vi.fn());
+const updateAllocationMock = vi.hoisted(() => vi.fn());
+const createTicketMock = vi.hoisted(() => vi.fn());
+const sendMessageMock = vi.hoisted(() => vi.fn());
+const emitToTenantMock = vi.hoisted(() => vi.fn());
+const emitToTicketMock = vi.hoisted(() => vi.fn());
+const leadLastContactGaugeSetMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -46,41 +92,7 @@ vi.mock('../../../../config/logger', () => ({
 }));
 
 vi.mock('../../../../lib/prisma', () => ({
-  prisma: {
-    queue: {
-      findUnique: findUniqueMock,
-      findFirst: findFirstMock,
-      upsert: queueUpsertMock,
-    },
-    whatsAppInstance: {
-      findUnique: whatsappInstanceFindUniqueMock,
-      create: whatsappInstanceCreateMock,
-      findFirst: whatsappInstanceFindFirstMock,
-      update: whatsappInstanceUpdateMock,
-    },
-    tenant: {
-      findFirst: tenantFindFirstMock,
-    },
-    contact: {
-      findUnique: contactFindUniqueMock,
-      findFirst: contactFindFirstMock,
-      update: contactUpdateMock,
-      create: contactCreateMock,
-    },
-    lead: {
-      findFirst: leadFindFirstMock,
-      upsert: leadUpsertMock,
-      update: leadUpdateMock,
-      create: leadCreateMock,
-    },
-    leadActivity: {
-      findFirst: leadActivityFindFirstMock,
-      create: leadActivityCreateMock,
-    },
-    ticket: {
-      findUnique: ticketFindUniqueMock,
-    },
-  },
+  prisma: prismaMock,
 }));
 
 vi.mock('../../../../services/ticket-service', () => ({
@@ -95,7 +107,14 @@ vi.mock('../../../../lib/socket-registry', () => ({
   getSocketServer: vi.fn(() => null),
 }));
 
-const ensureTenantRecordMock = vi.fn();
+vi.mock('@ticketz/storage', () => ({
+  allocateBrokerLeads: allocateBrokerLeadsMock,
+  listAllocations: listAllocationsMock,
+  updateAllocation: updateAllocationMock,
+  $Enums: { MessageType: {} },
+}));
+
+const ensureTenantRecordMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../services/tenant-service', () => ({
   ensureTenantRecord: ensureTenantRecordMock,
@@ -106,15 +125,19 @@ vi.mock('../../../../lib/metrics', () => ({
   leadLastContactGauge: { set: leadLastContactGaugeSetMock },
 }));
 
-type TestingHelpers = typeof import('../inbound-lead-service')['__testing'];
+type InboundModule = typeof import('../inbound-lead-service');
+type TestingHelpers = InboundModule['__testing'];
 
 let testing!: TestingHelpers;
+let ingestInboundWhatsAppMessage!: InboundModule['ingestInboundWhatsAppMessage'];
 type UpsertParams = Parameters<TestingHelpers['upsertLeadFromInbound']>[0];
 type ProcessEventParams = Parameters<TestingHelpers['processStandardInboundEvent']>;
 type InboundEvent = ProcessEventParams[0];
 
 beforeAll(async () => {
-  testing = (await import('../inbound-lead-service')).__testing;
+  const module = await import('../inbound-lead-service');
+  testing = module.__testing;
+  ingestInboundWhatsAppMessage = module.ingestInboundWhatsAppMessage;
 });
 
 describe('getDefaultQueueId', () => {
@@ -186,6 +209,140 @@ describe('getDefaultQueueId', () => {
   });
 });
 
+describe('ingestInboundWhatsAppMessage', () => {
+  beforeEach(() => {
+    queueCacheByTenant.clear();
+    vi.clearAllMocks();
+  });
+
+  it('ensures tenant creation and persists inbound message for unknown tenant', async () => {
+    const ensuredTenant = { id: 'tenant-fresh', name: 'Tenant Fresh', slug: 'tenant-fresh' };
+    const timestamp = new Date('2024-03-25T12:00:00.000Z');
+    const envelope: InboundWhatsAppEnvelope = {
+      origin: 'webhook',
+      instanceId: 'wa-new',
+      chatId: null,
+      tenantId: null,
+      message: {
+        kind: 'message',
+        id: 'msg-ensure',
+        externalId: 'ext-ensure',
+        brokerMessageId: 'broker-ensure',
+        timestamp: timestamp.toISOString(),
+        direction: 'INBOUND',
+        contact: { phone: '+5511999999999', name: 'Cliente Webhook' },
+        payload: {
+          id: 'payload-ensure',
+          type: 'text',
+          text: 'Olá, LeadEngine!',
+          key: { id: 'broker-ensure' },
+          metadata: null,
+        },
+        metadata: {
+          tenantId: ensuredTenant.id,
+          requestId: 'req-ensure',
+        },
+      },
+    };
+
+    tenantFindFirstMock.mockResolvedValueOnce(null).mockResolvedValueOnce(ensuredTenant);
+    ensureTenantRecordMock.mockResolvedValueOnce(ensuredTenant);
+    whatsappInstanceFindFirstMock.mockResolvedValueOnce(null);
+    const createdInstance = {
+      id: 'wa-new',
+      tenantId: ensuredTenant.id,
+      name: 'Instance Webhook',
+      brokerId: 'wa-new',
+      status: 'connected',
+      connected: true,
+      phoneNumber: null,
+      lastSeenAt: null,
+      metadata: {},
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    whatsappInstanceCreateMock.mockResolvedValueOnce(createdInstance);
+    campaignFindManyMock.mockResolvedValueOnce([]);
+    campaignUpsertMock.mockResolvedValueOnce({
+      id: 'campaign-fallback',
+      tenantId: ensuredTenant.id,
+      whatsappInstanceId: 'wa-new',
+      status: 'active',
+    });
+    findFirstMock.mockResolvedValueOnce(null);
+    queueUpsertMock.mockResolvedValueOnce({ id: 'queue-auto', tenantId: ensuredTenant.id });
+    contactFindUniqueMock.mockResolvedValueOnce(null);
+    contactFindFirstMock.mockResolvedValueOnce(null);
+    contactCreateMock.mockResolvedValueOnce({
+      id: 'contact-auto',
+      tenantId: ensuredTenant.id,
+      phone: '+5511999999999',
+      name: 'Cliente Webhook',
+    });
+    const leadRecord = {
+      id: 'lead-auto',
+      tenantId: ensuredTenant.id,
+      contactId: 'contact-auto',
+      status: 'NEW',
+      source: 'WHATSAPP',
+      lastContactAt: timestamp,
+    };
+    leadFindFirstMock.mockResolvedValueOnce(null);
+    leadCreateMock.mockResolvedValueOnce(leadRecord);
+    leadActivityFindFirstMock.mockResolvedValueOnce(null);
+    leadActivityCreateMock.mockResolvedValueOnce({
+      id: 'activity-auto',
+      tenantId: ensuredTenant.id,
+      leadId: leadRecord.id,
+      type: 'WHATSAPP_REPLIED',
+      occurredAt: timestamp,
+    });
+    createTicketMock.mockResolvedValueOnce({ id: 'ticket-auto' });
+    ticketFindUniqueMock.mockResolvedValueOnce({
+      id: 'ticket-auto',
+      status: 'OPEN',
+      updatedAt: timestamp,
+    });
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-auto',
+      createdAt: timestamp,
+      metadata: { eventMetadata: { requestId: 'req-ensure' } },
+      content: 'Olá, LeadEngine!',
+    });
+
+    const persisted = await ingestInboundWhatsAppMessage(envelope);
+
+    expect(persisted).toBe(true);
+    expect(ensureTenantRecordMock).toHaveBeenCalledWith(
+      ensuredTenant.id,
+      expect.objectContaining({
+        source: 'whatsapp-inbound-auto',
+        action: 'ensure-tenant',
+        instanceId: 'wa-new',
+        requestId: 'req-ensure',
+      })
+    );
+    expect(whatsappInstanceCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ tenantId: ensuredTenant.id }),
+      })
+    );
+    expect(queueUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ tenantId: ensuredTenant.id }),
+      })
+    );
+    expect(createTicketMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: ensuredTenant.id, queueId: 'queue-auto' })
+    );
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      ensuredTenant.id,
+      undefined,
+      expect.objectContaining({ ticketId: 'ticket-auto', content: 'Olá, LeadEngine!' })
+    );
+  });
+});
+
 describe('metadata helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -224,6 +381,7 @@ describe('metadata helpers', () => {
       whatsappInstanceFindFirstMock.mockReset();
       whatsappInstanceUpdateMock.mockReset();
       tenantFindFirstMock.mockReset();
+      ensureTenantRecordMock.mockReset();
       whatsappInstanceFindFirstMock.mockResolvedValue(null);
     });
 
@@ -296,6 +454,64 @@ describe('metadata helpers', () => {
       expect(result).toEqual(
         expect.objectContaining({
           instance: expect.objectContaining({ id: 'wa-auto', tenantId: tenantRecord.id }),
+          wasCreated: true,
+          brokerId: 'wa-auto',
+        })
+      );
+    });
+
+    it('ensures tenant automatically when missing before provisioning instance', async () => {
+      const ensuredTenant = { id: 'tenant-ensured', name: 'Tenant Ensured', slug: 'tenant-ensured' };
+      const instanceRecord = {
+        id: 'wa-auto',
+        tenantId: ensuredTenant.id,
+        name: 'WhatsApp Principal',
+        brokerId: 'wa-auto',
+        status: 'connected',
+        connected: true,
+        phoneNumber: null,
+        lastSeenAt: null,
+        metadata: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      tenantFindFirstMock.mockResolvedValueOnce(null).mockResolvedValueOnce(ensuredTenant);
+      ensureTenantRecordMock.mockResolvedValueOnce(ensuredTenant);
+      whatsappInstanceCreateMock.mockResolvedValueOnce(instanceRecord);
+
+      const result = await attemptAutoProvisionWhatsAppInstance({
+        instanceId: 'wa-auto',
+        metadata: baseMetadata,
+        requestId: 'req-ensure',
+      });
+
+      expect(ensureTenantRecordMock).toHaveBeenCalledWith(
+        'tenant-autoprov',
+        expect.objectContaining({
+          source: 'whatsapp-inbound-auto',
+          action: 'ensure-tenant',
+          instanceId: 'wa-auto',
+          requestId: 'req-ensure',
+        })
+      );
+      expect(tenantFindFirstMock).toHaveBeenCalledTimes(2);
+      expect(tenantFindFirstMock).toHaveBeenNthCalledWith(2, {
+        where: {
+          OR: [
+            { id: 'tenant-autoprov' },
+            { slug: 'tenant-autoprov' },
+          ],
+        },
+      });
+      expect(whatsappInstanceCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tenantId: ensuredTenant.id }),
+        })
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          instance: expect.objectContaining({ tenantId: ensuredTenant.id }),
           wasCreated: true,
           brokerId: 'wa-auto',
         })
