@@ -179,7 +179,6 @@ export const ConversationArea = ({
           id="ticketViewport"
           ref={scrollRef}
           className="relative z-0 flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
-          className="flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
         >
           <div className="min-h-0 min-w-0 px-4 py-4 sm:px-5 sm:py-5">
             <MessageTimeline
@@ -194,7 +193,7 @@ export const ConversationArea = ({
 
         <footer
           ref={composerRef}
-          className="sticky bottom-0 z-10 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-3 sm:px-5 sm:py-4"
+          className="sticky bottom-0 z-0 border-t border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-4 py-3 sm:px-5 sm:py-4"
         >
           {composerNotice ? (
             <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-[0_6px_20px_-12px_rgba(217,119,6,0.55)]">
