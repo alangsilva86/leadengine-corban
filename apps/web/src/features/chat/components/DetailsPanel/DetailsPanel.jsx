@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import LeadSummaryCard from './LeadSummaryCard.jsx';
-import ContactDetailsCard from './ContactDetailsCard.jsx';
+import LeadDetailsTabs from './LeadDetailsTabs.jsx';
 import ConsentInfo from './ConsentInfo.jsx';
 import ProposalMiniSim from './ProposalMiniSim.jsx';
 import NotesSection from './NotesSection.jsx';
@@ -114,6 +114,14 @@ export const DetailsPanel = ({
             <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
           </TabsList>
 
+      <section className="space-y-3">
+        <header>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-muted">Informações do lead</h3>
+        </header>
+        <LeadSummaryCard lead={ticket?.lead} />
+        <LeadDetailsTabs ticket={ticket} />
+        <ConsentInfo consent={ticket?.contact?.consent} />
+      </section>
           <TabsContent value="contact" className="space-y-3">
             <ContactDetailsCard contact={ticket?.contact} />
             <ConsentInfo consent={ticket?.contact?.consent} />
