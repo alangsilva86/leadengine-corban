@@ -1518,7 +1518,7 @@ export const ConversationHeader = ({
       open={isExpanded}
       onOpenChange={setIsExpanded}
       className={cn(
-        'rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
+        'relative z-10 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
