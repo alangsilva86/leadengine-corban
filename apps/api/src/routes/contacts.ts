@@ -60,15 +60,23 @@ const TagsParamSchema = z.preprocess((value) => {
 }, z.array(z.string()).optional());
 
 const StatusParamSchema = z.preprocess((value) => {
+  let items: string[] | undefined;
+
   if (Array.isArray(value)) {
-    return value;
+    items = value.map((entry) => (typeof entry === 'string' ? entry : String(entry)));
+  } else if (typeof value === 'string' && value.trim().length > 0) {
+    items = value.split(',').map((item) => item.trim());
   }
 
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value.split(',').map((item) => item.trim());
+  if (!items?.length) {
+    return undefined;
   }
 
-  return undefined;
+  const normalized = items
+    .map((item) => item.trim().toUpperCase())
+    .filter((item) => item !== '' && item !== 'ALL');
+
+  return normalized.length > 0 ? normalized : undefined;
 }, z.array(ContactStatusSchema).optional());
 
 const DateParamSchema = z.preprocess((value) => {
