@@ -197,7 +197,7 @@ DO $$ BEGIN
         "contactId" TEXT NOT NULL,
         "type" "InteractionType" NOT NULL,
         "direction" "InteractionDirection" NOT NULL,
-        "channel" "InteractionChannel" NOT NULL,
+        "channel" "InteractionChannel",
         "subject" TEXT,
         "content" TEXT,
         "occurredAt" TIMESTAMP(3) NOT NULL,
@@ -209,6 +209,24 @@ DO $$ BEGIN
     );
 EXCEPTION
     WHEN duplicate_table THEN NULL;
+END $$;
+
+-- Ensure existing interactions table allows null channel values
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'interactions'
+          AND column_name = 'channel'
+    ) THEN
+        ALTER TABLE "interactions"
+        ALTER COLUMN "channel" DROP NOT NULL;
+    END IF;
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+    WHEN undefined_column THEN NULL;
 END $$;
 
 -- CreateTable tasks
