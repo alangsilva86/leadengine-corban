@@ -615,6 +615,8 @@ export const ConversationHeader = ({
   onRegisterCallResult,
   typingAgents = [],
   isRegisteringResult = false,
+  renderSummary,
+  renderDetails,
 }) => {
   const [isFadeIn, setIsFadeIn] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -991,15 +993,7 @@ export const ConversationHeader = ({
         <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
       );
 
-  return (
-    <Collapsible
-      open={isExpanded}
-      onOpenChange={setIsExpanded}
-      className={cn(
-        'rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
-        isFadeIn ? 'opacity-100' : 'opacity-0',
-      )}
-    >
+  const summaryContent = (
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           {leadIdentifier ? (
@@ -1194,6 +1188,10 @@ export const ConversationHeader = ({
         </div>
       </div>
 
+  );
+
+  const detailsContent = (
+    <>
       <CollapsibleContent>
         <ConversationCardBody>
           <ConversationCardBody.Left>
@@ -1526,8 +1524,23 @@ export const ConversationHeader = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  return (
+    <Collapsible
+      open={isExpanded}
+      onOpenChange={setIsExpanded}
+      className={cn(
+        'rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
+        isFadeIn ? 'opacity-100' : 'opacity-0',
+      )}
+    >
+      {renderSummary ? renderSummary(summaryContent, { isExpanded, onOpenChange: setIsExpanded }) : summaryContent}
+      {renderDetails ? renderDetails(detailsContent, { isExpanded, onOpenChange: setIsExpanded }) : detailsContent}
     </Collapsible>
   );
 };
+
 
 export default ConversationHeader;
