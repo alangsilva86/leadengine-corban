@@ -153,7 +153,15 @@ export const QuickComposer = ({
       setTaskDueAt('');
       trackPrimaryAction(primaryTrackedRef, startedAtRef, 'next_step', { ticketId });
     } catch (error) {
-      // handled upstream
+      const message = error?.message ?? 'Falha desconhecida ao salvar o próximo passo.';
+      emitInboxTelemetry('chat.quick_action.next_step_error', {
+        ticketId,
+        message,
+      });
+      console.error('Falha ao salvar próximo passo no QuickComposer', error);
+      toast.error('Não foi possível salvar o próximo passo.', {
+        description: message,
+      });
     }
   }, [onCreateNextStep, primaryTrackedRef, startedAtRef, taskDescription, taskDueAt, ticketId]);
 
