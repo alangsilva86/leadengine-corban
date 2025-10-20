@@ -83,12 +83,6 @@ DROP INDEX IF EXISTS "contacts_tenantId_phone_key";
 -- DropIndex
 DROP INDEX IF EXISTS "contacts_tenantId_email_key";
 
--- Update contacts columns
-ALTER TABLE "contacts"
-    DROP COLUMN IF EXISTS "email",
-    DROP COLUMN IF EXISTS "phone",
-    DROP COLUMN IF EXISTS "tags";
-
 ALTER TABLE "contacts"
     ADD COLUMN IF NOT EXISTS "birthDate" TIMESTAMP(3),
     ADD COLUMN IF NOT EXISTS "department" TEXT,
@@ -110,6 +104,7 @@ ALTER TABLE "contacts"
     ADD COLUMN IF NOT EXISTS "status" "ContactStatus" NOT NULL DEFAULT 'ACTIVE',
     ADD COLUMN IF NOT EXISTS "timezone" TEXT;
 
+-- CreateTable contact_phones (ensure availability before data migration)
 DO $$
 BEGIN
     IF EXISTS (
@@ -150,7 +145,7 @@ EXCEPTION
     WHEN duplicate_table THEN NULL;
 END $$;
 
--- CreateTable contact_emails
+-- CreateTable contact_emails (ensure availability before data migration)
 DO $$ BEGIN
     CREATE TABLE "contact_emails" (
         "id" TEXT NOT NULL,
@@ -167,6 +162,113 @@ DO $$ BEGIN
 EXCEPTION
     WHEN duplicate_table THEN NULL;
 END $$;
+
+-- Migrate existing phone and email data into new structures before dropping legacy columns
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'contacts'
+          AND column_name = 'phone'
+    ) THEN
+        UPDATE "contacts"
+        SET "primaryPhone" = "phone"
+        WHERE "phone" IS NOT NULL
+          AND ("primaryPhone" IS NULL OR "primaryPhone" = '');
+
+        INSERT INTO "contact_phones" (
+            "id",
+            "tenantId",
+            "contactId",
+            "phoneNumber",
+            "type",
+            "label",
+            "waId",
+            "isPrimary",
+            "createdAt",
+            "updatedAt"
+        )
+        SELECT
+            CONCAT(c."id", '-primary-phone'),
+            c."tenantId",
+            c."id",
+            c."phone",
+            NULL,
+            NULL,
+            NULL,
+            true,
+            c."createdAt",
+            COALESCE(c."updatedAt", CURRENT_TIMESTAMP)
+        FROM "contacts" c
+        WHERE c."phone" IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM "contact_phones" cp
+              WHERE cp."contactId" = c."id"
+                AND cp."isPrimary" = true
+          );
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'contacts'
+          AND column_name = 'email'
+    ) THEN
+        UPDATE "contacts"
+        SET "primaryEmail" = "email"
+        WHERE "email" IS NOT NULL
+          AND ("primaryEmail" IS NULL OR "primaryEmail" = '');
+
+        INSERT INTO "contact_emails" (
+            "id",
+            "tenantId",
+            "contactId",
+            "email",
+            "type",
+            "label",
+            "isPrimary",
+            "createdAt",
+            "updatedAt"
+        )
+        SELECT
+            CONCAT(c."id", '-primary-email'),
+            c."tenantId",
+            c."id",
+            c."email",
+            NULL,
+            NULL,
+            true,
+            c."createdAt",
+            COALESCE(c."updatedAt", CURRENT_TIMESTAMP)
+        FROM "contacts" c
+        WHERE c."email" IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM "contact_emails" ce
+              WHERE ce."contactId" = c."id"
+                AND ce."isPrimary" = true
+          );
+    END IF;
+END $$;
+
+ALTER TABLE "contacts"
+    DROP COLUMN IF EXISTS "email",
+    DROP COLUMN IF EXISTS "phone",
+    DROP COLUMN IF EXISTS "tags";
+
+UPDATE "contacts"
+SET "fullName" = COALESCE("name", '')
+WHERE "fullName" IS NULL;
+
+ALTER TABLE "contacts"
+    ALTER COLUMN "fullName" SET NOT NULL;
+
+ALTER TABLE "contacts"
+    DROP COLUMN IF EXISTS "name";
 
 -- CreateTable tags
 DO $$ BEGIN
