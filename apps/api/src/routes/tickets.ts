@@ -179,8 +179,8 @@ const normalizeOutboundMedia = (
   }
 
   const mediaRecord = value as Record<string, unknown>;
-  const mediaType = normalizeString(mediaRecord.mediaType);
-  if (!mediaType || !allowedMediaTypes.has(mediaType)) {
+  const normalizedMediaType = normalizeString(mediaRecord.mediaType)?.toLowerCase();
+  if (!normalizedMediaType || !allowedMediaTypes.has(normalizedMediaType)) {
     return null;
   }
 
@@ -191,7 +191,7 @@ const normalizeOutboundMedia = (
   const caption = normalizeString(mediaRecord.caption);
 
   const broker = {
-    mediaType: mediaType as 'image' | 'video' | 'audio' | 'document',
+    mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
     mimetype: mimetype ?? undefined,
     base64: base64 ?? undefined,
     mediaUrl: mediaUrl ?? undefined,
@@ -200,7 +200,7 @@ const normalizeOutboundMedia = (
   };
 
   const storage: PassthroughMessageMedia = {
-    mediaType,
+    mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
     caption: caption ?? undefined,
     mimeType: mimetype ?? undefined,
     fileName: fileName ?? undefined,
@@ -339,7 +339,7 @@ const sendMessageValidation = [
     const hasMedia = media && typeof media === 'object';
 
     if (hasMedia) {
-      const mediaType = normalizeString(media.mediaType);
+      const mediaType = normalizeString(media.mediaType)?.toLowerCase();
       if (!mediaType || !allowedMediaTypes.has(mediaType)) {
         throw new Error('media.mediaType deve ser image, video, audio ou document');
       }
