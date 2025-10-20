@@ -472,7 +472,10 @@ export const mapPassthroughMessage = (
 
   const resolvedMediaRecord = asRecord(passthroughMetadata.media);
   const derivedMediaType = (() => {
-    const fromMetadata = typeof resolvedMediaRecord?.mediaType === 'string' ? resolvedMediaRecord.mediaType : null;
+    const fromMetadata =
+      typeof resolvedMediaRecord?.mediaType === 'string' && resolvedMediaRecord.mediaType.trim().length > 0
+        ? resolvedMediaRecord.mediaType.trim()
+        : null;
     if (fromMetadata) {
       return fromMetadata;
     }
@@ -513,12 +516,18 @@ export const mapPassthroughMessage = (
         ? resolvedMediaRecord.caption
         : record.caption ?? null;
 
-    if (!url && !mimeType && !fileName && !size && !base64 && !mediaKey && !directPath && !derivedMediaType) {
+    const mediaType =
+      derivedMediaType ??
+      (typeof resolvedMediaRecord?.mediaType === 'string' && resolvedMediaRecord.mediaType.trim().length > 0
+        ? resolvedMediaRecord.mediaType.trim()
+        : null);
+
+    if (!url && !mimeType && !fileName && !size && !base64 && !mediaKey && !directPath && !mediaType) {
       return null;
     }
 
     return {
-      mediaType: derivedMediaType ?? resolvedMediaRecord?.mediaType ?? 'file',
+      mediaType: mediaType ?? 'file',
       url,
       mimeType,
       fileName,
