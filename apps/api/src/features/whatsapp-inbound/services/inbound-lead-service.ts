@@ -76,6 +76,201 @@ export const resetInboundLeadServiceTestState = (): void => {
   queueCacheByTenant.clear();
 };
 
+const CONTACT_RELATIONS_INCLUDE = {
+  tags: { include: { tag: true } },
+  phones: true,
+} satisfies Prisma.ContactInclude;
+
+type PrismaContactWithRelations = Prisma.ContactGetPayload<{
+  include: typeof CONTACT_RELATIONS_INCLUDE;
+}>;
+
+const normalizeTagNames = (values: string[] | undefined): string[] => {
+  if (!values?.length) {
+    return [];
+  }
+  const unique = new Set<string>();
+  for (const entry of values) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length > 0) {
+      unique.add(trimmed);
+    }
+  }
+  return Array.from(unique);
+};
+
+const extractTagNames = (contact: PrismaContactWithRelations | null): string[] => {
+  if (!contact?.tags?.length) {
+    return [];
+  }
+  return contact.tags
+    .map((assignment) => assignment.tag?.name ?? null)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+};
+
+const ensureTagsExist = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  tagNames: string[]
+): Promise<Map<string, string>> => {
+  if (!tagNames.length) {
+    return new Map();
+  }
+  const existing = await tx.tag.findMany({
+    where: { tenantId, name: { in: tagNames } },
+  });
+
+  const tags = new Map(existing.map((tag) => [tag.name, tag.id]));
+  const missing = tagNames.filter((name) => !tags.has(name));
+
+  if (missing.length > 0) {
+    const created = await Promise.all(
+      missing.map((name) =>
+        tx.tag.create({
+          data: { tenantId, name },
+          select: { id: true, name: true },
+        })
+      )
+    );
+    for (const tag of created) {
+      tags.set(tag.name, tag.id);
+    }
+  }
+
+  return tags;
+};
+
+const syncContactTags = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  contactId: string,
+  tags: string[]
+) => {
+  const normalized = normalizeTagNames(tags);
+  if (!normalized.length) {
+    await tx.contactTag.deleteMany({ where: { tenantId, contactId } });
+    return;
+  }
+
+  const tagsByName = await ensureTagsExist(tx, tenantId, normalized);
+  const tagIds = normalized
+    .map((name) => tagsByName.get(name))
+    .filter((id): id is string => typeof id === 'string');
+
+  await tx.contactTag.deleteMany({
+    where: {
+      tenantId,
+      contactId,
+      tagId: { notIn: tagIds },
+    },
+  });
+
+  await Promise.all(
+    tagIds.map((tagId) =>
+      tx.contactTag.upsert({
+        where: {
+          contactId_tagId: {
+            contactId,
+            tagId,
+          },
+        },
+        update: {},
+        create: {
+          tenantId,
+          contactId,
+          tagId,
+        },
+      })
+    )
+  );
+};
+
+const upsertPrimaryPhone = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  contactId: string,
+  phone: string | null | undefined
+) => {
+  if (!phone) {
+    return;
+  }
+  const trimmed = phone.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  await tx.contactPhone.upsert({
+    where: {
+      tenantId_phoneNumber: {
+        tenantId,
+        phoneNumber: trimmed,
+      },
+    },
+    update: {
+      contactId,
+      isPrimary: true,
+      updatedAt: new Date(),
+    },
+    create: {
+      tenantId,
+      contactId,
+      phoneNumber: trimmed,
+      isPrimary: true,
+    },
+  });
+
+  await tx.contactPhone.updateMany({
+    where: {
+      tenantId,
+      contactId,
+      phoneNumber: { not: trimmed },
+      isPrimary: true,
+    },
+    data: { isPrimary: false },
+  });
+};
+
+const findContactByPhoneOrDocument = async (
+  tenantId: string,
+  phone?: string | null,
+  document?: string | null
+): Promise<PrismaContactWithRelations | null> => {
+  const conditions: Prisma.ContactWhereInput[] = [];
+  if (phone) {
+    const trimmed = phone.trim();
+    if (trimmed) {
+      conditions.push({ primaryPhone: trimmed });
+      conditions.push({
+        phones: {
+          some: { phoneNumber: trimmed },
+        },
+      });
+    }
+  }
+
+  if (document) {
+    const trimmedDocument = document.trim();
+    if (trimmedDocument) {
+      conditions.push({ document: trimmedDocument });
+    }
+  }
+
+  if (!conditions.length) {
+    return null;
+  }
+
+  return prisma.contact.findFirst({
+    where: {
+      tenantId,
+      OR: conditions,
+    },
+    include: CONTACT_RELATIONS_INCLUDE,
+  });
+};
+
 
 
 const isMessageEnvelope = (
@@ -134,40 +329,18 @@ const ensureContact = async (
     timestamp?: string | null | undefined;
     avatar?: string | null | undefined;
   }
-) => {
+): Promise<PrismaContactWithRelations> => {
   const interactionDate = timestamp ? new Date(timestamp) : new Date();
   const interactionTimestamp = interactionDate.getTime();
   const interactionIso = interactionDate.toISOString();
 
-  let contact = null;
-
-  if (phone) {
-    contact = await prisma.contact.findUnique({
-      where: {
-        tenantId_phone: {
-          tenantId,
-          phone,
-        },
-      },
-    });
-  }
-
-  if (!contact && document) {
-    contact = await prisma.contact.findFirst({
-      where: {
-        tenantId,
-        document,
-      },
-    });
-  }
-
-  const tags = Array.from(
-    new Set([...(contact?.tags ?? []), 'whatsapp', 'inbound'])
-  );
+  const existing = await findContactByPhoneOrDocument(tenantId, phone ?? null, document ?? null);
+  const existingTags = extractTagNames(existing);
+  const tags = normalizeTagNames([...existingTags, 'whatsapp', 'inbound']);
 
   const customFieldsSource =
-    typeof contact?.customFields === 'object' && contact?.customFields !== null
-      ? (contact.customFields as Record<string, unknown>)
+    existing?.customFields && typeof existing.customFields === 'object'
+      ? (existing.customFields as Record<string, unknown>)
       : {};
 
   const customFieldsRecord: Record<string, unknown> = {
@@ -186,7 +359,7 @@ const ensureContact = async (
     customFieldsRecord.consent = {
       granted: true,
       base: 'legitimate_interest',
-      grantedAt: interactionDate.toISOString(),
+      grantedAt: interactionIso,
     };
   }
 
@@ -211,31 +384,57 @@ const ensureContact = async (
     customFieldsRecord['lastInboundAt'] = interactionIso;
   }
 
-  const contactData = {
-    name: name && name.trim().length > 0 ? name.trim() : contact?.name ?? 'Contato WhatsApp',
-    phone: phone ?? contact?.phone ?? null,
-    document: document ?? contact?.document ?? null,
-    avatar: avatar ?? contact?.avatar ?? null,
-    tags,
+  const resolvedName =
+    name && name.trim().length > 0
+      ? name.trim()
+      : existing?.fullName && existing.fullName.trim().length > 0
+      ? existing.fullName
+      : 'Contato WhatsApp';
+
+  const normalizedPhone = phone?.trim() ?? existing?.primaryPhone ?? null;
+
+  const contactData: Prisma.ContactUpdateInput = {
+    fullName: resolvedName,
+    displayName: resolvedName,
+    primaryPhone: normalizedPhone,
+    document: document ?? existing?.document ?? null,
+    avatar: avatar ?? existing?.avatar ?? null,
     customFields: customFieldsRecord as Prisma.InputJsonValue,
     lastInteractionAt: interactionDate,
+    lastActivityAt: interactionDate,
   };
 
-  if (contact) {
-    contact = await prisma.contact.update({
-      where: { id: contact.id },
-      data: contactData,
-    });
-  } else {
-    contact = await prisma.contact.create({
-      data: {
-        tenantId,
-        ...contactData,
-      },
-    });
-  }
+  const persisted = await prisma.$transaction(async (tx) => {
+    const target =
+      existing !== null
+        ? await tx.contact.update({
+            where: { id: existing.id },
+            data: contactData,
+          })
+        : await tx.contact.create({
+            data: {
+              tenantId,
+              fullName: resolvedName,
+              displayName: resolvedName,
+              primaryPhone: normalizedPhone,
+              document: document ?? null,
+              avatar: avatar ?? null,
+              customFields: customFieldsRecord as Prisma.InputJsonValue,
+              lastInteractionAt: interactionDate,
+              lastActivityAt: interactionDate,
+            },
+          });
 
-  return contact;
+    await upsertPrimaryPhone(tx, tenantId, target.id, normalizedPhone ?? undefined);
+    await syncContactTags(tx, tenantId, target.id, tags);
+
+    return tx.contact.findUniqueOrThrow({
+      where: { id: target.id },
+      include: CONTACT_RELATIONS_INCLUDE,
+    });
+  });
+
+  return persisted;
 };
 
 const ensureTicketForContact = async (
@@ -1121,7 +1320,11 @@ const processStandardInboundEvent = async (
     pipelineStep: 'follow-up',
   };
 
-  const ticketSubject = contactRecord.name || contactRecord.phone || 'Contato WhatsApp';
+  const ticketSubject =
+    contactRecord.displayName ||
+    contactRecord.fullName ||
+    contactRecord.primaryPhone ||
+    'Contato WhatsApp';
   const ticketId = await ensureTicketForContact(
     tenantId,
     contactRecord.id,
