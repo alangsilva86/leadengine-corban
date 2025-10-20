@@ -189,6 +189,8 @@ const normalizeOutboundMedia = (
   const mimetype = normalizeString(mediaRecord.mimetype ?? mediaRecord.mimeType);
   const fileName = normalizeString(mediaRecord.fileName ?? mediaRecord.filename);
   const caption = normalizeString(mediaRecord.caption);
+  const mediaKey = normalizeString(mediaRecord.mediaKey ?? mediaRecord.media_key);
+  const directPath = normalizeString(mediaRecord.directPath ?? mediaRecord.direct_path);
 
   const broker = {
     mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
@@ -206,6 +208,9 @@ const normalizeOutboundMedia = (
     fileName: fileName ?? undefined,
     url: mediaUrl ?? null,
     size: null,
+    base64: base64 ?? undefined,
+    mediaKey: mediaKey ?? undefined,
+    directPath: directPath ?? undefined,
   };
 
   return { broker, storage };
