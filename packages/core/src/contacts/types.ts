@@ -10,7 +10,7 @@ import {
   TimestampSchema,
 } from '../common/types';
 
-export const ContactStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'BLOCKED']);
+export const ContactStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']);
 export type ContactStatus = z.infer<typeof ContactStatusSchema>;
 
 export const ContactTaskStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELLED']);
@@ -81,6 +81,8 @@ export const ContactFiltersSchema = z
     lastInteractionFrom: TimestampSchema.optional(),
     lastInteractionTo: TimestampSchema.optional(),
     hasOpenTickets: z.boolean().optional(),
+    isBlocked: z.boolean().optional(),
+    hasWhatsapp: z.boolean().optional(),
   })
   .partial();
 export type ContactFilters = z.infer<typeof ContactFiltersSchema>;

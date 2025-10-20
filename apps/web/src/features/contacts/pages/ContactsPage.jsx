@@ -31,13 +31,16 @@ const ContactsPage = () => {
 
   const debouncedSearch = useDebouncedValue(search, 350);
 
-  const queryFilters = useMemo(
-    () => ({
-      ...filters,
+  const queryFilters = useMemo(() => {
+    const { status, ...rest } = filters;
+    const resolvedStatus = status && status !== 'all' ? status : undefined;
+
+    return {
+      ...rest,
+      ...(resolvedStatus ? { status: resolvedStatus } : {}),
       search: debouncedSearch,
-    }),
-    [filters, debouncedSearch]
-  );
+    };
+  }, [filters, debouncedSearch]);
 
   const contactsQuery = useContactsQuery({ filters: queryFilters, pageSize: 60 });
   const bulkMutation = useContactBulkMutation();

@@ -168,6 +168,17 @@ describe('Contacts routes', () => {
     );
   });
 
+  it('parses boolean filters for blocked and whatsapp flags', async () => {
+    const app = buildContactsApp();
+    await request(app).get('/?page=1&limit=25&isBlocked=true&hasWhatsapp=true').expect(200);
+
+    expect(listContactsMock).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ page: 1, limit: 25 }),
+      expect.objectContaining({ isBlocked: true, hasWhatsapp: true })
+    );
+  });
+
   it('returns 404 when contact is not found', async () => {
     const app = buildContactsApp();
     getContactByIdMock.mockResolvedValueOnce(null);
