@@ -189,8 +189,78 @@ export const handlePassthroughIngest = async (
         fileName?: string | null;
         size?: number | null;
         caption?: string | null;
+        base64?: string | null;
+        mediaKey?: string | null;
+        directPath?: string | null;
       }
     | null = null;
+
+  const asRecord = (value: unknown): Record<string, unknown> | null => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  };
+
+  const readFirstString = (...values: Array<unknown>): string | null => {
+    for (const value of values) {
+      const parsed = readString(value);
+      if (parsed) {
+        return parsed;
+      }
+    }
+    return null;
+  };
+
+  const candidateMediaRecords: Array<Record<string, unknown>> = [];
+  const pushCandidate = (value: unknown) => {
+    const record = asRecord(value);
+    if (record) {
+      candidateMediaRecords.push(record);
+    }
+  };
+
+  pushCandidate(messageRecord.media);
+  pushCandidate(metadataRecord.media);
+
+  const normalizedRawMessage = asRecord(normalizedMessage.raw);
+  if (normalizedRawMessage) {
+    pushCandidate(normalizedRawMessage.imageMessage);
+    pushCandidate(normalizedRawMessage.videoMessage);
+    pushCandidate(normalizedRawMessage.audioMessage);
+    pushCandidate(normalizedRawMessage.documentMessage);
+    pushCandidate(normalizedRawMessage.stickerMessage);
+    const nested = asRecord(normalizedRawMessage.message);
+    if (nested) {
+      pushCandidate(nested.imageMessage);
+      pushCandidate(nested.videoMessage);
+      pushCandidate(nested.audioMessage);
+      pushCandidate(nested.documentMessage);
+      pushCandidate(nested.stickerMessage);
+    }
+  }
+
+  const readFromCandidates = (keys: string[]): string | null => {
+    for (const record of candidateMediaRecords) {
+      for (const key of keys) {
+        const value = readFirstString(record[key]);
+        if (value) {
+          return value;
+        }
+      }
+    }
+    return null;
+  };
+
+  const mediaBase64 =
+    readFromCandidates(['base64', 'fileBase64', 'data', 'payload', 'body']) ??
+    readFirstString(messageRecord.base64, metadataRecord.base64);
+  const mediaKey =
+    readFromCandidates(['mediaKey', 'media_key', 'mediakey']) ??
+    readFirstString(messageRecord.mediaKey, metadataRecord.mediaKey, metadataRecord.media_key);
+  const directPath =
+    readFromCandidates(['directPath', 'direct_path', 'downloadUrl', 'download_url']) ??
+    readFirstString(messageRecord.directPath, metadataRecord.directPath, metadataRecord.direct_path);
 
   if (
     normalizedType === 'IMAGE' ||
@@ -207,6 +277,9 @@ export const handlePassthroughIngest = async (
       mimeType: normalizedMessage.mimetype ?? null,
       size: normalizedMessage.fileSize ?? null,
       caption: normalizedMessage.caption ?? null,
+      base64: mediaBase64,
+      mediaKey,
+      directPath,
     };
   } else if (
     normalizedType === 'TEXT' ||
