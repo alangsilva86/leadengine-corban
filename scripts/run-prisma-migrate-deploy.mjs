@@ -15,8 +15,10 @@ if (!DATABASE_URL) {
 const env = {
   ...process.env,
   DATABASE_URL,
-  PRISMA_MIGRATE_MAX_DATABASE_CONNECTIONS:
-    process.env.PRISMA_MIGRATE_MAX_DATABASE_CONNECTIONS ?? '1',
+  PRISMA_MIGRATE_ENGINE_MAX_DATABASE_CONNECTIONS:
+    process.env.PRISMA_MIGRATE_ENGINE_MAX_DATABASE_CONNECTIONS ??
+    process.env.PRISMA_MIGRATE_MAX_DATABASE_CONNECTIONS ??
+    '1',
 };
 
 const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
