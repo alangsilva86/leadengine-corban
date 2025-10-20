@@ -225,23 +225,35 @@ export const QuickComposer = ({
 
       <Separator className="bg-surface-overlay-glass-border" />
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <StickyNote className="h-4 w-4 text-accent" />
           Próximos passos
         </div>
-        <Textarea
-          value={taskDescription}
-          onChange={(event) => setTaskDescription(event.target.value)}
-          placeholder="Descreva a tarefa ou follow-up"
-          className="min-h-[90px] rounded-2xl border-none bg-surface-overlay-quiet text-sm text-foreground placeholder:text-foreground-muted ring-1 ring-surface-overlay-glass-border"
-        />
-        <Input
-          type="datetime-local"
-          value={taskDueAt}
-          onChange={(event) => setTaskDueAt(event.target.value)}
-          className="h-10 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm"
-        />
+        <div className="space-y-2">
+          <Label htmlFor="next-step-description" className="text-sm font-medium text-foreground">
+            Descrição do próximo passo (obrigatório)
+          </Label>
+          <Textarea
+            id="next-step-description"
+            value={taskDescription}
+            onChange={(event) => setTaskDescription(event.target.value)}
+            placeholder="Descreva a tarefa ou follow-up"
+            className="min-h-[90px] rounded-2xl border-none bg-surface-overlay-quiet text-sm text-foreground placeholder:text-foreground-muted ring-1 ring-surface-overlay-glass-border"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="next-step-due-at" className="text-sm font-medium text-foreground">
+            Data prevista para conclusão (opcional)
+          </Label>
+          <Input
+            id="next-step-due-at"
+            type="datetime-local"
+            value={taskDueAt}
+            onChange={(event) => setTaskDueAt(event.target.value)}
+            className="h-10 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm"
+          />
+        </div>
         <Button
           type="button"
           onClick={handleTaskSubmit}
