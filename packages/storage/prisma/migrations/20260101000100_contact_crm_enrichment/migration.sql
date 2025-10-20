@@ -105,6 +105,28 @@ ALTER TABLE "contacts"
     ADD COLUMN IF NOT EXISTS "timezone" TEXT;
 
 -- CreateTable contact_phones (ensure availability before data migration)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'contacts'
+          AND column_name = 'name'
+    ) THEN
+        UPDATE "contacts"
+        SET "fullName" = COALESCE("name", '')
+        WHERE "fullName" IS NULL;
+    END IF;
+END $$;
+
+ALTER TABLE "contacts"
+    ALTER COLUMN "fullName" SET NOT NULL;
+
+ALTER TABLE "contacts"
+    DROP COLUMN IF EXISTS "name";
+
+-- CreateTable contact_phones
 DO $$ BEGIN
     CREATE TABLE "contact_phones" (
         "id" TEXT NOT NULL,
@@ -288,7 +310,7 @@ DO $$ BEGIN
         "contactId" TEXT NOT NULL,
         "type" "InteractionType" NOT NULL,
         "direction" "InteractionDirection" NOT NULL,
-        "channel" "InteractionChannel" NOT NULL,
+        "channel" "InteractionChannel",
         "subject" TEXT,
         "content" TEXT,
         "occurredAt" TIMESTAMP(3) NOT NULL,
@@ -302,6 +324,24 @@ EXCEPTION
     WHEN duplicate_table THEN NULL;
 END $$;
 
+-- Ensure existing interactions table allows null channel values
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'interactions'
+          AND column_name = 'channel'
+    ) THEN
+        ALTER TABLE "interactions"
+        ALTER COLUMN "channel" DROP NOT NULL;
+    END IF;
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+    WHEN undefined_column THEN NULL;
+END $$;
+
 -- CreateTable tasks
 DO $$ BEGIN
     CREATE TABLE "tasks" (
@@ -313,16 +353,47 @@ DO $$ BEGIN
         "priority" "TaskPriority" NOT NULL DEFAULT 'NORMAL',
         "title" TEXT NOT NULL,
         "description" TEXT,
-        "dueDate" TIMESTAMP(3),
+        "dueAt" TIMESTAMP(3),
         "completedAt" TIMESTAMP(3),
         "assigneeId" TEXT,
         "createdById" TEXT,
+        "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL,
         CONSTRAINT "tasks_pkey" PRIMARY KEY ("id")
     );
 EXCEPTION
     WHEN duplicate_table THEN NULL;
+END $$;
+
+-- Ensure existing tasks table aligns with the latest schema
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'tasks'
+          AND column_name = 'dueDate'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'tasks'
+          AND column_name = 'dueAt'
+    ) THEN
+        ALTER TABLE "tasks" RENAME COLUMN "dueDate" TO "dueAt";
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'tasks'
+          AND column_name = 'metadata'
+    ) THEN
+        ALTER TABLE "tasks" ADD COLUMN "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb;
+    END IF;
 END $$;
 
 -- CreateIndex
