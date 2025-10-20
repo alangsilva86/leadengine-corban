@@ -1371,4 +1371,117 @@ describe('processStandardInboundEvent', () => {
       expect(mediaMetadata).toMatchObject({ caption });
     }
   });
+
+  it.each([
+    {
+      scenario: 'null',
+      downloadResult: null,
+    },
+    {
+      scenario: 'an empty buffer',
+      downloadResult: {
+        buffer: Buffer.alloc(0),
+        mimeType: 'image/jpeg',
+        fileName: 'image-empty.jpg',
+        size: 0,
+      },
+    },
+  ])(
+    'does not persist directPath references when media download returns $scenario payload',
+    async ({ downloadResult, scenario }) => {
+      const now = new Date('2024-03-26T10:30:00.000Z');
+      const instanceRecord = {
+        id: 'instance-direct-path',
+        tenantId: 'tenant-direct-path',
+        brokerId: 'broker-direct-path',
+        name: 'WhatsApp Direct Path',
+      } as const;
+
+      const messageExternalId = `ext-direct-path-${scenario.replace(/\s+/g, '-')}`;
+
+      findFirstMock.mockResolvedValueOnce({ id: 'queue-direct-path', tenantId: 'tenant-direct-path' });
+      campaignFindManyMock.mockResolvedValueOnce([{ id: 'campaign-direct-path' }]);
+      createTicketMock.mockResolvedValueOnce({ id: 'ticket-direct-path' });
+      ticketFindUniqueMock.mockResolvedValueOnce({ id: 'ticket-direct-path', status: 'OPEN', updatedAt: now });
+
+      contactFindUniqueMock.mockResolvedValueOnce(null);
+      contactFindFirstMock.mockResolvedValueOnce(null);
+      contactCreateMock.mockResolvedValueOnce({
+        id: 'contact-direct-path',
+        tenantId: 'tenant-direct-path',
+        phone: '+5511888888888',
+        name: 'Cliente Direto',
+      });
+      contactFindUniqueOrThrowMock.mockResolvedValueOnce({
+        id: 'contact-direct-path',
+        tenantId: 'tenant-direct-path',
+        displayName: 'Cliente Direto',
+        fullName: 'Cliente Direto',
+        primaryPhone: '+5511888888888',
+        phones: [],
+        tags: [],
+      });
+      contactPhoneUpsertMock.mockResolvedValueOnce({ id: 'phone-direct-path' });
+      contactPhoneUpdateManyMock.mockResolvedValueOnce({ count: 0 });
+      tagFindManyMock.mockResolvedValueOnce([]);
+      tagCreateMock.mockImplementation(async ({ data }) => ({ id: `${String(data?.name)}-id`, name: String(data?.name) }));
+      contactTagDeleteManyMock.mockResolvedValueOnce({ count: 0 });
+      contactTagUpsertMock.mockResolvedValue({});
+
+      downloadInboundMediaMock.mockResolvedValueOnce(downloadResult as unknown as Awaited<
+        ReturnType<typeof downloadInboundMediaMock>
+      >);
+
+      sendMessageMock.mockResolvedValueOnce({
+        id: 'timeline-direct-path',
+        createdAt: now,
+        metadata: { eventMetadata: { requestId: 'req-direct-path' } },
+        content: 'Mensagem direta',
+      });
+
+      const event: InboundEvent = {
+        id: 'event-direct-path',
+        instanceId: instanceRecord.id,
+        tenantId: instanceRecord.tenantId,
+        direction: 'INBOUND',
+        contact: { phone: '+5511888888888', name: 'Cliente Direto' },
+        message: {
+          id: 'wamid-direct-path',
+          type: 'image',
+          metadata: {
+            directPath: '/direct/image',
+            mediaKey: 'image-key',
+          },
+          imageMessage: {
+            directPath: '/direct/image',
+            mediaKey: 'image-key',
+            mimetype: 'image/jpeg',
+            fileName: 'image-original.jpg',
+          },
+        },
+        timestamp: now.toISOString(),
+        metadata: {
+          requestId: 'req-direct-path',
+          brokerId: instanceRecord.brokerId,
+          broker: { id: instanceRecord.brokerId, messageId: messageExternalId },
+        },
+        chatId: '5511888888888@s.whatsapp.net',
+        externalId: messageExternalId,
+        sessionId: 'session-direct-path',
+      } as unknown as InboundEvent;
+
+      await testing.processStandardInboundEvent(event, now.getTime(), {
+        preloadedInstance: instanceRecord as unknown as Parameters<
+          TestingHelpers['processStandardInboundEvent']
+        >[2]['preloadedInstance'],
+      });
+
+      expect(saveWhatsAppMediaMock).not.toHaveBeenCalled();
+
+      expect(sendMessageMock).toHaveBeenCalled();
+      const [, , payload] = sendMessageMock.mock.calls[0];
+      expect(payload.mediaUrl).toBeUndefined();
+      expect(payload.metadata?.media).toBeUndefined();
+    }
+  );
 });

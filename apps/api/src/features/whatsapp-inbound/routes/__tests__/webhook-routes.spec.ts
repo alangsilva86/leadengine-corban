@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { whatsappWebhookRouter } from '../webhook-routes';
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
+import { __testing as inboundQueueTesting } from '../../services/inbound-queue';
 
 const hoistedMocks = vi.hoisted(() => {
   const processedIntegrationEventCreateMock = vi.fn();
@@ -41,6 +42,10 @@ vi.mock('../../services/baileys-raw-normalizer', () => ({
   normalizeUpsertEvent: hoistedMocks.normalizeUpsertEventMock,
 }));
 
+vi.mock('@ticketz/storage', () => ({
+  $Enums: { MessageType: {} },
+}));
+
 const prismaMock = hoistedMocks.prisma;
 const {
   processedIntegrationEventCreateMock,
@@ -69,8 +74,10 @@ const buildApp = () => {
   return app;
 };
 
-afterEach(() => {
+afterEach(async () => {
+  await inboundQueueTesting.waitForIdle();
   vi.clearAllMocks();
+  inboundQueueTesting.resetQueue();
 });
 
 describe('WhatsApp webhook HMAC signature enforcement', () => {
@@ -125,8 +132,8 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
       .set('x-signature-sha256', signature)
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true });
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
   });
 });
 
@@ -195,7 +202,9 @@ describe('WhatsApp webhook Baileys event logging', () => {
 
     const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(204);
+
+    await inboundQueueTesting.waitForIdle();
     expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
 
@@ -298,8 +307,9 @@ describe('WhatsApp webhook instance resolution', () => {
         },
       });
 
-    expect(response.status).toBe(500);
-    expect(response.body).toMatchObject({ ok: false, persisted: 0, failures: 1 });
+    expect(response.status).toBe(204);
+
+    await inboundQueueTesting.waitForIdle();
 
     const metrics = renderMetrics();
     expect(metrics).toMatch(
@@ -358,8 +368,9 @@ describe('WhatsApp webhook instance resolution', () => {
         },
       });
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, persisted: 1, failures: 0 });
+    expect(response.status).toBe(204);
+
+    await inboundQueueTesting.waitForIdle();
 
     expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
     const lookupArgs = prismaMock.whatsAppInstance.findFirst.mock.calls[0]?.[0];

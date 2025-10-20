@@ -21,7 +21,7 @@ import {
   normalizeUpsertEvent,
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
-import { ingestInboundWhatsAppMessage } from '../services/inbound-lead-service';
+import { enqueueInboundWebhookJob } from '../services/inbound-queue';
 import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 import { prisma } from '../../../lib/prisma';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
@@ -601,9 +601,10 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     return;
   }
 
-  let persisted = 0;
-  let failures = 0;
-  let attempted = 0;
+  let enqueued = 0;
+  let ackPersisted = 0;
+  let ackFailures = 0;
+  let prepFailures = 0;
 
   for (const entry of events) {
     const unwrapped = unwrapWebhookEvent(entry);
@@ -668,8 +669,8 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         tenantOverride: tenantOverride ?? null,
       });
 
-      persisted += ackOutcome.persisted;
-      failures += ackOutcome.failures;
+      ackPersisted += ackOutcome.persisted;
+      ackFailures += ackOutcome.failures;
       continue;
     }
 
@@ -816,65 +817,38 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           });
         }
 
-        attempted += 1;
+        enqueued += 1;
 
-        const processed = await ingestInboundWhatsAppMessage({
-          origin: 'webhook',
-          instanceId: instanceId ?? 'unknown-instance',
-          chatId,
+        enqueueInboundWebhookJob({
+          requestId,
           tenantId,
-          message: {
-            kind: 'message',
-            id: normalized.messageId ?? null,
-            externalId,
-            brokerMessageId: normalized.messageId,
-            timestamp,
-            direction,
-            contact: contactRecord,
-            payload: messageRecord,
-            metadata,
-          },
-          raw: {
-            event: eventRecord,
-            normalizedIndex: normalized.messageIndex,
+          instanceId,
+          chatId,
+          normalizedIndex: normalized.messageIndex ?? null,
+          envelope: {
+            origin: 'webhook',
+            instanceId: instanceId ?? 'unknown-instance',
+            chatId,
+            tenantId,
+            message: {
+              kind: 'message',
+              id: normalized.messageId ?? null,
+              externalId,
+              brokerMessageId: normalized.messageId,
+              timestamp,
+              direction,
+              contact: contactRecord,
+              payload: messageRecord,
+              metadata,
+            },
+            raw: {
+              event: eventRecord,
+              normalizedIndex: normalized.messageIndex,
+            },
           },
         });
-
-        if (processed) {
-          persisted += 1;
-          whatsappWebhookEventsCounter.inc({
-            origin: 'webhook',
-            tenantId: tenantId ?? 'unknown',
-            instanceId: instanceId ?? 'unknown',
-            result: 'accepted',
-            reason: 'ok',
-          });
-          logger.info('🎯 LeadEngine • WhatsApp :: 🎉 Webhook ingestão concluída', {
-            requestId,
-            tenantId,
-            instanceId,
-            chatId,
-            normalizedIndex: normalized.messageIndex,
-          });
-        } else {
-          failures += 1;
-          logger.warn('🎯 LeadEngine • WhatsApp :: 🎭 Webhook ingestão não persistiu mensagem', {
-            requestId,
-            tenantId,
-            instanceId,
-            chatId,
-            normalizedIndex: normalized.messageIndex,
-          });
-          whatsappWebhookEventsCounter.inc({
-            origin: 'webhook',
-            tenantId: tenantId ?? 'unknown',
-            instanceId: instanceId ?? 'unknown',
-            result: 'failed',
-            reason: 'ingest_failed',
-          });
-        }
       } catch (error) {
-        failures += 1;
+        prepFailures += 1;
         logger.error('Failed to persist inbound WhatsApp message', {
           requestId,
           tenantId,
@@ -892,22 +866,30 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     }
   }
 
-  const allFailed = attempted > 0 && persisted === 0;
-  const statusCode = allFailed ? 500 : 200;
-
-  if (allFailed) {
-    logger.error('🎯 LeadEngine • WhatsApp :: 💥 Webhook finalizou com todas ingestões falhando', {
+  if (prepFailures > 0) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Webhook encontrou falhas ao preparar ingestão', {
       requestId,
-      received: events.length,
+      prepFailures,
     });
   }
 
-  res.status(statusCode).json({
-    ok: !allFailed,
+  if (ackFailures > 0) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Atualização de status WhatsApp falhou em algumas mensagens', {
+      requestId,
+      ackFailures,
+      ackPersisted,
+    });
+  }
+
+  logger.debug('🎯 LeadEngine • WhatsApp :: ✅ Eventos enfileirados a partir do webhook', {
+    requestId,
     received: events.length,
-    persisted,
-    failures,
+    enqueued,
+    ackPersisted,
+    ackFailures,
   });
+
+  res.status(204).send();
 };
 
 const handleVerification = asyncHandler(async (req: Request, res: Response) => {

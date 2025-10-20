@@ -1573,6 +1573,8 @@ const processStandardInboundEvent = async (
     return true;
   }
 
+  let downloadedMediaSuccessfully = false;
+
   const shouldAttemptMediaDownload =
     MEDIA_MESSAGE_TYPES.has(normalizedMessage.type) &&
     !isHttpUrl(normalizedMessage.mediaUrl ?? undefined);
@@ -1647,6 +1649,8 @@ const processStandardInboundEvent = async (
 
           normalizedMessage.mediaUrl = descriptor.mediaUrl;
 
+          downloadedMediaSuccessfully = true;
+
           const metadataMedia = toRecord(metadataRecord.media);
           metadataMedia.url = descriptor.mediaUrl;
           if (normalizedMessage.caption) {
@@ -1698,6 +1702,19 @@ const processStandardInboundEvent = async (
     }
   }
 
+  const currentMediaUrl = normalizedMessage.mediaUrl ?? null;
+  if (!downloadedMediaSuccessfully && currentMediaUrl && !isHttpUrl(currentMediaUrl)) {
+    normalizedMessage.mediaUrl = null;
+
+    const metadataMedia = metadataRecord.media;
+    if (metadataMedia && typeof metadataMedia === 'object' && !Array.isArray(metadataMedia)) {
+      delete (metadataMedia as Record<string, unknown>).url;
+      if (Object.keys(metadataMedia as Record<string, unknown>).length === 0) {
+        delete metadataRecord.media;
+      }
+    }
+  }
+
   let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
 
   const timelineMessageType = (() => {
@@ -1717,13 +1734,18 @@ const processStandardInboundEvent = async (
   })();
 
   try {
+    const resolvedMediaUrl =
+      downloadedMediaSuccessfully || isHttpUrl(normalizedMessage.mediaUrl ?? undefined)
+        ? normalizedMessage.mediaUrl
+        : null;
+
     persistedMessage = await sendMessageService(tenantId, undefined, {
       ticketId,
       content: normalizedMessage.text ?? '[Mensagem]',
       type: timelineMessageType,
       direction,
       externalId: messageExternalId ?? undefined,
-      mediaUrl: normalizedMessage.mediaUrl ?? undefined,
+      mediaUrl: resolvedMediaUrl ?? undefined,
       metadata: {
         broker: {
           messageId: messageExternalId ?? normalizedMessage.id,
@@ -1733,9 +1755,9 @@ const processStandardInboundEvent = async (
           campaignIds: campaigns.map((campaign) => campaign.id),
         },
         externalId: messageExternalId ?? undefined,
-        media: normalizedMessage.mediaUrl
+        media: resolvedMediaUrl
           ? {
-              url: normalizedMessage.mediaUrl,
+              url: resolvedMediaUrl,
               mimetype: normalizedMessage.mimetype,
               caption: normalizedMessage.caption,
               size: normalizedMessage.fileSize,
