@@ -148,6 +148,7 @@ Variáveis de ambiente (além das já mencionadas na seção de configuração g
 - `NODE_ENV=production`
 - `PRISMA_CLIENT_ENGINE_TYPE=binary` (opcional, acelera cold start)
 - `PRISMA_MIGRATE_MAX_ATTEMPTS` (opcional, padrão `5`) e `PRISMA_MIGRATE_RETRY_DELAY_MS` (opcional, padrão `5000`) para ajustar as tentativas automáticas do script de migração
+- `PRISMA_MIGRATE_ENGINE_MAX_DATABASE_CONNECTIONS` (opcional, padrão `1`) para limitar o número de conexões simultâneas usadas pelo engine do Prisma durante o deploy das migrações
 - `PORT` (opcional; o Render define automaticamente, mas mantenha-a visível para debugging)
 - `LOG_LEVEL` (opcional, padrão `info`)
 - `JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_URL`, etc.
