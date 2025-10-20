@@ -17,21 +17,55 @@ const updateContactTaskMock = vi.fn();
 const mergeContactsMock = vi.fn();
 
 const sendToContactMock = vi.fn();
+const setPrismaClientMock = vi.fn();
+
+let isStoragePrismaLinked = true;
+
+const setStoragePrismaLinked = (value: boolean) => {
+  isStoragePrismaLinked = value;
+};
+
+const resetStoragePrismaLink = () => {
+  setStoragePrismaLinked(false);
+};
+
+const ensureStoragePrismaLinked = () => {
+  if (isStoragePrismaLinked) {
+    return;
+  }
+
+  const error = new Error('Storage Prisma client is not configured.') as Error & {
+    code?: string;
+  };
+  error.code = 'STORAGE_PRISMA_NOT_CONFIGURED';
+  throw error;
+};
+
+const withStorageGuard = <T extends (...args: unknown[]) => unknown>(mock: T): T => {
+  return ((...args: Parameters<T>) => {
+    ensureStoragePrismaLinked();
+    return mock(...args);
+  }) as T;
+};
 
 vi.mock('@ticketz/storage', () => ({
-  listContacts: listContactsMock,
-  createContact: createContactMock,
-  getContactById: getContactByIdMock,
-  updateContact: updateContactMock,
-  listContactTags: listContactTagsMock,
-  applyBulkContactsAction: applyBulkContactsActionMock,
-  findContactsByIds: findContactsByIdsMock,
-  listContactInteractions: listContactInteractionsMock,
-  logContactInteraction: logContactInteractionMock,
-  listContactTasks: listContactTasksMock,
-  createContactTask: createContactTaskMock,
-  updateContactTask: updateContactTaskMock,
-  mergeContacts: mergeContactsMock,
+  setPrismaClient: vi.fn((client: unknown) => {
+    setStoragePrismaLinked(Boolean(client));
+    setPrismaClientMock(client);
+  }),
+  listContacts: withStorageGuard(listContactsMock),
+  createContact: withStorageGuard(createContactMock),
+  getContactById: withStorageGuard(getContactByIdMock),
+  updateContact: withStorageGuard(updateContactMock),
+  listContactTags: withStorageGuard(listContactTagsMock),
+  applyBulkContactsAction: withStorageGuard(applyBulkContactsActionMock),
+  findContactsByIds: withStorageGuard(findContactsByIdsMock),
+  listContactInteractions: withStorageGuard(listContactInteractionsMock),
+  logContactInteraction: withStorageGuard(logContactInteractionMock),
+  listContactTasks: withStorageGuard(listContactTasksMock),
+  createContactTask: withStorageGuard(createContactTaskMock),
+  updateContactTask: withStorageGuard(updateContactTaskMock),
+  mergeContacts: withStorageGuard(mergeContactsMock),
 }));
 
 vi.mock('../../services/ticket-service', () => ({
@@ -81,6 +115,8 @@ const buildTasksApp = () => {
 describe('Contacts routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setStoragePrismaLinked(true);
+    setPrismaClientMock.mockClear();
     listContactsMock.mockResolvedValue({
       items: [],
       total: 0,
@@ -185,5 +221,41 @@ describe('Contacts routes', () => {
       .patch('/tasks/33333333-3333-3333-3333-333333333333')
       .send({ status: 'COMPLETED' });
     expect(response.status).toBe(404);
+  });
+});
+
+describe('Contacts routes bootstrap', () => {
+  it('links Prisma to storage before handling requests', async () => {
+    vi.resetModules();
+    resetStoragePrismaLink();
+    setPrismaClientMock.mockClear();
+
+    const { prisma } = await import('../../lib/prisma');
+    expect(setPrismaClientMock).toHaveBeenCalledWith(prisma);
+
+    const contactsModule = await import('../contacts');
+    const errorHandlerModule = await import('../../middleware/error-handler');
+
+    const app = express();
+    app.use(express.json());
+    app.use(withTenant);
+    app.use('/', contactsModule.contactsRouter);
+    app.use(errorHandlerModule.errorHandler as unknown as RequestHandler);
+
+    listContactsMock.mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+      hasNext: false,
+      hasPrev: false,
+    });
+
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(setPrismaClientMock).toHaveBeenCalled();
   });
 });
