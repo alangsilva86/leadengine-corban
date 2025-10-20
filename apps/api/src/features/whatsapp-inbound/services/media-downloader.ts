@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createDecipheriv, createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { fetch } from 'undici';
 
 import { logger } from '../../../config/logger';
@@ -159,9 +160,232 @@ const parseContentDisposition = (value: string | null): string | null => {
   }
 };
 
+const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 15_000;
+const DEFAULT_WHATSAPP_MEDIA_HOST = 'https://mmg.whatsapp.net';
+
+const MEDIA_KEY_INFO_BY_TYPE: Record<string, string> = {
+  IMAGE: 'WhatsApp Image Keys',
+  VIDEO: 'WhatsApp Video Keys',
+  AUDIO: 'WhatsApp Audio Keys',
+  DOCUMENT: 'WhatsApp Document Keys',
+  STICKER: 'WhatsApp Image Keys',
+};
+
+const DEFAULT_MIME_BY_TYPE: Record<string, string> = {
+  IMAGE: 'image/jpeg',
+  VIDEO: 'video/mp4',
+  AUDIO: 'audio/ogg',
+  DOCUMENT: 'application/octet-stream',
+  STICKER: 'image/webp',
+};
+
+const resolveMediaTypeKey = (mediaType: string | null): string => {
+  if (!mediaType) {
+    return MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
+  }
+
+  const normalized = mediaType.trim().toUpperCase();
+  return MEDIA_KEY_INFO_BY_TYPE[normalized] ?? MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
+};
+
+const resolveDefaultMime = (mediaType: string | null): string | null => {
+  if (!mediaType) {
+    return null;
+  }
+
+  const normalized = mediaType.trim().toUpperCase();
+  return DEFAULT_MIME_BY_TYPE[normalized] ?? null;
+};
+
+const buildWhatsAppMediaUrl = (directPath: string): string | null => {
+  const trimmed = directPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return `${DEFAULT_WHATSAPP_MEDIA_HOST}${normalized}`;
+};
+
+const deriveMediaKeys = (
+  mediaKeyBase64: string,
+  mediaType: string | null
+): { iv: Buffer; cipherKey: Buffer; macKey: Buffer } | null => {
+  const trimmed = mediaKeyBase64.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  let mediaKey: Buffer;
+  try {
+    mediaKey = Buffer.from(trimmed, 'base64');
+  } catch {
+    return null;
+  }
+
+  if (!mediaKey.length) {
+    return null;
+  }
+
+  try {
+    const info = Buffer.from(resolveMediaTypeKey(mediaType), 'utf-8');
+    const expanded = hkdfSync('sha256', mediaKey, Buffer.alloc(32, 0), info, 112);
+
+    return {
+      iv: expanded.subarray(0, 16),
+      cipherKey: expanded.subarray(16, 48),
+      macKey: expanded.subarray(48, 80),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const decryptWhatsAppMediaPayload = (
+  payload: Buffer,
+  keys: { iv: Buffer; cipherKey: Buffer; macKey: Buffer }
+): Buffer | null => {
+  if (payload.length <= 10) {
+    return null;
+  }
+
+  const media = payload.subarray(0, payload.length - 10);
+  const mac = payload.subarray(payload.length - 10);
+  const computedMac = createHmac('sha256', keys.macKey)
+    .update(Buffer.concat([keys.iv, media]))
+    .digest()
+    .subarray(0, mac.length);
+
+  if (computedMac.length !== mac.length || !timingSafeEqual(computedMac, mac)) {
+    return null;
+  }
+
+  try {
+    const decipher = createDecipheriv('aes-256-cbc', keys.cipherKey, keys.iv);
+    return Buffer.concat([decipher.update(media), decipher.final()]);
+  } catch {
+    return null;
+  }
+};
+
+const downloadMediaViaMediaKey = async ({
+  directPath,
+  mediaKey,
+  mediaType,
+  timeoutMs,
+  tenantId,
+  instanceId,
+  messageId,
+}: {
+  directPath: string;
+  mediaKey: string;
+  mediaType: string | null;
+  timeoutMs?: number;
+  tenantId?: string | null;
+  instanceId?: string | null;
+  messageId?: string | null;
+}): Promise<InboundMediaDownloadResult | null> => {
+  const targetUrl = buildWhatsAppMediaUrl(directPath);
+  if (!targetUrl) {
+    return null;
+  }
+
+  const keys = deriveMediaKeys(mediaKey, mediaType);
+  if (!keys) {
+    return null;
+  }
+
+  const { signal, cancel } = createBrokerTimeoutSignal(timeoutMs ?? DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS);
+
+  try {
+    const headers = new Headers();
+    headers.set('Accept', 'application/octet-stream');
+    headers.set('User-Agent', 'Mozilla/5.0 (LeadEngine WhatsApp)');
+    headers.set('Origin', 'https://web.whatsapp.com');
+    headers.set('Referer', 'https://web.whatsapp.com/');
+
+    const response = await fetch(targetUrl, {
+      method: 'GET',
+      headers,
+      signal,
+    });
+
+    if (!response.ok) {
+      logger.debug('WhatsApp direct media fetch failed', {
+        status: response.status,
+        targetUrl,
+        tenantId: tenantId ?? null,
+        instanceId: instanceId ?? null,
+        messageId: messageId ?? null,
+      });
+      return null;
+    }
+
+    const encrypted = Buffer.from(await response.arrayBuffer());
+    const decrypted = decryptWhatsAppMediaPayload(encrypted, keys);
+
+    if (!decrypted) {
+      logger.debug('WhatsApp direct media decrypt failed', {
+        targetUrl,
+        tenantId: tenantId ?? null,
+        instanceId: instanceId ?? null,
+        messageId: messageId ?? null,
+      });
+      return null;
+    }
+
+    const contentType = response.headers?.get?.('content-type') ?? null;
+    const mimeTypeHeader = contentType ? contentType.split(';')[0]?.trim() ?? null : null;
+    const disposition = response.headers?.get?.('content-disposition') ?? null;
+    const fileName = parseContentDisposition(disposition);
+    const fallbackMime = resolveDefaultMime(mediaType);
+
+    return {
+      buffer: decrypted,
+      mimeType: mimeTypeHeader ?? fallbackMime,
+      fileName,
+      size: decrypted.length,
+    };
+  } catch (error) {
+    logger.debug('WhatsApp direct media download error', {
+      error,
+      targetUrl,
+      tenantId: tenantId ?? null,
+      instanceId: instanceId ?? null,
+      messageId: messageId ?? null,
+    });
+    return null;
+  } finally {
+    cancel();
+  }
+};
+
 export const downloadInboundMediaFromBroker = async (
   input: InboundMediaDownloadInput
 ): Promise<InboundMediaDownloadResult | null> => {
+  const directPath = isNonEmptyString(input.directPath) ? input.directPath!.trim() : null;
+  const mediaKey = isNonEmptyString(input.mediaKey) ? input.mediaKey!.trim() : null;
+  const normalizedMediaType = isNonEmptyString(input.mediaType) ? input.mediaType!.trim() : null;
+
+  if (directPath && mediaKey) {
+    const directDownload = await downloadMediaViaMediaKey({
+      directPath,
+      mediaKey,
+      mediaType: normalizedMediaType,
+      tenantId: isNonEmptyString(input.tenantId) ? input.tenantId!.trim() : null,
+      instanceId: isNonEmptyString(input.instanceId) ? input.instanceId!.trim() : null,
+      messageId: isNonEmptyString(input.messageId) ? input.messageId!.trim() : null,
+    });
+
+    if (directDownload) {
+      return directDownload;
+    }
+  }
+
   const sessionIdCandidate =
     (typeof input.brokerId === 'string' && input.brokerId.trim().length > 0 ? input.brokerId.trim() : null) ||
     (typeof input.instanceId === 'string' && input.instanceId.trim().length > 0 ? input.instanceId.trim() : null);
@@ -169,9 +393,6 @@ export const downloadInboundMediaFromBroker = async (
   if (!sessionIdCandidate) {
     return null;
   }
-
-  const directPath = isNonEmptyString(input.directPath) ? input.directPath : null;
-  const mediaKey = isNonEmptyString(input.mediaKey) ? input.mediaKey : null;
 
   if (!directPath && !mediaKey) {
     return null;
@@ -193,8 +414,8 @@ export const downloadInboundMediaFromBroker = async (
   if (isNonEmptyString(input.messageId)) {
     requestBody.messageId = input.messageId!.trim();
   }
-  if (isNonEmptyString(input.mediaType)) {
-    requestBody.mediaType = input.mediaType!.trim();
+  if (normalizedMediaType) {
+    requestBody.mediaType = normalizedMediaType;
   }
 
   let config;
