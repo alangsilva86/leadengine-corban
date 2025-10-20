@@ -29,30 +29,18 @@ model Tenant {
   contacts            Contact[]
   contactInteractions ContactInteraction[]
   contactTasks        ContactTask[]
+  contactPhones       ContactPhone[]
+  contactEmails       ContactEmail[]
+  contactTags         ContactTag[]
+  tags                Tag[]
+  interactions        Interaction[]
+  tasks               Task[]
   tickets             Ticket[]
   leads               Lead[]
   campaigns           Campaign[]
   queues              Queue[]
-  users         User[]
-  contacts      Contact[]
-  contactPhones ContactPhone[]
-  contactEmails ContactEmail[]
-  contactTags   ContactTag[]
-  tags          Tag[]
-  interactions  Interaction[]
-  tasks         Task[]
-  tickets       Ticket[]
-  leads         Lead[]
-  campaigns     Campaign[]
-  queues        Queue[]
 
   @@map("tenants")
-}
-
-enum ContactStatus {
-  ACTIVE
-  INACTIVE
-  BLOCKED
 }
 
 enum ContactInteractionChannel {
@@ -90,17 +78,12 @@ model User {
   updatedAt    DateTime  @updatedAt
 
   // Relations
-  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignedTickets  Ticket[]  @relation("TicketAssignee")
-  sentMessages     Message[] @relation("MessageSender")
-  assignedLeads    Lead[]    @relation("LeadAssignee")
-  userQueues       UserQueue[]
-  contactTasks     ContactTask[]
   tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedTickets Ticket[]      @relation("TicketAssignee")
   sentMessages    Message[]     @relation("MessageSender")
   assignedLeads   Lead[]        @relation("LeadAssignee")
   userQueues      UserQueue[]
+  contactTasks    ContactTask[]
   ownedContacts   Contact[]     @relation("ContactOwner")
   contactTags     ContactTag[]  @relation("ContactTagAddedBy")
   interactions    Interaction[]
@@ -147,29 +130,6 @@ model UserQueue {
 }
 
 model Contact {
-  id                  String         @id @default(cuid())
-  tenantId            String
-  name                String
-  phone               String?
-  email               String?
-  document            String?
-  avatar              String?
-  status              ContactStatus  @default(ACTIVE)
-  isBlocked           Boolean        @default(false)
-  tags                String[]       @default([])
-  customFields        Json           @default("{}")
-  lastInteractionAt   DateTime?
-  notes               String?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-
-  // Relations
-  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tickets       Ticket[]
-  messages      Message[]
-  leads         Lead[]
-  interactions  ContactInteraction[]
-  tasks         ContactTask[]
   id                String                @id @default(cuid())
   tenantId          String
   fullName          String
@@ -201,16 +161,18 @@ model Contact {
   updatedAt         DateTime              @updatedAt
 
   // Relations
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  owner        User?          @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  phones       ContactPhone[]
-  emails       ContactEmail[]
-  tags         ContactTag[]
-  interactions Interaction[]
-  tasks        Task[]
-  tickets      Ticket[]
-  messages     Message[]
-  leads        Lead[]
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner              User?                @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  phones             ContactPhone[]
+  emails             ContactEmail[]
+  tags               ContactTag[]
+  interactions        Interaction[]
+  tickets             Ticket[]
+  messages            Message[]
+  leads               Lead[]
+  contactInteractions ContactInteraction[]
+  contactTasks        ContactTask[]
+  tasks               Task[]
 
   @@unique([tenantId, primaryPhone])
   @@unique([tenantId, primaryEmail])
