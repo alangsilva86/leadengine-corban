@@ -52,6 +52,9 @@ export type PassthroughMessageMedia = {
   fileName?: string | null;
   size?: number | null;
   caption?: string | null;
+  base64?: string | null;
+  mediaKey?: string | null;
+  directPath?: string | null;
 };
 
 export type PassthroughMessage = {
@@ -369,6 +372,13 @@ const mapPassthroughTypeToPrisma = (
     if (normalized === 'document' || normalized === 'file' || normalized === 'pdf') {
       return 'DOCUMENT';
     }
+    if (normalized) {
+      return 'DOCUMENT';
+    }
+  }
+
+  if (type === 'media') {
+    return 'DOCUMENT';
   }
 
   return 'TEXT';
@@ -486,22 +496,37 @@ export const mapPassthroughMessage = (
       typeof resolvedMediaRecord?.size === 'number' && Number.isFinite(resolvedMediaRecord.size)
         ? resolvedMediaRecord.size
         : record.mediaSize ?? null;
+    const base64 =
+      typeof resolvedMediaRecord?.base64 === 'string' && resolvedMediaRecord.base64.trim().length > 0
+        ? resolvedMediaRecord.base64.trim()
+        : null;
+    const mediaKey =
+      typeof resolvedMediaRecord?.mediaKey === 'string' && resolvedMediaRecord.mediaKey.trim().length > 0
+        ? resolvedMediaRecord.mediaKey.trim()
+        : null;
+    const directPath =
+      typeof resolvedMediaRecord?.directPath === 'string' && resolvedMediaRecord.directPath.trim().length > 0
+        ? resolvedMediaRecord.directPath.trim()
+        : null;
     const caption =
       typeof resolvedMediaRecord?.caption === 'string'
         ? resolvedMediaRecord.caption
         : record.caption ?? null;
 
-    if (!url && !mimeType && !fileName && !size) {
+    if (!url && !mimeType && !fileName && !size && !base64 && !mediaKey && !directPath && !derivedMediaType) {
       return null;
     }
 
     return {
-      mediaType: derivedMediaType ?? 'file',
+      mediaType: derivedMediaType ?? resolvedMediaRecord?.mediaType ?? 'file',
       url,
       mimeType,
       fileName,
       size,
       caption,
+      base64,
+      mediaKey,
+      directPath,
     } satisfies PassthroughMessageMedia;
   })();
 
@@ -1361,11 +1386,60 @@ export const upsertMessageByExternalId = async (
   const metadataBase = normalizeMetadataRecord(input.metadata ?? null);
   const timestamp = coerceTimestamp(input.timestamp) ?? new Date();
 
+  const normalizedMedia: PassthroughMessageMedia | null = (() => {
+    const source = input.media;
+    if (!source) {
+      return null;
+    }
+
+    const mediaType =
+      typeof source.mediaType === 'string' && source.mediaType.trim().length > 0
+        ? source.mediaType.trim()
+        : 'file';
+    const url =
+      typeof source.url === 'string' && source.url.trim().length > 0 ? source.url.trim() : null;
+    const mimeType =
+      typeof source.mimeType === 'string' && source.mimeType.trim().length > 0
+        ? source.mimeType.trim()
+        : null;
+    const fileName =
+      typeof source.fileName === 'string' && source.fileName.trim().length > 0
+        ? source.fileName.trim()
+        : null;
+    const size =
+      typeof source.size === 'number' && Number.isFinite(source.size) ? source.size : null;
+    const caption = typeof source.caption === 'string' ? source.caption : null;
+    const base64 =
+      typeof source.base64 === 'string' && source.base64.trim().length > 0
+        ? source.base64.trim()
+        : null;
+    const mediaKey =
+      typeof source.mediaKey === 'string' && source.mediaKey.trim().length > 0
+        ? source.mediaKey.trim()
+        : null;
+    const directPath =
+      typeof source.directPath === 'string' && source.directPath.trim().length > 0
+        ? source.directPath.trim()
+        : null;
+
+    return {
+      mediaType,
+      url,
+      mimeType,
+      fileName,
+      size,
+      caption,
+      base64,
+      mediaKey,
+      directPath,
+    } satisfies PassthroughMessageMedia;
+  })();
+
   const passthroughMetadata = {
     chatId: input.chatId,
     type: input.type,
     text: input.text ?? null,
-    media: input.media ?? null,
+    media: normalizedMedia,
   };
 
   const metadataRecord: Record<string, unknown> = {
@@ -1375,7 +1449,7 @@ export const upsertMessageByExternalId = async (
   };
 
   const direction = normalizePassthroughDirectionForWrite(input.direction);
-  const storageType = mapPassthroughTypeToPrisma(input.type, input.media?.mediaType ?? null);
+  const storageType = mapPassthroughTypeToPrisma(input.type, normalizedMedia?.mediaType ?? null);
 
   const resolveContent = (): string => {
     const text = typeof input.text === 'string' ? input.text.trim() : '';
@@ -1396,10 +1470,15 @@ export const upsertMessageByExternalId = async (
 
   const content = resolveContent();
   const caption = input.type === 'media' ? input.text ?? undefined : undefined;
-  const mediaUrl =
-    input.type === 'media' && typeof input.media?.url === 'string' && input.media.url.trim().length > 0
-      ? input.media.url.trim()
-      : undefined;
+  const mediaUrl = normalizedMedia?.url ?? undefined;
+  const hasMediaUrl = typeof mediaUrl === 'string' && mediaUrl.length > 0;
+  const hasMediaBase64 = typeof normalizedMedia?.base64 === 'string' && normalizedMedia.base64.length > 0;
+  const hasMediaKey = typeof normalizedMedia?.mediaKey === 'string' && normalizedMedia.mediaKey.length > 0;
+  const hasMediaDirectPath =
+    typeof normalizedMedia?.directPath === 'string' && normalizedMedia.directPath.length > 0;
+  const hasDeclaredMediaType = typeof normalizedMedia?.mediaType === 'string' && normalizedMedia.mediaType.length > 0;
+  const shouldPersistAsMedia =
+    input.type === 'media' && (hasMediaUrl || hasMediaBase64 || hasMediaKey || hasMediaDirectPath || hasDeclaredMediaType);
 
   const existing = await prisma.message.findFirst({
     where: {
@@ -1416,10 +1495,10 @@ export const upsertMessageByExternalId = async (
         type: normalizeMessageTypeForWrite(storageType),
         content,
         caption: caption ?? null,
-        mediaUrl: mediaUrl ?? null,
-        mediaFileName: input.media?.fileName ?? null,
-        mediaType: input.media?.mimeType ?? null,
-        mediaSize: input.media?.size ?? null,
+        mediaUrl: hasMediaUrl ? mediaUrl : null,
+        mediaFileName: normalizedMedia?.fileName ?? null,
+        mediaType: normalizedMedia?.mimeType ?? null,
+        mediaSize: normalizedMedia?.size ?? null,
         metadata: mergeMessageMetadata(existing.metadata, metadataRecord),
         instanceId:
           typeof metadataBase.sourceInstance === 'string'
@@ -1435,7 +1514,6 @@ export const upsertMessageByExternalId = async (
     };
   }
 
-  const mediaEnabled = storageType !== 'TEXT' && Boolean(mediaUrl);
   const metadataWithTimestamps: Record<string, unknown> = {
     ...metadataRecord,
     normalizedTimestamp: timestamp.getTime(),
@@ -1448,13 +1526,13 @@ export const upsertMessageByExternalId = async (
     const created = await createMessage(input.tenantId, input.ticketId, {
       ticketId: input.ticketId,
       direction,
-      type: mediaEnabled ? storageType : 'TEXT',
+      type: shouldPersistAsMedia ? storageType : 'TEXT',
       content,
       caption,
       externalId: normalizedExternalId,
-      mediaUrl: mediaEnabled ? mediaUrl : undefined,
-      mediaFileName: mediaEnabled ? input.media?.fileName ?? undefined : undefined,
-      mediaMimeType: mediaEnabled ? input.media?.mimeType ?? undefined : undefined,
+      mediaUrl: hasMediaUrl ? mediaUrl : undefined,
+      mediaFileName: shouldPersistAsMedia ? normalizedMedia?.fileName ?? undefined : undefined,
+      mediaMimeType: shouldPersistAsMedia ? normalizedMedia?.mimeType ?? undefined : undefined,
       metadata: metadataWithTimestamps,
       ...(instanceIdValue !== undefined ? { instanceId: instanceIdValue } : {}),
     });
@@ -1481,10 +1559,10 @@ export const upsertMessageByExternalId = async (
         type: normalizeMessageTypeForWrite(storageType),
         content,
         caption: caption ?? null,
-        mediaUrl: mediaUrl ?? null,
-        mediaFileName: input.media?.fileName ?? null,
-        mediaType: input.media?.mimeType ?? null,
-        mediaSize: input.media?.size ?? null,
+        mediaUrl: hasMediaUrl ? mediaUrl : null,
+        mediaFileName: normalizedMedia?.fileName ?? null,
+        mediaType: normalizedMedia?.mimeType ?? null,
+        mediaSize: normalizedMedia?.size ?? null,
         status: 'SENT',
         externalId: normalizedExternalId,
         metadata: metadataWithTimestamps as Prisma.InputJsonValue,
