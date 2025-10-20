@@ -1,8 +1,8 @@
 import {
   Prisma,
-  type Contact as PrismaContact,
   type ContactInteraction as PrismaContactInteraction,
   type ContactTask as PrismaContactTask,
+  type Tag as PrismaTag,
   $Enums,
 } from '@prisma/client';
 
@@ -26,7 +26,6 @@ import {
   ListContactInteractionsQuery,
   ListContactTasksQuery,
   MergeContactsDTO,
-  PaginatedResult,
   UpdateContactDTO,
   UpdateContactTaskDTO,
 } from '@ticketz/core';
@@ -41,6 +40,149 @@ const OPEN_TICKET_STATUSES = [
 
 const PENDING_TASK_STATUS = $Enums.ContactTaskStatus.PENDING;
 
+const CONTACT_TAGS_INCLUDE = {
+  tags: {
+    include: {
+      tag: true,
+    },
+  },
+} satisfies Prisma.ContactInclude;
+
+const CONTACT_DETAILS_INCLUDE = {
+  ...CONTACT_TAGS_INCLUDE,
+  contactInteractions: { orderBy: { occurredAt: 'desc' }, take: 20 },
+  contactTasks: { orderBy: { createdAt: 'desc' }, take: 20 },
+  _count: {
+    select: {
+      tickets: { where: { status: { in: OPEN_TICKET_STATUSES } } },
+    },
+  },
+} satisfies Prisma.ContactInclude;
+
+type PrismaContactWithTags = Prisma.ContactGetPayload<{
+  include: typeof CONTACT_TAGS_INCLUDE;
+}>;
+
+const normalizeTagNames = (tags: string[] | undefined): string[] => {
+  if (!tags?.length) {
+    return [];
+  }
+
+  const unique = new Set<string>();
+  for (const tag of tags) {
+    const normalized = tag.trim();
+    if (normalized.length > 0) {
+      unique.add(normalized);
+    }
+  }
+
+  return Array.from(unique);
+};
+
+const ensureTagsExist = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  tagNames: string[]
+): Promise<Map<string, PrismaTag>> => {
+  if (!tagNames.length) {
+    return new Map();
+  }
+
+  const existingTags = await tx.tag.findMany({
+    where: { tenantId, name: { in: tagNames } },
+  });
+
+  const tagsByName = new Map(existingTags.map((tag) => [tag.name, tag]));
+  const missing = tagNames.filter((name) => !tagsByName.has(name));
+
+  if (missing.length) {
+    const created = await Promise.all(
+      missing.map((name) =>
+        tx.tag.create({
+          data: {
+            tenantId,
+            name,
+          },
+        })
+      )
+    );
+
+    for (const tag of created) {
+      tagsByName.set(tag.name, tag);
+    }
+  }
+
+  return tagsByName;
+};
+
+const syncContactTags = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  contactId: string,
+  tagNames: string[]
+): Promise<void> => {
+  const normalized = normalizeTagNames(tagNames);
+
+  if (!normalized.length) {
+    await tx.contactTag.deleteMany({ where: { contactId, tenantId } });
+    return;
+  }
+
+  const tagsByName = await ensureTagsExist(tx, tenantId, normalized);
+  const tagIds = normalized
+    .map((name) => tagsByName.get(name)?.id)
+    .filter((id): id is string => typeof id === 'string');
+
+  await tx.contactTag.deleteMany({
+    where: {
+      contactId,
+      tenantId,
+      tagId: { notIn: tagIds },
+    },
+  });
+
+  await Promise.all(
+    tagIds.map((tagId) =>
+      tx.contactTag.upsert({
+        where: {
+          contactId_tagId: {
+            contactId,
+            tagId,
+          },
+        },
+        update: {},
+        create: {
+          tenantId,
+          contactId,
+          tagId,
+        },
+      })
+    )
+  );
+};
+
+const CONTACT_SORT_FIELDS: Record<string, keyof Prisma.ContactOrderByWithRelationInput> = {
+  name: 'fullName',
+  fullName: 'fullName',
+  email: 'primaryEmail',
+  primaryEmail: 'primaryEmail',
+  phone: 'primaryPhone',
+  primaryPhone: 'primaryPhone',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  lastInteractionAt: 'lastInteractionAt',
+};
+
+type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+};
+
 const toRecord = (value: Prisma.JsonValue | null | undefined): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -49,23 +191,29 @@ const toRecord = (value: Prisma.JsonValue | null | undefined): Record<string, un
   return value as Record<string, unknown>;
 };
 
-const mapContact = (record: PrismaContact): Contact => ({
-  id: record.id,
-  tenantId: record.tenantId,
-  name: record.name,
-  phone: record.phone ?? undefined,
-  email: record.email ?? undefined,
-  document: record.document ?? undefined,
-  avatar: record.avatar ?? undefined,
-  status: record.status as ContactStatus,
-  isBlocked: record.isBlocked,
-  tags: [...record.tags],
-  customFields: toRecord(record.customFields),
-  lastInteractionAt: record.lastInteractionAt ?? undefined,
-  notes: record.notes ?? undefined,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
-});
+const mapContact = (record: PrismaContactWithTags): Contact => {
+  const tags = record.tags
+    .map((assignment) => assignment.tag?.name ?? null)
+    .filter((name): name is string => typeof name === 'string' && name.length > 0);
+
+  return {
+    id: record.id,
+    tenantId: record.tenantId,
+    name: record.fullName,
+    phone: record.primaryPhone ?? undefined,
+    email: record.primaryEmail ?? undefined,
+    document: record.document ?? undefined,
+    avatar: record.avatar ?? undefined,
+    status: record.status as ContactStatus,
+    isBlocked: record.isBlocked,
+    tags,
+    customFields: toRecord(record.customFields),
+    lastInteractionAt: record.lastInteractionAt ?? undefined,
+    notes: record.notes ?? undefined,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+};
 
 const mapInteraction = (record: PrismaContactInteraction): ContactInteraction => ({
   id: record.id,
@@ -135,9 +283,10 @@ const buildContactWhere = (
     const term = filters.search.trim();
     if (term) {
       where.OR = [
-        { name: { contains: term, mode: 'insensitive' } },
-        { email: { contains: term, mode: 'insensitive' } },
-        { phone: { contains: term, mode: 'insensitive' } },
+        { fullName: { contains: term, mode: 'insensitive' } },
+        { displayName: { contains: term, mode: 'insensitive' } },
+        { primaryEmail: { contains: term, mode: 'insensitive' } },
+        { primaryPhone: { contains: term, mode: 'insensitive' } },
         { document: { contains: term, mode: 'insensitive' } },
       ];
     }
@@ -149,7 +298,13 @@ const buildContactWhere = (
   }
 
   if (filters.tags?.length) {
-    where.tags = { hasSome: filters.tags };
+    where.tags = {
+      some: {
+        tag: {
+          name: { in: filters.tags },
+        },
+      },
+    };
   }
 
   if (filters.lastInteractionFrom || filters.lastInteractionTo) {
@@ -189,13 +344,18 @@ export const listContacts = async (
   const prisma = getPrismaClient();
   const where = buildContactWhere(tenantId, filters);
   const skip = (page - 1) * limit;
+  const resolvedSortField = sortBy ? CONTACT_SORT_FIELDS[sortBy] : undefined;
+  const orderBy: Prisma.ContactOrderByWithRelationInput = resolvedSortField
+    ? { [resolvedSortField]: sortOrder }
+    : { updatedAt: sortOrder };
 
   const [records, total] = await Promise.all([
     prisma.contact.findMany({
       where,
       skip,
       take: limit,
-      orderBy: sortBy ? { [sortBy]: sortOrder } : { updatedAt: sortOrder },
+      orderBy,
+      include: CONTACT_TAGS_INCLUDE,
     }),
     prisma.contact.count({ where }),
   ]);
@@ -222,7 +382,7 @@ export const listContacts = async (
     const pendingTasks = pendingTaskCounts.find((item) => item.contactId === record.id)?._count._all ?? 0;
 
     return {
-      ...mapContact(record),
+      ...mapContact(record as PrismaContactWithTags),
       openTickets,
       pendingTasks,
     };
@@ -238,15 +398,7 @@ export const getContactById = async (tenantId: string, contactId: string): Promi
   const prisma = getPrismaClient();
   const record = await prisma.contact.findFirst({
     where: { tenantId, id: contactId },
-    include: {
-      interactions: { orderBy: { occurredAt: 'desc' }, take: 20 },
-      tasks: { orderBy: { createdAt: 'desc' }, take: 20 },
-      _count: {
-        select: {
-          tickets: { where: { status: { in: OPEN_TICKET_STATUSES } } },
-        },
-      },
-    },
+    include: CONTACT_DETAILS_INCLUDE,
   });
 
   if (!record) {
@@ -254,58 +406,88 @@ export const getContactById = async (tenantId: string, contactId: string): Promi
   }
 
   return {
-    ...mapContact(record),
-    interactions: record.interactions.map(mapInteraction),
-    tasks: record.tasks.map(mapTask),
+    ...mapContact(record as PrismaContactWithTags),
+    interactions: record.contactInteractions.map(mapInteraction),
+    tasks: record.contactTasks.map(mapTask),
     openTickets: record._count?.tickets ?? 0,
   };
 };
 
 export const createContact = async ({ tenantId, payload }: CreateContactDTO): Promise<Contact> => {
   const prisma = getPrismaClient();
-  const record = await prisma.contact.create({
-    data: {
-      tenantId,
-      name: payload.name,
-      phone: payload.phone ?? null,
-      email: payload.email ?? null,
-      document: payload.document ?? null,
-      avatar: payload.avatar ?? null,
-      status: (payload.status as $Enums.ContactStatus | undefined) ?? $Enums.ContactStatus.ACTIVE,
-      isBlocked: payload.isBlocked ?? false,
-      tags: payload.tags ?? [],
-      customFields: payload.customFields ?? {},
-      lastInteractionAt: payload.lastInteractionAt ?? null,
-      notes: payload.notes ?? null,
-    },
+  const record = await prisma.$transaction(async (tx) => {
+    const created = await tx.contact.create({
+      data: {
+        tenantId,
+        fullName: payload.name,
+        displayName: payload.name,
+        primaryPhone: payload.phone ?? null,
+        primaryEmail: payload.email ?? null,
+        document: payload.document ?? null,
+        avatar: payload.avatar ?? null,
+        status: (payload.status as $Enums.ContactStatus | undefined) ?? $Enums.ContactStatus.ACTIVE,
+        isBlocked: payload.isBlocked ?? false,
+        customFields: (payload.customFields ?? {}) as Prisma.InputJsonValue,
+        lastInteractionAt: payload.lastInteractionAt ?? null,
+        notes: payload.notes ?? null,
+      },
+    });
+
+    const tags = normalizeTagNames(payload.tags);
+    if (tags.length) {
+      await syncContactTags(tx, tenantId, created.id, tags);
+    }
+
+    const withTags = await tx.contact.findUniqueOrThrow({
+      where: { id: created.id },
+      include: CONTACT_TAGS_INCLUDE,
+    });
+
+    return withTags;
   });
 
-  return mapContact(record);
+  return mapContact(record as PrismaContactWithTags);
 };
 
 export const updateContact = async ({ tenantId, contactId, payload }: UpdateContactDTO): Promise<Contact | null> => {
   const prisma = getPrismaClient();
   try {
-    const record = await prisma.contact.update({
-      where: { id: contactId, tenantId },
-      data: {
-        ...(payload.name !== undefined ? { name: payload.name } : {}),
-        ...(payload.phone !== undefined ? { phone: payload.phone ?? null } : {}),
-        ...(payload.email !== undefined ? { email: payload.email ?? null } : {}),
-        ...(payload.document !== undefined ? { document: payload.document ?? null } : {}),
-        ...(payload.avatar !== undefined ? { avatar: payload.avatar ?? null } : {}),
-        ...(payload.status !== undefined ? { status: payload.status as $Enums.ContactStatus } : {}),
-        ...(payload.isBlocked !== undefined ? { isBlocked: payload.isBlocked } : {}),
-        ...(payload.tags !== undefined ? { tags: payload.tags } : {}),
-        ...(payload.customFields !== undefined ? { customFields: payload.customFields } : {}),
-        ...(payload.lastInteractionAt !== undefined
-          ? { lastInteractionAt: payload.lastInteractionAt ?? null }
-          : {}),
-        ...(payload.notes !== undefined ? { notes: payload.notes ?? null } : {}),
-      },
+    const record = await prisma.$transaction(async (tx) => {
+      const updated = await tx.contact.update({
+        where: { id: contactId, tenantId },
+        data: {
+          ...(payload.name !== undefined
+            ? { fullName: payload.name, displayName: payload.name }
+            : {}),
+          ...(payload.phone !== undefined ? { primaryPhone: payload.phone ?? null } : {}),
+          ...(payload.email !== undefined ? { primaryEmail: payload.email ?? null } : {}),
+          ...(payload.document !== undefined ? { document: payload.document ?? null } : {}),
+          ...(payload.avatar !== undefined ? { avatar: payload.avatar ?? null } : {}),
+          ...(payload.status !== undefined ? { status: payload.status as $Enums.ContactStatus } : {}),
+          ...(payload.isBlocked !== undefined ? { isBlocked: payload.isBlocked } : {}),
+          ...(payload.customFields !== undefined
+            ? { customFields: (payload.customFields ?? {}) as Prisma.InputJsonValue }
+            : {}),
+          ...(payload.lastInteractionAt !== undefined
+            ? { lastInteractionAt: payload.lastInteractionAt ?? null }
+            : {}),
+          ...(payload.notes !== undefined ? { notes: payload.notes ?? null } : {}),
+        },
+      });
+
+      if (payload.tags !== undefined) {
+        await syncContactTags(tx, tenantId, updated.id, payload.tags);
+      }
+
+      const withTags = await tx.contact.findUniqueOrThrow({
+        where: { id: contactId },
+        include: CONTACT_TAGS_INCLUDE,
+      });
+
+      return withTags;
     });
 
-    return mapContact(record);
+    return mapContact(record as PrismaContactWithTags);
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
       return null;
@@ -322,16 +504,33 @@ export const deleteContacts = async (tenantId: string, contactIds: string[]): Pr
 
 export const listContactTags = async (tenantId: string): Promise<ContactTagAggregation[]> => {
   const prisma = getPrismaClient();
-  const records = await prisma.contact.findMany({ where: { tenantId }, select: { tags: true } });
-  const counts = new Map<string, number>();
+  const assignments = await prisma.contactTag.groupBy({
+    by: ['tagId'],
+    where: { tenantId },
+    _count: { _all: true },
+  });
 
-  for (const record of records) {
-    for (const tag of record.tags) {
-      counts.set(tag, (counts.get(tag) ?? 0) + 1);
-    }
+  if (!assignments.length) {
+    return [];
   }
 
-  return Array.from(counts.entries()).map(([tag, count]) => ({ tag, count }));
+  const tags = await prisma.tag.findMany({
+    where: { tenantId, id: { in: assignments.map((assignment) => assignment.tagId) } },
+  });
+
+  const tagNameById = new Map(tags.map((tag) => [tag.id, tag.name]));
+
+  return assignments
+    .map((assignment) => {
+      const name = tagNameById.get(assignment.tagId);
+      if (!name) {
+        return null;
+      }
+
+      return { tag: name, count: assignment._count._all } satisfies ContactTagAggregation;
+    })
+    .filter((value): value is ContactTagAggregation => value !== null)
+    .sort((a, b) => a.tag.localeCompare(b.tag));
 };
 
 export const logContactInteraction = async ({
@@ -347,7 +546,7 @@ export const logContactInteraction = async ({
       channel: payload.channel as $Enums.ContactInteractionChannel,
       direction: payload.direction as $Enums.ContactInteractionDirection,
       summary: payload.summary,
-      payload: payload.payload ?? {},
+      payload: (payload.payload ?? {}) as Prisma.InputJsonValue,
       occurredAt: payload.occurredAt ?? new Date(),
     },
   });
@@ -402,7 +601,7 @@ export const createContactTask = async ({
       dueAt: payload.dueAt ?? null,
       status: PENDING_TASK_STATUS,
       assigneeId: payload.assigneeId ?? null,
-      metadata: payload.metadata ?? {},
+      metadata: (payload.metadata ?? {}) as Prisma.InputJsonValue,
     },
   });
 
@@ -458,7 +657,9 @@ export const updateContactTask = async ({
         ...(payload.dueAt !== undefined ? { dueAt: payload.dueAt ?? null } : {}),
         ...(payload.status ? { status: payload.status as $Enums.ContactTaskStatus } : {}),
         ...(payload.assigneeId !== undefined ? { assigneeId: payload.assigneeId ?? null } : {}),
-        ...(payload.metadata ? { metadata: payload.metadata } : {}),
+        ...(payload.metadata !== undefined
+          ? { metadata: (payload.metadata ?? {}) as Prisma.InputJsonValue }
+          : {}),
         ...(payload.completedAt !== undefined ? { completedAt: payload.completedAt ?? null } : {}),
       },
     });
@@ -480,21 +681,36 @@ export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }:
   }
 
   return prisma.$transaction(async (tx) => {
-    const target = await tx.contact.findFirst({ where: { tenantId, id: targetId } });
+    const target = await tx.contact.findFirst({
+      where: { tenantId, id: targetId },
+      include: CONTACT_TAGS_INCLUDE,
+    });
     if (!target) {
       return null;
     }
 
-    const sources = await tx.contact.findMany({ where: { tenantId, id: { in: uniqueSourceIds } } });
+    const sources = await tx.contact.findMany({
+      where: { tenantId, id: { in: uniqueSourceIds } },
+      include: CONTACT_TAGS_INCLUDE,
+    });
 
     if (!sources.length) {
-      return mapContact(target);
+      return mapContact(target as PrismaContactWithTags);
     }
+
+    const targetTagNames = target.tags
+      .map((assignment) => assignment.tag?.name ?? null)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0);
+    const sourceTagNames = sources.flatMap((source) =>
+      source.tags
+        .map((assignment) => assignment.tag?.name ?? null)
+        .filter((name): name is string => typeof name === 'string' && name.length > 0)
+    );
 
     const mergedTags =
       preserve?.tags === false
-        ? target.tags
-        : Array.from(new Set([...target.tags, ...sources.flatMap((s) => s.tags)]));
+        ? targetTagNames
+        : normalizeTagNames([...targetTagNames, ...sourceTagNames]);
 
     const baseCustomFields = toRecord(target.customFields);
     const mergedCustomFields =
@@ -543,16 +759,21 @@ export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }:
     await tx.contact.update({
       where: { id: targetId, tenantId },
       data: {
-        tags: mergedTags,
-        customFields: mergedCustomFields,
+        customFields: mergedCustomFields as Prisma.InputJsonValue,
         notes: mergedNotes,
       },
     });
 
+    await syncContactTags(tx, tenantId, targetId, mergedTags);
+
     await tx.contact.deleteMany({ where: { tenantId, id: { in: uniqueSourceIds } } });
 
-    const updated = await tx.contact.findFirst({ where: { tenantId, id: targetId } });
-    return updated ? mapContact(updated) : null;
+    const updated = await tx.contact.findFirst({
+      where: { tenantId, id: targetId },
+      include: CONTACT_TAGS_INCLUDE,
+    });
+
+    return updated ? mapContact(updated as PrismaContactWithTags) : null;
   });
 };
 
@@ -565,34 +786,52 @@ export const applyBulkContactsAction = async ({
   block,
 }: BulkContactsAction): Promise<Contact[]> => {
   const prisma = getPrismaClient();
-  const contacts = await prisma.contact.findMany({ where: { tenantId, id: { in: contactIds } } });
+  return prisma.$transaction(async (tx) => {
+    const contacts = await tx.contact.findMany({
+      where: { tenantId, id: { in: contactIds } },
+      include: CONTACT_TAGS_INCLUDE,
+    });
 
-  const tagsToAdd = addTags ?? [];
-  const tagsToRemove = new Set(removeTags ?? []);
+    const tagsToAdd = normalizeTagNames(addTags);
+    const tagsToRemove = new Set(normalizeTagNames(removeTags));
 
-  const updated = await Promise.all(
-    contacts.map(async (contact) => {
-      const nextTags = Array.from(
-        new Set([
-          ...contact.tags.filter((tag) => !tagsToRemove.has(tag)),
-          ...tagsToAdd,
-        ])
-      );
+    const updated = await Promise.all(
+      contacts.map(async (contact) => {
+        const currentTags = contact.tags
+          .map((assignment) => assignment.tag?.name ?? null)
+          .filter((name): name is string => typeof name === 'string' && name.length > 0);
 
-      const record = await prisma.contact.update({
-        where: { id: contact.id, tenantId },
-        data: {
-          ...(status ? { status: status as $Enums.ContactStatus } : {}),
-          ...(block !== undefined ? { isBlocked: block } : {}),
-          ...(tagsToAdd.length || tagsToRemove.size ? { tags: nextTags } : {}),
-        },
-      });
+        let nextTags = currentTags.filter((tag) => !tagsToRemove.has(tag));
 
-      return mapContact(record);
-    })
-  );
+        if (tagsToAdd.length) {
+          nextTags = normalizeTagNames([...nextTags, ...tagsToAdd]);
+        }
 
-  return updated;
+        const shouldSyncTags = tagsToAdd.length > 0 || tagsToRemove.size > 0;
+
+        await tx.contact.update({
+          where: { id: contact.id, tenantId },
+          data: {
+            ...(status ? { status: status as $Enums.ContactStatus } : {}),
+            ...(block !== undefined ? { isBlocked: block } : {}),
+          },
+        });
+
+        if (shouldSyncTags) {
+          await syncContactTags(tx, tenantId, contact.id, nextTags);
+        }
+
+        const refreshed = await tx.contact.findUniqueOrThrow({
+          where: { id: contact.id },
+          include: CONTACT_TAGS_INCLUDE,
+        });
+
+        return mapContact(refreshed as PrismaContactWithTags);
+      })
+    );
+
+    return updated;
+  });
 };
 
 export const findContactsByIds = async (tenantId: string, contactIds: string[]): Promise<Contact[]> => {
@@ -601,6 +840,9 @@ export const findContactsByIds = async (tenantId: string, contactIds: string[]):
   }
 
   const prisma = getPrismaClient();
-  const records = await prisma.contact.findMany({ where: { tenantId, id: { in: contactIds } } });
-  return records.map(mapContact);
+  const records = await prisma.contact.findMany({
+    where: { tenantId, id: { in: contactIds } },
+    include: CONTACT_TAGS_INCLUDE,
+  });
+  return records.map((record) => mapContact(record as PrismaContactWithTags));
 };
