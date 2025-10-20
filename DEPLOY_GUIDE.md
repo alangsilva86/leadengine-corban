@@ -139,7 +139,7 @@ O ambiente da Render deve ser dividido em **dois serviços**: a API (serviço No
 | Node version | Defina `NODE_VERSION=20` (ou deixe o Render usar a versão declarada no `package.json`) |
 
 - **Cache**: habilite o diretório `./.pnpm-store` no menu de _Build Cache_ da Render. Os scripts já exportam `PNPM_STORE_PATH=.pnpm-store`, portanto a restauração será automática entre deploys.
-- **Migrações**: utilize um _background worker_ ou _job manual_ com `pnpm --filter @ticketz/api exec prisma migrate deploy --schema=../../packages/storage/prisma/schema.prisma` antes de promover novas releases.
+- **Migrações**: utilize um _background worker_ ou _job manual_ com `pnpm run db:migrate:deploy` antes de promover novas releases. O script aplica `prisma migrate deploy` com limite de conexões (1 por padrão) e repetirá automaticamente em caso de saturação temporária do Postgres.
 - **Health check**: configure `Path = /healthz`, `Timeout = 30s` e `Interval = 60s` para evitar reinícios agressivos.
 
 Variáveis de ambiente (além das já mencionadas na seção de configuração geral):
@@ -147,6 +147,7 @@ Variáveis de ambiente (além das já mencionadas na seção de configuração g
 - `DATABASE_URL`
 - `NODE_ENV=production`
 - `PRISMA_CLIENT_ENGINE_TYPE=binary` (opcional, acelera cold start)
+- `PRISMA_MIGRATE_MAX_ATTEMPTS` (opcional, padrão `5`) e `PRISMA_MIGRATE_RETRY_DELAY_MS` (opcional, padrão `5000`) para ajustar as tentativas automáticas do script de migração
 - `PORT` (opcional; o Render define automaticamente, mas mantenha-a visível para debugging)
 - `LOG_LEVEL` (opcional, padrão `info`)
 - `JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_URL`, etc.
