@@ -701,6 +701,7 @@ const normalizeMessagePayload = (
     direction,
     instanceId: context.instanceId,
     timestamp: toIsoTimestamp(messageTimestamp),
+    contact: fromContact,
     from: fromContact,
     message: normalizedMessage,
     metadata,
