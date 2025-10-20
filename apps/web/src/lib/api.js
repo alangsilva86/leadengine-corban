@@ -343,6 +343,22 @@ export const apiPost = async (path, body, options = {}) => {
   });
 };
 
+export const apiUpload = async (path, formData, options = {}) => {
+  const prepared = prepareOptions(options);
+  const headers = { ...prepared.headers };
+  if ('Content-Type' in headers) {
+    delete headers['Content-Type'];
+  }
+
+  return safeFetch(path, {
+    ...prepared,
+    method: 'POST',
+    headers,
+    body: formData,
+    credentials: prepared.credentials ?? 'include',
+  });
+};
+
 export const apiPatch = async (path, body, options = {}) => {
   const prepared = prepareOptions(options);
   const headers = { ...prepared.headers, 'Content-Type': 'application/json' };

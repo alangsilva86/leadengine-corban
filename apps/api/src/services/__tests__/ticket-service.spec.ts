@@ -467,6 +467,116 @@ describe('ticket-service dispatch guard', () => {
     );
   });
 
+  it('includes media payload details when dispatching attachments', async () => {
+    const ticket = {
+      id: 'ticket-media-1',
+      tenantId: 'tenant-media-1',
+      contactId: 'contact-media-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'inst-media-1' },
+      updatedAt: new Date(),
+      lastMessageAt: new Date(),
+      lastMessagePreview: 'preview',
+    };
+    const messageRecord = {
+      id: 'message-media-1',
+      ticketId: ticket.id,
+      type: 'DOCUMENT',
+      direction: 'OUTBOUND',
+      content: '[Anexo enviado]',
+      caption: 'Contrato assinado',
+      mediaUrl: 'https://cdn.example.com/contrato.pdf',
+      mediaFileName: 'contrato.pdf',
+      mediaMimeType: 'application/pdf',
+      metadata: {
+        attachments: [
+          {
+            mediaUrl: 'https://cdn.example.com/contrato.pdf',
+            fileName: 'contrato.pdf',
+            mimeType: 'application/pdf',
+          },
+        ],
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'PENDING',
+      instanceId: 'inst-media-1',
+    };
+    const brokerTimestamp = new Date().toISOString();
+    const updatedMessage = {
+      ...messageRecord,
+      status: 'SENT',
+      metadata: {
+        ...messageRecord.metadata,
+        broker: {
+          provider: 'whatsapp',
+          instanceId: 'inst-media-1',
+          externalId: 'external-media-1',
+          status: 'SENT',
+          dispatchedAt: brokerTimestamp,
+        },
+      },
+    };
+
+    storageFindTicketById.mockResolvedValue(ticket);
+    storageCreateMessage.mockResolvedValue(messageRecord);
+    storageUpdateMessage.mockResolvedValue(updatedMessage);
+    prisma.contact.findUnique.mockResolvedValue({ id: 'contact-media-1', phone: '5511999998888' });
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-media-1', brokerId: 'broker-media-1' });
+
+    const transport = {
+      sendMessage: vi.fn().mockResolvedValue({
+        externalId: 'external-media-1',
+        status: 'SENT',
+        timestamp: brokerTimestamp,
+      }),
+    };
+
+    const { sendMessage } = await import('../ticket-service');
+
+    await sendMessage(
+      'tenant-media-1',
+      'agent-media-1',
+      {
+        ticketId: ticket.id,
+        type: 'DOCUMENT',
+        direction: 'OUTBOUND',
+        content: '[Anexo enviado]',
+        caption: 'Contrato assinado',
+        mediaUrl: 'https://cdn.example.com/contrato.pdf',
+        mediaFileName: 'contrato.pdf',
+        mediaMimeType: 'application/pdf',
+        metadata: messageRecord.metadata,
+      },
+      { transport }
+    );
+
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1);
+    expect(transport.sendMessage).toHaveBeenCalledWith(
+      'broker-media-1',
+      expect.objectContaining({
+        to: '5511999998888',
+        type: 'DOCUMENT',
+        caption: 'Contrato assinado',
+        mediaUrl: 'https://cdn.example.com/contrato.pdf',
+        mediaFileName: 'contrato.pdf',
+        mediaMimeType: 'application/pdf',
+      }),
+      { idempotencyKey: 'message-media-1' }
+    );
+    expect(storageCreateMessage).toHaveBeenCalledWith(
+      'tenant-media-1',
+      ticket.id,
+      expect.objectContaining({
+        mediaUrl: 'https://cdn.example.com/contrato.pdf',
+        mediaFileName: 'contrato.pdf',
+        mediaMimeType: 'application/pdf',
+        caption: 'Contrato assinado',
+        metadata: messageRecord.metadata,
+      })
+    );
+  });
+
   it('skips dispatch for inbound WhatsApp messages', async () => {
     const ticket = {
       id: 'ticket-in-1',

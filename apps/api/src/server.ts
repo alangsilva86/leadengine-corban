@@ -33,6 +33,8 @@ import { preferencesRouter } from './routes/preferences';
 import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
+import { whatsappRouter } from './routes/whatsapp';
+import { getWhatsAppUploadsBaseUrl, getWhatsAppUploadsDirectory } from './services/whatsapp-media-service';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -40,6 +42,11 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app: Application = express();
 const server = createServer(app);
+
+const whatsappUploadsBaseUrl = getWhatsAppUploadsBaseUrl();
+if (whatsappUploadsBaseUrl.startsWith('/')) {
+  app.use(whatsappUploadsBaseUrl, express.static(getWhatsAppUploadsDirectory()));
+}
 
 const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
 let debugMessagesRouter: Router | null = null;
@@ -381,6 +388,7 @@ app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api', authMiddleware, preferencesRouter);
+app.use('/api/whatsapp', authMiddleware, whatsappRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {
