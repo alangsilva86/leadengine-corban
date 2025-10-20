@@ -78,6 +78,18 @@ function CardContent({
   return (<div data-slot="card-content" className={cn("px-6", className)} {...props} />);
 }
 
+function CardBody({
+  className,
+  ...props
+}) {
+  return (
+    <div
+      data-slot="card-body"
+      className={cn("px-6", className)}
+      {...props} />
+  );
+}
+
 function CardFooter({
   className,
   ...props
@@ -98,4 +110,5 @@ export {
   CardAction,
   CardDescription,
   CardContent,
+  CardBody,
 }
