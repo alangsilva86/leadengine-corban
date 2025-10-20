@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictError } from '@ticketz/core';
+import { ConflictError, NotFoundError } from '@ticketz/core';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../lib/prisma';
@@ -15,12 +15,17 @@ import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
 } from '../../../services/ticket-service';
+import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
 import {
   emitToAgreement,
   emitToTenant,
   emitToTicket,
 } from '../../../lib/socket-registry';
-import { normalizeInboundMessage } from '../utils/normalize';
+import {
+  normalizeInboundMessage,
+  type NormalizedInboundMessage,
+  type NormalizedMessageType,
+} from '../utils/normalize';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 import {
   DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX,
@@ -52,11 +57,13 @@ import {
   attemptAutoProvisionWhatsAppInstance,
   ensureInboundQueueForInboundMessage,
   getDefaultQueueId,
+  isForeignKeyError,
   isUniqueViolation,
   provisionDefaultQueueForTenant,
   provisionFallbackCampaignForInstance,
   queueCacheByTenant,
 } from './provisioning';
+import { downloadInboundMediaFromBroker } from './media-downloader';
 import {
   type InboundMessageDetails,
   type InboundWhatsAppEnvelope,
@@ -69,6 +76,171 @@ const toRecord = (value: unknown): Record<string, unknown> => {
     return { ...(value as Record<string, unknown>) };
   }
   return {};
+};
+
+const MEDIA_MESSAGE_TYPES = new Set<NormalizedMessageType>([
+  'IMAGE',
+  'VIDEO',
+  'AUDIO',
+  'DOCUMENT',
+  'STICKER',
+]);
+
+const isHttpUrl = (value: string | null | undefined): boolean =>
+  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+
+const readNullableString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const readNullableNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const collectMediaRecords = (
+  message: NormalizedInboundMessage,
+  metadataRecord: Record<string, unknown>
+): Record<string, unknown>[] => {
+  const visited = new Set<Record<string, unknown>>();
+  const records: Record<string, unknown>[] = [];
+
+  const pushRecord = (value: unknown): void => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    if (visited.has(record)) {
+      return;
+    }
+
+    visited.add(record);
+    records.push(record);
+
+    for (const key of ['media', 'attachment', 'file']) {
+      if (key in record) {
+        pushRecord((record as Record<string, unknown>)[key]);
+      }
+    }
+  };
+
+  const rawRecord = message.raw as Record<string, unknown>;
+  pushRecord(rawRecord);
+  pushRecord(rawRecord.metadata);
+  pushRecord(rawRecord.imageMessage);
+  pushRecord(rawRecord.videoMessage);
+  pushRecord(rawRecord.audioMessage);
+  pushRecord(rawRecord.documentMessage);
+  pushRecord(rawRecord.stickerMessage);
+  pushRecord(metadataRecord);
+  if (metadataRecord.media && typeof metadataRecord.media === 'object' && !Array.isArray(metadataRecord.media)) {
+    pushRecord(metadataRecord.media);
+  }
+
+  return records;
+};
+
+const extractMediaDownloadDetails = (
+  message: NormalizedInboundMessage,
+  metadataRecord: Record<string, unknown>
+): {
+  directPath: string | null;
+  mediaKey: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  size: number | null;
+} => {
+  const records = collectMediaRecords(message, metadataRecord);
+
+  const pickString = (...candidates: unknown[]): string | null => {
+    for (const candidate of candidates) {
+      const value = readNullableString(candidate);
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  };
+
+  const pickNumber = (...candidates: unknown[]): number | null => {
+    for (const candidate of candidates) {
+      const value = readNullableNumber(candidate);
+      if (value !== null) {
+        return value;
+      }
+    }
+    return null;
+  };
+
+  const directPathCandidate = pickString(
+    ...(message.mediaUrl ? [message.mediaUrl] : []),
+    ...records.flatMap((record) => [
+      record['directPath'],
+      record['direct_path'],
+      record['downloadUrl'],
+      record['download_url'],
+      record['mediaUrl'],
+      record['media_url'],
+      record['url'],
+    ])
+  );
+  const mediaKey = pickString(
+    ...records.flatMap((record) => [
+      record['mediaKey'],
+      record['media_key'],
+      record['fileSha256'],
+      record['file_sha256'],
+      record['mediaKeyTimestamp'],
+    ])
+  );
+  const fileName = pickString(
+    ...records.flatMap((record) => [
+      record['fileName'],
+      record['filename'],
+      record['file_name'],
+      record['fileNameEncryptedSha256'],
+      record['name'],
+      record['originalFilename'],
+    ])
+  );
+  const mimeType = pickString(
+    message.mimetype,
+    ...records.flatMap((record) => [
+      record['mimeType'],
+      record['mimetype'],
+      record['contentType'],
+      record['content_type'],
+      record['type'],
+    ])
+  );
+  const size = pickNumber(
+    message.fileSize,
+    ...records.flatMap((record) => [
+      record['fileLength'],
+      record['file_length'],
+      record['size'],
+      record['length'],
+    ])
+  );
+
+  return {
+    directPath: directPathCandidate && !isHttpUrl(directPathCandidate) ? directPathCandidate : null,
+    mediaKey: mediaKey ?? null,
+    fileName: fileName ?? null,
+    mimeType: mimeType ?? null,
+    size: size ?? null,
+  };
 };
 
 export const resetInboundLeadServiceTestState = (): void => {
@@ -1401,23 +1573,148 @@ const processStandardInboundEvent = async (
     return true;
   }
 
-    let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+  const shouldAttemptMediaDownload =
+    MEDIA_MESSAGE_TYPES.has(normalizedMessage.type) &&
+    !isHttpUrl(normalizedMessage.mediaUrl ?? undefined);
 
-    const timelineMessageType = (() => {
-      switch (normalizedMessage.type) {
-        case 'IMAGE':
-        case 'VIDEO':
-        case 'AUDIO':
-        case 'DOCUMENT':
-        case 'LOCATION':
-        case 'CONTACT':
-        case 'TEMPLATE':
-          return normalizedMessage.type;
-        case 'TEXT':
-        default:
-          return 'TEXT';
+  if (shouldAttemptMediaDownload) {
+    const mediaDetails = extractMediaDownloadDetails(normalizedMessage, metadataRecord);
+    const hasDownloadMetadata = Boolean(mediaDetails.directPath || mediaDetails.mediaKey);
+
+    if (!hasDownloadMetadata) {
+      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Metadados insuficientes para download de mídia inbound', {
+        requestId,
+        tenantId,
+        instanceId,
+        brokerId: resolvedBrokerId ?? null,
+        messageId: messageExternalId ?? normalizedMessage.id ?? null,
+        mediaType: normalizedMessage.type,
+      });
+    } else {
+      logger.info('🎯 LeadEngine • WhatsApp :: ⬇️ Baixando mídia inbound a partir do broker', {
+        requestId,
+        tenantId,
+        instanceId,
+        brokerId: resolvedBrokerId ?? null,
+        messageId: messageExternalId ?? normalizedMessage.id ?? null,
+        mediaType: normalizedMessage.type,
+        hasDirectPath: Boolean(mediaDetails.directPath),
+        hasMediaKey: Boolean(mediaDetails.mediaKey),
+      });
+
+      try {
+        const downloadResult = await downloadInboundMediaFromBroker({
+          brokerId: resolvedBrokerId ?? null,
+          instanceId,
+          tenantId,
+          mediaKey: mediaDetails.mediaKey,
+          directPath: mediaDetails.directPath,
+          messageId: messageExternalId ?? normalizedMessage.id ?? null,
+          mediaType: normalizedMessage.type,
+        });
+
+        if (downloadResult && downloadResult.buffer.length > 0) {
+          const descriptor = await saveWhatsAppMedia({
+            buffer: downloadResult.buffer,
+            tenantId,
+            originalName: mediaDetails.fileName ?? undefined,
+            mimeType:
+              normalizedMessage.mimetype ??
+              mediaDetails.mimeType ??
+              downloadResult.mimeType ??
+              undefined,
+          });
+
+          const resolvedMimeType =
+            normalizedMessage.mimetype ??
+            mediaDetails.mimeType ??
+            downloadResult.mimeType ??
+            descriptor.mimeType ??
+            null;
+          if (!normalizedMessage.mimetype && resolvedMimeType) {
+            normalizedMessage.mimetype = resolvedMimeType;
+          }
+
+          const resolvedSize =
+            normalizedMessage.fileSize ??
+            mediaDetails.size ??
+            downloadResult.size ??
+            descriptor.size ??
+            downloadResult.buffer.length;
+          if (!normalizedMessage.fileSize && resolvedSize !== null) {
+            normalizedMessage.fileSize = resolvedSize;
+          }
+
+          normalizedMessage.mediaUrl = descriptor.mediaUrl;
+
+          const metadataMedia = toRecord(metadataRecord.media);
+          metadataMedia.url = descriptor.mediaUrl;
+          if (normalizedMessage.caption) {
+            metadataMedia.caption = normalizedMessage.caption;
+          }
+          if (normalizedMessage.mimetype) {
+            metadataMedia.mimetype = normalizedMessage.mimetype;
+          }
+          if (
+            normalizedMessage.fileSize !== null &&
+            normalizedMessage.fileSize !== undefined
+          ) {
+            metadataMedia.size = normalizedMessage.fileSize;
+          }
+          metadataRecord.media = metadataMedia;
+
+          logger.info('🎯 LeadEngine • WhatsApp :: ✅ Mídia inbound baixada e armazenada localmente', {
+            requestId,
+            tenantId,
+            instanceId,
+            brokerId: resolvedBrokerId ?? null,
+            messageId: messageExternalId ?? normalizedMessage.id ?? null,
+            mediaType: normalizedMessage.type,
+            mediaUrl: descriptor.mediaUrl,
+            fileName: descriptor.fileName,
+            size: normalizedMessage.fileSize ?? null,
+          });
+        } else {
+          logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Broker retornou payload vazio ao baixar mídia inbound', {
+            requestId,
+            tenantId,
+            instanceId,
+            brokerId: resolvedBrokerId ?? null,
+            messageId: messageExternalId ?? normalizedMessage.id ?? null,
+            mediaType: normalizedMessage.type,
+          });
+        }
+      } catch (error) {
+        logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao baixar mídia inbound', {
+          error: mapErrorForLog(error),
+          requestId,
+          tenantId,
+          instanceId,
+          brokerId: resolvedBrokerId ?? null,
+          messageId: messageExternalId ?? normalizedMessage.id ?? null,
+          mediaType: normalizedMessage.type,
+        });
       }
-    })();
+    }
+  }
+
+  let persistedMessage: Awaited<ReturnType<typeof sendMessageService>> | null = null;
+
+  const timelineMessageType = (() => {
+    switch (normalizedMessage.type) {
+      case 'IMAGE':
+      case 'VIDEO':
+      case 'AUDIO':
+      case 'DOCUMENT':
+      case 'LOCATION':
+      case 'CONTACT':
+      case 'TEMPLATE':
+        return normalizedMessage.type;
+      case 'TEXT':
+      default:
+        return 'TEXT';
+    }
+  })();
 
   try {
     persistedMessage = await sendMessageService(tenantId, undefined, {

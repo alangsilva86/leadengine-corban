@@ -11,45 +11,88 @@ import {
 import { resolveTenantIdentifiersFromMetadata } from '../identifiers';
 import type { InboundWhatsAppEnvelope, InboundWhatsAppEvent } from '../types';
 
-const prismaMock = vi.hoisted(() => ({
-  queue: {
-    findUnique: vi.fn(),
-    findFirst: vi.fn(),
-    upsert: vi.fn(),
-  },
-  whatsAppInstance: {
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    findFirst: vi.fn(),
-    update: vi.fn(),
-  },
-  tenant: {
-    findFirst: vi.fn(),
-  },
-  campaign: {
-    findMany: vi.fn(),
-    upsert: vi.fn(),
-  },
-  contact: {
-    findUnique: vi.fn(),
-    findFirst: vi.fn(),
-    update: vi.fn(),
-    create: vi.fn(),
-  },
-  lead: {
-    findFirst: vi.fn(),
-    upsert: vi.fn(),
-    update: vi.fn(),
-    create: vi.fn(),
-  },
-  leadActivity: {
-    findFirst: vi.fn(),
-    create: vi.fn(),
-  },
-  ticket: {
-    findUnique: vi.fn(),
-  },
-}));
+const prismaMock = vi.hoisted(() => {
+  const mock = {
+    queue: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      upsert: vi.fn(),
+    },
+    whatsAppInstance: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+    tenant: {
+      findFirst: vi.fn(),
+    },
+    campaign: {
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    contact: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+      create: vi.fn(),
+    },
+    contactPhone: {
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    contactTag: {
+      deleteMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    tag: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+    },
+    lead: {
+      findFirst: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      create: vi.fn(),
+    },
+    leadActivity: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
+    ticket: {
+      findUnique: vi.fn(),
+    },
+    $transaction: vi.fn(),
+  } satisfies Record<string, unknown>;
+
+  return mock as typeof mock & { $transaction: ReturnType<typeof vi.fn> };
+});
+
+const applyDefaultPrismaTransactionMock = () => {
+  prismaMock.$transaction.mockImplementation(async (callback: (tx: Prisma.TransactionClient) => unknown) =>
+    callback(prismaMock as unknown as Prisma.TransactionClient)
+  );
+  prismaMock.tag.findMany.mockResolvedValue([]);
+  prismaMock.tag.create.mockImplementation(async (args: { data?: { name?: string } }) => ({
+    id: `tag-${args?.data?.name ?? 'generated'}`,
+    name: args?.data?.name ?? 'generated',
+  }));
+  prismaMock.contact.findUniqueOrThrow.mockImplementation(async (args: { where?: { id?: string } }) => ({
+    id: args?.where?.id ?? 'contact-generated',
+    tenantId: 'tenant-generated',
+    displayName: 'Contato WhatsApp',
+    fullName: 'Contato WhatsApp',
+    primaryPhone: '+5511000000000',
+    tags: [],
+    phones: [],
+  }));
+};
+
+applyDefaultPrismaTransactionMock();
+
+const createPrismaKnownRequestError = (code: string, message: string) =>
+  Object.assign(new Error(message), { code, clientVersion: '5.0.0' }) as Prisma.PrismaClientKnownRequestError;
 
 const findUniqueMock = prismaMock.queue.findUnique;
 const findFirstMock = prismaMock.queue.findFirst;
@@ -63,8 +106,15 @@ const campaignFindManyMock = prismaMock.campaign.findMany;
 const campaignUpsertMock = prismaMock.campaign.upsert;
 const contactFindUniqueMock = prismaMock.contact.findUnique;
 const contactFindFirstMock = prismaMock.contact.findFirst;
+const contactFindUniqueOrThrowMock = prismaMock.contact.findUniqueOrThrow;
 const contactUpdateMock = prismaMock.contact.update;
 const contactCreateMock = prismaMock.contact.create;
+const contactPhoneUpsertMock = prismaMock.contactPhone.upsert;
+const contactPhoneUpdateManyMock = prismaMock.contactPhone.updateMany;
+const contactTagDeleteManyMock = prismaMock.contactTag.deleteMany;
+const contactTagUpsertMock = prismaMock.contactTag.upsert;
+const tagFindManyMock = prismaMock.tag.findMany;
+const tagCreateMock = prismaMock.tag.create;
 const leadFindFirstMock = prismaMock.lead.findFirst;
 const leadUpsertMock = prismaMock.lead.upsert;
 const leadUpdateMock = prismaMock.lead.update;
@@ -81,6 +131,8 @@ const sendMessageMock = vi.hoisted(() => vi.fn());
 const emitToTenantMock = vi.hoisted(() => vi.fn());
 const emitToTicketMock = vi.hoisted(() => vi.fn());
 const leadLastContactGaugeSetMock = vi.hoisted(() => vi.fn());
+const downloadInboundMediaMock = vi.hoisted(() => vi.fn());
+const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -98,6 +150,14 @@ vi.mock('../../../../lib/prisma', () => ({
 vi.mock('../../../../services/ticket-service', () => ({
   createTicket: createTicketMock,
   sendMessage: sendMessageMock,
+}));
+
+vi.mock('../media-downloader', () => ({
+  downloadInboundMediaFromBroker: (...args: unknown[]) => downloadInboundMediaMock(...args),
+}));
+
+vi.mock('../../../../services/whatsapp-media-service', () => ({
+  saveWhatsAppMedia: (...args: unknown[]) => saveWhatsAppMediaMock(...args),
 }));
 
 vi.mock('../../../../lib/socket-registry', () => ({
@@ -145,6 +205,7 @@ describe('getDefaultQueueId', () => {
     queueCacheByTenant.clear();
     vi.resetAllMocks();
     queueUpsertMock.mockReset();
+    applyDefaultPrismaTransactionMock();
   });
 
   it('returns cached queue id when entry is valid and queue exists', async () => {
@@ -213,6 +274,7 @@ describe('ingestInboundWhatsAppMessage', () => {
   beforeEach(() => {
     queueCacheByTenant.clear();
     vi.clearAllMocks();
+    applyDefaultPrismaTransactionMock();
   });
 
   it('ensures tenant creation and persists inbound message for unknown tenant', async () => {
@@ -278,6 +340,9 @@ describe('ingestInboundWhatsAppMessage', () => {
       tenantId: ensuredTenant.id,
       phone: '+5511999999999',
       name: 'Cliente Webhook',
+      displayName: 'Cliente Webhook',
+      fullName: 'Cliente Webhook',
+      primaryPhone: '+5511999999999',
     });
     const leadRecord = {
       id: 'lead-auto',
@@ -666,14 +731,12 @@ describe('ensureInboundQueueForInboundMessage', () => {
   beforeEach(() => {
     queueCacheByTenant.clear();
     vi.resetAllMocks();
+    applyDefaultPrismaTransactionMock();
   });
 
   it('ensures tenant automatically when foreign key errors occur', async () => {
     findFirstMock.mockResolvedValueOnce(null);
-    const fkError = new Prisma.PrismaClientKnownRequestError('Missing tenant', {
-      code: 'P2003',
-      clientVersion: '5.0.0',
-    });
+    const fkError = createPrismaKnownRequestError('P2003', 'Missing tenant');
     queueUpsertMock.mockRejectedValueOnce(fkError).mockResolvedValueOnce({
       id: 'queue-after-tenant',
       tenantId: 'tenant-missing',
@@ -702,10 +765,7 @@ describe('ensureInboundQueueForInboundMessage', () => {
 
   it('returns recoverable error when tenant cannot be provisioned automatically', async () => {
     findFirstMock.mockResolvedValueOnce(null);
-    const fkError = new Prisma.PrismaClientKnownRequestError('Missing tenant', {
-      code: 'P2003',
-      clientVersion: '5.0.0',
-    });
+    const fkError = createPrismaKnownRequestError('P2003', 'Missing tenant');
     queueUpsertMock.mockRejectedValueOnce(fkError).mockRejectedValueOnce(fkError);
     ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-missing', slug: 'tenant-missing' });
 
@@ -736,6 +796,7 @@ describe('ensureTicketForContact', () => {
   beforeEach(() => {
     queueCacheByTenant.clear();
     vi.resetAllMocks();
+    applyDefaultPrismaTransactionMock();
   });
 
   it('provisions fallback queue for tenants without queues and continues ticket creation', async () => {
@@ -809,10 +870,7 @@ describe('ensureTicketForContact', () => {
       expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
     });
 
-    const prismaError = new Prisma.PrismaClientKnownRequestError('Missing queue', {
-      code: 'P2003',
-      clientVersion: '5.0.0',
-    });
+    const prismaError = createPrismaKnownRequestError('P2003', 'Missing queue');
     const wrappedError = new Error('Failed to create ticket');
     (wrappedError as { cause?: unknown }).cause = prismaError;
 
@@ -1050,6 +1108,28 @@ describe('processStandardInboundEvent', () => {
     queueCacheByTenant.clear();
     vi.resetAllMocks();
     ticketFindUniqueMock.mockReset();
+    applyDefaultPrismaTransactionMock();
+    prismaMock.$transaction = vi.fn(async (callback) =>
+      callback({
+        contact: {
+          update: prismaMock.contact.update,
+          create: prismaMock.contact.create,
+          findUniqueOrThrow: prismaMock.contact.findUniqueOrThrow,
+        },
+        contactPhone: {
+          upsert: prismaMock.contactPhone.upsert,
+          updateMany: prismaMock.contactPhone.updateMany,
+        },
+        contactTag: {
+          deleteMany: prismaMock.contactTag.deleteMany,
+          upsert: prismaMock.contactTag.upsert,
+        },
+        tag: {
+          findMany: prismaMock.tag.findMany,
+          create: prismaMock.tag.create,
+        },
+      } as unknown as Prisma.TransactionClient)
+    );
   });
 
   it('auto provisions fallback queue and delivers message to inbox when tenant lacks queues', async () => {
@@ -1076,6 +1156,12 @@ describe('processStandardInboundEvent', () => {
 
     findFirstMock.mockResolvedValueOnce(null);
     queueUpsertMock.mockResolvedValueOnce({ id: 'queue-fallback', tenantId: instanceRecord.tenantId });
+    campaignFindManyMock.mockResolvedValueOnce([]);
+    campaignUpsertMock.mockResolvedValueOnce({
+      id: 'campaign-fallback',
+      tenantId: instanceRecord.tenantId,
+      whatsappInstanceId: instanceRecord.id,
+    });
 
     createTicketMock.mockResolvedValueOnce({ id: 'ticket-fallback' });
     contactFindUniqueMock.mockResolvedValueOnce(null);
@@ -1085,6 +1171,9 @@ describe('processStandardInboundEvent', () => {
       tenantId: instanceRecord.tenantId,
       phone: '+5511999999999',
       name: 'Cliente WhatsApp',
+      displayName: 'Cliente WhatsApp',
+      fullName: 'Cliente WhatsApp',
+      primaryPhone: '+5511999999999',
     });
     sendMessageMock.mockResolvedValueOnce({
       id: 'timeline-1',
@@ -1117,8 +1206,169 @@ describe('processStandardInboundEvent', () => {
     );
     expect(emitToTenantMock).toHaveBeenCalledWith(
       instanceRecord.tenantId,
-      'tickets.updated',
-      expect.objectContaining({ ticketId: 'ticket-fallback' })
+      'whatsapp.queue.autoProvisioned',
+      expect.objectContaining({
+        tenantId: instanceRecord.tenantId,
+        instanceId: instanceRecord.id,
+        queueId: 'queue-fallback',
+      })
     );
+  });
+
+  it.each([
+    {
+      kind: 'IMAGE' as const,
+      rawKey: 'imageMessage',
+      caption: 'Imagem legal',
+      mimetype: 'image/jpeg',
+      extension: 'jpg',
+      fileLength: 2048,
+    },
+    {
+      kind: 'VIDEO' as const,
+      rawKey: 'videoMessage',
+      caption: 'Vídeo incrível',
+      mimetype: 'video/mp4',
+      extension: 'mp4',
+      fileLength: 8192,
+    },
+    {
+      kind: 'AUDIO' as const,
+      rawKey: 'audioMessage',
+      caption: null,
+      mimetype: 'audio/ogg',
+      extension: 'ogg',
+      fileLength: 1024,
+    },
+  ])('downloads inbound %s media and stores a local URL', async ({ kind, rawKey, caption, mimetype, extension, fileLength }) => {
+    const now = new Date('2024-03-25T09:00:00.000Z');
+    const instanceRecord = {
+      id: 'instance-1',
+      tenantId: 'tenant-1',
+      brokerId: 'broker-1',
+      name: 'WhatsApp Principal',
+    } as const;
+
+    findFirstMock.mockResolvedValueOnce({ id: 'queue-media', tenantId: 'tenant-1' });
+    campaignFindManyMock.mockResolvedValueOnce([{ id: 'campaign-1' }]);
+    createTicketMock.mockResolvedValueOnce({ id: 'ticket-media' });
+    ticketFindUniqueMock.mockResolvedValueOnce({ id: 'ticket-media', status: 'OPEN', updatedAt: now });
+
+    contactFindUniqueMock.mockResolvedValueOnce(null);
+    contactFindFirstMock.mockResolvedValueOnce(null);
+    contactCreateMock.mockResolvedValueOnce({
+      id: 'contact-media',
+      tenantId: 'tenant-1',
+      phone: '+5511999999999',
+      name: 'Cliente Mídia',
+    });
+    contactFindUniqueOrThrowMock.mockResolvedValueOnce({
+      id: 'contact-media',
+      tenantId: 'tenant-1',
+      displayName: 'Cliente Mídia',
+      fullName: 'Cliente Mídia',
+      primaryPhone: '+5511999999999',
+      phones: [],
+      tags: [],
+    });
+    contactPhoneUpsertMock.mockResolvedValueOnce({ id: 'phone-1' });
+    contactPhoneUpdateManyMock.mockResolvedValueOnce({ count: 0 });
+    tagFindManyMock.mockResolvedValueOnce([]);
+    tagCreateMock.mockImplementation(async ({ data }) => ({ id: `${String(data?.name)}-id`, name: String(data?.name) }));
+    contactTagDeleteManyMock.mockResolvedValueOnce({ count: 0 });
+    contactTagUpsertMock.mockResolvedValue({});
+
+    downloadInboundMediaMock.mockResolvedValueOnce({
+      buffer: Buffer.from(`media-${kind.toLowerCase()}`),
+      mimeType: mimetype,
+      fileName: `${kind.toLowerCase()}-broker.${extension}`,
+      size: 111,
+    });
+    saveWhatsAppMediaMock.mockResolvedValueOnce({
+      mediaUrl: `/uploads/whatsapp/${kind.toLowerCase()}-stored.${extension}`,
+      mimeType: mimetype,
+      fileName: `${kind.toLowerCase()}-stored.${extension}`,
+      size: 111,
+    });
+
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-media',
+      createdAt: now,
+      metadata: { eventMetadata: { requestId: 'req-media' } },
+      content: 'Mensagem com mídia',
+    });
+
+    const messagePayload: Record<string, unknown> = {
+      id: `wamid-${kind.toLowerCase()}`,
+      type: kind.toLowerCase(),
+      text: 'Mensagem com mídia',
+      metadata: {
+        directPath: `/direct/${kind.toLowerCase()}`,
+        mediaKey: `${kind.toLowerCase()}-key`,
+      },
+    };
+    messagePayload[rawKey] = {
+      mimetype,
+      fileLength,
+      fileName: `${kind.toLowerCase()}-file.${extension}`,
+      mediaKey: `${kind.toLowerCase()}-key`,
+      directPath: `/direct/${kind.toLowerCase()}`,
+      ...(caption ? { caption } : {}),
+    };
+
+    const event: InboundEvent = {
+      id: `event-${kind.toLowerCase()}`,
+      instanceId: 'instance-1',
+      tenantId: 'tenant-1',
+      direction: 'INBOUND',
+      contact: { phone: '+5511999999999', name: 'Cliente Mídia' },
+      message: messagePayload as InboundEvent['message'],
+      timestamp: now.toISOString(),
+      metadata: {
+        requestId: 'req-media',
+        brokerId: 'broker-1',
+        broker: { id: 'broker-1', messageId: `wamid-${kind.toLowerCase()}` },
+      },
+      chatId: '5511999999999@s.whatsapp.net',
+      externalId: `ext-${kind.toLowerCase()}`,
+      sessionId: 'session-1',
+    } as unknown as InboundEvent;
+
+    await testing.processStandardInboundEvent(event, now.getTime(), {
+      preloadedInstance: instanceRecord as unknown as Parameters<TestingHelpers['processStandardInboundEvent']>[2]['preloadedInstance'],
+    });
+
+    expect(downloadInboundMediaMock).toHaveBeenCalledTimes(1);
+    expect(downloadInboundMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brokerId: 'broker-1',
+        instanceId: 'instance-1',
+        tenantId: 'tenant-1',
+        mediaType: kind,
+        directPath: `/direct/${kind.toLowerCase()}`,
+        mediaKey: `${kind.toLowerCase()}-key`,
+        messageId: `ext-${kind.toLowerCase()}`,
+      })
+    );
+
+    expect(saveWhatsAppMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        originalName: `${kind.toLowerCase()}-file.${extension}`,
+        mimeType: mimetype,
+      })
+    );
+
+    const [, , payload] = sendMessageMock.mock.calls[0];
+    expect(payload.mediaUrl).toBe(`/uploads/whatsapp/${kind.toLowerCase()}-stored.${extension}`);
+    const mediaMetadata = payload.metadata?.media as Record<string, unknown> | undefined;
+    expect(mediaMetadata).toMatchObject({
+      url: `/uploads/whatsapp/${kind.toLowerCase()}-stored.${extension}`,
+      mimetype,
+      size: fileLength,
+    });
+    if (caption) {
+      expect(mediaMetadata).toMatchObject({ caption });
+    }
   });
 });
