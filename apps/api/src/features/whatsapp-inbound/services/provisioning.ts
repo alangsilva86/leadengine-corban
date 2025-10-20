@@ -190,7 +190,15 @@ export const getDefaultQueueId = async (
 ): Promise<string | null> => {
   const cached = queueCacheByTenant.get(tenantId);
   if (cached && cached.expires > Date.now()) {
-    return cached.id;
+    const existing = await prisma.queue.findUnique({ where: { id: cached.id } });
+
+    if (existing) {
+      queueCacheByTenant.set(tenantId, {
+        id: existing.id,
+        expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
+      });
+      return existing.id;
+    }
   }
 
   if (cached) {
