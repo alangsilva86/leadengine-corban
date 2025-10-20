@@ -110,9 +110,20 @@ ALTER TABLE "contacts"
     ADD COLUMN IF NOT EXISTS "status" "ContactStatus" NOT NULL DEFAULT 'ACTIVE',
     ADD COLUMN IF NOT EXISTS "timezone" TEXT;
 
-UPDATE "contacts"
-SET "fullName" = COALESCE("name", '')
-WHERE "fullName" IS NULL;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'contacts'
+          AND column_name = 'name'
+    ) THEN
+        UPDATE "contacts"
+        SET "fullName" = COALESCE("name", '')
+        WHERE "fullName" IS NULL;
+    END IF;
+END $$;
 
 ALTER TABLE "contacts"
     ALTER COLUMN "fullName" SET NOT NULL;
