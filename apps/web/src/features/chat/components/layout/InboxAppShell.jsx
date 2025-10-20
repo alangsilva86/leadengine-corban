@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils.js';
 import ContextDrawer from './ContextDrawer.jsx';
 import SplitLayout from './SplitLayout.jsx';
 import { useMediaQuery } from '@/hooks/use-media-query.js';
+import emitInboxTelemetry from '../../utils/telemetry.js';
 
 const CONTEXT_PREFERENCE_KEY = 'inbox_context_open';
 const LIST_SCROLL_STORAGE_KEY = 'inbox:queue-list';
@@ -169,6 +170,10 @@ const InboxAppShell = ({
 
   useEffect(() => {
     writePreference(CONTEXT_PREFERENCE_KEY, contextOpen);
+  }, [contextOpen]);
+
+  useEffect(() => {
+    emitInboxTelemetry('chat.context.toggle', { open: contextOpen });
   }, [contextOpen]);
 
   const isTablet = useMediaQuery('(min-width: 1024px)');
