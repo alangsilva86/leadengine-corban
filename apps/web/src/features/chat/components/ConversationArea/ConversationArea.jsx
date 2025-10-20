@@ -157,6 +157,7 @@ export const ConversationArea = ({
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-visible">
         <div className="relative z-10">
           <ConversationHeader
+        <ConversationHeader
           ticket={ticket}
           onRegisterResult={onRegisterResult}
           onAssign={onAssign}
@@ -179,6 +180,7 @@ export const ConversationArea = ({
           id="ticketViewport"
           ref={scrollRef}
           className="relative z-0 flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
+          className="flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
         >
           <div className="min-h-0 min-w-0 px-4 py-4 sm:px-5 sm:py-5">
             <MessageTimeline
