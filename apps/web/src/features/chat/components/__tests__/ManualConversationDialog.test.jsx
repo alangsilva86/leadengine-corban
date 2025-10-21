@@ -9,7 +9,7 @@ const { mockUseWhatsAppInstances, mockToastError } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
 }));
 
-vi.mock('@/features/whatsapp/hooks/useWhatsAppInstances.js', () => ({
+vi.mock('@/features/whatsapp/hooks/useWhatsAppInstances.jsx', () => ({
   __esModule: true,
   default: (...args) => mockUseWhatsAppInstances(...args),
 }));

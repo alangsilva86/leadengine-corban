@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.jsx';
-import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.js';
+import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 
