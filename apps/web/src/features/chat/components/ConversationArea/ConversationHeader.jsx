@@ -57,6 +57,8 @@ import {
 import QuickComposer from './QuickComposer.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 
+export const GENERATE_PROPOSAL_ANCHOR_ID = 'conversation-generate-proposal';
+
 const LOSS_REASONS = [
   { value: 'sem_interesse', label: 'Sem interesse' },
   { value: 'orcamento', label: 'Sem orçamento disponível' },
@@ -484,6 +486,10 @@ export const ConversationHeader = ({
     }
   }, [document]);
 
+  const handleGenerateProposal = useCallback(() => {
+    onGenerateProposal?.(ticket);
+  }, [onGenerateProposal, ticket]);
+
   useEffect(() => {
     if (!ticket) {
       return undefined;
@@ -498,6 +504,10 @@ export const ConversationHeader = ({
       switch (key) {
         case 'e':
           setIsExpanded((previous) => !previous);
+          event.preventDefault();
+          break;
+        case 'g':
+          handleGenerateProposal();
           event.preventDefault();
           break;
         case 'n':
@@ -519,10 +529,7 @@ export const ConversationHeader = ({
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [ticket, onAssign, onScheduleFollowUp, handlePhoneAction]);
-  const handleGenerateProposal = useCallback(() => {
-    onGenerateProposal?.(ticket);
-  }, [onGenerateProposal, ticket]);
+  }, [ticket, onAssign, onScheduleFollowUp, handlePhoneAction, handleGenerateProposal]);
 
   const handleAssign = useCallback(() => {
     onAssign?.(ticket);
@@ -696,18 +703,20 @@ export const ConversationHeader = ({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                id={GENERATE_PROPOSAL_ANCHOR_ID}
                 type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onGenerateProposal?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                size="sm"
+                onClick={handleGenerateProposal}
+                className="gap-2 rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
                 aria-label="Gerar proposta"
                 aria-keyshortcuts="g"
+                accessKey="g"
               >
                 <FileText className="size-4" aria-hidden />
+                Gerar proposta
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Gerar proposta</TooltipContent>
+            <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -868,14 +877,6 @@ export const ConversationHeader = ({
             <p className="text-xs text-foreground-muted">{subtitle}</p>
 
             <section className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => onGenerateProposal?.(ticket)}
-                className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-              >
-                Gerar proposta
-              </Button>
               <Button
                 type="button"
                 size="sm"

@@ -8,7 +8,7 @@ import NotesSection from './NotesSection.jsx';
 import TasksSection from './TasksSection.jsx';
 import AuditTrailLink from './AuditTrailLink.jsx';
 import QuickComposer from '../ConversationArea/QuickComposer.jsx';
-import { CardBody } from '../ConversationArea/ConversationHeader.jsx';
+import { CardBody, GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 
@@ -82,7 +82,6 @@ export const DetailsPanel = ({
   onSendTemplate,
   onCreateNextStep,
   onRegisterCallResult,
-  onGenerateProposal,
   onReopenWindow,
   onOpenAudit,
 }) => {
@@ -130,7 +129,10 @@ export const DetailsPanel = ({
 
           <TabsContent value="opportunity" className="space-y-3">
             <LeadSummaryCard lead={ticket?.lead} />
-            <ProposalMiniSim lead={ticket?.lead} onGenerate={onGenerateProposal} />
+            <ProposalMiniSim
+              lead={ticket?.lead}
+              primaryCtaHref={`#${GENERATE_PROPOSAL_ANCHOR_ID}`}
+            />
             <TasksSection ticket={ticket} onReopenWindow={onReopenWindow} />
             <AuditTrailLink onOpenAudit={onOpenAudit} />
           </TabsContent>
