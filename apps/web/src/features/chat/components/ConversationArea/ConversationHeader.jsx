@@ -849,7 +849,14 @@ export const ConversationHeader = ({
 
   const detailsContent = (
     <>
-      <CollapsibleContent>
+      <CollapsibleContent
+        className={cn(
+          'data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down',
+          isExpanded
+            ? 'max-h-[calc(100vh-9rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]'
+            : ''
+        )}
+      >
         <ConversationCardBody>
           <ConversationCardBody.Left>
             <QuickComposer
