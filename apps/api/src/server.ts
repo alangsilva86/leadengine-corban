@@ -33,7 +33,6 @@ import { preferencesRouter } from './routes/preferences';
 import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
-import { whatsappRouter } from './routes/whatsapp';
 import { getWhatsAppUploadsBaseUrl, getWhatsAppUploadsDirectory } from './services/whatsapp-media-service';
 
 if (process.env.NODE_ENV !== 'production') {
@@ -388,7 +387,6 @@ app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api', authMiddleware, preferencesRouter);
-app.use('/api/whatsapp', authMiddleware, whatsappRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {

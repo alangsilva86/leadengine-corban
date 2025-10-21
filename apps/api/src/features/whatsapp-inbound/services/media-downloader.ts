@@ -179,14 +179,20 @@ const DEFAULT_MIME_BY_TYPE: Record<string, string> = {
   STICKER: 'image/webp',
 };
 
+const DEFAULT_MEDIA_KEY_INFO = MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
+const DEFAULT_MEDIA_TYPE = 'DOCUMENT';
+
 const resolveMediaTypeKey = (mediaType: string | null): string => {
   if (!mediaType) {
-    return MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
+    return DEFAULT_MEDIA_KEY_INFO;
   }
 
-  const normalized = mediaType.trim().toUpperCase();
-  const mapped = MEDIA_KEY_INFO_BY_TYPE[normalized];
-  return typeof mapped === 'string' ? mapped : MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
+  const normalized = mediaType.trim().toUpperCase() || DEFAULT_MEDIA_TYPE;
+  if (!normalized) {
+    return DEFAULT_MEDIA_KEY_INFO;
+  }
+
+  return MEDIA_KEY_INFO_BY_TYPE[normalized] ?? DEFAULT_MEDIA_KEY_INFO;
 };
 
 const resolveDefaultMime = (mediaType: string | null): string | null => {
@@ -195,8 +201,11 @@ const resolveDefaultMime = (mediaType: string | null): string | null => {
   }
 
   const normalized = mediaType.trim().toUpperCase();
-  const mapped = DEFAULT_MIME_BY_TYPE[normalized];
-  return typeof mapped === 'string' ? mapped : null;
+  if (!normalized) {
+    return null;
+  }
+
+  return DEFAULT_MIME_BY_TYPE[normalized] ?? null;
 };
 
 const buildWhatsAppMediaUrl = (directPath: string): string | null => {
