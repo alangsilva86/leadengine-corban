@@ -829,96 +829,98 @@ export const ConversationHeader = ({
       >
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
           <div className="mt-3 flex flex-col gap-4 border-t border-surface-overlay-glass-border pt-4">
-          <ConversationCardBody>
-            <ConversationCardBody.Left>
-              <QuickComposer
-                ticket={ticket}
-                onSendTemplate={onSendTemplate}
-                onCreateNextStep={onCreateNextStep}
-              />
-            </ConversationCardBody.Left>
-            <ConversationCardBody.Right>
-            <p className="text-xs text-foreground-muted">{subtitle}</p>
+            <ConversationCardBody>
+              <ConversationCardBody.Left>
+                <QuickComposer
+                  ticket={ticket}
+                  onSendTemplate={onSendTemplate}
+                  onCreateNextStep={onCreateNextStep}
+                />
+              </ConversationCardBody.Left>
+              <ConversationCardBody.Right>
+                <p className="text-xs text-foreground-muted">{subtitle}</p>
 
-            <section className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => onAssign?.(ticket)}
-                className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-              >
-                Atribuir
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => onScheduleFollowUp?.(ticket)}
-                className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
-              >
-                Agendar follow-up
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                <section className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
                     size="sm"
-                    aria-label="Registrar resultado"
-                    className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
-                    disabled={isRegisteringResult}
+                    variant="outline"
+                    onClick={() => onAssign?.(ticket)}
+                    className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
                   >
-                    <span className="mr-1">Registrar resultado</span>
-                    <ChevronDown className="size-4" aria-hidden />
+                    Atribuir
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                    {RESULT_ITEMS.map((item) => (
-                      <DropdownMenuRadioItem
-                        key={item.value}
-                        value={item.value}
-                        className="min-h-[40px]"
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onScheduleFollowUp?.(ticket)}
+                    className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
+                  >
+                    Agendar follow-up
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        aria-label="Registrar resultado"
+                        className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
                         disabled={isRegisteringResult}
                       >
-                        {item.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </section>
+                        <span className="mr-1">Registrar resultado</span>
+                        <ChevronDown className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                        {RESULT_ITEMS.map((item) => (
+                          <DropdownMenuRadioItem
+                            key={item.value}
+                            value={item.value}
+                            className="min-h-[40px]"
+                            disabled={isRegisteringResult}
+                          >
+                            {item.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </section>
 
-            <footer className="flex flex-wrap items-center gap-2 pt-1">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <MetadataBadge icon={Phone} aria-label="Telefone">
-                    {phoneDisplay}
+                <footer className="flex flex-wrap items-center gap-2 pt-1">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <MetadataBadge icon={Phone} aria-label="Telefone">
+                        {phoneDisplay}
+                      </MetadataBadge>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-52">
+                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                        Ligar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                        Enviar SMS
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                        Abrir WhatsApp
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+                        Copiar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <MetadataBadge
+                    icon={IdCard}
+                    aria-label="Copiar documento"
+                    onClick={handleCopyDocument}
+                  >
+                    Doc: {document}
                   </MetadataBadge>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52">
-                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-                    Ligar
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
-                    Enviar SMS
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-                    Abrir WhatsApp
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-                    Copiar
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <MetadataBadge
-                icon={IdCard}
-                aria-label="Copiar documento"
-                onClick={handleCopyDocument}
-              >
-                Doc: {document}
-              </MetadataBadge>
-            </footer>
+                </footer>
+              </ConversationCardBody.Right>
+            </ConversationCardBody>
           </div>
         </div>
       </CollapsibleContent>
