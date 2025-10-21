@@ -115,16 +115,9 @@ export const DetailsPanel = ({
             <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
           </TabsList>
 
-      <section className="space-y-3">
-        <header>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-muted">Informações do lead</h3>
-        </header>
-        <LeadSummaryCard lead={ticket?.lead} />
-        <LeadDetailsTabs ticket={ticket} />
-        <ConsentInfo consent={ticket?.contact?.consent} />
-      </section>
           <TabsContent value="contact" className="space-y-3">
             <ContactSummary contact={ticket?.contact} />
+            <LeadDetailsTabs ticket={ticket} />
             <ConsentInfo consent={ticket?.contact?.consent} />
           </TabsContent>
 
