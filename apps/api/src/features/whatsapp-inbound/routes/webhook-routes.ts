@@ -848,7 +848,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   }
 
   if (signatureRequired) {
-    const signature = readString(req.header('x-signature-sha256'));
+    const signature = readString(req.header('x-signature-sha256'), req.header('x-signature'));
     const secret = getWebhookSignatureSecret();
     if (!signature || !secret) {
       logger.warn('WhatsApp webhook missing signature while required', { requestId });
