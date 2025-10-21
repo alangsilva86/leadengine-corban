@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import {
+  enqueueInboundMediaJob,
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
   type PassthroughMessage,
@@ -338,10 +339,32 @@ export const handlePassthroughIngest = async (
     passthroughText = normalizedMessage.text ?? null;
   }
 
+  const resolvedBrokerId =
+    readString(metadataRecord.brokerId) ??
+    readString(metadataIntegration.brokerId) ??
+    null;
+
+  let pendingMediaJob:
+    | {
+        directPath: string | null;
+        mediaKey: string | null;
+        mediaType: string | null;
+        mimeType: string | null;
+        size: number | null;
+        fileName: string | null;
+        brokerId: string | null;
+      }
+    | null = null;
+
   if (passthroughType === 'media' && passthroughMedia) {
     const existingUrl = passthroughMedia.url ?? null;
     const hasPersistedUrl = isPersistedMediaUrl(existingUrl);
     let descriptor: Awaited<ReturnType<typeof saveWhatsAppMedia>> | null = null;
+    const resolvedDirectPath = passthroughMedia.directPath ?? directPath ?? null;
+    const resolvedMediaKey = passthroughMedia.mediaKey ?? mediaKey ?? null;
+    let lastDownloadResult: Awaited<ReturnType<typeof downloadViaBaileys>> | Awaited<
+      ReturnType<typeof downloadViaBroker>
+    > | null = null;
 
     try {
       if (!hasPersistedUrl) {
@@ -368,12 +391,8 @@ export const handlePassthroughIngest = async (
             descriptor = await saveWhatsAppMedia(saveInput);
           }
         } else {
-          let downloadResult = null as Awaited<ReturnType<typeof downloadViaBaileys>> | Awaited<
-            ReturnType<typeof downloadViaBroker>
-          > | null;
-
           try {
-            downloadResult = await downloadViaBaileys(normalizedMessage.raw);
+            lastDownloadResult = await downloadViaBaileys(normalizedMessage.raw);
           } catch (error) {
             logger.warn('passthrough: failed to download media via Baileys', {
               error: mapErrorForLog(error),
@@ -383,19 +402,14 @@ export const handlePassthroughIngest = async (
             });
           }
 
-          if (!downloadResult && (passthroughMedia.directPath || passthroughMedia.mediaKey)) {
-            const brokerId =
-              readString(metadataRecord.brokerId) ??
-              readString(metadataIntegration.brokerId) ??
-              null;
-
+          if (!lastDownloadResult && (resolvedDirectPath || resolvedMediaKey)) {
             try {
-              downloadResult = await downloadViaBroker({
-                brokerId,
+              lastDownloadResult = await downloadViaBroker({
+                brokerId: resolvedBrokerId,
                 instanceId: instanceIdentifier,
                 tenantId: effectiveTenantId,
-                mediaKey: passthroughMedia.mediaKey ?? null,
-                directPath: passthroughMedia.directPath ?? null,
+                mediaKey: resolvedMediaKey,
+                directPath: resolvedDirectPath,
                 messageId: externalIdForUpsert ?? null,
                 mediaType: normalizedType,
               });
@@ -408,7 +422,7 @@ export const handlePassthroughIngest = async (
                 mediaType: normalizedType,
               });
             }
-          } else if (!downloadResult) {
+          } else if (!lastDownloadResult) {
             logger.warn('passthrough: unable to download media due to missing directPath/mediaKey', {
               tenantId: effectiveTenantId,
               instanceId: instanceIdentifier,
@@ -417,9 +431,9 @@ export const handlePassthroughIngest = async (
             });
           }
 
-          if (downloadResult && downloadResult.buffer.length > 0) {
+          if (lastDownloadResult && lastDownloadResult.buffer.length > 0) {
             const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
-              buffer: downloadResult.buffer,
+              buffer: lastDownloadResult.buffer,
               tenantId: effectiveTenantId,
             };
 
@@ -430,7 +444,7 @@ export const handlePassthroughIngest = async (
 
             const mimeCandidate =
               passthroughMedia.mimeType ??
-              downloadResult.mimeType ??
+              lastDownloadResult.mimeType ??
               null;
             if (mimeCandidate) {
               saveInput.mimeType = mimeCandidate;
@@ -438,13 +452,16 @@ export const handlePassthroughIngest = async (
 
             descriptor = await saveWhatsAppMedia(saveInput);
 
-            if (!passthroughMedia.mimeType && downloadResult.mimeType) {
-              passthroughMedia.mimeType = downloadResult.mimeType;
+            if (!passthroughMedia.mimeType && lastDownloadResult.mimeType) {
+              passthroughMedia.mimeType = lastDownloadResult.mimeType;
             }
             if (!passthroughMedia.size) {
-              passthroughMedia.size = downloadResult.size ?? downloadResult.buffer.length;
+              passthroughMedia.size = lastDownloadResult.size ?? lastDownloadResult.buffer.length;
             }
-          } else if (downloadResult) {
+            if (!passthroughMedia.fileName && descriptor.fileName) {
+              passthroughMedia.fileName = descriptor.fileName;
+            }
+          } else if (lastDownloadResult) {
             logger.warn('passthrough: media download returned empty payload', {
               tenantId: effectiveTenantId,
               instanceId: instanceIdentifier,
@@ -491,12 +508,47 @@ export const handlePassthroughIngest = async (
         mediaUrl: descriptor.mediaUrl,
       });
     } else if (!hasPersistedUrl) {
-      logger.warn('passthrough: could not resolve media url for inbound message', {
-        tenantId: effectiveTenantId,
-        instanceId: instanceIdentifier,
-        messageId: externalIdForUpsert,
-        mediaType: normalizedType,
-      });
+      if (resolvedDirectPath || resolvedMediaKey) {
+        pendingMediaJob = {
+          directPath: resolvedDirectPath,
+          mediaKey: resolvedMediaKey,
+          mediaType: normalizedType,
+          mimeType: passthroughMedia.mimeType ?? lastDownloadResult?.mimeType ?? null,
+          size: passthroughMedia.size ?? lastDownloadResult?.size ?? null,
+          fileName: passthroughMedia.fileName ?? null,
+          brokerId: resolvedBrokerId,
+        };
+
+        passthroughMedia.url = null;
+
+        const metadataMedia = toRecord(metadataRecord.media);
+        if ('url' in metadataMedia) {
+          delete metadataMedia.url;
+        }
+        if (Object.keys(metadataMedia).length > 0) {
+          metadataRecord.media = metadataMedia;
+        } else {
+          delete metadataRecord.media;
+        }
+
+        metadataRecord.media_pending = true;
+
+        logger.warn('passthrough: scheduling async retry for inbound media download', {
+          tenantId: effectiveTenantId,
+          instanceId: instanceIdentifier,
+          messageId: externalIdForUpsert,
+          mediaType: normalizedType,
+          hasDirectPath: Boolean(resolvedDirectPath),
+          hasMediaKey: Boolean(resolvedMediaKey),
+        });
+      } else {
+        logger.warn('passthrough: could not resolve media url for inbound message', {
+          tenantId: effectiveTenantId,
+          instanceId: instanceIdentifier,
+          messageId: externalIdForUpsert,
+          mediaType: normalizedType,
+        });
+      }
     }
   }
 
@@ -556,6 +608,41 @@ export const handlePassthroughIngest = async (
       return Date.now();
     })(),
   });
+
+  if (pendingMediaJob) {
+    try {
+      await enqueueInboundMediaJob({
+        tenantId: effectiveTenantId,
+        messageId: passthroughMessage.id,
+        messageExternalId: externalIdForUpsert,
+        instanceId: instanceIdentifier ?? null,
+        brokerId: pendingMediaJob.brokerId ?? null,
+        mediaType: pendingMediaJob.mediaType ?? null,
+        mediaKey: pendingMediaJob.mediaKey,
+        directPath: pendingMediaJob.directPath,
+        metadata: {
+          mimeType: pendingMediaJob.mimeType,
+          size: pendingMediaJob.size,
+          fileName: pendingMediaJob.fileName,
+        },
+      });
+
+      logger.info('passthrough: inbound media retry job enqueued', {
+        tenantId: effectiveTenantId,
+        instanceId: instanceIdentifier,
+        messageId: passthroughMessage.id,
+        mediaType: pendingMediaJob.mediaType ?? null,
+      });
+    } catch (error) {
+      logger.error('passthrough: failed to enqueue inbound media retry job', {
+        tenantId: effectiveTenantId,
+        instanceId: instanceIdentifier,
+        messageId: passthroughMessage.id,
+        mediaType: pendingMediaJob.mediaType ?? null,
+        error: mapErrorForLog(error),
+      });
+    }
+  }
 
   const socket = getSocketServer();
   if (socket) {

@@ -6,6 +6,7 @@ const upsertMessageByExternalIdMock = vi.hoisted(() => vi.fn());
 const downloadViaBaileysMock = vi.hoisted(() => vi.fn());
 const downloadViaBrokerMock = vi.hoisted(() => vi.fn());
 const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
+const enqueueInboundMediaJobMock = vi.hoisted(() => vi.fn());
 const getWhatsAppUploadsBaseUrlMock = vi.hoisted(() => vi.fn(() => '/uploads/whatsapp'));
 const socketToMock = vi.hoisted(() => vi.fn(() => ({ emit: vi.fn() })));
 const getSocketServerMock = vi.hoisted(() => vi.fn(() => ({ to: socketToMock })));
@@ -13,6 +14,7 @@ const getSocketServerMock = vi.hoisted(() => vi.fn(() => ({ to: socketToMock }))
 vi.mock('@ticketz/storage', () => ({
   findOrCreateOpenTicketByChat: (...args: unknown[]) => findOrCreateOpenTicketByChatMock(...args),
   upsertMessageByExternalId: (...args: unknown[]) => upsertMessageByExternalIdMock(...args),
+  enqueueInboundMediaJob: (...args: unknown[]) => enqueueInboundMediaJobMock(...args),
 }));
 
 vi.mock('../../../../config/logger', () => ({
@@ -57,6 +59,8 @@ describe('handlePassthroughIngest - media handling', () => {
       message: { id: mockMessageId, ticketId: mockTicketId },
       wasCreated: true,
     });
+
+    enqueueInboundMediaJobMock.mockResolvedValue({ id: 'job-1' });
 
     downloadViaBaileysMock.mockResolvedValue(null);
     downloadViaBrokerMock.mockResolvedValue({
@@ -135,6 +139,8 @@ describe('handlePassthroughIngest - media handling', () => {
         }),
       })
     );
+
+    expect(enqueueInboundMediaJobMock).not.toHaveBeenCalled();
   });
 
   it('forces media persistence when message already includes external URL', async () => {
@@ -190,6 +196,8 @@ describe('handlePassthroughIngest - media handling', () => {
         }),
       })
     );
+
+    expect(enqueueInboundMediaJobMock).not.toHaveBeenCalled();
   });
 
   it('skips broker download when media already persisted with trusted base URL', async () => {
@@ -226,5 +234,64 @@ describe('handlePassthroughIngest - media handling', () => {
 
     expect(downloadViaBaileysMock).not.toHaveBeenCalled();
     expect(downloadViaBrokerMock).not.toHaveBeenCalled();
+    expect(enqueueInboundMediaJobMock).not.toHaveBeenCalled();
+  });
+
+  it('queues retry job when media download cannot be completed immediately', async () => {
+    downloadViaBaileysMock.mockResolvedValue(null);
+    downloadViaBrokerMock.mockResolvedValue(null);
+    saveWhatsAppMediaMock.mockReset();
+
+    const { handlePassthroughIngest } = await import('../passthrough');
+
+    const event: InboundWhatsAppEvent = {
+      id: 'event-4',
+      instanceId: 'instance-2',
+      direction: 'INBOUND',
+      chatId: '5511999999996@s.whatsapp.net',
+      externalId: 'wamid-999',
+      timestamp: new Date().toISOString(),
+      contact: {
+        phone: '+5511999999996',
+        name: 'Contato',
+      },
+      message: {
+        id: 'wamid-999',
+        type: 'IMAGE',
+        metadata: {
+          directPath: '/vision/media/path-fail',
+          mediaKey: 'media-key-fail',
+        },
+        imageMessage: {
+          mimetype: 'image/jpeg',
+        },
+      },
+      metadata: {
+        brokerId: 'session-2',
+        directPath: '/vision/media/path-fail',
+        mediaKey: 'media-key-fail',
+      },
+    };
+
+    await handlePassthroughIngest(event);
+
+    expect(saveWhatsAppMediaMock).not.toHaveBeenCalled();
+    expect(upsertMessageByExternalIdMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          media_pending: true,
+        }),
+      })
+    );
+    expect(enqueueInboundMediaJobMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'demo-tenant',
+        messageId: mockMessageId,
+        instanceId: 'instance-2',
+        brokerId: 'session-2',
+        mediaKey: 'media-key-fail',
+        directPath: '/vision/media/path-fail',
+      })
+    );
   });
 });
