@@ -2,7 +2,11 @@ import { Prisma } from '@prisma/client';
 
 import { getPrismaClient } from '../prisma-client';
 
-export type InboundMediaJobStatus = Prisma.InboundMediaJobStatus;
+type PrismaClientInstance = ReturnType<typeof getPrismaClient>;
+type PrismaInboundMediaJobPromise = ReturnType<PrismaClientInstance['inboundMediaJob']['findUniqueOrThrow']>;
+type PrismaInboundMediaJob = Awaited<PrismaInboundMediaJobPromise>;
+
+export type InboundMediaJobStatus = PrismaInboundMediaJob['status'];
 
 export interface InboundMediaJob {
   id: string;
@@ -31,7 +35,7 @@ const coerceMetadata = (value: Prisma.JsonValue | null | undefined): Record<stri
   return { ...(value as Record<string, unknown>) };
 };
 
-const mapInboundMediaJob = (record: Prisma.InboundMediaJob): InboundMediaJob => ({
+const mapInboundMediaJob = (record: PrismaInboundMediaJob): InboundMediaJob => ({
   id: record.id,
   tenantId: record.tenantId,
   messageId: record.messageId,
