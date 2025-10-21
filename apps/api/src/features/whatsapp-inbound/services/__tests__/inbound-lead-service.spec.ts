@@ -133,6 +133,7 @@ const emitToTicketMock = vi.hoisted(() => vi.fn());
 const leadLastContactGaugeSetMock = vi.hoisted(() => vi.fn());
 const downloadInboundMediaMock = vi.hoisted(() => vi.fn());
 const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
+const enqueueInboundMediaJobMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../config/logger', () => ({
   logger: {
@@ -171,6 +172,7 @@ vi.mock('@ticketz/storage', () => ({
   allocateBrokerLeads: allocateBrokerLeadsMock,
   listAllocations: listAllocationsMock,
   updateAllocation: updateAllocationMock,
+  enqueueInboundMediaJob: enqueueInboundMediaJobMock,
   $Enums: { MessageType: {} },
 }));
 
@@ -1370,6 +1372,8 @@ describe('processStandardInboundEvent', () => {
     if (caption) {
       expect(mediaMetadata).toMatchObject({ caption });
     }
+    expect(payload.metadata?.media_pending).toBeUndefined();
+    expect(enqueueInboundMediaJobMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1482,6 +1486,21 @@ describe('processStandardInboundEvent', () => {
       const [, , payload] = sendMessageMock.mock.calls[0];
       expect(payload.mediaUrl).toBeUndefined();
       expect(payload.metadata?.media).toBeUndefined();
+      expect(payload.metadata?.media_pending).toBe(true);
+
+      expect(enqueueInboundMediaJobMock).toHaveBeenCalledTimes(1);
+      expect(enqueueInboundMediaJobMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: instanceRecord.tenantId,
+          mediaType: 'IMAGE',
+          mediaKey: 'image-key',
+          directPath: '/direct/image',
+          metadata: expect.objectContaining({
+            fileName: 'image-original.jpg',
+            mimeType: 'image/jpeg',
+          }),
+        })
+      );
     }
   );
 });

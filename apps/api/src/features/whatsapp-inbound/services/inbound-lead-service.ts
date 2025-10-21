@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 import { Prisma } from '@prisma/client';
+import { enqueueInboundMediaJob } from '@ticketz/storage';
 
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
@@ -1574,6 +1575,16 @@ const processStandardInboundEvent = async (
   }
 
   let downloadedMediaSuccessfully = false;
+  let pendingMediaJobDetails:
+    | {
+        directPath: string | null;
+        mediaKey: string | null;
+        mediaType: NormalizedMessageType | null;
+        fileName: string | null;
+        mimeType: string | null;
+        size: number | null;
+      }
+    | null = null;
 
   const shouldAttemptMediaDownload =
     MEDIA_MESSAGE_TYPES.has(normalizedMessage.type) &&
@@ -1709,6 +1720,18 @@ const processStandardInboundEvent = async (
           mediaType: normalizedMessage.type,
         });
       }
+
+      if (!downloadedMediaSuccessfully && hasDownloadMetadata) {
+        pendingMediaJobDetails = {
+          directPath: mediaDetails.directPath,
+          mediaKey: mediaDetails.mediaKey,
+          mediaType: normalizedMessage.type,
+          fileName: mediaDetails.fileName,
+          mimeType: mediaDetails.mimeType,
+          size: mediaDetails.size,
+        };
+        metadataRecord['media_pending'] = true;
+      }
     }
   }
 
@@ -1749,6 +1772,42 @@ const processStandardInboundEvent = async (
         ? normalizedMessage.mediaUrl
         : null;
 
+    const messageMetadata: Record<string, unknown> = {
+      broker: {
+        messageId: messageExternalId ?? normalizedMessage.id,
+        clientMessageId: normalizedMessage.clientMessageId,
+        conversationId: normalizedMessage.conversationId,
+        instanceId,
+        campaignIds: campaigns.map((campaign) => campaign.id),
+      },
+      externalId: messageExternalId ?? undefined,
+      media: resolvedMediaUrl
+        ? {
+            url: resolvedMediaUrl,
+            mimetype: normalizedMessage.mimetype,
+            caption: normalizedMessage.caption,
+            size: normalizedMessage.fileSize,
+          }
+        : undefined,
+      location: normalizedMessage.latitude || normalizedMessage.longitude
+        ? {
+            latitude: normalizedMessage.latitude,
+            longitude: normalizedMessage.longitude,
+            name: normalizedMessage.locationName,
+          }
+        : undefined,
+      contacts: normalizedMessage.contacts ?? undefined,
+      raw: normalizedMessage.raw,
+      eventMetadata: event.metadata ?? {},
+      receivedAt: normalizedMessage.receivedAt,
+      brokerMessageTimestamp: normalizedMessage.brokerMessageTimestamp,
+      normalizedTimestamp,
+    };
+
+    if (pendingMediaJobDetails) {
+      messageMetadata.media_pending = true;
+    }
+
     persistedMessage = await sendMessageService(tenantId, undefined, {
       ticketId,
       content: normalizedMessage.text ?? '[Mensagem]',
@@ -1756,37 +1815,7 @@ const processStandardInboundEvent = async (
       direction,
       externalId: messageExternalId ?? undefined,
       mediaUrl: resolvedMediaUrl ?? undefined,
-      metadata: {
-        broker: {
-          messageId: messageExternalId ?? normalizedMessage.id,
-          clientMessageId: normalizedMessage.clientMessageId,
-          conversationId: normalizedMessage.conversationId,
-          instanceId,
-          campaignIds: campaigns.map((campaign) => campaign.id),
-        },
-        externalId: messageExternalId ?? undefined,
-        media: resolvedMediaUrl
-          ? {
-              url: resolvedMediaUrl,
-              mimetype: normalizedMessage.mimetype,
-              caption: normalizedMessage.caption,
-              size: normalizedMessage.fileSize,
-            }
-          : undefined,
-        location: normalizedMessage.latitude || normalizedMessage.longitude
-          ? {
-              latitude: normalizedMessage.latitude,
-              longitude: normalizedMessage.longitude,
-              name: normalizedMessage.locationName,
-            }
-          : undefined,
-        contacts: normalizedMessage.contacts ?? undefined,
-        raw: normalizedMessage.raw,
-        eventMetadata: event.metadata ?? {},
-        receivedAt: normalizedMessage.receivedAt,
-        brokerMessageTimestamp: normalizedMessage.brokerMessageTimestamp,
-        normalizedTimestamp,
-      },
+      metadata: messageMetadata,
     });
   } catch (error) {
     logger.error('🎯 LeadEngine • WhatsApp :: 💾 Falha ao salvar a mensagem inbound na timeline do ticket', {
@@ -1802,6 +1831,37 @@ const processStandardInboundEvent = async (
     await registerDedupeKey(dedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
 
     const providerMessageId = normalizedMessage.id ?? null;
+
+    if (pendingMediaJobDetails) {
+      try {
+        await enqueueInboundMediaJob({
+          tenantId,
+          messageId: persistedMessage.id,
+          messageExternalId: messageExternalId ?? providerMessageId,
+          instanceId,
+          brokerId: resolvedBrokerId ?? null,
+          mediaType: pendingMediaJobDetails.mediaType ?? null,
+          mediaKey: pendingMediaJobDetails.mediaKey,
+          directPath: pendingMediaJobDetails.directPath,
+          metadata: {
+            requestId: requestId ?? null,
+            eventId: event.id ?? null,
+            fileName: pendingMediaJobDetails.fileName,
+            mimeType: pendingMediaJobDetails.mimeType,
+            size: pendingMediaJobDetails.size,
+          },
+        });
+      } catch (error) {
+        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao enfileirar job de mídia inbound', {
+          error: mapErrorForLog(error),
+          tenantId,
+          ticketId,
+          instanceId,
+          messageId: persistedMessage.id,
+        });
+      }
+    }
+
     await emitRealtimeUpdatesForInbound({
       tenantId,
       ticketId,
