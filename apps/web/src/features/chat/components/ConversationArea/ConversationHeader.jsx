@@ -44,6 +44,9 @@ import {
   UserPlus,
 } from 'lucide-react';
 import emitInboxTelemetry from '../../utils/telemetry.js';
+import { usePhoneActions } from '../../hooks/usePhoneActions.js';
+
+export const GENERATE_PROPOSAL_ANCHOR_ID = 'conversation-generate-proposal';
 
 const LOSS_REASONS = [
   { value: 'sem_interesse', label: 'Sem interesse' },
@@ -261,6 +264,9 @@ export const ConversationHeader = ({
   const [isFadeIn, setIsFadeIn] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [resultSelection, setResultSelection] = useState('');
+  const [callDialogOpen, setCallDialogOpen] = useState(false);
+  const [callNotes, setCallNotes] = useState('');
+  const [callOutcome, setCallOutcome] = useState('connected');
   const [lossDialogOpen, setLossDialogOpen] = useState(false);
   const [lossReason, setLossReason] = useState('');
   const [lossNotes, setLossNotes] = useState('');
@@ -398,44 +404,29 @@ export const ConversationHeader = ({
     }
   }, [resetLossState]);
 
-  const handlePhoneAction = useCallback((action) => {
-    if (!rawPhone) {
-      toast.info('Nenhum telefone disponível para este lead.');
-      return;
-    }
-    const digits = String(rawPhone).replace(/\D/g, '');
-    const hasWindow = typeof window !== 'undefined';
-    const hasClipboard = typeof navigator !== 'undefined' && navigator.clipboard;
+  const phoneActions = usePhoneActions(rawPhone, {
+    missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
+    onCall: () => setCallDialogOpen(true),
+  });
 
-    switch (action) {
-      case 'call':
-        if (hasWindow) {
-          window.open(`tel:${digits}`, '_self');
-        } else {
-          toast.info(`Ligue para ${rawPhone}.`);
-        }
-        break;
-      case 'whatsapp':
-        if (hasWindow) {
-          window.open(`https://wa.me/${digits}`, '_blank', 'noopener');
-        } else {
-          toast.info(`Abra o WhatsApp e contate ${rawPhone}.`);
-        }
-        break;
-      case 'copy':
-        if (hasClipboard) {
-          navigator.clipboard
-            .writeText(rawPhone)
-            .then(() => toast.success('Telefone copiado.'))
-            .catch(() => toast.error('Não foi possível concluir. Tente novamente.'));
-        } else {
-          toast.info(`Copie manualmente: ${rawPhone}`);
-        }
-        break;
-      default:
-        break;
+  const handlePhoneAction = useCallback((action) => {
+    phoneActions(action);
+  }, [phoneActions]);
+
+  const handleCallDialogChange = useCallback((open) => {
+    setCallDialogOpen(open);
+    if (!open) {
+      setCallOutcome('connected');
+      setCallNotes('');
     }
-  }, [rawPhone]);
+  }, []);
+
+  const handleCallResultSubmit = useCallback(() => {
+    onRegisterCallResult?.({ outcome: callOutcome, notes: callNotes });
+    setCallNotes('');
+    setCallOutcome('connected');
+    setCallDialogOpen(false);
+  }, [callNotes, callOutcome, onRegisterCallResult]);
 
   const handleCopyDocument = useCallback(() => {
     if (!document || document === '—') {
@@ -453,6 +444,10 @@ export const ConversationHeader = ({
     }
   }, [document]);
 
+  const handleGenerateProposal = useCallback(() => {
+    onGenerateProposal?.(ticket);
+  }, [onGenerateProposal, ticket]);
+
   useEffect(() => {
     if (!ticket) {
       return undefined;
@@ -467,6 +462,10 @@ export const ConversationHeader = ({
       switch (key) {
         case 'e':
           setIsExpanded((previous) => !previous);
+          event.preventDefault();
+          break;
+        case 'g':
+          handleGenerateProposal();
           event.preventDefault();
           break;
         case 'n':
@@ -488,10 +487,7 @@ export const ConversationHeader = ({
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [ticket, onAssign, onScheduleFollowUp, handlePhoneAction]);
-  const handleGenerateProposal = useCallback(() => {
-    onGenerateProposal?.(ticket);
-  }, [onGenerateProposal, ticket]);
+  }, [ticket, onAssign, onScheduleFollowUp, handlePhoneAction, handleGenerateProposal]);
 
   const handleAssign = useCallback(() => {
     onAssign?.(ticket);
@@ -508,6 +504,119 @@ export const ConversationHeader = ({
       </div>
     );
   }
+
+  const contactContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Nome">{name}</InfoRow>
+        {company ? <InfoRow label="Empresa">{company}</InfoRow> : null}
+        <InfoRow label="Telefone">{phoneDisplay ?? '—'}</InfoRow>
+        <InfoRow label="E-mail">{email ?? '—'}</InfoRow>
+        <InfoRow label="Documento">{document ?? '—'}</InfoRow>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <MetadataBadge icon={Phone} aria-label="Telefone" aria-keyshortcuts="w" accessKey="w">
+              {phoneDisplay ?? 'Telefone indisponível'}
+            </MetadataBadge>
+          </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                  Ligar
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                  Enviar SMS
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                  Abrir WhatsApp
+                </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+              Copiar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {document ? (
+          <MetadataBadge icon={IdCard} aria-label="Copiar documento" onClick={handleCopyDocument}>
+            Doc: {document}
+          </MetadataBadge>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const opportunityContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Potencial">{potential}</InfoRow>
+        <InfoRow label="Probabilidade">{probability}</InfoRow>
+        <InfoRow label="Etapa">
+          {stage && stage !== '—' ? <Chip tone="neutral" className="px-2.5 py-1 text-xs">{stage}</Chip> : '—'}
+        </InfoRow>
+        <InfoRow label="ID completo">{leadIdentifier ? String(leadIdentifier) : '—'}</InfoRow>
+        <InfoRow label="Status">{statusInfo.label}</InfoRow>
+        <InfoRow label="Janela SLA">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help text-foreground">{expirationInfo.label}</span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start">
+              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
+            </TooltipContent>
+          </Tooltip>
+        </InfoRow>
+      </div>
+      {unreadInboundCount ? (
+        <p className="text-sm text-foreground-muted">
+          {unreadInboundCount} mensagem{unreadInboundCount > 1 ? 's' : ''} pendente{unreadInboundCount > 1 ? 's' : ''} do cliente.
+        </p>
+      ) : null}
+    </div>
+  );
+
+  const timelineContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Último cliente">{lastInboundLabel}</InfoRow>
+        <InfoRow label="Último agente">{lastOutboundLabel}</InfoRow>
+        <InfoRow label="Status atual">
+          <Chip tone={directionMeta.tone} className="px-2.5 py-1 text-xs">{directionMeta.label}</Chip>
+        </InfoRow>
+        <InfoRow label="Direção mais recente">{timeline.lastDirection ? timeline.lastDirection.toLowerCase() : '—'}</InfoRow>
+      </div>
+      <p className="text-xs text-foreground-muted">
+        Histórico detalhado disponível na linha do tempo da conversa.
+      </p>
+    </div>
+  );
+
+  const attachmentsContent = attachments.length > 0
+    ? (
+        <ul className="space-y-2 text-sm text-foreground">
+          {attachments.map((item, index) => {
+            const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
+            const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
+            return (
+              <li
+                key={key}
+                className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2"
+              >
+                <span className="truncate">{label}</span>
+                {item?.url ? (
+                  <Button variant="link" size="sm" asChild>
+                    <a href={item.url} target="_blank" rel="noreferrer">
+                      Abrir
+                    </a>
+                  </Button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )
+    : (
+        <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
+      );
 
   const summaryContent = (
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -555,18 +664,20 @@ export const ConversationHeader = ({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                id={GENERATE_PROPOSAL_ANCHOR_ID}
                 type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onGenerateProposal?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
+                size="sm"
+                onClick={handleGenerateProposal}
+                className="gap-2 rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
                 aria-label="Gerar proposta"
                 aria-keyshortcuts="g"
+                accessKey="g"
               >
                 <FileText className="size-4" aria-hidden />
+                Gerar proposta
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Gerar proposta</TooltipContent>
+            <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -654,11 +765,14 @@ export const ConversationHeader = ({
                   </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Opções de telefone</TooltipContent>
+              <TooltipContent side="bottom">Ações de telefone e registro de ligação</TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
                 Ligar
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                Enviar SMS
               </DropdownMenuItem>
               <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
                 Abrir WhatsApp
@@ -715,17 +829,18 @@ export const ConversationHeader = ({
       >
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
           <div className="mt-3 flex flex-col gap-4 border-t border-surface-overlay-glass-border pt-4">
+          <ConversationCardBody>
+            <ConversationCardBody.Left>
+              <QuickComposer
+                ticket={ticket}
+                onSendTemplate={onSendTemplate}
+                onCreateNextStep={onCreateNextStep}
+              />
+            </ConversationCardBody.Left>
+            <ConversationCardBody.Right>
             <p className="text-xs text-foreground-muted">{subtitle}</p>
 
             <section className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => onGenerateProposal?.(ticket)}
-                className="rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-              >
-                Gerar proposta
-              </Button>
               <Button
                 type="button"
                 size="sm"
@@ -784,6 +899,9 @@ export const ConversationHeader = ({
                 <DropdownMenuContent align="start" className="w-52">
                   <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
                     Ligar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                    Enviar SMS
                   </DropdownMenuItem>
                   <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
                     Abrir WhatsApp
@@ -852,6 +970,46 @@ export const ConversationHeader = ({
               className="min-h-[44px]"
             >
               Registrar perda
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={callDialogOpen} onOpenChange={handleCallDialogChange}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Registrar resultado da chamada</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="call-outcome" className="text-sm font-medium text-foreground">
+              Resultado
+            </Label>
+            <Select value={callOutcome} onValueChange={setCallOutcome}>
+              <SelectTrigger id="call-outcome" className="h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="connected">Conectou</SelectItem>
+                <SelectItem value="no_answer">Sem resposta</SelectItem>
+                <SelectItem value="voicemail">Caixa postal</SelectItem>
+              </SelectContent>
+            </Select>
+            <Label htmlFor="call-notes" className="text-sm font-medium text-foreground">
+              Observações
+            </Label>
+            <Textarea
+              id="call-notes"
+              value={callNotes}
+              onChange={(event) => setCallNotes(event.target.value)}
+              placeholder="Resumo do contato"
+              className="min-h-[100px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => handleCallDialogChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleCallResultSubmit}>
+              Registrar
             </Button>
           </DialogFooter>
         </DialogContent>
