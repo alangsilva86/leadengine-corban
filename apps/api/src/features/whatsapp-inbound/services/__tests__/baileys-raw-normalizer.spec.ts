@@ -39,6 +39,7 @@ describe('normalizeUpsertEvent', () => {
 
     const [normalized] = result.normalized;
     expect(normalized.messageType).toBe('text');
+    expect(normalized.messageUpsertType).toBeNull();
     expect(normalized.data.instanceId).toBe('instance-1');
 
     const from = normalized.data.from as Record<string, unknown>;
@@ -55,27 +56,66 @@ describe('normalizeUpsertEvent', () => {
     expect((metadata.contact as Record<string, unknown>).isGroup).toBe(false);
   });
 
-  it('normalizes messages from raw payload when primary array is empty', () => {
+  it('captures payload upsert type for notify events', () => {
+    const event = buildBaseEvent();
+    (event.payload as Record<string, unknown>).type = 'notify';
+    event.payload.messages.push({
+      key: {
+        id: 'wamid-notify',
+        remoteJid: '5511888777766@s.whatsapp.net',
+        fromMe: false,
+      },
+      pushName: 'Notify',
+      messageTimestamp: 1_700_000_002,
+      message: {
+        conversation: 'Evento notify',
+      },
+    });
+
+    const result = normalizeUpsertEvent(event);
+    expect(result.normalized).toHaveLength(1);
+
+    const [normalized] = result.normalized;
+    expect(normalized.messageUpsertType).toBe('notify');
+    expect(normalized.messageType).toBe('text');
+  });
+
+  it('captures raw envelope upsert type for append events', () => {
+    const event = buildBaseEvent();
+    event.payload.messages = [];
+
+    (event.payload as Record<string, unknown>).raw = {
+      type: 'append',
+      messages: [
+        {
+          key: {
+            id: 'wamid-append',
+            remoteJid: '5511991112222@s.whatsapp.net',
+            fromMe: false,
+          },
+          pushName: 'Append',
+          messageTimestamp: 1_700_000_003,
+          message: {
+            conversation: 'Evento append',
+          },
+        },
+      ],
+    } satisfies Record<string, unknown>;
+
+    const result = normalizeUpsertEvent(event);
+    expect(result.normalized).toHaveLength(1);
+
+    const [normalized] = result.normalized;
+    expect(normalized.messageUpsertType).toBe('append');
+    expect(normalized.messageType).toBe('text');
+  });
+
   it('normalizes messages present only in the raw envelope', () => {
     const event = buildBaseEvent();
     event.payload.messages = [];
     delete (event.payload as Record<string, unknown>).owner;
     delete (event.payload as Record<string, unknown>).source;
     delete (event.payload as Record<string, unknown>).timestamp;
-    (event.payload as Record<string, unknown>).raw = {
-      owner: 'raw-owner',
-      source: 'raw-source',
-      timestamp: 1_700_000_555,
-      messages: [
-        {
-          key: {
-            id: 'wamid-raw-1',
-            remoteJid: '5511999999999@s.whatsapp.net',
-            fromMe: false,
-          },
-          pushName: 'Fallback',
-          message: {
-            conversation: 'Mensagem vinda do raw',
 
     const fallbackTimestamp = 1_700_000_555;
 
@@ -102,9 +142,9 @@ describe('normalizeUpsertEvent', () => {
     expect(result.normalized).toHaveLength(1);
     const [normalized] = result.normalized;
     expect(normalized.messageType).toBe('text');
+    expect(normalized.messageUpsertType).toBeNull();
 
     const message = normalized.data.message as Record<string, unknown>;
-    expect(message.text).toBe('Mensagem vinda do raw');
     expect(message.text).toBe('Fallback mágico');
     expect(message.conversation).toBe('Fallback mágico');
     expect(message.messageTimestamp).toBe(fallbackTimestamp);

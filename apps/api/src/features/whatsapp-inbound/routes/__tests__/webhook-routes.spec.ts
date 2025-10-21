@@ -156,6 +156,9 @@ describe('WhatsApp webhook Baileys event logging', () => {
           sessionId: null,
           brokerId: null,
           tenantId: 'tenant-42',
+          messageType: 'text',
+          messageUpsertType: 'notify',
+          isGroup: false,
           data: {
             instanceId: 'instance-1',
             tenantId: 'tenant-42',
@@ -238,6 +241,11 @@ describe('WhatsApp webhook Baileys event logging', () => {
       chatId: '5511999999999@s.whatsapp.net',
     });
     expect(typeof metadata?.source).toBe('string');
+    const brokerMetadata = metadata?.broker as Record<string, unknown> | undefined;
+    expect(brokerMetadata).toMatchObject({
+      messageType: 'notify',
+      messageContentType: 'text',
+    });
 
     expect(typeof payload?.rawPayload).toBe('string');
     expect(payload?.rawPayload as string).toContain('WHATSAPP_MESSAGES_UPSERT');
@@ -342,6 +350,9 @@ describe('WhatsApp webhook instance resolution', () => {
           sessionId: null,
           brokerId: null,
           tenantId: 'tenant-uuid',
+          messageType: 'text',
+          messageUpsertType: 'notify',
+          isGroup: false,
           data: {
             instanceId: 'instance-1',
             tenantId: 'tenant-uuid',
@@ -403,6 +414,9 @@ describe('WhatsApp webhook instance resolution', () => {
           sessionId: null,
           brokerId: null,
           tenantId: 'tenant-uuid',
+          messageType: 'text',
+          messageUpsertType: 'notify',
+          isGroup: false,
           data: {
             instanceId: 'stored-instance',
             tenantId: 'tenant-uuid',
