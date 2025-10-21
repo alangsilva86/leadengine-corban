@@ -832,7 +832,7 @@ export const ConversationHeader = ({
               variant="ghost"
               size="icon"
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong lg:hidden"
+              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
               aria-keyshortcuts="e"
               accessKey="e"
             >
@@ -854,7 +854,7 @@ export const ConversationHeader = ({
           'data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden'
         )}
       >
-        <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable] lg:hidden">
+        <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
           <ConversationCardBody>
             <ConversationCardBody.Left>
               <QuickComposer
