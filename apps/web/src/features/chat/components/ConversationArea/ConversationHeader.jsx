@@ -44,6 +44,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import emitInboxTelemetry from '../../utils/telemetry.js';
+import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'conversation-generate-proposal';
