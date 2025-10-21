@@ -71,3 +71,15 @@ export {
   findContactsByIds,
 } from './repositories/contact-repository';
 
+export {
+  enqueueInboundMediaJob,
+  findPendingInboundMediaJobs,
+  markInboundMediaJobProcessing,
+  completeInboundMediaJob,
+  rescheduleInboundMediaJob,
+  failInboundMediaJob,
+  type InboundMediaJob,
+  type InboundMediaJobStatus,
+  type EnqueueInboundMediaJobInput,
+} from './repositories/inbound-media-job-repository';
+

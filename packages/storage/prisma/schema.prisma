@@ -418,14 +418,48 @@ model Message {
   ticket        Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
   sender        User?     @relation("MessageSender", fields: [userId], references: [id], onDelete: SetNull)
-  quotedMessage Message?  @relation("MessageQuote", fields: [quotedMessageId], references: [id])
-  quotes        Message[] @relation("MessageQuote")
+  quotedMessage      Message?          @relation("MessageQuote", fields: [quotedMessageId], references: [id])
+  quotes             Message[]         @relation("MessageQuote")
+  inboundMediaJobs   InboundMediaJob[]
 
   @@unique([tenantId, externalId], map: "messages_tenant_external_id_unique")
   @@unique([tenantId, idempotencyKey], map: "messages_tenant_idempotency_key_unique")
   @@index([instanceId, createdAt], map: "messages_instance_created_idx")
   @@index([ticketId, createdAt], map: "messages_ticket_created_idx")
   @@map("messages")
+}
+
+enum InboundMediaJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model InboundMediaJob {
+  id                String               @id @default(cuid())
+  tenantId          String
+  messageId         String
+  messageExternalId String?
+  instanceId        String?
+  brokerId          String?
+  mediaType         String?
+  mediaKey          String?
+  directPath        String?
+  status            InboundMediaJobStatus @default(PENDING)
+  attempts          Int                  @default(0)
+  nextRetryAt       DateTime?
+  lastError         String?
+  metadata          Json                 @default("{}")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRetryAt])
+  @@index([tenantId, status])
+  @@unique([messageId])
+  @@map("inbound_media_jobs")
 }
 
 model Lead {

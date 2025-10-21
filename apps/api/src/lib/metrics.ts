@@ -33,6 +33,21 @@ const INBOUND_MESSAGES_HELP =
   '# HELP inbound_messages_processed_total Contador de mensagens inbound processadas por tenant';
 const INBOUND_MESSAGES_TYPE = '# TYPE inbound_messages_processed_total counter';
 
+const INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC = 'inbound_media_retry_attempts_total';
+const INBOUND_MEDIA_RETRY_ATTEMPTS_HELP =
+  '# HELP inbound_media_retry_attempts_total Tentativas de reprocessamento de mídia inbound';
+const INBOUND_MEDIA_RETRY_ATTEMPTS_TYPE = '# TYPE inbound_media_retry_attempts_total counter';
+
+const INBOUND_MEDIA_RETRY_SUCCESS_METRIC = 'inbound_media_retry_success_total';
+const INBOUND_MEDIA_RETRY_SUCCESS_HELP =
+  '# HELP inbound_media_retry_success_total Reprocessamentos de mídia inbound bem-sucedidos';
+const INBOUND_MEDIA_RETRY_SUCCESS_TYPE = '# TYPE inbound_media_retry_success_total counter';
+
+const INBOUND_MEDIA_RETRY_DLQ_METRIC = 'inbound_media_retry_dlq_total';
+const INBOUND_MEDIA_RETRY_DLQ_HELP =
+  '# HELP inbound_media_retry_dlq_total Jobs de mídia inbound enviados para DLQ após esgotar tentativas';
+const INBOUND_MEDIA_RETRY_DLQ_TYPE = '# TYPE inbound_media_retry_dlq_total counter';
+
 const LEAD_LAST_CONTACT_METRIC = 'lead_last_contact_timestamp';
 const LEAD_LAST_CONTACT_HELP =
   '# HELP lead_last_contact_timestamp Timestamp (epoch ms) do último contato inbound por lead';
@@ -71,6 +86,9 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
   [OUTBOUND_DELIVERY_SUCCESS_METRIC]: BASE_LABEL_CONSTRAINTS,
   [SOCKET_RECONNECT_METRIC]: BASE_LABEL_CONSTRAINTS,
   [INBOUND_MESSAGES_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [INBOUND_MEDIA_RETRY_SUCCESS_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [INBOUND_MEDIA_RETRY_DLQ_METRIC]: BASE_LABEL_CONSTRAINTS,
 };
 
 const labelValueTracker = new Map<string, Map<string, Set<string>>>();
@@ -83,6 +101,9 @@ const socketReconnectCounterStore = new Map<string, number>();
 const httpRequestCounterStore = new Map<string, number>();
 const wsEmitCounterStore = new Map<string, number>();
 const inboundMessagesCounterStore = new Map<string, number>();
+const inboundMediaRetryAttemptsStore = new Map<string, number>();
+const inboundMediaRetrySuccessStore = new Map<string, number>();
+const inboundMediaRetryDlqStore = new Map<string, number>();
 const leadLastContactGaugeStore = new Map<string, number>();
 
 const toLabelString = (value: unknown): string | null => {
@@ -260,6 +281,29 @@ export const inboundMessagesProcessedCounter = {
   },
 };
 
+const buildCounter = (metric: string, store: Map<string, number>) => ({
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(metric, labels);
+    const current = store.get(key) ?? 0;
+    store.set(key, current + value);
+  },
+});
+
+export const inboundMediaRetryAttemptsCounter = buildCounter(
+  INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC,
+  inboundMediaRetryAttemptsStore
+);
+
+export const inboundMediaRetrySuccessCounter = buildCounter(
+  INBOUND_MEDIA_RETRY_SUCCESS_METRIC,
+  inboundMediaRetrySuccessStore
+);
+
+export const inboundMediaRetryDlqCounter = buildCounter(
+  INBOUND_MEDIA_RETRY_DLQ_METRIC,
+  inboundMediaRetryDlqStore
+);
+
 export const leadLastContactGauge = {
   set(labels: CounterLabels = {}, timestampMs: number): void {
     if (!Number.isFinite(timestampMs)) {
@@ -356,6 +400,36 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(INBOUND_MEDIA_RETRY_ATTEMPTS_HELP, INBOUND_MEDIA_RETRY_ATTEMPTS_TYPE);
+  if (inboundMediaRetryAttemptsStore.size === 0) {
+    lines.push(`${INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of inboundMediaRetryAttemptsStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(INBOUND_MEDIA_RETRY_SUCCESS_HELP, INBOUND_MEDIA_RETRY_SUCCESS_TYPE);
+  if (inboundMediaRetrySuccessStore.size === 0) {
+    lines.push(`${INBOUND_MEDIA_RETRY_SUCCESS_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of inboundMediaRetrySuccessStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${INBOUND_MEDIA_RETRY_SUCCESS_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(INBOUND_MEDIA_RETRY_DLQ_HELP, INBOUND_MEDIA_RETRY_DLQ_TYPE);
+  if (inboundMediaRetryDlqStore.size === 0) {
+    lines.push(`${INBOUND_MEDIA_RETRY_DLQ_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of inboundMediaRetryDlqStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${INBOUND_MEDIA_RETRY_DLQ_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(LEAD_LAST_CONTACT_HELP, LEAD_LAST_CONTACT_TYPE);
   if (leadLastContactGaugeStore.size === 0) {
     lines.push(`${LEAD_LAST_CONTACT_METRIC} 0`);
@@ -378,6 +452,9 @@ export const resetMetrics = (): void => {
   httpRequestCounterStore.clear();
   wsEmitCounterStore.clear();
   inboundMessagesCounterStore.clear();
+  inboundMediaRetryAttemptsStore.clear();
+  inboundMediaRetrySuccessStore.clear();
+  inboundMediaRetryDlqStore.clear();
   leadLastContactGaugeStore.clear();
   labelValueTracker.clear();
 };

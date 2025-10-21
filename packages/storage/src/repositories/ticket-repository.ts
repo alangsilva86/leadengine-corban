@@ -1150,6 +1150,10 @@ export const updateMessage = async (
     deliveredAt?: Date | null;
     readAt?: Date | null;
     instanceId?: string | null;
+    mediaUrl?: string | null;
+    mediaFileName?: string | null;
+    mediaType?: string | null;
+    mediaSize?: number | null;
   }
 ): Promise<Message | null> => {
   const prisma = getPrismaClient();
@@ -1183,6 +1187,22 @@ export const updateMessage = async (
 
   if (updates.instanceId !== undefined) {
     data.instanceId = updates.instanceId ?? null;
+  }
+
+  if (updates.mediaUrl !== undefined) {
+    data.mediaUrl = updates.mediaUrl ?? null;
+  }
+
+  if (updates.mediaFileName !== undefined) {
+    data.mediaFileName = updates.mediaFileName ?? null;
+  }
+
+  if (updates.mediaType !== undefined) {
+    data.mediaType = updates.mediaType ?? null;
+  }
+
+  if (updates.mediaSize !== undefined) {
+    data.mediaSize = updates.mediaSize ?? null;
   }
 
   const updated = await prisma.message.update({
