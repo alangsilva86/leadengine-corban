@@ -619,12 +619,30 @@ export const emitMessageUpdatedEvents = async (
     ticket ?? (await storageFindTicketById(tenantId, ticketId).catch(() => Promise.resolve(null)));
 
   if (resolvedTicket) {
+    const providerMessageId = resolveProviderMessageId(message.metadata);
+    const messageEnvelope = buildMessageRealtimeEnvelope({
+      tenantId,
+      ticket: resolvedTicket,
+      message,
+      instanceId: message.instanceId ?? null,
+      providerMessageId,
+    });
+
+    emitTicketEvent(
+      tenantId,
+      ticketId,
+      'messages.updated',
+      messageEnvelope,
+      userId,
+      resolveTicketAgreementId(resolvedTicket)
+    );
+
     const ticketEnvelope = buildTicketRealtimeEnvelope({
       tenantId,
       ticket: resolvedTicket,
       message,
       instanceId: message.instanceId ?? null,
-      providerMessageId: resolveProviderMessageId(message.metadata),
+      providerMessageId,
     });
 
     emitTicketRealtimeEnvelope(tenantId, resolvedTicket, ticketEnvelope, userId ?? null);

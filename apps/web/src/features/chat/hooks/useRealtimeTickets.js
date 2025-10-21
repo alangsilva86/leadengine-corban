@@ -26,6 +26,7 @@ export const useRealtimeTickets = ({
   onTicketEvent,
   onTicketUpdated,
   onMessageCreated,
+  onMessageUpdated,
   onMessageStatusChanged,
   onTyping,
   onQueueMissing,
@@ -153,6 +154,20 @@ export const useRealtimeTickets = ({
         };
 
         registerHandler(socket, 'messages.new', handleMessageCreated);
+        const handleMessageUpdated = (payload) => {
+          console.info('🎯 LeadEngine • Chat :: 🔄 Mensagem atualizada', {
+            tenantId,
+            ticketId: ticketRoomRef.current,
+            messageId: payload?.message?.id ?? payload?.id ?? null,
+          });
+          handleTicketEvent(payload);
+          if (typeof onMessageUpdated === 'function') {
+            onMessageUpdated(payload);
+          }
+        };
+
+        registerHandler(socket, 'messages.updated', handleMessageUpdated);
+        registerHandler(socket, 'message:updated', handleMessageUpdated);
         registerHandler(socket, 'message.status.changed', (payload) => {
           console.info('🎯 LeadEngine • Chat :: 📬 Status de mensagem atualizado', {
             tenantId,

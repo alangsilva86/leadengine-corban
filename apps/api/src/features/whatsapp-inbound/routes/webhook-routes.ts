@@ -36,6 +36,7 @@ import {
 } from '../schemas/broker-contracts';
 import { PollChoiceEventSchema } from '../schemas/poll-choice';
 import { recordPollChoiceVote } from '../services/poll-choice-service';
+import { syncPollChoiceState } from '../services/poll-choice-sync-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -921,6 +922,17 @@ const processPollChoiceEvent = async (
         result: 'accepted',
         reason: 'poll_choice',
       });
+
+      try {
+        await syncPollChoiceState(pollPayload.pollId, { state: result.state });
+      } catch (error) {
+        logger.error('Failed to sync poll choice state with message metadata', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          error,
+        });
+      }
+
       return { persisted: 1, ignored: 0, failures: 0 };
     }
 

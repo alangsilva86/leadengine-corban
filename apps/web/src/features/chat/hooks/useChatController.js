@@ -168,6 +168,77 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     });
   }, []);
 
+  const handleMessageUpdated = useCallback(
+    (payload) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+
+      const message = payload.message ?? payload;
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+
+      const ticketId = payload.ticketId ?? message.ticketId;
+      if (!ticketId) {
+        return;
+      }
+
+      const queryKey = ['chat', 'messages', ticketId, DEFAULT_MESSAGES_PAGE_SIZE];
+      queryClient.setQueryData(queryKey, (current) => {
+        if (!current || !Array.isArray(current.pages)) {
+          return current;
+        }
+
+        let hasChanges = false;
+
+        const nextPages = current.pages.map((page) => {
+          if (!page || !Array.isArray(page.items)) {
+            return page;
+          }
+
+          let pageChanged = false;
+          const items = page.items.map((item) => {
+            if (!item) {
+              return item;
+            }
+
+            const matches =
+              item.id === message.id ||
+              (item.externalId && message.externalId && item.externalId === message.externalId);
+
+            if (!matches) {
+              return item;
+            }
+
+            pageChanged = true;
+            hasChanges = true;
+
+            return {
+              ...item,
+              ...message,
+              metadata: message.metadata ?? item.metadata ?? null,
+            };
+          });
+
+          return pageChanged ? { ...page, items } : page;
+        });
+
+        if (!hasChanges) {
+          return current;
+        }
+
+        return {
+          ...current,
+          pages: nextPages,
+        };
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+    },
+    [queryClient]
+  );
+
   const realtime = useRealtimeTickets({
     tenantId,
     userId: currentUser?.id,
@@ -175,6 +246,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     enabled: Boolean(tenantId),
     onTicketUpdated: handleTicketInvalidation,
     onMessageCreated: handleMessageCreated,
+    onMessageUpdated: handleMessageUpdated,
     onQueueMissing: handleQueueMissing,
   });
 
