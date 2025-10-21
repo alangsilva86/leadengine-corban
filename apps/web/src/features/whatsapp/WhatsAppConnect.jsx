@@ -48,7 +48,7 @@ import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import QrPreview from './components/QrPreview.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
-import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.js';
+import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.jsx';
 import CampaignHistoryDialog from './components/CampaignHistoryDialog.jsx';
 
 const STATUS_TONES = {

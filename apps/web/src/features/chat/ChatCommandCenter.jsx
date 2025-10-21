@@ -12,7 +12,7 @@ import { resolveWhatsAppErrorCopy } from '../whatsapp/utils/whatsapp-error-codes
 import ManualConversationDialog from './components/ManualConversationDialog.jsx';
 import { useManualConversationLauncher } from './hooks/useManualConversationLauncher.js';
 import emitInboxTelemetry from './utils/telemetry.js';
-import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.js';
+import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 

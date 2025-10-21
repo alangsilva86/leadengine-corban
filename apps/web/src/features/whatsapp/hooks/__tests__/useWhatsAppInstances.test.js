@@ -3,7 +3,7 @@
 import { act, renderHook, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import useWhatsAppInstances from '../useWhatsAppInstances.js';
+import useWhatsAppInstances from '../useWhatsAppInstances.jsx';
 
 vi.mock('../useInstanceLiveUpdates.js', () => ({
   default: vi.fn(() => ({ connected: false })),
