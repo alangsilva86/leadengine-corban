@@ -423,6 +423,7 @@ function useWhatsAppInstancesController({
   onError,
   logger,
   campaignInstanceId = null,
+  autoGenerateQr = true,
   autoRefresh = true,
   pauseWhenHidden = true,
   initialFetch = autoRefresh,

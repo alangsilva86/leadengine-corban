@@ -39,17 +39,21 @@ const BASE_URL = '/api/integrations/whatsapp/instances';
 describe('useWhatsAppInstances', () => {
   const disableAutoSync = (result) => {
     act(() => {
-      result.current.setSessionActive(false);
-      result.current.setAuthDeferred(true);
+      result.current?.setSessionActive?.(false);
+      result.current?.setAuthDeferred?.(true);
     });
   };
 
   const loadAndFreeze = async (result, options) => {
     let response;
+    const controller = result.current;
+    if (!controller) {
+      throw new Error('Controller not ready');
+    }
     await act(async () => {
-      response = await result.current.loadInstances(options);
-      result.current.setSessionActive(false);
-      result.current.setAuthDeferred(true);
+      response = await controller.loadInstances(options);
+      controller.setSessionActive(false);
+      controller.setAuthDeferred(true);
     });
     return response;
   };
@@ -68,7 +72,7 @@ describe('useWhatsAppInstances', () => {
     apiGet.mockResolvedValueOnce({});
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false, autoGenerateQr: false })
     );
 
     disableAutoSync(result);
@@ -85,7 +89,7 @@ describe('useWhatsAppInstances', () => {
     apiGet.mockResolvedValueOnce({});
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false, autoGenerateQr: false })
     );
 
     disableAutoSync(result);
@@ -112,7 +116,7 @@ describe('useWhatsAppInstances', () => {
     apiGet.mockResolvedValueOnce({});
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false, autoGenerateQr: false })
     );
 
     disableAutoSync(result);
@@ -144,6 +148,7 @@ describe('useWhatsAppInstances', () => {
         logger: { log: vi.fn() },
         autoRefresh: false,
         initialFetch: false,
+        autoGenerateQr: false,
       })
     );
 
@@ -163,7 +168,12 @@ describe('useWhatsAppInstances', () => {
     });
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ onError, autoRefresh: false, initialFetch: false })
+      useWhatsAppInstances({
+        onError,
+        autoRefresh: false,
+        initialFetch: false,
+        autoGenerateQr: false,
+      })
     );
 
     disableAutoSync(result);
@@ -178,10 +188,9 @@ describe('useWhatsAppInstances', () => {
     apiGet.mockResolvedValueOnce({
       instances: [{ id: 'inst-1', status: 'disconnected', connected: false }],
     });
-    apiGet.mockResolvedValueOnce({});
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false, autoGenerateQr: false })
     );
 
     disableAutoSync(result);
@@ -202,5 +211,48 @@ describe('useWhatsAppInstances', () => {
     });
 
     expect(connectResponse?.status).toBe('connected');
+  });
+
+  it('auto generates QR codes for disconnected instances by default', async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    apiGet.mockResolvedValueOnce({
+      instances: [{ id: 'inst-1', status: 'disconnected', connected: false }],
+    });
+    apiGet.mockResolvedValueOnce({
+      qr: { qrCode: 'qr-data', expiresAt },
+      status: 'disconnected',
+      connected: false,
+      instance: { id: 'inst-1', status: 'disconnected', connected: false },
+    });
+
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+    );
+
+    disableAutoSync(result);
+
+    await loadAndFreeze(result);
+
+    expect(apiGet.mock.calls.map(([url]) => url)).toContain(`${BASE_URL}/inst-1/status`);
+    await waitFor(() => {
+      expect(result.current.qrData?.qrCode).toBe('qr-data');
+    });
+  });
+
+  it('respects the autoGenerateQr flag when disabled', async () => {
+    apiGet.mockResolvedValueOnce({
+      instances: [{ id: 'inst-1', status: 'disconnected', connected: false }],
+    });
+
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false, autoGenerateQr: false })
+    );
+
+    disableAutoSync(result);
+
+    await loadAndFreeze(result);
+
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    expect(result.current.qrData).toBeNull();
   });
 });
