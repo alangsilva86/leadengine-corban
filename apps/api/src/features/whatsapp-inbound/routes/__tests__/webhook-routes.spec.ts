@@ -370,6 +370,54 @@ describe('WhatsApp webhook Baileys event logging', () => {
     });
   });
 
+  it('fills missing payload instanceId for broker contract events using the envelope', async () => {
+    normalizeUpsertEventMock.mockClear();
+    const app = buildApp();
+
+    const eventPayload = {
+      id: 'broker-event-2',
+      type: 'MESSAGE_INBOUND',
+      tenantId: 'tenant-42',
+      instanceId: 'instance-2',
+      timestamp: '2024-01-02T00:00:00.000Z',
+      payload: {
+        timestamp: '2024-01-02T00:00:00.000Z',
+        direction: 'INBOUND',
+        contact: { phone: '+55 11 98888-8888', name: 'João' },
+        message: { id: 'wamid-2', type: 'text', text: 'Oi!' },
+        metadata: {
+          contact: { remoteJid: '5511988888888@s.whatsapp.net' },
+          broker: { brokerId: 'broker-2' },
+        },
+      },
+    } satisfies Record<string, unknown>;
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
+
+    expect(response.status).toBe(204);
+    await inboundQueueTesting.waitForIdle();
+
+    expect(normalizeUpsertEventMock).not.toHaveBeenCalled();
+    expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
+    expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
+
+    const createArgs = processedIntegrationEventCreateMock.mock.calls[0]?.[0];
+    const debugPayload = (createArgs?.data as { payload?: unknown })?.payload as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(debugPayload).toMatchObject({
+      tenantId: 'tenant-42',
+      instanceId: 'instance-2',
+      messageId: 'wamid-2',
+      direction: 'INBOUND',
+      normalizedIndex: 0,
+    });
+
+    const metrics = renderMetrics();
+    expect(metrics).not.toMatch(/invalid_contract/);
+  });
+
   it('processes broker contract inbound message events when only the event field is provided', async () => {
     normalizeUpsertEventMock.mockClear();
     const app = buildApp();

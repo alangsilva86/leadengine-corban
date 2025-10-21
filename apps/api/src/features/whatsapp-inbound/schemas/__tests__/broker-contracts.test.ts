@@ -57,6 +57,25 @@ describe('broker-contracts', () => {
     expect(parsed.type).toBe('MESSAGE_INBOUND');
   });
 
+  it('fills payload instanceId from the envelope when missing', () => {
+    const parsed = BrokerInboundEventSchema.parse({
+      id: 'event-1b',
+      type: 'MESSAGE_INBOUND',
+      instanceId: 'instance-456',
+      timestamp: '2024-04-30T12:00:00.000Z',
+      payload: {
+        timestamp: '2024-04-30T12:00:00.000Z',
+        direction: 'inbound',
+        contact: {},
+        message: { conversation: 'Ping' },
+        metadata: {},
+      },
+    });
+
+    expect(parsed.payload.instanceId).toBe('instance-456');
+    expect(parsed.instanceId).toBe('instance-456');
+  });
+
   it('accepts inbound broker queue events using the event field when type is missing', () => {
     const parsed = BrokerInboundEventSchema.parse({
       id: 'event-2',

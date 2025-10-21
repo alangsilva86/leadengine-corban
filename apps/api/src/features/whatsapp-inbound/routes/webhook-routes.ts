@@ -236,6 +236,21 @@ const normalizeContractEvent = (
       ? ({ ...eventRecord, type: fallbackEvent } as Record<string, unknown>)
       : eventRecord;
 
+  const payloadRecord = asRecord((recordWithType as { payload?: unknown }).payload);
+  const envelopeInstanceId =
+    readString(options.instanceOverride, (eventRecord as { instanceId?: unknown }).instanceId) ?? null;
+
+  if (payloadRecord) {
+    if (!readString((payloadRecord as { instanceId?: unknown }).instanceId) && envelopeInstanceId) {
+      payloadRecord.instanceId = envelopeInstanceId;
+    }
+    (recordWithType as Record<string, unknown>).payload = payloadRecord;
+  } else if (envelopeInstanceId) {
+    (recordWithType as Record<string, unknown>).payload = {
+      instanceId: envelopeInstanceId,
+    };
+  }
+
   const parsed = BrokerInboundEventSchema.safeParse(recordWithType);
   if (!parsed.success) {
     logger.warn('Received invalid broker WhatsApp contract event', {

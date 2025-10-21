@@ -95,7 +95,7 @@ export type BrokerInboundMetadata = z.infer<typeof BrokerInboundMetadataSchema>;
 
 export const BrokerInboundEventPayloadSchema = z
   .object({
-    instanceId: trimmedString,
+    instanceId: trimmedString.optional(),
     timestamp: timestampInput,
     direction: directionInput,
     contact: BrokerInboundContactSchema.default({}) as unknown as z.ZodType<BrokerInboundContact>,
@@ -110,9 +110,10 @@ export const BrokerInboundEventPayloadSchema = z
         : payload.direction === 'inbound'
         ? 'INBOUND'
         : 'INBOUND';
+    const instanceId = payload.instanceId ?? '';
 
     return {
-      instanceId: payload.instanceId,
+      instanceId,
       timestamp: normalizedTimestamp,
       direction: normalizedDirection,
       contact: payload.contact,
@@ -165,6 +166,7 @@ export const BrokerInboundEventSchema = z
         ...event.payload,
         direction,
         timestamp,
+        instanceId: event.payload.instanceId || event.instanceId,
       },
     };
   });
