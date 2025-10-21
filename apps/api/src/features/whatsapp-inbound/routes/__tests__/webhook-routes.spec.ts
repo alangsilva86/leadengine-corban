@@ -651,6 +651,7 @@ describe('WhatsApp webhook poll choice events', () => {
         votes: {
           '5511999999999@s.whatsapp.net': {
             optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
             messageId: 'wamid-poll-1',
             timestamp: now,
           },
@@ -667,6 +668,7 @@ describe('WhatsApp webhook poll choice events', () => {
         },
         updatedAt: now,
       },
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
     });
 
     const app = buildApp();
@@ -678,6 +680,7 @@ describe('WhatsApp webhook poll choice events', () => {
         voterJid: '5511999999999@s.whatsapp.net',
         messageId: 'wamid-poll-1',
         selectedOptionIds: ['opt-1'],
+        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
         options: [
           { id: 'opt-1', title: 'Option 1', selected: true },
           { id: 'opt-2', title: 'Option 2', selected: false },
@@ -713,6 +716,7 @@ describe('WhatsApp webhook poll choice events', () => {
         votes: {
           'user@s.whatsapp.net': {
             optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option' }],
             messageId: 'wamid-dup',
             timestamp: now,
           },
@@ -729,6 +733,7 @@ describe('WhatsApp webhook poll choice events', () => {
         },
         updatedAt: now,
       },
+      selectedOptions: [{ id: 'opt-1', title: 'Option' }],
     });
 
     const app = express();

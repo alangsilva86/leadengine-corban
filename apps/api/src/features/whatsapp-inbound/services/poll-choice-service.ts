@@ -6,6 +6,7 @@ import {
   PollChoiceStateSchema,
   type PollChoiceAggregatesPayload,
   type PollChoiceEventPayload,
+  type PollChoiceSelectedOptionPayload,
   type PollChoiceState,
   type PollChoiceVoteEntry,
 } from '../schemas/poll-choice';
@@ -133,6 +134,66 @@ const selectionsMatch = (left: string[] | undefined, right: string[] | undefined
 
 const buildStateId = (pollId: string): string => `poll-state:${pollId}`;
 
+const normalizeSelectedOptionTitle = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const deriveSelectedOptions = (
+  selectedOptionIds: string[],
+  mergedOptions: PollChoiceState['options'],
+  incomingOptions: PollChoiceEventPayload['options'],
+  payloadSelectedOptions?: PollChoiceEventPayload['selectedOptions']
+): PollChoiceSelectedOptionPayload[] => {
+  const ids = toArrayUnique(selectedOptionIds);
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const payloadMap = new Map<string, PollChoiceSelectedOptionPayload>();
+  if (Array.isArray(payloadSelectedOptions)) {
+    for (const entry of payloadSelectedOptions) {
+      const trimmedId = entry.id.trim();
+      if (!trimmedId) {
+        continue;
+      }
+
+      payloadMap.set(trimmedId, {
+        ...entry,
+        id: trimmedId,
+        title: normalizeSelectedOptionTitle(entry.title),
+      });
+    }
+  }
+
+  const incomingMap = new Map(incomingOptions.map((option) => [option.id, option] as const));
+  const mergedMap = new Map(mergedOptions.map((option) => [option.id, option] as const));
+
+  return ids.map((id) => {
+    const payloadOption = payloadMap.get(id);
+    if (payloadOption) {
+      return payloadOption;
+    }
+
+    const incomingOption = incomingMap.get(id);
+    if (incomingOption) {
+      return { id, title: normalizeOptionTitle(incomingOption) };
+    }
+
+    const mergedOption = mergedMap.get(id);
+    if (mergedOption) {
+      const title = normalizeSelectedOptionTitle(mergedOption.title ?? null);
+      return { id, title };
+    }
+
+    return { id, title: null };
+  });
+};
+
 const ensureState = (payload: unknown, pollId: string): PollChoiceState => {
   const parsed = PollChoiceStateSchema.safeParse(payload);
   if (parsed.success) {
@@ -152,6 +213,7 @@ const ensureState = (payload: unknown, pollId: string): PollChoiceState => {
 export interface RecordPollChoiceVoteResult {
   updated: boolean;
   state: PollChoiceState;
+  selectedOptions: PollChoiceSelectedOptionPayload[];
 }
 
 export const recordPollChoiceVote = async (
@@ -174,6 +236,13 @@ export const recordPollChoiceVote = async (
   });
 
   const existingState = ensureState(existingRecord?.payload, pollId);
+  const options = mergeOptions(existingState.options, parsed.options);
+  const selectedOptions = deriveSelectedOptions(
+    selectedOptionIds,
+    options,
+    parsed.options,
+    parsed.selectedOptions
+  );
   const previousVote = existingState.votes[voterJid];
 
   const sameSelection = selectionsMatch(previousVote?.optionIds, selectedOptionIds);
@@ -181,20 +250,27 @@ export const recordPollChoiceVote = async (
   const sameTimestamp = previousVote?.timestamp === (parsed.timestamp ?? null);
 
   if (existingRecord && sameSelection && sameMessage && sameTimestamp) {
-    return { updated: false, state: existingState };
+    const previousSelected = Array.isArray(previousVote?.selectedOptions)
+      ? (previousVote?.selectedOptions as PollChoiceSelectedOptionPayload[])
+      : [];
+    return {
+      updated: false,
+      state: existingState,
+      selectedOptions: previousSelected.length > 0 ? previousSelected : selectedOptions,
+    };
   }
 
   const updatedVotes: Record<string, PollChoiceVoteEntry> = {
     ...existingState.votes,
     [voterJid]: {
       optionIds: selectedOptionIds,
+      selectedOptions,
       messageId: parsed.messageId ?? null,
       timestamp: parsed.timestamp ?? null,
     },
   };
 
   const aggregates = computeAggregates(updatedVotes);
-  const options = mergeOptions(existingState.options, parsed.options);
   const updatedState: PollChoiceState = {
     pollId,
     options,
@@ -228,7 +304,7 @@ export const recordPollChoiceVote = async (
     throw error;
   }
 
-  return { updated: true, state: updatedState };
+  return { updated: true, state: updatedState, selectedOptions };
 };
 
 export const __testing = {
