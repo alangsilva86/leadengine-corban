@@ -31,6 +31,59 @@ describe('WhatsAppBrokerClient', () => {
     refreshWhatsAppEnv();
   });
 
+  describe('resolveWhatsAppBrokerConfig', () => {
+    it('normalizes the broker base URL removing trailing slash', async () => {
+      process.env.WHATSAPP_BROKER_URL = 'https://broker.test/api/';
+      refreshWhatsAppEnv();
+
+      const { resolveWhatsAppBrokerConfig } = await import('../whatsapp-broker-client');
+
+      const config = resolveWhatsAppBrokerConfig();
+      expect(config.baseUrl).toBe('https://broker.test/api');
+    });
+
+    it('aggregates missing configuration keys in the thrown error', async () => {
+      delete process.env.WHATSAPP_BROKER_URL;
+      delete process.env.WHATSAPP_BROKER_API_KEY;
+      delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+      refreshWhatsAppEnv();
+
+      const {
+        resolveWhatsAppBrokerConfig,
+        WhatsAppBrokerNotConfiguredError,
+      } = await import('../whatsapp-broker-client');
+
+      try {
+        resolveWhatsAppBrokerConfig();
+        throw new Error('expected error');
+      } catch (error) {
+        expect(error).toBeInstanceOf(WhatsAppBrokerNotConfiguredError);
+        expect((error as WhatsAppBrokerNotConfiguredError).message).toBe(
+          'WhatsApp broker configuration is missing required variables: WHATSAPP_BROKER_URL, WHATSAPP_BROKER_API_KEY, WHATSAPP_WEBHOOK_VERIFY_TOKEN.'
+        );
+        expect((error as WhatsAppBrokerNotConfiguredError).missing).toEqual([
+          'WHATSAPP_BROKER_URL',
+          'WHATSAPP_BROKER_API_KEY',
+          'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+        ]);
+      }
+    });
+
+    it('wraps invalid URLs in WhatsAppBrokerNotConfiguredError', async () => {
+      process.env.WHATSAPP_BROKER_URL = 'ftp://broker.test';
+      refreshWhatsAppEnv();
+
+      const {
+        resolveWhatsAppBrokerConfig,
+        WhatsAppBrokerNotConfiguredError,
+      } = await import('../whatsapp-broker-client');
+
+      expect(() => resolveWhatsAppBrokerConfig()).toThrowError(
+        WhatsAppBrokerNotConfiguredError
+      );
+    });
+  });
+
   it('creates instances using the official payload', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
