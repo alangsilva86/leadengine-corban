@@ -15,6 +15,7 @@ export const ConversationArea = ({
   onSendMessage,
   onCreateNote,
   onRegisterResult,
+  onRegisterCallResult,
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
@@ -157,6 +158,7 @@ export const ConversationArea = ({
           <ConversationHeader
             ticket={ticket}
             onRegisterResult={onRegisterResult}
+            onRegisterCallResult={onRegisterCallResult}
             onAssign={onAssign}
             onGenerateProposal={onGenerateProposal}
             onScheduleFollowUp={onScheduleFollowUp}
