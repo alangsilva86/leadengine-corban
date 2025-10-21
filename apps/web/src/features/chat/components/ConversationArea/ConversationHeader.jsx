@@ -253,6 +253,7 @@ const ACTION_BUTTON_STYLES =
 export const ConversationHeader = ({
   ticket,
   onRegisterResult,
+  onRegisterCallResult,
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
