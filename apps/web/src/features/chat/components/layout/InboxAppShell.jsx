@@ -187,6 +187,7 @@ const InboxAppShell = ({
   }, [shouldRenderSplitLayout]);
 
   const canPersistPreferences = Boolean(currentUser?.id);
+  const isContextAvailable = Boolean(context);
 
   const handleToggleListVisibility = useCallback(() => {
     if (isDesktop) {
@@ -203,6 +204,10 @@ const InboxAppShell = ({
   }, [isDesktop, isTablet]);
 
   const handleToggleContext = useCallback(() => {
+    if (!isContextAvailable) {
+      return;
+    }
+
     setContextOpen((previous) => {
       const next = !previous;
       if (next && isDesktop) {
@@ -210,7 +215,13 @@ const InboxAppShell = ({
       }
       return next;
     });
-  }, [isDesktop]);
+  }, [isContextAvailable, isDesktop]);
+
+  useEffect(() => {
+    if (!isContextAvailable && contextOpen) {
+      setContextOpen(false);
+    }
+  }, [isContextAvailable, contextOpen]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -227,9 +238,9 @@ const InboxAppShell = ({
   }, [handleToggleListVisibility]);
 
   const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
-  const effectiveContextOpen = isDesktop && contextOpen;
+  const contextDrawerOpen = Boolean(context) && contextOpen;
   const renderDetailSurface = () => {
-    const detailGap = effectiveContextOpen ? 'lg:gap-6' : 'lg:gap-0';
+    const detailGap = contextDrawerOpen ? 'lg:gap-6' : 'lg:gap-0';
 
     return (
       <div className={cn('flex h-full min-h-0 w-full flex-col items-stretch lg:flex-row', detailGap)}>
@@ -240,7 +251,11 @@ const InboxAppShell = ({
             </div>
           </section>
         </div>
-        <ContextDrawer open={effectiveContextOpen} onOpenChange={setContextOpen} desktopContentClassName="px-4 py-5">
+        <ContextDrawer
+          open={contextDrawerOpen}
+          onOpenChange={setContextOpen}
+          desktopContentClassName="px-4 py-5"
+        >
           {context}
         </ContextDrawer>
       </div>
@@ -277,7 +292,7 @@ const InboxAppShell = ({
             </Button>
             <div className="min-w-0">
               <h1 className="truncate text-sm font-semibold text-foreground sm:text-base">{title}</h1>
-              {!effectiveContextOpen ? (
+              {!contextDrawerOpen ? (
                 <p className="mt-0.5 hidden text-xs text-[color:var(--text-shell-muted)] sm:block">
                   Foco total nas conversas com clientes.
                 </p>
@@ -290,13 +305,13 @@ const InboxAppShell = ({
                 {toolbar}
               </div>
             ) : null}
-            <DesktopToolbar
-              onToggleListVisibility={handleToggleListVisibility}
-              onToggleContext={handleToggleContext}
-              contextOpen={effectiveContextOpen}
-              desktopListVisible={desktopListVisible}
-              headerListButtonLabel={headerListButtonLabel}
-            />
+              <DesktopToolbar
+                onToggleListVisibility={handleToggleListVisibility}
+                onToggleContext={handleToggleContext}
+                contextOpen={contextDrawerOpen}
+                desktopListVisible={desktopListVisible}
+                headerListButtonLabel={headerListButtonLabel}
+              />
           </div>
         </header>
       </div>

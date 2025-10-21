@@ -5,9 +5,6 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
 import {
@@ -27,12 +24,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion.jsx';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -41,20 +32,17 @@ import {
 } from '@/components/ui/select.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
 import {
   CalendarClock,
   ChevronDown,
   ClipboardList,
-  Clock3,
   FileText,
   IdCard,
   Phone,
   UserPlus,
 } from 'lucide-react';
-import QuickComposer from './QuickComposer.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 
@@ -259,12 +247,6 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 };
 
 export { ConversationCardBody as CardBody };
-const InfoRow = ({ label, children }) => (
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
-    <span className="text-sm text-foreground">{children ?? '—'}</span>
-  </div>
-);
 const ACTION_BUTTON_STYLES =
   'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
 
@@ -274,9 +256,6 @@ export const ConversationHeader = ({
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
-  onSendTemplate,
-  onCreateNextStep,
-  onRegisterCallResult,
   typingAgents = [],
   isRegisteringResult = false,
   renderSummary,
@@ -365,16 +344,6 @@ export const ConversationHeader = ({
     }
     return parts.join(' • ');
   }, [stage, lastInteractionLabel, unreadInboundCount]);
-
-  const attachments = useMemo(() => {
-    if (Array.isArray(ticket?.metadata?.attachments)) {
-      return ticket.metadata.attachments;
-    }
-    if (Array.isArray(ticket?.attachments)) {
-      return ticket.attachments;
-    }
-    return [];
-  }, [ticket?.metadata?.attachments, ticket?.attachments]);
 
   const resetLossState = useCallback(() => {
     setLossReason('');
@@ -859,6 +828,7 @@ export const ConversationHeader = ({
         )}
       >
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
+          <div className="mt-3 flex flex-col gap-4 border-t border-surface-overlay-glass-border pt-4">
           <ConversationCardBody>
             <ConversationCardBody.Left>
               <QuickComposer
@@ -949,51 +919,7 @@ export const ConversationHeader = ({
                 Doc: {document}
               </MetadataBadge>
             </footer>
-
-            <div className="mt-6 space-y-4">
-              <div className="hidden md:flex flex-col gap-4">
-                <Tabs defaultValue="contato" className="flex flex-col gap-4">
-                  <TabsList className="w-full flex-wrap justify-start gap-2">
-                    <TabsTrigger value="contato">Contato</TabsTrigger>
-                    <TabsTrigger value="oportunidade">Oportunidade</TabsTrigger>
-                    <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                    <TabsTrigger value="anexos">Anexos</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="contato">{contactContent}</TabsContent>
-                  <TabsContent value="oportunidade">{opportunityContent}</TabsContent>
-                  <TabsContent value="timeline">{timelineContent}</TabsContent>
-                  <TabsContent value="anexos">{attachmentsContent}</TabsContent>
-                </Tabs>
-              </div>
-
-              <div className="md:hidden">
-                <Accordion
-                  type="single"
-                  collapsible
-                  defaultValue="contato"
-                  className="divide-y divide-surface-overlay-glass-border rounded-2xl border border-surface-overlay-glass-border"
-                >
-                  <AccordionItem value="contato">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Contato</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{contactContent}</AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="oportunidade">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Oportunidade</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{opportunityContent}</AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="timeline">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Timeline</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{timelineContent}</AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="anexos">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Anexos</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{attachmentsContent}</AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </div>
-            </div>
-            </ConversationCardBody.Right>
-          </ConversationCardBody>
+          </div>
         </div>
       </CollapsibleContent>
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
