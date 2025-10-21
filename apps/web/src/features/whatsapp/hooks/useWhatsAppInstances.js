@@ -423,6 +423,8 @@ export default function useWhatsAppInstances({
   onError,
   logger,
   campaignInstanceId = null,
+  autoSync = true,
+  autoGenerateQr = true,
 } = {}) {
   const { log, warn, error: logError } = { ...defaultLogger, ...logger };
 
@@ -857,14 +859,17 @@ export default function useWhatsAppInstances({
           preferredInstanceId: resolvedPreferredInstanceId ?? null,
         });
         const shouldForceBrokerSync =
-          typeof forceRefresh === 'boolean' ? forceRefresh : true;
+          typeof forceRefresh === 'boolean' ? forceRefresh : !hasFetchedOnceRef.current;
 
         log('🛰️ Solicitando lista de instâncias', {
           agreementId,
           forceRefresh: shouldForceBrokerSync,
           hasFetchedOnce: hasFetchedOnceRef.current,
         });
-        const instancesUrl = '/api/integrations/whatsapp/instances?refresh=1';
+        const baseInstancesUrl = '/api/integrations/whatsapp/instances';
+        const instancesUrl = shouldForceBrokerSync
+          ? `${baseInstancesUrl}?refresh=1`
+          : baseInstancesUrl;
         const response = await apiGet(instancesUrl);
         const parsedResponse = parseInstancesPayload(response);
         setSessionActive(true);
@@ -874,7 +879,7 @@ export default function useWhatsAppInstances({
         let connectResult = providedConnect || null;
 
         if (list.length === 0 && !shouldForceBrokerSync) {
-          const refreshed = await apiGet(instancesUrl).catch(() => null);
+          const refreshed = await apiGet(`${baseInstancesUrl}?refresh=1`).catch(() => null);
           if (refreshed) {
             const parsedRefreshed = parseInstancesPayload(refreshed);
             const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
@@ -995,9 +1000,9 @@ export default function useWhatsAppInstances({
         const shouldShowQrFromConnect =
           connectResult && connectResult.connected === false && Boolean(connectQr?.qrCode);
 
-        if (shouldShowQrFromConnect) {
+        if (autoGenerateQr && shouldShowQrFromConnect) {
           setQrData(connectQr);
-        } else if (current && statusFromInstance !== 'connected') {
+        } else if (autoGenerateQr && current && statusFromInstance !== 'connected') {
           await generateQr(current.id, { skipStatus: Boolean(connectResult) });
         } else {
           setQrData(null);
@@ -1039,6 +1044,7 @@ export default function useWhatsAppInstances({
     },
     [
       applyErrorMessageFromError,
+      autoGenerateQr,
       campaignInstanceId,
       connectInstance,
       generateQr,
@@ -1520,12 +1526,16 @@ export default function useWhatsAppInstances({
   }, [selectedAgreement?.id]);
 
   useEffect(() => {
+    if (!autoSync) {
+      setInstancesReady(true);
+      return;
+    }
     if (!canSynchronize) {
       setInstancesReady(true);
       return;
     }
     void loadInstances({ forceRefresh: true });
-  }, [canSynchronize, loadInstances, selectedAgreement?.id]);
+  }, [autoSync, canSynchronize, loadInstances, selectedAgreement?.id]);
 
   useEffect(() => {
     if (!canSynchronize) {

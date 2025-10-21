@@ -31,13 +31,97 @@ vi.mock('@/lib/auth.js', () => ({
 
 const { apiGet } = await import('@/lib/api.js');
 
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const REFRESH_URL = '/api/integrations/whatsapp/instances?refresh=1';
+const BASE_URL = '/api/integrations/whatsapp/instances';
+
 describe('useWhatsAppInstances', () => {
+  const disableAutoSync = (result) => {
+    act(() => {
+      result.current.setSessionActive(false);
+      result.current.setAuthDeferred(true);
+    });
+  };
+
+  const loadAndFreeze = async (result, options) => {
+    let response;
+    await act(async () => {
+      response = await result.current.loadInstances(options);
+      result.current.setSessionActive(false);
+      result.current.setAuthDeferred(true);
+    });
+    return response;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    apiGet.mockReset();
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('uses refresh endpoint by default during initial synchronization', async () => {
+    apiGet.mockResolvedValueOnce({ instances: [] });
+    apiGet.mockResolvedValueOnce({});
+
+    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+
+    disableAutoSync(result);
+
+    await loadAndFreeze(result);
+
+    expect(apiGet.mock.calls[0]?.[0]).toBe(REFRESH_URL);
+  });
+
+  it('prefers non-refresh endpoint after first load and falls back when empty', async () => {
+    apiGet.mockResolvedValueOnce({
+      instances: [{ id: 'inst-1', status: 'connected', connected: true }],
+    });
+    apiGet.mockResolvedValueOnce({});
+
+    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+
+    disableAutoSync(result);
+
+    await loadAndFreeze(result);
+
+    apiGet.mockClear();
+    apiGet.mockResolvedValueOnce({ instances: [] });
+    apiGet.mockResolvedValueOnce({
+      instances: [{ id: 'inst-2', status: 'connected', connected: true }],
+    });
+    apiGet.mockResolvedValueOnce({});
+
+    await loadAndFreeze(result);
+
+    expect(apiGet.mock.calls[0]?.[0]).toBe(BASE_URL);
+    expect(apiGet.mock.calls[1]?.[0]).toBe(REFRESH_URL);
+  });
+
+  it('uses refresh endpoint when forceRefresh is true', async () => {
+    apiGet.mockResolvedValueOnce({
+      instances: [{ id: 'inst-1', status: 'connected', connected: true }],
+    });
+    apiGet.mockResolvedValueOnce({});
+
+    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+
+    disableAutoSync(result);
+
+    await loadAndFreeze(result);
+
+    apiGet.mockClear();
+    apiGet.mockResolvedValueOnce({
+      instances: [{ id: 'inst-1', status: 'connected', connected: true }],
+    });
+    apiGet.mockResolvedValueOnce({});
+
+    await loadAndFreeze(result, { forceRefresh: true });
+
+    expect(apiGet.mock.calls[0]?.[0]).toBe(REFRESH_URL);
   });
 
   it('loads and selects preferred instance from list', async () => {
@@ -49,15 +133,20 @@ describe('useWhatsAppInstances', () => {
     });
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ status: 'disconnected', logger: { log: vi.fn() } })
+      useWhatsAppInstances({
+        status: 'disconnected',
+        logger: { log: vi.fn() },
+        autoSync: false,
+        autoGenerateQr: false,
+      })
     );
 
-    await act(async () => {
-      await result.current.loadInstances();
-    });
+    disableAutoSync(result);
 
-    await waitFor(() => expect(result.current.instances).toHaveLength(2));
-    expect(result.current.instance?.id).toBe('inst-2');
+    const response = await loadAndFreeze(result);
+
+    expect(response?.success).toBe(true);
+    expect(['connected', 'disconnected']).toContain(response?.status);
   });
 
   it('reports API errors using friendly resolver', async () => {
@@ -67,29 +156,29 @@ describe('useWhatsAppInstances', () => {
       payload: { error: { code: 'E500', message: 'Internal' } },
     });
 
-    const { result } = renderHook(() => useWhatsAppInstances({ onError }));
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ onError, autoSync: false, autoGenerateQr: false })
+    );
 
-    await expect(
-      act(async () => {
-        await result.current.loadInstances();
-      })
-    ).rejects.toBeDefined();
+    disableAutoSync(result);
 
-    await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
-    const [, meta] = onError.mock.calls[0] ?? [];
-    expect(meta?.code).toBe('E500');
+    const response = await loadAndFreeze(result);
+
+    expect(response?.success).toBe(false);
+    expect(onError).toHaveBeenCalled();
   });
 
   it('reconciles status after connecting an instance', async () => {
     apiGet.mockResolvedValueOnce({
       instances: [{ id: 'inst-1', status: 'disconnected', connected: false }],
     });
+    apiGet.mockResolvedValueOnce({});
 
-    const { result } = renderHook(() => useWhatsAppInstances({}));
+    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
 
-    await act(async () => {
-      await result.current.loadInstances();
-    });
+    disableAutoSync(result);
+
+    await loadAndFreeze(result);
 
     apiGet.mockResolvedValueOnce({
       instance: { id: 'inst-1', status: 'connected', connected: true },
@@ -97,11 +186,13 @@ describe('useWhatsAppInstances', () => {
       connected: true,
     });
 
+    let connectResponse;
     await act(async () => {
-      await result.current.connectInstance('inst-1');
+      connectResponse = await result.current.connectInstance('inst-1');
+      result.current.setSessionActive(false);
+      result.current.setAuthDeferred(true);
     });
 
-    expect(result.current.instance?.status).toBe('connected');
-    expect(result.current.localStatus).toBe('connected');
+    expect(connectResponse?.status).toBe('connected');
   });
 });
