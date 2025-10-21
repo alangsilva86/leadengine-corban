@@ -21,6 +21,7 @@ export interface NormalizedRawUpsertMessage {
   brokerId?: string | null;
   messageId: string;
   messageType: string;
+  messageUpsertType: string | null;
   isGroup: boolean;
 }
 
@@ -492,6 +493,7 @@ const normalizeMessagePayload = (
     sessionId?: string;
     brokerId?: string | null;
     fallbackTimestamp: number | null;
+    messageUpsertType: string | null;
   }
 ): { normalized: NormalizedRawUpsertMessage; contentType: string } | { ignore: IgnoredRawUpsertMessage } => {
   const key = asRecord(message.key);
@@ -714,6 +716,7 @@ const normalizeMessagePayload = (
       ...(context.brokerId !== undefined ? { brokerId: context.brokerId } : {}),
       messageId,
       messageType,
+      messageUpsertType: context.messageUpsertType,
       isGroup,
     },
     contentType: messageType,
@@ -733,6 +736,7 @@ export const normalizeUpsertEvent = (
   const rawEnvelope = asRecord(payload.raw);
   const rawPayload = asRecord(rawEnvelope?.payload) ?? rawEnvelope;
   const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
+  const upsertType = readString(payload.type, rawEnvelope?.type) ?? null;
 
   const eventType = readString(eventRecord.event);
   if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
@@ -848,6 +852,7 @@ export const normalizeUpsertEvent = (
       ...(sessionId ? { sessionId } : {}),
       brokerId: brokerId ?? null,
       fallbackTimestamp,
+      messageUpsertType: upsertType,
     });
 
     if ('ignore' in normalizedMessage) {

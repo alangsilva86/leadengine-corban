@@ -251,6 +251,12 @@ const normalizeContractEvent = (
   }
 
   const metadataContactRecord = asRecord(sanitizedMetadata.contact);
+  const metadataBrokerInput = asRecord(metadataInput.broker);
+  const messageUpsertType =
+    readString(
+      (metadataBrokerInput as { messageType?: unknown })?.messageType,
+      (asRecord(sanitizedMetadata.broker) as { messageType?: unknown } | null)?.messageType
+    ) ?? null;
   const resolvedInstanceId =
     readString(
       options.instanceOverride,
@@ -302,6 +308,7 @@ const normalizeContractEvent = (
     ...(brokerCandidate !== undefined ? { brokerId: brokerCandidate } : {}),
     messageId,
     messageType,
+    messageUpsertType,
     isGroup,
   };
 
@@ -384,6 +391,21 @@ const processNormalizedMessage = async (
       metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
         ? { ...(metadataBase.broker as Record<string, unknown>) }
         : ({} as Record<string, unknown>);
+
+    const existingBrokerMessageType = brokerMetadata.messageType;
+    const messageUpsertType = normalized.messageUpsertType;
+    if (messageUpsertType !== null) {
+      brokerMetadata.messageType = messageUpsertType;
+    } else if (brokerMetadata.messageType === undefined) {
+      brokerMetadata.messageType = null;
+    }
+
+    if (normalized.messageType) {
+      brokerMetadata.messageContentType =
+        brokerMetadata.messageContentType ??
+        (typeof existingBrokerMessageType === 'string' ? existingBrokerMessageType : undefined) ??
+        normalized.messageType;
+    }
 
     brokerMetadata.instanceId = brokerMetadata.instanceId ?? instanceId ?? null;
     brokerMetadata.sessionId = brokerMetadata.sessionId ?? normalized.sessionId ?? null;
