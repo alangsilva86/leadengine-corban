@@ -18,7 +18,7 @@ export INSTANCE_ID="alan"
 
 > ℹ️ With `MVP_AUTH_BYPASS=true` (enabled in demos), the API injects the bypass user automatically and you **do not** need the `Authorization` header. Keep the header enabled in production environments.
 
-> 🔐 O webhook sempre valida `x-api-key` e, quando configurado, `x-signature-sha256`. Certifique-se de exportar as credenciais corretas antes de testar.
+> 🔐 O webhook sempre valida `x-api-key` e, quando configurado, `x-signature-sha256` (ou o alias legado `x-signature`). Certifique-se de exportar as credenciais corretas antes de testar.
 
 ## Inbound webhook check
 

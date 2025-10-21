@@ -105,35 +105,37 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     );
   });
 
-  it('rejects requests with mismatching signature', async () => {
-    const app = buildApp();
-    const response = await request(app)
-      .post('/api/webhooks/whatsapp')
-      .set('x-signature-sha256', 'deadbeef')
-      .send({ event: 'pong' });
+  describe.each(['x-signature-sha256', 'x-signature'] as const)('using %s header', (headerName) => {
+    it('rejects requests with mismatching signature', async () => {
+      const app = buildApp();
+      const response = await request(app)
+        .post('/api/webhooks/whatsapp')
+        .set(headerName, 'deadbeef')
+        .send({ event: 'pong' });
 
-    expect(response.status).toBe(401);
-    expect(response.body.code).toBe('INVALID_SIGNATURE');
-    const metrics = renderMetrics();
-    expect(metrics).toMatch(
-      /whatsapp_webhook_events_total\{[^}]*reason="invalid_signature"[^}]*result="rejected"[^}]*\} 1/
-    );
-  });
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('INVALID_SIGNATURE');
+      const metrics = renderMetrics();
+      expect(metrics).toMatch(
+        /whatsapp_webhook_events_total\{[^}]*reason="invalid_signature"[^}]*result="rejected"[^}]*\} 1/
+      );
+    });
 
-  it('accepts requests with valid signature', async () => {
-    const app = buildApp();
-    const payload = { event: 'ok' };
-    const raw = JSON.stringify(payload);
-    const crypto = await import('node:crypto');
-    const signature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
+    it('accepts requests with valid signature', async () => {
+      const app = buildApp();
+      const payload = { event: 'ok' };
+      const raw = JSON.stringify(payload);
+      const crypto = await import('node:crypto');
+      const signature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
 
-    const response = await request(app)
-      .post('/api/webhooks/whatsapp')
-      .set('x-signature-sha256', signature)
-      .send(payload);
+      const response = await request(app)
+        .post('/api/webhooks/whatsapp')
+        .set(headerName, signature)
+        .send(payload);
 
-    expect(response.status).toBe(204);
-    expect(response.body).toEqual({});
+      expect(response.status).toBe(204);
+      expect(response.body).toEqual({});
+    });
   });
 });
 
