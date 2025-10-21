@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../../../middleware/error-handler';
 import { logger } from '../../../config/logger';
@@ -284,14 +285,12 @@ const normalizeContractEvent = (
 
   const normalized: NormalizedRawUpsertMessage = {
     data: {
-      event: 'message',
       direction,
       instanceId: resolvedInstanceId,
       timestamp: event.payload.timestamp,
       message: messageRecord,
       metadata: sanitizedMetadata,
       from: contactRecord as BrokerInboundContact,
-      contact: contactRecord as BrokerInboundContact,
     },
     messageIndex: 0,
     tenantId: options.tenantOverride ?? event.tenantId ?? undefined,
@@ -357,8 +356,8 @@ const processNormalizedMessage = async (
         ? { ...(data.metadata as Record<string, unknown>) }
         : ({} as Record<string, unknown>);
     const metadataContact = asRecord(metadataBase.contact);
-    const messageKey = asRecord(messageRecord.key) ?? {};
-    const contactRecord = asRecord(data.contact) ?? {};
+    const messageKey = messageKeyRecord ?? {};
+    const contactRecord = asRecord(data.from) ?? {};
 
     const remoteJid =
       normalizeChatId(
@@ -534,7 +533,7 @@ const findMessageForStatusUpdate = async ({
     }
   }
 
-  const where: Parameters<typeof prisma.message.findFirst>[0]['where'] = {
+  const where: Prisma.MessageWhereInput = {
     OR: [
       { externalId: trimmedId },
       { metadata: { path: ['broker', 'messageId'], equals: trimmedId } },
@@ -962,9 +961,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     if (eventType === 'MESSAGE_INBOUND' || eventType === 'MESSAGE_OUTBOUND') {
       const normalizedContract = normalizeContractEvent(eventRecord, {
         requestId,
-        instanceOverride,
-        tenantOverride,
-        brokerOverride,
+        instanceOverride: instanceOverride ?? null,
+        tenantOverride: tenantOverride ?? null,
+        brokerOverride: brokerOverride ?? null,
       });
 
       if (!normalizedContract) {
@@ -994,9 +993,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       }
 
       const normalization = normalizeUpsertEvent(eventRecord, {
-        instanceId: instanceOverride,
-        tenantId: tenantOverride,
-        brokerId: brokerOverride,
+        instanceId: instanceOverride ?? null,
+        tenantId: tenantOverride ?? null,
+        brokerId: brokerOverride ?? null,
       });
 
       if (normalization.normalized.length === 0) {
@@ -1013,8 +1012,8 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         envelopeRecord,
         rawPreview,
         requestId,
-        tenantOverride,
-        instanceOverride,
+        tenantOverride: tenantOverride ?? null,
+        instanceOverride: instanceOverride ?? null,
       });
 
       if (processed) {

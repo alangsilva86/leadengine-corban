@@ -62,6 +62,7 @@ import {
   provisionDefaultQueueForTenant,
   provisionFallbackCampaignForInstance,
   queueCacheByTenant,
+  type WhatsAppInstanceRecord,
 } from './provisioning';
 import { downloadInboundMediaFromBroker } from './media-downloader';
 import {
@@ -83,7 +84,6 @@ const MEDIA_MESSAGE_TYPES = new Set<NormalizedMessageType>([
   'VIDEO',
   'AUDIO',
   'DOCUMENT',
-  'STICKER',
 ]);
 
 const isHttpUrl = (value: string | null | undefined): boolean =>
@@ -1232,7 +1232,7 @@ const processStandardInboundEvent = async (
     metadataContact,
     sessionId:
       readString(eventSessionId) ?? readString(metadataRecord.sessionId) ?? readString(metadataRecord.session_id),
-    externalId,
+    externalId: externalId ?? null,
   });
   const document = sanitizeDocument(contact.document, [
     normalizedPhone,
@@ -1415,7 +1415,7 @@ const processStandardInboundEvent = async (
       instanceId,
       messageId: message.id ?? null,
     });
-    return;
+    return false;
   }
 
   const tenantId = instance.tenantId;
@@ -1616,16 +1616,26 @@ const processStandardInboundEvent = async (
         });
 
         if (downloadResult && downloadResult.buffer.length > 0) {
-          const descriptor = await saveWhatsAppMedia({
+          const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
             buffer: downloadResult.buffer,
             tenantId,
-            originalName: mediaDetails.fileName ?? undefined,
-            mimeType:
-              normalizedMessage.mimetype ??
-              mediaDetails.mimeType ??
-              downloadResult.mimeType ??
-              undefined,
-          });
+          };
+
+          if (mediaDetails.fileName) {
+            saveInput.originalName = mediaDetails.fileName;
+          }
+
+          const mimeCandidate =
+            normalizedMessage.mimetype ??
+            mediaDetails.mimeType ??
+            downloadResult.mimeType ??
+            null;
+
+          if (mimeCandidate) {
+            saveInput.mimeType = mimeCandidate;
+          }
+
+          const descriptor = await saveWhatsAppMedia(saveInput);
 
           const resolvedMimeType =
             normalizedMessage.mimetype ??
@@ -1846,12 +1856,26 @@ const processStandardInboundEvent = async (
     });
   }
 
-  const allocationTargets = campaigns.length
+  const allocationTargets: Array<{
+    campaign: (typeof campaigns)[number] | null;
+    target: { campaignId?: string; instanceId?: string };
+  }> = campaigns.length
     ? campaigns.map((campaign) => ({
         campaign,
-        target: { campaignId: campaign.id, instanceId },
+        target: { campaignId: campaign.id },
       }))
-    : [{ campaign: null as const, target: { instanceId } }];
+    : instanceId
+    ? [{ campaign: null, target: { instanceId: instanceId! } }]
+    : [];
+
+  if (!campaigns.length && !instanceId) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Instância sem identificador para alocação fallback', {
+      requestId,
+      tenantId,
+      instanceId,
+      messageId: message.id ?? null,
+    });
+  }
 
   for (const { campaign, target } of allocationTargets) {
     const campaignId = campaign?.id ?? null;
@@ -1899,7 +1923,7 @@ const processStandardInboundEvent = async (
       await registerDedupeKey(allocationDedupeKey, now, DEFAULT_DEDUPE_TTL_MS);
 
       if (newlyAllocated.length > 0) {
-        const allocation = newlyAllocated[0];
+        const allocation = newlyAllocated[0]!;
 
         logger.info('🎯 LeadEngine • WhatsApp :: 🎯 Lead inbound alocado com sucesso', {
           tenantId,

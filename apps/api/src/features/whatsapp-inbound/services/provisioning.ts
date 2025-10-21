@@ -331,7 +331,7 @@ export const ensureInboundQueueForInboundMessage = async ({
   }
 };
 
-type WhatsAppInstanceRecord = Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
+export type WhatsAppInstanceRecord = Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>;
 
 type AutoProvisionMetadataPayload = {
   autopProvisionedAt: string;
