@@ -3,7 +3,8 @@ import type { InboundWhatsAppEvent } from '../types';
 
 const findOrCreateOpenTicketByChatMock = vi.hoisted(() => vi.fn());
 const upsertMessageByExternalIdMock = vi.hoisted(() => vi.fn());
-const downloadInboundMediaMock = vi.hoisted(() => vi.fn());
+const downloadViaBaileysMock = vi.hoisted(() => vi.fn());
+const downloadViaBrokerMock = vi.hoisted(() => vi.fn());
 const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
 const getWhatsAppUploadsBaseUrlMock = vi.hoisted(() => vi.fn(() => '/uploads/whatsapp'));
 const socketToMock = vi.hoisted(() => vi.fn(() => ({ emit: vi.fn() })));
@@ -30,8 +31,9 @@ vi.mock('../../../../lib/socket-registry', () => ({
   emitToAgreement: vi.fn(),
 }));
 
-vi.mock('../media-downloader', () => ({
-  downloadInboundMediaFromBroker: (...args: unknown[]) => downloadInboundMediaMock(...args),
+vi.mock('../mediaDownloader', () => ({
+  downloadViaBaileys: (...args: unknown[]) => downloadViaBaileysMock(...args),
+  downloadViaBroker: (...args: unknown[]) => downloadViaBrokerMock(...args),
 }));
 
 vi.mock('../../../../services/whatsapp-media-service', () => ({
@@ -56,7 +58,8 @@ describe('handlePassthroughIngest - media handling', () => {
       wasCreated: true,
     });
 
-    downloadInboundMediaMock.mockResolvedValue({
+    downloadViaBaileysMock.mockResolvedValue(null);
+    downloadViaBrokerMock.mockResolvedValue({
       buffer: Buffer.from('fake-binary'),
       mimeType: 'image/jpeg',
       size: 10_240,
@@ -105,7 +108,8 @@ describe('handlePassthroughIngest - media handling', () => {
 
     await handlePassthroughIngest(event);
 
-    expect(downloadInboundMediaMock).toHaveBeenCalledWith(
+    expect(downloadViaBaileysMock).toHaveBeenCalledTimes(1);
+    expect(downloadViaBrokerMock).toHaveBeenCalledWith(
       expect.objectContaining({
         brokerId: 'session-1',
         instanceId: 'instance-1',
@@ -169,7 +173,8 @@ describe('handlePassthroughIngest - media handling', () => {
 
     await handlePassthroughIngest(event);
 
-    expect(downloadInboundMediaMock).toHaveBeenCalledWith(
+    expect(downloadViaBaileysMock).toHaveBeenCalledTimes(1);
+    expect(downloadViaBrokerMock).toHaveBeenCalledWith(
       expect.objectContaining({
         directPath: '/o1/v/t24/f2/m123/media.jpg',
         mediaKey: 'media-key-2',
@@ -219,6 +224,7 @@ describe('handlePassthroughIngest - media handling', () => {
 
     await handlePassthroughIngest(event);
 
-    expect(downloadInboundMediaMock).not.toHaveBeenCalled();
+    expect(downloadViaBaileysMock).not.toHaveBeenCalled();
+    expect(downloadViaBrokerMock).not.toHaveBeenCalled();
   });
 });
