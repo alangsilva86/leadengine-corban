@@ -54,6 +54,28 @@ describe('broker-contracts', () => {
     expect(parsed.payload.contact.registrations).toEqual(['ABC123']);
     expect(parsed.timestamp).toBe('2024-04-30T12:00:00.000Z');
     expect(parsed.payload.direction).toBe('INBOUND');
+    expect(parsed.type).toBe('MESSAGE_INBOUND');
+  });
+
+  it('accepts inbound broker queue events using the event field when type is missing', () => {
+    const parsed = BrokerInboundEventSchema.parse({
+      id: 'event-2',
+      event: 'MESSAGE_OUTBOUND',
+      instanceId: 'instance-321',
+      timestamp: '2024-05-01T12:00:00.000Z',
+      payload: {
+        instanceId: 'instance-321',
+        timestamp: '2024-05-01T12:00:00.000Z',
+        direction: 'outbound',
+        contact: {},
+        message: { id: 'wamid-123' },
+        metadata: {},
+      },
+    });
+
+    expect(parsed.type).toBe('MESSAGE_OUTBOUND');
+    expect(parsed.payload.direction).toBe('OUTBOUND');
+    expect(parsed.timestamp).toBe('2024-05-01T12:00:00.000Z');
   });
 
   it('enforces outbound message contract', () => {

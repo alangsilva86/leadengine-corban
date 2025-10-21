@@ -19,6 +19,11 @@ const optionalTrimmedString = z
   .pipe(z.string().min(1))
   .optional();
 
+const inboundEventTypeInput = z
+  .string()
+  .transform((value) => value.trim().toUpperCase())
+  .pipe(z.enum(['MESSAGE_INBOUND', 'MESSAGE_OUTBOUND']));
+
 const directionInput = z
   .string()
   .transform((value) => value.trim().toLowerCase())
@@ -121,7 +126,8 @@ export type BrokerInboundEventPayload = z.infer<typeof BrokerInboundEventPayload
 export const BrokerInboundEventSchema = z
   .object({
     id: trimmedString,
-    type: z.enum(['MESSAGE_INBOUND', 'MESSAGE_OUTBOUND']),
+    type: inboundEventTypeInput.optional(),
+    event: inboundEventTypeInput.optional(),
     tenantId: nullableTrimmedString.optional(),
     sessionId: nullableTrimmedString.optional(),
     instanceId: trimmedString,
@@ -129,9 +135,19 @@ export const BrokerInboundEventSchema = z
     cursor: timestampInput.nullable().optional(),
     payload: BrokerInboundEventPayloadSchema,
   })
+  .superRefine((event, ctx) => {
+    if (!event.type && !event.event) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Expected type or event field',
+        path: ['type'],
+      });
+    }
+  })
   .transform((event) => {
     const timestamp = normalizeTimestamp(event.timestamp) ?? event.payload.timestamp;
-    const type = event.type === 'MESSAGE_OUTBOUND' ? 'MESSAGE_OUTBOUND' : 'MESSAGE_INBOUND';
+    const rawType = event.type ?? event.event ?? 'MESSAGE_INBOUND';
+    const type = rawType === 'MESSAGE_OUTBOUND' ? 'MESSAGE_OUTBOUND' : 'MESSAGE_INBOUND';
     const direction =
       event.payload.direction ??
       (type === 'MESSAGE_OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
