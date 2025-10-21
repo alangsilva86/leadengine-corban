@@ -828,12 +828,19 @@ const matchesMessageFilters = (message: MessageRecord, filters: MessageFilters):
 const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' | 'desc' = 'desc') => {
   const direction = sortOrder === 'asc' ? 1 : -1;
   const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
-  const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof TicketRecord) : 'createdAt';
+  const sortFields: Array<keyof TicketRecord> = (() => {
+    if (!sortBy || !allowedFields.has(sortBy)) {
+      return ['lastMessageAt', 'updatedAt', 'createdAt'];
+    }
 
-  return tickets.sort((a, b) => {
-    const valueA = a[field];
-    const valueB = b[field];
+    if (sortBy === 'lastMessageAt') {
+      return ['lastMessageAt', 'updatedAt', 'createdAt'];
+    }
 
+    return [sortBy as keyof TicketRecord];
+  })();
+
+  const compareValues = (valueA: unknown, valueB: unknown) => {
     if (valueA === valueB) {
       return 0;
     }
@@ -856,6 +863,17 @@ const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' 
 
     if (typeof valueA === 'number' && typeof valueB === 'number') {
       return valueA > valueB ? direction : -direction;
+    }
+
+    return 0;
+  };
+
+  return tickets.sort((a, b) => {
+    for (const field of sortFields) {
+      const result = compareValues(a[field], b[field]);
+      if (result !== 0) {
+        return result;
+      }
     }
 
     return 0;
