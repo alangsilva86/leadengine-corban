@@ -1,7 +1,6 @@
 import express, { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
-import { SendByInstanceSchema, normalizePayload } from '@ticketz/contracts';
 import { asyncHandler } from '../../middleware/error-handler';
 import { prisma } from '../../lib/prisma';
 import { rateKeyForInstance, resolveInstanceRateLimit, sendAdHoc } from '../../services/ticket-service';
@@ -72,6 +71,14 @@ const instrumentationMiddleware: express.RequestHandler = (req, res, next) => {
   next();
 };
 
+let contractsPromise: Promise<typeof import('@ticketz/contracts')> | null = null;
+const loadContracts = async () => {
+  if (!contractsPromise) {
+    contractsPromise = import('@ticketz/contracts');
+  }
+  return contractsPromise;
+};
+
 const router: Router = Router();
 
 router.use(express.json({ limit: '1mb' }));
@@ -80,7 +87,12 @@ router.use(instrumentationMiddleware);
 router.post(
   '/integrations/whatsapp/instances/:instanceId/messages',
   asyncHandler(async (req: Request, res: Response) => {
-    const { instanceId } = req.params;
+    const instanceIdParam = req.params.instanceId;
+    const instanceId = typeof instanceIdParam === 'string' ? instanceIdParam.trim() : '';
+    if (!instanceId) {
+      throw new NotFoundError('WhatsAppInstance', instanceIdParam ?? '');
+    }
+
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
 
     if (!instance) {
@@ -132,6 +144,8 @@ router.post(
       return;
     }
 
+    const { SendByInstanceSchema, normalizePayload } = await loadContracts();
+
     const parsedResult = SendByInstanceSchema.safeParse(req.body ?? {});
     if (!parsedResult.success) {
       respondWithValidationError(res, parsedResult.error.issues);
@@ -181,18 +195,23 @@ router.post(
 
     try {
       const transport = getWhatsAppTransport();
-      const response = await sendAdHoc(
-        {
-          operatorId: req.user?.id,
-          instanceId: instance.id,
-          tenantId: resolvedTenantId ?? undefined,
-          to: parsed.to,
-          payload,
-          idempotencyKey,
-          rateLimitConsumed: true,
-        },
-        { transport }
-      );
+      const sendParams: Parameters<typeof sendAdHoc>[0] = {
+        instanceId: instance.id,
+        to: parsed.to,
+        payload,
+        idempotencyKey,
+        rateLimitConsumed: true,
+      };
+
+      if (req.user?.id) {
+        sendParams.operatorId = req.user.id;
+      }
+
+      if (resolvedTenantId) {
+        sendParams.tenantId = resolvedTenantId;
+      }
+
+      const response = await sendAdHoc(sendParams, { transport });
 
       res.status(202).json(response);
     } catch (error) {

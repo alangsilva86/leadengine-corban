@@ -42,7 +42,6 @@ export class WhatsAppBrokerError extends Error {
   requestId: string | undefined;
   brokerStatus: number | undefined;
   brokerCode: string | undefined;
-  cause?: unknown;
 
   constructor(
     message: string,
