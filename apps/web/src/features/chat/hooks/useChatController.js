@@ -11,6 +11,7 @@ import useWhatsAppLimits from '../api/useWhatsAppLimits.js';
 import useRealtimeTickets from './useRealtimeTickets.js';
 import useConversationState from './useConversationState.js';
 import useTypingIndicator from './useTypingIndicator.js';
+import mergeTicketIntoList from '../utils/updateTicketsList.js';
 
 const DEFAULT_FILTERS = {
   scope: 'team',
@@ -115,9 +116,22 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
   const statusMutation = useTicketStatusMutation({ fallbackTicketId: selectedTicketId });
   const assignMutation = useTicketAssignMutation({ fallbackTicketId: selectedTicketId });
 
-  const handleTicketInvalidation = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
-  }, [queryClient]);
+  const handleTicketUpdated = useCallback(
+    (payload) => {
+      const ticket = payload?.ticket ?? payload;
+
+      if (!ticket || typeof ticket !== 'object' || !ticket.id) {
+        return;
+      }
+
+      const queries = queryClient.getQueryCache().findAll({ queryKey: ['chat', 'tickets'] });
+
+      queries.forEach(({ queryKey }) => {
+        queryClient.setQueryData(queryKey, (current) => mergeTicketIntoList(current, ticket));
+      });
+    },
+    [queryClient]
+  );
 
   const handleMessageCreated = useCallback(
     (payload) => {
@@ -152,8 +166,12 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       });
 
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+
+      if (payload?.ticket) {
+        handleTicketUpdated(payload);
+      }
     },
-    [queryClient]
+    [handleTicketUpdated, queryClient]
   );
 
   const handleQueueMissing = useCallback((payload) => {
@@ -235,8 +253,12 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       });
 
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+
+      if (payload?.ticket) {
+        handleTicketUpdated(payload);
+      }
     },
-    [queryClient]
+    [handleTicketUpdated, queryClient]
   );
 
   const realtime = useRealtimeTickets({
@@ -244,7 +266,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     userId: currentUser?.id,
     ticketId: selectedTicketId,
     enabled: Boolean(tenantId),
-    onTicketUpdated: handleTicketInvalidation,
+    onTicketUpdated: handleTicketUpdated,
     onMessageCreated: handleMessageCreated,
     onMessageUpdated: handleMessageUpdated,
     onQueueMissing: handleQueueMissing,
@@ -311,6 +333,10 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       });
 
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+
+      if (incoming?.ticket) {
+        handleTicketUpdated(incoming);
+      }
     };
 
     socket.on('messages.new', handleRealtimeMessage);
@@ -318,7 +344,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     return () => {
       socket.off('messages.new', handleRealtimeMessage);
     };
-  }, [queryClient, realtime.socket]);
+  }, [handleTicketUpdated, queryClient, realtime.socket]);
 
   const whatsAppLimits = useWhatsAppLimits({ enabled: Boolean(tenantId) });
 
