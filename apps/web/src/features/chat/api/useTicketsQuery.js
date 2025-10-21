@@ -34,9 +34,24 @@ const toQueryValue = (value) => {
   return `${value}`;
 };
 
-const buildQueryString = ({ limit, includeMetrics, include, filters }) => {
+const buildQueryString = ({
+  limit,
+  includeMetrics,
+  include,
+  filters,
+  sortBy = 'lastMessageAt',
+  sortOrder = 'desc',
+}) => {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
+
+  if (sortBy) {
+    params.set('sortBy', sortBy);
+  }
+
+  if (sortOrder) {
+    params.set('sortOrder', sortOrder);
+  }
 
   if (includeMetrics) {
     params.set('metrics', 'true');
@@ -66,12 +81,18 @@ export const useTicketsQuery = ({
   includeMetrics = true,
   enabled = true,
   staleTime = 5000,
+  sortBy = 'lastMessageAt',
+  sortOrder = 'desc',
 } = {}) => {
   const normalizedFilters = useMemo(() => normalizeFilters(filters), [filters]);
 
   const queryKey = useMemo(
-    () => ['chat', 'tickets', { limit, includeMetrics, filters: normalizedFilters }],
-    [limit, includeMetrics, normalizedFilters]
+    () => [
+      'chat',
+      'tickets',
+      { limit, includeMetrics, filters: normalizedFilters, sortBy, sortOrder },
+    ],
+    [limit, includeMetrics, normalizedFilters, sortBy, sortOrder]
   );
 
   return useQuery({
@@ -85,6 +106,8 @@ export const useTicketsQuery = ({
         includeMetrics,
         include: DEFAULT_INCLUDE,
         filters: normalizedFilters,
+        sortBy,
+        sortOrder,
       });
 
       const payload = await apiGet(`/api/tickets?${queryString}`);
