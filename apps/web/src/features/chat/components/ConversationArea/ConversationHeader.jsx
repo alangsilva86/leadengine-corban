@@ -851,22 +851,20 @@ export const ConversationHeader = ({
     <>
       <CollapsibleContent
         className={cn(
-          'data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down',
-          isExpanded
-            ? 'max-h-[calc(100vh-9rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]'
-            : ''
+          'data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden'
         )}
       >
-        <ConversationCardBody>
-          <ConversationCardBody.Left>
-            <QuickComposer
-              ticket={ticket}
-              onSendTemplate={onSendTemplate}
-              onCreateNextStep={onCreateNextStep}
-              onRegisterCallResult={onRegisterCallResult}
-            />
-          </ConversationCardBody.Left>
-          <ConversationCardBody.Right>
+        <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
+          <ConversationCardBody>
+            <ConversationCardBody.Left>
+              <QuickComposer
+                ticket={ticket}
+                onSendTemplate={onSendTemplate}
+                onCreateNextStep={onCreateNextStep}
+                onRegisterCallResult={onRegisterCallResult}
+              />
+            </ConversationCardBody.Left>
+            <ConversationCardBody.Right>
             <p className="text-xs text-foreground-muted">{subtitle}</p>
 
             <section className="flex flex-wrap items-center gap-2">
@@ -996,8 +994,9 @@ export const ConversationHeader = ({
                 </Accordion>
               </div>
             </div>
-          </ConversationCardBody.Right>
-        </ConversationCardBody>
+            </ConversationCardBody.Right>
+          </ConversationCardBody>
+        </div>
       </CollapsibleContent>
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
         <DialogContent className="sm:max-w-md">
@@ -1059,8 +1058,7 @@ export const ConversationHeader = ({
       open={isExpanded}
       onOpenChange={setIsExpanded}
       className={cn(
-        'relative z-10 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
-        'data-[state=open]:max-h-[calc(100vh-6rem)] data-[state=open]:overflow-y-auto data-[state=open]:overscroll-contain data-[state=open]:pr-1 sm:data-[state=open]:pr-2 data-[state=open]:[scrollbar-gutter:stable]',
+        'relative z-10 flex flex-col rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
