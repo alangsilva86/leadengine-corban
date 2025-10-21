@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import QuickComposer from './QuickComposer.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
+import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'conversation-generate-proposal';
 
@@ -284,6 +285,9 @@ export const ConversationHeader = ({
   const [isFadeIn, setIsFadeIn] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [resultSelection, setResultSelection] = useState('');
+  const [callDialogOpen, setCallDialogOpen] = useState(false);
+  const [callNotes, setCallNotes] = useState('');
+  const [callOutcome, setCallOutcome] = useState('connected');
   const [lossDialogOpen, setLossDialogOpen] = useState(false);
   const [lossReason, setLossReason] = useState('');
   const [lossNotes, setLossNotes] = useState('');
@@ -431,44 +435,29 @@ export const ConversationHeader = ({
     }
   }, [resetLossState]);
 
-  const handlePhoneAction = useCallback((action) => {
-    if (!rawPhone) {
-      toast.info('Nenhum telefone disponível para este lead.');
-      return;
-    }
-    const digits = String(rawPhone).replace(/\D/g, '');
-    const hasWindow = typeof window !== 'undefined';
-    const hasClipboard = typeof navigator !== 'undefined' && navigator.clipboard;
+  const phoneActions = usePhoneActions(rawPhone, {
+    missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
+    onCall: () => setCallDialogOpen(true),
+  });
 
-    switch (action) {
-      case 'call':
-        if (hasWindow) {
-          window.open(`tel:${digits}`, '_self');
-        } else {
-          toast.info(`Ligue para ${rawPhone}.`);
-        }
-        break;
-      case 'whatsapp':
-        if (hasWindow) {
-          window.open(`https://wa.me/${digits}`, '_blank', 'noopener');
-        } else {
-          toast.info(`Abra o WhatsApp e contate ${rawPhone}.`);
-        }
-        break;
-      case 'copy':
-        if (hasClipboard) {
-          navigator.clipboard
-            .writeText(rawPhone)
-            .then(() => toast.success('Telefone copiado.'))
-            .catch(() => toast.error('Não foi possível concluir. Tente novamente.'));
-        } else {
-          toast.info(`Copie manualmente: ${rawPhone}`);
-        }
-        break;
-      default:
-        break;
+  const handlePhoneAction = useCallback((action) => {
+    phoneActions(action);
+  }, [phoneActions]);
+
+  const handleCallDialogChange = useCallback((open) => {
+    setCallDialogOpen(open);
+    if (!open) {
+      setCallOutcome('connected');
+      setCallNotes('');
     }
-  }, [rawPhone]);
+  }, []);
+
+  const handleCallResultSubmit = useCallback(() => {
+    onRegisterCallResult?.({ outcome: callOutcome, notes: callNotes });
+    setCallNotes('');
+    setCallOutcome('connected');
+    setCallDialogOpen(false);
+  }, [callNotes, callOutcome, onRegisterCallResult]);
 
   const handleCopyDocument = useCallback(() => {
     if (!document || document === '—') {
@@ -563,13 +552,16 @@ export const ConversationHeader = ({
               {phoneDisplay ?? 'Telefone indisponível'}
             </MetadataBadge>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-              Ligar
-            </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-              Abrir WhatsApp
-            </DropdownMenuItem>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                  Ligar
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                  Enviar SMS
+                </DropdownMenuItem>
+                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                  Abrir WhatsApp
+                </DropdownMenuItem>
             <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
               Copiar
             </DropdownMenuItem>
@@ -804,11 +796,14 @@ export const ConversationHeader = ({
                   </Button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Opções de telefone</TooltipContent>
+              <TooltipContent side="bottom">Ações de telefone e registro de ligação</TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
                 Ligar
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                Enviar SMS
               </DropdownMenuItem>
               <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
                 Abrir WhatsApp
@@ -870,7 +865,6 @@ export const ConversationHeader = ({
                 ticket={ticket}
                 onSendTemplate={onSendTemplate}
                 onCreateNextStep={onCreateNextStep}
-                onRegisterCallResult={onRegisterCallResult}
               />
             </ConversationCardBody.Left>
             <ConversationCardBody.Right>
@@ -935,6 +929,9 @@ export const ConversationHeader = ({
                 <DropdownMenuContent align="start" className="w-52">
                   <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
                     Ligar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                    Enviar SMS
                   </DropdownMenuItem>
                   <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
                     Abrir WhatsApp
@@ -1047,6 +1044,46 @@ export const ConversationHeader = ({
               className="min-h-[44px]"
             >
               Registrar perda
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={callDialogOpen} onOpenChange={handleCallDialogChange}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Registrar resultado da chamada</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="call-outcome" className="text-sm font-medium text-foreground">
+              Resultado
+            </Label>
+            <Select value={callOutcome} onValueChange={setCallOutcome}>
+              <SelectTrigger id="call-outcome" className="h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="connected">Conectou</SelectItem>
+                <SelectItem value="no_answer">Sem resposta</SelectItem>
+                <SelectItem value="voicemail">Caixa postal</SelectItem>
+              </SelectContent>
+            </Select>
+            <Label htmlFor="call-notes" className="text-sm font-medium text-foreground">
+              Observações
+            </Label>
+            <Textarea
+              id="call-notes"
+              value={callNotes}
+              onChange={(event) => setCallNotes(event.target.value)}
+              placeholder="Resumo do contato"
+              className="min-h-[100px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => handleCallDialogChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleCallResultSubmit}>
+              Registrar
             </Button>
           </DialogFooter>
         </DialogContent>

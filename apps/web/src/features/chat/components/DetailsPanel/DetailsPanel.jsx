@@ -81,6 +81,7 @@ export const DetailsPanel = ({
   notesLoading,
   onSendTemplate,
   onCreateNextStep,
+  onGenerateProposal,
   onRegisterCallResult,
   onReopenWindow,
   onOpenAudit,
@@ -102,7 +103,6 @@ export const DetailsPanel = ({
           ticket={ticket}
           onSendTemplate={onSendTemplate}
           onCreateNextStep={onCreateNextStep}
-          onRegisterCallResult={onRegisterCallResult}
         />
       </CardBody.Left>
       <CardBody.Right>
