@@ -289,7 +289,14 @@ describe('POST /api/tickets/messages validations', () => {
     });
 
     expect(response.status).toBe(502);
-    expect(response.body).toMatchObject({ code: 'BROKER_ERROR' });
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'BROKER_ERROR',
+        message: 'broker rejected message',
+        brokerCode: 'INSTANCE_NOT_CONNECTED',
+      },
+    });
   });
 
   it('returns 503 when the broker is not configured', async () => {
@@ -305,6 +312,12 @@ describe('POST /api/tickets/messages validations', () => {
     });
 
     expect(response.status).toBe(503);
-    expect(response.body).toMatchObject({ code: 'BROKER_NOT_CONFIGURED' });
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'BROKER_NOT_CONFIGURED',
+        message: 'WhatsApp broker not configured',
+      },
+    });
   });
 });

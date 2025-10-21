@@ -841,6 +841,22 @@ const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' 
       if (valueA === valueB) {
         continue;
       }
+  const sortFields: Array<keyof TicketRecord> = (() => {
+    if (!sortBy || !allowedFields.has(sortBy)) {
+      return ['lastMessageAt', 'updatedAt', 'createdAt'];
+    }
+
+    if (sortBy === 'lastMessageAt') {
+      return ['lastMessageAt', 'updatedAt', 'createdAt'];
+    }
+
+    return [sortBy as keyof TicketRecord];
+  })();
+
+  const compareValues = (valueA: unknown, valueB: unknown) => {
+    if (valueA === valueB) {
+      return 0;
+    }
 
       if (valueA === undefined || valueA === null) {
         return 1;
@@ -870,6 +886,17 @@ const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' 
           continue;
         }
         return valueA > valueB ? direction : -direction;
+      }
+    }
+
+    return 0;
+  };
+
+  return tickets.sort((a, b) => {
+    for (const field of sortFields) {
+      const result = compareValues(a[field], b[field]);
+      if (result !== 0) {
+        return result;
       }
     }
 

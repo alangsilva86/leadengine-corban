@@ -721,6 +721,21 @@ const buildTicketOrderBy = (
 ): Prisma.TicketOrderByWithRelationInput[] => {
   const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
   const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof PrismaTicket) : 'lastMessageAt';
+):
+  | Prisma.TicketOrderByWithRelationInput
+  | Prisma.TicketOrderByWithRelationInput[] => {
+  const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
+  const defaultOrder: Prisma.TicketOrderByWithRelationInput[] = [
+    { lastMessageAt: sortOrder },
+    { updatedAt: sortOrder },
+    { createdAt: sortOrder },
+  ];
+
+  const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof PrismaTicket) : null;
+
+  if (!field || field === 'lastMessageAt') {
+    return defaultOrder;
+  }
 
   const orderBy: Prisma.TicketOrderByWithRelationInput[] = [
     {
