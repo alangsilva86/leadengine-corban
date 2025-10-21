@@ -179,7 +179,7 @@ export const useRealtimeTickets = ({
             onMessageStatusChanged(payload);
           }
         });
-        registerHandler(socket, 'ticket.typing', (payload) => {
+        registerHandler(socket, 'ticket:typing', (payload) => {
           console.info('🎯 LeadEngine • Chat :: ⌨️ Indicador de digitação recebido', {
             tenantId,
             ticketId: ticketRoomRef.current,
