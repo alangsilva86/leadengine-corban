@@ -836,14 +836,31 @@ router.post(
         });
       } catch (error) {
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
-          res.status(503).json({ code: 'BROKER_NOT_CONFIGURED' });
+          res.status(503).json({
+            success: false,
+            error: {
+              code: 'BROKER_NOT_CONFIGURED',
+              message: error.message,
+              ...(error.missing ? { missing: error.missing } : {}),
+            },
+          });
           return;
         }
 
         if (error instanceof WhatsAppBrokerError || error instanceof WhatsAppTransportError) {
           res.status(502).json({
-            code: 'BROKER_ERROR',
-            message: error instanceof Error ? error.message : String(error),
+            success: false,
+            error: {
+              code: 'BROKER_ERROR',
+              message: error instanceof Error ? error.message : String(error),
+              ...(error instanceof WhatsAppBrokerError
+                ? {
+                    brokerCode: error.brokerCode,
+                    brokerStatus: error.brokerStatus,
+                    requestId: error.requestId,
+                  }
+                : {}),
+            },
           });
           return;
         }
@@ -970,7 +987,14 @@ router.post(
       });
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
-        res.status(503).json({ code: 'BROKER_NOT_CONFIGURED' });
+        res.status(503).json({
+          success: false,
+          error: {
+            code: 'BROKER_NOT_CONFIGURED',
+            message: error.message,
+            ...(error.missing ? { missing: error.missing } : {}),
+          },
+        });
         return;
       }
 
@@ -1003,8 +1027,18 @@ router.post(
       emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
 
       res.status(502).json({
-        code: 'BROKER_ERROR',
-        message: error instanceof Error ? error.message : String(error),
+        success: false,
+        error: {
+          code: 'BROKER_ERROR',
+          message: error instanceof Error ? error.message : String(error),
+          ...(error instanceof WhatsAppBrokerError
+            ? {
+                brokerCode: error.brokerCode,
+                brokerStatus: error.brokerStatus,
+                requestId: error.requestId,
+              }
+            : {}),
+        },
       });
     }
   })
