@@ -25,6 +25,172 @@ const compactObject = <T extends Record<string, unknown>>(value: T): T => {
   ) as T;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const pickFirstString = (...candidates: unknown[]): string | undefined => {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+  return undefined;
+};
+
+const unwrapOutboundResponsePayload = (payload: unknown): Record<string, unknown> | null => {
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  const queue: unknown[] = [payload];
+  const visited = new Set<object>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const record = isRecord(current) ? current : null;
+
+    if (!record) {
+      continue;
+    }
+
+    if (visited.has(record)) {
+      continue;
+    }
+
+    visited.add(record);
+
+    const hasIdentifier =
+      typeof record.id === 'string' ||
+      typeof record.messageId === 'string' ||
+      typeof record.message_id === 'string' ||
+      typeof record.externalId === 'string' ||
+      typeof record.external_id === 'string';
+
+    if (hasIdentifier) {
+      return record;
+    }
+
+    const nestedSources: unknown[] = [];
+
+    if ('data' in record) {
+      const dataValue = record.data;
+      if (Array.isArray(dataValue)) {
+        nestedSources.push(...dataValue);
+      } else {
+        nestedSources.push(dataValue);
+      }
+    }
+
+    if ('result' in record) {
+      nestedSources.push(record.result);
+    }
+
+    if ('payload' in record) {
+      nestedSources.push(record.payload);
+    }
+
+    if ('message' in record) {
+      nestedSources.push(record.message);
+    }
+
+    if ('response' in record) {
+      nestedSources.push(record.response);
+    }
+
+    queue.push(...nestedSources);
+  }
+
+  return isRecord(payload) ? payload : null;
+};
+
+const normalizeOutboundResponsePayload = (
+  payload: unknown,
+  normalizedRequest: BrokerOutboundMessage
+): Record<string, unknown> => {
+  const record = unwrapOutboundResponsePayload(payload);
+  const normalized: Record<string, unknown> = record ? { ...record } : {};
+
+  const fallbackExternalId = pickFirstString(
+    normalizedRequest.externalId,
+    typeof normalizedRequest.metadata?.['idempotencyKey'] === 'string'
+      ? (normalizedRequest.metadata?.['idempotencyKey'] as string)
+      : undefined
+  );
+
+  const resolvedId =
+    pickFirstString(
+      normalized.id,
+      normalized.messageId,
+      normalized.message_id,
+      normalized.externalId,
+      normalized.external_id
+    ) ?? fallbackExternalId;
+
+  if (resolvedId) {
+    normalized.id = resolvedId;
+    if (!normalized.externalId) {
+      normalized.externalId = resolvedId;
+    }
+  }
+
+  if (!normalized.externalId) {
+    const externalIdCandidate = pickFirstString(
+      normalized.external_id,
+      fallbackExternalId,
+      normalized.id
+    );
+    if (externalIdCandidate) {
+      normalized.externalId = externalIdCandidate;
+    }
+  }
+
+  const resolvedStatus =
+    pickFirstString(
+      normalized.status,
+      normalized.state,
+      normalized.deliveryStatus,
+      normalized.delivery_status
+    ) ?? 'sent';
+
+  normalized.status = resolvedStatus;
+
+  const timestampCandidate = (() => {
+    if (typeof normalized.timestamp === 'number') {
+      try {
+        return new Date(normalized.timestamp).toISOString();
+      } catch {
+        return undefined;
+      }
+    }
+    return pickFirstString(
+      normalized.timestamp,
+      normalized.sentAt,
+      normalized.sent_at,
+      normalized.deliveredAt,
+      normalized.delivered_at
+    );
+  })();
+
+  if (timestampCandidate) {
+    normalized.timestamp = timestampCandidate;
+  } else if ('timestamp' in normalized) {
+    normalized.timestamp = null;
+  }
+
+  if (!normalized.raw && isRecord(payload)) {
+    normalized.raw = payload;
+  }
+
+  return normalized;
+};
+
 const supportedDirectTypes = new Set([
   'text',
   'image',
@@ -245,7 +411,27 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       config
     );
 
-    const normalizedResponse = BrokerOutboundResponseSchema.parse(response);
+    const parsedResponsePayload = normalizeOutboundResponsePayload(response, normalizedPayload);
+    let normalizedResponse: BrokerOutboundResponse;
+
+    try {
+      normalizedResponse = BrokerOutboundResponseSchema.parse(parsedResponsePayload);
+    } catch (error) {
+      logger.warn('⚠️ [WhatsApp Broker] Unable to parse direct route response', {
+        instanceId,
+        to: normalizedPayload.to,
+        endpoint: routePath,
+        responseShape: Object.keys(parsedResponsePayload),
+        originalKeys: isRecord(response) ? Object.keys(response) : null,
+        error,
+      });
+      throw error;
+    }
+
+    const enrichedResponse: BrokerOutboundResponse = {
+      ...normalizedResponse,
+      raw: normalizedResponse.raw ?? (isRecord(response) ? response : parsedResponsePayload ?? null),
+    };
 
     logger.info('🎉 [WhatsApp Broker] Resposta recebida da rota direta', {
       instanceId,
@@ -256,7 +442,7 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       status: normalizedResponse.status,
     });
 
-    return this.buildMessageResult(normalizedPayload, normalizedResponse);
+    return this.buildMessageResult(normalizedPayload, enrichedResponse);
   }
 
   async sendMessage(
