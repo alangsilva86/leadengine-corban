@@ -40,7 +40,7 @@ const ManualConversationDialog = ({
   isSubmitting = false,
 }) => {
   const phoneInputRef = useRef(null);
-  const { instances = [] } = useWhatsAppInstances({});
+  const { instances = [], loadInstances } = useWhatsAppInstances();
   const availableInstances = useMemo(
     () =>
       Array.isArray(instances)
@@ -86,6 +86,12 @@ const ManualConversationDialog = ({
       form.reset(defaultValues);
     }
   }, [open, form, defaultValues]);
+
+  useEffect(() => {
+    if (open) {
+      loadInstances({ forceRefresh: true });
+    }
+  }, [loadInstances, open]);
 
   const handleSubmit = form.handleSubmit(async (values) => {
     const digits = sanitizePhone(values.phone);

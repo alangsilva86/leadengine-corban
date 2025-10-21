@@ -12,6 +12,7 @@ import { resolveWhatsAppErrorCopy } from '../whatsapp/utils/whatsapp-error-codes
 import ManualConversationDialog from './components/ManualConversationDialog.jsx';
 import { useManualConversationLauncher } from './hooks/useManualConversationLauncher.js';
 import emitInboxTelemetry from './utils/telemetry.js';
+import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.js';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
@@ -418,7 +419,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   }, [manualConversationAvailable]);
 
   return (
-    <>
+    <WhatsAppInstancesProvider autoRefresh={false} initialFetch={false}>
       {manualConversationAvailable ? (
         <ManualConversationDialog
           open={manualConversationOpen}
@@ -500,7 +501,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
           />
         </InboxAppShell>
       </div>
-    </>
+    </WhatsAppInstancesProvider>
   );
 };
 

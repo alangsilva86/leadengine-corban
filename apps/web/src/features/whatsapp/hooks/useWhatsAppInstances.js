@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, createContext } from 'react';
 import { toast } from 'sonner';
 import { apiDelete, apiGet, apiPost } from '@/lib/api.js';
 import { getAuthToken } from '@/lib/auth.js';
@@ -416,13 +416,16 @@ const defaultLogger = {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export default function useWhatsAppInstances({
+function useWhatsAppInstancesController({
   selectedAgreement,
   status: initialStatus,
   onStatusChange,
   onError,
   logger,
   campaignInstanceId = null,
+  autoRefresh = true,
+  pauseWhenHidden = true,
+  initialFetch = autoRefresh,
 } = {}) {
   const { log, warn, error: logError } = { ...defaultLogger, ...logger };
 
@@ -447,6 +450,7 @@ export default function useWhatsAppInstances({
   const loadingInstancesRef = useRef(false);
   const loadingQrRef = useRef(false);
   const generatingQrRef = useRef(false);
+  const qrAbortRef = useRef(null);
 
   const setErrorMessage = useCallback(
     (message, meta = {}) => {
@@ -678,6 +682,11 @@ export default function useWhatsAppInstances({
       if (!id) return;
 
       const myPollId = ++pollIdRef.current;
+      const abortController = new AbortController();
+      if (qrAbortRef.current) {
+        qrAbortRef.current.abort();
+      }
+      qrAbortRef.current = abortController;
       setLoadingQr(true);
       setErrorMessage(null);
       try {
@@ -759,10 +768,15 @@ export default function useWhatsAppInstances({
           }
           let qrResponse = null;
           try {
-            qrResponse = await apiGet(`/api/integrations/whatsapp/instances/${encodedId}/qr`);
+            qrResponse = await apiGet(`/api/integrations/whatsapp/instances/${encodedId}/qr`, {
+              signal: abortController.signal,
+            });
             setSessionActive(true);
             setAuthDeferred(false);
           } catch (error) {
+            if (error?.name === 'AbortError') {
+              return;
+            }
             if (isAuthError(error)) {
               handleAuthFallback({ error });
               return;
@@ -786,12 +800,18 @@ export default function useWhatsAppInstances({
 
         setQrData(received);
       } catch (err) {
+        if (err?.name === 'AbortError') {
+          return;
+        }
         if (isAuthError(err)) {
           handleAuthFallback({ error: err });
         } else {
           applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
         }
       } finally {
+        if (qrAbortRef.current === abortController) {
+          qrAbortRef.current = null;
+        }
         setLoadingQr(false);
       }
     },
@@ -856,15 +876,15 @@ export default function useWhatsAppInstances({
           tenantAgreement: selectedAgreement?.id ?? null,
           preferredInstanceId: resolvedPreferredInstanceId ?? null,
         });
-        const shouldForceBrokerSync =
-          typeof forceRefresh === 'boolean' ? forceRefresh : true;
+        const shouldForceBrokerSync = forceRefresh === true;
 
         log('🛰️ Solicitando lista de instâncias', {
           agreementId,
           forceRefresh: shouldForceBrokerSync,
           hasFetchedOnce: hasFetchedOnceRef.current,
         });
-        const instancesUrl = '/api/integrations/whatsapp/instances?refresh=1';
+        const baseInstancesUrl = '/api/integrations/whatsapp/instances';
+        const instancesUrl = shouldForceBrokerSync ? `${baseInstancesUrl}?refresh=1` : baseInstancesUrl;
         const response = await apiGet(instancesUrl);
         const parsedResponse = parseInstancesPayload(response);
         setSessionActive(true);
@@ -874,7 +894,7 @@ export default function useWhatsAppInstances({
         let connectResult = providedConnect || null;
 
         if (list.length === 0 && !shouldForceBrokerSync) {
-          const refreshed = await apiGet(instancesUrl).catch(() => null);
+          const refreshed = await apiGet(`${baseInstancesUrl}?refresh=1`).catch(() => null);
           if (refreshed) {
             const parsedRefreshed = parseInstancesPayload(refreshed);
             const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
@@ -1524,8 +1544,12 @@ export default function useWhatsAppInstances({
       setInstancesReady(true);
       return;
     }
-    void loadInstances({ forceRefresh: true });
-  }, [canSynchronize, loadInstances, selectedAgreement?.id]);
+    if (!initialFetch) {
+      setInstancesReady(true);
+      return;
+    }
+    void loadInstances({ forceRefresh: false });
+  }, [canSynchronize, initialFetch, loadInstances, selectedAgreement?.id]);
 
   useEffect(() => {
     if (!canSynchronize) {
@@ -1534,7 +1558,7 @@ export default function useWhatsAppInstances({
   }, [canSynchronize]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!autoRefresh || !isAuthenticated) {
       return undefined;
     }
 
@@ -1580,7 +1604,14 @@ export default function useWhatsAppInstances({
         return;
       }
 
-      if (loadingInstancesRef.current || loadingQrRef.current || generatingQrRef.current) {
+      if (
+        (pauseWhenHidden &&
+          typeof document !== 'undefined' &&
+          document.hidden) ||
+        loadingInstancesRef.current ||
+        loadingQrRef.current ||
+        generatingQrRef.current
+      ) {
         scheduleNext(DEFAULT_POLL_INTERVAL_MS);
         return;
       }
@@ -1605,43 +1636,129 @@ export default function useWhatsAppInstances({
         clearTimeout(timeoutId);
       }
     };
-  }, [isAuthenticated, selectedAgreement?.id]);
+  }, [autoRefresh, isAuthenticated, pauseWhenHidden, selectedAgreement?.id]);
 
   useEffect(() => {
     setLiveEvents([]);
   }, [currentInstance?.id]);
 
-  return {
-    instances,
-    instancesReady,
-    currentInstance,
-    status: localStatus,
-    qrData,
-    secondsLeft,
-    loadingInstances,
-    loadingQr,
-    isAuthenticated,
-    sessionActive,
-    authDeferred,
-    authTokenState,
-    deletingInstanceId,
-    liveEvents,
-    realtimeConnected,
-    setQrData,
-    setSecondsLeft,
-    loadInstances,
-    selectInstance,
-    generateQr,
-    connectInstance,
-    createInstance,
-    deleteInstance,
-    markConnected,
-    handleAuthFallback,
-    setSessionActive,
-    setAuthDeferred,
-    setGeneratingQrState,
-    setStatus: setLocalStatus,
-  };
+  useEffect(() => {
+    return () => {
+      if (qrAbortRef.current) {
+        try {
+          qrAbortRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!autoRefresh || !pauseWhenHidden) {
+      return undefined;
+    }
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden && canSynchronize) {
+        void loadInstances({ forceRefresh: true });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [autoRefresh, canSynchronize, loadInstances, pauseWhenHidden]);
+
+  const controllerValue = useMemo(
+    () => ({
+      instances,
+      instancesReady,
+      currentInstance,
+      status: localStatus,
+      qrData,
+      secondsLeft,
+      loadingInstances,
+      loadingQr,
+      isAuthenticated,
+      sessionActive,
+      authDeferred,
+      authTokenState,
+      deletingInstanceId,
+      liveEvents,
+      realtimeConnected,
+      setQrData,
+      setSecondsLeft,
+      loadInstances,
+      selectInstance,
+      generateQr,
+      connectInstance,
+      createInstance,
+      deleteInstance,
+      markConnected,
+      handleAuthFallback,
+      setSessionActive,
+      setAuthDeferred,
+      setGeneratingQrState,
+      setStatus: setLocalStatus,
+    }),
+    [
+      instances,
+      instancesReady,
+      currentInstance,
+      localStatus,
+      qrData,
+      secondsLeft,
+      loadingInstances,
+      loadingQr,
+      isAuthenticated,
+      sessionActive,
+      authDeferred,
+      authTokenState,
+      deletingInstanceId,
+      liveEvents,
+      realtimeConnected,
+      setQrData,
+      setSecondsLeft,
+      loadInstances,
+      selectInstance,
+      generateQr,
+      connectInstance,
+      createInstance,
+      deleteInstance,
+      markConnected,
+      handleAuthFallback,
+      setSessionActive,
+      setAuthDeferred,
+      setGeneratingQrState,
+      setLocalStatus,
+    ]
+  );
+
+  return controllerValue;
+}
+
+const WhatsAppInstancesContext = createContext(null);
+
+export const WhatsAppInstancesProvider = ({ children, ...config }) => {
+  const value = useWhatsAppInstancesController(config);
+  return (
+    <WhatsAppInstancesContext.Provider value={value}>
+      {children}
+    </WhatsAppInstancesContext.Provider>
+  );
+};
+
+export default function useWhatsAppInstances(options = {}) {
+  const context = useContext(WhatsAppInstancesContext);
+  if (context) {
+    return context;
+  }
+  return useWhatsAppInstancesController(options);
 }
 
 export {
