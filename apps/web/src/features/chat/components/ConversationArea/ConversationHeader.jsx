@@ -373,6 +373,20 @@ export const ConversationHeader = ({
     return parts.join(' • ');
   }, [stage, lastInteractionLabel, unreadInboundCount]);
 
+  const attachments = useMemo(() => {
+    const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
+
+    if (Array.isArray(source)) {
+      return source.filter(Boolean);
+    }
+
+    if (source && typeof source === 'object') {
+      return Object.values(source).filter(Boolean);
+    }
+
+    return [];
+  }, [ticket?.attachments, ticket?.metadata?.attachments]);
+
   const resetLossState = useCallback(() => {
     setLossReason('');
     setLossNotes('');
