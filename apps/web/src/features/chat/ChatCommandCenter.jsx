@@ -451,9 +451,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               onSendTemplate={handleSendTemplate}
               onCreateNextStep={handleCreateNextStep}
               onRegisterCallResult={handleRegisterCallResult}
-              onGenerateProposal={() =>
-                toast.info('Gerar minuta', { description: 'Integração com assinaturas em andamento.' })
-              }
               onReopenWindow={() =>
                 toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
               }

@@ -1,7 +1,9 @@
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 
-export const ProposalMiniSim = ({ lead, onGenerate }) => {
+export const ProposalMiniSim = ({ lead, primaryCtaHref }) => {
+  const hasPrimaryCta = Boolean(primaryCtaHref);
+
   return (
     <Card className="border-0 bg-surface-overlay-quiet text-foreground shadow-[0_24px_45px_-32px_rgba(15,23,42,0.9)] ring-1 ring-surface-overlay-glass-border backdrop-blur">
       <CardHeader>
@@ -21,10 +23,22 @@ export const ProposalMiniSim = ({ lead, onGenerate }) => {
           <span>{lead?.value ? `R$ ${lead.value}` : 'R$ 45.000,00'}</span>
         </div>
       </CardContent>
-      <CardFooter>
-        <Button className="w-full rounded-full bg-sky-500 text-white shadow-[0_18px_36px_-24px_rgba(14,165,233,0.6)] hover:bg-sky-400" size="sm" onClick={() => onGenerate?.()}>
-          Gerar minuta
-        </Button>
+      <CardFooter className="flex flex-col gap-2">
+        <p className="text-[11px] text-foreground-muted">
+          Utilize o botão &ldquo;Gerar proposta&rdquo; na barra de resumo (atalho G) para criar a minuta com estes parâmetros.
+        </p>
+        {hasPrimaryCta ? (
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="w-full justify-center gap-2 rounded-full border-surface-overlay-glass-border bg-transparent text-xs font-semibold text-sky-600 hover:text-sky-500"
+          >
+            <a href={primaryCtaHref} aria-label="Ir para o botão principal de gerar proposta">
+              Ir para &ldquo;Gerar proposta&rdquo;
+            </a>
+          </Button>
+        ) : null}
       </CardFooter>
     </Card>
   );
