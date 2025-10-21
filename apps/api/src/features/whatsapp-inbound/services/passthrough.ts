@@ -32,10 +32,7 @@ import {
 } from './types';
 import { resolveTicketAgreementId } from './ticket-utils';
 import { downloadViaBaileys, downloadViaBroker } from './mediaDownloader';
-import {
-  getWhatsAppUploadsBaseUrl,
-  saveWhatsAppMedia,
-} from '../../../services/whatsapp-media-service';
+import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
 
 type PassthroughMetadata = Record<string, unknown>;
 
@@ -49,28 +46,8 @@ const isPersistedMediaUrl = (value: string | null | undefined): boolean => {
     return false;
   }
 
-  const baseUrl = getWhatsAppUploadsBaseUrl().trim().replace(/\/$/, '');
-  if (!baseUrl) {
-    return false;
-  }
-
-  const normalizedBase = baseUrl.startsWith('/') ? baseUrl : `/${baseUrl}`;
-
-  if (trimmed.startsWith(normalizedBase)) {
-    return true;
-  }
-
-  if (/^https?:\/\//i.test(baseUrl) && trimmed.startsWith(baseUrl)) {
-    return true;
-  }
-
   if (/^https?:\/\//i.test(trimmed)) {
-    try {
-      const parsed = new URL(trimmed);
-      return parsed.pathname.startsWith(normalizedBase);
-    } catch {
-      return false;
-    }
+    return trimmed.includes('X-Amz-Signature=') || trimmed.includes('X-Amz-Credential=');
   }
 
   return false;
@@ -374,10 +351,13 @@ export const handlePassthroughIngest = async (
             const normalizedBase64 = trimmed.startsWith('data:')
               ? trimmed.substring(trimmed.indexOf(',') + 1)
               : trimmed;
-            const buffer = Buffer.from(normalizedBase64, 'base64');
+            const uploadBuffer = Buffer.from(normalizedBase64, 'base64');
             const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
-              buffer,
+              buffer: uploadBuffer,
               tenantId: effectiveTenantId,
+              instanceId: instanceIdentifier,
+              chatId: resolvedChatId,
+              messageId: externalIdForUpsert ?? normalizedMessage.id ?? null,
             };
 
             if (passthroughMedia.fileName) {
@@ -389,6 +369,18 @@ export const handlePassthroughIngest = async (
             }
 
             descriptor = await saveWhatsAppMedia(saveInput);
+
+            if (!passthroughMedia.mimeType && saveInput.mimeType) {
+              passthroughMedia.mimeType = saveInput.mimeType;
+            }
+
+            if (!passthroughMedia.size) {
+              passthroughMedia.size = uploadBuffer.length;
+            }
+
+            if (!passthroughMedia.fileName && saveInput.originalName) {
+              passthroughMedia.fileName = saveInput.originalName;
+            }
           }
         } else {
           try {
@@ -435,6 +427,9 @@ export const handlePassthroughIngest = async (
             const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
               buffer: lastDownloadResult.buffer,
               tenantId: effectiveTenantId,
+              instanceId: instanceIdentifier,
+              chatId: resolvedChatId,
+              messageId: externalIdForUpsert ?? normalizedMessage.id ?? null,
             };
 
             const nameCandidate = passthroughMedia.fileName;
@@ -452,14 +447,15 @@ export const handlePassthroughIngest = async (
 
             descriptor = await saveWhatsAppMedia(saveInput);
 
-            if (!passthroughMedia.mimeType && lastDownloadResult.mimeType) {
-              passthroughMedia.mimeType = lastDownloadResult.mimeType;
+            if (!passthroughMedia.mimeType) {
+              passthroughMedia.mimeType =
+                lastDownloadResult.mimeType ?? saveInput.mimeType ?? passthroughMedia.mimeType ?? null;
             }
             if (!passthroughMedia.size) {
               passthroughMedia.size = lastDownloadResult.size ?? lastDownloadResult.buffer.length;
             }
-            if (!passthroughMedia.fileName && descriptor.fileName) {
-              passthroughMedia.fileName = descriptor.fileName;
+            if (!passthroughMedia.fileName && saveInput.originalName) {
+              passthroughMedia.fileName = saveInput.originalName;
             }
           } else if (lastDownloadResult) {
             logger.warn('passthrough: media download returned empty payload', {
@@ -483,12 +479,11 @@ export const handlePassthroughIngest = async (
 
     if (descriptor) {
       passthroughMedia.url = descriptor.mediaUrl;
-      passthroughMedia.mimeType = passthroughMedia.mimeType ?? descriptor.mimeType;
-      passthroughMedia.size = passthroughMedia.size ?? descriptor.size;
       passthroughMedia.base64 = null;
 
       const metadataMedia = toRecord(metadataRecord.media);
       metadataMedia.url = descriptor.mediaUrl;
+      metadataMedia.urlExpiresInSeconds = descriptor.expiresInSeconds;
       if (passthroughMedia.mimeType) {
         metadataMedia.mimetype = passthroughMedia.mimeType;
       }

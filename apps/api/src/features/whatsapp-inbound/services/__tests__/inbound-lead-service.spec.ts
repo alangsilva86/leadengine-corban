@@ -1290,10 +1290,8 @@ describe('processStandardInboundEvent', () => {
       size: 111,
     });
     saveWhatsAppMediaMock.mockResolvedValueOnce({
-      mediaUrl: `/uploads/whatsapp/${kind.toLowerCase()}-stored.${extension}`,
-      mimeType: mimetype,
-      fileName: `${kind.toLowerCase()}-stored.${extension}`,
-      size: 111,
+      mediaUrl: `https://cdn.example.com/${kind.toLowerCase()}-stored.${extension}?X-Amz-Signature=test`,
+      expiresInSeconds: 600,
     });
 
     sendMessageMock.mockResolvedValueOnce({
@@ -1366,12 +1364,15 @@ describe('processStandardInboundEvent', () => {
     );
 
     const [, , payload] = sendMessageMock.mock.calls[0];
-    expect(payload.mediaUrl).toBe(`/uploads/whatsapp/${kind.toLowerCase()}-stored.${extension}`);
+    expect(payload.mediaUrl).toBe(
+      `https://cdn.example.com/${kind.toLowerCase()}-stored.${extension}?X-Amz-Signature=test`
+    );
     const mediaMetadata = payload.metadata?.media as Record<string, unknown> | undefined;
     expect(mediaMetadata).toMatchObject({
-      url: `/uploads/whatsapp/${kind.toLowerCase()}-stored.${extension}`,
+      url: `https://cdn.example.com/${kind.toLowerCase()}-stored.${extension}?X-Amz-Signature=test`,
       mimetype,
       size: fileLength,
+      urlExpiresInSeconds: 600,
     });
     if (caption) {
       expect(mediaMetadata).toMatchObject({ caption });

@@ -7,7 +7,6 @@ const downloadViaBaileysMock = vi.hoisted(() => vi.fn());
 const downloadViaBrokerMock = vi.hoisted(() => vi.fn());
 const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
 const enqueueInboundMediaJobMock = vi.hoisted(() => vi.fn());
-const getWhatsAppUploadsBaseUrlMock = vi.hoisted(() => vi.fn(() => '/uploads/whatsapp'));
 const socketToMock = vi.hoisted(() => vi.fn(() => ({ emit: vi.fn() })));
 const getSocketServerMock = vi.hoisted(() => vi.fn(() => ({ to: socketToMock })));
 
@@ -40,7 +39,6 @@ vi.mock('../mediaDownloader', () => ({
 
 vi.mock('../../../../services/whatsapp-media-service', () => ({
   saveWhatsAppMedia: (...args: unknown[]) => saveWhatsAppMediaMock(...args),
-  getWhatsAppUploadsBaseUrl: () => getWhatsAppUploadsBaseUrlMock(),
 }));
 
 const mockTicketId = 'ticket-123';
@@ -71,9 +69,7 @@ describe('handlePassthroughIngest - media handling', () => {
 
     saveWhatsAppMediaMock.mockResolvedValue({
       mediaUrl: 'https://api.example.com/uploads/whatsapp/media-file.jpg',
-      mimeType: 'image/jpeg',
-      fileName: 'media-file.jpg',
-      size: 10_240,
+      expiresInSeconds: 3600,
     });
   });
 
@@ -137,6 +133,11 @@ describe('handlePassthroughIngest - media handling', () => {
           mimeType: 'image/jpeg',
           size: 10_240,
         }),
+        metadata: expect.objectContaining({
+          media: expect.objectContaining({
+            urlExpiresInSeconds: 3600,
+          }),
+        }),
       })
     );
 
@@ -194,6 +195,11 @@ describe('handlePassthroughIngest - media handling', () => {
         media: expect.objectContaining({
           url: 'https://api.example.com/uploads/whatsapp/media-file.jpg',
         }),
+        metadata: expect.objectContaining({
+          media: expect.objectContaining({
+            urlExpiresInSeconds: 3600,
+          }),
+        }),
       })
     );
 
@@ -218,7 +224,7 @@ describe('handlePassthroughIngest - media handling', () => {
         id: 'wamid-789',
         type: 'IMAGE',
         metadata: {
-          mediaUrl: '/uploads/whatsapp/existing-file.jpg',
+          mediaUrl: 'https://storage.example.com/object.jpg?X-Amz-Signature=dummy',
         },
         imageMessage: {
           mimetype: 'image/jpeg',

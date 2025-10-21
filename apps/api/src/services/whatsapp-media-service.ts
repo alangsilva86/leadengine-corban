@@ -1,9 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const DEFAULT_UPLOADS_DIR = path.resolve(process.cwd(), 'uploads/whatsapp');
-const DEFAULT_BASE_URL = '/uploads/whatsapp';
+import { createSignedGetUrl, uploadObject } from './supabase-storage';
+
+const DEFAULT_SIGNED_URL_TTL_SECONDS = (() => {
+  const configured = process.env.WHATSAPP_MEDIA_SIGNED_URL_TTL_SECONDS;
+  if (!configured) {
+    return 900;
+  }
+
+  const parsed = Number.parseInt(configured, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 900;
+  }
+
+  return parsed;
+})();
 
 const mimeExtensionMap = new Map(
   Object.entries({
@@ -22,40 +34,19 @@ const mimeExtensionMap = new Map(
   })
 );
 
-const resolveUploadsDir = (): string => {
-  const configured = process.env.WHATSAPP_UPLOADS_DIR;
-  if (configured && configured.trim().length > 0) {
-    return path.resolve(configured.trim());
-  }
-  return DEFAULT_UPLOADS_DIR;
-};
-
-const resolveBaseUrl = (): string => {
-  const configured = process.env.WHATSAPP_UPLOADS_BASE_URL;
-  if (configured && configured.trim().length > 0) {
-    return configured.trim().replace(/\/$/, '');
-  }
-  return DEFAULT_BASE_URL;
-};
-
-let ensuredPath: string | null = null;
-let ensurePromise: Promise<string> | null = null;
-
-export const ensureWhatsAppUploadsDirectory = async (): Promise<string> => {
-  const directory = resolveUploadsDir();
-  if (!ensurePromise || ensuredPath !== directory) {
-    ensurePromise = mkdir(directory, { recursive: true }).then(() => directory);
-    ensuredPath = directory;
+const sanitizeSegment = (value: string | null | undefined, fallback: string): string => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) {
+    return fallback;
   }
 
-  return ensurePromise;
-};
+  const normalized = trimmed
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N}\-_.]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
 
-const sanitizeSegment = (value: string | undefined | null): string => {
-  if (!value) {
-    return 'tenant';
-  }
-  return value.toString().toLowerCase().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'tenant';
+  return normalized || fallback;
 };
 
 const resolveExtension = (originalName?: string, mimeType?: string): string => {
@@ -90,58 +81,92 @@ const resolveExtension = (originalName?: string, mimeType?: string): string => {
   return '.bin';
 };
 
-export const getWhatsAppUploadsDirectory = (): string => resolveUploadsDir();
-
-export const getWhatsAppUploadsBaseUrl = (): string => resolveBaseUrl();
-
-export const buildWhatsAppMediaUrl = (fileName: string): string => {
-  const baseUrl = resolveBaseUrl();
-  if (/^https?:\/\//i.test(baseUrl)) {
-    return `${baseUrl}/${fileName}`;
+const resolveSignedUrlTtl = (candidate?: number | null): number => {
+  if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
+    return Math.floor(candidate);
   }
-  const normalizedBase = baseUrl.startsWith('/') ? baseUrl : `/${baseUrl}`;
-  return `${normalizedBase}/${fileName}`;
+
+  return DEFAULT_SIGNED_URL_TTL_SECONDS;
+};
+
+const resolveContentDisposition = (originalName?: string): string | undefined => {
+  if (!originalName) {
+    return undefined;
+  }
+
+  const trimmed = originalName.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const safe = trimmed.replace(/"/g, '');
+  const encoded = encodeURIComponent(trimmed);
+
+  return `attachment; filename="${safe}"; filename*=UTF-8''${encoded}`;
 };
 
 export interface SaveWhatsAppMediaInput {
   buffer: Buffer;
-  tenantId?: string;
+  tenantId?: string | null;
+  instanceId?: string | null;
+  chatId?: string | null;
+  messageId?: string | null;
   originalName?: string;
   mimeType?: string;
+  signedUrlTtlSeconds?: number | null;
 }
 
 export interface WhatsAppMediaDescriptor {
   mediaUrl: string;
-  mimeType: string;
-  fileName: string;
-  size: number;
+  expiresInSeconds: number;
 }
 
 export const saveWhatsAppMedia = async ({
   buffer,
   tenantId,
+  instanceId,
+  chatId,
+  messageId,
   originalName,
   mimeType,
+  signedUrlTtlSeconds,
 }: SaveWhatsAppMediaInput): Promise<WhatsAppMediaDescriptor> => {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new Error('Arquivo inválido para upload.');
   }
 
-  const directory = await ensureWhatsAppUploadsDirectory();
-  const safeTenant = sanitizeSegment(tenantId);
+  const safeTenant = sanitizeSegment(tenantId, 'tenant');
+  const safeInstance = sanitizeSegment(instanceId, 'instance');
+  const safeChat = sanitizeSegment(chatId, 'chat');
+  const fallbackMessageId = sanitizeSegment(messageId, randomUUID());
   const extension = resolveExtension(originalName, mimeType);
-  const fileName = `${safeTenant}-${randomUUID()}${extension}`;
-  const targetPath = path.join(directory, fileName);
 
-  await writeFile(targetPath, buffer);
+  const key = path.posix.join(
+    'whatsapp',
+    safeTenant,
+    safeInstance,
+    safeChat,
+    `${fallbackMessageId}${extension}`
+  );
 
   const resolvedMime = mimeType && mimeType.trim().length > 0 ? mimeType : 'application/octet-stream';
+  const expiresInSeconds = resolveSignedUrlTtl(signedUrlTtlSeconds);
+
+  await uploadObject({
+    key,
+    body: buffer,
+    contentType: resolvedMime,
+    contentDisposition: resolveContentDisposition(originalName),
+  });
+
+  const mediaUrl = await createSignedGetUrl({
+    key,
+    expiresInSeconds,
+  });
 
   return {
-    mediaUrl: buildWhatsAppMediaUrl(fileName),
-    mimeType: resolvedMime,
-    fileName,
-    size: buffer.length,
+    mediaUrl,
+    expiresInSeconds,
   };
 };
 

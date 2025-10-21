@@ -117,25 +117,29 @@ export const processInboundMediaRetryJobs = async (options: MediaRetryWorkerOpti
       const descriptor = await saveWhatsAppMedia({
         buffer: downloadResult.buffer,
         tenantId: claimed.tenantId,
+        instanceId: claimed.instanceId,
+        messageId: claimed.messageExternalId ?? claimed.messageId,
         originalName: readNullableString(metadataRecord.fileName) ?? downloadResult.fileName ?? undefined,
         mimeType: readNullableString(metadataRecord.mimeType) ?? downloadResult.mimeType ?? undefined,
       });
 
-      const resolvedMime = descriptor.mimeType ?? downloadResult.mimeType ?? readNullableString(metadataRecord.mimeType);
-      const resolvedSize = descriptor.size ?? downloadResult.size ?? readNullableNumber(metadataRecord.size);
+      const resolvedMime = downloadResult.mimeType ?? readNullableString(metadataRecord.mimeType);
+      const resolvedSize = downloadResult.size ?? readNullableNumber(metadataRecord.size);
 
       await storageUpdateMessage(claimed.tenantId, claimed.messageId, {
         mediaUrl: descriptor.mediaUrl,
-        mediaFileName: descriptor.fileName ?? readNullableString(metadataRecord.fileName),
+        mediaFileName: readNullableString(metadataRecord.fileName) ?? downloadResult.fileName ?? null,
         mediaType: resolvedMime ?? null,
         mediaSize: resolvedSize ?? null,
         metadata: {
           media_pending: false,
           media: {
             url: descriptor.mediaUrl,
+            urlExpiresInSeconds: descriptor.expiresInSeconds,
             mimetype: resolvedMime ?? undefined,
             size: resolvedSize ?? undefined,
-            fileName: descriptor.fileName ?? undefined,
+            fileName:
+              readNullableString(metadataRecord.fileName) ?? downloadResult.fileName ?? undefined,
           },
         },
       });
