@@ -718,6 +718,9 @@ const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.Tick
 const buildTicketOrderBy = (
   sortBy?: string,
   sortOrder: 'asc' | 'desc' = 'desc'
+): Prisma.TicketOrderByWithRelationInput[] => {
+  const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
+  const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof PrismaTicket) : 'lastMessageAt';
 ):
   | Prisma.TicketOrderByWithRelationInput
   | Prisma.TicketOrderByWithRelationInput[] => {
@@ -734,9 +737,18 @@ const buildTicketOrderBy = (
     return defaultOrder;
   }
 
-  return {
-    [field]: sortOrder,
-  } as Prisma.TicketOrderByWithRelationInput;
+  const orderBy: Prisma.TicketOrderByWithRelationInput[] = [
+    {
+      [field]: sortOrder,
+    } as Prisma.TicketOrderByWithRelationInput,
+  ];
+
+  if (field === 'lastMessageAt') {
+    orderBy.push({ updatedAt: sortOrder });
+    orderBy.push({ createdAt: sortOrder });
+  }
+
+  return orderBy;
 };
 
 const buildMessageWhere = (tenantId: string, filters: MessageFilters): Prisma.MessageWhereInput => {

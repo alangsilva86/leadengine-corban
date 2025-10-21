@@ -828,6 +828,19 @@ const matchesMessageFilters = (message: MessageRecord, filters: MessageFilters):
 const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' | 'desc' = 'desc') => {
   const direction = sortOrder === 'asc' ? 1 : -1;
   const allowedFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
+  const field = allowedFields.has(sortBy ?? '') ? (sortBy as keyof TicketRecord) : 'lastMessageAt';
+  const fallbackFields: Array<keyof TicketRecord> =
+    field === 'lastMessageAt' ? ['updatedAt', 'createdAt'] : [];
+  const fieldsToCompare: Array<keyof TicketRecord> = [field, ...fallbackFields];
+
+  return tickets.sort((a, b) => {
+    for (const currentField of fieldsToCompare) {
+      const valueA = a[currentField];
+      const valueB = b[currentField];
+
+      if (valueA === valueB) {
+        continue;
+      }
   const sortFields: Array<keyof TicketRecord> = (() => {
     if (!sortBy || !allowedFields.has(sortBy)) {
       return ['lastMessageAt', 'updatedAt', 'createdAt'];
@@ -845,24 +858,35 @@ const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' 
       return 0;
     }
 
-    if (valueA === undefined || valueA === null) {
-      return 1;
-    }
+      if (valueA === undefined || valueA === null) {
+        return 1;
+      }
 
-    if (valueB === undefined || valueB === null) {
-      return -1;
-    }
+      if (valueB === undefined || valueB === null) {
+        return -1;
+      }
 
-    if (valueA instanceof Date && valueB instanceof Date) {
-      return valueA.getTime() > valueB.getTime() ? direction : -direction;
-    }
+      if (valueA instanceof Date && valueB instanceof Date) {
+        if (valueA.getTime() === valueB.getTime()) {
+          continue;
+        }
+        return valueA.getTime() > valueB.getTime() ? direction : -direction;
+      }
 
-    if (typeof valueA === 'string' && typeof valueB === 'string') {
-      return valueA.localeCompare(valueB) * direction;
-    }
+      if (typeof valueA === 'string' && typeof valueB === 'string') {
+        const comparison = valueA.localeCompare(valueB);
+        if (comparison === 0) {
+          continue;
+        }
+        return comparison * direction;
+      }
 
-    if (typeof valueA === 'number' && typeof valueB === 'number') {
-      return valueA > valueB ? direction : -direction;
+      if (typeof valueA === 'number' && typeof valueB === 'number') {
+        if (valueA === valueB) {
+          continue;
+        }
+        return valueA > valueB ? direction : -direction;
+      }
     }
 
     return 0;
