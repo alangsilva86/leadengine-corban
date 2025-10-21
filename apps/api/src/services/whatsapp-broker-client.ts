@@ -19,11 +19,28 @@ import {
   type WhatsAppCanonicalError,
 } from '@ticketz/wa-contracts';
 
+export type WhatsAppBrokerNotConfiguredErrorOptions = {
+  cause?: unknown;
+  missing?: string[];
+};
+
 export class WhatsAppBrokerNotConfiguredError extends Error {
   override name = 'WhatsAppBrokerNotConfiguredError';
+  readonly missing: string[] | undefined;
 
-  constructor(message = 'WhatsApp broker not configured') {
+  constructor(
+    message = 'WhatsApp broker not configured',
+    options: WhatsAppBrokerNotConfiguredErrorOptions = {}
+  ) {
     super(message);
+
+    if (options.cause !== undefined) {
+      this.cause = options.cause;
+    }
+
+    if (options.missing && options.missing.length > 0) {
+      this.missing = options.missing;
+    }
   }
 }
 
@@ -224,36 +241,69 @@ export type WhatsAppBrokerResolvedConfig = {
   timeoutMs: number;
 };
 
+const REQUIRED_ENV_VARS = {
+  baseUrl: 'WHATSAPP_BROKER_URL',
+  apiKey: 'WHATSAPP_BROKER_API_KEY',
+  verifyToken: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+} as const;
+
+const normalizeBrokerBaseUrl = (raw: string): string => {
+  try {
+    const parsed = new URL(raw);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error(`Unsupported protocol: ${parsed.protocol}`);
+    }
+
+    const normalized = `${parsed.origin}${parsed.pathname}`.replace(/\/$/, '');
+    return normalized;
+  } catch (error) {
+    throw new WhatsAppBrokerNotConfiguredError(
+      'WhatsApp broker base URL is invalid. Provide an absolute HTTP(S) URL in WHATSAPP_BROKER_URL.',
+      { cause: error }
+    );
+  }
+};
+
 export const resolveWhatsAppBrokerConfig = (): WhatsAppBrokerResolvedConfig => {
-  const baseUrl = getBrokerBaseUrl();
-  if (!baseUrl) {
+  let baseUrl: string | null;
+  let apiKey: string | null;
+  let verifyToken: string | null;
+  let webhookUrl: string;
+  let timeoutMs: number;
+
+  try {
+    baseUrl = getBrokerBaseUrl();
+    apiKey = getBrokerApiKey();
+    verifyToken = getWebhookVerifyToken();
+    webhookUrl = getBrokerWebhookUrl();
+    timeoutMs = getBrokerTimeoutMs();
+  } catch (error) {
     throw new WhatsAppBrokerNotConfiguredError(
-      'WhatsApp broker base URL is not configured. Set WHATSAPP_BROKER_URL.'
+      'Unable to read WhatsApp broker configuration.',
+      { cause: error }
     );
   }
 
-  const apiKey = getBrokerApiKey();
-  if (!apiKey) {
-    throw new WhatsAppBrokerNotConfiguredError(
-      'WhatsApp broker API key is not configured. Set WHATSAPP_BROKER_API_KEY.'
-    );
+  const missing = Object.entries({ baseUrl, apiKey, verifyToken })
+    .filter(([, value]) => !value)
+    .map(([key]) => REQUIRED_ENV_VARS[key as keyof typeof REQUIRED_ENV_VARS]);
+
+  if (missing.length > 0) {
+    const message =
+      missing.length === 1
+        ? `WhatsApp broker configuration is missing ${missing[0]}.`
+        : `WhatsApp broker configuration is missing required variables: ${missing.join(', ')}.`;
+
+    throw new WhatsAppBrokerNotConfiguredError(message, { missing });
   }
 
-  const verifyToken = getWebhookVerifyToken();
-  if (!verifyToken) {
-    throw new WhatsAppBrokerNotConfiguredError(
-      'WhatsApp webhook verify token is not configured. Set WHATSAPP_WEBHOOK_VERIFY_TOKEN.'
-    );
-  }
-
-  const webhookUrl = getBrokerWebhookUrl();
-  const timeoutMs = getBrokerTimeoutMs();
+  const normalizedBaseUrl = normalizeBrokerBaseUrl(baseUrl!);
 
   return {
-    baseUrl: baseUrl.replace(/\/$/, ''),
-    apiKey,
+    baseUrl: normalizedBaseUrl,
+    apiKey: apiKey!,
     webhookUrl,
-    verifyToken,
+    verifyToken: verifyToken!,
     timeoutMs,
   };
 };
