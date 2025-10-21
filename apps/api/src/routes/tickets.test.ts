@@ -221,6 +221,78 @@ describe('Tickets routes', () => {
     }
   });
 
+  it('orders tickets by last interaction without explicit sort', async () => {
+    const { server, url } = await startTestServer();
+
+    const tenantHeaders = {
+      'content-type': 'application/json',
+      'x-tenant-id': 'tenant-123',
+    } as const;
+
+    const createTicket = async (contactId: string, subject: string) => {
+      const response = await fetch(`${url}/api/tickets`, {
+        method: 'POST',
+        headers: tenantHeaders,
+        body: JSON.stringify({
+          contactId,
+          queueId: '00000000-0000-4000-8000-000000000555',
+          subject,
+          channel: 'WHATSAPP',
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      return body.data.id as string;
+    };
+
+    const sendMessage = async (ticketId: string, isoTimestamp: string, content: string) => {
+      const response = await fetch(`${url}/api/tickets/messages`, {
+        method: 'POST',
+        headers: tenantHeaders,
+        body: JSON.stringify({
+          ticketId,
+          content,
+          metadata: { normalizedTimestamp: isoTimestamp },
+        }),
+      });
+
+      expect(response.status).toBe(201);
+    };
+
+    try {
+      const ticketOlder = await createTicket('00000000-0000-4000-8000-000000000211', 'Old interaction');
+      const ticketNewer = await createTicket('00000000-0000-4000-8000-000000000212', 'Recent interaction');
+      const ticketWithoutMessages = await createTicket(
+        '00000000-0000-4000-8000-000000000213',
+        'No interactions yet'
+      );
+
+      await sendMessage(ticketOlder, '2024-01-01T10:00:00.000Z', 'First reply');
+      await sendMessage(ticketNewer, '2024-01-02T15:30:00.000Z', 'Follow-up reply');
+
+      const listResponse = await fetch(`${url}/api/tickets?limit=10`, {
+        headers: { 'x-tenant-id': 'tenant-123' },
+      });
+
+      expect(listResponse.status).toBe(200);
+      const listBody = await listResponse.json();
+      const returnedIds = listBody.data.items.map((ticket: { id: string }) => ticket.id);
+
+      expect(returnedIds.slice(0, 3)).toEqual([
+        ticketNewer,
+        ticketOlder,
+        ticketWithoutMessages,
+      ]);
+
+      expect(listBody.data.items[0].lastMessageAt).toBeTruthy();
+      expect(listBody.data.items[1].lastMessageAt).toBeTruthy();
+      expect(listBody.data.items[2].lastMessageAt).toBeUndefined();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('returns 503 when broker is not configured for ticket messages', async () => {
     const { server, url } = await startTestServer();
 
