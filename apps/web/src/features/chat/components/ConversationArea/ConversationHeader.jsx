@@ -283,6 +283,8 @@ export const ConversationHeader = ({
   onRegisterResult,
   onRegisterCallResult,
   onAssign,
+  onSendTemplate,
+  onCreateNextStep,
   onGenerateProposal,
   onScheduleFollowUp,
   typingAgents = [],

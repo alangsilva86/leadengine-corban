@@ -14,6 +14,8 @@ export const ConversationArea = ({
   messagesQuery,
   onSendMessage,
   onCreateNote,
+  onSendTemplate,
+  onCreateNextStep,
   onRegisterResult,
   onRegisterCallResult,
   onAssign,
@@ -160,6 +162,8 @@ export const ConversationArea = ({
             onRegisterResult={onRegisterResult}
             onRegisterCallResult={onRegisterCallResult}
             onAssign={onAssign}
+            onSendTemplate={onSendTemplate}
+            onCreateNextStep={onCreateNextStep}
             onGenerateProposal={onGenerateProposal}
             onScheduleFollowUp={onScheduleFollowUp}
             isRegisteringResult={isRegisteringResult}

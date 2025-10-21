@@ -63,6 +63,8 @@ export const QuickComposer = ({
 
   const startedAtRef = useRef(typeof performance !== 'undefined' ? performance.now() : Date.now());
   const primaryTrackedRef = useRef(false);
+  const canSendTemplate = typeof onSendTemplate === 'function';
+  const canCreateNextStep = typeof onCreateNextStep === 'function';
 
   const ticketId = ticket?.id ?? null;
 
@@ -80,12 +82,17 @@ export const QuickComposer = ({
   }, [phones, selectedPhone]);
 
   const handleOpenTemplate = useCallback(() => {
+    if (!canSendTemplate) {
+      toast.info('Envio de template indisponível no ambiente atual.');
+      return;
+    }
+
     if (!ensurePhone()) {
       return;
     }
     setTemplatePickerOpen(true);
     trackPrimaryAction(primaryTrackedRef, startedAtRef, 'whatsapp_template', { ticketId });
-  }, [ensurePhone, primaryTrackedRef, startedAtRef, ticketId]);
+  }, [canSendTemplate, ensurePhone, primaryTrackedRef, startedAtRef, ticketId]);
 
   const handleTemplateSelected = useCallback(
     (template) => {
@@ -107,6 +114,10 @@ export const QuickComposer = ({
       toast.info('Descreva o próximo passo antes de salvar.');
       return;
     }
+    if (!canCreateNextStep) {
+      toast.info('Registro de próximo passo indisponível no ambiente atual.');
+      return;
+    }
     try {
       await onCreateNextStep?.({ description, dueAt: taskDueAt });
       setTaskDescription('');
@@ -123,7 +134,7 @@ export const QuickComposer = ({
         description: message,
       });
     }
-  }, [onCreateNextStep, primaryTrackedRef, startedAtRef, taskDescription, taskDueAt, ticketId]);
+  }, [canCreateNextStep, onCreateNextStep, primaryTrackedRef, startedAtRef, taskDescription, taskDueAt, ticketId]);
 
   const renderPhoneSelector = () => {
     if (phones.length <= 1) {
@@ -161,6 +172,10 @@ export const QuickComposer = ({
             type="button"
             onClick={handleOpenTemplate}
             className="flex flex-col items-center gap-1 rounded-xl bg-emerald-500/90 py-3 text-xs font-semibold text-white shadow-[0_18px_32px_-24px_rgba(16,185,129,0.8)] hover:bg-emerald-500"
+            disabled={!canSendTemplate}
+            title={
+              canSendTemplate ? undefined : 'Templates indisponíveis na sua configuração atual.'
+            }
           >
             <MessageCircle className="h-4 w-4" />
             WhatsApp
@@ -203,6 +218,7 @@ export const QuickComposer = ({
           type="button"
           onClick={handleTaskSubmit}
           className="w-full rounded-full bg-primary text-sm font-semibold text-primary-foreground shadow-[0_18px_36px_-24px_rgba(59,130,246,0.8)] hover:bg-primary/90"
+          disabled={!canCreateNextStep}
         >
           Registrar próximo passo
         </Button>

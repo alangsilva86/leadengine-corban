@@ -484,6 +484,8 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             messagesQuery={controller.messagesQuery}
             onSendMessage={sendMessage}
             onCreateNote={createNote}
+            onSendTemplate={handleSendTemplate}
+            onCreateNextStep={handleCreateNextStep}
             onRegisterResult={registerResult}
             onRegisterCallResult={handleRegisterCallResult}
             onAssign={() => assignToMe(controller.selectedTicket)}
