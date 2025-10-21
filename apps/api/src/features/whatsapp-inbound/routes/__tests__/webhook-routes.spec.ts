@@ -210,7 +210,9 @@ describe('WhatsApp webhook Baileys event logging', () => {
 
     const logCallOrder = processedIntegrationEventCreateMock.mock.invocationCallOrder[0];
     const ingestCallOrder = ingestInboundWhatsAppMessageMock.mock.invocationCallOrder[0];
-    expect(logCallOrder).toBeLessThan(ingestCallOrder);
+    expect(logCallOrder).toBeDefined();
+    expect(ingestCallOrder).toBeDefined();
+    expect(logCallOrder!).toBeLessThan(ingestCallOrder!);
 
     const createArgs = processedIntegrationEventCreateMock.mock.calls[0]?.[0];
     expect(createArgs).toMatchObject({

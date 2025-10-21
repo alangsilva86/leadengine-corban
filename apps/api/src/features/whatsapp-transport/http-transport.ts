@@ -11,6 +11,7 @@ import {
   type WhatsAppMessageResult,
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
+  type BrokerRequestOptions,
 } from '../../services/whatsapp-broker-client';
 import { logger } from '../../config/logger';
 import type {
@@ -75,21 +76,37 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       return undefined;
     })();
 
-    return {
-      mediaUrl:
-        toTrimmedString(rawPayload.mediaUrl) ??
-        toTrimmedString(mediaRecord?.url) ??
-        toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['mediaUrl']),
-      mimetype:
-        toTrimmedString(rawPayload.mediaMimeType) ??
-        toTrimmedString(mediaRecord?.mimetype) ??
-        toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['mimeType']),
-      fileName:
-        toTrimmedString(rawPayload.mediaFileName) ??
-        toTrimmedString(mediaRecord?.filename) ??
-        toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['fileName']),
-      caption: captionCandidate,
-    };
+    const result: { caption?: string; mediaUrl?: string; mimetype?: string; fileName?: string } = {};
+
+    const mediaUrlCandidate =
+      toTrimmedString(rawPayload.mediaUrl) ??
+      toTrimmedString(mediaRecord?.url) ??
+      toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['mediaUrl']);
+    if (mediaUrlCandidate) {
+      result.mediaUrl = mediaUrlCandidate;
+    }
+
+    const mimetypeCandidate =
+      toTrimmedString(rawPayload.mediaMimeType) ??
+      toTrimmedString(mediaRecord?.mimetype) ??
+      toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['mimeType']);
+    if (mimetypeCandidate) {
+      result.mimetype = mimetypeCandidate;
+    }
+
+    const fileNameCandidate =
+      toTrimmedString(rawPayload.mediaFileName) ??
+      toTrimmedString(mediaRecord?.filename) ??
+      toTrimmedString((mediaRecord as Record<string, unknown> | null)?.['fileName']);
+    if (fileNameCandidate) {
+      result.fileName = fileNameCandidate;
+    }
+
+    if (captionCandidate) {
+      result.caption = captionCandidate;
+    }
+
+    return result;
   }
 
   private buildMessageResult(
@@ -213,13 +230,18 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       previewSnippet,
     });
 
+    const requestOptions: BrokerRequestOptions = {};
+    if (options.idempotencyKey) {
+      requestOptions.idempotencyKey = options.idempotencyKey;
+    }
+
     const response = await performWhatsAppBrokerRequest<Record<string, unknown>>(
       routePath,
       {
         method: 'POST',
         body: JSON.stringify(directRequestBody),
       },
-      { idempotencyKey: options.idempotencyKey },
+      requestOptions,
       config
     );
 
@@ -303,10 +325,13 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       return metadataKey;
     })();
 
-    const dispatchOptions = {
+    const dispatchOptions: { rawPayload: WhatsAppTransportSendMessagePayload; idempotencyKey?: string } = {
       rawPayload: payload,
-      idempotencyKey: normalizedIdempotencyKey,
-    } as const;
+    };
+
+    if (normalizedIdempotencyKey) {
+      dispatchOptions.idempotencyKey = normalizedIdempotencyKey;
+    }
 
     try {
       return await this.sendViaDirectRoutes(config, instanceId, normalizedPayload, dispatchOptions);

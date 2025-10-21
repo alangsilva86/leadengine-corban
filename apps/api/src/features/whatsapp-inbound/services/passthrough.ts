@@ -183,7 +183,7 @@ export const handlePassthroughIngest = async (
       readString(eventSessionId) ??
       readString(metadataRecord.sessionId) ??
       readString(metadataRecord.session_id),
-    externalId,
+    externalId: readString(externalId) ?? null,
   });
   const document = sanitizeDocument(readString(contact.document), [
     normalizedPhone,
@@ -352,12 +352,20 @@ export const handlePassthroughIngest = async (
               ? trimmed.substring(trimmed.indexOf(',') + 1)
               : trimmed;
             const buffer = Buffer.from(normalizedBase64, 'base64');
-            descriptor = await saveWhatsAppMedia({
+            const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
               buffer,
               tenantId: effectiveTenantId,
-              originalName: passthroughMedia.fileName ?? undefined,
-              mimeType: passthroughMedia.mimeType ?? undefined,
-            });
+            };
+
+            if (passthroughMedia.fileName) {
+              saveInput.originalName = passthroughMedia.fileName;
+            }
+
+            if (passthroughMedia.mimeType) {
+              saveInput.mimeType = passthroughMedia.mimeType;
+            }
+
+            descriptor = await saveWhatsAppMedia(saveInput);
           }
         } else if (passthroughMedia.directPath || passthroughMedia.mediaKey) {
           const downloadResult = await downloadInboundMediaFromBroker({
@@ -374,15 +382,25 @@ export const handlePassthroughIngest = async (
           });
 
           if (downloadResult && downloadResult.buffer.length > 0) {
-            descriptor = await saveWhatsAppMedia({
+            const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
               buffer: downloadResult.buffer,
               tenantId: effectiveTenantId,
-              originalName: passthroughMedia.fileName ?? undefined,
-              mimeType:
-                passthroughMedia.mimeType ??
-                downloadResult.mimeType ??
-                undefined,
-            });
+            };
+
+            const nameCandidate = passthroughMedia.fileName;
+            if (nameCandidate) {
+              saveInput.originalName = nameCandidate;
+            }
+
+            const mimeCandidate =
+              passthroughMedia.mimeType ??
+              downloadResult.mimeType ??
+              null;
+            if (mimeCandidate) {
+              saveInput.mimeType = mimeCandidate;
+            }
+
+            descriptor = await saveWhatsAppMedia(saveInput);
 
             if (!passthroughMedia.mimeType && downloadResult.mimeType) {
               passthroughMedia.mimeType = downloadResult.mimeType;

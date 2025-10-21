@@ -32,7 +32,7 @@ export type WhatsAppBrokerErrorOptions = {
   brokerStatus?: number | undefined;
   brokerCode?: string | undefined;
   requestId?: string | undefined;
-  cause?: unknown;
+  override cause?: unknown;
 };
 
 export class WhatsAppBrokerError extends Error {
@@ -561,12 +561,22 @@ class WhatsAppBrokerClient {
     const hasOverride = trimmed.length > 0;
     const instanceId = hasOverride ? trimmed : fallbackId;
 
-    return {
+    const result: {
+      instanceId: string;
+      encodedInstanceId: string;
+      queryInstanceId?: string;
+      isOverride: boolean;
+    } = {
       instanceId,
       encodedInstanceId: encodeURIComponent(instanceId),
-      queryInstanceId: hasOverride ? trimmed : undefined,
       isOverride: hasOverride && instanceId !== fallbackId,
     };
+
+    if (hasOverride) {
+      result.queryInstanceId = trimmed;
+    }
+
+    return result;
   }
 
   private async loadQrFromStatus(brokerId: string, instanceId: string): Promise<WhatsAppQrCode> {
@@ -1001,18 +1011,41 @@ class WhatsAppBrokerClient {
         metadata.stats
       );
 
-    return {
+    const instance: WhatsAppInstance = {
       id: idCandidate,
       tenantId: resolvedTenantId,
-      name,
       status,
-      createdAt,
-      lastActivity,
-      connected,
-      phoneNumber: phoneNumber ?? undefined,
-      user: user ?? undefined,
-      stats: statsCandidate ?? undefined,
     };
+
+    if (name) {
+      instance.name = name;
+    }
+
+    if (createdAt) {
+      instance.createdAt = createdAt;
+    }
+
+    if (lastActivity !== undefined) {
+      instance.lastActivity = lastActivity;
+    }
+
+    if (connected !== undefined) {
+      instance.connected = connected;
+    }
+
+    if (phoneNumber !== null && phoneNumber !== undefined) {
+      instance.phoneNumber = phoneNumber;
+    }
+
+    if (user !== null && user !== undefined) {
+      instance.user = user;
+    }
+
+    if (statsCandidate) {
+      instance.stats = statsCandidate;
+    }
+
+    return instance;
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
@@ -1112,17 +1145,31 @@ class WhatsAppBrokerClient {
 
     const normalizedQr = this.normalizeQrPayload(qrSource);
 
-    return {
+    const statusPayload: WhatsAppStatus = {
       status,
       connected,
       ...normalizedQr,
-      stats: statsCandidate ?? messagesCandidate ?? null,
-      metrics: metricsCandidate ?? statsCandidate ?? null,
-      messages: messagesCandidate ?? null,
-      rate: rateCandidate ?? null,
-      rateUsage: rateUsageCandidate ?? rateCandidate ?? null,
-      raw: primary ?? (extendedSources.length > 0 ? extendedSources[0] : null),
     };
+
+    const statsValue = statsCandidate ?? messagesCandidate ?? null;
+    statusPayload.stats = statsValue;
+
+    const metricsValue = metricsCandidate ?? statsCandidate ?? null;
+    statusPayload.metrics = metricsValue;
+
+    const messagesValue = messagesCandidate ?? null;
+    statusPayload.messages = messagesValue;
+
+    const rateValue = rateCandidate ?? null;
+    statusPayload.rate = rateValue;
+
+    const rateUsageValue = rateUsageCandidate ?? rateCandidate ?? null;
+    statusPayload.rateUsage = rateUsageValue;
+
+    const rawValue = primary ?? (extendedSources.length > 0 ? extendedSources[0] : null);
+    statusPayload.raw = rawValue;
+
+    return statusPayload;
   }
 
   private normalizeStatusResponse(
@@ -1356,11 +1403,19 @@ class WhatsAppBrokerClient {
     options: { instanceId?: string; code?: string; phoneNumber?: string } = {}
   ): Promise<void> {
     this.resolveConfig();
-    await this.connectSession(brokerId, {
+    const connectPayload: { instanceId: string; code?: string; phoneNumber?: string } = {
       instanceId: options.instanceId ?? brokerId,
-      code: options.code,
-      phoneNumber: options.phoneNumber,
-    });
+    };
+
+    if (options.code) {
+      connectPayload.code = options.code;
+    }
+
+    if (options.phoneNumber) {
+      connectPayload.phoneNumber = options.phoneNumber;
+    }
+
+    await this.connectSession(brokerId, connectPayload);
   }
 
   async disconnectInstance(

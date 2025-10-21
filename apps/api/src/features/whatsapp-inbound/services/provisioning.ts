@@ -410,7 +410,7 @@ const ensureAutopProvisionMetadata = async (
 
   const updated = await prisma.whatsAppInstance.update({
     where: { id: instance.id },
-    data: { metadata: nextMetadata },
+    data: { metadata: nextMetadata as Prisma.InputJsonValue },
   });
 
   return updated;
@@ -452,6 +452,10 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
     });
 
     const ensureIdentifier = tenantIdentifiers[0];
+
+    if (!ensureIdentifier) {
+      return null;
+    }
 
     try {
       const ensuredTenant = await ensureTenantRecord(ensureIdentifier, {
@@ -595,20 +599,22 @@ export const isUniqueViolation = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') {
     return false;
   }
-  return (
-    (error as { code?: string }).code === 'P2002' ||
+  const codeMatches = (error as { code?: string }).code === 'P2002';
+  const messageMatches = Boolean(
     (error as { message?: string }).message?.includes('Unique constraint failed')
   );
+  return codeMatches || messageMatches;
 };
 
 export const isForeignKeyError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') {
     return false;
   }
-  return (
-    (error as { code?: string }).code === 'P2003' ||
+  const codeMatches = (error as { code?: string }).code === 'P2003';
+  const messageMatches = Boolean(
     (error as { message?: string }).message?.includes('Foreign key constraint failed')
   );
+  return codeMatches || messageMatches;
 };
 
 export const __testing = {

@@ -6,10 +6,11 @@ import { logger } from '../../../config/logger';
 
 export const sanitizeJsonPayload = (value: unknown): Prisma.InputJsonValue => {
   try {
-    return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+    const normalized = JSON.parse(JSON.stringify(value ?? null));
+    return normalized as Prisma.InputJsonValue;
   } catch (error) {
     logger.warn('⚠️ [Webhook] Falha ao sanitizar payload JSON para debug', { error });
-    return null;
+    return null as Prisma.InputJsonValue;
   }
 };
 

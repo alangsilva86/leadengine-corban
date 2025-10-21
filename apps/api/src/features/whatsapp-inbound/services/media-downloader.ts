@@ -185,7 +185,8 @@ const resolveMediaTypeKey = (mediaType: string | null): string => {
   }
 
   const normalized = mediaType.trim().toUpperCase();
-  return MEDIA_KEY_INFO_BY_TYPE[normalized] ?? MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
+  const mapped = MEDIA_KEY_INFO_BY_TYPE[normalized];
+  return typeof mapped === 'string' ? mapped : MEDIA_KEY_INFO_BY_TYPE.DOCUMENT;
 };
 
 const resolveDefaultMime = (mediaType: string | null): string | null => {
@@ -194,7 +195,8 @@ const resolveDefaultMime = (mediaType: string | null): string | null => {
   }
 
   const normalized = mediaType.trim().toUpperCase();
-  return DEFAULT_MIME_BY_TYPE[normalized] ?? null;
+  const mapped = DEFAULT_MIME_BY_TYPE[normalized];
+  return typeof mapped === 'string' ? mapped : null;
 };
 
 const buildWhatsAppMediaUrl = (directPath: string): string | null => {
@@ -234,11 +236,12 @@ const deriveMediaKeys = (
   try {
     const info = Buffer.from(resolveMediaTypeKey(mediaType), 'utf-8');
     const expanded = hkdfSync('sha256', mediaKey, Buffer.alloc(32, 0), info, 112);
+    const expandedBuffer = Buffer.isBuffer(expanded) ? expanded : Buffer.from(expanded);
 
     return {
-      iv: expanded.subarray(0, 16),
-      cipherKey: expanded.subarray(16, 48),
-      macKey: expanded.subarray(48, 80),
+      iv: expandedBuffer.subarray(0, 16),
+      cipherKey: expandedBuffer.subarray(16, 48),
+      macKey: expandedBuffer.subarray(48, 80),
     };
   } catch {
     return null;

@@ -283,6 +283,10 @@ const normalizeContractEvent = (
     (event.type === 'MESSAGE_OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
   const direction = rawDirection.toLowerCase().includes('outbound') ? 'outbound' : 'inbound';
 
+  const tenantCandidate = options.tenantOverride ?? event.tenantId ?? null;
+  const sessionCandidate = event.sessionId ?? null;
+  const brokerCandidate = options.brokerOverride ?? event.instanceId ?? null;
+
   const normalized: NormalizedRawUpsertMessage = {
     data: {
       direction,
@@ -293,9 +297,9 @@ const normalizeContractEvent = (
       from: contactRecord as BrokerInboundContact,
     },
     messageIndex: 0,
-    tenantId: options.tenantOverride ?? event.tenantId ?? undefined,
-    sessionId: event.sessionId ?? undefined,
-    brokerId: options.brokerOverride ?? event.instanceId ?? null,
+    ...(tenantCandidate ? { tenantId: tenantCandidate } : {}),
+    ...(sessionCandidate ? { sessionId: sessionCandidate } : {}),
+    ...(brokerCandidate !== undefined ? { brokerId: brokerCandidate } : {}),
     messageId,
     messageType,
     isGroup,

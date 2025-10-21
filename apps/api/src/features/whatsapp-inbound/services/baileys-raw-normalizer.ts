@@ -697,11 +697,9 @@ const normalizeMessagePayload = (
   }) as BrokerInboundContact;
 
   const normalized: BrokerWebhookInbound = {
-    event: 'message',
     direction,
     instanceId: context.instanceId,
     timestamp: toIsoTimestamp(messageTimestamp),
-    contact: fromContact,
     from: fromContact,
     message: normalizedMessage,
     metadata,
@@ -846,8 +844,8 @@ export const normalizeUpsertEvent = (
       instanceId: resolvedInstanceId,
       owner,
       source,
-      tenantId,
-      sessionId,
+      ...(tenantId ? { tenantId } : {}),
+      ...(sessionId ? { sessionId } : {}),
       brokerId: brokerId ?? null,
       fallbackTimestamp,
     });
