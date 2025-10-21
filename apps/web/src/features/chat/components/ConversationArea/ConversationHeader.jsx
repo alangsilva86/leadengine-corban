@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -226,6 +226,33 @@ const MetadataBadge = ({ icon: Icon, children, className, ...props }) => (
     <span className="truncate text-left">{children}</span>
   </button>
 );
+
+const InfoRow = ({
+  label,
+  children,
+  className,
+  labelClassName,
+  valueClassName,
+  ...props
+}) => {
+  const labelId = useId();
+
+  return (
+    <div
+      role="group"
+      aria-labelledby={labelId}
+      className={cn('flex flex-col gap-1', className)}
+      {...props}>
+      <span
+        id={labelId}
+        className={cn('text-xs font-medium uppercase tracking-wide text-foreground-muted', labelClassName)}
+      >
+        {label}
+      </span>
+      <div className={cn('text-sm font-medium text-foreground', valueClassName)}>{children ?? '—'}</div>
+    </div>
+  );
+};
 
 export const ConversationCardBody = ({ children, className }) => (
   <div
