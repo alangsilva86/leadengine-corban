@@ -33,7 +33,6 @@ import { preferencesRouter } from './routes/preferences';
 import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
-import { getWhatsAppUploadsBaseUrl, getWhatsAppUploadsDirectory } from './services/whatsapp-media-service';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -41,11 +40,6 @@ if (process.env.NODE_ENV !== 'production') {
 
 const app: Application = express();
 const server = createServer(app);
-
-const whatsappUploadsBaseUrl = getWhatsAppUploadsBaseUrl();
-if (whatsappUploadsBaseUrl.startsWith('/')) {
-  app.use(whatsappUploadsBaseUrl, express.static(getWhatsAppUploadsDirectory()));
-}
 
 const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
 let debugMessagesRouter: Router | null = null;

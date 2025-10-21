@@ -1,42 +1,54 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const uploadObjectMock = vi.hoisted(() => vi.fn());
+const createSignedGetUrlMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../supabase-storage', () => ({
+  uploadObject: (...args: unknown[]) => uploadObjectMock(...args),
+  createSignedGetUrl: (...args: unknown[]) => createSignedGetUrlMock(...args),
+}));
 
 describe('whatsapp-media-service', () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    tempDir = await mkdtemp(path.join(tmpdir(), 'wa-media-'));
-    process.env.WHATSAPP_UPLOADS_DIR = tempDir;
-    process.env.WHATSAPP_UPLOADS_BASE_URL = '/static/wa';
+  beforeEach(() => {
     vi.resetModules();
+    uploadObjectMock.mockReset();
+    createSignedGetUrlMock.mockReset();
+    process.env.WHATSAPP_MEDIA_SIGNED_URL_TTL_SECONDS = '1200';
   });
 
-  afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-    delete process.env.WHATSAPP_UPLOADS_DIR;
-    delete process.env.WHATSAPP_UPLOADS_BASE_URL;
-    vi.resetModules();
-  });
+  it('uploads media buffers to Supabase storage and returns a signed URL descriptor', async () => {
+    createSignedGetUrlMock.mockResolvedValueOnce('https://cdn.example.com/signed/url');
 
-  it('persists media buffers and returns descriptor metadata', async () => {
     const service = await import('../whatsapp-media-service');
     const buffer = Buffer.from('hello whatsapp');
 
     const descriptor = await service.saveWhatsAppMedia({
       buffer,
       tenantId: 'Tenant#123',
+      instanceId: 'Instance A',
+      chatId: '5511999999999@s.whatsapp.net',
+      messageId: 'wamid::ABC123',
       originalName: ' Documento .PDF ',
       mimeType: 'application/pdf',
+      signedUrlTtlSeconds: 3600,
     });
 
-    expect(descriptor.mimeType).toBe('application/pdf');
-    expect(descriptor.fileName).toMatch(/tenant-123-.*\.pdf$/);
-    expect(descriptor.size).toBe(buffer.length);
-    expect(descriptor.mediaUrl).toBe(`/static/wa/${descriptor.fileName}`);
+    expect(uploadObjectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'whatsapp/tenant-123/instance-a/5511999999999-s.whatsapp.net/wamid-abc123.pdf',
+        contentType: 'application/pdf',
+        contentDisposition: expect.stringContaining('filename="Documento .PDF"'),
+      })
+    );
 
-    const stored = await readFile(path.join(service.getWhatsAppUploadsDirectory(), descriptor.fileName));
-    expect(stored.equals(buffer)).toBe(true);
+    expect(createSignedGetUrlMock).toHaveBeenCalledWith({
+      key: 'whatsapp/tenant-123/instance-a/5511999999999-s.whatsapp.net/wamid-abc123.pdf',
+      expiresInSeconds: 3600,
+    });
+
+    expect(descriptor).toEqual({
+      mediaUrl: 'https://cdn.example.com/signed/url',
+      expiresInSeconds: 3600,
+    });
   });
 });

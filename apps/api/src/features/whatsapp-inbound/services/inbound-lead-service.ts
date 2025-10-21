@@ -1615,6 +1615,7 @@ const processStandardInboundEvent = async (
   }
 
   let downloadedMediaSuccessfully = false;
+  let signedMediaUrlExpiresIn: number | null = null;
   let pendingMediaJobDetails:
     | {
         directPath: string | null;
@@ -1714,6 +1715,9 @@ const processStandardInboundEvent = async (
       const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
         buffer: downloadResult.buffer,
         tenantId,
+        instanceId: instanceIdentifier,
+        chatId,
+        messageId: externalId ?? normalizedMessage.id ?? null,
       };
 
       if (mediaDetails.fileName) {
@@ -1731,12 +1735,13 @@ const processStandardInboundEvent = async (
       }
 
       const descriptor = await saveWhatsAppMedia(saveInput);
+      signedMediaUrlExpiresIn = descriptor.expiresInSeconds;
 
       const resolvedMimeType =
         normalizedMessage.mimetype ??
         mediaDetails.mimeType ??
         downloadResult.mimeType ??
-        descriptor.mimeType ??
+        saveInput.mimeType ??
         null;
       if (!normalizedMessage.mimetype && resolvedMimeType) {
         normalizedMessage.mimetype = resolvedMimeType;
@@ -1746,11 +1751,13 @@ const processStandardInboundEvent = async (
         normalizedMessage.fileSize ??
         mediaDetails.size ??
         downloadResult.size ??
-        descriptor.size ??
         downloadResult.buffer.length;
       if (!normalizedMessage.fileSize && resolvedSize !== null) {
         normalizedMessage.fileSize = resolvedSize;
       }
+
+      const resolvedFileName =
+        mediaDetails.fileName ?? downloadResult.fileName ?? saveInput.originalName ?? null;
 
       normalizedMessage.mediaUrl = descriptor.mediaUrl;
 
@@ -1758,6 +1765,7 @@ const processStandardInboundEvent = async (
 
       const metadataMedia = toRecord(metadataRecord.media);
       metadataMedia.url = descriptor.mediaUrl;
+      metadataMedia.urlExpiresInSeconds = descriptor.expiresInSeconds;
       if (normalizedMessage.caption) {
         metadataMedia.caption = normalizedMessage.caption;
       }
@@ -1767,7 +1775,14 @@ const processStandardInboundEvent = async (
       if (normalizedMessage.fileSize !== null && normalizedMessage.fileSize !== undefined) {
         metadataMedia.size = normalizedMessage.fileSize;
       }
+      if (resolvedFileName) {
+        metadataMedia.fileName = resolvedFileName;
+      }
       metadataRecord.media = metadataMedia;
+      if ('media_pending' in metadataRecord) {
+        delete (metadataRecord as Record<string, unknown>).media_pending;
+      }
+      pendingMediaJobDetails = null;
 
       logger.info('🎯 LeadEngine • WhatsApp :: ✅ Mídia inbound baixada e armazenada localmente', {
         requestId,
@@ -1777,7 +1792,7 @@ const processStandardInboundEvent = async (
         messageId: messageExternalId ?? normalizedMessage.id ?? null,
         mediaType: normalizedMessage.type,
         mediaUrl: descriptor.mediaUrl,
-        fileName: descriptor.fileName,
+        fileName: resolvedFileName,
         size: normalizedMessage.fileSize ?? null,
       });
     } else if (downloadResult) {
@@ -1844,6 +1859,7 @@ const processStandardInboundEvent = async (
             mimetype: normalizedMessage.mimetype,
             caption: normalizedMessage.caption,
             size: normalizedMessage.fileSize,
+            urlExpiresInSeconds: signedMediaUrlExpiresIn ?? undefined,
           }
         : undefined,
       location: normalizedMessage.latitude || normalizedMessage.longitude

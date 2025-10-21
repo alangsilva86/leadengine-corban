@@ -85,10 +85,8 @@ describe('media-retry worker', () => {
       size: 256,
     });
     saveMediaMock.mockResolvedValueOnce({
-      mediaUrl: '/uploads/media.jpg',
-      mimeType: 'image/jpeg',
-      fileName: 'stored.jpg',
-      size: 256,
+      mediaUrl: 'https://cdn.example.com/uploads/media.jpg?X-Amz-Signature=test',
+      expiresInSeconds: 900,
     });
     updateMessageMock.mockResolvedValueOnce({ id: 'message-1' });
 
@@ -119,8 +117,14 @@ describe('media-retry worker', () => {
       'tenant-1',
       'message-1',
       expect.objectContaining({
-        mediaUrl: '/uploads/media.jpg',
-        metadata: expect.objectContaining({ media_pending: false }),
+        mediaUrl: 'https://cdn.example.com/uploads/media.jpg?X-Amz-Signature=test',
+        mediaFileName: 'original.jpg',
+        metadata: expect.objectContaining({
+          media_pending: false,
+          media: expect.objectContaining({
+            urlExpiresInSeconds: 900,
+          }),
+        }),
       })
     );
     expect(completeJobMock).toHaveBeenCalledWith('job-1');
