@@ -30,7 +30,7 @@ import {
   type InboundWhatsAppEvent,
 } from './types';
 import { resolveTicketAgreementId } from './ticket-utils';
-import { downloadInboundMediaFromBroker } from './media-downloader';
+import { downloadViaBaileys, downloadViaBroker } from './mediaDownloader';
 import {
   getWhatsAppUploadsBaseUrl,
   saveWhatsAppMedia,
@@ -367,19 +367,55 @@ export const handlePassthroughIngest = async (
 
             descriptor = await saveWhatsAppMedia(saveInput);
           }
-        } else if (passthroughMedia.directPath || passthroughMedia.mediaKey) {
-          const downloadResult = await downloadInboundMediaFromBroker({
-            brokerId:
+        } else {
+          let downloadResult = null as Awaited<ReturnType<typeof downloadViaBaileys>> | Awaited<
+            ReturnType<typeof downloadViaBroker>
+          > | null;
+
+          try {
+            downloadResult = await downloadViaBaileys(normalizedMessage.raw);
+          } catch (error) {
+            logger.warn('passthrough: failed to download media via Baileys', {
+              error: mapErrorForLog(error),
+              tenantId: effectiveTenantId,
+              instanceId: instanceIdentifier,
+              messageId: externalIdForUpsert,
+            });
+          }
+
+          if (!downloadResult && (passthroughMedia.directPath || passthroughMedia.mediaKey)) {
+            const brokerId =
               readString(metadataRecord.brokerId) ??
               readString(metadataIntegration.brokerId) ??
-              null,
-            instanceId: instanceIdentifier,
-            tenantId: effectiveTenantId,
-            mediaKey: passthroughMedia.mediaKey ?? null,
-            directPath: passthroughMedia.directPath ?? null,
-            messageId: externalIdForUpsert ?? null,
-            mediaType: normalizedType,
-          });
+              null;
+
+            try {
+              downloadResult = await downloadViaBroker({
+                brokerId,
+                instanceId: instanceIdentifier,
+                tenantId: effectiveTenantId,
+                mediaKey: passthroughMedia.mediaKey ?? null,
+                directPath: passthroughMedia.directPath ?? null,
+                messageId: externalIdForUpsert ?? null,
+                mediaType: normalizedType,
+              });
+            } catch (error) {
+              logger.error('passthrough: failed to download media via broker', {
+                error: mapErrorForLog(error),
+                tenantId: effectiveTenantId,
+                instanceId: instanceIdentifier,
+                messageId: externalIdForUpsert,
+                mediaType: normalizedType,
+              });
+            }
+          } else if (!downloadResult) {
+            logger.warn('passthrough: unable to download media due to missing directPath/mediaKey', {
+              tenantId: effectiveTenantId,
+              instanceId: instanceIdentifier,
+              messageId: externalIdForUpsert,
+              mediaType: normalizedType,
+            });
+          }
 
           if (downloadResult && downloadResult.buffer.length > 0) {
             const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
@@ -408,8 +444,8 @@ export const handlePassthroughIngest = async (
             if (!passthroughMedia.size) {
               passthroughMedia.size = downloadResult.size ?? downloadResult.buffer.length;
             }
-          } else {
-            logger.warn('passthrough: broker returned empty payload for media download', {
+          } else if (downloadResult) {
+            logger.warn('passthrough: media download returned empty payload', {
               tenantId: effectiveTenantId,
               instanceId: instanceIdentifier,
               messageId: externalIdForUpsert,

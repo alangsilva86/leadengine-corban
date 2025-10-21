@@ -131,7 +131,8 @@ const sendMessageMock = vi.hoisted(() => vi.fn());
 const emitToTenantMock = vi.hoisted(() => vi.fn());
 const emitToTicketMock = vi.hoisted(() => vi.fn());
 const leadLastContactGaugeSetMock = vi.hoisted(() => vi.fn());
-const downloadInboundMediaMock = vi.hoisted(() => vi.fn());
+const downloadViaBaileysMock = vi.hoisted(() => vi.fn());
+const downloadViaBrokerMock = vi.hoisted(() => vi.fn());
 const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
 const enqueueInboundMediaJobMock = vi.hoisted(() => vi.fn());
 
@@ -153,8 +154,9 @@ vi.mock('../../../../services/ticket-service', () => ({
   sendMessage: sendMessageMock,
 }));
 
-vi.mock('../media-downloader', () => ({
-  downloadInboundMediaFromBroker: (...args: unknown[]) => downloadInboundMediaMock(...args),
+vi.mock('../mediaDownloader', () => ({
+  downloadViaBaileys: (...args: unknown[]) => downloadViaBaileysMock(...args),
+  downloadViaBroker: (...args: unknown[]) => downloadViaBrokerMock(...args),
 }));
 
 vi.mock('../../../../services/whatsapp-media-service', () => ({
@@ -1280,7 +1282,8 @@ describe('processStandardInboundEvent', () => {
     contactTagDeleteManyMock.mockResolvedValueOnce({ count: 0 });
     contactTagUpsertMock.mockResolvedValue({});
 
-    downloadInboundMediaMock.mockResolvedValueOnce({
+    downloadViaBaileysMock.mockResolvedValueOnce(null);
+    downloadViaBrokerMock.mockResolvedValueOnce({
       buffer: Buffer.from(`media-${kind.toLowerCase()}`),
       mimeType: mimetype,
       fileName: `${kind.toLowerCase()}-broker.${extension}`,
@@ -1340,8 +1343,9 @@ describe('processStandardInboundEvent', () => {
       preloadedInstance: instanceRecord as unknown as Parameters<TestingHelpers['processStandardInboundEvent']>[2]['preloadedInstance'],
     });
 
-    expect(downloadInboundMediaMock).toHaveBeenCalledTimes(1);
-    expect(downloadInboundMediaMock).toHaveBeenCalledWith(
+    expect(downloadViaBaileysMock).toHaveBeenCalledTimes(1);
+    expect(downloadViaBrokerMock).toHaveBeenCalledTimes(1);
+    expect(downloadViaBrokerMock).toHaveBeenCalledWith(
       expect.objectContaining({
         brokerId: 'broker-1',
         instanceId: 'instance-1',
@@ -1432,8 +1436,9 @@ describe('processStandardInboundEvent', () => {
       contactTagDeleteManyMock.mockResolvedValueOnce({ count: 0 });
       contactTagUpsertMock.mockResolvedValue({});
 
-      downloadInboundMediaMock.mockResolvedValueOnce(downloadResult as unknown as Awaited<
-        ReturnType<typeof downloadInboundMediaMock>
+      downloadViaBaileysMock.mockResolvedValueOnce(null);
+      downloadViaBrokerMock.mockResolvedValueOnce(downloadResult as unknown as Awaited<
+        ReturnType<typeof downloadViaBrokerMock>
       >);
 
       sendMessageMock.mockResolvedValueOnce({
