@@ -34,6 +34,8 @@ import {
   type BrokerInboundContact,
   type BrokerInboundEvent,
 } from '../schemas/broker-contracts';
+import { PollChoiceEventSchema } from '../schemas/poll-choice';
+import { recordPollChoiceVote } from '../services/poll-choice-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -811,6 +813,120 @@ const processMessagesUpdate = async (
   return { persisted, failures };
 };
 
+const processPollChoiceEvent = async (
+  eventRecord: RawBaileysUpsertEvent,
+  envelopeRecord: Record<string, unknown>,
+  context: {
+    requestId: string;
+    instanceId?: string | null;
+    tenantOverride?: string | null;
+  }
+): Promise<{ persisted: number; ignored: number; failures: number }> => {
+  const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
+
+  if (!payloadRecord) {
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: context.tenantOverride ?? 'unknown',
+      instanceId: context.instanceId ?? 'unknown',
+      result: 'ignored',
+      reason: 'poll_choice_invalid',
+    });
+    logger.warn('Received poll choice event without payload', {
+      requestId: context.requestId,
+      rawPreview: toRawPreview(eventRecord),
+    });
+    return { persisted: 0, ignored: 1, failures: 0 };
+  }
+
+  const parsed = PollChoiceEventSchema.safeParse(payloadRecord);
+  if (!parsed.success) {
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: context.tenantOverride ?? 'unknown',
+      instanceId: context.instanceId ?? 'unknown',
+      result: 'ignored',
+      reason: 'poll_choice_invalid',
+    });
+    logger.warn('Received invalid poll choice payload', {
+      requestId: context.requestId,
+      issues: parsed.error.issues,
+      preview: toRawPreview(eventRecord),
+    });
+    return { persisted: 0, ignored: 1, failures: 0 };
+  }
+
+  const pollPayload = parsed.data;
+
+  try {
+    const result = await recordPollChoiceVote(pollPayload, {
+      tenantId: context.tenantOverride ?? null,
+      instanceId: context.instanceId ?? null,
+    });
+
+    emitWhatsAppDebugPhase({
+      phase: 'webhook:poll_choice',
+      correlationId: pollPayload.pollId,
+      tenantId: context.tenantOverride ?? null,
+      instanceId: context.instanceId ?? null,
+      chatId: normalizeChatId(pollPayload.voterJid),
+      tags: ['webhook', 'poll'],
+      context: {
+        requestId: context.requestId,
+        source: 'webhook',
+        pollId: pollPayload.pollId,
+      },
+      payload: {
+        poll: pollPayload,
+        state: result.state,
+      },
+    });
+
+    await logBaileysDebugEvent('whatsapp:poll_choice', {
+      tenantId: context.tenantOverride ?? null,
+      instanceId: context.instanceId ?? null,
+      poll: pollPayload,
+      state: result.state,
+      rawEvent: eventRecord,
+      rawEnvelope: envelopeRecord,
+    });
+
+    if (result.updated) {
+      whatsappWebhookEventsCounter.inc({
+        origin: 'webhook',
+        tenantId: context.tenantOverride ?? 'unknown',
+        instanceId: context.instanceId ?? 'unknown',
+        result: 'accepted',
+        reason: 'poll_choice',
+      });
+      return { persisted: 1, ignored: 0, failures: 0 };
+    }
+
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: context.tenantOverride ?? 'unknown',
+      instanceId: context.instanceId ?? 'unknown',
+      result: 'ignored',
+      reason: 'poll_choice_duplicate',
+    });
+    return { persisted: 0, ignored: 1, failures: 0 };
+  } catch (error) {
+    logger.error('Failed to process poll choice event', {
+      requestId: context.requestId,
+      pollId: pollPayload.pollId,
+      error,
+    });
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: context.tenantOverride ?? 'unknown',
+      instanceId: context.instanceId ?? 'unknown',
+      result: 'failed',
+      reason: 'poll_choice_error',
+    });
+    return { persisted: 0, ignored: 0, failures: 1 };
+  }
+};
+
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const requestId = readString(req.header('x-request-id')) ?? randomUUID();
   const providedApiKey = normalizeApiKey(
@@ -913,6 +1029,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   let ackPersisted = 0;
   let ackFailures = 0;
   let prepFailures = 0;
+  let pollPersisted = 0;
+  let pollIgnored = 0;
+  let pollFailures = 0;
 
   for (const entry of events) {
     const unwrapped = unwrapWebhookEvent(entry);
@@ -979,6 +1098,19 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
       ackPersisted += ackOutcome.persisted;
       ackFailures += ackOutcome.failures;
+      continue;
+    }
+
+    if (eventType === 'POLL_CHOICE') {
+      const pollOutcome = await processPollChoiceEvent(eventRecord, envelopeRecord, {
+        requestId,
+        instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
+        tenantOverride: tenantOverride ?? null,
+      });
+
+      pollPersisted += pollOutcome.persisted;
+      pollIgnored += pollOutcome.ignored;
+      pollFailures += pollOutcome.failures;
       continue;
     }
 
@@ -1071,6 +1203,9 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     enqueued,
     ackPersisted,
     ackFailures,
+    pollPersisted,
+    pollIgnored,
+    pollFailures,
   });
 
   res.status(204).send();

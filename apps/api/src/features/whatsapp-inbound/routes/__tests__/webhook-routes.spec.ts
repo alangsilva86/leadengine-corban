@@ -9,13 +9,20 @@ import { __testing as inboundQueueTesting } from '../../services/inbound-queue';
 
 const hoistedMocks = vi.hoisted(() => {
   const processedIntegrationEventCreateMock = vi.fn();
+  const processedIntegrationEventFindUniqueMock = vi.fn();
+  const processedIntegrationEventUpsertMock = vi.fn();
   const whatsAppInstanceFindFirstMock = vi.fn();
   const whatsAppInstanceUpdateMock = vi.fn();
   const ingestInboundWhatsAppMessageMock = vi.fn();
   const normalizeUpsertEventMock = vi.fn();
+  const recordPollChoiceVoteMock = vi.fn();
 
   const prisma = {
-    processedIntegrationEvent: { create: processedIntegrationEventCreateMock },
+    processedIntegrationEvent: {
+      create: processedIntegrationEventCreateMock,
+      findUnique: processedIntegrationEventFindUniqueMock,
+      upsert: processedIntegrationEventUpsertMock,
+    },
     whatsAppInstance: {
       findFirst: whatsAppInstanceFindFirstMock,
       update: whatsAppInstanceUpdateMock,
@@ -25,10 +32,13 @@ const hoistedMocks = vi.hoisted(() => {
   return {
     prisma,
     processedIntegrationEventCreateMock,
+    processedIntegrationEventFindUniqueMock,
+    processedIntegrationEventUpsertMock,
     whatsAppInstanceFindFirstMock,
     whatsAppInstanceUpdateMock,
     ingestInboundWhatsAppMessageMock,
     normalizeUpsertEventMock,
+    recordPollChoiceVoteMock,
   };
 });
 
@@ -42,6 +52,10 @@ vi.mock('../../services/baileys-raw-normalizer', () => ({
   normalizeUpsertEvent: hoistedMocks.normalizeUpsertEventMock,
 }));
 
+vi.mock('../../services/poll-choice-service', () => ({
+  recordPollChoiceVote: hoistedMocks.recordPollChoiceVoteMock,
+}));
+
 vi.mock('@ticketz/storage', () => ({
   $Enums: { MessageType: {} },
 }));
@@ -49,10 +63,13 @@ vi.mock('@ticketz/storage', () => ({
 const prismaMock = hoistedMocks.prisma;
 const {
   processedIntegrationEventCreateMock,
+  processedIntegrationEventFindUniqueMock,
+  processedIntegrationEventUpsertMock,
   whatsAppInstanceFindFirstMock,
   whatsAppInstanceUpdateMock: _whatsAppInstanceUpdateMock,
   ingestInboundWhatsAppMessageMock,
   normalizeUpsertEventMock,
+  recordPollChoiceVoteMock,
 } = hoistedMocks;
 
 
@@ -331,15 +348,13 @@ describe('WhatsApp webhook instance resolution', () => {
     normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
   });
 
-  const buildApp = () => {
-    const app = express();
-    app.use(express.json());
-    app.use('/api/webhooks', whatsappWebhookRouter);
+  const createInstanceApp = () => {
+    const app = buildApp();
     return app;
   };
 
   it('signals failure when ingestion does not persist message', async () => {
-    const app = buildApp();
+    const app = createInstanceApp();
     prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(null);
 
     normalizeUpsertEventMock.mockReturnValueOnce({
@@ -397,7 +412,7 @@ describe('WhatsApp webhook instance resolution', () => {
   });
 
   it('resolves stored instance metadata and persists missing broker id when matching UUID', async () => {
-    const app = buildApp();
+    const app = createInstanceApp();
     const uuid = 'broker-uuid-1234';
     prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce({
       id: 'stored-instance',
@@ -477,6 +492,139 @@ describe('WhatsApp webhook instance resolution', () => {
         instanceId: 'stored-instance',
         tenantId: 'tenant-uuid',
       })
+    );
+  });
+});
+
+describe('WhatsApp webhook poll choice events', () => {
+  beforeEach(() => {
+    process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'false';
+    delete process.env.WHATSAPP_WEBHOOK_HMAC_SECRET;
+    delete process.env.WHATSAPP_WEBHOOK_API_KEY;
+    refreshWhatsAppEnv();
+    resetMetrics();
+    recordPollChoiceVoteMock.mockReset();
+    processedIntegrationEventCreateMock.mockReset();
+    processedIntegrationEventCreateMock.mockResolvedValue({} as never);
+  });
+
+  it('delegates poll choice events to dedicated service', async () => {
+    const now = new Date().toISOString();
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-1',
+        options: [
+          { id: 'opt-1', title: 'Option 1', index: 0 },
+          { id: 'opt-2', title: 'Option 2', index: 1 },
+        ],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            messageId: 'wamid-poll-1',
+            timestamp: now,
+          },
+        },
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
+        brokerAggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
+        updatedAt: now,
+      },
+    });
+
+    const app = buildApp();
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      payload: {
+        pollId: 'poll-1',
+        voterJid: '5511999999999@s.whatsapp.net',
+        messageId: 'wamid-poll-1',
+        selectedOptionIds: ['opt-1'],
+        options: [
+          { id: 'opt-1', title: 'Option 1', selected: true },
+          { id: 'opt-2', title: 'Option 2', selected: false },
+        ],
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1, 'opt-2': 0 },
+        },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(recordPollChoiceVoteMock).toHaveBeenCalledTimes(1);
+    const [payloadArg, contextArg] = recordPollChoiceVoteMock.mock.calls[0] ?? [];
+    expect(payloadArg).toMatchObject({ pollId: 'poll-1', voterJid: '5511999999999@s.whatsapp.net' });
+    expect(contextArg).toMatchObject({ tenantId: null });
+
+    const metrics = renderMetrics();
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="poll_choice"[^}]*result="accepted"[^}]*\} 1/
+    );
+  });
+
+  it('records duplicate poll choice events as ignored', async () => {
+    const now = new Date().toISOString();
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: false,
+      state: {
+        pollId: 'poll-duplicate',
+        options: [{ id: 'opt-1', title: 'Option', index: 0 }],
+        votes: {
+          'user@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            messageId: 'wamid-dup',
+            timestamp: now,
+          },
+        },
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
+        brokerAggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
+        updatedAt: now,
+      },
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/webhooks', whatsappWebhookRouter);
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      payload: {
+        pollId: 'poll-duplicate',
+        voterJid: 'user@s.whatsapp.net',
+        options: [{ id: 'opt-1', title: 'Option', selected: true }],
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(recordPollChoiceVoteMock).toHaveBeenCalledTimes(1);
+
+    const metrics = renderMetrics();
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_duplicate"[^}]*result="ignored"[^}]*\} 1/
     );
   });
 });
