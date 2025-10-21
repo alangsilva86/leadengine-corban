@@ -35,6 +35,7 @@ const buildStatePayload = () => ({
   votes: {
     'user@s.whatsapp.net': {
       optionIds: ['opt-1'],
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
       messageId: 'wamid-1',
       timestamp: '2024-01-01T00:00:00.000Z',
     },
@@ -83,11 +84,15 @@ describe('recordPollChoiceVote', () => {
 
     expect(result.updated).toBe(true);
     expect(result.state.pollId).toBe('poll-1');
+    expect(result.selectedOptions).toEqual([{ id: 'opt-1', title: 'Option 1' }]);
     expect(result.state.aggregates).toMatchObject({
       totalVoters: 1,
       totalVotes: 1,
       optionTotals: { 'opt-1': 1 },
     });
+    expect(result.state.votes['user@s.whatsapp.net']?.selectedOptions).toEqual([
+      { id: 'opt-1', title: 'Option 1' },
+    ]);
 
     expect(upsertMock).toHaveBeenCalledTimes(1);
     const [upsertArgs] = upsertMock.mock.calls[0] ?? [];
@@ -121,6 +126,7 @@ describe('recordPollChoiceVote', () => {
     });
 
     expect(result.updated).toBe(false);
+    expect(result.selectedOptions).toEqual([{ id: 'opt-1', title: 'Option 1' }]);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -148,6 +154,7 @@ describe('recordPollChoiceVote', () => {
     });
 
     expect(result.updated).toBe(true);
+    expect(result.selectedOptions).toEqual([{ id: 'opt-2', title: 'Option 2' }]);
     expect(result.state.aggregates.totalVoters).toBe(1);
     expect(result.state.aggregates.totalVotes).toBe(1);
     expect(result.state.aggregates.optionTotals).toMatchObject({ 'opt-2': 1 });

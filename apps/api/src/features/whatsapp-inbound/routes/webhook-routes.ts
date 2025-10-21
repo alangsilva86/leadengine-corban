@@ -887,6 +887,14 @@ const processPollChoiceEvent = async (
       instanceId: context.instanceId ?? null,
     });
 
+    const pollWithSelections = {
+      ...pollPayload,
+      selectedOptions:
+        result.selectedOptions.length > 0
+          ? result.selectedOptions
+          : pollPayload.selectedOptions ?? [],
+    };
+
     emitWhatsAppDebugPhase({
       phase: 'webhook:poll_choice',
       correlationId: pollPayload.pollId,
@@ -900,7 +908,7 @@ const processPollChoiceEvent = async (
         pollId: pollPayload.pollId,
       },
       payload: {
-        poll: pollPayload,
+        poll: pollWithSelections,
         state: result.state,
       },
     });
@@ -908,7 +916,7 @@ const processPollChoiceEvent = async (
     await logBaileysDebugEvent('whatsapp:poll_choice', {
       tenantId: context.tenantOverride ?? null,
       instanceId: context.instanceId ?? null,
-      poll: pollPayload,
+      poll: pollWithSelections,
       state: result.state,
       rawEvent: eventRecord,
       rawEnvelope: envelopeRecord,
