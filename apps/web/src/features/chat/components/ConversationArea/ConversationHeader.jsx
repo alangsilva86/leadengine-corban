@@ -5,9 +5,6 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
 import {
@@ -27,12 +24,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion.jsx';
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -41,20 +32,17 @@ import {
 } from '@/components/ui/select.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
 import {
   CalendarClock,
   ChevronDown,
   ClipboardList,
-  Clock3,
   FileText,
   IdCard,
   Phone,
   UserPlus,
 } from 'lucide-react';
-import QuickComposer from './QuickComposer.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 
 const LOSS_REASONS = [
@@ -256,12 +244,6 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 };
 
 export { ConversationCardBody as CardBody };
-const InfoRow = ({ label, children }) => (
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
-    <span className="text-sm text-foreground">{children ?? '—'}</span>
-  </div>
-);
 const ACTION_BUTTON_STYLES =
   'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
 
@@ -271,9 +253,6 @@ export const ConversationHeader = ({
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
-  onSendTemplate,
-  onCreateNextStep,
-  onRegisterCallResult,
   typingAgents = [],
   isRegisteringResult = false,
   renderSummary,
@@ -359,16 +338,6 @@ export const ConversationHeader = ({
     }
     return parts.join(' • ');
   }, [stage, lastInteractionLabel, unreadInboundCount]);
-
-  const attachments = useMemo(() => {
-    if (Array.isArray(ticket?.metadata?.attachments)) {
-      return ticket.metadata.attachments;
-    }
-    if (Array.isArray(ticket?.attachments)) {
-      return ticket.attachments;
-    }
-    return [];
-  }, [ticket?.metadata?.attachments, ticket?.attachments]);
 
   const resetLossState = useCallback(() => {
     setLossReason('');
@@ -539,116 +508,6 @@ export const ConversationHeader = ({
       </div>
     );
   }
-
-  const contactContent = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Nome">{name}</InfoRow>
-        {company ? <InfoRow label="Empresa">{company}</InfoRow> : null}
-        <InfoRow label="Telefone">{phoneDisplay ?? '—'}</InfoRow>
-        <InfoRow label="E-mail">{email ?? '—'}</InfoRow>
-        <InfoRow label="Documento">{document ?? '—'}</InfoRow>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <MetadataBadge icon={Phone} aria-label="Telefone" aria-keyshortcuts="w" accessKey="w">
-              {phoneDisplay ?? 'Telefone indisponível'}
-            </MetadataBadge>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-              Ligar
-            </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-              Abrir WhatsApp
-            </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-              Copiar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {document ? (
-          <MetadataBadge icon={IdCard} aria-label="Copiar documento" onClick={handleCopyDocument}>
-            Doc: {document}
-          </MetadataBadge>
-        ) : null}
-      </div>
-    </div>
-  );
-
-  const opportunityContent = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Potencial">{potential}</InfoRow>
-        <InfoRow label="Probabilidade">{probability}</InfoRow>
-        <InfoRow label="Etapa">
-          {stage && stage !== '—' ? <Chip tone="neutral" className="px-2.5 py-1 text-xs">{stage}</Chip> : '—'}
-        </InfoRow>
-        <InfoRow label="ID completo">{leadIdentifier ? String(leadIdentifier) : '—'}</InfoRow>
-        <InfoRow label="Status">{statusInfo.label}</InfoRow>
-        <InfoRow label="Janela SLA">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="cursor-help text-foreground">{expirationInfo.label}</span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="start">
-              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-            </TooltipContent>
-          </Tooltip>
-        </InfoRow>
-      </div>
-      {unreadInboundCount ? (
-        <p className="text-sm text-foreground-muted">
-          {unreadInboundCount} mensagem{unreadInboundCount > 1 ? 's' : ''} pendente{unreadInboundCount > 1 ? 's' : ''} do cliente.
-        </p>
-      ) : null}
-    </div>
-  );
-
-  const timelineContent = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Último cliente">{lastInboundLabel}</InfoRow>
-        <InfoRow label="Último agente">{lastOutboundLabel}</InfoRow>
-        <InfoRow label="Status atual">
-          <Chip tone={directionMeta.tone} className="px-2.5 py-1 text-xs">{directionMeta.label}</Chip>
-        </InfoRow>
-        <InfoRow label="Direção mais recente">{timeline.lastDirection ? timeline.lastDirection.toLowerCase() : '—'}</InfoRow>
-      </div>
-      <p className="text-xs text-foreground-muted">
-        Histórico detalhado disponível na linha do tempo da conversa.
-      </p>
-    </div>
-  );
-
-  const attachmentsContent = attachments.length > 0
-    ? (
-        <ul className="space-y-2 text-sm text-foreground">
-          {attachments.map((item, index) => {
-            const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
-            const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
-            return (
-              <li
-                key={key}
-                className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2"
-              >
-                <span className="truncate">{label}</span>
-                {item?.url ? (
-                  <Button variant="link" size="sm" asChild>
-                    <a href={item.url} target="_blank" rel="noreferrer">
-                      Abrir
-                    </a>
-                  </Button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      )
-    : (
-        <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
-      );
 
   const summaryContent = (
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -855,16 +714,7 @@ export const ConversationHeader = ({
         )}
       >
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
-          <ConversationCardBody>
-            <ConversationCardBody.Left>
-              <QuickComposer
-                ticket={ticket}
-                onSendTemplate={onSendTemplate}
-                onCreateNextStep={onCreateNextStep}
-                onRegisterCallResult={onRegisterCallResult}
-              />
-            </ConversationCardBody.Left>
-            <ConversationCardBody.Right>
+          <div className="mt-3 flex flex-col gap-4 border-t border-surface-overlay-glass-border pt-4">
             <p className="text-xs text-foreground-muted">{subtitle}</p>
 
             <section className="flex flex-wrap items-center gap-2">
@@ -951,51 +801,7 @@ export const ConversationHeader = ({
                 Doc: {document}
               </MetadataBadge>
             </footer>
-
-            <div className="mt-6 space-y-4">
-              <div className="hidden md:flex flex-col gap-4">
-                <Tabs defaultValue="contato" className="flex flex-col gap-4">
-                  <TabsList className="w-full flex-wrap justify-start gap-2">
-                    <TabsTrigger value="contato">Contato</TabsTrigger>
-                    <TabsTrigger value="oportunidade">Oportunidade</TabsTrigger>
-                    <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                    <TabsTrigger value="anexos">Anexos</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="contato">{contactContent}</TabsContent>
-                  <TabsContent value="oportunidade">{opportunityContent}</TabsContent>
-                  <TabsContent value="timeline">{timelineContent}</TabsContent>
-                  <TabsContent value="anexos">{attachmentsContent}</TabsContent>
-                </Tabs>
-              </div>
-
-              <div className="md:hidden">
-                <Accordion
-                  type="single"
-                  collapsible
-                  defaultValue="contato"
-                  className="divide-y divide-surface-overlay-glass-border rounded-2xl border border-surface-overlay-glass-border"
-                >
-                  <AccordionItem value="contato">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Contato</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{contactContent}</AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="oportunidade">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Oportunidade</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{opportunityContent}</AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="timeline">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Timeline</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{timelineContent}</AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem value="anexos">
-                    <AccordionTrigger className="px-3 py-2 text-sm font-semibold">Anexos</AccordionTrigger>
-                    <AccordionContent className="px-3 pb-4 pt-0">{attachmentsContent}</AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </div>
-            </div>
-            </ConversationCardBody.Right>
-          </ConversationCardBody>
+          </div>
         </div>
       </CollapsibleContent>
       <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>

@@ -462,7 +462,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               }
             />
           }
-          defaultContextOpen={false}
+          defaultContextOpen
           toolbar={
             <FilterToolbar
               search={filters.search ?? ''}
@@ -491,9 +491,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             onAssign={() => assignToMe(controller.selectedTicket)}
             onGenerateProposal={handleGenerateProposal}
             onScheduleFollowUp={handleScheduleFollowUp}
-            onSendTemplate={handleSendTemplate}
-            onCreateNextStep={handleCreateNextStep}
-            onRegisterCallResult={handleRegisterCallResult}
             isRegisteringResult={controller.statusMutation.isPending}
             typingIndicator={controller.typingIndicator}
             isSending={controller.sendMessageMutation.isPending}

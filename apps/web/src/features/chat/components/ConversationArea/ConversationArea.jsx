@@ -18,9 +18,6 @@ export const ConversationArea = ({
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
-  onSendTemplate,
-  onCreateNextStep,
-  onRegisterCallResult,
   isRegisteringResult = false,
   typingIndicator,
   isSending,
@@ -163,9 +160,6 @@ export const ConversationArea = ({
             onAssign={onAssign}
             onGenerateProposal={onGenerateProposal}
             onScheduleFollowUp={onScheduleFollowUp}
-            onSendTemplate={onSendTemplate}
-            onCreateNextStep={onCreateNextStep}
-            onRegisterCallResult={onRegisterCallResult}
             isRegisteringResult={isRegisteringResult}
             typingAgents={typingIndicator?.agentsTyping ?? []}
             renderSummary={(summary, { isExpanded }) => (
