@@ -8,7 +8,7 @@ import NotesSection from './NotesSection.jsx';
 import TasksSection from './TasksSection.jsx';
 import AuditTrailLink from './AuditTrailLink.jsx';
 import QuickComposer from '../ConversationArea/QuickComposer.jsx';
-import { CardBody } from '../ConversationArea/ConversationHeader.jsx';
+import { CardBody, GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 
@@ -82,6 +82,7 @@ export const DetailsPanel = ({
   onSendTemplate,
   onCreateNextStep,
   onGenerateProposal,
+  onRegisterCallResult,
   onReopenWindow,
   onOpenAudit,
 }) => {
@@ -113,22 +114,18 @@ export const DetailsPanel = ({
             <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
           </TabsList>
 
-      <section className="space-y-3">
-        <header>
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-muted">Informações do lead</h3>
-        </header>
-        <LeadSummaryCard lead={ticket?.lead} />
-        <LeadDetailsTabs ticket={ticket} />
-        <ConsentInfo consent={ticket?.contact?.consent} />
-      </section>
           <TabsContent value="contact" className="space-y-3">
             <ContactSummary contact={ticket?.contact} />
+            <LeadDetailsTabs ticket={ticket} />
             <ConsentInfo consent={ticket?.contact?.consent} />
           </TabsContent>
 
           <TabsContent value="opportunity" className="space-y-3">
             <LeadSummaryCard lead={ticket?.lead} />
-            <ProposalMiniSim lead={ticket?.lead} onGenerate={onGenerateProposal} />
+            <ProposalMiniSim
+              lead={ticket?.lead}
+              primaryCtaHref={`#${GENERATE_PROPOSAL_ANCHOR_ID}`}
+            />
             <TasksSection ticket={ticket} onReopenWindow={onReopenWindow} />
             <AuditTrailLink onOpenAudit={onOpenAudit} />
           </TabsContent>
