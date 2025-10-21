@@ -286,66 +286,6 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const socket = realtime.socket;
-    if (!socket) {
-      return undefined;
-    }
-
-    const handleRealtimeMessage = (incoming) => {
-      if (!incoming || typeof incoming !== 'object') {
-        return;
-      }
-
-      const message = incoming.message ?? incoming;
-      if (!message || typeof message !== 'object') {
-        return;
-      }
-
-      const ticketId = incoming.ticketId ?? message.ticketId;
-      if (!ticketId) {
-        return;
-      }
-
-      const queryKey = ['chat', 'messages', ticketId, DEFAULT_MESSAGES_PAGE_SIZE];
-      queryClient.setQueryData(queryKey, (current) => {
-        if (!current || !Array.isArray(current.pages)) {
-          return current;
-        }
-
-        const alreadyExists = current.pages.some((page) =>
-          Array.isArray(page?.items) &&
-          page.items.some((item) => item?.id === message.id || (item?.externalId && item.externalId === message.externalId))
-        );
-
-        if (alreadyExists) {
-          return current;
-        }
-
-        const [firstPage = {}, ...restPages] = current.pages;
-        const existingItems = Array.isArray(firstPage.items) ? firstPage.items : [];
-        const nextItems = [message, ...existingItems].slice(0, DEFAULT_MESSAGES_PAGE_SIZE);
-
-        return {
-          ...current,
-          pages: [{ ...firstPage, items: nextItems }, ...restPages],
-        };
-      });
-
-      queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
-
-      if (incoming?.ticket) {
-        handleTicketUpdated(incoming);
-      }
-    };
-
-    socket.on('messages.new', handleRealtimeMessage);
-
-    return () => {
-      socket.off('messages.new', handleRealtimeMessage);
-    };
-  }, [handleTicketUpdated, queryClient, realtime.socket]);
-
   const whatsAppLimits = useWhatsAppLimits({ enabled: Boolean(tenantId) });
 
   const selectTicket = useCallback((ticketId) => {
