@@ -114,7 +114,6 @@ export const useInboxLiveUpdates = ({ tenantId, enabled = true, onLead }) => {
             }
           };
 
-          socket.on('leadengine:inbox:new', notifyLeadUpdate);
           socket.on('tickets.updated', notifyLeadUpdate);
         };
 
