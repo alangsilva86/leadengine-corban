@@ -19,6 +19,7 @@ import {
 } from '@ticketz/storage';
 import {
   normalizeUpsertEvent,
+  type NormalizedRawUpsertMessage,
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
 import { enqueueInboundWebhookJob } from '../services/inbound-queue';
@@ -27,6 +28,11 @@ import { prisma } from '../../../lib/prisma';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
 import { normalizeBaileysMessageStatus } from '../services/baileys-status-normalizer';
+import {
+  BrokerInboundEventSchema,
+  type BrokerInboundContact,
+  type BrokerInboundEvent,
+} from '../schemas/broker-contracts';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -207,6 +213,283 @@ const parseTimestampToDate = (value: unknown): Date | null => {
   }
 
   return null;
+};
+
+interface NormalizeContractEventOptions {
+  requestId: string;
+  instanceOverride?: string | null;
+  tenantOverride?: string | null;
+  brokerOverride?: string | null;
+}
+
+const normalizeContractEvent = (
+  eventRecord: Record<string, unknown>,
+  options: NormalizeContractEventOptions
+): NormalizedRawUpsertMessage | null => {
+  const parsed = BrokerInboundEventSchema.safeParse(eventRecord);
+  if (!parsed.success) {
+    logger.warn('Received invalid broker WhatsApp contract event', {
+      requestId: options.requestId,
+      issues: parsed.error.issues,
+      preview: toRawPreview(eventRecord),
+    });
+    return null;
+  }
+
+  const event = parsed.data as BrokerInboundEvent;
+  const contactRecord = asRecord(event.payload.contact) ?? {};
+  const messageRecord = asRecord(event.payload.message) ?? {};
+  const metadataInput = asRecord(event.payload.metadata) ?? {};
+
+  const sanitizedMetadata = sanitizeMetadataValue({
+    ...metadataInput,
+  }) as Record<string, unknown>;
+
+  if (!asRecord(sanitizedMetadata.contact) && Object.keys(contactRecord).length > 0) {
+    sanitizedMetadata.contact = contactRecord;
+  }
+
+  const metadataContactRecord = asRecord(sanitizedMetadata.contact);
+  const resolvedInstanceId =
+    readString(
+      options.instanceOverride,
+      event.payload.instanceId,
+      event.instanceId
+    ) ?? event.payload.instanceId;
+
+  const messageId =
+    readString(
+      (messageRecord as { id?: unknown }).id,
+      (messageRecord as { key?: { id?: unknown } }).key?.id,
+      (sanitizedMetadata as { messageId?: unknown }).messageId,
+      event.id
+    ) ?? event.id;
+
+  const messageType =
+    readString(
+      (sanitizedMetadata as { messageType?: unknown }).messageType,
+      (messageRecord as { type?: unknown }).type
+    ) ?? 'contract';
+
+  const isGroup = Boolean(
+    (metadataContactRecord as { isGroup?: unknown })?.isGroup ??
+      (sanitizedMetadata as { isGroup?: unknown }).isGroup ??
+      false
+  );
+
+  const rawDirection =
+    readString(event.payload.direction, event.type) ??
+    (event.type === 'MESSAGE_OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
+  const direction = rawDirection.toLowerCase().includes('outbound') ? 'outbound' : 'inbound';
+
+  const normalized: NormalizedRawUpsertMessage = {
+    data: {
+      event: 'message',
+      direction,
+      instanceId: resolvedInstanceId,
+      timestamp: event.payload.timestamp,
+      message: messageRecord,
+      metadata: sanitizedMetadata,
+      from: contactRecord as BrokerInboundContact,
+      contact: contactRecord as BrokerInboundContact,
+    },
+    messageIndex: 0,
+    tenantId: options.tenantOverride ?? event.tenantId ?? undefined,
+    sessionId: event.sessionId ?? undefined,
+    brokerId: options.brokerOverride ?? event.instanceId ?? null,
+    messageId,
+    messageType,
+    isGroup,
+  };
+
+  return normalized;
+};
+
+interface ProcessNormalizedMessageOptions {
+  normalized: NormalizedRawUpsertMessage;
+  eventRecord: Record<string, unknown>;
+  envelopeRecord: Record<string, unknown>;
+  rawPreview: string;
+  requestId: string;
+  tenantOverride?: string | null;
+  instanceOverride?: string | null;
+}
+
+const processNormalizedMessage = async (
+  options: ProcessNormalizedMessageOptions
+): Promise<boolean> => {
+  const { normalized, eventRecord, envelopeRecord, rawPreview, requestId } = options;
+
+  const tenantId =
+    options.tenantOverride ??
+    normalized.tenantId ??
+    readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ??
+    getDefaultTenantId();
+
+  const instanceId =
+    readString(
+      options.instanceOverride,
+      normalized.data.instanceId,
+      (eventRecord as { instanceId?: unknown }).instanceId,
+      envelopeRecord.instanceId
+    ) ?? getDefaultInstanceId();
+
+  const metadataContactRecord = asRecord(normalized.data.metadata?.contact);
+  const messageRecord = (normalized.data.message ?? {}) as Record<string, unknown>;
+  const messageKeyRecord = asRecord(messageRecord.key);
+  const fromRecord = asRecord(normalized.data.from);
+
+  const chatIdCandidate =
+    normalizeChatId(
+      readString(metadataContactRecord?.remoteJid) ??
+        readString(metadataContactRecord?.jid) ??
+        readString(messageKeyRecord?.remoteJid) ??
+        readString(fromRecord?.phone) ??
+        readString(messageKeyRecord?.id)
+    ) ?? normalizeChatId(readString(fromRecord?.phone));
+
+  const chatId = chatIdCandidate ?? `${tenantId}@baileys`;
+
+  try {
+    const data = normalized.data;
+    const metadataBase =
+      data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+        ? { ...(data.metadata as Record<string, unknown>) }
+        : ({} as Record<string, unknown>);
+    const metadataContact = asRecord(metadataBase.contact);
+    const messageKey = asRecord(messageRecord.key) ?? {};
+    const contactRecord = asRecord(data.contact) ?? {};
+
+    const remoteJid =
+      normalizeChatId(
+        readString(messageKey.remoteJid) ??
+          readString(metadataContact?.jid) ??
+          readString(metadataContact?.remoteJid) ??
+          readString(
+            (eventRecord as {
+              payload?: { messages?: Array<{ key?: { remoteJid?: string } }> };
+            })?.payload?.messages?.[normalized.messageIndex ?? 0]?.key?.remoteJid
+          )
+      ) ?? chatId;
+
+    const direction =
+      (data.direction ?? 'inbound').toString().toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';
+    const externalId = readString(messageRecord.id, messageKey.id, normalized.messageId);
+    const timestamp = readString(data.timestamp) ?? null;
+
+    const brokerMetadata =
+      metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
+        ? { ...(metadataBase.broker as Record<string, unknown>) }
+        : ({} as Record<string, unknown>);
+
+    brokerMetadata.instanceId = brokerMetadata.instanceId ?? instanceId ?? null;
+    brokerMetadata.sessionId = brokerMetadata.sessionId ?? normalized.sessionId ?? null;
+    brokerMetadata.brokerId = brokerMetadata.brokerId ?? normalized.brokerId ?? null;
+    brokerMetadata.origin = brokerMetadata.origin ?? 'webhook';
+
+    const metadata: Record<string, unknown> = {
+      ...metadataBase,
+      source: metadataBase.source ?? 'baileys:webhook',
+      direction,
+      remoteJid: metadataBase.remoteJid ?? remoteJid,
+      chatId: metadataBase.chatId ?? chatId,
+      tenantId: metadataBase.tenantId ?? tenantId,
+      instanceId: metadataBase.instanceId ?? instanceId ?? null,
+      sessionId: metadataBase.sessionId ?? normalized.sessionId ?? null,
+      normalizedIndex: normalized.messageIndex,
+      raw: metadataBase.raw ?? rawPreview,
+      broker: brokerMetadata,
+    };
+
+    emitWhatsAppDebugPhase({
+      phase: 'webhook:normalized',
+      correlationId: normalized.messageId ?? externalId ?? requestId ?? null,
+      tenantId: tenantId ?? null,
+      instanceId: instanceId ?? null,
+      chatId,
+      tags: ['webhook'],
+      context: {
+        requestId,
+        normalizedIndex: normalized.messageIndex,
+        direction,
+        source: 'webhook',
+      },
+      payload: {
+        contact: contactRecord,
+        message: messageRecord,
+        metadata,
+      },
+    });
+
+    const metadataSource = readString(metadata.source);
+    const debugSource =
+      metadataSource && metadataSource.toLowerCase().includes('baileys')
+        ? metadataSource
+        : 'baileys:webhook';
+
+    if (debugSource) {
+      await logBaileysDebugEvent(debugSource, {
+        tenantId: tenantId ?? null,
+        instanceId: instanceId ?? null,
+        chatId,
+        messageId: normalized.messageId ?? externalId ?? null,
+        direction,
+        timestamp,
+        metadata,
+        contact: contactRecord,
+        message: messageRecord,
+        rawPayload: toRawPreview(eventRecord),
+        rawEnvelope: toRawPreview(envelopeRecord),
+        normalizedIndex: normalized.messageIndex,
+      });
+    }
+
+    enqueueInboundWebhookJob({
+      requestId,
+      tenantId,
+      instanceId,
+      chatId,
+      normalizedIndex: normalized.messageIndex ?? null,
+      envelope: {
+        origin: 'webhook',
+        instanceId: instanceId ?? 'unknown-instance',
+        chatId,
+        tenantId,
+        message: {
+          kind: 'message',
+          id: normalized.messageId ?? null,
+          externalId,
+          brokerMessageId: normalized.messageId,
+          timestamp,
+          direction,
+          contact: contactRecord,
+          payload: messageRecord,
+          metadata,
+        },
+        raw: {
+          event: eventRecord,
+          normalizedIndex: normalized.messageIndex,
+        },
+      },
+    });
+
+    return true;
+  } catch (error) {
+    logger.error('Failed to persist inbound WhatsApp message', {
+      requestId,
+      tenantId,
+      chatId,
+      error,
+    });
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: tenantId ?? 'unknown',
+      instanceId: instanceId ?? 'unknown',
+      result: 'failed',
+      reason: 'persist_error',
+    });
+    return false;
+  }
 };
 
 type MessageLookupResult = {
@@ -674,194 +957,70 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       continue;
     }
 
-    if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: tenantOverride ?? 'unknown',
-        instanceId: instanceOverride ?? 'unknown',
-        result: 'ignored',
-        reason: 'unsupported_event',
-        event: eventType,
+    const normalizedMessages: NormalizedRawUpsertMessage[] = [];
+
+    if (eventType === 'MESSAGE_INBOUND' || eventType === 'MESSAGE_OUTBOUND') {
+      const normalizedContract = normalizeContractEvent(eventRecord, {
+        requestId,
+        instanceOverride,
+        tenantOverride,
+        brokerOverride,
       });
-      continue;
-    }
 
-    const normalization = normalizeUpsertEvent(eventRecord, {
-      instanceId: instanceOverride,
-      tenantId: tenantOverride,
-      brokerId: brokerOverride,
-    });
-
-    if (normalization.normalized.length === 0) {
-      continue;
-    }
-
-    for (const normalized of normalization.normalized) {
-      const tenantId = normalized.tenantId ??
-        readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ??
-        getDefaultTenantId();
-      const instanceId =
-        readString(
-          normalized.data.instanceId,
-          (eventRecord as { instanceId?: unknown }).instanceId,
-          envelopeRecord.instanceId
-        ) ?? getDefaultInstanceId();
-
-      const metadataContactRecord = asRecord(normalized.data.metadata?.contact);
-      const messageRecord = (normalized.data.message ?? {}) as Record<string, unknown>;
-      const messageKeyRecord = asRecord(messageRecord.key);
-      const fromRecord = asRecord(normalized.data.from);
-
-      const chatIdCandidate =
-        normalizeChatId(
-          readString(metadataContactRecord?.remoteJid) ??
-            readString(metadataContactRecord?.jid) ??
-            readString(messageKeyRecord?.remoteJid) ??
-            readString(fromRecord?.phone) ??
-            readString(messageKeyRecord?.id)
-        ) ?? normalizeChatId(readString(fromRecord?.phone));
-
-      const chatId = chatIdCandidate ?? `${tenantId}@baileys`;
-
-      try {
-        const data = normalized.data;
-        const metadataBase =
-          data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
-            ? { ...(data.metadata as Record<string, unknown>) }
-            : ({} as Record<string, unknown>);
-        const metadataContact = asRecord(metadataBase.contact);
-        const messageRecord = (data.message ?? {}) as Record<string, unknown>;
-        const messageKey = asRecord(messageRecord.key) ?? {};
-        const contactRecord = asRecord(data.contact) ?? {};
-
-        const remoteJid =
-          normalizeChatId(
-            readString(messageKey.remoteJid) ??
-              readString(metadataContact?.jid) ??
-              readString(metadataContact?.remoteJid) ??
-              readString(
-                (eventRecord as {
-                  payload?: { messages?: Array<{ key?: { remoteJid?: string } }> };
-                })?.payload?.messages?.[normalized.messageIndex]?.key?.remoteJid
-              )
-          ) ?? chatId;
-
-        const direction = (data.direction ?? 'inbound').toString().toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';
-        const externalId = readString(messageRecord.id, messageKey.id, normalized.messageId);
-        const timestamp = readString(data.timestamp) ?? null;
-
-        const brokerMetadata =
-          metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
-            ? { ...(metadataBase.broker as Record<string, unknown>) }
-            : ({} as Record<string, unknown>);
-
-        brokerMetadata.instanceId = brokerMetadata.instanceId ?? instanceId ?? null;
-        brokerMetadata.sessionId = brokerMetadata.sessionId ?? normalized.sessionId ?? null;
-        brokerMetadata.brokerId = brokerMetadata.brokerId ?? normalized.brokerId ?? null;
-        brokerMetadata.origin = brokerMetadata.origin ?? 'webhook';
-
-        const metadata: Record<string, unknown> = {
-          ...metadataBase,
-          source: metadataBase.source ?? 'baileys:webhook',
-          direction,
-          remoteJid: metadataBase.remoteJid ?? remoteJid,
-          chatId: metadataBase.chatId ?? chatId,
-          tenantId: metadataBase.tenantId ?? tenantId,
-          instanceId: metadataBase.instanceId ?? instanceId ?? null,
-          sessionId: metadataBase.sessionId ?? normalized.sessionId ?? null,
-          normalizedIndex: normalized.messageIndex,
-          raw: metadataBase.raw ?? rawPreview,
-          broker: brokerMetadata,
-        };
-
-        emitWhatsAppDebugPhase({
-          phase: 'webhook:normalized',
-          correlationId: normalized.messageId ?? externalId ?? requestId ?? null,
-          tenantId: tenantId ?? null,
-          instanceId: instanceId ?? null,
-          chatId,
-          tags: ['webhook'],
-          context: {
-            requestId,
-            normalizedIndex: normalized.messageIndex,
-            direction,
-            source: 'webhook',
-          },
-          payload: {
-            contact: contactRecord,
-            message: messageRecord,
-            metadata,
-          },
-        });
-
-        const metadataSource = readString(metadata.source);
-        const debugSource =
-          metadataSource && metadataSource.toLowerCase().includes('baileys')
-            ? metadataSource
-            : 'baileys:webhook';
-
-        if (debugSource) {
-          await logBaileysDebugEvent(debugSource, {
-            tenantId: tenantId ?? null,
-            instanceId: instanceId ?? null,
-            chatId,
-            messageId: normalized.messageId ?? externalId ?? null,
-            direction,
-            timestamp,
-            metadata,
-            contact: contactRecord,
-            message: messageRecord,
-            rawPayload: toRawPreview(eventRecord),
-            rawEnvelope: toRawPreview(envelopeRecord),
-            normalizedIndex: normalized.messageIndex,
-          });
-        }
-
-        enqueued += 1;
-
-        enqueueInboundWebhookJob({
-          requestId,
-          tenantId,
-          instanceId,
-          chatId,
-          normalizedIndex: normalized.messageIndex ?? null,
-          envelope: {
-            origin: 'webhook',
-            instanceId: instanceId ?? 'unknown-instance',
-            chatId,
-            tenantId,
-            message: {
-              kind: 'message',
-              id: normalized.messageId ?? null,
-              externalId,
-              brokerMessageId: normalized.messageId,
-              timestamp,
-              direction,
-              contact: contactRecord,
-              payload: messageRecord,
-              metadata,
-            },
-            raw: {
-              event: eventRecord,
-              normalizedIndex: normalized.messageIndex,
-            },
-          },
-        });
-      } catch (error) {
-        prepFailures += 1;
-        logger.error('Failed to persist inbound WhatsApp message', {
-          requestId,
-          tenantId,
-          chatId,
-          error,
-        });
+      if (!normalizedContract) {
         whatsappWebhookEventsCounter.inc({
           origin: 'webhook',
-          tenantId: tenantId ?? 'unknown',
-          instanceId: instanceId ?? 'unknown',
-          result: 'failed',
-          reason: 'persist_error',
+          tenantId: tenantOverride ?? 'unknown',
+          instanceId: instanceOverride ?? 'unknown',
+          result: 'ignored',
+          reason: 'invalid_contract',
+          event: eventType,
         });
+        continue;
+      }
+
+      normalizedMessages.push(normalizedContract);
+    } else {
+      if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
+        whatsappWebhookEventsCounter.inc({
+          origin: 'webhook',
+          tenantId: tenantOverride ?? 'unknown',
+          instanceId: instanceOverride ?? 'unknown',
+          result: 'ignored',
+          reason: 'unsupported_event',
+          event: eventType,
+        });
+        continue;
+      }
+
+      const normalization = normalizeUpsertEvent(eventRecord, {
+        instanceId: instanceOverride,
+        tenantId: tenantOverride,
+        brokerId: brokerOverride,
+      });
+
+      if (normalization.normalized.length === 0) {
+        continue;
+      }
+
+      normalizedMessages.push(...normalization.normalized);
+    }
+
+    for (const normalized of normalizedMessages) {
+      const processed = await processNormalizedMessage({
+        normalized,
+        eventRecord,
+        envelopeRecord,
+        rawPreview,
+        requestId,
+        tenantOverride,
+        instanceOverride,
+      });
+
+      if (processed) {
+        enqueued += 1;
+      } else {
+        prepFailures += 1;
       }
     }
   }
