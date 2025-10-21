@@ -137,6 +137,40 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
       expect(response.body).toEqual({});
     });
   });
+
+  it('prefers the x-signature header over the legacy alias when both are provided', async () => {
+    const app = buildApp();
+    const payload = { event: 'preferred' };
+    const raw = JSON.stringify(payload);
+    const crypto = await import('node:crypto');
+    const validSignature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
+
+    const response = await request(app)
+      .post('/api/webhooks/whatsapp')
+      .set('x-signature', validSignature)
+      .set('x-signature-sha256', 'deadbeef')
+      .send(payload);
+
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
+  });
+
+  it('rejects when the preferred header mismatches even if the legacy alias matches', async () => {
+    const app = buildApp();
+    const payload = { event: 'mismatch' };
+    const raw = JSON.stringify(payload);
+    const crypto = await import('node:crypto');
+    const validSignature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
+
+    const response = await request(app)
+      .post('/api/webhooks/whatsapp')
+      .set('x-signature', 'deadbeef')
+      .set('x-signature-sha256', validSignature)
+      .send(payload);
+
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe('INVALID_SIGNATURE');
+  });
 });
 
 describe('WhatsApp webhook Baileys event logging', () => {
