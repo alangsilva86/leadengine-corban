@@ -65,7 +65,7 @@ import {
   queueCacheByTenant,
   type WhatsAppInstanceRecord,
 } from './provisioning';
-import { downloadInboundMediaFromBroker } from './media-downloader';
+import { downloadViaBaileys, downloadViaBroker } from './mediaDownloader';
 import {
   type InboundMessageDetails,
   type InboundWhatsAppEnvelope,
@@ -109,6 +109,14 @@ const readNullableNumber = (value: unknown): number | null => {
   return null;
 };
 
+const RAW_MEDIA_MESSAGE_KEYS = [
+  'imageMessage',
+  'videoMessage',
+  'audioMessage',
+  'documentMessage',
+  'stickerMessage',
+] as const;
+
 const collectMediaRecords = (
   message: NormalizedInboundMessage,
   metadataRecord: Record<string, unknown>
@@ -139,6 +147,7 @@ const collectMediaRecords = (
   const rawRecord = message.raw as Record<string, unknown>;
   pushRecord(rawRecord);
   pushRecord(rawRecord.metadata);
+  pushRecord(rawRecord.message);
   pushRecord(rawRecord.imageMessage);
   pushRecord(rawRecord.videoMessage);
   pushRecord(rawRecord.audioMessage);
@@ -152,6 +161,33 @@ const collectMediaRecords = (
   return records;
 };
 
+const resolveRawMediaKey = (
+  message: NormalizedInboundMessage
+): (typeof RAW_MEDIA_MESSAGE_KEYS)[number] | null => {
+  const rawRecord = message.raw as Record<string, unknown>;
+
+  const candidateSources: Array<Record<string, unknown> | null> = [
+    rawRecord,
+    (rawRecord.message && typeof rawRecord.message === 'object' && !Array.isArray(rawRecord.message)
+      ? (rawRecord.message as Record<string, unknown>)
+      : null) as Record<string, unknown> | null,
+  ];
+
+  for (const source of candidateSources) {
+    if (!source) {
+      continue;
+    }
+
+    for (const key of RAW_MEDIA_MESSAGE_KEYS) {
+      if (key in source && source[key] && typeof source[key] === 'object') {
+        return key;
+      }
+    }
+  }
+
+  return null;
+};
+
 const extractMediaDownloadDetails = (
   message: NormalizedInboundMessage,
   metadataRecord: Record<string, unknown>
@@ -161,6 +197,8 @@ const extractMediaDownloadDetails = (
   fileName: string | null;
   mimeType: string | null;
   size: number | null;
+  raw: Record<string, unknown>;
+  rawKey: (typeof RAW_MEDIA_MESSAGE_KEYS)[number] | null;
 } => {
   const records = collectMediaRecords(message, metadataRecord);
 
@@ -241,6 +279,8 @@ const extractMediaDownloadDetails = (
     fileName: fileName ?? null,
     mimeType: mimeType ?? null,
     size: size ?? null,
+    raw: message.raw,
+    rawKey: resolveRawMediaKey(message),
   };
 };
 
@@ -1594,113 +1634,59 @@ const processStandardInboundEvent = async (
     const mediaDetails = extractMediaDownloadDetails(normalizedMessage, metadataRecord);
     const hasDownloadMetadata = Boolean(mediaDetails.directPath || mediaDetails.mediaKey);
 
-    if (!hasDownloadMetadata) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Metadados insuficientes para download de mídia inbound', {
-        requestId,
-        tenantId,
-        instanceId,
-        brokerId: resolvedBrokerId ?? null,
-        messageId: messageExternalId ?? normalizedMessage.id ?? null,
-        mediaType: normalizedMessage.type,
-      });
-    } else {
-      logger.info('🎯 LeadEngine • WhatsApp :: ⬇️ Baixando mídia inbound a partir do broker', {
-        requestId,
-        tenantId,
-        instanceId,
-        brokerId: resolvedBrokerId ?? null,
-        messageId: messageExternalId ?? normalizedMessage.id ?? null,
-        mediaType: normalizedMessage.type,
-        hasDirectPath: Boolean(mediaDetails.directPath),
-        hasMediaKey: Boolean(mediaDetails.mediaKey),
-      });
+    let downloadResult: Awaited<ReturnType<typeof downloadViaBaileys>> | Awaited<
+      ReturnType<typeof downloadViaBroker>
+    > | null = null;
 
-      try {
-        const downloadResult = await downloadInboundMediaFromBroker({
-          brokerId: resolvedBrokerId ?? null,
-          instanceId,
+    try {
+      downloadResult = await downloadViaBaileys(mediaDetails.raw, mediaDetails.rawKey ?? undefined);
+    } catch (error) {
+      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao baixar mídia inbound diretamente via Baileys', {
+        error: mapErrorForLog(error),
+        requestId,
+        tenantId,
+        instanceId,
+        brokerId: resolvedBrokerId ?? null,
+        messageId: messageExternalId ?? normalizedMessage.id ?? null,
+        mediaType: normalizedMessage.type,
+      });
+    }
+
+    if (!downloadResult) {
+      if (!hasDownloadMetadata) {
+        logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Metadados insuficientes para download de mídia inbound', {
+          requestId,
           tenantId,
-          mediaKey: mediaDetails.mediaKey,
-          directPath: mediaDetails.directPath,
+          instanceId,
+          brokerId: resolvedBrokerId ?? null,
           messageId: messageExternalId ?? normalizedMessage.id ?? null,
           mediaType: normalizedMessage.type,
         });
+      } else {
+        logger.info('🎯 LeadEngine • WhatsApp :: ⬇️ Baixando mídia inbound a partir do broker', {
+          requestId,
+          tenantId,
+          instanceId,
+          brokerId: resolvedBrokerId ?? null,
+          messageId: messageExternalId ?? normalizedMessage.id ?? null,
+          mediaType: normalizedMessage.type,
+          hasDirectPath: Boolean(mediaDetails.directPath),
+          hasMediaKey: Boolean(mediaDetails.mediaKey),
+        });
 
-        if (downloadResult && downloadResult.buffer.length > 0) {
-          const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
-            buffer: downloadResult.buffer,
-            tenantId,
-          };
-
-          if (mediaDetails.fileName) {
-            saveInput.originalName = mediaDetails.fileName;
-          }
-
-          const mimeCandidate =
-            normalizedMessage.mimetype ??
-            mediaDetails.mimeType ??
-            downloadResult.mimeType ??
-            null;
-
-          if (mimeCandidate) {
-            saveInput.mimeType = mimeCandidate;
-          }
-
-          const descriptor = await saveWhatsAppMedia(saveInput);
-
-          const resolvedMimeType =
-            normalizedMessage.mimetype ??
-            mediaDetails.mimeType ??
-            downloadResult.mimeType ??
-            descriptor.mimeType ??
-            null;
-          if (!normalizedMessage.mimetype && resolvedMimeType) {
-            normalizedMessage.mimetype = resolvedMimeType;
-          }
-
-          const resolvedSize =
-            normalizedMessage.fileSize ??
-            mediaDetails.size ??
-            downloadResult.size ??
-            descriptor.size ??
-            downloadResult.buffer.length;
-          if (!normalizedMessage.fileSize && resolvedSize !== null) {
-            normalizedMessage.fileSize = resolvedSize;
-          }
-
-          normalizedMessage.mediaUrl = descriptor.mediaUrl;
-
-          downloadedMediaSuccessfully = true;
-
-          const metadataMedia = toRecord(metadataRecord.media);
-          metadataMedia.url = descriptor.mediaUrl;
-          if (normalizedMessage.caption) {
-            metadataMedia.caption = normalizedMessage.caption;
-          }
-          if (normalizedMessage.mimetype) {
-            metadataMedia.mimetype = normalizedMessage.mimetype;
-          }
-          if (
-            normalizedMessage.fileSize !== null &&
-            normalizedMessage.fileSize !== undefined
-          ) {
-            metadataMedia.size = normalizedMessage.fileSize;
-          }
-          metadataRecord.media = metadataMedia;
-
-          logger.info('🎯 LeadEngine • WhatsApp :: ✅ Mídia inbound baixada e armazenada localmente', {
-            requestId,
-            tenantId,
-            instanceId,
+        try {
+          downloadResult = await downloadViaBroker({
             brokerId: resolvedBrokerId ?? null,
+            instanceId,
+            tenantId,
+            mediaKey: mediaDetails.mediaKey,
+            directPath: mediaDetails.directPath,
             messageId: messageExternalId ?? normalizedMessage.id ?? null,
             mediaType: normalizedMessage.type,
-            mediaUrl: descriptor.mediaUrl,
-            fileName: descriptor.fileName,
-            size: normalizedMessage.fileSize ?? null,
           });
-        } else {
-          logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Broker retornou payload vazio ao baixar mídia inbound', {
+        } catch (error) {
+          logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao baixar mídia inbound via broker', {
+            error: mapErrorForLog(error),
             requestId,
             tenantId,
             instanceId,
@@ -1709,16 +1695,6 @@ const processStandardInboundEvent = async (
             mediaType: normalizedMessage.type,
           });
         }
-      } catch (error) {
-        logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao baixar mídia inbound', {
-          error: mapErrorForLog(error),
-          requestId,
-          tenantId,
-          instanceId,
-          brokerId: resolvedBrokerId ?? null,
-          messageId: messageExternalId ?? normalizedMessage.id ?? null,
-          mediaType: normalizedMessage.type,
-        });
       }
 
       if (!downloadedMediaSuccessfully && hasDownloadMetadata) {
@@ -1732,6 +1708,87 @@ const processStandardInboundEvent = async (
         };
         metadataRecord['media_pending'] = true;
       }
+    }
+
+    if (downloadResult && downloadResult.buffer.length > 0) {
+      const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
+        buffer: downloadResult.buffer,
+        tenantId,
+      };
+
+      if (mediaDetails.fileName) {
+        saveInput.originalName = mediaDetails.fileName;
+      }
+
+      const mimeCandidate =
+        normalizedMessage.mimetype ??
+        mediaDetails.mimeType ??
+        downloadResult.mimeType ??
+        null;
+
+      if (mimeCandidate) {
+        saveInput.mimeType = mimeCandidate;
+      }
+
+      const descriptor = await saveWhatsAppMedia(saveInput);
+
+      const resolvedMimeType =
+        normalizedMessage.mimetype ??
+        mediaDetails.mimeType ??
+        downloadResult.mimeType ??
+        descriptor.mimeType ??
+        null;
+      if (!normalizedMessage.mimetype && resolvedMimeType) {
+        normalizedMessage.mimetype = resolvedMimeType;
+      }
+
+      const resolvedSize =
+        normalizedMessage.fileSize ??
+        mediaDetails.size ??
+        downloadResult.size ??
+        descriptor.size ??
+        downloadResult.buffer.length;
+      if (!normalizedMessage.fileSize && resolvedSize !== null) {
+        normalizedMessage.fileSize = resolvedSize;
+      }
+
+      normalizedMessage.mediaUrl = descriptor.mediaUrl;
+
+      downloadedMediaSuccessfully = true;
+
+      const metadataMedia = toRecord(metadataRecord.media);
+      metadataMedia.url = descriptor.mediaUrl;
+      if (normalizedMessage.caption) {
+        metadataMedia.caption = normalizedMessage.caption;
+      }
+      if (normalizedMessage.mimetype) {
+        metadataMedia.mimetype = normalizedMessage.mimetype;
+      }
+      if (normalizedMessage.fileSize !== null && normalizedMessage.fileSize !== undefined) {
+        metadataMedia.size = normalizedMessage.fileSize;
+      }
+      metadataRecord.media = metadataMedia;
+
+      logger.info('🎯 LeadEngine • WhatsApp :: ✅ Mídia inbound baixada e armazenada localmente', {
+        requestId,
+        tenantId,
+        instanceId,
+        brokerId: resolvedBrokerId ?? null,
+        messageId: messageExternalId ?? normalizedMessage.id ?? null,
+        mediaType: normalizedMessage.type,
+        mediaUrl: descriptor.mediaUrl,
+        fileName: descriptor.fileName,
+        size: normalizedMessage.fileSize ?? null,
+      });
+    } else if (downloadResult) {
+      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Download de mídia inbound retornou payload vazio', {
+        requestId,
+        tenantId,
+        instanceId,
+        brokerId: resolvedBrokerId ?? null,
+        messageId: messageExternalId ?? normalizedMessage.id ?? null,
+        mediaType: normalizedMessage.type,
+      });
     }
   }
 
