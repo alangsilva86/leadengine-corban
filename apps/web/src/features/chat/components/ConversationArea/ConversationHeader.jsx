@@ -1060,6 +1060,7 @@ export const ConversationHeader = ({
       onOpenChange={setIsExpanded}
       className={cn(
         'relative z-10 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
+        'data-[state=open]:max-h-[calc(100vh-6rem)] data-[state=open]:overflow-y-auto data-[state=open]:overscroll-contain data-[state=open]:pr-1 sm:data-[state=open]:pr-2 data-[state=open]:[scrollbar-gutter:stable]',
         isFadeIn ? 'opacity-100' : 'opacity-0',
       )}
     >
