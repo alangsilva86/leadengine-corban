@@ -227,7 +227,14 @@ const normalizeContractEvent = (
   eventRecord: Record<string, unknown>,
   options: NormalizeContractEventOptions
 ): NormalizedRawUpsertMessage | null => {
-  const parsed = BrokerInboundEventSchema.safeParse(eventRecord);
+  const hasType = readString((eventRecord as { type?: unknown }).type);
+  const fallbackEvent = readString((eventRecord as { event?: unknown }).event);
+  const recordWithType =
+    !hasType && fallbackEvent
+      ? ({ ...eventRecord, type: fallbackEvent } as Record<string, unknown>)
+      : eventRecord;
+
+  const parsed = BrokerInboundEventSchema.safeParse(recordWithType);
   if (!parsed.success) {
     logger.warn('Received invalid broker WhatsApp contract event', {
       requestId: options.requestId,
