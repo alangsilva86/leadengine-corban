@@ -17,13 +17,13 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 
 | Token (`colors.surface.*`) | Propósito | Valor (Light) | Valor (Dark) | Componentes consumidores |
 | --- | --- | --- | --- | --- |
-| `canvas` | Plano de fundo principal da aplicação, aplicado ao `<body>` e wrappers globais. | `#f8fafc` | `#0f172a` | `App.css`, shells do ChatCommandCenter (`SidebarInbox`, `ConversationArea`) |
+| `canvas` | Plano de fundo principal da aplicação, aplicado ao `<body>` e wrappers globais. | `#f8fafc` | `#0f172a` | `App.css`, shells do ChatCommandCenter (`QueueList`, `ConversationArea`) |
 | `overlay.quiet` | Camada translúcida para cards e seções secundárias. | `rgba(255, 255, 255, 0.78)` | `rgba(124, 138, 163, 0.14)` | `Card`, `InboxHeader`, mosaicos do dashboard |
 | `overlay.bold` | Sobreposição com maior contraste para popovers e modais. | `rgba(255, 255, 255, 0.92)` | `rgba(124, 138, 163, 0.22)` | `Popover`, `Dashboard` (painéis com foco em dados) |
 | `overlay.glass.layer` | Fundo “glassmorphism” usado em superfícies com blur. | `rgba(255, 255, 255, 0.85)` | `rgba(148, 163, 184, 0.08)` | `Composer`, `InboxAppShell`, `ChatCommandCenter` |
 | `overlay.glass.border` | Bordas de superfícies em vidro e estados de foco correlatos. | `rgba(15, 23, 42, 0.12)` | `rgba(148, 163, 184, 0.25)` | `Card`, `ChatCommandCenter`, `WhatsAppConnect` |
-| `overlay.inbox.quiet` | Plano de fundo padrão das listas de conversas. | `rgba(255, 255, 255, 0.72)` | `rgba(15, 23, 42, 0.78)` | `SidebarInbox`, `AssignmentMenu` |
-| `overlay.inbox.bold` | Realce para estados ativos dentro da inbox. | `rgba(255, 255, 255, 0.88)` | `rgba(15, 23, 42, 0.9)` | `SidebarInbox` (cards ativos), `AssignmentMenu` |
+| `overlay.inbox.quiet` | Plano de fundo padrão das listas de conversas. | `rgba(255, 255, 255, 0.72)` | `rgba(15, 23, 42, 0.78)` | `QueueList`, cartões da inbox |
+| `overlay.inbox.bold` | Realce para estados ativos dentro da inbox. | `rgba(255, 255, 255, 0.88)` | `rgba(15, 23, 42, 0.9)` | `QueueList` (estados ativos e hover) |
 
 ### Conteúdo
 
@@ -31,8 +31,8 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | --- | --- | --- | --- | --- |
 | `primary` | Texto principal em superfícies padrão. | `#0f172a` | `#f1f5f9` | Tipografia global (`App.css`), `Card`, `Dashboard` |
 | `muted` | Texto desativado e rótulos secundários. | `#475569` | `#94a3b8` | `Badge`, `CardDescription`, filtros da inbox |
-| `inbox.primary` | Texto em cartões e listas da inbox. | `#0f172a` | `rgba(241, 245, 249, 0.92)` | `SidebarInbox`, `ConversationArea` |
-| `inbox.muted` | Texto auxiliar dentro da inbox. | `rgba(15, 23, 42, 0.6)` | `rgba(241, 245, 249, 0.75)` | `SidebarInbox`, `ConversationArea` |
+| `inbox.primary` | Texto em cartões e listas da inbox. | `#0f172a` | `rgba(241, 245, 249, 0.92)` | `QueueList`, `ConversationArea` |
+| `inbox.muted` | Texto auxiliar dentro da inbox. | `rgba(15, 23, 42, 0.6)` | `rgba(241, 245, 249, 0.75)` | `QueueList`, `ConversationArea` |
 
 ### Traços
 
@@ -41,7 +41,7 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 | `divider` | Linhas de separação sutis entre blocos. | `rgba(15, 23, 42, 0.08)` | `rgba(124, 138, 163, 0.35)` | `App.css` (`.section-divider`), tabelas do dashboard |
 | `default` | Bordas padrão de cartões, inputs e painéis. | `rgba(15, 23, 42, 0.12)` | `#7c8aa3` | `Card`, `Button` (outline), `glass-surface` |
 | `input` | Delimitação de campos interativos. | `rgba(15, 23, 42, 0.18)` | `#7c8aa3` | `Input`, `Textarea`, `Select` |
-| `inbox` | Bordas específicas da área de atendimento. | `rgba(15, 23, 42, 0.12)` | `rgba(255, 255, 255, 0.12)` | `SidebarInbox`, divisórias do `ChatCommandCenter` |
+| `inbox` | Bordas específicas da área de atendimento. | `rgba(15, 23, 42, 0.12)` | `rgba(255, 255, 255, 0.12)` | `QueueList`, divisórias do `ChatCommandCenter` |
 
 ### Marca e suporte
 
