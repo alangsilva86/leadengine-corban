@@ -423,14 +423,9 @@ function useWhatsAppInstancesController({
   onError,
   logger,
   campaignInstanceId = null,
-<<<<<<< HEAD
   autoRefresh = true,
   pauseWhenHidden = true,
   initialFetch = autoRefresh,
-=======
-  autoSync = true,
-  autoGenerateQr = true,
->>>>>>> 2b3de1d89698b3e781b41b5004f3f9f513db0439
 } = {}) {
   const { log, warn, error: logError } = { ...defaultLogger, ...logger };
 
@@ -881,12 +876,7 @@ function useWhatsAppInstancesController({
           tenantAgreement: selectedAgreement?.id ?? null,
           preferredInstanceId: resolvedPreferredInstanceId ?? null,
         });
-<<<<<<< HEAD
         const shouldForceBrokerSync = forceRefresh === true;
-=======
-        const shouldForceBrokerSync =
-          typeof forceRefresh === 'boolean' ? forceRefresh : !hasFetchedOnceRef.current;
->>>>>>> 2b3de1d89698b3e781b41b5004f3f9f513db0439
 
         log('🛰️ Solicitando lista de instâncias', {
           agreementId,
@@ -894,13 +884,7 @@ function useWhatsAppInstancesController({
           hasFetchedOnce: hasFetchedOnceRef.current,
         });
         const baseInstancesUrl = '/api/integrations/whatsapp/instances';
-<<<<<<< HEAD
         const instancesUrl = shouldForceBrokerSync ? `${baseInstancesUrl}?refresh=1` : baseInstancesUrl;
-=======
-        const instancesUrl = shouldForceBrokerSync
-          ? `${baseInstancesUrl}?refresh=1`
-          : baseInstancesUrl;
->>>>>>> 2b3de1d89698b3e781b41b5004f3f9f513db0439
         const response = await apiGet(instancesUrl);
         const parsedResponse = parseInstancesPayload(response);
         setSessionActive(true);
@@ -1557,7 +1541,7 @@ function useWhatsAppInstancesController({
   }, [selectedAgreement?.id]);
 
   useEffect(() => {
-    if (!autoSync) {
+    if (!autoRefresh) {
       setInstancesReady(true);
       return;
     }
@@ -1565,17 +1549,12 @@ function useWhatsAppInstancesController({
       setInstancesReady(true);
       return;
     }
-<<<<<<< HEAD
     if (!initialFetch) {
       setInstancesReady(true);
       return;
     }
     void loadInstances({ forceRefresh: false });
-  }, [canSynchronize, initialFetch, loadInstances, selectedAgreement?.id]);
-=======
-    void loadInstances({ forceRefresh: true });
-  }, [autoSync, canSynchronize, loadInstances, selectedAgreement?.id]);
->>>>>>> 2b3de1d89698b3e781b41b5004f3f9f513db0439
+  }, [autoRefresh, canSynchronize, initialFetch, loadInstances, selectedAgreement?.id]);
 
   useEffect(() => {
     if (!canSynchronize) {

@@ -63,26 +63,30 @@ describe('useWhatsAppInstances', () => {
     cleanup();
   });
 
-  it('uses refresh endpoint by default during initial synchronization', async () => {
+  it('calls base endpoint first during initial synchronization', async () => {
     apiGet.mockResolvedValueOnce({ instances: [] });
     apiGet.mockResolvedValueOnce({});
 
-    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+    );
 
     disableAutoSync(result);
 
     await loadAndFreeze(result);
 
-    expect(apiGet.mock.calls[0]?.[0]).toBe(REFRESH_URL);
+    expect(apiGet.mock.calls[0]?.[0]).toBe(BASE_URL);
   });
 
-  it('prefers non-refresh endpoint after first load and falls back when empty', async () => {
+  it('falls back to refresh endpoint when base response is empty', async () => {
     apiGet.mockResolvedValueOnce({
       instances: [{ id: 'inst-1', status: 'connected', connected: true }],
     });
     apiGet.mockResolvedValueOnce({});
 
-    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+    );
 
     disableAutoSync(result);
 
@@ -107,7 +111,9 @@ describe('useWhatsAppInstances', () => {
     });
     apiGet.mockResolvedValueOnce({});
 
-    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+    );
 
     disableAutoSync(result);
 
@@ -136,8 +142,8 @@ describe('useWhatsAppInstances', () => {
       useWhatsAppInstances({
         status: 'disconnected',
         logger: { log: vi.fn() },
-        autoSync: false,
-        autoGenerateQr: false,
+        autoRefresh: false,
+        initialFetch: false,
       })
     );
 
@@ -157,7 +163,7 @@ describe('useWhatsAppInstances', () => {
     });
 
     const { result } = renderHook(() =>
-      useWhatsAppInstances({ onError, autoSync: false, autoGenerateQr: false })
+      useWhatsAppInstances({ onError, autoRefresh: false, initialFetch: false })
     );
 
     disableAutoSync(result);
@@ -174,7 +180,9 @@ describe('useWhatsAppInstances', () => {
     });
     apiGet.mockResolvedValueOnce({});
 
-    const { result } = renderHook(() => useWhatsAppInstances({ autoSync: false, autoGenerateQr: false }));
+    const { result } = renderHook(() =>
+      useWhatsAppInstances({ autoRefresh: false, initialFetch: false })
+    );
 
     disableAutoSync(result);
 
