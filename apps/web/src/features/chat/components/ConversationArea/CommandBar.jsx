@@ -298,7 +298,7 @@ const CommandBar = ({ context, className }) => {
   const resolvedActions = useMemo(() => normalizeActions(context), [context]);
   const { primary, secondary } = useMemo(() => groupActions(resolvedActions), [resolvedActions]);
 
-  useSlashShortcuts(resolvedActions, context, focusMap);
+  // useSlashShortcuts(resolvedActions, context, focusMap);
 
   return (
     <div
