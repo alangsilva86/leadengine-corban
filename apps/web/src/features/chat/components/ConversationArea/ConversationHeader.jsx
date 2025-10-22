@@ -40,6 +40,7 @@ import ConversationActions, {
   DEFAULT_RESULT_OPTIONS,
 } from '../Shared/ConversationActions.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
+import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 
@@ -161,18 +162,6 @@ const buildSlaTooltip = (windowInfo = {}) => {
     return 'Prazo para primeira resposta.';
   }
   return `Prazo para primeira resposta. Último contato há ${lastInteraction}.`;
-};
-
-const formatDateTime = (value) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 };
 
 const Chip = ({ tone = 'neutral', className, children, ...props }) => (
