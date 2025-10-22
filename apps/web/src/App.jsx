@@ -39,7 +39,12 @@ const OnboardingRoute = () => {
   );
 
   return (
-    <Layout currentPage={safeCurrentPage} onNavigate={handleRouteNavigate} onboarding={onboarding}>
+    <Layout
+      currentPage={safeCurrentPage}
+      onNavigate={handleRouteNavigate}
+      onboarding={onboarding}
+      fullWidthContent={safeCurrentPage === 'inbox'}
+    >
       <Suspense fallback={<PageFallback />}>{renderPage()}</Suspense>
     </Layout>
   );
