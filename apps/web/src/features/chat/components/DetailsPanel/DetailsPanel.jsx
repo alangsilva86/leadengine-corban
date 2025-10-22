@@ -254,6 +254,13 @@ const AttachmentsPanel = ({ attachments }) => {
   return <AttachmentPreview attachments={attachments} />;
 };
 
+const scheduleNextFrame = (callback) => {
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    return window.requestAnimationFrame(callback);
+  }
+  return setTimeout(callback, 0);
+};
+
 const SectionGroup = ({ baseId, sections }) => {
   const defaultValues = useMemo(
     () => sections.filter((section) => section.defaultOpen !== false).map((section) => `${baseId}-${section.value}`),
@@ -277,12 +284,24 @@ const PanelSection = ({
   count,
   action,
   children,
+  onOpen,
 }) => (
   <AccordionItem
     value={sectionId}
     className="w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
   >
-    <AccordionTrigger className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground">
+    <AccordionTrigger
+      className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground"
+      onClick={(event) => {
+        if (!onOpen) return;
+        const target = event.currentTarget;
+        scheduleNextFrame(() => {
+          if (target?.getAttribute('aria-expanded') === 'true') {
+            onOpen();
+          }
+        });
+      }}
+    >
       <div className="flex min-w-0 flex-1 items-start gap-3">
         {Icon ? (
           <span className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-full">
@@ -431,6 +450,10 @@ export const DetailsPanel = ({
   timelineItems = [],
 }) => {
   const notesSectionRef = useRef(null);
+  const handleNotesSectionOpen = useCallback(() => {
+    const target = notesSectionRef.current;
+    target?.focusComposer?.();
+  }, []);
 
   const attachments = useMemo(() => {
     const list = ticket?.metadata?.attachments;
@@ -528,6 +551,123 @@ export const DetailsPanel = ({
           ))}
         </TabsList>
 
+        <TabsContent value="contact" className="space-y-4 min-w-0">
+          <SectionGroup
+            baseId="contact"
+            sections={[
+              {
+                value: 'summary',
+                icon: UserCircle2,
+                title: 'Ficha do contato',
+                description: 'Informações cadastrais e campos personalizados organizadas por categoria.',
+                children: <ContactSummary contact={ticket?.contact} />,
+              },
+              {
+                value: 'details',
+                icon: Info,
+                title: 'Campos do atendimento',
+                description: 'Campos personalizados e dados operacionais do ticket.',
+                children: <LeadDetailsTabs ticket={ticket} />,
+              },
+              {
+                value: 'consent',
+                icon: ShieldCheck,
+                title: 'Consentimento',
+                description: 'Preferências de comunicação registradas para o contato.',
+                children: <ConsentInfo consent={ticket?.contact?.consent} />,
+              },
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="opportunity" className="space-y-4 min-w-0">
+          <SectionGroup
+            baseId="opportunity"
+            sections={[
+              {
+                value: 'lead-summary',
+                icon: Briefcase,
+                title: 'Resumo da oportunidade',
+                description: 'Status, valor estimado e principais indicadores do lead.',
+                children: <LeadSummaryCard lead={ticket?.lead} />,
+              },
+              {
+                value: 'proposal',
+                icon: FileText,
+                title: 'Simulação & propostas',
+                description: 'Acesse rapidamente a mini simulação e gere uma proposta atualizada.',
+                children: (
+                  <ProposalMiniSim
+                    lead={ticket?.lead}
+                    primaryCtaHref={`#${GENERATE_PROPOSAL_ANCHOR_ID}`}
+                  />
+                ),
+              },
+              {
+                value: 'tasks',
+                icon: NotebookPen,
+                title: 'Tarefas e follow-ups',
+                description: 'Gerencie janelas de reabertura e ações pendentes para este ticket.',
+                children: <TasksSection ticket={ticket} onReopenWindow={onReopenWindow} />,
+              },
+              {
+                value: 'audit',
+                icon: Info,
+                title: 'Auditoria',
+                description: 'Histórico completo de alterações relacionadas ao atendimento.',
+                children: <AuditTrailLink onOpenAudit={onOpenAudit} />,
+              },
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="timeline" className="space-y-4 min-w-0">
+          <SectionGroup
+            baseId="timeline"
+            sections={[
+              {
+                value: 'activity',
+                icon: Clock3,
+                title: 'Registro de interações',
+                description: 'Resumo cronológico das mensagens e ações trocadas com o cliente.',
+                count: timelineCount,
+                children: <TimelineSummary ticket={ticket} />,
+              },
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="attachments" className="space-y-4 min-w-0">
+          <SectionGroup
+            baseId="attachments"
+            sections={[
+              {
+                value: 'files',
+                icon: Paperclip,
+                title: 'Anexos compartilhados',
+                description: 'Arquivos e mídias enviados durante a conversa.',
+                count: attachmentsCount,
+                children: <AttachmentsPanel attachments={attachments} />,
+              },
+              {
+                value: 'notes',
+                icon: NotebookPen,
+                title: 'Notas internas',
+                description: 'Comentários privados para alinhamento entre a equipe.',
+                count: notesCount,
+                children: (
+                  <NotesSection
+                    ref={notesSectionRef}
+                    notes={ticket?.notes ?? []}
+                    onCreate={onCreateNote}
+                    loading={notesLoading}
+                  />
+                ),
+                onOpen: handleNotesSectionOpen,
+              },
+            ]}
+          />
+        </TabsContent>
         {tabs.map((tab) => (
           <TabsContent key={tab.value} value={tab.value} className="space-y-4 min-w-0">
             <SectionGroup baseId={tab.value} sections={tab.sections} />

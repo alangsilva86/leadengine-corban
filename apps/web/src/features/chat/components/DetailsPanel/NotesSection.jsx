@@ -4,18 +4,24 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { StickyNote } from 'lucide-react';
 
-export const NotesSection = forwardRef(({ notes = [], onCreate, loading }, ref) => {
+export const NotesSection = forwardRef(function NotesSection({ notes = [], onCreate, loading }, ref) {
   const [value, setValue] = useState('');
   const textareaRef = useRef(null);
 
-  useImperativeHandle(ref, () => ({
-    focusComposer: () => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        textareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    },
-  }));
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusComposer: () => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        if (typeof textarea.scrollIntoView === 'function') {
+          textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      },
+    }),
+    []
+  );
 
   const handleSubmit = () => {
     const trimmed = value.trim();
