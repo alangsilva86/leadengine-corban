@@ -1,5 +1,10 @@
 # Changelog
 
+## 2025-04-19
+
+### Changed
+- Simplified the chat conversation header by deleting unused action button styles and related placeholder constants.
+
 ## 2025-03-28
 
 ### Breaking
