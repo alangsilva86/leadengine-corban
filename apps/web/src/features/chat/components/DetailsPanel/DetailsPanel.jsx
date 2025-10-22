@@ -18,9 +18,12 @@ import AuditTrailLink from './AuditTrailLink.jsx';
 import { GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
+import { CONVERSATION_ACTION_IDS } from '../Shared/ConversationActions.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 import {
+  CalendarClock,
   Briefcase,
+  ClipboardList,
   Check,
   Clock3,
   Copy,
@@ -31,6 +34,7 @@ import {
   Paperclip,
   Phone,
   ShieldCheck,
+  UserPlus,
   UserCircle2,
 } from 'lucide-react';
 import {
@@ -45,6 +49,159 @@ import {
   tabsContent,
   tabsList,
 } from './detailsPanelStyles.ts';
+
+/**
+ * @typedef {Object} DetailsPanelContext
+ * @property {import('react').MutableRefObject<unknown>} notesSectionRef
+ * @property {Object|null} ticket
+ * @property {Array} attachments
+ * @property {number} attachmentsCount
+ * @property {number} notesCount
+ * @property {number} timelineCount
+ * @property {(...args: any[]) => void} [onCreateNote]
+ * @property {boolean} [notesLoading]
+ * @property {(windowId: string) => void} [onReopenWindow]
+ * @property {() => void} [onOpenAudit]
+ */
+
+/**
+ * @typedef {Object} PanelSectionDefinition
+ * @property {string} value
+ * @property {import('lucide-react').LucideIcon} [icon]
+ * @property {string} title
+ * @property {string} [description]
+ * @property {import('react').ReactNode} [children]
+ * @property {(context: DetailsPanelContext) => import('react').ReactNode} [render]
+ * @property {(context: DetailsPanelContext) => number} [getCount]
+ * @property {number} [count]
+ * @property {(context: DetailsPanelContext) => import('react').ReactNode} [renderAction]
+ * @property {import('react').ReactNode} [action]
+ * @property {boolean} [defaultOpen]
+ */
+
+/**
+ * @typedef {Object} TabDefinition
+ * @property {string} value
+ * @property {string} label
+ * @property {PanelSectionDefinition[]} sections
+ */
+
+/**
+ * @type {TabDefinition[]}
+ */
+const DETAILS_PANEL_TABS = [
+  {
+    value: 'contact',
+    label: 'Contato',
+    sections: [
+      {
+        value: 'summary',
+        icon: UserCircle2,
+        title: 'Ficha do contato',
+        description: 'Informações cadastrais e campos personalizados organizadas por categoria.',
+        render: ({ ticket }) => <ContactSummary contact={ticket?.contact} />,
+      },
+      {
+        value: 'details',
+        icon: Info,
+        title: 'Campos do atendimento',
+        description: 'Campos personalizados e dados operacionais do ticket.',
+        render: ({ ticket }) => <LeadDetailsTabs ticket={ticket} />,
+      },
+      {
+        value: 'consent',
+        icon: ShieldCheck,
+        title: 'Consentimento',
+        description: 'Preferências de comunicação registradas para o contato.',
+        render: ({ ticket }) => <ConsentInfo consent={ticket?.contact?.consent} />,
+      },
+    ],
+  },
+  {
+    value: 'opportunity',
+    label: 'Oportunidade',
+    sections: [
+      {
+        value: 'lead-summary',
+        icon: Briefcase,
+        title: 'Resumo da oportunidade',
+        description: 'Status, valor estimado e principais indicadores do lead.',
+        render: ({ ticket }) => <LeadSummaryCard lead={ticket?.lead} />,
+      },
+      {
+        value: 'proposal',
+        icon: FileText,
+        title: 'Simulação & propostas',
+        description: 'Acesse rapidamente a mini simulação e gere uma proposta atualizada.',
+        render: ({ ticket }) => (
+          <ProposalMiniSim
+            lead={ticket?.lead}
+            primaryCtaHref={`#${GENERATE_PROPOSAL_ANCHOR_ID}`}
+          />
+        ),
+      },
+      {
+        value: 'tasks',
+        icon: NotebookPen,
+        title: 'Tarefas e follow-ups',
+        description: 'Gerencie janelas de reabertura e ações pendentes para este ticket.',
+        render: ({ ticket, onReopenWindow }) => (
+          <TasksSection ticket={ticket} onReopenWindow={onReopenWindow} />
+        ),
+      },
+      {
+        value: 'audit',
+        icon: Info,
+        title: 'Auditoria',
+        description: 'Histórico completo de alterações relacionadas ao atendimento.',
+        render: ({ onOpenAudit }) => <AuditTrailLink onOpenAudit={onOpenAudit} />,
+      },
+    ],
+  },
+  {
+    value: 'timeline',
+    label: 'Timeline',
+    sections: [
+      {
+        value: 'activity',
+        icon: Clock3,
+        title: 'Registro de interações',
+        description: 'Resumo cronológico das mensagens e ações trocadas com o cliente.',
+        getCount: ({ timelineCount }) => timelineCount,
+        render: ({ ticket }) => <TimelineSummary ticket={ticket} />,
+      },
+    ],
+  },
+  {
+    value: 'attachments',
+    label: 'Anexos & Notas',
+    sections: [
+      {
+        value: 'files',
+        icon: Paperclip,
+        title: 'Anexos compartilhados',
+        description: 'Arquivos e mídias enviados durante a conversa.',
+        getCount: ({ attachmentsCount }) => attachmentsCount,
+        render: ({ attachments }) => <AttachmentsPanel attachments={attachments} />,
+      },
+      {
+        value: 'notes',
+        icon: NotebookPen,
+        title: 'Notas internas',
+        description: 'Comentários privados para alinhamento entre a equipe.',
+        getCount: ({ notesCount }) => notesCount,
+        render: ({ ticket, onCreateNote, notesLoading, notesSectionRef }) => (
+          <NotesSection
+            ref={notesSectionRef}
+            notes={ticket?.notes ?? []}
+            onCreate={onCreateNote}
+            loading={notesLoading}
+          />
+        ),
+      },
+    ],
+  },
+];
 
 const formatDateTime = (value) => {
   if (!value) return '—';
@@ -109,6 +266,13 @@ const AttachmentsPanel = ({ attachments }) => {
   return <AttachmentPreview attachments={attachments} />;
 };
 
+const scheduleNextFrame = (callback) => {
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    return window.requestAnimationFrame(callback);
+  }
+  return setTimeout(callback, 0);
+};
+
 const SectionGroup = ({ baseId, sections }) => {
   const defaultValues = useMemo(
     () => sections.filter((section) => section.defaultOpen !== false).map((section) => `${baseId}-${section.value}`),
@@ -132,9 +296,26 @@ const PanelSection = ({
   count,
   action,
   children,
+  onOpen,
 }) => (
   <AccordionItem value={sectionId} className={sectionItem()}>
     <AccordionTrigger className={sectionTrigger()}>
+  <AccordionItem
+    value={sectionId}
+    className="w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
+  >
+    <AccordionTrigger
+      className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground"
+      onClick={(event) => {
+        if (!onOpen) return;
+        const target = event.currentTarget;
+        scheduleNextFrame(() => {
+          if (target?.getAttribute('aria-expanded') === 'true') {
+            onOpen();
+          }
+        });
+      }}
+    >
       <div className="flex min-w-0 flex-1 items-start gap-3">
         {Icon ? (
           <span className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-full">
@@ -254,14 +435,39 @@ const PanelHeader = ({ contact, lead }) => {
   );
 };
 
+export const countVisibleTimelineEntries = (items) => {
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+
+  return items.reduce((total, entry) => {
+    if (!entry || entry.hidden) {
+      return total;
+    }
+
+    const type = typeof entry.type === 'string' ? entry.type.toLowerCase() : '';
+
+    if (!type || type === 'divider') {
+      return total;
+    }
+
+    return total + 1;
+  }, 0);
+};
+
 export const DetailsPanel = ({
   ticket,
   onCreateNote,
   notesLoading,
   onReopenWindow,
   onOpenAudit,
+  timelineItems = [],
 }) => {
   const notesSectionRef = useRef(null);
+  const handleNotesSectionOpen = useCallback(() => {
+    const target = notesSectionRef.current;
+    target?.focusComposer?.();
+  }, []);
 
   const attachments = useMemo(() => {
     const list = ticket?.metadata?.attachments;
@@ -271,13 +477,84 @@ export const DetailsPanel = ({
     return [];
   }, [ticket?.metadata?.attachments]);
 
+  const quickActionLinks = useMemo(
+    () => [
+      { id: CONVERSATION_ACTION_IDS.assign, label: 'Atribuir', icon: UserPlus },
+      { id: CONVERSATION_ACTION_IDS.scheduleFollowUp, label: 'Agendar follow-up', icon: CalendarClock },
+      { id: CONVERSATION_ACTION_IDS.registerResult, label: 'Registrar resultado', icon: ClipboardList },
+      { id: CONVERSATION_ACTION_IDS.phone, label: 'Ações de telefone', icon: Phone },
+    ],
+    []
+  );
+
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;
-  const timelineCount = ticket?.timeline ? Object.keys(ticket.timeline).length : 0;
+  const timelineCount = useMemo(() => countVisibleTimelineEntries(timelineItems), [timelineItems]);
+
+  const tabs = useMemo(() => {
+    const context = {
+      ticket,
+      attachments,
+      attachmentsCount,
+      notesCount,
+      timelineCount,
+      notesSectionRef,
+      onCreateNote,
+      notesLoading,
+      onReopenWindow,
+      onOpenAudit,
+    };
+
+    return DETAILS_PANEL_TABS.map((tab) => ({
+      ...tab,
+      sections: tab.sections.map((section) => {
+        const { render, getCount, renderAction, ...rest } = section;
+        return {
+          ...rest,
+          count: typeof getCount === 'function' ? getCount(context) : section.count,
+          action: typeof renderAction === 'function' ? renderAction(context) : section.action,
+          children: typeof render === 'function' ? render(context) : section.children,
+        };
+      }),
+    }));
+  }, [
+    ticket,
+    attachments,
+    attachmentsCount,
+    notesCount,
+    timelineCount,
+    onCreateNote,
+    notesLoading,
+    onReopenWindow,
+    onOpenAudit,
+  ]);
 
   return (
     <div className={detailsPanelContainer()}>
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
+
+      <nav
+        aria-label="Ações do atendimento"
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
+      >
+        {quickActionLinks.map((action) => {
+          const Icon = action.icon;
+          return (
+            <Button
+              key={action.id}
+              variant="ghost"
+              size="sm"
+              asChild
+              className="h-auto rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
+            >
+              <a href={`#${action.id}`} className="inline-flex items-center gap-1">
+                <Icon className="size-4" aria-hidden />
+                <span>{action.label}</span>
+              </a>
+            </Button>
+          );
+        })}
+      </nav>
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
         <TabsList className={tabsList()}>
@@ -285,6 +562,12 @@ export const DetailsPanel = ({
           <TabsTrigger value="opportunity">Oportunidade</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
+        <TabsList className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap">
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="contact" className={tabsContent()}>
@@ -399,10 +682,16 @@ export const DetailsPanel = ({
                     loading={notesLoading}
                   />
                 ),
+                onOpen: handleNotesSectionOpen,
               },
             ]}
           />
         </TabsContent>
+        {tabs.map((tab) => (
+          <TabsContent key={tab.value} value={tab.value} className="space-y-4 min-w-0">
+            <SectionGroup baseId={tab.value} sections={tab.sections} />
+          </TabsContent>
+        ))}
       </Tabs>
     </div>
   );

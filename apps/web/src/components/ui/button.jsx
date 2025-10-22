@@ -19,6 +19,8 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground shadow-sm hover:bg-[color-mix(in_oklab,_var(--primary)_12%,_transparent)]",
         ghost:
           "hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] hover:text-foreground",
+        toolbar:
+          "rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted shadow-none hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border focus-visible:ring-offset-0",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
@@ -26,6 +28,7 @@ const buttonVariants = cva(
         sm: "min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5",
         lg: "min-h-[46px] px-6 has-[>svg]:px-4",
         icon: "size-10",
+        toolbar: "size-9",
       },
     },
     defaultVariants: {

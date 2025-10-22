@@ -34,15 +34,11 @@ import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
-import {
-  CalendarClock,
-  ChevronDown,
-  ClipboardList,
-  FileText,
-  IdCard,
-  Phone,
-  UserPlus,
-} from 'lucide-react';
+import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
+import ConversationActions, {
+  CONVERSATION_ACTION_IDS,
+  DEFAULT_RESULT_OPTIONS,
+} from '../Shared/ConversationActions.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
@@ -55,13 +51,6 @@ const LOSS_REASONS = [
   { value: 'concorrencia', label: 'Fechou com a concorrência' },
   { value: 'documentacao', label: 'Documentação incompleta' },
   { value: 'outro', label: 'Outro' },
-];
-
-const RESULT_ITEMS = [
-  { value: 'won', label: 'Ganho' },
-  { value: 'lost', label: 'Perda' },
-  { value: 'no_contact', label: 'Sem contato' },
-  { value: 'disqualified', label: 'Desqualificado' },
 ];
 
 const STATUS_LABELS = {
@@ -275,8 +264,8 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 };
 
 export { ConversationCardBody as CardBody };
-const ACTION_BUTTON_STYLES =
-  'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
+const ACTION_BUTTON_STYLES = { variant: 'toolbar', size: 'toolbar' };
+const ACTION_TEXT_BUTTON_STYLES = { variant: 'toolbar', size: 'sm', className: 'text-xs font-medium' };
 
 export const ConversationHeader = ({
   ticket,
@@ -729,10 +718,8 @@ export const ConversationHeader = ({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={() => onAssign?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Atribuir"
                 aria-keyshortcuts="n"
                 accessKey="n"
@@ -747,10 +734,8 @@ export const ConversationHeader = ({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={() => onScheduleFollowUp?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Agendar follow-up"
                 aria-keyshortcuts="x"
                 accessKey="x"
@@ -767,10 +752,8 @@ export const ConversationHeader = ({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
+                    {...ACTION_BUTTON_STYLES}
                     aria-label="Registrar resultado"
-                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                     disabled={isRegisteringResult}
                   >
                     <ClipboardList className="size-4" aria-hidden />
@@ -801,10 +784,8 @@ export const ConversationHeader = ({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
+                    {...ACTION_BUTTON_STYLES}
                     aria-label="Opções de telefone"
-                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     <Phone className="size-4" aria-hidden />
                   </Button>
@@ -827,15 +808,25 @@ export const ConversationHeader = ({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <ConversationActions
+            layout="compact"
+            onAssign={handleAssign}
+            onScheduleFollowUp={handleScheduleFollowUp}
+            onRegisterResult={handleResultChange}
+            onPhoneAction={handlePhoneAction}
+            resultOptions={DEFAULT_RESULT_OPTIONS}
+            resultSelection={resultSelection || undefined}
+            isRegisteringResult={isRegisteringResult}
+            assignShortcut="n"
+            followUpShortcut="x"
+          />
 
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={handleCopyDocument}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Copiar documento"
               >
                 <IdCard className="size-4" aria-hidden />
@@ -847,10 +838,8 @@ export const ConversationHeader = ({
           <CollapsibleTrigger asChild>
             <Button
               type="button"
-              variant="ghost"
-              size="icon"
+              {...ACTION_BUTTON_STYLES}
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
               aria-keyshortcuts="e"
               accessKey="e"
             >
@@ -888,19 +877,15 @@ export const ConversationHeader = ({
                 <section className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    {...ACTION_TEXT_BUTTON_STYLES}
                     onClick={() => onAssign?.(ticket)}
-                    className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     Atribuir
                   </Button>
                   <Button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    {...ACTION_TEXT_BUTTON_STYLES}
                     onClick={() => onScheduleFollowUp?.(ticket)}
-                    className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     Agendar follow-up
                   </Button>
@@ -933,6 +918,18 @@ export const ConversationHeader = ({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </section>
+                <ConversationActions
+                  layout="expanded"
+                  className="text-xs"
+                  onAssign={handleAssign}
+                  onScheduleFollowUp={handleScheduleFollowUp}
+                  onRegisterResult={handleResultChange}
+                  onPhoneAction={handlePhoneAction}
+                  resultOptions={DEFAULT_RESULT_OPTIONS}
+                  resultSelection={resultSelection || undefined}
+                  isRegisteringResult={isRegisteringResult}
+                  phoneTriggerLabel={phoneDisplay ?? 'Ações de telefone'}
+                />
 
                 <footer className="flex flex-wrap items-center gap-2 pt-1">
                   <DropdownMenu>

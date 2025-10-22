@@ -455,6 +455,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               onOpenAudit={() =>
                 toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
               }
+              timelineItems={controller.conversation?.timeline ?? []}
             />
           }
           defaultContextOpen
