@@ -277,34 +277,35 @@ const InboxAppShell = ({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface-shell text-foreground">
-      <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
-        <header className="flex flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-[color:var(--text-shell-muted)] hover:text-foreground lg:hidden"
-              onClick={() => setMobileListOpen(true)}
-              aria-label="Abrir lista de tickets"
-            >
-              <PanelLeftOpen className="h-5 w-5" />
-            </Button>
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold text-foreground sm:text-base">{title}</h1>
-              {!contextDrawerOpen ? (
-                <p className="mt-0.5 hidden text-xs text-[color:var(--text-shell-muted)] sm:block">
-                  Foco total nas conversas com clientes.
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
-            {toolbar ? (
-              <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
-                {toolbar}
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-surface-shell text-foreground">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
+          <header className="flex flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full text-[color:var(--text-shell-muted)] hover:text-foreground lg:hidden"
+                onClick={() => setMobileListOpen(true)}
+                aria-label="Abrir lista de tickets"
+              >
+                <PanelLeftOpen className="h-5 w-5" />
+              </Button>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-semibold text-foreground sm:text-base">{title}</h1>
+                {!contextDrawerOpen ? (
+                  <p className="mt-0.5 hidden text-xs text-[color:var(--text-shell-muted)] sm:block">
+                    Foco total nas conversas com clientes.
+                  </p>
+                ) : null}
               </div>
-            ) : null}
+            </div>
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
+              {toolbar ? (
+                <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+                  {toolbar}
+                </div>
+              ) : null}
               <DesktopToolbar
                 onToggleListVisibility={handleToggleListVisibility}
                 onToggleContext={handleToggleContext}
@@ -312,32 +313,33 @@ const InboxAppShell = ({
                 desktopListVisible={desktopListVisible}
                 headerListButtonLabel={headerListButtonLabel}
               />
-          </div>
-        </header>
-      </div>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-hidden">
-          {shouldRenderSplitLayout ? (
-            <SplitLayout
-              className="h-full min-h-0 w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
-              list={listContent}
-              detail={renderDetailSurface()}
-              listClassName={cn(
-                'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0'
-              )}
-              detailClassName="flex min-h-0 min-w-0 flex-col"
-              listWidth={360}
-              isListVisible={Boolean(sidebar) && (isDesktop ? desktopListVisible : true)}
-              minListWidth={360}
-              maxListWidthPx={360}
-              maxListWidthToken="360px"
-              resizable={false}
-            />
-          ) : (
-            <div className="flex h-full w-full px-4 py-4 sm:px-6 sm:py-6">
-              {renderDetailSurface()}
             </div>
-          )}
+          </header>
+        </div>
+        <div className="flex min-h-0 flex-1">
+          <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-x-hidden">
+            {shouldRenderSplitLayout ? (
+              <SplitLayout
+                className="h-full min-h-0 w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
+                list={listContent}
+                detail={renderDetailSurface()}
+                listClassName={cn(
+                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0'
+                )}
+                detailClassName="flex min-h-0 min-w-0 flex-col"
+                listWidth={360}
+                isListVisible={Boolean(sidebar) && (isDesktop ? desktopListVisible : true)}
+                minListWidth={360}
+                maxListWidthPx={360}
+                maxListWidthToken="360px"
+                resizable={false}
+              />
+            ) : (
+              <div className="flex h-full w-full px-4 py-4 sm:px-6 sm:py-6">
+                {renderDetailSurface()}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <Sheet open={mobileListOpen} onOpenChange={setMobileListOpen}>
