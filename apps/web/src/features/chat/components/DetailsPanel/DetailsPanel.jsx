@@ -379,7 +379,7 @@ const CopyButton = ({ value, label }) => {
       type="button"
       size="sm"
       variant="ghost"
-      className="shrink-0 text-foreground-muted hover:text-foreground"
+      className="flex-none shrink-0 text-foreground-muted hover:text-foreground"
       onClick={handleCopy}
       aria-label={label}
     >
@@ -396,7 +396,7 @@ const QuickActionsBar = ({ actions }) => {
   return (
     <nav
       aria-label="Ações rápidas do atendimento"
-      className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
+      className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
     >
       {actions.map((action) => {
         const Icon = action.icon;
@@ -408,9 +408,13 @@ const QuickActionsBar = ({ actions }) => {
             asChild
             className="h-auto rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
           >
-            <a href={`#${action.id}`} className="inline-flex items-center gap-1">
-              {Icon ? <Icon className="size-4" aria-hidden /> : null}
-              <span>{action.label}</span>
+            <a
+              href={`#${action.id}`}
+              className="inline-flex min-w-0 items-center gap-1"
+              title={action.label}
+            >
+              {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null}
+              <span className="max-w-full truncate [overflow-wrap:anywhere]">{action.label}</span>
             </a>
           </Button>
         );
@@ -423,9 +427,14 @@ const HeaderItem = ({ label, value, icon: Icon, copyValue }) => (
   <div className="flex min-w-0 flex-col gap-1">
     <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
     <div className="text-sm text-foreground flex flex-wrap items-center gap-2 min-w-0">
-      <div className="flex min-w-0 items-center gap-2 break-words">
+      <div className="flex min-w-0 items-center gap-2">
         {Icon ? <Icon className="text-foreground-muted size-4 shrink-0" aria-hidden /> : null}
-        <span className="font-medium break-words break-all max-w-full">{value ?? '—'}</span>
+        <span
+          className="font-medium min-w-0 max-w-full truncate [overflow-wrap:anywhere]"
+          title={value ?? '—'}
+        >
+          {value ?? '—'}
+        </span>
       </div>
       <CopyButton value={copyValue ?? value} label={`Copiar ${label.toLowerCase()}`} />
     </div>
@@ -450,7 +459,7 @@ const PanelHeader = ({ contact, lead }) => {
         </div>
         {status ? <StatusBadge status={status} className="shrink-0" /> : null}
       </div>
-      <dl className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
+      <dl className="mt-5 grid min-w-0 gap-4 grid-cols-1 md:[grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]">
         <HeaderItem label="Telefone" value={phone ?? '—'} icon={Phone} copyValue={phone} />
         <HeaderItem label="E-mail" value={email ?? '—'} icon={Mail} copyValue={email} />
         <HeaderItem label="Documento" value={document ?? '—'} icon={FileText} />
@@ -502,15 +511,22 @@ export const DetailsPanel = ({
     return [];
   }, [ticket?.metadata?.attachments]);
 
+  const contactPhone =
+    ticket?.contact?.phone ??
+    ticket?.contact?.primaryPhone ??
+    ticket?.contact?.phoneDetails?.[0]?.phoneNumber ??
+    ticket?.metadata?.contactPhone ??
+    null;
+
   const quickActionLinks = useMemo(
     () =>
       buildQuickActionLinks({
         canAssign: true,
         canScheduleFollowUp: true,
         canRegisterResult: true,
-        hasPhone: Boolean(ticket?.contact?.phone ?? ticket?.metadata?.contactPhone),
+        hasPhone: Boolean(contactPhone),
       }),
-    [ticket?.contact?.phone, ticket?.metadata?.contactPhone],
+    [contactPhone],
   );
 
   const notesCount = ticket?.notes?.length ?? 0;

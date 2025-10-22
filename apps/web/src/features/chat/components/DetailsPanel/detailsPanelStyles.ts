@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 
 export const detailsPanelContainer = cva(
-  'flex w-full flex-1 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden p-4'
+  'box-border flex w-full max-w-full flex-1 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden md:[overflow-x:clip] p-4'
 );
 
 export const sectionGroup = cva('w-full min-w-0 space-y-3');
@@ -21,7 +21,7 @@ export const sectionContentInner = cva(
 );
 
 export const panelHeaderSection = cva(
-  'w-full rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur'
+  'w-full overflow-hidden rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur'
 );
 
 export const panelHeaderLayout = cva(
