@@ -37,6 +37,18 @@ import {
   UserPlus,
   UserCircle2,
 } from 'lucide-react';
+import {
+  detailsPanelContainer,
+  panelHeaderLayout,
+  panelHeaderSection,
+  sectionContent,
+  sectionContentInner,
+  sectionGroup,
+  sectionItem,
+  sectionTrigger,
+  tabsContent,
+  tabsList,
+} from './detailsPanelStyles.ts';
 
 /**
  * @typedef {Object} DetailsPanelContext
@@ -268,7 +280,7 @@ const SectionGroup = ({ baseId, sections }) => {
   );
 
   return (
-    <Accordion type="multiple" defaultValue={defaultValues} className="space-y-3 w-full min-w-0">
+    <Accordion type="multiple" defaultValue={defaultValues} className={sectionGroup()}>
       {sections.map((section) => (
         <PanelSection key={section.value} {...section} sectionId={`${baseId}-${section.value}`} />
       ))}
@@ -286,6 +298,8 @@ const PanelSection = ({
   children,
   onOpen,
 }) => (
+  <AccordionItem value={sectionId} className={sectionItem()}>
+    <AccordionTrigger className={sectionTrigger()}>
   <AccordionItem
     value={sectionId}
     className="w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
@@ -322,8 +336,8 @@ const PanelSection = ({
       </div>
       {action ? <div className="pl-2 shrink-0">{action}</div> : null}
     </AccordionTrigger>
-    <AccordionContent className="px-0">
-      <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
+    <AccordionContent className={sectionContent()}>
+      <div className={sectionContentInner()}>
         {children}
       </div>
     </AccordionContent>
@@ -402,8 +416,8 @@ const PanelHeader = ({ contact, lead }) => {
   const status = lead?.status ?? contact?.status ?? null;
 
   return (
-    <section className="w-full rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur">
-      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className={panelHeaderSection()}>
+      <div className={panelHeaderLayout()}>
         <div className="flex flex-col gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Contato principal</span>
           <h2 className="text-xl font-semibold leading-tight text-foreground">{name}</h2>
@@ -516,7 +530,7 @@ export const DetailsPanel = ({
   ]);
 
   return (
-    <div className="flex w-full flex-1 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden p-4">
+    <div className={detailsPanelContainer()}>
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
 
       <nav
@@ -543,6 +557,11 @@ export const DetailsPanel = ({
       </nav>
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
+        <TabsList className={tabsList()}>
+          <TabsTrigger value="contact">Contato</TabsTrigger>
+          <TabsTrigger value="opportunity">Oportunidade</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
         <TabsList className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap">
           {tabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
@@ -551,7 +570,7 @@ export const DetailsPanel = ({
           ))}
         </TabsList>
 
-        <TabsContent value="contact" className="space-y-4 min-w-0">
+        <TabsContent value="contact" className={tabsContent()}>
           <SectionGroup
             baseId="contact"
             sections={[
@@ -580,7 +599,7 @@ export const DetailsPanel = ({
           />
         </TabsContent>
 
-        <TabsContent value="opportunity" className="space-y-4 min-w-0">
+        <TabsContent value="opportunity" className={tabsContent()}>
           <SectionGroup
             baseId="opportunity"
             sections={[
@@ -621,7 +640,7 @@ export const DetailsPanel = ({
           />
         </TabsContent>
 
-        <TabsContent value="timeline" className="space-y-4 min-w-0">
+        <TabsContent value="timeline" className={tabsContent()}>
           <SectionGroup
             baseId="timeline"
             sections={[
@@ -637,7 +656,7 @@ export const DetailsPanel = ({
           />
         </TabsContent>
 
-        <TabsContent value="attachments" className="space-y-4 min-w-0">
+        <TabsContent value="attachments" className={tabsContent()}>
           <SectionGroup
             baseId="attachments"
             sections={[
