@@ -104,7 +104,7 @@ const SectionGroup = ({ baseId, sections }) => {
   );
 
   return (
-    <Accordion type="multiple" defaultValue={defaultValues} className="space-y-3">
+    <Accordion type="multiple" defaultValue={defaultValues} className="space-y-3 w-full">
       {sections.map((section) => (
         <PanelSection key={section.value} {...section} sectionId={`${baseId}-${section.value}`} />
       ))}
@@ -123,9 +123,9 @@ const PanelSection = ({
 }) => (
   <AccordionItem
     value={sectionId}
-    className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
+    className="w-full overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
   >
-    <AccordionTrigger className="hover:no-underline focus-visible:ring-ring/50 flex flex-1 items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground">
+    <AccordionTrigger className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground">
       <div className="flex flex-1 items-start gap-3">
         {Icon ? (
           <span className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-full">
@@ -147,7 +147,7 @@ const PanelSection = ({
       {action ? <div className="pl-2">{action}</div> : null}
     </AccordionTrigger>
     <AccordionContent className="px-0">
-      <div className="rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
+      <div className="min-w-0 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
         {children}
       </div>
     </AccordionContent>
@@ -205,12 +205,12 @@ const CopyButton = ({ value, label }) => {
 };
 
 const HeaderItem = ({ label, value, icon: Icon, copyValue }) => (
-  <div className="flex flex-col gap-1">
+  <div className="flex min-w-0 flex-col gap-1">
     <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
-    <div className="text-sm text-foreground flex items-center gap-2">
-      <div className="flex items-center gap-2 break-all">
+    <div className="text-sm text-foreground flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 break-words">
         {Icon ? <Icon className="text-foreground-muted size-4 shrink-0" aria-hidden /> : null}
-        <span className="font-medium break-all">{value ?? '—'}</span>
+        <span className="font-medium break-words break-all">{value ?? '—'}</span>
       </div>
       <CopyButton value={copyValue ?? value} label={`Copiar ${label.toLowerCase()}`} />
     </div>
@@ -226,8 +226,8 @@ const PanelHeader = ({ contact, lead }) => {
   const status = lead?.status ?? contact?.status ?? null;
 
   return (
-    <section className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className="w-full rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Contato principal</span>
           <h2 className="text-xl font-semibold leading-tight text-foreground">{name}</h2>
@@ -235,7 +235,7 @@ const PanelHeader = ({ contact, lead }) => {
         </div>
         {status ? <StatusBadge status={status} /> : null}
       </div>
-      <dl className="mt-5 grid gap-4 md:grid-cols-2">
+      <dl className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
         <HeaderItem label="Telefone" value={phone ?? '—'} icon={Phone} copyValue={phone} />
         <HeaderItem label="E-mail" value={email ?? '—'} icon={Mail} copyValue={email} />
         <HeaderItem label="Documento" value={document ?? '—'} icon={FileText} />
@@ -267,18 +267,18 @@ export const DetailsPanel = ({
   const timelineCount = ticket?.timeline ? Object.keys(ticket.timeline).length : 0;
 
   return (
-    <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
+    <div className="flex flex-1 min-w-0 flex-col gap-5 overflow-y-auto p-4">
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
 
-      <Tabs defaultValue="contact" className="flex flex-1 flex-col gap-5">
-        <TabsList className="w-full justify-start bg-surface-overlay-quiet/60 p-1.5">
+      <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
+        <TabsList className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap">
           <TabsTrigger value="contact">Contato</TabsTrigger>
           <TabsTrigger value="opportunity">Oportunidade</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="contact" className="space-y-4">
+        <TabsContent value="contact" className="space-y-4 min-w-0">
           <SectionGroup
             baseId="contact"
             sections={[
@@ -307,7 +307,7 @@ export const DetailsPanel = ({
           />
         </TabsContent>
 
-        <TabsContent value="opportunity" className="space-y-4">
+        <TabsContent value="opportunity" className="space-y-4 min-w-0">
           <SectionGroup
             baseId="opportunity"
             sections={[
@@ -348,7 +348,7 @@ export const DetailsPanel = ({
           />
         </TabsContent>
 
-        <TabsContent value="timeline" className="space-y-4">
+        <TabsContent value="timeline" className="space-y-4 min-w-0">
           <SectionGroup
             baseId="timeline"
             sections={[
@@ -364,7 +364,7 @@ export const DetailsPanel = ({
           />
         </TabsContent>
 
-        <TabsContent value="attachments" className="space-y-4">
+        <TabsContent value="attachments" className="space-y-4 min-w-0">
           <SectionGroup
             baseId="attachments"
             sections={[
