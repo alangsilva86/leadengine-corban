@@ -34,9 +34,9 @@ import {
   Paperclip,
   Phone,
   ShieldCheck,
-  UserPlus,
   UserCircle2,
 } from 'lucide-react';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import {
   detailsPanelContainer,
   panelHeaderLayout,
