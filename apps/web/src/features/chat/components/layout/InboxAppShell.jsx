@@ -65,9 +65,9 @@ const ListPanelHeader = ({ showCloseButton = false }) => (
   </div>
 );
 
-const ListPanelContent = ({ children }) => (
-  <div className="flex min-h-0 min-w-0 flex-col px-3 py-4">{children}</div>
-);
+const ListPanelContent = ({ children }) => <div className="flex min-h-0 min-w-0 flex-col">{children}</div>;
+
+const SHELL_CONTENT_SPACING = 'px-4 py-4 sm:px-6 sm:py-6';
 
 const ListPanelFooter = ({ canPersistPreferences }) => (
   <div className="shrink-0 border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
@@ -117,7 +117,9 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
         className="chat-scroll-area min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges] [overflow-clip-margin:24px]"
         style={{ overscrollBehavior: 'contain' }}
       >
-        <ListPanelContent>{sidebar}</ListPanelContent>
+        <div className="px-4 py-4">
+          <ListPanelContent>{sidebar}</ListPanelContent>
+        </div>
       </div>
       <ListPanelFooter canPersistPreferences={canPersistPreferences} />
     </div>
@@ -316,10 +318,15 @@ const InboxAppShell = ({
         </header>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-hidden">
+        <div
+          className={cn(
+            'mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-hidden',
+            SHELL_CONTENT_SPACING
+          )}
+        >
           {shouldRenderSplitLayout ? (
             <SplitLayout
-              className="h-full min-h-0 w-full gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"
+              className="h-full min-h-0 w-full gap-6"
               list={listContent}
               detail={renderDetailSurface()}
               listClassName={cn(
@@ -334,7 +341,7 @@ const InboxAppShell = ({
               resizable={false}
             />
           ) : (
-            <div className="flex h-full w-full px-4 py-4 sm:px-6 sm:py-6">
+            <div className="flex h-full w-full">
               {renderDetailSurface()}
             </div>
           )}
