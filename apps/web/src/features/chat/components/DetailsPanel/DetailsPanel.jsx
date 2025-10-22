@@ -104,7 +104,7 @@ const SectionGroup = ({ baseId, sections }) => {
   );
 
   return (
-    <Accordion type="multiple" defaultValue={defaultValues} className="space-y-3 w-full">
+    <Accordion type="multiple" defaultValue={defaultValues} className="space-y-3 w-full min-w-0">
       {sections.map((section) => (
         <PanelSection key={section.value} {...section} sectionId={`${baseId}-${section.value}`} />
       ))}
@@ -123,17 +123,17 @@ const PanelSection = ({
 }) => (
   <AccordionItem
     value={sectionId}
-    className="w-full overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
+    className="w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
   >
-    <AccordionTrigger className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground">
-      <div className="flex flex-1 items-start gap-3">
+    <AccordionTrigger className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
         {Icon ? (
           <span className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-full">
             <Icon className="size-4" aria-hidden />
           </span>
         ) : null}
-        <div className="flex flex-1 flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-sm font-semibold">{title}</span>
             {typeof count === 'number' ? (
               <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px] font-medium">
@@ -141,13 +141,13 @@ const PanelSection = ({
               </Badge>
             ) : null}
           </div>
-          {description ? <p className="text-xs font-normal text-foreground-muted">{description}</p> : null}
+          {description ? <p className="text-xs font-normal text-foreground-muted break-words">{description}</p> : null}
         </div>
       </div>
-      {action ? <div className="pl-2">{action}</div> : null}
+      {action ? <div className="pl-2 shrink-0">{action}</div> : null}
     </AccordionTrigger>
     <AccordionContent className="px-0">
-      <div className="min-w-0 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
+      <div className="min-w-0 overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
         {children}
       </div>
     </AccordionContent>
@@ -195,7 +195,7 @@ const CopyButton = ({ value, label }) => {
       type="button"
       size="sm"
       variant="ghost"
-      className="text-foreground-muted hover:text-foreground"
+      className="shrink-0 text-foreground-muted hover:text-foreground"
       onClick={handleCopy}
       aria-label={label}
     >
@@ -233,7 +233,7 @@ const PanelHeader = ({ contact, lead }) => {
           <h2 className="text-xl font-semibold leading-tight text-foreground">{name}</h2>
           {organization ? <p className="text-sm text-foreground-muted">{organization}</p> : null}
         </div>
-        {status ? <StatusBadge status={status} /> : null}
+        {status ? <StatusBadge status={status} className="shrink-0" /> : null}
       </div>
       <dl className="mt-5 grid min-w-0 gap-4 md:grid-cols-2">
         <HeaderItem label="Telefone" value={phone ?? '—'} icon={Phone} copyValue={phone} />

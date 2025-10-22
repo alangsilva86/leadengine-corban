@@ -27,11 +27,11 @@ const toLabel = (status) => {
   }
 };
 
-export const StatusBadge = ({ status }) => {
+export const StatusBadge = ({ status, className: classNameProp = '' }) => {
   const normalized = status ? String(status).toUpperCase() : 'OPEN';
-  const className = STATUS_STYLES[normalized] ?? 'bg-surface-overlay-quiet text-foreground-muted border-border';
+  const toneClass = STATUS_STYLES[normalized] ?? 'bg-surface-overlay-quiet text-foreground-muted border-border';
   return (
-    <Badge variant="outline" className={`border ${className}`}>
+    <Badge variant="outline" className={`border ${toneClass} ${classNameProp}`}>
       {toLabel(status)}
     </Badge>
   );
