@@ -112,7 +112,7 @@ describe('DetailsPanel', () => {
       ],
     };
 
-    const { container } = render(
+    render(
       <DetailsPanel
         ticket={ticket}
         onCreateNote={vi.fn()}
@@ -122,10 +122,12 @@ describe('DetailsPanel', () => {
       />
     );
 
-    expect(container.firstChild).toMatchSnapshot();
+    expect(screen.getByText('Contato principal')).toBeInTheDocument();
+    expect(screen.getByText('Proposta rápida')).toBeInTheDocument();
+    expect(screen.getByText('Timeline resumida')).toBeInTheDocument();
   });
 
-  it('remove ações rápidas indisponíveis do header', () => {
+  it('exibe links de atalho para a command bar', () => {
     const ticket = {
       id: 'ticket-2',
       contact: {
@@ -142,18 +144,11 @@ describe('DetailsPanel', () => {
         notesLoading={false}
         onReopenWindow={vi.fn()}
         onOpenAudit={vi.fn()}
-        availableActions={{
-          canAssign: false,
-          canScheduleFollowUp: true,
-          canRegisterResult: false,
-          hasPhone: false,
-        }}
       />,
     );
 
-    expect(screen.queryByText('Atribuir')).not.toBeInTheDocument();
-    expect(screen.getByText('Agendar follow-up')).toBeInTheDocument();
-    expect(screen.queryByText('Registrar resultado')).not.toBeInTheDocument();
-    expect(screen.queryByText('Ações de telefone')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Atribuir' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Telefonia' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Editar contato' })[0]).toBeInTheDocument();
   });
 });

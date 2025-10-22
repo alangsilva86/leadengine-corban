@@ -9,7 +9,6 @@ import {
 import { Ellipsis } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import {
-  ACTIONS_BY_ID,
   DEFAULT_QUICK_ACTIONS,
   PRIMARY_ACTION_IDS,
 } from '@/features/chat/actions/inventory.ts';
@@ -43,50 +42,65 @@ const groupActions = (resolved) => {
 };
 
 const useSlashShortcuts = (actions, context, focusMap) => {
-  const pendingRef = useRef(false);
-
   useEffect(() => {
+    if (!actions || actions.length === 0) {
+      return undefined;
+    }
+
+    let awaitingShortcut = false;
+
     const handleKeyDown = (event) => {
       if (event.defaultPrevented) return;
       const target = event.target;
-      if (target instanceof HTMLElement && focusableTagNames.has(target.tagName)) {
-        return;
+      if (target instanceof HTMLElement) {
+        if (target.isContentEditable || focusableTagNames.has(target.tagName)) {
+          return;
+        }
       }
 
       const key = event.key.toLowerCase();
 
       if (key === '/') {
-        pendingRef.current = true;
+        awaitingShortcut = true;
         return;
       }
 
-      if (!pendingRef.current) return;
+      if (!awaitingShortcut) return;
 
-      pendingRef.current = false;
+      awaitingShortcut = false;
 
-      const action = actions.find(
-        (entry) => entry.definition.shortcut && entry.definition.shortcut.toLowerCase() === key,
+      const entry = actions.find(
+        (item) => item.definition.shortcut && item.definition.shortcut.toLowerCase() === key,
       );
-      if (!action || !action.canExecute) {
+      if (!entry || !entry.canExecute) {
         return;
       }
 
       event.preventDefault();
-      const element = focusMap.current.get(action.definition.id) ?? null;
+      const element = focusMap.current.get(entry.definition.id) ?? null;
       const contextWithFocus = { ...context, returnFocus: element };
-      action.definition.run(contextWithFocus);
-      action.definition.analytics?.(contextWithFocus);
+      entry.definition.run(contextWithFocus);
+      entry.definition.analytics?.(contextWithFocus);
     };
 
-    const resetPending = () => {
-      pendingRef.current = false;
+    const handleKeyUp = (event) => {
+      if (event.key === '/') {
+        awaitingShortcut = false;
+      }
+    };
+
+    const handleBlur = () => {
+      awaitingShortcut = false;
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('blur', resetPending);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('blur', resetPending);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [actions, context, focusMap]);
 };
@@ -298,7 +312,7 @@ const CommandBar = ({ context, className }) => {
   const resolvedActions = useMemo(() => normalizeActions(context), [context]);
   const { primary, secondary } = useMemo(() => groupActions(resolvedActions), [resolvedActions]);
 
-  // useSlashShortcuts(resolvedActions, context, focusMap);
+  useSlashShortcuts(resolvedActions, context, focusMap);
 
   return (
     <div
@@ -326,4 +340,4 @@ const CommandBar = ({ context, className }) => {
   );
 };
 
-export { CommandBar, ACTIONS_BY_ID };
+export { CommandBar };

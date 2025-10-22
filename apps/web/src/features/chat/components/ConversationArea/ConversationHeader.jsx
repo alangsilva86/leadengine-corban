@@ -454,14 +454,6 @@ export const ConversationHeader = ({
     element.focus({ preventScroll: true });
   }, []);
 
-  if (!ticket) {
-    return (
-      <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
-        Selecione um ticket para visualizar a conversa.
-      </div>
-    );
-  }
-
   const commandCapabilities = useMemo(
     () => ({
       canGenerateProposal: Boolean(ticket),
@@ -515,6 +507,14 @@ export const ConversationHeader = ({
       openDialog,
     ],
   );
+
+  if (!ticket) {
+    return (
+      <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
+        Selecione um ticket para visualizar a conversa.
+      </div>
+    );
+  }
 
   const summaryContent = (
     <div className="flex flex-col gap-4">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import { apiPost } from '@/lib/api.js';
@@ -42,12 +42,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const controller = useChatController({ tenantId, currentUser });
   const selectedTicket = controller.selectedTicket;
   const selectedContact = selectedTicket?.contact ?? null;
-  const contactPhone =
-    selectedContact?.phone ??
-    selectedContact?.primaryPhone ??
-    selectedContact?.phoneDetails?.[0]?.phoneNumber ??
-    selectedTicket?.metadata?.contactPhone ??
-    null;
   const {
     launch: launchManualConversation,
     isPending: manualConversationPending,
@@ -320,6 +314,31 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     });
   };
 
+  const handleSendSms = useCallback(
+    (phoneNumber) => {
+      if (!phoneNumber) return;
+      emitInboxTelemetry('chat.sms.triggered', {
+        ticketId: controller.selectedTicketId,
+        phoneNumber,
+      });
+    },
+    [controller.selectedTicketId]
+  );
+
+  const handleEditContact = useCallback(
+    (contactId) => {
+      if (!contactId) return;
+      emitInboxTelemetry('chat.contact.edit_requested', {
+        ticketId: controller.selectedTicketId,
+        contactId,
+      });
+      toast.info('Edição de contato', {
+        description: 'Integração com editor de contato ainda não está disponível neste ambiente.',
+      });
+    },
+    [controller.selectedTicketId]
+  );
+
   const handleSendTemplate = (template) => {
     if (!template) return;
     sendMessage({ content: template.body ?? template.content ?? '', template });
@@ -435,16 +454,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const conversationRegisterResultHandler = canRegisterResult ? registerResult : undefined;
   const conversationRegisterCallResultHandler = selectedTicket ? handleRegisterCallResult : undefined;
 
-  const availableActions = useMemo(
-    () => ({
-      canAssign,
-      canScheduleFollowUp,
-      canRegisterResult,
-      hasPhone: Boolean(contactPhone),
-    }),
-    [canAssign, canScheduleFollowUp, canRegisterResult, contactPhone],
-  );
-
   return (
     <WhatsAppInstancesProvider autoRefresh={false} initialFetch={false}>
       {manualConversationAvailable ? (
@@ -483,7 +492,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
                 toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
               }
               timelineItems={controller.conversation?.timeline ?? []}
-              availableActions={availableActions}
             />
           }
           defaultContextOpen
@@ -518,6 +526,8 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             onAssign={conversationAssignHandler}
             onGenerateProposal={handleGenerateProposal}
             onScheduleFollowUp={conversationScheduleFollowUpHandler}
+            onSendSMS={handleSendSms}
+            onEditContact={handleEditContact}
             isRegisteringResult={controller.statusMutation.isPending}
             typingIndicator={controller.typingIndicator}
             isSending={controller.sendMessageMutation.isPending}
