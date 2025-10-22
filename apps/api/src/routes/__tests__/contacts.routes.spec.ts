@@ -179,12 +179,33 @@ describe('Contacts routes', () => {
     );
   });
 
+  it('lists contact tags for the tenant', async () => {
+    const app = buildContactsApp();
+    listContactTagsMock.mockResolvedValueOnce(['vip', 'partner']);
+
+    const response = await request(app).get('/tags').expect(200);
+
+    expect(listContactTagsMock).toHaveBeenCalledWith('tenant-1');
+    expect(response.body).toEqual({ success: true, data: ['vip', 'partner'] });
+  });
+
   it('returns 404 when contact is not found', async () => {
     const app = buildContactsApp();
     getContactByIdMock.mockResolvedValueOnce(null);
 
     const response = await request(app).get('/11111111-1111-1111-1111-111111111111');
     expect(response.status).toBe(404);
+  });
+
+  it('returns the contact data when it exists', async () => {
+    const app = buildContactsApp();
+    const contactId = '11111111-1111-1111-1111-111111111111';
+    getContactByIdMock.mockResolvedValueOnce({ id: contactId, name: 'Test' });
+
+    const response = await request(app).get(`/${contactId}`).expect(200);
+
+    expect(getContactByIdMock).toHaveBeenCalledWith('tenant-1', contactId);
+    expect(response.body).toEqual({ success: true, data: { id: contactId, name: 'Test' } });
   });
 
   it('sends whatsapp action for each contact', async () => {
