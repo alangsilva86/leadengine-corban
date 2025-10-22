@@ -449,9 +449,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               ticket={controller.selectedTicket}
               onCreateNote={createNote}
               notesLoading={controller.notesMutation.isPending}
-              onSendTemplate={handleSendTemplate}
-              onCreateNextStep={handleCreateNextStep}
-              onRegisterCallResult={handleRegisterCallResult}
               onReopenWindow={() =>
                 toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
               }
