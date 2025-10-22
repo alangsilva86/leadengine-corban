@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 
 export const detailsPanelContainer = cva(
-  'flex w-full flex-1 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden p-4'
+  'flex w-full flex-1 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden p-4'
 );
 
 export const sectionGroup = cva('w-full min-w-0 space-y-3');
@@ -29,7 +29,7 @@ export const panelHeaderLayout = cva(
 );
 
 export const tabsList = cva(
-  'flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap'
+  'flex w-full min-w-0 flex-wrap items-center justify-start gap-2 md:gap-3 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap'
 );
 
 export const tabsContent = cva('min-w-0 space-y-4');
