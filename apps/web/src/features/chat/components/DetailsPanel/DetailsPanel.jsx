@@ -97,6 +97,13 @@ const AttachmentsPanel = ({ attachments }) => {
   return <AttachmentPreview attachments={attachments} />;
 };
 
+const scheduleNextFrame = (callback) => {
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    return window.requestAnimationFrame(callback);
+  }
+  return setTimeout(callback, 0);
+};
+
 const SectionGroup = ({ baseId, sections }) => {
   const defaultValues = useMemo(
     () => sections.filter((section) => section.defaultOpen !== false).map((section) => `${baseId}-${section.value}`),
@@ -120,12 +127,24 @@ const PanelSection = ({
   count,
   action,
   children,
+  onOpen,
 }) => (
   <AccordionItem
     value={sectionId}
     className="w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
   >
-    <AccordionTrigger className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground">
+    <AccordionTrigger
+      className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground"
+      onClick={(event) => {
+        if (!onOpen) return;
+        const target = event.currentTarget;
+        scheduleNextFrame(() => {
+          if (target?.getAttribute('aria-expanded') === 'true') {
+            onOpen();
+          }
+        });
+      }}
+    >
       <div className="flex min-w-0 flex-1 items-start gap-3">
         {Icon ? (
           <span className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-full">
@@ -253,6 +272,10 @@ export const DetailsPanel = ({
   onOpenAudit,
 }) => {
   const notesSectionRef = useRef(null);
+  const handleNotesSectionOpen = useCallback(() => {
+    const target = notesSectionRef.current;
+    target?.focusComposer?.();
+  }, []);
 
   const attachments = useMemo(() => {
     const list = ticket?.metadata?.attachments;
@@ -390,6 +413,7 @@ export const DetailsPanel = ({
                     loading={notesLoading}
                   />
                 ),
+                onOpen: handleNotesSectionOpen,
               },
             ]}
           />
