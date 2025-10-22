@@ -264,6 +264,8 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 };
 
 export { ConversationCardBody as CardBody };
+const ACTION_BUTTON_STYLES = { variant: 'toolbar', size: 'toolbar' };
+const ACTION_TEXT_BUTTON_STYLES = { variant: 'toolbar', size: 'sm', className: 'text-xs font-medium' };
 
 export const ConversationHeader = ({
   ticket,
@@ -712,6 +714,100 @@ export const ConversationHeader = ({
             <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
           </Tooltip>
 
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                {...ACTION_BUTTON_STYLES}
+                onClick={() => onAssign?.(ticket)}
+                aria-label="Atribuir"
+                aria-keyshortcuts="n"
+                accessKey="n"
+              >
+                <UserPlus className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Atribuir</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                {...ACTION_BUTTON_STYLES}
+                onClick={() => onScheduleFollowUp?.(ticket)}
+                aria-label="Agendar follow-up"
+                aria-keyshortcuts="x"
+                accessKey="x"
+              >
+                <CalendarClock className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Agendar follow-up</TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    {...ACTION_BUTTON_STYLES}
+                    aria-label="Registrar resultado"
+                    disabled={isRegisteringResult}
+                  >
+                    <ClipboardList className="size-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Registrar resultado</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                {RESULT_ITEMS.map((item) => (
+                  <DropdownMenuRadioItem
+                    key={item.value}
+                    value={item.value}
+                    className="min-h-[44px]"
+                    disabled={isRegisteringResult}
+                  >
+                    {item.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    {...ACTION_BUTTON_STYLES}
+                    aria-label="Opções de telefone"
+                  >
+                    <Phone className="size-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Ações de telefone e registro de ligação</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
+                Ligar
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
+                Enviar SMS
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
+                Abrir WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
+                Copiar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ConversationActions
             layout="compact"
             onAssign={handleAssign}
@@ -729,10 +825,8 @@ export const ConversationHeader = ({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={handleCopyDocument}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Copiar documento"
               >
                 <IdCard className="size-4" aria-hidden />
@@ -744,10 +838,8 @@ export const ConversationHeader = ({
           <CollapsibleTrigger asChild>
             <Button
               type="button"
-              variant="ghost"
-              size="icon"
+              {...ACTION_BUTTON_STYLES}
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
               aria-keyshortcuts="e"
               accessKey="e"
             >
@@ -782,6 +874,50 @@ export const ConversationHeader = ({
               <ConversationCardBody.Right>
                 <p className="text-xs text-foreground-muted">{subtitle}</p>
 
+                <section className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    {...ACTION_TEXT_BUTTON_STYLES}
+                    onClick={() => onAssign?.(ticket)}
+                  >
+                    Atribuir
+                  </Button>
+                  <Button
+                    type="button"
+                    {...ACTION_TEXT_BUTTON_STYLES}
+                    onClick={() => onScheduleFollowUp?.(ticket)}
+                  >
+                    Agendar follow-up
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        aria-label="Registrar resultado"
+                        className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
+                        disabled={isRegisteringResult}
+                      >
+                        <span className="mr-1">Registrar resultado</span>
+                        <ChevronDown className="size-4" aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
+                        {RESULT_ITEMS.map((item) => (
+                          <DropdownMenuRadioItem
+                            key={item.value}
+                            value={item.value}
+                            className="min-h-[40px]"
+                            disabled={isRegisteringResult}
+                          >
+                            {item.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </section>
                 <ConversationActions
                   layout="expanded"
                   className="text-xs"
