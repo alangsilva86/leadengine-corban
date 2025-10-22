@@ -62,6 +62,7 @@ import {
  * @property {boolean} [notesLoading]
  * @property {(windowId: string) => void} [onReopenWindow]
  * @property {() => void} [onOpenAudit]
+ * @property {() => void} [onNotesSectionOpen]
  */
 
 /**
@@ -77,6 +78,7 @@ import {
  * @property {(context: DetailsPanelContext) => import('react').ReactNode} [renderAction]
  * @property {import('react').ReactNode} [action]
  * @property {boolean} [defaultOpen]
+ * @property {(context: DetailsPanelContext) => () => void} [getOnOpen]
  */
 
 /**
@@ -190,6 +192,7 @@ const DETAILS_PANEL_TABS = [
         title: 'Notas internas',
         description: 'Comentários privados para alinhamento entre a equipe.',
         getCount: ({ notesCount }) => notesCount,
+        getOnOpen: ({ onNotesSectionOpen }) => onNotesSectionOpen,
         render: ({ ticket, onCreateNote, notesLoading, notesSectionRef }) => (
           <NotesSection
             ref={notesSectionRef}
@@ -498,17 +501,19 @@ export const DetailsPanel = ({
       notesLoading,
       onReopenWindow,
       onOpenAudit,
+      onNotesSectionOpen: handleNotesSectionOpen,
     };
 
     return DETAILS_PANEL_TABS.map((tab) => ({
       ...tab,
       sections: tab.sections.map((section) => {
-        const { render, getCount, renderAction, ...rest } = section;
+        const { render, getCount, renderAction, getOnOpen, ...rest } = section;
         return {
           ...rest,
           count: typeof getCount === 'function' ? getCount(context) : section.count,
           action: typeof renderAction === 'function' ? renderAction(context) : section.action,
           children: typeof render === 'function' ? render(context) : section.children,
+          onOpen: typeof getOnOpen === 'function' ? getOnOpen(context) : section.onOpen,
         };
       }),
     }));
@@ -522,6 +527,7 @@ export const DetailsPanel = ({
     notesLoading,
     onReopenWindow,
     onOpenAudit,
+    handleNotesSectionOpen,
   ]);
 
   return (
@@ -553,11 +559,6 @@ export const DetailsPanel = ({
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
         <TabsList className={tabsList()}>
-          <TabsTrigger value="contact">Contato</TabsTrigger>
-          <TabsTrigger value="opportunity">Oportunidade</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="attachments">Anexos & Notas</TabsTrigger>
-        <TabsList className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap">
           {tabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}
@@ -565,125 +566,8 @@ export const DetailsPanel = ({
           ))}
         </TabsList>
 
-        <TabsContent value="contact" className={tabsContent()}>
-          <SectionGroup
-            baseId="contact"
-            sections={[
-              {
-                value: 'summary',
-                icon: UserCircle2,
-                title: 'Ficha do contato',
-                description: 'Informações cadastrais e campos personalizados organizadas por categoria.',
-                children: <ContactSummary contact={ticket?.contact} />,
-              },
-              {
-                value: 'details',
-                icon: Info,
-                title: 'Campos do atendimento',
-                description: 'Campos personalizados e dados operacionais do ticket.',
-                children: <LeadDetailsTabs ticket={ticket} />,
-              },
-              {
-                value: 'consent',
-                icon: ShieldCheck,
-                title: 'Consentimento',
-                description: 'Preferências de comunicação registradas para o contato.',
-                children: <ConsentInfo consent={ticket?.contact?.consent} />,
-              },
-            ]}
-          />
-        </TabsContent>
-
-        <TabsContent value="opportunity" className={tabsContent()}>
-          <SectionGroup
-            baseId="opportunity"
-            sections={[
-              {
-                value: 'lead-summary',
-                icon: Briefcase,
-                title: 'Resumo da oportunidade',
-                description: 'Status, valor estimado e principais indicadores do lead.',
-                children: <LeadSummaryCard lead={ticket?.lead} />,
-              },
-              {
-                value: 'proposal',
-                icon: FileText,
-                title: 'Simulação & propostas',
-                description: 'Acesse rapidamente a mini simulação e gere uma proposta atualizada.',
-                children: (
-                  <ProposalMiniSim
-                    lead={ticket?.lead}
-                    primaryCtaHref={`#${GENERATE_PROPOSAL_ANCHOR_ID}`}
-                  />
-                ),
-              },
-              {
-                value: 'tasks',
-                icon: NotebookPen,
-                title: 'Tarefas e follow-ups',
-                description: 'Gerencie janelas de reabertura e ações pendentes para este ticket.',
-                children: <TasksSection ticket={ticket} onReopenWindow={onReopenWindow} />,
-              },
-              {
-                value: 'audit',
-                icon: Info,
-                title: 'Auditoria',
-                description: 'Histórico completo de alterações relacionadas ao atendimento.',
-                children: <AuditTrailLink onOpenAudit={onOpenAudit} />,
-              },
-            ]}
-          />
-        </TabsContent>
-
-        <TabsContent value="timeline" className={tabsContent()}>
-          <SectionGroup
-            baseId="timeline"
-            sections={[
-              {
-                value: 'activity',
-                icon: Clock3,
-                title: 'Registro de interações',
-                description: 'Resumo cronológico das mensagens e ações trocadas com o cliente.',
-                count: timelineCount,
-                children: <TimelineSummary ticket={ticket} />,
-              },
-            ]}
-          />
-        </TabsContent>
-
-        <TabsContent value="attachments" className={tabsContent()}>
-          <SectionGroup
-            baseId="attachments"
-            sections={[
-              {
-                value: 'files',
-                icon: Paperclip,
-                title: 'Anexos compartilhados',
-                description: 'Arquivos e mídias enviados durante a conversa.',
-                count: attachmentsCount,
-                children: <AttachmentsPanel attachments={attachments} />,
-              },
-              {
-                value: 'notes',
-                icon: NotebookPen,
-                title: 'Notas internas',
-                description: 'Comentários privados para alinhamento entre a equipe.',
-                count: notesCount,
-                children: (
-                  <NotesSection
-                    ref={notesSectionRef}
-                    notes={ticket?.notes ?? []}
-                    onCreate={onCreateNote}
-                    loading={notesLoading}
-                  />
-                ),
-                onOpen: handleNotesSectionOpen,
-              },
-            ]}
-          />
-        </TabsContent>
         {tabs.map((tab) => (
-          <TabsContent key={tab.value} value={tab.value} className="space-y-4 min-w-0">
+          <TabsContent key={tab.value} value={tab.value} className={tabsContent()}>
             <SectionGroup baseId={tab.value} sections={tab.sections} />
           </TabsContent>
         ))}
