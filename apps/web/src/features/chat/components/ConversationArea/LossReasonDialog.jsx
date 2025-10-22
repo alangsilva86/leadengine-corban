@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -28,13 +28,21 @@ const LossReasonDialog = ({
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const triggerRef = useRef(null);
 
   useEffect(() => {
     if (!open) {
       setReason('');
       setNotes('');
       setSubmitted(false);
+      return;
     }
+
+    const frame = requestAnimationFrame(() => {
+      triggerRef.current?.focus();
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   const handleConfirm = () => {
@@ -64,7 +72,7 @@ const LossReasonDialog = ({
                 setSubmitted(false);
               }}
             >
-              <SelectTrigger id="loss-reason" className="w-full min-h-[44px]">
+              <SelectTrigger id="loss-reason" className="w-full min-h-[44px]" ref={triggerRef}>
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>

@@ -18,7 +18,7 @@ import AuditTrailLink from './AuditTrailLink.jsx';
 import { GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
-import { DEFAULT_QUICK_ACTION_LINKS } from '../Shared/ConversationActions.jsx';
+import { buildQuickActionLinks } from '../Shared/ConversationActions.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 import { formatDateTime } from '../../utils/datetime.js';
 import {
@@ -31,6 +31,7 @@ import {
   Mail,
   NotebookPen,
   Paperclip,
+  Phone,
   ShieldCheck,
   UserCircle2,
 } from 'lucide-react';
@@ -501,7 +502,16 @@ export const DetailsPanel = ({
     return [];
   }, [ticket?.metadata?.attachments]);
 
-  const quickActionLinks = DEFAULT_QUICK_ACTION_LINKS;
+  const quickActionLinks = useMemo(
+    () =>
+      buildQuickActionLinks({
+        canAssign: true,
+        canScheduleFollowUp: true,
+        canRegisterResult: true,
+        hasPhone: Boolean(ticket?.contact?.phone ?? ticket?.metadata?.contactPhone),
+      }),
+    [ticket?.contact?.phone, ticket?.metadata?.contactPhone],
+  );
 
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;

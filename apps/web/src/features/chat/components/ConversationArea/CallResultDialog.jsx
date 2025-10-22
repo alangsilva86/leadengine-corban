@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -22,12 +22,20 @@ const DEFAULT_OUTCOME = 'connected';
 const CallResultDialog = ({ open, onOpenChange, onSubmit }) => {
   const [outcome, setOutcome] = useState(DEFAULT_OUTCOME);
   const [notes, setNotes] = useState('');
+  const triggerRef = useRef(null);
 
   useEffect(() => {
     if (!open) {
       setOutcome(DEFAULT_OUTCOME);
       setNotes('');
+      return;
     }
+
+    const frame = requestAnimationFrame(() => {
+      triggerRef.current?.focus();
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   const handleSubmit = () => {
@@ -45,7 +53,7 @@ const CallResultDialog = ({ open, onOpenChange, onSubmit }) => {
             Resultado
           </Label>
           <Select value={outcome} onValueChange={setOutcome}>
-            <SelectTrigger id="call-outcome" className="h-10">
+            <SelectTrigger id="call-outcome" className="h-10" ref={triggerRef}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

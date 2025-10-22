@@ -17,7 +17,7 @@ export const sectionTrigger = cva(
 export const sectionContent = cva('px-0');
 
 export const sectionContentInner = cva(
-  'min-w-0 max-w-full overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground'
+  'min-w-0 max-w-full overflow-hidden rounded-xl bg-surface-overlay-quiet/70 p-4 text-sm text-foreground'
 );
 
 export const panelHeaderSection = cva(

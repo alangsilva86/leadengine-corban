@@ -26,11 +26,36 @@ export const CONVERSATION_ACTION_IDS = {
 };
 
 export const DEFAULT_QUICK_ACTION_LINKS = [
-  { id: CONVERSATION_ACTION_IDS.assign, label: 'Atribuir', icon: UserPlus },
-  { id: CONVERSATION_ACTION_IDS.scheduleFollowUp, label: 'Agendar follow-up', icon: CalendarClock },
-  { id: CONVERSATION_ACTION_IDS.registerResult, label: 'Registrar resultado', icon: ClipboardList },
-  { id: CONVERSATION_ACTION_IDS.phone, label: 'Ações de telefone', icon: Phone },
+  {
+    id: CONVERSATION_ACTION_IDS.assign,
+    label: 'Atribuir',
+    icon: UserPlus,
+    canExecute: ({ canAssign } = {}) => canAssign !== false,
+  },
+  {
+    id: CONVERSATION_ACTION_IDS.scheduleFollowUp,
+    label: 'Agendar follow-up',
+    icon: CalendarClock,
+    canExecute: ({ canScheduleFollowUp } = {}) => canScheduleFollowUp !== false,
+  },
+  {
+    id: CONVERSATION_ACTION_IDS.registerResult,
+    label: 'Registrar resultado',
+    icon: ClipboardList,
+    canExecute: ({ canRegisterResult } = {}) => canRegisterResult !== false,
+  },
+  {
+    id: CONVERSATION_ACTION_IDS.phone,
+    label: 'Ações de telefone',
+    icon: Phone,
+    canExecute: ({ hasPhone } = {}) => hasPhone !== false,
+  },
 ];
+
+export const buildQuickActionLinks = (context = {}) =>
+  DEFAULT_QUICK_ACTION_LINKS.filter((action) =>
+    typeof action.canExecute === 'function' ? action.canExecute(context) : true,
+  ).map(({ canExecute, ...rest }) => rest);
 
 export const DEFAULT_RESULT_OPTIONS = [
   { value: 'won', label: 'Ganho' },
