@@ -275,8 +275,8 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 };
 
 export { ConversationCardBody as CardBody };
-const ACTION_BUTTON_STYLES =
-  'h-8 w-8 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border';
+const ACTION_BUTTON_STYLES = { variant: 'toolbar', size: 'toolbar' };
+const ACTION_TEXT_BUTTON_STYLES = { variant: 'toolbar', size: 'sm', className: 'text-xs font-medium' };
 
 export const ConversationHeader = ({
   ticket,
@@ -729,10 +729,8 @@ export const ConversationHeader = ({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={() => onAssign?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Atribuir"
                 aria-keyshortcuts="n"
                 accessKey="n"
@@ -747,10 +745,8 @@ export const ConversationHeader = ({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={() => onScheduleFollowUp?.(ticket)}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Agendar follow-up"
                 aria-keyshortcuts="x"
                 accessKey="x"
@@ -767,10 +763,8 @@ export const ConversationHeader = ({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
+                    {...ACTION_BUTTON_STYLES}
                     aria-label="Registrar resultado"
-                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                     disabled={isRegisteringResult}
                   >
                     <ClipboardList className="size-4" aria-hidden />
@@ -801,10 +795,8 @@ export const ConversationHeader = ({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
+                    {...ACTION_BUTTON_STYLES}
                     aria-label="Opções de telefone"
-                    className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     <Phone className="size-4" aria-hidden />
                   </Button>
@@ -832,10 +824,8 @@ export const ConversationHeader = ({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
+                {...ACTION_BUTTON_STYLES}
                 onClick={handleCopyDocument}
-                className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
                 aria-label="Copiar documento"
               >
                 <IdCard className="size-4" aria-hidden />
@@ -847,10 +837,8 @@ export const ConversationHeader = ({
           <CollapsibleTrigger asChild>
             <Button
               type="button"
-              variant="ghost"
-              size="icon"
+              {...ACTION_BUTTON_STYLES}
               aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              className="size-9 rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted hover:bg-surface-overlay-strong"
               aria-keyshortcuts="e"
               accessKey="e"
             >
@@ -888,19 +876,15 @@ export const ConversationHeader = ({
                 <section className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    {...ACTION_TEXT_BUTTON_STYLES}
                     onClick={() => onAssign?.(ticket)}
-                    className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     Atribuir
                   </Button>
                   <Button
                     type="button"
-                    size="sm"
-                    variant="outline"
+                    {...ACTION_TEXT_BUTTON_STYLES}
                     onClick={() => onScheduleFollowUp?.(ticket)}
-                    className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground-muted hover:bg-surface-overlay-strong"
                   >
                     Agendar follow-up
                   </Button>
