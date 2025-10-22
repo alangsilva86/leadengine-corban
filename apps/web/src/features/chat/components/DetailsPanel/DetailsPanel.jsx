@@ -18,9 +18,12 @@ import AuditTrailLink from './AuditTrailLink.jsx';
 import { GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
+import { CONVERSATION_ACTION_IDS } from '../Shared/ConversationActions.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 import {
+  CalendarClock,
   Briefcase,
+  ClipboardList,
   Check,
   Clock3,
   Copy,
@@ -31,6 +34,7 @@ import {
   Paperclip,
   Phone,
   ShieldCheck,
+  UserPlus,
   UserCircle2,
 } from 'lucide-react';
 
@@ -262,6 +266,16 @@ export const DetailsPanel = ({
     return [];
   }, [ticket?.metadata?.attachments]);
 
+  const quickActionLinks = useMemo(
+    () => [
+      { id: CONVERSATION_ACTION_IDS.assign, label: 'Atribuir', icon: UserPlus },
+      { id: CONVERSATION_ACTION_IDS.scheduleFollowUp, label: 'Agendar follow-up', icon: CalendarClock },
+      { id: CONVERSATION_ACTION_IDS.registerResult, label: 'Registrar resultado', icon: ClipboardList },
+      { id: CONVERSATION_ACTION_IDS.phone, label: 'Ações de telefone', icon: Phone },
+    ],
+    []
+  );
+
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;
   const timelineCount = ticket?.timeline ? Object.keys(ticket.timeline).length : 0;
@@ -269,6 +283,29 @@ export const DetailsPanel = ({
   return (
     <div className="flex w-full flex-1 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden p-4">
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
+
+      <nav
+        aria-label="Ações do atendimento"
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
+      >
+        {quickActionLinks.map((action) => {
+          const Icon = action.icon;
+          return (
+            <Button
+              key={action.id}
+              variant="ghost"
+              size="sm"
+              asChild
+              className="h-auto rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
+            >
+              <a href={`#${action.id}`} className="inline-flex items-center gap-1">
+                <Icon className="size-4" aria-hidden />
+                <span>{action.label}</span>
+              </a>
+            </Button>
+          );
+        })}
+      </nav>
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
         <TabsList className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap">
