@@ -9,8 +9,8 @@ const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktop
 
   const content = useMemo(() => {
     return (
-      <ScrollArea className="flex-1 min-h-0" viewportClassName="min-h-0 overscroll-contain">
-        <div className={cn('px-4 py-6 sm:px-5 w-full max-w-full', desktopContentClassName)}>{children}</div>
+      <ScrollArea className="flex-1 min-h-0 min-w-0" viewportClassName="min-h-0 min-w-0 overscroll-contain">
+        <div className={cn('px-4 py-6 sm:px-5 w-full min-w-0 max-w-full', desktopContentClassName)}>{children}</div>
       </ScrollArea>
     );
   }, [children, desktopContentClassName]);
@@ -33,7 +33,7 @@ const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktop
   }
 
   return (
-    <aside className="hidden h-full min-h-0 flex-shrink-0 lg:flex">
+    <aside className="hidden h-full min-h-0 min-w-0 flex-shrink-0 lg:flex">
       <div className={cn('flex h-full min-h-0 w-[360px] flex-col overflow-hidden rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]', desktopClassName)}>
         {content}
       </div>

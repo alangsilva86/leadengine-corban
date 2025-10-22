@@ -575,7 +575,7 @@ export const DetailsPanel = ({
   ]);
 
   return (
-    <div className={detailsPanelContainer()}>
+    <div data-detailspanel className={detailsPanelContainer()}>
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
 
       <QuickActionsBar actions={quickActionLinks} />
@@ -583,7 +583,12 @@ export const DetailsPanel = ({
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
         <TabsList className={tabsList()}>
           {tabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              className="max-w-[10rem] truncate [overflow-wrap:anywhere] sm:max-w-[12rem]"
+              title={tab.label}
+            >
               {tab.label}
             </TabsTrigger>
           ))}
