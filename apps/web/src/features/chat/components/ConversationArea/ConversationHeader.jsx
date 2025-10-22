@@ -265,7 +265,6 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 
 export { ConversationCardBody as CardBody };
 const ACTION_BUTTON_STYLES = { variant: 'toolbar', size: 'toolbar' };
-const ACTION_TEXT_BUTTON_STYLES = { variant: 'toolbar', size: 'sm', className: 'text-xs font-medium' };
 
 export const ConversationHeader = ({
   ticket,
@@ -779,53 +778,9 @@ export const ConversationHeader = ({
               <ConversationCardBody.Right>
                 <p className="text-xs text-foreground-muted">{subtitle}</p>
 
-                <section className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    {...ACTION_TEXT_BUTTON_STYLES}
-                    onClick={() => onAssign?.(ticket)}
-                  >
-                    Atribuir
-                  </Button>
-                  <Button
-                    type="button"
-                    {...ACTION_TEXT_BUTTON_STYLES}
-                    onClick={() => onScheduleFollowUp?.(ticket)}
-                  >
-                    Agendar follow-up
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        size="sm"
-                        aria-label="Registrar resultado"
-                        className="rounded-lg bg-surface-overlay-quiet px-3 text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border"
-                        disabled={isRegisteringResult}
-                      >
-                        <span className="mr-1">Registrar resultado</span>
-                        <ChevronDown className="size-4" aria-hidden />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-56">
-                      <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                        {DEFAULT_RESULT_OPTIONS.map((item) => (
-                          <DropdownMenuRadioItem
-                            key={item.value}
-                            value={item.value}
-                            className="min-h-[40px]"
-                            disabled={isRegisteringResult}
-                          >
-                            {item.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </section>
                 <ConversationActions
                   layout="expanded"
-                  className="text-xs"
+                  className="text-xs font-medium"
                   onAssign={handleAssign}
                   onScheduleFollowUp={handleScheduleFollowUp}
                   onRegisterResult={handleResultChange}
@@ -834,6 +789,7 @@ export const ConversationHeader = ({
                   resultSelection={resultSelection || undefined}
                   isRegisteringResult={isRegisteringResult}
                   phoneTriggerLabel={phoneDisplay ?? 'Ações de telefone'}
+                  phoneTooltip="Ações de telefone"
                 />
 
                 <footer className="flex flex-wrap items-center gap-2 pt-1">

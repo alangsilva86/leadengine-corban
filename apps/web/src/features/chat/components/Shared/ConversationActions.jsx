@@ -53,6 +53,7 @@ const buttonBaseExpanded =
 const ConversationActions = ({
   layout = 'compact',
   className,
+  gap = 'gap-2',
   onAssign,
   onScheduleFollowUp,
   onRegisterResult,
@@ -65,7 +66,7 @@ const ConversationActions = ({
   followUpLabel = 'Agendar follow-up',
   registerResultLabel = 'Registrar resultado',
   phoneTriggerLabel = 'Ações de telefone',
-  phoneTooltip = 'Ações de telefone e registro de ligação',
+  phoneTooltip = 'Ações de telefone',
   assignShortcut,
   followUpShortcut,
   anchorIds = CONVERSATION_ACTION_IDS,
@@ -96,9 +97,11 @@ const ConversationActions = ({
     return null;
   }
 
+  const containerClasses = cn('flex flex-wrap items-center', gap, className);
+
   if (layout === 'expanded') {
     return (
-      <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <div className={containerClasses}>
         {hasAssign ? (
           <Button
             type="button"
@@ -185,7 +188,7 @@ const ConversationActions = ({
   }
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+    <div className={containerClasses}>
       {hasAssign ? (
         <Tooltip>
           <TooltipTrigger asChild>
