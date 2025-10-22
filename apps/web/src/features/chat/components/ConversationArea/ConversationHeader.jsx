@@ -35,6 +35,7 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
 import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import ConversationActions, {
   CONVERSATION_ACTION_IDS,
   DEFAULT_RESULT_OPTIONS,

@@ -15,8 +15,8 @@ import {
   ChevronDown,
   ClipboardList,
   Phone,
-  UserPlus,
 } from 'lucide-react';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 
 export const CONVERSATION_ACTION_IDS = {
   assign: 'conversation-action-assign',
