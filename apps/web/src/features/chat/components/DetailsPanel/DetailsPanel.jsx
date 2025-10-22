@@ -533,9 +533,9 @@ export const DetailsPanel = ({
               variant="ghost"
               size="sm"
               asChild
-              className="h-auto rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
+              className="h-auto rounded-lg border border-transparent px-3 py-1.5 text-sm font-medium hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
             >
-              <a href={`#${action.id}`} className="inline-flex items-center gap-1">
+              <a href={`#${action.id}`} className="inline-flex items-center gap-2">
                 <Icon className="size-4" aria-hidden />
                 <span>{action.label}</span>
               </a>
