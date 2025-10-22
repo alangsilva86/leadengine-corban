@@ -11,6 +11,42 @@ const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
+const noop = () => {};
+const skippedResult = Object.freeze({ success: false, skipped: true });
+const noopAsync = async () => skippedResult;
+
+const EMPTY_CONTROLLER = Object.freeze({
+  instances: [],
+  instancesReady: false,
+  currentInstance: null,
+  status: 'disconnected',
+  qrData: null,
+  secondsLeft: null,
+  loadingInstances: false,
+  loadingQr: false,
+  isAuthenticated: false,
+  sessionActive: false,
+  authDeferred: false,
+  authTokenState: null,
+  deletingInstanceId: null,
+  liveEvents: [],
+  realtimeConnected: false,
+  setQrData: noop,
+  setSecondsLeft: noop,
+  loadInstances: noopAsync,
+  selectInstance: noop,
+  generateQr: noopAsync,
+  connectInstance: noopAsync,
+  createInstance: noopAsync,
+  deleteInstance: noopAsync,
+  markConnected: noop,
+  handleAuthFallback: noop,
+  setSessionActive: noop,
+  setAuthDeferred: noop,
+  setGeneratingQrState: noop,
+  setStatus: noop,
+});
+
 const readInstancesCache = () => {
   if (!sessionStorageAvailable()) {
     return null;
@@ -427,7 +463,10 @@ function useWhatsAppInstancesController({
   autoRefresh = true,
   pauseWhenHidden = true,
   initialFetch = autoRefresh,
+  __internalSkip = false,
 } = {}) {
+  const skipController = Boolean(__internalSkip);
+
   const { log, warn, error: logError } = { ...defaultLogger, ...logger };
 
   const [instances, setInstances] = useState([]);
@@ -529,11 +568,15 @@ function useWhatsAppInstancesController({
   );
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
+
     const cached = readInstancesCache();
     if (!cached) {
       setInstancesReady(false);
       preferredInstanceIdRef.current = null;
-      return;
+      return undefined;
     }
 
     const list = Array.isArray(cached.list) ? cached.list : [];
@@ -553,15 +596,20 @@ function useWhatsAppInstancesController({
       preferredInstanceIdRef.current = null;
     }
     hasFetchedOnceRef.current = false;
-  }, [selectedAgreement?.id]);
+    return undefined;
+  }, [skipController, selectedAgreement?.id]);
 
   const setGeneratingQrState = useCallback((value) => {
     generatingQrRef.current = Boolean(value);
   }, []);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     setLocalStatus(initialStatus ?? 'disconnected');
-  }, [initialStatus]);
+    return undefined;
+  }, [initialStatus, skipController]);
 
   const expiresAt = useMemo(() => {
     if (!qrData?.expiresAt) return null;
@@ -569,6 +617,9 @@ function useWhatsAppInstancesController({
   }, [qrData]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     if (!expiresAt || localStatus === 'connected') {
       setSecondsLeft(null);
       return undefined;
@@ -586,15 +637,23 @@ function useWhatsAppInstancesController({
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [expiresAt, localStatus, onStatusChange]);
+  }, [expiresAt, localStatus, onStatusChange, skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     loadingInstancesRef.current = loadingInstances;
-  }, [loadingInstances]);
+    return undefined;
+  }, [loadingInstances, skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     loadingQrRef.current = loadingQr;
-  }, [loadingQr]);
+    return undefined;
+  }, [loadingQr, skipController]);
 
   const connectInstance = useCallback(
     async (instanceId = null, options = {}) => {
@@ -1078,8 +1137,11 @@ function useWhatsAppInstancesController({
   loadInstancesRef.current = loadInstances;
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     if (!campaignInstanceId || instances.length === 0) {
-      return;
+      return undefined;
     }
 
     const matched = instances.find(
@@ -1087,7 +1149,7 @@ function useWhatsAppInstancesController({
     );
 
     if (!matched || currentInstance?.id === matched.id) {
-      return;
+      return undefined;
     }
 
     setCurrentInstance(matched);
@@ -1096,11 +1158,23 @@ function useWhatsAppInstancesController({
     const statusFromInstance = matched.status || 'disconnected';
     setLocalStatus(statusFromInstance);
     onStatusChange?.(statusFromInstance);
-  }, [campaignInstanceId, currentInstance?.id, instances, onStatusChange, selectedAgreement?.id]);
+    return undefined;
+  }, [
+    campaignInstanceId,
+    currentInstance?.id,
+    instances,
+    onStatusChange,
+    selectedAgreement?.id,
+    skipController,
+  ]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     loadInstancesRef.current = loadInstances;
-  }, [loadInstances]);
+    return undefined;
+  }, [loadInstances, skipController]);
 
   const markConnected = useCallback(async () => {
     if (!currentInstance?.id) return false;
@@ -1533,37 +1607,59 @@ function useWhatsAppInstancesController({
 
   const { connected: realtimeConnected } = useInstanceLiveUpdates({
     tenantId: tenantRoomId,
-    enabled: Boolean(tenantRoomId),
+    enabled: !skipController && Boolean(tenantRoomId),
     onEvent: handleRealtimeEvent,
   });
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     setLiveEvents([]);
-  }, [selectedAgreement?.id]);
+    return undefined;
+  }, [selectedAgreement?.id, skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     if (!autoRefresh) {
       setInstancesReady(true);
-      return;
+      return undefined;
     }
     if (!canSynchronize) {
       setInstancesReady(true);
-      return;
+      return undefined;
     }
     if (!initialFetch) {
       setInstancesReady(true);
-      return;
+      return undefined;
     }
     void loadInstances({ forceRefresh: false });
-  }, [autoRefresh, canSynchronize, initialFetch, loadInstances, selectedAgreement?.id]);
+    return undefined;
+  }, [
+    autoRefresh,
+    canSynchronize,
+    initialFetch,
+    loadInstances,
+    selectedAgreement?.id,
+    skipController,
+  ]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     if (!canSynchronize) {
       setInstancesReady(true);
     }
-  }, [canSynchronize]);
+    return undefined;
+  }, [canSynchronize, skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     if (!autoRefresh || !isAuthenticated) {
       return undefined;
     }
@@ -1642,13 +1738,20 @@ function useWhatsAppInstancesController({
         clearTimeout(timeoutId);
       }
     };
-  }, [autoRefresh, isAuthenticated, pauseWhenHidden, selectedAgreement?.id]);
+  }, [autoRefresh, isAuthenticated, pauseWhenHidden, selectedAgreement?.id, skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     setLiveEvents([]);
-  }, [currentInstance?.id]);
+    return undefined;
+  }, [currentInstance?.id, skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     return () => {
       if (qrAbortRef.current) {
         try {
@@ -1658,9 +1761,12 @@ function useWhatsAppInstancesController({
         }
       }
     };
-  }, []);
+  }, [skipController]);
 
   useEffect(() => {
+    if (skipController) {
+      return undefined;
+    }
     if (!autoRefresh || !pauseWhenHidden) {
       return undefined;
     }
@@ -1678,7 +1784,7 @@ function useWhatsAppInstancesController({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [autoRefresh, canSynchronize, loadInstances, pauseWhenHidden]);
+  }, [autoRefresh, canSynchronize, loadInstances, pauseWhenHidden, skipController]);
 
   const controllerValue = useMemo(
     () => ({
@@ -1745,7 +1851,7 @@ function useWhatsAppInstancesController({
     ]
   );
 
-  return controllerValue;
+  return skipController ? EMPTY_CONTROLLER : controllerValue;
 }
 
 const WhatsAppInstancesContext = createContext(null);
@@ -1761,10 +1867,12 @@ export const WhatsAppInstancesProvider = ({ children, ...config }) => {
 
 export default function useWhatsAppInstances(options = {}) {
   const context = useContext(WhatsAppInstancesContext);
-  if (context) {
-    return context;
-  }
-  return useWhatsAppInstancesController(options);
+  const controller = useWhatsAppInstancesController({
+    ...options,
+    __internalSkip: Boolean(context),
+  });
+
+  return context ?? controller;
 }
 
 export {
