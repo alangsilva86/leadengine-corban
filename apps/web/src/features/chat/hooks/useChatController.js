@@ -7,7 +7,6 @@ import useSendMessage from '../api/useSendMessage.js';
 import useNotesMutation from '../api/useNotesMutation.js';
 import useTicketStatusMutation from '../api/useTicketStatusMutation.js';
 import useTicketAssignMutation from '../api/useTicketAssignMutation.js';
-import useWhatsAppLimits from '../api/useWhatsAppLimits.js';
 import useRealtimeTickets from './useRealtimeTickets.js';
 import useConversationState from './useConversationState.js';
 import useTypingIndicator from './useTypingIndicator.js';
@@ -286,8 +285,6 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     return () => window.clearInterval(interval);
   }, []);
 
-  const whatsAppLimits = useWhatsAppLimits({ enabled: Boolean(tenantId) });
-
   const selectTicket = useCallback((ticketId) => {
     setSelectedTicketId(ticketId);
   }, []);
@@ -321,7 +318,6 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     ticketsQuery,
     tickets,
     metrics,
-    whatsAppLimits,
     selectedTicketId,
     selectedTicket,
     selectTicket,

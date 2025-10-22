@@ -35,11 +35,6 @@ vi.mock('../api/useTicketAssignMutation.js', () => ({
   default: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock('../api/useWhatsAppLimits.js', () => ({
-  __esModule: true,
-  default: () => ({ data: null, isLoading: false }),
-}));
-
 vi.mock('../useTypingIndicator.js', () => ({
   __esModule: true,
   default: () => ({ agentsTyping: [], broadcastTyping: vi.fn() }),
