@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import { apiPost } from '@/lib/api.js';
 import ConversationArea from './components/ConversationArea/ConversationArea.jsx';
-import DetailsPanel from './components/DetailsPanel/DetailsPanel.jsx';
 import InboxAppShell from './components/layout/InboxAppShell.jsx';
 import QueueList from './components/QueueList/QueueList.jsx';
 import FilterToolbar from './components/FilterToolbar/FilterToolbar.jsx';
@@ -41,7 +40,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
   const controller = useChatController({ tenantId, currentUser });
   const selectedTicket = controller.selectedTicket;
-  const selectedContact = selectedTicket?.contact ?? null;
   const {
     launch: launchManualConversation,
     isPending: manualConversationPending,
@@ -480,21 +478,6 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
               metrics={metrics}
             />
           }
-          context={
-            <DetailsPanel
-              ticket={controller.selectedTicket}
-              onCreateNote={createNote}
-              notesLoading={controller.notesMutation.isPending}
-              onReopenWindow={() =>
-                toast.info('Reabrir janela sugerido', { description: 'Envie um template para retomar a conversa.' })
-              }
-              onOpenAudit={() =>
-                toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
-              }
-              timelineItems={controller.conversation?.timeline ?? []}
-            />
-          }
-          defaultContextOpen
           toolbar={
             <FilterToolbar
               search={filters.search ?? ''}

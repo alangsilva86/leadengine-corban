@@ -130,6 +130,7 @@ const DesktopToolbar = ({
   contextOpen,
   desktopListVisible,
   headerListButtonLabel,
+  showContextToggle = true,
 }) => (
   <div className="flex items-center gap-2">
     <Button
@@ -141,17 +142,19 @@ const DesktopToolbar = ({
       {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
       <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
     </Button>
-    <Button
-      variant="outline"
-      size="sm"
-      className="border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell"
-      onClick={onToggleContext}
-    >
-      {contextOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-      <span className="ml-2 hidden text-xs font-medium sm:inline">
-        {contextOpen ? 'Ocultar painel' : 'Exibir painel'}
-      </span>
-    </Button>
+    {showContextToggle ? (
+      <Button
+        variant="outline"
+        size="sm"
+        className="border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell"
+        onClick={onToggleContext}
+      >
+        {contextOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+        <span className="ml-2 hidden text-xs font-medium sm:inline">
+          {contextOpen ? 'Ocultar painel' : 'Exibir painel'}
+        </span>
+      </Button>
+    ) : null}
   </div>
 );
 
@@ -312,6 +315,7 @@ const InboxAppShell = ({
                 contextOpen={contextDrawerOpen}
                 desktopListVisible={desktopListVisible}
                 headerListButtonLabel={headerListButtonLabel}
+                showContextToggle={isContextAvailable}
               />
             </div>
           </header>

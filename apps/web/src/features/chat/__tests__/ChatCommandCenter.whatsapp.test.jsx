@@ -5,7 +5,6 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import { ChatCommandCenter } from '../ChatCommandCenter.jsx';
-import { countVisibleTimelineEntries } from '../components/DetailsPanel/DetailsPanel.jsx';
 
 vi.mock('@/lib/auth.js', () => {
   const getTenantId = vi.fn(() => 'test-tenant');
@@ -51,29 +50,11 @@ vi.mock('../components/ConversationArea/ConversationArea.jsx', () => ({
   default: ConversationAreaMock,
 }));
 
-const DetailsPanelMock = vi.hoisted(() => {
-  const mock = vi.fn((props) => {
-    mock.props = props;
-    return <div data-testid="details-panel" />;
-  });
-  return mock;
-});
-
-vi.mock('../components/DetailsPanel/DetailsPanel.jsx', async () => {
-  const actual = await vi.importActual('../components/DetailsPanel/DetailsPanel.jsx');
-  return {
-    __esModule: true,
-    ...actual,
-    default: DetailsPanelMock,
-  };
-});
-
 vi.mock('../components/layout/InboxAppShell.jsx', () => ({
   __esModule: true,
-  default: ({ sidebar, context, toolbar, children }) => (
+  default: ({ sidebar, toolbar, children }) => (
     <div>
       <div>{sidebar}</div>
-      <div>{context}</div>
       <div>{toolbar}</div>
       <div>{children}</div>
     </div>
@@ -170,8 +151,6 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
     render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
 
     expect(ConversationAreaMock).toHaveBeenCalled();
-    expect(DetailsPanelMock).toHaveBeenCalled();
-    expect(DetailsPanelMock.props?.timelineItems).toEqual(mockController.conversation.timeline);
     const initialProps = ConversationAreaMock.props;
     expect(initialProps.composerDisabled).toBe(false);
 
@@ -194,21 +173,5 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
       code: 'BROKER_NOT_CONFIGURED',
       title: 'WhatsApp não configurado',
     });
-  });
-});
-
-describe('countVisibleTimelineEntries', () => {
-  it('counts only timeline entries that are visible to the user', () => {
-    const timeline = [
-      null,
-      { id: 'divider', type: 'divider' },
-      { id: 'message-1', type: 'message' },
-      { id: 'event-1', type: 'event', hidden: false },
-      { id: 'note-1', type: 'note' },
-      { id: 'hidden-1', type: 'message', hidden: true },
-      { id: 'unknown', type: 'system' },
-    ];
-
-    expect(countVisibleTimelineEntries(timeline)).toBe(4);
   });
 });
