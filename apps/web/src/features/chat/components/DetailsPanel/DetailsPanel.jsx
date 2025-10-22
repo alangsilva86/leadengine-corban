@@ -299,13 +299,8 @@ const PanelSection = ({
   onOpen,
 }) => (
   <AccordionItem value={sectionId} className={sectionItem()}>
-    <AccordionTrigger className={sectionTrigger()}>
-  <AccordionItem
-    value={sectionId}
-    className="w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
-  >
     <AccordionTrigger
-      className="hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground"
+      className={sectionTrigger()}
       onClick={(event) => {
         if (!onOpen) return;
         const target = event.currentTarget;
