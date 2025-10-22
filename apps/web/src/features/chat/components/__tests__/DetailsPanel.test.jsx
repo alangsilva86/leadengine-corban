@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { forwardRef } from 'react';
 
@@ -123,5 +123,37 @@ describe('DetailsPanel', () => {
     );
 
     expect(container.firstChild).toMatchSnapshot();
+  });
+
+  it('remove ações rápidas indisponíveis do header', () => {
+    const ticket = {
+      id: 'ticket-2',
+      contact: {
+        id: 'contact-2',
+        name: 'João Souza',
+        phone: '+55 21 98888-7777',
+      },
+    };
+
+    render(
+      <DetailsPanel
+        ticket={ticket}
+        onCreateNote={vi.fn()}
+        notesLoading={false}
+        onReopenWindow={vi.fn()}
+        onOpenAudit={vi.fn()}
+        availableActions={{
+          canAssign: false,
+          canScheduleFollowUp: true,
+          canRegisterResult: false,
+          hasPhone: false,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('Atribuir')).not.toBeInTheDocument();
+    expect(screen.getByText('Agendar follow-up')).toBeInTheDocument();
+    expect(screen.queryByText('Registrar resultado')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ações de telefone')).not.toBeInTheDocument();
   });
 });

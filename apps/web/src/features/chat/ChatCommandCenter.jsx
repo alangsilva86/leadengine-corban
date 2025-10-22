@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getTenantId } from '@/lib/auth.js';
 import { apiPost } from '@/lib/api.js';
@@ -40,6 +40,14 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
 
   const controller = useChatController({ tenantId, currentUser });
+  const selectedTicket = controller.selectedTicket;
+  const selectedContact = selectedTicket?.contact ?? null;
+  const contactPhone =
+    selectedContact?.phone ??
+    selectedContact?.primaryPhone ??
+    selectedContact?.phoneDetails?.[0]?.phoneNumber ??
+    selectedTicket?.metadata?.contactPhone ??
+    null;
   const {
     launch: launchManualConversation,
     isPending: manualConversationPending,
@@ -418,6 +426,25 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     }
   }, [manualConversationAvailable]);
 
+  const canAssign = Boolean(selectedTicket);
+  const canScheduleFollowUp = Boolean(selectedTicket);
+  const canRegisterResult = Boolean(selectedTicket);
+
+  const conversationAssignHandler = canAssign ? () => assignToMe(selectedTicket) : undefined;
+  const conversationScheduleFollowUpHandler = canScheduleFollowUp ? handleScheduleFollowUp : undefined;
+  const conversationRegisterResultHandler = canRegisterResult ? registerResult : undefined;
+  const conversationRegisterCallResultHandler = selectedTicket ? handleRegisterCallResult : undefined;
+
+  const availableActions = useMemo(
+    () => ({
+      canAssign,
+      canScheduleFollowUp,
+      canRegisterResult,
+      hasPhone: Boolean(contactPhone),
+    }),
+    [canAssign, canScheduleFollowUp, canRegisterResult, contactPhone],
+  );
+
   return (
     <WhatsAppInstancesProvider autoRefresh={false} initialFetch={false}>
       {manualConversationAvailable ? (
@@ -456,6 +483,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
                 toast.info('Auditoria', { description: 'Export disponível no módulo de compliance.' })
               }
               timelineItems={controller.conversation?.timeline ?? []}
+              availableActions={availableActions}
             />
           }
           defaultContextOpen
@@ -485,11 +513,11 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             onCreateNote={createNote}
             onSendTemplate={handleSendTemplate}
             onCreateNextStep={handleCreateNextStep}
-            onRegisterResult={registerResult}
-            onRegisterCallResult={handleRegisterCallResult}
-            onAssign={() => assignToMe(controller.selectedTicket)}
+            onRegisterResult={conversationRegisterResultHandler}
+            onRegisterCallResult={conversationRegisterCallResultHandler}
+            onAssign={conversationAssignHandler}
             onGenerateProposal={handleGenerateProposal}
-            onScheduleFollowUp={handleScheduleFollowUp}
+            onScheduleFollowUp={conversationScheduleFollowUpHandler}
             isRegisteringResult={controller.statusMutation.isPending}
             typingIndicator={controller.typingIndicator}
             isSending={controller.sendMessageMutation.isPending}

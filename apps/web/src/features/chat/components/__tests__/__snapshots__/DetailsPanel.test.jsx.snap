@@ -2,10 +2,11 @@
 
 exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`] = `
 <div
-  class="flex w-full flex-1 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden p-4"
+  class="box-border flex w-full max-w-full flex-1 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden md:[overflow-x:clip] p-4"
+  data-detailspanel="true"
 >
   <section
-    class="w-full rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur"
+    class="w-full overflow-hidden rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-5 shadow-[0_24px_45px_-32px_rgba(15,23,42,0.8)] backdrop-blur"
   >
     <div
       class="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
@@ -37,7 +38,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       </div>
     </div>
     <dl
-      class="mt-5 grid min-w-0 gap-4 md:grid-cols-2"
+      class="mt-5 grid min-w-0 gap-4 grid-cols-1 md:[grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]"
     >
       <div
         class="flex min-w-0 flex-col gap-1"
@@ -51,7 +52,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
           class="text-sm text-foreground flex flex-wrap items-center gap-2 min-w-0"
         >
           <div
-            class="flex min-w-0 items-center gap-2 break-words"
+            class="flex min-w-0 items-center gap-2"
           >
             <svg
               aria-hidden="true"
@@ -71,14 +72,15 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
               />
             </svg>
             <span
-              class="font-medium break-words break-all max-w-full"
+              class="font-medium min-w-0 max-w-full truncate [overflow-wrap:anywhere]"
+              title="+55 11 99999-9999"
             >
               +55 11 99999-9999
             </span>
           </div>
           <button
             aria-label="Copiar telefone"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 shrink-0 text-foreground-muted hover:text-foreground"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 flex-none shrink-0 text-foreground-muted hover:text-foreground"
             data-slot="button"
             type="button"
           >
@@ -122,7 +124,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
           class="text-sm text-foreground flex flex-wrap items-center gap-2 min-w-0"
         >
           <div
-            class="flex min-w-0 items-center gap-2 break-words"
+            class="flex min-w-0 items-center gap-2"
           >
             <svg
               aria-hidden="true"
@@ -149,14 +151,15 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
               />
             </svg>
             <span
-              class="font-medium break-words break-all max-w-full"
+              class="font-medium min-w-0 max-w-full truncate [overflow-wrap:anywhere]"
+              title="maria@example.com"
             >
               maria@example.com
             </span>
           </div>
           <button
             aria-label="Copiar e-mail"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 shrink-0 text-foreground-muted hover:text-foreground"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 flex-none shrink-0 text-foreground-muted hover:text-foreground"
             data-slot="button"
             type="button"
           >
@@ -200,7 +203,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
           class="text-sm text-foreground flex flex-wrap items-center gap-2 min-w-0"
         >
           <div
-            class="flex min-w-0 items-center gap-2 break-words"
+            class="flex min-w-0 items-center gap-2"
           >
             <svg
               aria-hidden="true"
@@ -232,14 +235,15 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
               />
             </svg>
             <span
-              class="font-medium break-words break-all max-w-full"
+              class="font-medium min-w-0 max-w-full truncate [overflow-wrap:anywhere]"
+              title="123.456.789-00"
             >
               123.456.789-00
             </span>
           </div>
           <button
             aria-label="Copiar documento"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 shrink-0 text-foreground-muted hover:text-foreground"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 flex-none shrink-0 text-foreground-muted hover:text-foreground"
             data-slot="button"
             type="button"
           >
@@ -283,7 +287,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
           class="text-sm text-foreground flex flex-wrap items-center gap-2 min-w-0"
         >
           <div
-            class="flex min-w-0 items-center gap-2 break-words"
+            class="flex min-w-0 items-center gap-2"
           >
             <svg
               aria-hidden="true"
@@ -311,14 +315,15 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
               />
             </svg>
             <span
-              class="font-medium break-words break-all max-w-full"
+              class="font-medium min-w-0 max-w-full truncate [overflow-wrap:anywhere]"
+              title="contact-1"
             >
               contact-1
             </span>
           </div>
           <button
             aria-label="Copiar id do contato"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 shrink-0 text-foreground-muted hover:text-foreground"
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5 flex-none shrink-0 text-foreground-muted hover:text-foreground"
             data-slot="button"
             type="button"
           >
@@ -352,6 +357,181 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       </div>
     </dl>
   </section>
+  <nav
+    aria-label="Ações rápidas do atendimento"
+    class="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
+  >
+    <a
+      class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:text-foreground min-h-[38px] gap-1.5 has-[>svg]:px-2.5 h-auto min-w-0 shrink overflow-hidden rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+      data-slot="button"
+      href="#conversation-action-assign"
+      title="Atribuir"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-user-plus size-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"
+        />
+        <circle
+          cx="9"
+          cy="7"
+          r="4"
+        />
+        <line
+          x1="19"
+          x2="19"
+          y1="8"
+          y2="14"
+        />
+        <line
+          x1="22"
+          x2="16"
+          y1="11"
+          y2="11"
+        />
+      </svg>
+      <span
+        class="max-w-[12rem] truncate [overflow-wrap:anywhere]"
+      >
+        Atribuir
+      </span>
+    </a>
+    <a
+      class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:text-foreground min-h-[38px] gap-1.5 has-[>svg]:px-2.5 h-auto min-w-0 shrink overflow-hidden rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+      data-slot="button"
+      href="#conversation-action-schedule-follow-up"
+      title="Agendar follow-up"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-calendar-clock size-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"
+        />
+        <path
+          d="M16 2v4"
+        />
+        <path
+          d="M8 2v4"
+        />
+        <path
+          d="M3 10h5"
+        />
+        <path
+          d="M17.5 17.5 16 16.3V14"
+        />
+        <circle
+          cx="16"
+          cy="16"
+          r="6"
+        />
+      </svg>
+      <span
+        class="max-w-[12rem] truncate [overflow-wrap:anywhere]"
+      >
+        Agendar follow-up
+      </span>
+    </a>
+    <a
+      class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:text-foreground min-h-[38px] gap-1.5 has-[>svg]:px-2.5 h-auto min-w-0 shrink overflow-hidden rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+      data-slot="button"
+      href="#conversation-action-register-result"
+      title="Registrar resultado"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-clipboard-list size-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect
+          height="4"
+          rx="1"
+          ry="1"
+          width="8"
+          x="8"
+          y="2"
+        />
+        <path
+          d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+        />
+        <path
+          d="M12 11h4"
+        />
+        <path
+          d="M12 16h4"
+        />
+        <path
+          d="M8 11h.01"
+        />
+        <path
+          d="M8 16h.01"
+        />
+      </svg>
+      <span
+        class="max-w-[12rem] truncate [overflow-wrap:anywhere]"
+      >
+        Registrar resultado
+      </span>
+    </a>
+    <a
+      class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)] hover:text-foreground min-h-[38px] gap-1.5 has-[>svg]:px-2.5 h-auto min-w-0 shrink overflow-hidden rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+      data-slot="button"
+      href="#conversation-action-phone"
+      title="Ações de telefone"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-phone size-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"
+        />
+      </svg>
+      <span
+        class="max-w-[12rem] truncate [overflow-wrap:anywhere]"
+      >
+        Ações de telefone
+      </span>
+    </a>
+  </nav>
   <div
     class="flex flex-1 min-w-0 flex-col gap-5"
     data-orientation="horizontal"
@@ -360,7 +540,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
   >
     <div
       aria-orientation="horizontal"
-      class="text-muted-foreground h-9 rounded-lg flex w-full min-w-0 flex-wrap items-center justify-start gap-2 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap"
+      class="text-muted-foreground h-9 rounded-lg flex w-full min-w-0 flex-wrap items-center justify-start gap-2 md:gap-3 overflow-x-auto bg-surface-overlay-quiet/60 p-1.5 md:flex-nowrap"
       data-orientation="horizontal"
       data-slot="tabs-list"
       role="tablist"
@@ -370,7 +550,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       <button
         aria-controls="radix-_r_0_-content-contact"
         aria-selected="true"
-        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 max-w-[10rem] truncate [overflow-wrap:anywhere] sm:max-w-[12rem]"
         data-orientation="horizontal"
         data-radix-collection-item=""
         data-slot="tabs-trigger"
@@ -378,6 +558,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
         id="radix-_r_0_-trigger-contact"
         role="tab"
         tabindex="-1"
+        title="Contato"
         type="button"
       >
         Contato
@@ -385,7 +566,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       <button
         aria-controls="radix-_r_0_-content-opportunity"
         aria-selected="false"
-        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 max-w-[10rem] truncate [overflow-wrap:anywhere] sm:max-w-[12rem]"
         data-orientation="horizontal"
         data-radix-collection-item=""
         data-slot="tabs-trigger"
@@ -393,6 +574,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
         id="radix-_r_0_-trigger-opportunity"
         role="tab"
         tabindex="-1"
+        title="Oportunidade"
         type="button"
       >
         Oportunidade
@@ -400,7 +582,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       <button
         aria-controls="radix-_r_0_-content-timeline"
         aria-selected="false"
-        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 max-w-[10rem] truncate [overflow-wrap:anywhere] sm:max-w-[12rem]"
         data-orientation="horizontal"
         data-radix-collection-item=""
         data-slot="tabs-trigger"
@@ -408,6 +590,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
         id="radix-_r_0_-trigger-timeline"
         role="tab"
         tabindex="-1"
+        title="Timeline"
         type="button"
       >
         Timeline
@@ -415,7 +598,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       <button
         aria-controls="radix-_r_0_-content-attachments"
         aria-selected="false"
-        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        class="data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 max-w-[10rem] truncate [overflow-wrap:anywhere] sm:max-w-[12rem]"
         data-orientation="horizontal"
         data-radix-collection-item=""
         data-slot="tabs-trigger"
@@ -423,6 +606,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
         id="radix-_r_0_-trigger-attachments"
         role="tab"
         tabindex="-1"
+        title="Anexos & Notas"
         type="button"
       >
         Anexos & Notas
@@ -430,7 +614,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
     </div>
     <div
       aria-labelledby="radix-_r_0_-trigger-contact"
-      class="flex-1 outline-none space-y-4 min-w-0"
+      class="flex-1 outline-none min-w-0 space-y-4"
       data-orientation="horizontal"
       data-slot="tabs-content"
       data-state="active"
@@ -440,7 +624,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
       tabindex="0"
     >
       <div
-        class="space-y-3 w-full min-w-0"
+        class="w-full min-w-0 space-y-3"
         data-orientation="vertical"
         data-slot="accordion"
       >
@@ -552,7 +736,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
               class="pt-0 pb-4 px-0"
             >
               <div
-                class="min-w-0 max-w-full overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground"
+                class="min-w-0 max-w-full overflow-hidden rounded-xl bg-surface-overlay-quiet/70 p-4 text-sm text-foreground"
               >
                 <div
                   data-testid="contact-summary"
@@ -568,21 +752,21 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
           class="last:border-b-0 w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
           data-orientation="vertical"
           data-slot="accordion-item"
-          data-state="open"
+          data-state="closed"
         >
           <h3
             class="flex"
             data-orientation="vertical"
-            data-state="open"
+            data-state="closed"
           >
             <button
               aria-controls="radix-_r_8_"
-              aria-expanded="true"
+              aria-expanded="false"
               class="focus-visible:border-ring transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&[data-state=open]>svg]:rotate-180 hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground"
               data-orientation="vertical"
               data-radix-collection-item=""
               data-slot="accordion-trigger"
-              data-state="open"
+              data-state="closed"
               id="radix-_r_7_"
               type="button"
             >
@@ -661,46 +845,32 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
             class="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden text-sm"
             data-orientation="vertical"
             data-slot="accordion-content"
-            data-state="open"
+            data-state="closed"
+            hidden=""
             id="radix-_r_8_"
             role="region"
-            style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width); transition-duration: 0s; animation-name: none;"
-          >
-            <div
-              class="pt-0 pb-4 px-0"
-            >
-              <div
-                class="min-w-0 max-w-full overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground"
-              >
-                <div
-                  data-testid="lead-details"
-                >
-                  Lead details tabs: 
-                  ticket-1
-                </div>
-              </div>
-            </div>
-          </div>
+            style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);"
+          />
         </div>
         <div
           class="last:border-b-0 w-full min-w-0 overflow-hidden rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/40 px-2 backdrop-blur"
           data-orientation="vertical"
           data-slot="accordion-item"
-          data-state="open"
+          data-state="closed"
         >
           <h3
             class="flex"
             data-orientation="vertical"
-            data-state="open"
+            data-state="closed"
           >
             <button
               aria-controls="radix-_r_a_"
-              aria-expanded="true"
+              aria-expanded="false"
               class="focus-visible:border-ring transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&[data-state=open]>svg]:rotate-180 hover:no-underline focus-visible:ring-ring/50 flex w-full flex-1 flex-wrap items-start justify-between gap-4 rounded-xl px-3 py-4 text-left text-sm font-semibold text-foreground"
               data-orientation="vertical"
               data-radix-collection-item=""
               data-slot="accordion-trigger"
-              data-state="open"
+              data-state="closed"
               id="radix-_r_9_"
               type="button"
             >
@@ -774,32 +944,18 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
             class="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden text-sm"
             data-orientation="vertical"
             data-slot="accordion-content"
-            data-state="open"
+            data-state="closed"
+            hidden=""
             id="radix-_r_a_"
             role="region"
-            style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width); transition-duration: 0s; animation-name: none;"
-          >
-            <div
-              class="pt-0 pb-4 px-0"
-            >
-              <div
-                class="min-w-0 max-w-full overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground"
-              >
-                <div
-                  data-testid="consent-info"
-                >
-                  Consent: 
-                  {"whatsapp":true}
-                </div>
-              </div>
-            </div>
-          </div>
+            style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);"
+          />
         </div>
       </div>
     </div>
     <div
       aria-labelledby="radix-_r_0_-trigger-opportunity"
-      class="flex-1 outline-none space-y-4 min-w-0"
+      class="flex-1 outline-none min-w-0 space-y-4"
       data-orientation="horizontal"
       data-slot="tabs-content"
       data-state="inactive"
@@ -810,7 +966,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
     />
     <div
       aria-labelledby="radix-_r_0_-trigger-timeline"
-      class="flex-1 outline-none space-y-4 min-w-0"
+      class="flex-1 outline-none min-w-0 space-y-4"
       data-orientation="horizontal"
       data-slot="tabs-content"
       data-state="inactive"
@@ -821,7 +977,7 @@ exports[`DetailsPanel > renderiza os grupos de seções previstos em snapshot 1`
     />
     <div
       aria-labelledby="radix-_r_0_-trigger-attachments"
-      class="flex-1 outline-none space-y-4 min-w-0"
+      class="flex-1 outline-none min-w-0 space-y-4"
       data-orientation="horizontal"
       data-slot="tabs-content"
       data-state="inactive"

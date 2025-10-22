@@ -496,6 +496,7 @@ export const DetailsPanel = ({
   onReopenWindow,
   onOpenAudit,
   timelineItems = [],
+  availableActions = null,
 }) => {
   const notesSectionRef = useRef(null);
   const handleNotesSectionOpen = useCallback(() => {
@@ -518,16 +519,23 @@ export const DetailsPanel = ({
     ticket?.metadata?.contactPhone ??
     null;
 
-  const quickActionLinks = useMemo(
-    () =>
-      buildQuickActionLinks({
-        canAssign: true,
-        canScheduleFollowUp: true,
-        canRegisterResult: true,
-        hasPhone: Boolean(contactPhone),
-      }),
-    [contactPhone],
-  );
+  const {
+    canAssign: canAssignAction,
+    canScheduleFollowUp: canScheduleFollowUpAction,
+    canRegisterResult: canRegisterResultAction,
+    hasPhone: hasPhoneAction,
+  } = availableActions ?? {};
+
+  const quickActionLinks = useMemo(() => {
+    const quickActionsContext = {
+      canAssign: canAssignAction,
+      canScheduleFollowUp: canScheduleFollowUpAction,
+      canRegisterResult: canRegisterResultAction,
+      hasPhone: hasPhoneAction ?? Boolean(contactPhone),
+    };
+
+    return buildQuickActionLinks(quickActionsContext);
+  }, [canAssignAction, canRegisterResultAction, canScheduleFollowUpAction, hasPhoneAction, contactPhone]);
 
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;
