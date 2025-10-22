@@ -236,6 +236,36 @@ router.post(
   })
 );
 
+router.post(
+  '/merge',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const payload = parseOrRespond(MergeContactsDTOSchema.omit({ tenantId: true }), req.body, res);
+    if (!payload) {
+      return;
+    }
+
+    const tenantId = req.user!.tenantId;
+    const result = await mergeContacts({ tenantId, ...payload });
+
+    if (!result) {
+      throw new NotFoundError('Contact', payload.targetId);
+    }
+
+    res.json({ success: true, data: result });
+  })
+);
+
+router.get(
+  '/tags',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.user!.tenantId;
+    const tags = await listContactTags(tenantId);
+    res.json({ success: true, data: tags });
+  })
+);
+
 router.get(
   '/:contactId',
   requireTenant,
@@ -278,36 +308,6 @@ router.patch(
     }
 
     res.json({ success: true, data: contact });
-  })
-);
-
-router.post(
-  '/merge',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const payload = parseOrRespond(MergeContactsDTOSchema.omit({ tenantId: true }), req.body, res);
-    if (!payload) {
-      return;
-    }
-
-    const tenantId = req.user!.tenantId;
-    const result = await mergeContacts({ tenantId, ...payload });
-
-    if (!result) {
-      throw new NotFoundError('Contact', payload.targetId);
-    }
-
-    res.json({ success: true, data: result });
-  })
-);
-
-router.get(
-  '/tags',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user!.tenantId;
-    const tags = await listContactTags(tenantId);
-    res.json({ success: true, data: tags });
   })
 );
 
