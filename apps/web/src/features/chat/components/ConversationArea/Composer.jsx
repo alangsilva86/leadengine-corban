@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Brain, Paperclip, Smile, Send, Loader2, X } from 'lucide-react';
@@ -29,24 +29,28 @@ const detectCommand = (value) => {
   return null;
 };
 
-export const Composer = ({
-  disabled,
-  onSend,
-  onTemplate,
-  onCreateNote,
-  onTyping,
-  isSending,
-  sendError,
-  onRequestSuggestion,
-  aiLoading,
-  aiSuggestions,
-  onApplySuggestion,
-  onDiscardSuggestion,
-}) => {
+export const Composer = forwardRef(function Composer(
+  {
+    disabled,
+    onSend,
+    onTemplate,
+    onCreateNote,
+    onTyping,
+    isSending,
+    sendError,
+    onRequestSuggestion,
+    aiLoading,
+    aiSuggestions,
+    onApplySuggestion,
+    onDiscardSuggestion,
+  },
+  ref
+) {
   const [value, setValue] = useState('');
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
   const [quickReplies, setQuickReplies] = useState(() => [...DEFAULT_REPLIES]);
   const [uploadError, setUploadError] = useState(null);
   const {
@@ -175,6 +179,19 @@ export const Composer = ({
     setAttachments((current) => current.filter((item) => item.id !== id));
   };
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusInput: () => {
+        textareaRef.current?.focus();
+      },
+      openAttachmentDialog: () => {
+        fileInputRef.current?.click();
+      },
+    }),
+    []
+  );
+
   return (
     <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/90 p-3 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.6)] backdrop-blur-sm">
       {attachments.length > 0 ? (
@@ -259,6 +276,7 @@ export const Composer = ({
 
         <div className="flex items-end gap-2">
           <Textarea
+            ref={textareaRef}
             value={value}
             onChange={(event) => {
               setValue(event.target.value);
@@ -338,6 +356,8 @@ export const Composer = ({
       />
     </div>
   );
-};
+});
+
+Composer.displayName = 'Composer';
 
 export default Composer;

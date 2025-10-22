@@ -21,6 +21,8 @@ export const ConversationArea = ({
   onAssign,
   onGenerateProposal,
   onScheduleFollowUp,
+  onSendSMS,
+  onEditContact,
   isRegisteringResult = false,
   typingIndicator,
   isSending,
@@ -34,6 +36,7 @@ export const ConversationArea = ({
   const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
   const [composerOffset, setComposerOffset] = useState(96);
   const composerRef = useRef(null);
+  const composerApiRef = useRef(null);
   const ticketId = ticket?.id ?? null;
 
   const timelineItems = useMemo(() => {
@@ -152,6 +155,10 @@ export const ConversationArea = ({
     scrollToBottom({ behavior: 'smooth', force: true });
   }, [scrollToBottom]);
   const showNewMessagesHint = !isNearBottom;
+  const handleAttachFileFromHeader = useCallback(() => {
+    const api = composerApiRef.current;
+    api?.openAttachmentDialog?.();
+  }, []);
 
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -166,6 +173,9 @@ export const ConversationArea = ({
             onCreateNextStep={onCreateNextStep}
             onGenerateProposal={onGenerateProposal}
             onScheduleFollowUp={onScheduleFollowUp}
+            onSendSMS={onSendSMS}
+            onAttachFile={handleAttachFileFromHeader}
+            onEditContact={onEditContact}
             isRegisteringResult={isRegisteringResult}
             typingAgents={typingIndicator?.agentsTyping ?? []}
             renderSummary={(summary, { isExpanded }) => (
@@ -209,6 +219,7 @@ export const ConversationArea = ({
             </div>
           ) : null}
           <Composer
+            ref={composerApiRef}
             disabled={disabled}
             onSend={(payload) => onSendMessage?.(payload)}
             onTemplate={(template) => {

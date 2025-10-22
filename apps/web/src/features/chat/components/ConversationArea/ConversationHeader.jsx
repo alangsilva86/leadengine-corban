@@ -1,11 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu.jsx';
-import { Button } from '@/components/ui/button.jsx';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import {
@@ -17,15 +10,15 @@ import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
 import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
-import ConversationActions, { DEFAULT_RESULT_OPTIONS } from '../Shared/ConversationActions.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 import CallResultDialog from './CallResultDialog.jsx';
 import LossReasonDialog from './LossReasonDialog.jsx';
+import { CommandBar } from './CommandBar.jsx';
 
-export const GENERATE_PROPOSAL_ANCHOR_ID = 'conversation-generate-proposal';
+export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
 const LOSS_REASONS = [
   { value: 'sem_interesse', label: 'Sem interesse' },
@@ -174,19 +167,6 @@ const TypingIndicator = ({ agents = [] }) => {
   );
 };
 
-const MetadataBadge = ({ icon: Icon, children, className, ...props }) => (
-  <button
-    type="button"
-    className={cn(
-      'inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-sm font-medium text-foreground-muted transition-colors hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border',
-      className,
-    )}
-    {...props}>
-    {Icon ? <Icon className="size-4" aria-hidden /> : null}
-    <span className="truncate text-left">{children}</span>
-  </button>
-);
-
 const InfoRow = ({
   label,
   children,
@@ -234,7 +214,19 @@ ConversationCardBody.Right = function ConversationCardBodyRight({ children, clas
 };
 
 export { ConversationCardBody as CardBody };
-const ACTION_BUTTON_STYLES = { variant: 'toolbar', size: 'toolbar' };
+
+const SectionLink = ({ actionId, label, onActivate }) => (
+  <a
+    href={`#command-${actionId}`}
+    onClick={(event) => {
+      event.preventDefault();
+      onActivate(actionId);
+    }}
+    className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-surface-overlay-glass-border px-3 py-1 text-xs font-medium text-foreground hover:bg-surface-overlay-quiet"
+  >
+    {label}
+  </a>
+);
 
 export const ConversationHeader = ({
   ticket,
@@ -245,6 +237,9 @@ export const ConversationHeader = ({
   onCreateNextStep,
   onGenerateProposal,
   onScheduleFollowUp,
+  onSendSMS,
+  onAttachFile,
+  onEditContact,
   typingAgents = [],
   isRegisteringResult = false,
   renderSummary,
@@ -252,9 +247,8 @@ export const ConversationHeader = ({
 }) => {
   const [isFadeIn, setIsFadeIn] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [resultSelection, setResultSelection] = useState('');
-  const [callDialogOpen, setCallDialogOpen] = useState(false);
-  const [lossDialogOpen, setLossDialogOpen] = useState(false);
+  const [activeDialog, setActiveDialog] = useState(null);
+  const dialogReturnFocusRef = useRef(null);
   const { copy: copyToClipboard } = useClipboard();
 
   useEffect(() => {
@@ -285,7 +279,6 @@ export const ConversationHeader = ({
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const expirationInfo = useMemo(() => getExpirationInfo(ticket?.window), [ticket?.window]);
   const slaTooltip = useMemo(() => buildSlaTooltip(ticket?.window), [ticket?.window]);
-  const initials = useMemo(() => buildInitials(name, 'CT'), [name]);
   const remainingMinutes = ticket?.window?.remainingMinutes ?? null;
   const lastInteractionLabel = useMemo(
     () => minutesToHoursLabel(ticket?.window?.lastInteractionMinutes),
@@ -313,6 +306,7 @@ export const ConversationHeader = ({
     }
   }, [timeline.lastDirection]);
   const unreadInboundCount = timeline.unreadInboundCount ?? 0;
+
   const subtitle = useMemo(() => {
     const parts = [];
     if (stage && stage !== '—') {
@@ -323,91 +317,59 @@ export const ConversationHeader = ({
     }
     if (unreadInboundCount > 0) {
       const hasMany = unreadInboundCount > 1;
-      parts.push(
-        `${unreadInboundCount} mensagem${hasMany ? 's' : ''} pendente${hasMany ? 's' : ''}`,
-      );
+      parts.push(`${unreadInboundCount} mensagem${hasMany ? 's' : ''} pendente${hasMany ? 's' : ''}`);
     }
     return parts.join(' • ');
   }, [stage, lastInteractionLabel, unreadInboundCount]);
 
   const attachments = useMemo(() => {
     const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
-
-    if (Array.isArray(source)) {
-      return source.filter(Boolean);
-    }
-
-    if (source && typeof source === 'object') {
-      return Object.values(source).filter(Boolean);
-    }
-
+    if (Array.isArray(source)) return source.filter(Boolean);
+    if (source && typeof source === 'object') return Object.values(source).filter(Boolean);
     return [];
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
-  const handleResult = useCallback(async (value, reason) => {
-    if (!onRegisterResult) {
-      toast.error('Não foi possível concluir. Tente novamente.');
-      return;
-    }
-
-    setResultSelection(value);
-    try {
-      await onRegisterResult({ outcome: value === 'won' ? 'won' : 'lost', reason });
-    } finally {
-      setResultSelection('');
-    }
-  }, [onRegisterResult]);
-
-  const handleResultChange = useCallback(async (value) => {
-    if (!value) return;
-    if (value === 'lost') {
-      setLossDialogOpen(true);
-      return;
-    }
-
-    const reasonMap = {
-      won: 'Negócio ganho',
-      no_contact: 'Sem contato',
-      disqualified: 'Lead desqualificado',
-    };
-    const reason = reasonMap[value];
-    await handleResult(value, reason);
-  }, [handleResult]);
-
-  const handleLossDialogChange = useCallback((open) => {
-    setLossDialogOpen(open);
-  }, []);
-
-  const handleLossReasonSubmit = useCallback(async ({ reason, notes }) => {
-    const reasonLabel = LOSS_REASON_HELPERS[reason] ?? reason;
-    const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
-    try {
-      await handleResult('lost', finalReason);
-      setLossDialogOpen(false);
-    } catch {
-      // feedback handled upstream
-    }
-  }, [handleResult]);
-
-  const phoneActions = usePhoneActions(rawPhone, {
+  const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
-    onCall: () => setCallDialogOpen(true),
   });
 
-  const handlePhoneAction = useCallback((action) => {
-    phoneActions(action);
-  }, [phoneActions]);
+  const handleCall = useCallback(
+    (phone) => {
+      phoneAction('call', phone);
+    },
+    [phoneAction],
+  );
 
-  const handleCallDialogChange = useCallback((open) => {
-    setCallDialogOpen(open);
+  const handleSendSms = useCallback(
+    (phone) => {
+      const executed = phoneAction('sms', phone);
+      if (executed) {
+        onSendSMS?.(phone);
+      }
+    },
+    [onSendSMS, phoneAction],
+  );
+
+  const openDialog = useCallback((dialog, { returnFocus } = {}) => {
+    dialogReturnFocusRef.current = returnFocus ?? null;
+    setActiveDialog(dialog);
+  }, []);
+
+  const closeDialog = useCallback(() => {
+    setActiveDialog(null);
+    const target = dialogReturnFocusRef.current;
+    if (target && typeof target.focus === 'function') {
+      target.focus({ preventScroll: true });
+    }
+    dialogReturnFocusRef.current = null;
   }, []);
 
   const handleCallResultSubmit = useCallback(
     ({ outcome, notes }) => {
       onRegisterCallResult?.({ outcome, notes });
-      setCallDialogOpen(false);
+      closeDialog();
     },
-    [onRegisterCallResult],
+    [closeDialog, onRegisterCallResult],
   );
 
   const handleCopyDocument = useCallback(() => {
@@ -449,10 +411,6 @@ export const ConversationHeader = ({
           onAssign?.(ticket);
           event.preventDefault();
           break;
-        case 'w':
-          handlePhoneAction('whatsapp');
-          event.preventDefault();
-          break;
         case 'x':
           onScheduleFollowUp?.(ticket);
           event.preventDefault();
@@ -464,7 +422,7 @@ export const ConversationHeader = ({
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [ticket, onAssign, onScheduleFollowUp, handlePhoneAction, handleGenerateProposal]);
+  }, [ticket, onAssign, onScheduleFollowUp, handleGenerateProposal]);
 
   const handleAssign = useCallback(() => {
     onAssign?.(ticket);
@@ -474,6 +432,28 @@ export const ConversationHeader = ({
     onScheduleFollowUp?.(ticket);
   }, [onScheduleFollowUp, ticket]);
 
+  const handleLossReasonSubmit = useCallback(async ({ reason, notes }) => {
+    if (!onRegisterResult) {
+      toast.error('Não foi possível concluir. Tente novamente.');
+      return;
+    }
+    const reasonLabel = LOSS_REASON_HELPERS[reason] ?? reason;
+    const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
+    try {
+      await onRegisterResult({ outcome: 'lost', reason: finalReason });
+      closeDialog();
+    } catch {
+      // feedback tratado a montante
+    }
+  }, [closeDialog, onRegisterResult]);
+
+  const handleCommandLink = useCallback((actionId) => {
+    const element = document.getElementById(`command-${actionId}`);
+    if (!element) return;
+    element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    element.focus({ preventScroll: true });
+  }, []);
+
   if (!ticket) {
     return (
       <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
@@ -482,144 +462,72 @@ export const ConversationHeader = ({
     );
   }
 
-  const contactContent = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Nome">{name}</InfoRow>
-        {company ? <InfoRow label="Empresa">{company}</InfoRow> : null}
-        <InfoRow label="Telefone">{phoneDisplay ?? '—'}</InfoRow>
-        <InfoRow label="E-mail">{email ?? '—'}</InfoRow>
-        <InfoRow label="Documento">{document ?? '—'}</InfoRow>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <MetadataBadge icon={Phone} aria-label="Telefone" aria-keyshortcuts="w" accessKey="w">
-              {phoneDisplay ?? 'Telefone indisponível'}
-            </MetadataBadge>
-          </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-                  Ligar
-                </DropdownMenuItem>
-                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
-                  Enviar SMS
-                </DropdownMenuItem>
-                <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-                  Abrir WhatsApp
-                </DropdownMenuItem>
-            <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-              Copiar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {document ? (
-          <MetadataBadge icon={IdCard} aria-label="Copiar documento" onClick={handleCopyDocument}>
-            Doc: {document}
-          </MetadataBadge>
-        ) : null}
-      </div>
-    </div>
+  const commandCapabilities = useMemo(
+    () => ({
+      canGenerateProposal: Boolean(ticket),
+      canAssign: Boolean(ticket),
+      canRegisterResult: Boolean(ticket),
+      canCall: Boolean(rawPhone),
+      canSendSms: Boolean(rawPhone),
+      canQuickFollowUp: Boolean(ticket),
+      canAttachFile: true,
+      canEditContact: Boolean(ticket?.contact?.id),
+    }),
+    [ticket, rawPhone],
   );
 
-  const opportunityContent = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Potencial">{potential}</InfoRow>
-        <InfoRow label="Probabilidade">{probability}</InfoRow>
-        <InfoRow label="Etapa">
-          {stage && stage !== '—' ? <Chip tone="neutral" className="px-2.5 py-1 text-xs">{stage}</Chip> : '—'}
-        </InfoRow>
-        <InfoRow label="ID completo">{leadIdentifier ? String(leadIdentifier) : '—'}</InfoRow>
-        <InfoRow label="Status">{statusInfo.label}</InfoRow>
-        <InfoRow label="Janela SLA">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="cursor-help text-foreground">{expirationInfo.label}</span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" align="start">
-              <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-            </TooltipContent>
-          </Tooltip>
-        </InfoRow>
-      </div>
-      {unreadInboundCount ? (
-        <p className="text-sm text-foreground-muted">
-          {unreadInboundCount} mensagem{unreadInboundCount > 1 ? 's' : ''} pendente{unreadInboundCount > 1 ? 's' : ''} do cliente.
-        </p>
-      ) : null}
-    </div>
+  const commandContext = useMemo(
+    () => ({
+      ticket,
+      handlers: {
+        onGenerateProposal,
+        onAssign: handleAssign,
+        onRegisterResult,
+        onRegisterCallResult: handleCallResultSubmit,
+        onScheduleFollowUp: handleScheduleFollowUp,
+        onAttachFile,
+        onEditContact,
+        onCall: handleCall,
+        onSendSMS: handleSendSms,
+      },
+      capabilities: commandCapabilities,
+      phoneNumber: rawPhone ?? null,
+      loadingStates: {
+        registerResult: isRegisteringResult,
+      },
+      openDialog,
+      analytics: ({ id }) => emitInboxTelemetry('chat.command.execute', { ticketId: ticket?.id ?? null, actionId: id }),
+    }),
+    [
+      ticket,
+      onGenerateProposal,
+      handleAssign,
+      onRegisterResult,
+      handleCallResultSubmit,
+      handleScheduleFollowUp,
+      onAttachFile,
+      onEditContact,
+      handleCall,
+      handleSendSms,
+      commandCapabilities,
+      rawPhone,
+      isRegisteringResult,
+      openDialog,
+    ],
   );
-
-  const timelineContent = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Último cliente">{lastInboundLabel}</InfoRow>
-        <InfoRow label="Último agente">{lastOutboundLabel}</InfoRow>
-        <InfoRow label="Status atual">
-          <Chip tone={directionMeta.tone} className="px-2.5 py-1 text-xs">{directionMeta.label}</Chip>
-        </InfoRow>
-        <InfoRow label="Direção mais recente">{timeline.lastDirection ? timeline.lastDirection.toLowerCase() : '—'}</InfoRow>
-      </div>
-      <p className="text-xs text-foreground-muted">
-        Histórico detalhado disponível na linha do tempo da conversa.
-      </p>
-    </div>
-  );
-
-  const attachmentsContent = attachments.length > 0
-    ? (
-        <ul className="space-y-2 text-sm text-foreground">
-          {attachments.map((item, index) => {
-            const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
-            const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
-            return (
-              <li
-                key={key}
-                className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2"
-              >
-                <span className="truncate">{label}</span>
-                {item?.url ? (
-                  <Button variant="link" size="sm" asChild>
-                    <a href={item.url} target="_blank" rel="noreferrer">
-                      Abrir
-                    </a>
-                  </Button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      )
-    : (
-        <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
-      );
 
   const summaryContent = (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-col gap-2">
-          {leadIdentifier ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex min-w-0 items-center gap-2">
-                  <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
-                  {shortId ? (
-                    <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
-                      #{shortId}
-                    </span>
-                  ) : null}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="start">
-                <p className="max-w-[240px] text-xs text-foreground-muted">ID completo: {String(leadIdentifier)}</p>
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className="flex min-w-0 items-center gap-2">
-              <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
-            </div>
-          )}
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
+            {shortId ? (
+              <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
+                #{shortId}
+              </span>
+            ) : null}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
               {statusInfo.label}
@@ -636,71 +544,101 @@ export const ConversationHeader = ({
             </Tooltip>
           </div>
         </div>
-        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <div className="flex items-center gap-2 self-start">
           <TypingIndicator agents={typingAgents} />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  id={GENERATE_PROPOSAL_ANCHOR_ID}
-                  type="button"
-                  size="sm"
-                  onClick={handleGenerateProposal}
-                  className="gap-2 rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-                  aria-label="Gerar proposta"
-                  aria-keyshortcuts="g"
-                  accessKey="g"
-                >
-                  <FileText className="size-4" aria-hidden />
-                  Gerar proposta
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
-            </Tooltip>
-            <ConversationActions
-              layout="compact"
-              onAssign={handleAssign}
-              onScheduleFollowUp={handleScheduleFollowUp}
-              onRegisterResult={handleResultChange}
-              onPhoneAction={handlePhoneAction}
-              resultOptions={DEFAULT_RESULT_OPTIONS}
-              resultSelection={resultSelection || undefined}
-              isRegisteringResult={isRegisteringResult}
-              assignShortcut="n"
-              followUpShortcut="x"
-            />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  {...ACTION_BUTTON_STYLES}
-                  onClick={handleCopyDocument}
-                  aria-label="Copiar documento"
-                >
-                  <IdCard className="size-4" aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Copiar documento</TooltipContent>
-            </Tooltip>
-            <CollapsibleTrigger asChild>
-              <Button
-                type="button"
-                {...ACTION_BUTTON_STYLES}
-                aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-                aria-keyshortcuts="e"
-                accessKey="e"
-              >
-                <ChevronDown
-                  className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
-                  aria-hidden
-                />
-              </Button>
-            </CollapsibleTrigger>
-          </div>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border"
+              aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
+            >
+              <ChevronDown
+                className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+                aria-hidden
+              />
+            </button>
+          </CollapsibleTrigger>
         </div>
+      </div>
+      <CommandBar context={commandContext} />
+    </div>
+  );
+
+  const contactContent = (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InfoRow label="Telefone">
+          <span className="flex items-center gap-2 text-foreground">
+            <Phone className="size-4 text-foreground-muted" aria-hidden />
+            <span>{phoneDisplay ?? '—'}</span>
+          </span>
+        </InfoRow>
+        <InfoRow label="E-mail">{email ?? '—'}</InfoRow>
+        <InfoRow label="Documento">
+          <button
+            type="button"
+            className="inline-flex min-h-[32px] items-center gap-2 rounded-lg border border-surface-overlay-glass-border px-3 text-xs text-foreground-muted hover:bg-surface-overlay-quiet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border"
+            onClick={handleCopyDocument}
+          >
+            <IdCard className="size-4" aria-hidden />
+            <span>{document ?? '—'}</span>
+          </button>
+        </InfoRow>
+        <InfoRow label="ID do contato">{ticket?.contact?.id ?? '—'}</InfoRow>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
+        <span>Precisa agir?</span>
+        <SectionLink actionId="generate-proposal" label="Gerar proposta" onActivate={handleCommandLink} />
+        <SectionLink actionId="assign-owner" label="Atribuir ticket" onActivate={handleCommandLink} />
+        <SectionLink actionId="phone-call" label="Abrir ações de telefone" onActivate={handleCommandLink} />
       </div>
     </div>
   );
+
+  const opportunityContent = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <InfoRow label="Potencial">{potential}</InfoRow>
+      <InfoRow label="Probabilidade">{probability}</InfoRow>
+      <InfoRow label="Etapa atual">{stage}</InfoRow>
+      <InfoRow label="Próximo SLA">{remainingMinutes ? `${remainingMinutes} min` : '—'}</InfoRow>
+      <div className="sm:col-span-2">
+        <SectionLink actionId="register-result" label="Registrar resultado" onActivate={handleCommandLink} />
+      </div>
+    </div>
+  );
+
+  const timelineContent = (
+    <div className="flex flex-col gap-3">
+      <InfoRow label="Último cliente">{lastInboundLabel ?? '—'}</InfoRow>
+      <InfoRow label="Último agente">{lastOutboundLabel ?? '—'}</InfoRow>
+      <InfoRow label="Situação">
+        <Chip tone={directionMeta.tone}>{directionMeta.label}</Chip>
+      </InfoRow>
+      <InfoRow label="Pendências">{unreadInboundCount > 0 ? `${unreadInboundCount} mensagens` : 'Nenhuma'}</InfoRow>
+    </div>
+  );
+
+  const attachmentsContent = attachments.length
+    ? (
+        <ul className="space-y-2 text-sm text-foreground">
+          {attachments.map((item, index) => {
+            const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
+            const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
+            return (
+              <li
+                key={key}
+                className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2"
+              >
+                <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]">{label}</span>
+                <span className="text-xs text-foreground-muted">{item?.size ? `${Math.round(item.size / 1024)} KB` : ''}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )
+    : (
+        <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
+      );
 
   const detailsContent = (
     <>
@@ -721,67 +659,63 @@ export const ConversationHeader = ({
               </ConversationCardBody.Left>
               <ConversationCardBody.Right>
                 <p className="text-xs text-foreground-muted">{subtitle}</p>
-
-                <ConversationActions
-                  layout="expanded"
-                  className="text-xs font-medium"
-                  onAssign={handleAssign}
-                  onScheduleFollowUp={handleScheduleFollowUp}
-                  onRegisterResult={handleResultChange}
-                  onPhoneAction={handlePhoneAction}
-                  resultOptions={DEFAULT_RESULT_OPTIONS}
-                  resultSelection={resultSelection || undefined}
-                  isRegisteringResult={isRegisteringResult}
-                  anchorIds={null}
-                  phoneTriggerLabel={phoneDisplay ?? 'Ações de telefone'}
-                  phoneTooltip="Ações de telefone"
-                />
-
-                <footer className="flex flex-wrap items-center gap-2 pt-1">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <MetadataBadge icon={Phone} aria-label="Telefone">
-                        {phoneDisplay}
-                      </MetadataBadge>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-52">
-                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-                        Ligar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
-                        Enviar SMS
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-                        Abrir WhatsApp
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-                        Copiar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <MetadataBadge
-                    icon={IdCard}
-                    aria-label="Copiar documento"
-                    onClick={handleCopyDocument}
-                  >
-                    Doc: {document}
-                  </MetadataBadge>
-                </footer>
+                {contactContent}
+                <div className="rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3 text-xs text-foreground-muted">
+                  <p className="font-medium text-foreground">Atalhos disponíveis</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <SectionLink actionId="quick-followup" label="Agendar follow-up (/t)" onActivate={handleCommandLink} />
+                    <SectionLink actionId="attach-file" label="Anexar arquivo" onActivate={handleCommandLink} />
+                    <SectionLink actionId="edit-contact" label="Editar contato" onActivate={handleCommandLink} />
+                  </div>
+                </div>
               </ConversationCardBody.Right>
             </ConversationCardBody>
+
+            <div className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+              <h3 className="text-sm font-semibold text-foreground">Oportunidade</h3>
+              <div className="mt-3">{opportunityContent}</div>
+            </div>
+
+            <div className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+              <h3 className="text-sm font-semibold text-foreground">Timeline resumida</h3>
+              <div className="mt-3">{timelineContent}</div>
+              <SectionLink
+                actionId="register-result"
+                label="Registrar novo resultado"
+                onActivate={handleCommandLink}
+              />
+            </div>
+
+            <div className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+              <h3 className="text-sm font-semibold text-foreground">Anexos recentes</h3>
+              <div className="mt-3">{attachmentsContent}</div>
+              <SectionLink actionId="attach-file" label="Adicionar novo anexo" onActivate={handleCommandLink} />
+            </div>
           </div>
         </div>
       </CollapsibleContent>
       <LossReasonDialog
-        open={lossDialogOpen}
-        onOpenChange={handleLossDialogChange}
+        open={activeDialog === 'register-result'}
+        onOpenChange={(open) => {
+          if (open) {
+            setActiveDialog('register-result');
+          } else {
+            closeDialog();
+          }
+        }}
         options={LOSS_REASONS}
         onConfirm={handleLossReasonSubmit}
         isSubmitting={isRegisteringResult}
       />
       <CallResultDialog
-        open={callDialogOpen}
-        onOpenChange={handleCallDialogChange}
+        open={activeDialog === 'call-result'}
+        onOpenChange={(open) => {
+          if (open) {
+            setActiveDialog('call-result');
+          } else {
+            closeDialog();
+          }
+        }}
         onSubmit={handleCallResultSubmit}
       />
     </>
@@ -801,6 +735,5 @@ export const ConversationHeader = ({
     </Collapsible>
   );
 };
-
 
 export default ConversationHeader;

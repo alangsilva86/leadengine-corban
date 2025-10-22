@@ -18,7 +18,6 @@ import AuditTrailLink from './AuditTrailLink.jsx';
 import { GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
-import { buildQuickActionLinks } from '../Shared/ConversationActions.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 import { formatDateTime } from '../../utils/datetime.js';
 import {
@@ -101,6 +100,9 @@ const DETAILS_PANEL_TABS = [
         title: 'Ficha do contato',
         description: 'Informações cadastrais e campos personalizados organizadas por categoria.',
         render: ({ ticket }) => <ContactSummary contact={ticket?.contact} />,
+        renderAction: ({ focusCommandAction }) => (
+          <CommandLink actionId="edit-contact" label="Editar contato" onNavigate={focusCommandAction} />
+        ),
       },
       {
         value: 'details',
@@ -128,6 +130,9 @@ const DETAILS_PANEL_TABS = [
         title: 'Resumo da oportunidade',
         description: 'Status, valor estimado e principais indicadores do lead.',
         render: ({ ticket }) => <LeadSummaryCard lead={ticket?.lead} />,
+        renderAction: ({ focusCommandAction }) => (
+          <CommandLink actionId="generate-proposal" label="Gerar proposta" onNavigate={focusCommandAction} />
+        ),
       },
       {
         value: 'proposal',
@@ -148,6 +153,9 @@ const DETAILS_PANEL_TABS = [
         description: 'Gerencie janelas de reabertura e ações pendentes para este ticket.',
         render: ({ ticket, onReopenWindow }) => (
           <TasksSection ticket={ticket} onReopenWindow={onReopenWindow} />
+        ),
+        renderAction: ({ focusCommandAction }) => (
+          <CommandLink actionId="quick-followup" label="Criar follow-up" onNavigate={focusCommandAction} />
         ),
       },
       {
@@ -184,6 +192,9 @@ const DETAILS_PANEL_TABS = [
         description: 'Arquivos e mídias enviados durante a conversa.',
         getCount: ({ attachmentsCount }) => attachmentsCount,
         render: ({ attachments }) => <AttachmentsPanel attachments={attachments} />,
+        renderAction: ({ focusCommandAction }) => (
+          <CommandLink actionId="attach-file" label="Adicionar anexo" onNavigate={focusCommandAction} />
+        ),
       },
       {
         value: 'notes',
@@ -199,6 +210,9 @@ const DETAILS_PANEL_TABS = [
             onCreate={onCreateNote}
             loading={notesLoading}
           />
+        ),
+        renderAction: ({ focusCommandAction }) => (
+          <CommandLink actionId="quick-followup" label="Criar follow-up" onNavigate={focusCommandAction} />
         ),
       },
     ],
@@ -388,40 +402,18 @@ const CopyButton = ({ value, label }) => {
   );
 };
 
-const QuickActionsBar = ({ actions }) => {
-  if (!actions?.length) {
-    return null;
-  }
-
-  return (
-    <nav
-      aria-label="Ações rápidas do atendimento"
-      className="flex min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
-    >
-      {actions.map((action) => {
-        const Icon = action.icon;
-        return (
-          <Button
-            key={action.id}
-            variant="ghost"
-            size="sm"
-            asChild
-            className="h-auto min-w-0 shrink overflow-hidden rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
-          >
-            <a
-              href={`#${action.id}`}
-              className="inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
-              title={action.label}
-            >
-              {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null}
-              <span className="max-w-[12rem] truncate [overflow-wrap:anywhere]">{action.label}</span>
-            </a>
-          </Button>
-        );
-      })}
-    </nav>
-  );
-};
+const CommandLink = ({ actionId, label, onNavigate }) => (
+  <a
+    href={`#command-${actionId}`}
+    onClick={(event) => {
+      event.preventDefault();
+      onNavigate?.(actionId);
+    }}
+    className="inline-flex min-h-[32px] items-center justify-center rounded-lg border border-surface-overlay-glass-border px-3 py-1 text-xs font-medium text-foreground hover:bg-surface-overlay-quiet"
+  >
+    {label}
+  </a>
+);
 
 const HeaderItem = ({ label, value, icon: Icon, copyValue }) => (
   <div className="flex min-w-0 flex-col gap-1">
@@ -441,7 +433,7 @@ const HeaderItem = ({ label, value, icon: Icon, copyValue }) => (
   </div>
 );
 
-const PanelHeader = ({ contact, lead }) => {
+const PanelHeader = ({ contact, lead, onNavigateAction }) => {
   const name = contact?.name ?? 'Contato sem nome';
   const organization = contact?.company ?? contact?.organization ?? null;
   const phone = contact?.phone ?? contact?.primaryPhone ?? contact?.phoneDetails?.[0]?.phoneNumber;
@@ -465,6 +457,14 @@ const PanelHeader = ({ contact, lead }) => {
         <HeaderItem label="Documento" value={document ?? '—'} icon={FileText} />
         <HeaderItem label="ID do contato" value={contact?.id ?? '—'} icon={Info} copyValue={contact?.id} />
       </dl>
+      {onNavigateAction ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
+          <span>Acessos rápidos:</span>
+          <CommandLink actionId="assign-owner" label="Atribuir" onNavigate={onNavigateAction} />
+          <CommandLink actionId="phone-call" label="Telefonia" onNavigate={onNavigateAction} />
+          <CommandLink actionId="edit-contact" label="Editar contato" onNavigate={onNavigateAction} />
+        </div>
+      ) : null}
     </section>
   );
 };
@@ -496,7 +496,6 @@ export const DetailsPanel = ({
   onReopenWindow,
   onOpenAudit,
   timelineItems = [],
-  availableActions = null,
 }) => {
   const notesSectionRef = useRef(null);
   const handleNotesSectionOpen = useCallback(() => {
@@ -512,30 +511,12 @@ export const DetailsPanel = ({
     return [];
   }, [ticket?.metadata?.attachments]);
 
-  const contactPhone =
-    ticket?.contact?.phone ??
-    ticket?.contact?.primaryPhone ??
-    ticket?.contact?.phoneDetails?.[0]?.phoneNumber ??
-    ticket?.metadata?.contactPhone ??
-    null;
-
-  const {
-    canAssign: canAssignAction,
-    canScheduleFollowUp: canScheduleFollowUpAction,
-    canRegisterResult: canRegisterResultAction,
-    hasPhone: hasPhoneAction,
-  } = availableActions ?? {};
-
-  const quickActionLinks = useMemo(() => {
-    const quickActionsContext = {
-      canAssign: canAssignAction,
-      canScheduleFollowUp: canScheduleFollowUpAction,
-      canRegisterResult: canRegisterResultAction,
-      hasPhone: hasPhoneAction ?? Boolean(contactPhone),
-    };
-
-    return buildQuickActionLinks(quickActionsContext);
-  }, [canAssignAction, canRegisterResultAction, canScheduleFollowUpAction, hasPhoneAction, contactPhone]);
+  const handleCommandLink = useCallback((actionId) => {
+    const element = document.getElementById(`command-${actionId}`);
+    if (!element) return;
+    element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    element.focus({ preventScroll: true });
+  }, []);
 
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;
@@ -554,6 +535,7 @@ export const DetailsPanel = ({
       onReopenWindow,
       onOpenAudit,
       onNotesSectionOpen: handleNotesSectionOpen,
+      focusCommandAction: handleCommandLink,
     };
 
     return DETAILS_PANEL_TABS.map((tab) => ({
@@ -584,9 +566,11 @@ export const DetailsPanel = ({
 
   return (
     <div data-detailspanel className={detailsPanelContainer()}>
-      <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
-
-      <QuickActionsBar actions={quickActionLinks} />
+      <PanelHeader
+        contact={ticket?.contact ?? null}
+        lead={ticket?.lead ?? null}
+        onNavigateAction={handleCommandLink}
+      />
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
         <TabsList className={tabsList()}>

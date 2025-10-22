@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -47,6 +48,9 @@ const CallResultDialog = ({ open, onOpenChange, onSubmit }) => {
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Registrar resultado da chamada</DialogTitle>
+          <DialogDescription>
+            Informe o status e anote qualquer observação relevante antes de voltar para o chat.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <Label htmlFor="call-outcome" className="text-sm font-medium text-foreground">
