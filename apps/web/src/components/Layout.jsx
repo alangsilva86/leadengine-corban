@@ -75,18 +75,35 @@ const LayoutHeader = ({ children, className }) => (
   </header>
 );
 
-const LayoutContent = ({ children, className, stickyFooterPaddingClass }) => (
-  <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
-    <div
-      className={cn(
-        'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto p-6 md:p-8',
-        stickyFooterPaddingClass
-      )}
-    >
-      {children}
+const LayoutContent = ({
+  children,
+  className,
+  stickyFooterPaddingClass,
+  paddingVariant = 'default',
+  disableInnerWrapper = false,
+}) => {
+  if (disableInnerWrapper) {
+    return (
+      <div className={cn('page-content flex flex-1 min-h-0 flex-col', className, stickyFooterPaddingClass)}>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
+      <div
+        className={cn(
+          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
+          paddingVariant === 'none' ? 'p-0' : 'p-6 md:p-8',
+          stickyFooterPaddingClass
+        )}
+      >
+        {children}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const OnboardingTrack = ({ stages, activeStep }) => {
   if (!stages?.length) {
@@ -138,6 +155,8 @@ const LayoutShell = ({
   isDarkMode,
   themeMounted,
   setTheme,
+  contentPaddingVariant = 'default',
+  disableContentInnerWrapper = false,
 }) => {
   const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
   const isSidebarCollapsed = state === 'collapsed';
@@ -295,7 +314,11 @@ const LayoutShell = ({
             />
           </div>
         </div>
-        <LayoutContent className="h-full min-h-0">
+        <LayoutContent
+          className="h-full min-h-0"
+          paddingVariant={contentPaddingVariant}
+          disableInnerWrapper={disableContentInnerWrapper}
+        >
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
           ) : null}
@@ -360,6 +383,10 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
   const activeOnboardingStep = onboarding?.activeStep ?? 0;
 
+  const isInboxPage = currentPage === 'inbox';
+  const contentPaddingVariant = isInboxPage ? 'none' : 'default';
+  const shouldDisableContentInnerWrapper = isInboxPage;
+
   return (
     <SidebarProvider>
       <LayoutShell
@@ -372,6 +399,8 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
         isDarkMode={isDarkMode}
         themeMounted={themeMounted}
         setTheme={setTheme}
+        contentPaddingVariant={contentPaddingVariant}
+        disableContentInnerWrapper={shouldDisableContentInnerWrapper}
       >
         {children}
       </LayoutShell>
