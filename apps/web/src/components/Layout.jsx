@@ -75,6 +75,35 @@ const LayoutHeader = ({ children, className }) => (
   </header>
 );
 
+const LayoutContent = ({
+  children,
+  className,
+  stickyFooterPaddingClass,
+  paddingVariant = 'default',
+  disableInnerWrapper = false,
+}) => {
+  if (disableInnerWrapper) {
+    return (
+      <div className={cn('page-content flex flex-1 min-h-0 flex-col', className, stickyFooterPaddingClass)}>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
+      <div
+        className={cn(
+          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
+          paddingVariant === 'none' ? 'p-0' : 'p-6 md:p-8',
+          stickyFooterPaddingClass
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 const LayoutContent = ({ children, className, stickyFooterPaddingClass, paddingVariant = 'default' }) => (
   <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
     <div
@@ -159,6 +188,7 @@ const LayoutShell = ({
   themeMounted,
   setTheme,
   contentPaddingVariant = 'default',
+  disableContentInnerWrapper = false,
   fullWidthContent = false,
 }) => {
   const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
@@ -317,6 +347,11 @@ const LayoutShell = ({
             />
           </div>
         </div>
+        <LayoutContent
+          className="h-full min-h-0"
+          paddingVariant={contentPaddingVariant}
+          disableInnerWrapper={disableContentInnerWrapper}
+        >
         <LayoutContent className="h-full min-h-0" paddingVariant={contentPaddingVariant}>
         <LayoutContent className="h-full min-h-0" disableInnerWrapper={fullWidthContent}>
           {shouldShowOnboardingTrack ? (
@@ -389,6 +424,9 @@ const Layout = ({
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
   const activeOnboardingStep = onboarding?.activeStep ?? 0;
 
+  const isInboxPage = currentPage === 'inbox';
+  const contentPaddingVariant = isInboxPage ? 'none' : 'default';
+  const shouldDisableContentInnerWrapper = isInboxPage;
   const contentPaddingVariant = currentPage === 'inbox' ? 'none' : 'default';
 
   return (
@@ -404,6 +442,7 @@ const Layout = ({
         themeMounted={themeMounted}
         setTheme={setTheme}
         contentPaddingVariant={contentPaddingVariant}
+        disableContentInnerWrapper={shouldDisableContentInnerWrapper}
         fullWidthContent={fullWidthContent}
       >
         {children}
