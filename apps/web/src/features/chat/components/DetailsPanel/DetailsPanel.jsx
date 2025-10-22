@@ -249,12 +249,33 @@ const PanelHeader = ({ contact, lead }) => {
   );
 };
 
+export const countVisibleTimelineEntries = (items) => {
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+
+  return items.reduce((total, entry) => {
+    if (!entry || entry.hidden) {
+      return total;
+    }
+
+    const type = typeof entry.type === 'string' ? entry.type.toLowerCase() : '';
+
+    if (!type || type === 'divider') {
+      return total;
+    }
+
+    return total + 1;
+  }, 0);
+};
+
 export const DetailsPanel = ({
   ticket,
   onCreateNote,
   notesLoading,
   onReopenWindow,
   onOpenAudit,
+  timelineItems = [],
 }) => {
   const notesSectionRef = useRef(null);
 
@@ -278,7 +299,7 @@ export const DetailsPanel = ({
 
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;
-  const timelineCount = ticket?.timeline ? Object.keys(ticket.timeline).length : 0;
+  const timelineCount = useMemo(() => countVisibleTimelineEntries(timelineItems), [timelineItems]);
 
   return (
     <div className="flex w-full flex-1 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden p-4">
