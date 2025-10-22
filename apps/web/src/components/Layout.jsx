@@ -82,16 +82,18 @@ const LayoutContent = ({
   paddingVariant = 'default',
   disableInnerWrapper = false,
 }) => {
+  const containerClassName = cn('page-content flex flex-1 min-h-0 flex-col', className);
+
   if (disableInnerWrapper) {
     return (
-      <div className={cn('page-content flex flex-1 min-h-0 flex-col', className, stickyFooterPaddingClass)}>
+      <div className={cn(containerClassName, stickyFooterPaddingClass)}>
         {children}
       </div>
     );
   }
 
   return (
-    <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
+    <div className={containerClassName}>
       <div
         className={cn(
           'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
@@ -104,38 +106,6 @@ const LayoutContent = ({
     </div>
   );
 };
-const LayoutContent = ({ children, className, stickyFooterPaddingClass, paddingVariant = 'default' }) => (
-  <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
-    <div
-      className={cn(
-        'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
-        paddingVariant === 'none' ? 'p-0' : 'p-6 md:p-8',
-        stickyFooterPaddingClass
-      )}
-    >
-      {children}
-    </div>
-const LayoutContent = ({
-  children,
-  className,
-  stickyFooterPaddingClass,
-  disableInnerWrapper = false,
-}) => (
-  <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
-    {disableInnerWrapper ? (
-      children
-    ) : (
-      <div
-        className={cn(
-          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto p-6 md:p-8',
-          stickyFooterPaddingClass
-        )}
-      >
-        {children}
-      </div>
-    )}
-  </div>
-);
 
 const OnboardingTrack = ({ stages, activeStep }) => {
   if (!stages?.length) {
@@ -350,10 +320,8 @@ const LayoutShell = ({
         <LayoutContent
           className="h-full min-h-0"
           paddingVariant={contentPaddingVariant}
-          disableInnerWrapper={disableContentInnerWrapper}
+          disableInnerWrapper={disableContentInnerWrapper || fullWidthContent}
         >
-        <LayoutContent className="h-full min-h-0" paddingVariant={contentPaddingVariant}>
-        <LayoutContent className="h-full min-h-0" disableInnerWrapper={fullWidthContent}>
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
           ) : null}
@@ -427,7 +395,6 @@ const Layout = ({
   const isInboxPage = currentPage === 'inbox';
   const contentPaddingVariant = isInboxPage ? 'none' : 'default';
   const shouldDisableContentInnerWrapper = isInboxPage;
-  const contentPaddingVariant = currentPage === 'inbox' ? 'none' : 'default';
 
   return (
     <SidebarProvider>
