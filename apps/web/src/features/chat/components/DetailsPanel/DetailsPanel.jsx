@@ -406,15 +406,15 @@ const QuickActionsBar = ({ actions }) => {
             variant="ghost"
             size="sm"
             asChild
-            className="h-auto rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
+            className="h-auto min-w-0 shrink overflow-hidden rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
           >
             <a
               href={`#${action.id}`}
-              className="inline-flex min-w-0 items-center gap-1"
+              className="inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
               title={action.label}
             >
               {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : null}
-              <span className="max-w-full truncate [overflow-wrap:anywhere]">{action.label}</span>
+              <span className="max-w-[12rem] truncate [overflow-wrap:anywhere]">{action.label}</span>
             </a>
           </Button>
         );
