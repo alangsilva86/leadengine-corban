@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/tooltip.jsx';
 
 const ACTION_BUTTON_CLASSES =
-  'inline-flex h-11 min-w-[44px] items-center justify-center gap-1 rounded-xl px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:gap-2';
+  'inline-flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 const focusableTagNames = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
@@ -162,19 +162,13 @@ const CommandButton = ({ entry, context, focusMap }) => {
           {!loading && Icon ? (
             <Icon
               className={cn(
-                'size-4 shrink-0',
+                'size-5 shrink-0',
                 definition.intent === 'primary' ? 'text-white' : 'text-foreground'
               )}
               aria-hidden
             />
           ) : null}
           <span className="sr-only">{definition.label}</span>
-          <span className="hidden whitespace-nowrap lg:inline">{definition.label}</span>
-          {!loading && definition.shortcutDisplay ? (
-            <span className="ml-1 hidden rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/80 lg:inline-flex">
-              {definition.shortcutDisplay}
-            </span>
-          ) : null}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={6}>
@@ -227,9 +221,8 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
               disabled={!canExecute}
               aria-label={definition.label}
             >
-                  {Icon ? <Icon className="size-4 shrink-0 text-foreground" aria-hidden /> : null}
+              {Icon ? <Icon className="size-5 shrink-0 text-foreground" aria-hidden /> : null}
               <span className="sr-only">{definition.label}</span>
-              <span className="hidden whitespace-nowrap lg:inline">{definition.label}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
