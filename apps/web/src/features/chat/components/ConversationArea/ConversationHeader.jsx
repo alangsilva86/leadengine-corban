@@ -34,15 +34,11 @@ import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
-import {
-  CalendarClock,
-  ChevronDown,
-  ClipboardList,
-  FileText,
-  IdCard,
-  Phone,
-  UserPlus,
-} from 'lucide-react';
+import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
+import ConversationActions, {
+  CONVERSATION_ACTION_IDS,
+  DEFAULT_RESULT_OPTIONS,
+} from '../Shared/ConversationActions.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
@@ -55,13 +51,6 @@ const LOSS_REASONS = [
   { value: 'concorrencia', label: 'Fechou com a concorrência' },
   { value: 'documentacao', label: 'Documentação incompleta' },
   { value: 'outro', label: 'Outro' },
-];
-
-const RESULT_ITEMS = [
-  { value: 'won', label: 'Ganho' },
-  { value: 'lost', label: 'Perda' },
-  { value: 'no_contact', label: 'Sem contato' },
-  { value: 'disqualified', label: 'Desqualificado' },
 ];
 
 const STATUS_LABELS = {
@@ -819,6 +808,18 @@ export const ConversationHeader = ({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <ConversationActions
+            layout="compact"
+            onAssign={handleAssign}
+            onScheduleFollowUp={handleScheduleFollowUp}
+            onRegisterResult={handleResultChange}
+            onPhoneAction={handlePhoneAction}
+            resultOptions={DEFAULT_RESULT_OPTIONS}
+            resultSelection={resultSelection || undefined}
+            isRegisteringResult={isRegisteringResult}
+            assignShortcut="n"
+            followUpShortcut="x"
+          />
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -917,6 +918,18 @@ export const ConversationHeader = ({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </section>
+                <ConversationActions
+                  layout="expanded"
+                  className="text-xs"
+                  onAssign={handleAssign}
+                  onScheduleFollowUp={handleScheduleFollowUp}
+                  onRegisterResult={handleResultChange}
+                  onPhoneAction={handlePhoneAction}
+                  resultOptions={DEFAULT_RESULT_OPTIONS}
+                  resultSelection={resultSelection || undefined}
+                  isRegisteringResult={isRegisteringResult}
+                  phoneTriggerLabel={phoneDisplay ?? 'Ações de telefone'}
+                />
 
                 <footer className="flex flex-wrap items-center gap-2 pt-1">
                   <DropdownMenu>
