@@ -732,6 +732,7 @@ export const ConversationHeader = ({
                   resultOptions={DEFAULT_RESULT_OPTIONS}
                   resultSelection={resultSelection || undefined}
                   isRegisteringResult={isRegisteringResult}
+                  anchorIds={null}
                   phoneTriggerLabel={phoneDisplay ?? 'Ações de telefone'}
                   phoneTooltip="Ações de telefone"
                 />
