@@ -12,9 +12,14 @@ import {
   DEFAULT_QUICK_ACTIONS,
   PRIMARY_ACTION_IDS,
 } from '@/features/chat/actions/inventory.ts';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip.jsx';
 
 const ACTION_BUTTON_CLASSES =
-  'inline-flex h-11 min-w-[44px] items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'inline-flex h-11 min-w-[44px] items-center justify-center gap-1 rounded-xl px-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 const focusableTagNames = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
@@ -130,31 +135,42 @@ const CommandButton = ({ entry, context, focusMap }) => {
   const Icon = definition.icon;
 
   return (
-    <Button
-      ref={ref}
-      id={`command-${definition.id}`}
-      type="button"
-      variant={definition.intent === 'primary' ? 'default' : 'outline'}
-      className={cn(
-        ACTION_BUTTON_CLASSES,
-        definition.intent === 'primary'
-          ? 'bg-[color:var(--accent-inbox-primary)] text-white hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]'
-          : 'border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong',
-      )}
-      onClick={handleClick}
-      disabled={disabled || loading}
-      aria-disabled={disabled || loading}
-      aria-label={`${definition.label}${definition.shortcutDisplay ? ` (${definition.shortcutDisplay})` : ''}`}
-    >
-      {loading ? <span className="size-4 animate-spin border-2 border-current border-t-transparent rounded-full" /> : null}
-      {!loading && Icon ? <Icon className="size-4" aria-hidden /> : null}
-      <span className="whitespace-nowrap">{definition.label}</span>
-      {!loading && definition.shortcutDisplay ? (
-        <span className="ml-1 hidden rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/80 sm:inline">
-          {definition.shortcutDisplay}
-        </span>
-      ) : null}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          ref={ref}
+          id={`command-${definition.id}`}
+          type="button"
+          variant={definition.intent === 'primary' ? 'default' : 'outline'}
+          className={cn(
+            ACTION_BUTTON_CLASSES,
+            definition.intent === 'primary'
+              ? 'bg-[color:var(--accent-inbox-primary)] text-white hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]'
+              : 'border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong',
+          )}
+          onClick={handleClick}
+          disabled={disabled || loading}
+          aria-disabled={disabled || loading}
+          aria-label={`${definition.label}${definition.shortcutDisplay ? ` (${definition.shortcutDisplay})` : ''}`}
+        >
+          {loading ? (
+            <span className="size-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          ) : null}
+          {!loading && Icon ? <Icon className="size-4" aria-hidden /> : null}
+          <span className="sr-only">{definition.label}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6}>
+        <div className="flex items-center gap-2">
+          <span>{definition.label}</span>
+          {definition.shortcutDisplay ? (
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {definition.shortcutDisplay}
+            </span>
+          ) : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 };
 
@@ -178,26 +194,30 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
   const Icon = definition.icon;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          ref={triggerRef}
-          id={`command-${definition.id}`}
-          type="button"
-          variant="outline"
-          className={cn(
-            ACTION_BUTTON_CLASSES,
-            'border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong',
-          )}
-          disabled={!canExecute}
-        >
-          {Icon ? <Icon className="size-4" aria-hidden /> : null}
-          <span className="whitespace-nowrap">{definition.label}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-48">
-        {definition.menuItems.map((item) => {
-          const itemCanExecute = item.canExecute?.(context) ?? true;
+    <Tooltip>
+      <DropdownMenu>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              ref={triggerRef}
+              id={`command-${definition.id}`}
+              type="button"
+              variant="outline"
+              className={cn(
+                ACTION_BUTTON_CLASSES,
+                'border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong',
+              )}
+              disabled={!canExecute}
+              aria-label={definition.label}
+            >
+              {Icon ? <Icon className="size-4" aria-hidden /> : null}
+              <span className="sr-only">{definition.label}</span>
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <DropdownMenuContent align="end" sideOffset={6} className="w-48">
+          {definition.menuItems.map((item) => {
+            const itemCanExecute = item.canExecute?.(context) ?? true;
           return (
             <DropdownMenuItem
               key={item.id}
@@ -213,7 +233,11 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
           );
         })}
       </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenu>
+      <TooltipContent side="bottom" sideOffset={6}>
+        {definition.label}
+      </TooltipContent>
+    </Tooltip>
   );
 };
 
@@ -317,7 +341,7 @@ const CommandBar = ({ context, className }) => {
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-3 py-2 backdrop-blur',
+        'flex w-full min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-3 py-2 backdrop-blur lg:flex-nowrap',
         className,
       )}
       role="toolbar"
