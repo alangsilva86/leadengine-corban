@@ -18,13 +18,11 @@ import AuditTrailLink from './AuditTrailLink.jsx';
 import { GENERATE_PROPOSAL_ANCHOR_ID } from '../ConversationArea/ConversationHeader.jsx';
 import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
-import { CONVERSATION_ACTION_IDS } from '../Shared/ConversationActions.jsx';
+import { DEFAULT_QUICK_ACTION_LINKS } from '../Shared/ConversationActions.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 import { formatDateTime } from '../../utils/datetime.js';
 import {
-  CalendarClock,
   Briefcase,
-  ClipboardList,
   Check,
   Clock3,
   Copy,
@@ -33,11 +31,10 @@ import {
   Mail,
   NotebookPen,
   Paperclip,
-  Phone,
   ShieldCheck,
   UserCircle2,
 } from 'lucide-react';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import { useClipboard } from '@/hooks/use-clipboard.js';
 import {
   detailsPanelContainer,
   panelHeaderLayout,
@@ -264,10 +261,18 @@ const scheduleNextFrame = (callback) => {
 };
 
 const SectionGroup = ({ baseId, sections }) => {
-  const defaultValues = useMemo(
-    () => sections.filter((section) => section.defaultOpen !== false).map((section) => `${baseId}-${section.value}`),
-    [baseId, sections]
-  );
+  const defaultValues = useMemo(() => {
+    return sections.reduce((values, section, index) => {
+      if (section.defaultOpen === true) {
+        values.push(`${baseId}-${section.value}`);
+        return values;
+      }
+      if (section.defaultOpen === undefined && index === 0) {
+        values.push(`${baseId}-${section.value}`);
+      }
+      return values;
+    }, []);
+  }, [baseId, sections]);
 
   return (
     <Accordion type="multiple" defaultValue={defaultValues} className={sectionGroup()}>
@@ -330,24 +335,27 @@ const PanelSection = ({
 );
 
 const CopyButton = ({ value, label }) => {
+  const { copy } = useClipboard();
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef(null);
 
   const handleCopy = useCallback(async () => {
-    if (!value || typeof navigator === 'undefined' || !navigator?.clipboard?.writeText) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(value);
+    const success = await copy(value, {
+      emptyMessage: null,
+      successMessage: null,
+      errorMessage: null,
+      fallbackMessage: null,
+    });
+    if (success) {
       setCopied(true);
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
       timeoutRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       setCopied(false);
     }
-  }, [value]);
+  }, [copy, value]);
 
   useEffect(
     () => () => {
@@ -376,6 +384,37 @@ const CopyButton = ({ value, label }) => {
     >
       {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
     </Button>
+  );
+};
+
+const QuickActionsBar = ({ actions }) => {
+  if (!actions?.length) {
+    return null;
+  }
+
+  return (
+    <nav
+      aria-label="Ações rápidas do atendimento"
+      className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
+    >
+      {actions.map((action) => {
+        const Icon = action.icon;
+        return (
+          <Button
+            key={action.id}
+            variant="ghost"
+            size="sm"
+            asChild
+            className="h-auto rounded-lg border border-transparent px-2 py-1 text-xs font-medium text-foreground-muted hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
+          >
+            <a href={`#${action.id}`} className="inline-flex items-center gap-1">
+              {Icon ? <Icon className="size-4" aria-hidden /> : null}
+              <span>{action.label}</span>
+            </a>
+          </Button>
+        );
+      })}
+    </nav>
   );
 };
 
@@ -462,15 +501,7 @@ export const DetailsPanel = ({
     return [];
   }, [ticket?.metadata?.attachments]);
 
-  const quickActionLinks = useMemo(
-    () => [
-      { id: CONVERSATION_ACTION_IDS.assign, label: 'Atribuir', icon: UserPlus },
-      { id: CONVERSATION_ACTION_IDS.scheduleFollowUp, label: 'Agendar follow-up', icon: CalendarClock },
-      { id: CONVERSATION_ACTION_IDS.registerResult, label: 'Registrar resultado', icon: ClipboardList },
-      { id: CONVERSATION_ACTION_IDS.phone, label: 'Ações de telefone', icon: Phone },
-    ],
-    []
-  );
+  const quickActionLinks = DEFAULT_QUICK_ACTION_LINKS;
 
   const notesCount = ticket?.notes?.length ?? 0;
   const attachmentsCount = attachments.length;
@@ -521,28 +552,7 @@ export const DetailsPanel = ({
     <div className={detailsPanelContainer()}>
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
 
-      <nav
-        aria-label="Ações do atendimento"
-        className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3"
-      >
-        {quickActionLinks.map((action) => {
-          const Icon = action.icon;
-          return (
-            <Button
-              key={action.id}
-              variant="ghost"
-              size="sm"
-              asChild
-              className="h-auto rounded-lg border border-transparent px-3 py-1.5 text-sm font-medium hover:border-surface-overlay-glass-border hover:bg-surface-overlay-quiet"
-            >
-              <a href={`#${action.id}`} className="inline-flex items-center gap-2">
-                <Icon className="size-4" aria-hidden />
-                <span>{action.label}</span>
-              </a>
-            </Button>
-          );
-        })}
-      </nav>
+      <QuickActionsBar actions={quickActionLinks} />
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
         <TabsList className={tabsList()}>

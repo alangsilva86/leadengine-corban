@@ -25,6 +25,13 @@ export const CONVERSATION_ACTION_IDS = {
   phone: 'conversation-action-phone',
 };
 
+export const DEFAULT_QUICK_ACTION_LINKS = [
+  { id: CONVERSATION_ACTION_IDS.assign, label: 'Atribuir', icon: UserPlus },
+  { id: CONVERSATION_ACTION_IDS.scheduleFollowUp, label: 'Agendar follow-up', icon: CalendarClock },
+  { id: CONVERSATION_ACTION_IDS.registerResult, label: 'Registrar resultado', icon: ClipboardList },
+  { id: CONVERSATION_ACTION_IDS.phone, label: 'Ações de telefone', icon: Phone },
+];
+
 export const DEFAULT_RESULT_OPTIONS = [
   { value: 'won', label: 'Ganho' },
   { value: 'lost', label: 'Perda' },

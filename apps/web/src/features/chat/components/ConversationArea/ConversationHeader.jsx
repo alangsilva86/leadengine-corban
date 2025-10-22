@@ -3,18 +3,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
@@ -23,26 +13,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select.jsx';
-import { Label } from '@/components/ui/label.jsx';
-import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
+import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
 import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
-import ConversationActions, {
-  CONVERSATION_ACTION_IDS,
-  DEFAULT_RESULT_OPTIONS,
-} from '../Shared/ConversationActions.jsx';
+import ConversationActions, { DEFAULT_RESULT_OPTIONS } from '../Shared/ConversationActions.jsx';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
+import CallResultDialog from './CallResultDialog.jsx';
+import LossReasonDialog from './LossReasonDialog.jsx';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'conversation-generate-proposal';
 
@@ -273,12 +254,8 @@ export const ConversationHeader = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [resultSelection, setResultSelection] = useState('');
   const [callDialogOpen, setCallDialogOpen] = useState(false);
-  const [callNotes, setCallNotes] = useState('');
-  const [callOutcome, setCallOutcome] = useState('connected');
   const [lossDialogOpen, setLossDialogOpen] = useState(false);
-  const [lossReason, setLossReason] = useState('');
-  const [lossNotes, setLossNotes] = useState('');
-  const [lossSubmitted, setLossSubmitted] = useState(false);
+  const { copy: copyToClipboard } = useClipboard();
 
   useEffect(() => {
     if (!ticket) return;
@@ -367,12 +344,6 @@ export const ConversationHeader = ({
     return [];
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
-  const resetLossState = useCallback(() => {
-    setLossReason('');
-    setLossNotes('');
-    setLossSubmitted(false);
-  }, []);
-
   const handleResult = useCallback(async (value, reason) => {
     if (!onRegisterResult) {
       toast.error('Não foi possível concluir. Tente novamente.');
@@ -403,28 +374,20 @@ export const ConversationHeader = ({
     await handleResult(value, reason);
   }, [handleResult]);
 
-  const handleConfirmLoss = useCallback(async () => {
-    setLossSubmitted(true);
-    if (!lossReason) {
-      return;
-    }
-    const reasonLabel = LOSS_REASON_HELPERS[lossReason] ?? lossReason;
-    const finalReason = lossNotes ? `${reasonLabel} — ${lossNotes}` : reasonLabel;
+  const handleLossDialogChange = useCallback((open) => {
+    setLossDialogOpen(open);
+  }, []);
+
+  const handleLossReasonSubmit = useCallback(async ({ reason, notes }) => {
+    const reasonLabel = LOSS_REASON_HELPERS[reason] ?? reason;
+    const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
     try {
       await handleResult('lost', finalReason);
       setLossDialogOpen(false);
-      resetLossState();
     } catch {
       // feedback handled upstream
     }
-  }, [handleResult, lossReason, lossNotes, resetLossState]);
-
-  const handleCloseLossDialog = useCallback((nextOpen) => {
-    setLossDialogOpen(nextOpen);
-    if (!nextOpen) {
-      resetLossState();
-    }
-  }, [resetLossState]);
+  }, [handleResult]);
 
   const phoneActions = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
@@ -437,34 +400,26 @@ export const ConversationHeader = ({
 
   const handleCallDialogChange = useCallback((open) => {
     setCallDialogOpen(open);
-    if (!open) {
-      setCallOutcome('connected');
-      setCallNotes('');
-    }
   }, []);
 
-  const handleCallResultSubmit = useCallback(() => {
-    onRegisterCallResult?.({ outcome: callOutcome, notes: callNotes });
-    setCallNotes('');
-    setCallOutcome('connected');
-    setCallDialogOpen(false);
-  }, [callNotes, callOutcome, onRegisterCallResult]);
+  const handleCallResultSubmit = useCallback(
+    ({ outcome, notes }) => {
+      onRegisterCallResult?.({ outcome, notes });
+      setCallDialogOpen(false);
+    },
+    [onRegisterCallResult],
+  );
 
   const handleCopyDocument = useCallback(() => {
-    if (!document || document === '—') {
-      toast.info('Nenhum documento disponível para copiar.');
-      return;
-    }
-    const hasClipboard = typeof navigator !== 'undefined' && navigator.clipboard;
-    if (hasClipboard) {
-      navigator.clipboard
-        .writeText(document)
-        .then(() => toast.success('Documento copiado.'))
-        .catch(() => toast.error('Não foi possível concluir. Tente novamente.'));
-    } else {
-      toast.info(`Copie manualmente: ${document}`);
-    }
-  }, [document]);
+    const fallbackMessage =
+      document && document !== '—' ? (value) => `Copie manualmente: ${value}` : null;
+    copyToClipboard(document, {
+      emptyMessage: 'Nenhum documento disponível para copiar.',
+      successMessage: 'Documento copiado.',
+      errorMessage: 'Não foi possível concluir. Tente novamente.',
+      fallbackMessage,
+    });
+  }, [copyToClipboard, document]);
 
   const handleGenerateProposal = useCallback(() => {
     onGenerateProposal?.(ticket);
@@ -641,8 +596,9 @@ export const ConversationHeader = ({
       );
 
   const summaryContent = (
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 flex-col gap-1">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-col gap-2">
           {leadIdentifier ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -656,7 +612,7 @@ export const ConversationHeader = ({
                 </div>
               </TooltipTrigger>
               <TooltipContent side="bottom" align="start">
-                <p className="max-w-[220px] text-xs text-foreground-muted">ID completo: {String(leadIdentifier)}</p>
+                <p className="max-w-[240px] text-xs text-foreground-muted">ID completo: {String(leadIdentifier)}</p>
               </TooltipContent>
             </Tooltip>
           ) : (
@@ -680,71 +636,70 @@ export const ConversationHeader = ({
             </Tooltip>
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
           <TypingIndicator agents={typingAgents} />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                id={GENERATE_PROPOSAL_ANCHOR_ID}
-                type="button"
-                size="sm"
-                onClick={handleGenerateProposal}
-                className="gap-2 rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
-                aria-label="Gerar proposta"
-                aria-keyshortcuts="g"
-                accessKey="g"
-              >
-                <FileText className="size-4" aria-hidden />
-                Gerar proposta
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
-          </Tooltip>
-          <ConversationActions
-            layout="compact"
-            onAssign={handleAssign}
-            onScheduleFollowUp={handleScheduleFollowUp}
-            onRegisterResult={handleResultChange}
-            onPhoneAction={handlePhoneAction}
-            resultOptions={DEFAULT_RESULT_OPTIONS}
-            resultSelection={resultSelection || undefined}
-            isRegisteringResult={isRegisteringResult}
-            assignShortcut="n"
-            followUpShortcut="x"
-          />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  id={GENERATE_PROPOSAL_ANCHOR_ID}
+                  type="button"
+                  size="sm"
+                  onClick={handleGenerateProposal}
+                  className="gap-2 rounded-lg bg-sky-500 px-3 text-xs font-semibold text-white hover:bg-sky-400 focus-visible:ring-sky-300 active:bg-sky-600"
+                  aria-label="Gerar proposta"
+                  aria-keyshortcuts="g"
+                  accessKey="g"
+                >
+                  <FileText className="size-4" aria-hidden />
+                  Gerar proposta
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
+            </Tooltip>
+            <ConversationActions
+              layout="compact"
+              onAssign={handleAssign}
+              onScheduleFollowUp={handleScheduleFollowUp}
+              onRegisterResult={handleResultChange}
+              onPhoneAction={handlePhoneAction}
+              resultOptions={DEFAULT_RESULT_OPTIONS}
+              resultSelection={resultSelection || undefined}
+              isRegisteringResult={isRegisteringResult}
+              assignShortcut="n"
+              followUpShortcut="x"
+            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  {...ACTION_BUTTON_STYLES}
+                  onClick={handleCopyDocument}
+                  aria-label="Copiar documento"
+                >
+                  <IdCard className="size-4" aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Copiar documento</TooltipContent>
+            </Tooltip>
+            <CollapsibleTrigger asChild>
               <Button
                 type="button"
                 {...ACTION_BUTTON_STYLES}
-                onClick={handleCopyDocument}
-                aria-label="Copiar documento"
+                aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
+                aria-keyshortcuts="e"
+                accessKey="e"
               >
-                <IdCard className="size-4" aria-hidden />
+                <ChevronDown
+                  className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+                  aria-hidden
+                />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Copiar documento</TooltipContent>
-          </Tooltip>
-
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              {...ACTION_BUTTON_STYLES}
-              aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-              aria-keyshortcuts="e"
-              accessKey="e"
-            >
-              <ChevronDown
-                className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
-                aria-hidden
-              />
-            </Button>
-          </CollapsibleTrigger>
+            </CollapsibleTrigger>
+          </div>
         </div>
       </div>
-
+    </div>
   );
 
   const detailsContent = (
@@ -816,98 +771,18 @@ export const ConversationHeader = ({
           </div>
         </div>
       </CollapsibleContent>
-      <Dialog open={lossDialogOpen} onOpenChange={handleCloseLossDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Registrar perda</DialogTitle>
-            <DialogDescription>
-              Informe o motivo da perda para manter o funil atualizado.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="loss-reason">Motivo *</Label>
-              <Select value={lossReason} onValueChange={(value) => { setLossReason(value); setLossSubmitted(false); }}>
-                <SelectTrigger id="loss-reason" className="w-full min-h-[44px]">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {LOSS_REASONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {lossSubmitted && !lossReason ? (
-                <p className="text-xs text-rose-300">Selecione um motivo para continuar.</p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="loss-notes">Observações (opcional)</Label>
-              <Textarea
-                id="loss-notes"
-                value={lossNotes}
-                onChange={(event) => setLossNotes(event.target.value)}
-                placeholder="Detalhe o motivo ou próximos passos."
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={() => handleCloseLossDialog(false)} className="min-h-[44px]">
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              onClick={handleConfirmLoss}
-              disabled={isRegisteringResult}
-              className="min-h-[44px]"
-            >
-              Registrar perda
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={callDialogOpen} onOpenChange={handleCallDialogChange}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Registrar resultado da chamada</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Label htmlFor="call-outcome" className="text-sm font-medium text-foreground">
-              Resultado
-            </Label>
-            <Select value={callOutcome} onValueChange={setCallOutcome}>
-              <SelectTrigger id="call-outcome" className="h-10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="connected">Conectou</SelectItem>
-                <SelectItem value="no_answer">Sem resposta</SelectItem>
-                <SelectItem value="voicemail">Caixa postal</SelectItem>
-              </SelectContent>
-            </Select>
-            <Label htmlFor="call-notes" className="text-sm font-medium text-foreground">
-              Observações
-            </Label>
-            <Textarea
-              id="call-notes"
-              value={callNotes}
-              onChange={(event) => setCallNotes(event.target.value)}
-              placeholder="Resumo do contato"
-              className="min-h-[100px]"
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleCallDialogChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="button" onClick={handleCallResultSubmit}>
-              Registrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <LossReasonDialog
+        open={lossDialogOpen}
+        onOpenChange={handleLossDialogChange}
+        options={LOSS_REASONS}
+        onConfirm={handleLossReasonSubmit}
+        isSubmitting={isRegisteringResult}
+      />
+      <CallResultDialog
+        open={callDialogOpen}
+        onOpenChange={handleCallDialogChange}
+        onSubmit={handleCallResultSubmit}
+      />
     </>
   );
 
