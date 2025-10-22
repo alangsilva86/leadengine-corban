@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
 import { Ellipsis } from 'lucide-react';
@@ -156,7 +159,15 @@ const CommandButton = ({ entry, context, focusMap }) => {
           {loading ? (
             <span className="size-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
           ) : null}
-          {!loading && Icon ? <Icon className="size-4" aria-hidden /> : null}
+          {!loading && Icon ? (
+            <Icon
+              className={cn(
+                'size-4 shrink-0',
+                definition.intent === 'primary' ? 'text-white' : 'text-foreground'
+              )}
+              aria-hidden
+            />
+          ) : null}
           <span className="sr-only">{definition.label}</span>
           <span className="hidden whitespace-nowrap lg:inline">{definition.label}</span>
           {!loading && definition.shortcutDisplay ? (
@@ -216,7 +227,7 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
               disabled={!canExecute}
               aria-label={definition.label}
             >
-              {Icon ? <Icon className="size-4" aria-hidden /> : null}
+                  {Icon ? <Icon className="size-4 shrink-0 text-foreground" aria-hidden /> : null}
               <span className="sr-only">{definition.label}</span>
               <span className="hidden whitespace-nowrap lg:inline">{definition.label}</span>
             </Button>
@@ -225,21 +236,23 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
         <DropdownMenuContent align="end" sideOffset={6} className="w-48">
           {definition.menuItems.map((item) => {
             const itemCanExecute = item.canExecute?.(context) ?? true;
-          return (
-            <DropdownMenuItem
-              key={item.id}
-              disabled={!itemCanExecute}
-              onSelect={(event) => {
-                event.preventDefault();
-                if (!itemCanExecute) return;
-                runItem(item);
-              }}
-            >
-              {item.label}
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
+            return (
+              <DropdownMenuItem
+                key={item.id}
+                disabled={!itemCanExecute}
+                onSelect={(event) => {
+                  if (!itemCanExecute) {
+                    event.preventDefault();
+                    return;
+                  }
+                  runItem(item);
+                }}
+              >
+                {item.label}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
       </DropdownMenu>
       <TooltipContent side="bottom" sideOffset={6}>
         {definition.label}
@@ -249,6 +262,35 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
 };
 
 const CommandOverflow = ({ secondary, context, focusMap }) => {
+  const triggerRef = useRef(null);
+
+  useEffect(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+
+    secondary.forEach((entry) => {
+      focusMap.current.set(entry.definition.id, trigger);
+    });
+
+    return () => {
+      secondary.forEach((entry) => {
+        focusMap.current.delete(entry.definition.id);
+      });
+    };
+  }, [focusMap, secondary]);
+
+  const handleSelect = useCallback(
+    (definition, runAction, analytics) => {
+      const element = focusMap.current.get(definition.id) ?? triggerRef.current ?? null;
+      const contextWithFocus = { ...context, returnFocus: element };
+      runAction(contextWithFocus);
+      analytics?.(contextWithFocus);
+    },
+    [context, focusMap]
+  );
+
   if (secondary.length === 0) {
     return null;
   }
@@ -257,6 +299,7 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
+          ref={triggerRef}
           type="button"
           variant="outline"
           className={cn(
@@ -272,40 +315,37 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
         {secondary.map((entry) => {
           const { definition, canExecute, state } = entry;
           if (definition.type === 'menu') {
+            const MenuIcon = definition.icon;
             return (
-              <DropdownMenuItem
-                key={definition.id}
-                disabled={!canExecute}
-                onSelect={(event) => event.preventDefault()}
-                className="flex flex-col items-start gap-1"
-              >
-                <span>{definition.label}</span>
-                <div className="flex w-full flex-col rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet">
+              <DropdownMenuSub key={definition.id}>
+                <DropdownMenuSubTrigger
+                  disabled={!canExecute}
+                  className="flex w-full items-center gap-2"
+                >
+                  {MenuIcon ? <MenuIcon className="size-4 shrink-0 text-foreground" aria-hidden /> : null}
+                  <span className="flex-1 truncate">{definition.label}</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
                   {definition.menuItems.map((item) => {
                     const itemCanExecute = item.canExecute?.(context) ?? true;
                     return (
-                      <button
+                      <DropdownMenuItem
                         key={item.id}
-                        type="button"
-                        className={cn(
-                          'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-surface-overlay-strong',
-                          !itemCanExecute && 'opacity-50',
-                        )}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          if (!itemCanExecute) return;
-                          const element = focusMap.current.get(definition.id) ?? null;
-                          const contextWithFocus = { ...context, returnFocus: element };
-                          item.run(contextWithFocus);
-                          item.analytics?.(contextWithFocus);
+                        disabled={!itemCanExecute}
+                        onSelect={(event) => {
+                          if (!itemCanExecute) {
+                            event.preventDefault();
+                            return;
+                          }
+                          handleSelect(definition, item.run, item.analytics);
                         }}
                       >
-                        <span>{item.label}</span>
-                      </button>
+                        {item.label}
+                      </DropdownMenuItem>
                     );
                   })}
-                </div>
-              </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             );
           }
 
@@ -315,15 +355,14 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
               key={definition.id}
               disabled={!canExecute || state.disabled}
               onSelect={(event) => {
-                event.preventDefault();
-                if (!canExecute || state.disabled) return;
-                const element = focusMap.current.get(definition.id) ?? null;
-                const contextWithFocus = { ...context, returnFocus: element };
-                definition.run(contextWithFocus);
-                definition.analytics?.(contextWithFocus);
+                if (!canExecute || state.disabled) {
+                  event.preventDefault();
+                  return;
+                }
+                handleSelect(definition, definition.run, definition.analytics);
               }}
             >
-              {Icon ? <Icon className="mr-2 size-4" aria-hidden /> : null}
+              {Icon ? <Icon className="mr-2 size-4 shrink-0 text-foreground" aria-hidden /> : null}
               <span className="flex-1 truncate">{definition.label}</span>
               {definition.shortcutDisplay ? (
                 <span className="rounded-md bg-surface-overlay-quiet px-1.5 py-0.5 text-[10px] text-foreground-muted">
@@ -334,6 +373,11 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
           );
         })}
       </DropdownMenuContent>
+      <div aria-hidden="true" className="sr-only">
+        {secondary.map((entry) => (
+          <span key={entry.definition.id} id={`command-${entry.definition.id}`} tabIndex={-1} />
+        ))}
+      </div>
     </DropdownMenu>
   );
 };

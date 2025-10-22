@@ -1,7 +1,7 @@
 import { cva } from 'class-variance-authority';
 
 export const detailsPanelContainer = cva(
-  'box-border flex w-full max-w-full flex-1 min-w-0 flex-col gap-6 overflow-y-auto overflow-x-hidden md:[overflow-x:clip] p-4'
+  'box-border flex w-full max-w-full flex-1 min-w-0 flex-col gap-6 overflow-x-hidden md:[overflow-x:clip] p-4'
 );
 
 export const sectionGroup = cva('w-full min-w-0 space-y-3');
