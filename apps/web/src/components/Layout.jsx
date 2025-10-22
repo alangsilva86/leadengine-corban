@@ -82,16 +82,18 @@ const LayoutContent = ({
   paddingVariant = 'default',
   disableInnerWrapper = false,
 }) => {
+  const containerClassName = cn('page-content flex flex-1 min-h-0 flex-col', className);
+
   if (disableInnerWrapper) {
     return (
-      <div className={cn('page-content flex flex-1 min-h-0 flex-col', className, stickyFooterPaddingClass)}>
+      <div className={cn(containerClassName, stickyFooterPaddingClass)}>
         {children}
       </div>
     );
   }
 
   return (
-    <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
+    <div className={containerClassName}>
       <div
         className={cn(
           'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
@@ -104,6 +106,7 @@ const LayoutContent = ({
     </div>
   );
 };
+
 const OnboardingTrack = ({ stages, activeStep }) => {
   if (!stages?.length) {
     return null;
