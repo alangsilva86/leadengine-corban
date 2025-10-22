@@ -20,6 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip.jsx';
+import { getAllAnchorIdsForCommand, getPrimaryCommandAnchorId } from '../../actions/commandAnchors.js';
 
 const ACTION_BUTTON_CLASSES =
   'inline-flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -142,7 +143,7 @@ const CommandButton = ({ entry, context, focusMap }) => {
       <TooltipTrigger asChild>
         <Button
           ref={ref}
-          id={`command-${definition.id}`}
+          id={getPrimaryCommandAnchorId(definition.id)}
           type="button"
           variant={definition.intent === 'primary' ? 'default' : 'outline'}
           className={cn(
@@ -211,7 +212,7 @@ const CommandMenuButton = ({ entry, context, focusMap }) => {
           <DropdownMenuTrigger asChild>
             <Button
               ref={triggerRef}
-              id={`command-${definition.id}`}
+              id={getPrimaryCommandAnchorId(definition.id)}
               type="button"
               variant="outline"
               className={cn(
@@ -312,6 +313,7 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
             return (
               <DropdownMenuSub key={definition.id}>
                 <DropdownMenuSubTrigger
+                  id={getPrimaryCommandAnchorId(definition.id)}
                   disabled={!canExecute}
                   className="flex w-full items-center gap-2"
                 >
@@ -346,6 +348,7 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
           return (
             <DropdownMenuItem
               key={definition.id}
+              id={getPrimaryCommandAnchorId(definition.id)}
               disabled={!canExecute || state.disabled}
               onSelect={(event) => {
                 if (!canExecute || state.disabled) {
@@ -366,11 +369,6 @@ const CommandOverflow = ({ secondary, context, focusMap }) => {
           );
         })}
       </DropdownMenuContent>
-      <div aria-hidden="true" className="sr-only">
-        {secondary.map((entry) => (
-          <span key={entry.definition.id} id={`command-${entry.definition.id}`} tabIndex={-1} />
-        ))}
-      </div>
     </DropdownMenu>
   );
 };
@@ -379,33 +377,63 @@ const CommandBar = ({ context, className }) => {
   const focusMap = useRef(new Map());
   const resolvedActions = useMemo(() => normalizeActions(context), [context]);
   const { primary, secondary } = useMemo(() => groupActions(resolvedActions), [resolvedActions]);
+  const commandIds = useMemo(
+    () => Array.from(new Set(resolvedActions.map((entry) => entry.definition.id))),
+    [resolvedActions]
+  );
 
   useSlashShortcuts(resolvedActions, context, focusMap);
 
   return (
-    <div
-      className={cn(
-        'flex w-full min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-3 py-2 backdrop-blur lg:flex-nowrap',
-        className,
-      )}
-      role="toolbar"
-      aria-label="Ações do atendimento"
-    >
-      {primary.map((entry) => {
-        if (entry.definition.type === 'menu') {
+    <>
+      {commandIds.map((actionId) => (
+        <CommandAnchorMarkers key={actionId} actionId={actionId} focusMap={focusMap} />
+      ))}
+      <div
+        className={cn(
+          'flex w-full min-w-0 flex-wrap items-center gap-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-3 py-2 backdrop-blur lg:flex-nowrap',
+          className,
+        )}
+        role="toolbar"
+        aria-label="Ações do atendimento"
+      >
+        {primary.map((entry) => {
+          if (entry.definition.type === 'menu') {
+            return (
+              <CommandMenuButton key={entry.definition.id} entry={entry} context={context} focusMap={focusMap} />
+            );
+          }
           return (
-            <CommandMenuButton key={entry.definition.id} entry={entry} context={context} focusMap={focusMap} />
+            <CommandButton key={entry.definition.id} entry={entry} context={context} focusMap={focusMap} />
           );
-        }
-        return (
-          <CommandButton key={entry.definition.id} entry={entry} context={context} focusMap={focusMap} />
-        );
-      })}
-      <div className="flex flex-1 justify-end">
-        <CommandOverflow secondary={secondary} context={context} focusMap={focusMap} />
+        })}
+        <div className="flex flex-1 justify-end">
+          <CommandOverflow secondary={secondary} context={context} focusMap={focusMap} />
+        </div>
       </div>
-    </div>
+    </>
   );
+};
+
+const CommandAnchorMarkers = ({ actionId, focusMap }) => {
+  const handleFocus = useCallback(() => {
+    const target = focusMap.current.get(actionId);
+    if (target && typeof target.focus === 'function') {
+      target.focus({ preventScroll: true });
+    }
+  }, [actionId, focusMap]);
+
+  return getAllAnchorIdsForCommand(actionId).map((anchorId) => (
+    <span
+      key={anchorId}
+      id={anchorId}
+      tabIndex={-1}
+      onFocus={handleFocus}
+      aria-hidden="true"
+      className="sr-only"
+      data-command-anchor={actionId}
+    />
+  ));
 };
 
 export { CommandBar };

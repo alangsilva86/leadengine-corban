@@ -21,6 +21,10 @@ import StatusBadge from '../Shared/StatusBadge.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
 import { formatDateTime } from '../../utils/datetime.js';
 import {
+  COMMAND_ACTION_ANCHOR_ALIASES,
+  getPrimaryCommandAnchorId,
+} from '../../actions/commandAnchors.js';
+import {
   Briefcase,
   Check,
   Clock3,
@@ -404,7 +408,7 @@ const CopyButton = ({ value, label }) => {
 
 const CommandLink = ({ actionId, label, onNavigate }) => (
   <a
-    href={`#command-${actionId}`}
+    href={`#${COMMAND_ACTION_ANCHOR_ALIASES[actionId]?.[0] ?? getPrimaryCommandAnchorId(actionId)}`}
     onClick={(event) => {
       event.preventDefault();
       onNavigate?.(actionId);
