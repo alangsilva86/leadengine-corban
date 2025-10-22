@@ -34,8 +34,7 @@ import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
-import { CalendarClock, ChevronDown, ClipboardList, FileText, IdCard, Phone } from 'lucide-react';
-import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
 import ConversationActions, {
   CONVERSATION_ACTION_IDS,
   DEFAULT_RESULT_OPTIONS,
@@ -694,7 +693,7 @@ export const ConversationHeader = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <TypingIndicator agents={typingAgents} />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -714,101 +713,6 @@ export const ConversationHeader = ({
             </TooltipTrigger>
             <TooltipContent side="bottom">Gerar proposta (g)</TooltipContent>
           </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                {...ACTION_BUTTON_STYLES}
-                onClick={() => onAssign?.(ticket)}
-                aria-label="Atribuir"
-                aria-keyshortcuts="n"
-                accessKey="n"
-              >
-                <UserPlus className="size-4" aria-hidden />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Atribuir</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                {...ACTION_BUTTON_STYLES}
-                onClick={() => onScheduleFollowUp?.(ticket)}
-                aria-label="Agendar follow-up"
-                aria-keyshortcuts="x"
-                accessKey="x"
-              >
-                <CalendarClock className="size-4" aria-hidden />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Agendar follow-up</TooltipContent>
-          </Tooltip>
-
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    {...ACTION_BUTTON_STYLES}
-                    aria-label="Registrar resultado"
-                    disabled={isRegisteringResult}
-                  >
-                    <ClipboardList className="size-4" aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Registrar resultado</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                {DEFAULT_RESULT_OPTIONS.map((item) => (
-                  <DropdownMenuRadioItem
-                    key={item.value}
-                    value={item.value}
-                    className="min-h-[44px]"
-                    disabled={isRegisteringResult}
-                  >
-                    {item.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    {...ACTION_BUTTON_STYLES}
-                    aria-label="Opções de telefone"
-                  >
-                    <Phone className="size-4" aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Ações de telefone e registro de ligação</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('call')}>
-                Ligar
-              </DropdownMenuItem>
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('sms')}>
-                Enviar SMS
-              </DropdownMenuItem>
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('whatsapp')}>
-                Abrir WhatsApp
-              </DropdownMenuItem>
-              <DropdownMenuItem className="min-h-[44px]" onSelect={() => handlePhoneAction('copy')}>
-                Copiar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
           <ConversationActions
             layout="compact"
             onAssign={handleAssign}
