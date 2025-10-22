@@ -517,50 +517,49 @@ export const ConversationHeader = ({
   }
 
   const summaryContent = (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
-            {shortId ? (
-              <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
-                #{shortId}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
-              {statusInfo.label}
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
+          {shortId ? (
+            <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
+              #{shortId}
+            </span>
+          ) : null}
+        </div>
+        <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
+          {statusInfo.label}
+        </Chip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Chip tone={expirationInfo.tone} className="cursor-default select-none px-2.5 py-1 text-[11px]">
+              {expirationInfo.label}
             </Chip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Chip tone={expirationInfo.tone} className="cursor-default select-none px-2.5 py-1 text-[11px]">
-                  {expirationInfo.label}
-                </Chip>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="start">
-                <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 self-start">
-          <TypingIndicator agents={typingAgents} />
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border"
-              aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-            >
-              <ChevronDown
-                className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
-                aria-hidden
-              />
-            </button>
-          </CollapsibleTrigger>
-        </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="start">
+            <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
+          </TooltipContent>
+        </Tooltip>
+        {typingAgents.length > 0 ? <TypingIndicator agents={typingAgents} /> : null}
       </div>
-      <CommandBar context={commandContext} />
+      <div className="flex items-center gap-2">
+        <CommandBar
+          context={commandContext}
+          className="w-auto flex-nowrap gap-1 rounded-none border-none bg-transparent p-0 shadow-none"
+        />
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border"
+            aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
+          >
+            <ChevronDown
+              className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+              aria-hidden
+            />
+          </button>
+        </CollapsibleTrigger>
+      </div>
     </div>
   );
 
