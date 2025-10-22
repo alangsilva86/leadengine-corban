@@ -86,6 +86,25 @@ const LayoutContent = ({ children, className, stickyFooterPaddingClass, paddingV
     >
       {children}
     </div>
+const LayoutContent = ({
+  children,
+  className,
+  stickyFooterPaddingClass,
+  disableInnerWrapper = false,
+}) => (
+  <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
+    {disableInnerWrapper ? (
+      children
+    ) : (
+      <div
+        className={cn(
+          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto p-6 md:p-8',
+          stickyFooterPaddingClass
+        )}
+      >
+        {children}
+      </div>
+    )}
   </div>
 );
 
@@ -140,6 +159,7 @@ const LayoutShell = ({
   themeMounted,
   setTheme,
   contentPaddingVariant = 'default',
+  fullWidthContent = false,
 }) => {
   const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
   const isSidebarCollapsed = state === 'collapsed';
@@ -298,6 +318,7 @@ const LayoutShell = ({
           </div>
         </div>
         <LayoutContent className="h-full min-h-0" paddingVariant={contentPaddingVariant}>
+        <LayoutContent className="h-full min-h-0" disableInnerWrapper={fullWidthContent}>
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
           ) : null}
@@ -308,7 +329,13 @@ const LayoutShell = ({
   );
 };
 
-const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding }) => {
+const Layout = ({
+  children,
+  currentPage = 'dashboard',
+  onNavigate,
+  onboarding,
+  fullWidthContent = false,
+}) => {
   const [inboxCount, setInboxCount] = useState(
     typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
   );
@@ -377,6 +404,7 @@ const Layout = ({ children, currentPage = 'dashboard', onNavigate, onboarding })
         themeMounted={themeMounted}
         setTheme={setTheme}
         contentPaddingVariant={contentPaddingVariant}
+        fullWidthContent={fullWidthContent}
       >
         {children}
       </LayoutShell>
