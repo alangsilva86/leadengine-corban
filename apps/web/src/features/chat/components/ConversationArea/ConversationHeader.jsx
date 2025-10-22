@@ -34,7 +34,7 @@ import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { toast } from 'sonner';
-import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
+import { CalendarClock, ChevronDown, ClipboardList, FileText, IdCard, Phone } from 'lucide-react';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import ConversationActions, {
   CONVERSATION_ACTION_IDS,
@@ -765,7 +765,7 @@ export const ConversationHeader = ({
             </Tooltip>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                {RESULT_ITEMS.map((item) => (
+                {DEFAULT_RESULT_OPTIONS.map((item) => (
                   <DropdownMenuRadioItem
                     key={item.value}
                     value={item.value}
@@ -905,7 +905,7 @@ export const ConversationHeader = ({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-56">
                       <DropdownMenuRadioGroup value={resultSelection || undefined} onValueChange={handleResultChange}>
-                        {RESULT_ITEMS.map((item) => (
+                        {DEFAULT_RESULT_OPTIONS.map((item) => (
                           <DropdownMenuRadioItem
                             key={item.value}
                             value={item.value}
