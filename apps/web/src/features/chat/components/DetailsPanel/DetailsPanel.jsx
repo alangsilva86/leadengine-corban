@@ -147,7 +147,7 @@ const PanelSection = ({
       {action ? <div className="pl-2 shrink-0">{action}</div> : null}
     </AccordionTrigger>
     <AccordionContent className="px-0">
-      <div className="min-w-0 overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
+      <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 p-4 text-sm text-foreground">
         {children}
       </div>
     </AccordionContent>
@@ -207,10 +207,10 @@ const CopyButton = ({ value, label }) => {
 const HeaderItem = ({ label, value, icon: Icon, copyValue }) => (
   <div className="flex min-w-0 flex-col gap-1">
     <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">{label}</span>
-    <div className="text-sm text-foreground flex flex-wrap items-center gap-2">
+    <div className="text-sm text-foreground flex flex-wrap items-center gap-2 min-w-0">
       <div className="flex min-w-0 items-center gap-2 break-words">
         {Icon ? <Icon className="text-foreground-muted size-4 shrink-0" aria-hidden /> : null}
-        <span className="font-medium break-words break-all">{value ?? '—'}</span>
+        <span className="font-medium break-words break-all max-w-full">{value ?? '—'}</span>
       </div>
       <CopyButton value={copyValue ?? value} label={`Copiar ${label.toLowerCase()}`} />
     </div>
@@ -267,7 +267,7 @@ export const DetailsPanel = ({
   const timelineCount = ticket?.timeline ? Object.keys(ticket.timeline).length : 0;
 
   return (
-    <div className="flex flex-1 min-w-0 flex-col gap-5 overflow-y-auto p-4">
+    <div className="flex w-full flex-1 min-w-0 flex-col gap-5 overflow-y-auto overflow-x-hidden p-4">
       <PanelHeader contact={ticket?.contact ?? null} lead={ticket?.lead ?? null} />
 
       <Tabs defaultValue="contact" className="flex flex-1 min-w-0 flex-col gap-5">
