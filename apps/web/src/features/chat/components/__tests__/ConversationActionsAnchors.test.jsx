@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { ConversationHeader } from '../ConversationArea/ConversationHeader.jsx';
 import DetailsPanel from '../DetailsPanel/DetailsPanel.jsx';
-import { CONVERSATION_ACTION_IDS } from '../Shared/ConversationActions.jsx';
+import { CONVERSATION_ACTION_IDS } from '../../actions/commandAnchors.js';
 
 vi.mock('sonner', () => ({
   toast: {
@@ -191,4 +191,3 @@ describe('Conversation actions anchors', () => {
     expect(target).toBeInTheDocument();
   });
 });
-

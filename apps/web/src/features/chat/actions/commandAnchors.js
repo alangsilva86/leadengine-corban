@@ -1,4 +1,9 @@
-import { CONVERSATION_ACTION_IDS } from '../components/Shared/ConversationActions.jsx';
+export const CONVERSATION_ACTION_IDS = {
+  assign: 'conversation-action-assign',
+  scheduleFollowUp: 'conversation-action-schedule-follow-up',
+  registerResult: 'conversation-action-register-result',
+  phone: 'conversation-action-phone',
+};
 
 export const COMMAND_ACTION_ANCHOR_ALIASES = {
   'assign-owner': [CONVERSATION_ACTION_IDS.assign],
