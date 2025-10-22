@@ -20,6 +20,7 @@ import AttachmentPreview from '../Shared/AttachmentPreview.jsx';
 import StatusBadge from '../Shared/StatusBadge.jsx';
 import { CONVERSATION_ACTION_IDS } from '../Shared/ConversationActions.jsx';
 import ContactSummary from '@/features/contacts/components/ContactSummary.jsx';
+import { formatDateTime } from '../../utils/datetime.js';
 import {
   CalendarClock,
   Briefcase,
@@ -205,20 +206,6 @@ const DETAILS_PANEL_TABS = [
     ],
   },
 ];
-
-const formatDateTime = (value) => {
-  if (!value) return '—';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '—';
-  }
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
 
 const TimelineSummary = ({ ticket }) => {
   const entries = useMemo(() => {
