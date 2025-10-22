@@ -65,9 +65,9 @@ const ListPanelHeader = ({ showCloseButton = false }) => (
   </div>
 );
 
-const ListPanelContent = ({ children }) => (
-  <div className="flex min-h-0 min-w-0 flex-col px-3 py-4">{children}</div>
-);
+const ListPanelContent = ({ children }) => <div className="flex min-h-0 min-w-0 flex-col">{children}</div>;
+
+const SHELL_CONTENT_SPACING = 'px-4 py-4 sm:px-6 sm:py-6';
 
 const ListPanelFooter = ({ canPersistPreferences }) => (
   <div className="shrink-0 border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
@@ -117,7 +117,9 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
         className="chat-scroll-area min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges] [overflow-clip-margin:24px]"
         style={{ overscrollBehavior: 'contain' }}
       >
-        <ListPanelContent>{sidebar}</ListPanelContent>
+        <div className="px-4 py-4">
+          <ListPanelContent>{sidebar}</ListPanelContent>
+        </div>
       </div>
       <ListPanelFooter canPersistPreferences={canPersistPreferences} />
     </div>
@@ -345,6 +347,34 @@ const InboxAppShell = ({
         </header>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div
+          className={cn(
+            'mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-hidden',
+            SHELL_CONTENT_SPACING
+          )}
+        >
+          {shouldRenderSplitLayout ? (
+            <SplitLayout
+              className="h-full min-h-0 w-full gap-6"
+              list={listContent}
+              detail={renderDetailSurface()}
+              listClassName={cn(
+                'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0'
+              )}
+              detailClassName="flex min-h-0 min-w-0 flex-col"
+              listWidth={360}
+              isListVisible={Boolean(sidebar) && (isDesktop ? desktopListVisible : true)}
+              minListWidth={360}
+              maxListWidthPx={360}
+              maxListWidthToken="360px"
+              resizable={false}
+            />
+          ) : (
+            <div className="flex h-full w-full">
+              {renderDetailSurface()}
+            </div>
+          )}
+        </div>
         {shouldRenderSplitLayout ? (
           <SplitLayout
             className="h-full min-h-0 w-full flex-1 gap-4 px-4 py-4 sm:gap-6 sm:px-6 sm:py-6"

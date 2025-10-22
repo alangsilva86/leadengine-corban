@@ -75,6 +75,17 @@ const LayoutHeader = ({ children, className }) => (
   </header>
 );
 
+const LayoutContent = ({ children, className, stickyFooterPaddingClass, paddingVariant = 'default' }) => (
+  <div className={cn('page-content flex flex-1 min-h-0 flex-col', className)}>
+    <div
+      className={cn(
+        'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
+        paddingVariant === 'none' ? 'p-0' : 'p-6 md:p-8',
+        stickyFooterPaddingClass
+      )}
+    >
+      {children}
+    </div>
 const LayoutContent = ({
   children,
   className,
@@ -147,6 +158,7 @@ const LayoutShell = ({
   isDarkMode,
   themeMounted,
   setTheme,
+  contentPaddingVariant = 'default',
   fullWidthContent = false,
 }) => {
   const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
@@ -305,6 +317,7 @@ const LayoutShell = ({
             />
           </div>
         </div>
+        <LayoutContent className="h-full min-h-0" paddingVariant={contentPaddingVariant}>
         <LayoutContent className="h-full min-h-0" disableInnerWrapper={fullWidthContent}>
           {shouldShowOnboardingTrack ? (
             <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
@@ -376,6 +389,8 @@ const Layout = ({
   const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
   const activeOnboardingStep = onboarding?.activeStep ?? 0;
 
+  const contentPaddingVariant = currentPage === 'inbox' ? 'none' : 'default';
+
   return (
     <SidebarProvider>
       <LayoutShell
@@ -388,6 +403,7 @@ const Layout = ({
         isDarkMode={isDarkMode}
         themeMounted={themeMounted}
         setTheme={setTheme}
+        contentPaddingVariant={contentPaddingVariant}
         fullWidthContent={fullWidthContent}
       >
         {children}
