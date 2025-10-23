@@ -30,6 +30,7 @@ export const ConversationArea = ({
   composerDisabled = false,
   composerDisabledReason = null,
   onContactFieldSave = async () => {},
+  onDealFieldSave = async () => {},
   nextStepValue = '',
   onNextStepSave = async () => {},
   currentUser = null,
@@ -187,6 +188,7 @@ export const ConversationArea = ({
             isRegisteringResult={isRegisteringResult}
             typingAgents={typingIndicator?.agentsTyping ?? []}
             onContactFieldSave={onContactFieldSave}
+            onDealFieldSave={onDealFieldSave}
             nextStepValue={nextStepValue}
             onNextStepSave={onNextStepSave}
             onFocusComposer={handleFocusComposer}

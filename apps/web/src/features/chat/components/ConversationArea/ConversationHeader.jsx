@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, useId, useImperativeHandle } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import {
@@ -13,7 +13,9 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
-import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle, MessageCircle, Mail } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
@@ -22,6 +24,7 @@ import CallResultDialog from './CallResultDialog.jsx';
 import LossReasonDialog from './LossReasonDialog.jsx';
 import { CommandBar } from './CommandBar.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
+import { formatCurrencyField, formatTermField } from '../../utils/deal-fields.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -129,6 +132,115 @@ const PRIMARY_BUTTON_TONE = {
   yellow: 'bg-amber-500 text-white hover:bg-amber-500/90',
   orange: 'bg-orange-500 text-white hover:bg-orange-500/90',
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
+};
+
+const DEAL_STAGE_KEYS = new Set(['LIQUIDACAO', 'APROVADO_LIQUIDACAO']);
+const CHANNEL_PRESENTATION = {
+  WHATSAPP: {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    icon: MessageCircle,
+    className:
+      'border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)]',
+  },
+  VOICE: {
+    id: 'voice',
+    label: 'Telefone',
+    icon: Phone,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+  },
+  EMAIL: {
+    id: 'email',
+    label: 'E-mail',
+    icon: Mail,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+  },
+  DEFAULT: {
+    id: 'unknown',
+    label: 'Canal não identificado',
+    icon: MessageCircle,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  },
+};
+
+const normalizeChannel = (value) => {
+  if (!value) return null;
+
+  const normalized = String(value)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toUpperCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'PHONE' || normalized === 'TELEFONE' || normalized === 'CALL') {
+    return 'VOICE';
+  }
+
+  if (normalized === 'E-MAIL' || normalized === 'MAIL') {
+    return 'EMAIL';
+  }
+
+  if (normalized === 'WA') {
+    return 'WHATSAPP';
+  }
+
+  return normalized;
+};
+
+const resolveChannelInfo = (channel) => {
+  const normalized = normalizeChannel(channel);
+  return CHANNEL_PRESENTATION[normalized] ?? CHANNEL_PRESENTATION.DEFAULT;
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+};
+
+const formatRelativeTime = (value) => {
+  const date = parseDateValue(value);
+  if (!date) {
+    return null;
+  }
+
+  try {
+    return formatDistanceToNow(date, { addSuffix: true, locale: ptBR });
+  } catch {
+    return null;
+  }
+};
+
+const getLastInteractionTimestamp = (timeline) => {
+  if (!timeline) {
+    return null;
+  }
+
+  const inboundDate = parseDateValue(timeline.lastInboundAt);
+  const outboundDate = parseDateValue(timeline.lastOutboundAt);
+  const direction = timeline.lastDirection ?? null;
+
+  if (direction === 'INBOUND' && inboundDate) {
+    return inboundDate;
+  }
+
+  if (direction === 'OUTBOUND' && outboundDate) {
+    return outboundDate;
+  }
+
+  if (inboundDate && outboundDate) {
+    return inboundDate > outboundDate ? inboundDate : outboundDate;
+  }
+
+  return inboundDate ?? outboundDate ?? null;
 };
 
 const normalizeStage = (value) => {
@@ -301,8 +413,28 @@ const InlineField = ({
   );
 };
 
-const NextStepEditor = ({ value, onSave }) => {
+const NextStepEditor = forwardRef(({ value, onSave }, ref) => {
   const { draft, status, handleChange } = useInlineEditor(value ?? '', onSave, 700);
+  const textareaRef = useRef(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        const node = textareaRef.current;
+        if (!node || typeof node.focus !== 'function') {
+          return false;
+        }
+        node.focus();
+        if (typeof node.setSelectionRange === 'function') {
+          const length = node.value?.length ?? 0;
+          node.setSelectionRange(length, length);
+        }
+        return true;
+      },
+    }),
+    []
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -319,6 +451,7 @@ const NextStepEditor = ({ value, onSave }) => {
         ) : null}
       </div>
       <Textarea
+        ref={textareaRef}
         value={draft}
         onChange={handleChange}
         placeholder="Descreva o próximo passo combinado"
@@ -329,7 +462,9 @@ const NextStepEditor = ({ value, onSave }) => {
       />
     </div>
   );
-};
+});
+
+NextStepEditor.displayName = 'NextStepEditor';
 
 const getOriginLabel = (ticket) => {
   const origin =
@@ -354,6 +489,42 @@ const getTicketStage = (ticket) => {
 };
 
 const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = false }) => {
+const STAGE_LABELS = {
+  NOVO: 'Novo',
+  CONECTADO: 'Conectado',
+  QUALIFICACAO: 'Qualificação',
+  PROPOSTA: 'Proposta',
+  DOCUMENTACAO: 'Documentação',
+  DOCUMENTOS_AVERBACAO: 'Documentos/Averbação',
+  AGUARDANDO: 'Aguardando',
+  AGUARDANDO_CLIENTE: 'Aguardando Cliente',
+  LIQUIDACAO: 'Liquidação',
+  APROVADO_LIQUIDACAO: 'Aprovado/Liquidação',
+  RECICLAR: 'Reciclar',
+  DESCONHECIDO: 'Desconhecido',
+};
+
+const formatFallbackStageLabel = (stageKey) =>
+  stageKey
+    .split('_')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0) + segment.slice(1).toLowerCase())
+    .join(' ');
+
+const formatStageLabel = (stageKey) => {
+  const normalized = normalizeStage(stageKey);
+  if (STAGE_LABELS[normalized]) {
+    return STAGE_LABELS[normalized];
+  }
+
+  if (normalized === 'DESCONHECIDO') {
+    return STAGE_LABELS.DESCONHECIDO;
+  }
+
+  return formatFallbackStageLabel(normalized);
+};
+
+const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
   const preset = PRIMARY_ACTION_MAP[stageKey] ?? PRIMARY_ACTION_MAP[`${stageKey}_`];
   if (!preset) {
     return null;
@@ -487,7 +658,10 @@ const PrimaryActionButton = ({ action, jroState, onExecute, disabled }) => {
       type="button"
       onClick={onExecute}
       disabled={disabled}
-      className={cn('flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]', toneClass)}
+      className={cn(
+        'flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]',
+        toneClass,
+      )}
     >
       <span>{action.label}</span>
     </Button>
@@ -499,6 +673,35 @@ const ContactSummary = ({ ticket }) => {
   const lastInbound = timeline.lastInboundAt ? formatDateTime(timeline.lastInboundAt) : '—';
   const lastOutbound = timeline.lastOutboundAt ? formatDateTime(timeline.lastOutboundAt) : '—';
   const lastDirection = timeline.lastDirection ?? null;
+  const lastChannel =
+    timeline.lastChannel ??
+    timeline.lastMessageChannel ??
+    (lastDirection === 'INBOUND' ? timeline.lastInboundChannel : timeline.lastOutboundChannel) ??
+    timeline.lastInboundChannel ??
+    timeline.lastOutboundChannel ??
+    timeline.channel ??
+    ticket?.channel ??
+    ticket?.metadata?.lastChannel ??
+    null;
+
+  const channelInfo = useMemo(() => resolveChannelInfo(lastChannel), [lastChannel]);
+
+  const lastInteractionDate = useMemo(
+    () => getLastInteractionTimestamp(timeline),
+    [timeline.lastDirection, timeline.lastInboundAt, timeline.lastOutboundAt],
+  );
+
+  const relativeTime = useMemo(() => formatRelativeTime(lastInteractionDate), [lastInteractionDate]);
+
+  const directionActor = useMemo(() => {
+    if (lastDirection === 'INBOUND') {
+      return 'Cliente';
+    }
+    if (lastDirection === 'OUTBOUND') {
+      return 'Equipe';
+    }
+    return null;
+  }, [lastDirection]);
 
   const directionLabel = useMemo(() => {
     switch (lastDirection) {
@@ -511,11 +714,41 @@ const ContactSummary = ({ ticket }) => {
     }
   }, [lastDirection]);
 
+  const directionSummary = useMemo(() => {
+    if (directionActor && relativeTime) {
+      return `${directionActor} • ${relativeTime}`;
+    }
+
+    if (directionActor) {
+      return directionActor;
+    }
+
+    if (relativeTime) {
+      return relativeTime;
+    }
+
+    return 'Sem interações registradas';
+  }, [directionActor, relativeTime]);
+
+  const ChannelIcon = channelInfo.icon;
+
   return (
     <div className="grid gap-3 text-sm">
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Última interação</span>
-        <span className="text-foreground">{directionLabel}</span>
+        <div className="flex flex-wrap items-center gap-2 text-foreground">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium',
+              channelInfo.className,
+            )}
+          >
+            <ChannelIcon className="h-3.5 w-3.5" aria-hidden data-testid={`channel-icon-${channelInfo.id}`} />
+            {channelInfo.label}
+          </span>
+          <span className="text-sm text-foreground">{directionLabel}</span>
+        </div>
+        <span className="text-xs text-foreground-muted">{directionSummary}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="flex flex-col gap-1">
@@ -547,6 +780,7 @@ export const ConversationHeader = ({
   isRegisteringResult = false,
   renderSummary,
   onContactFieldSave,
+  onDealFieldSave,
   nextStepValue,
   onNextStepSave,
   onFocusComposer,
@@ -554,15 +788,74 @@ export const ConversationHeader = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
+  const nextStepEditorRef = useRef(null);
+  const collapseFrameRef = useRef(null);
+
+  const clearCollapseFrame = useCallback(() => {
+    if (collapseFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(collapseFrameRef.current);
+    }
+    collapseFrameRef.current = null;
+  }, []);
+
+  const focusNextStepEditor = useCallback(() => {
+    const target = nextStepEditorRef.current;
+    if (!target || typeof target.focus !== 'function') {
+      return false;
+    }
+    return Boolean(target.focus());
+  }, []);
+
+  const revealNextStepEditor = useCallback(() => {
+    const focusOrFallback = () => {
+      const focused = focusNextStepEditor();
+      if (!focused) {
+        onFocusComposer?.();
+      }
+    };
+
+    clearCollapseFrame();
+    setIsExpanded(true);
+
+    if (isExpanded) {
+      focusOrFallback();
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const schedule = window.requestAnimationFrame ?? ((cb) => window.setTimeout(cb, 16));
+      schedule(() => focusOrFallback());
+    } else {
+      focusOrFallback();
+    }
+  }, [clearCollapseFrame, focusNextStepEditor, isExpanded, onFocusComposer]);
   const dialogReturnFocusRef = useRef(null);
   const jro = useTicketJro(ticket);
   const { stageKey, primaryAction } = useStageInfo(ticket);
 
   useEffect(() => {
-    if (!ticket) return;
+    if (!ticket) return undefined;
+
     setIsExpanded(false);
-    const frame = requestAnimationFrame(() => setIsExpanded(false));
-    return () => cancelAnimationFrame(frame);
+
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(() => {
+        setIsExpanded(false);
+        collapseFrameRef.current = null;
+      });
+      collapseFrameRef.current = frame;
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(frame);
+        }
+        if (collapseFrameRef.current === frame) {
+          collapseFrameRef.current = null;
+        }
+      };
+    }
+
+    collapseFrameRef.current = null;
+    return undefined;
   }, [ticket?.id]);
 
   useEffect(() => {
@@ -594,6 +887,7 @@ export const ConversationHeader = ({
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
+  const stageLabel = useMemo(() => formatStageLabel(stageKey), [stageKey]);
 
   const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
@@ -714,7 +1008,7 @@ export const ConversationHeader = ({
         onEditContact?.(ticket?.contact?.id ?? null);
         break;
       case 'qualify':
-        onScheduleFollowUp?.(ticket);
+        revealNextStepEditor();
         break;
       case 'generate-proposal':
         onGenerateProposal?.(ticket);
@@ -731,10 +1025,26 @@ export const ConversationHeader = ({
       default:
         break;
     }
-  }, [handleCall, onEditContact, onFocusComposer, onGenerateProposal, onScheduleFollowUp, onSendTemplate, openDialog, primaryAction, ticket]);
+  }, [
+    handleCall,
+    onFocusComposer,
+    onGenerateProposal,
+    onScheduleFollowUp,
+    onSendTemplate,
+    openDialog,
+    primaryAction,
+    revealNextStepEditor,
+    ticket,
+  ]);
+
+  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
+  const handleAssign = useCallback(() => {
+    if (!ticket) return;
+    onAssign?.(ticket);
+  }, [onAssign, ticket]);
 
   const summaryContent = (
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar className="h-12 w-12">
           <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
@@ -748,6 +1058,7 @@ export const ConversationHeader = ({
               </span>
             ) : null}
             <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
+            {stageKey ? <Chip tone="neutral">{stageLabel}</Chip> : null}
             {origin ? <Chip tone="neutral">{origin}</Chip> : null}
           </div>
           <div className="mt-2">
@@ -755,8 +1066,49 @@ export const ConversationHeader = ({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <TypingIndicator agents={typingAgents} />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {(() => {
+            const assigneeBadge = (
+              <Badge
+                variant="outline"
+                className="flex min-w-0 max-w-[200px] items-center gap-1 border-surface-overlay-glass-border text-xs text-foreground"
+              >
+                <UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="truncate">
+                  {assigneeInfo.label}
+                </span>
+              </Badge>
+            );
+
+            if (currentUser?.id && (ticket?.assignee?.id ?? ticket?.assignedTo?.id) !== currentUser.id) {
+              return (
+                <>
+                  {assigneeBadge}
+                  <Button type="button" size="xs" variant="outline" onClick={handleAssign} className="shrink-0">
+                    Assumir
+                  </Button>
+                </>
+              );
+            }
+
+            const tooltipLabel = assigneeInfo.assignee
+              ? `Responsável: ${assigneeInfo.label}`
+              : 'Disponível para atendimento';
+
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>{assigneeBadge}</TooltipTrigger>
+                <TooltipContent>
+                  <span className="text-xs font-medium text-foreground">{tooltipLabel}</span>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })()}
+        </div>
+        <div className="shrink-0">
+          <TypingIndicator agents={typingAgents} />
+        </div>
         <PrimaryActionButton
           action={primaryAction}
           jroState={jro.state}
@@ -765,14 +1117,14 @@ export const ConversationHeader = ({
         />
         <CommandBar
           context={commandContext}
-          className="w-auto flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
+          className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
         />
         <CollapsibleTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="h-9 w-9 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
+            className="h-9 w-9 shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
             aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
           >
             <ChevronDown
@@ -785,28 +1137,9 @@ export const ConversationHeader = ({
     </div>
   );
 
-  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
-  const handleAssign = useCallback(() => {
-    if (!ticket) return;
-    onAssign?.(ticket);
-  }, [onAssign, ticket]);
-
   const contactContent = (
     <div className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">Contato</h4>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="gap-1 border-surface-overlay-glass-border text-xs text-foreground">
-            <UserCheck className="h-3.5 w-3.5" aria-hidden />
-            {assigneeInfo.label}
-          </Badge>
-          {currentUser?.id && ticket?.assignee?.id !== currentUser.id ? (
-            <Button type="button" size="xs" variant="outline" onClick={handleAssign}>
-              Assumir
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <h4 className="text-sm font-semibold text-foreground">Contato</h4>
       <InlineField
         label="Nome"
         value={ticket?.contact?.name ?? ''}
@@ -860,9 +1193,71 @@ export const ConversationHeader = ({
         </div>
       </div>
       <ContactSummary ticket={ticket} />
-      <NextStepEditor value={nextStepValue} onSave={onNextStepSave} />
+      <NextStepEditor ref={nextStepEditorRef} value={nextStepValue} onSave={onNextStepSave} />
     </div>
   );
+
+  const shouldShowDealPanel = DEAL_STAGE_KEYS.has(stageKey);
+
+  const dealFields = useMemo(() => {
+    if (!shouldShowDealPanel) {
+      return {};
+    }
+
+    const leadDeal =
+      ticket?.lead?.customFields?.deal && typeof ticket.lead.customFields.deal === 'object'
+        ? ticket.lead.customFields.deal
+        : null;
+    const metadataDeal =
+      ticket?.metadata?.deal && typeof ticket.metadata.deal === 'object'
+        ? ticket.metadata.deal
+        : null;
+
+    return leadDeal ?? metadataDeal ?? {};
+  }, [shouldShowDealPanel, ticket?.lead?.customFields?.deal, ticket?.metadata?.deal]);
+
+  const dealContent = shouldShowDealPanel ? (
+    <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-foreground">Liquidação</h4>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InlineField
+          label="Parcela"
+          value={dealFields?.installmentValue ?? ''}
+          placeholder="R$ 0,00"
+          formatter={formatCurrencyField}
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('installmentValue', value) : undefined}
+        />
+        <InlineField
+          label="Líquido"
+          value={dealFields?.netValue ?? ''}
+          placeholder="R$ 0,00"
+          formatter={formatCurrencyField}
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('netValue', value) : undefined}
+        />
+        <InlineField
+          label="Prazo"
+          value={dealFields?.term ?? ''}
+          placeholder="12 meses"
+          formatter={formatTermField}
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('term', value) : undefined}
+        />
+        <InlineField
+          label="Produto"
+          value={dealFields?.product ?? ''}
+          placeholder="Produto contratado"
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('product', value) : undefined}
+        />
+        <InlineField
+          label="Banco"
+          value={dealFields?.bank ?? ''}
+          placeholder="Banco parceiro"
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('bank', value) : undefined}
+        />
+      </div>
+    </div>
+  ) : null;
 
   const attachments = useMemo(() => {
     const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
@@ -875,6 +1270,7 @@ export const ConversationHeader = ({
     <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
       {contactContent}
       <div className="flex min-h-0 flex-col gap-4">
+        {dealContent}
         <div className="rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4 text-xs text-foreground-muted">
           <div className="flex items-center gap-2 text-foreground">
             <AlertTriangle className="h-4 w-4" aria-hidden />
@@ -954,5 +1350,5 @@ export const ConversationHeader = ({
   );
 };
 
-export { normalizeStage, resolvePrimaryAction, PRIMARY_ACTION_MAP, PrimaryActionButton };
+export { normalizeStage, resolvePrimaryAction, formatStageLabel, PRIMARY_ACTION_MAP, PrimaryActionButton };
 export default ConversationHeader;
