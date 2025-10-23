@@ -171,6 +171,7 @@ describe('ChatCommandCenter next step editor', () => {
     ConversationAreaMock.mockClear();
     ConversationAreaMock.props = undefined;
     toast.error.mockClear();
+    toast.success.mockClear();
   });
 
   afterEach(() => {
@@ -205,6 +206,7 @@ describe('ChatCommandCenter next step editor', () => {
     );
 
     expect(ConversationAreaMock.props?.nextStepValue).toBe('  Enviar contrato  ');
+    expect(toast.success).toHaveBeenCalledWith('Próximo passo atualizado.');
   });
 
   it('propaga erros da API e exibe toast de erro', async () => {

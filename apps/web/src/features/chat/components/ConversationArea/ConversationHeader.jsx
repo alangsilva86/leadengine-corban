@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, useId, useImperativeHandle } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import {
@@ -299,8 +299,28 @@ const InlineField = ({
   );
 };
 
-const NextStepEditor = ({ value, onSave }) => {
+const NextStepEditor = forwardRef(({ value, onSave }, ref) => {
   const { draft, status, handleChange } = useInlineEditor(value ?? '', onSave, 700);
+  const textareaRef = useRef(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        const node = textareaRef.current;
+        if (!node || typeof node.focus !== 'function') {
+          return false;
+        }
+        node.focus();
+        if (typeof node.setSelectionRange === 'function') {
+          const length = node.value?.length ?? 0;
+          node.setSelectionRange(length, length);
+        }
+        return true;
+      },
+    }),
+    []
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -317,6 +337,7 @@ const NextStepEditor = ({ value, onSave }) => {
         ) : null}
       </div>
       <Textarea
+        ref={textareaRef}
         value={draft}
         onChange={handleChange}
         placeholder="Descreva o próximo passo combinado"
@@ -327,7 +348,9 @@ const NextStepEditor = ({ value, onSave }) => {
       />
     </div>
   );
-};
+});
+
+NextStepEditor.displayName = 'NextStepEditor';
 
 const getOriginLabel = (ticket) => {
   const origin =
@@ -518,15 +541,74 @@ export const ConversationHeader = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
+  const nextStepEditorRef = useRef(null);
+  const collapseFrameRef = useRef(null);
+
+  const clearCollapseFrame = useCallback(() => {
+    if (collapseFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(collapseFrameRef.current);
+    }
+    collapseFrameRef.current = null;
+  }, []);
+
+  const focusNextStepEditor = useCallback(() => {
+    const target = nextStepEditorRef.current;
+    if (!target || typeof target.focus !== 'function') {
+      return false;
+    }
+    return Boolean(target.focus());
+  }, []);
+
+  const revealNextStepEditor = useCallback(() => {
+    const focusOrFallback = () => {
+      const focused = focusNextStepEditor();
+      if (!focused) {
+        onFocusComposer?.();
+      }
+    };
+
+    clearCollapseFrame();
+    setIsExpanded(true);
+
+    if (isExpanded) {
+      focusOrFallback();
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const schedule = window.requestAnimationFrame ?? ((cb) => window.setTimeout(cb, 16));
+      schedule(() => focusOrFallback());
+    } else {
+      focusOrFallback();
+    }
+  }, [clearCollapseFrame, focusNextStepEditor, isExpanded, onFocusComposer]);
   const dialogReturnFocusRef = useRef(null);
   const jro = useTicketJro(ticket);
   const { stageKey, primaryAction } = useStageInfo(ticket);
 
   useEffect(() => {
-    if (!ticket) return;
+    if (!ticket) return undefined;
+
     setIsExpanded(false);
-    const frame = requestAnimationFrame(() => setIsExpanded(false));
-    return () => cancelAnimationFrame(frame);
+
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(() => {
+        setIsExpanded(false);
+        collapseFrameRef.current = null;
+      });
+      collapseFrameRef.current = frame;
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(frame);
+        }
+        if (collapseFrameRef.current === frame) {
+          collapseFrameRef.current = null;
+        }
+      };
+    }
+
+    collapseFrameRef.current = null;
+    return undefined;
   }, [ticket?.id]);
 
   useEffect(() => {
@@ -675,7 +757,7 @@ export const ConversationHeader = ({
         handleCall();
         break;
       case 'qualify':
-        onScheduleFollowUp?.(ticket);
+        revealNextStepEditor();
         break;
       case 'generate-proposal':
         onGenerateProposal?.(ticket);
@@ -692,7 +774,17 @@ export const ConversationHeader = ({
       default:
         break;
     }
-  }, [handleCall, onEditContact, onFocusComposer, onGenerateProposal, onScheduleFollowUp, onSendTemplate, openDialog, primaryAction, ticket]);
+  }, [
+    handleCall,
+    onFocusComposer,
+    onGenerateProposal,
+    onScheduleFollowUp,
+    onSendTemplate,
+    openDialog,
+    primaryAction,
+    revealNextStepEditor,
+    ticket,
+  ]);
 
   const summaryContent = (
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -821,7 +913,7 @@ export const ConversationHeader = ({
         </div>
       </div>
       <ContactSummary ticket={ticket} />
-      <NextStepEditor value={nextStepValue} onSave={onNextStepSave} />
+      <NextStepEditor ref={nextStepEditorRef} value={nextStepValue} onSave={onNextStepSave} />
     </div>
   );
 
