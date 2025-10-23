@@ -38,7 +38,6 @@ import {
   UserCheck,
   UserClock,
 } from 'lucide-react';
-import { ChevronDown, Phone, Edit3, Copy as CopyIcon, AlertTriangle, MessageCircle, Mail } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import emitInboxTelemetry from '../../utils/telemetry.js';
@@ -848,6 +847,7 @@ const ConversationHeader = ({
   nextStepValue,
   onNextStepSave,
   onFocusComposer,
+  composerHeight,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -1378,9 +1378,22 @@ const ConversationHeader = ({
     ? renderSummary(summaryContent, { isExpanded, onOpenChange: setIsExpanded })
     : summaryContent;
 
+  const detailsStyle = useMemo(() => {
+    if (typeof composerHeight !== 'number' || Number.isNaN(composerHeight) || composerHeight <= 0) {
+      return undefined;
+    }
+    return {
+      '--conversation-header-composer': `${composerHeight}px`,
+    };
+  }, [composerHeight]);
+
   const renderedDetails = (
     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-      <div className="mt-4 max-h-[calc(100vh-18rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
+      <div
+        data-testid="conversation-header-details"
+        className="mt-4 max-h-[calc(100vh-var(--conversation-header-composer,18rem))] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]"
+        style={detailsStyle}
+      >
         {detailsContent}
       </div>
     </CollapsibleContent>
