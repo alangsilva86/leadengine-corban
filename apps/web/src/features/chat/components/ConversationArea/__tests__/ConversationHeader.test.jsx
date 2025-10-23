@@ -1,12 +1,46 @@
+/** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import {
+import ConversationHeader, {
   normalizeStage,
   resolvePrimaryAction,
   PrimaryActionButton,
 } from '../ConversationHeader.jsx';
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
+vi.mock('../../utils/telemetry.js', () => ({
+  __esModule: true,
+  default: vi.fn(),
+}));
+
+vi.mock('../QuickComposer.jsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="quick-composer">QuickComposer</div>,
+}));
+
+vi.mock('../CallResultDialog.jsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="call-result-dialog">CallResultDialog</div>,
+}));
+
+vi.mock('../LossReasonDialog.jsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="loss-reason-dialog">LossReasonDialog</div>,
+}));
+
+afterEach(() => {
+  cleanup();
+});
 
 const STAGE_SCENARIOS = [
   { raw: 'Novo', key: 'NOVO', hasWhatsApp: true },
@@ -47,5 +81,79 @@ describe('ConversationHeader helpers', () => {
       expect(screen.getByRole('button', { name: action.label })).toBeInTheDocument();
       unmount();
     });
+  });
+});
+
+describe('ContactSummary channel icons', () => {
+  beforeAll(() => {
+    vi.stubGlobal('requestAnimationFrame', (callback) => {
+      const id = setTimeout(() => callback(Date.now()), 0);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id) => {
+      clearTimeout(id);
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const renderHeaderWithChannel = async (channel) => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+    const ticket = {
+      id: 'ticket-channel',
+      status: 'OPEN',
+      channel: 'WHATSAPP',
+      contact: { id: 'contact-1', name: 'Maria Cliente', phone: '+55 11 90000-0000' },
+      metadata: { contactPhone: '+55 11 90000-0000' },
+      timeline: {
+        lastDirection: 'INBOUND',
+        lastInboundAt: fiveMinutesAgo,
+        lastOutboundAt: tenMinutesAgo,
+        lastChannel: channel,
+      },
+    };
+
+    render(
+      <ConversationHeader
+        ticket={ticket}
+        typingAgents={[]}
+        onAssign={() => {}}
+        onScheduleFollowUp={() => {}}
+        onRegisterResult={() => {}}
+        onRegisterCallResult={() => {}}
+        onSendTemplate={() => {}}
+        onCreateNextStep={() => {}}
+        onGenerateProposal={() => {}}
+        onSendSMS={() => {}}
+        onAttachFile={() => {}}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const toggleButton = screen.getByRole('button', { name: /Expandir detalhes/i });
+    await user.click(toggleButton);
+  };
+
+  it('renders WhatsApp icon when last interaction is via WhatsApp', async () => {
+    await renderHeaderWithChannel('whatsapp');
+    expect(await screen.findByTestId('channel-icon-whatsapp')).toBeInTheDocument();
+  });
+
+  it('renders phone icon when last interaction is via voice channel', async () => {
+    await renderHeaderWithChannel('voice');
+    expect(await screen.findByTestId('channel-icon-voice')).toBeInTheDocument();
+  });
+
+  it('renders email icon when last interaction is via email', async () => {
+    await renderHeaderWithChannel('email');
+    expect(await screen.findByTestId('channel-icon-email')).toBeInTheDocument();
   });
 });

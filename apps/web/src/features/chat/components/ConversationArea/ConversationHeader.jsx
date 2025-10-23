@@ -13,7 +13,9 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
-import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle, MessageCircle, Mail } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
@@ -127,6 +129,114 @@ const PRIMARY_BUTTON_TONE = {
   yellow: 'bg-amber-500 text-white hover:bg-amber-500/90',
   orange: 'bg-orange-500 text-white hover:bg-orange-500/90',
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
+};
+
+const CHANNEL_PRESENTATION = {
+  WHATSAPP: {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    icon: MessageCircle,
+    className:
+      'border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)]',
+  },
+  VOICE: {
+    id: 'voice',
+    label: 'Telefone',
+    icon: Phone,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+  },
+  EMAIL: {
+    id: 'email',
+    label: 'E-mail',
+    icon: Mail,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+  },
+  DEFAULT: {
+    id: 'unknown',
+    label: 'Canal não identificado',
+    icon: MessageCircle,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  },
+};
+
+const normalizeChannel = (value) => {
+  if (!value) return null;
+
+  const normalized = String(value)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toUpperCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'PHONE' || normalized === 'TELEFONE' || normalized === 'CALL') {
+    return 'VOICE';
+  }
+
+  if (normalized === 'E-MAIL' || normalized === 'MAIL') {
+    return 'EMAIL';
+  }
+
+  if (normalized === 'WA') {
+    return 'WHATSAPP';
+  }
+
+  return normalized;
+};
+
+const resolveChannelInfo = (channel) => {
+  const normalized = normalizeChannel(channel);
+  return CHANNEL_PRESENTATION[normalized] ?? CHANNEL_PRESENTATION.DEFAULT;
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+};
+
+const formatRelativeTime = (value) => {
+  const date = parseDateValue(value);
+  if (!date) {
+    return null;
+  }
+
+  try {
+    return formatDistanceToNow(date, { addSuffix: true, locale: ptBR });
+  } catch {
+    return null;
+  }
+};
+
+const getLastInteractionTimestamp = (timeline) => {
+  if (!timeline) {
+    return null;
+  }
+
+  const inboundDate = parseDateValue(timeline.lastInboundAt);
+  const outboundDate = parseDateValue(timeline.lastOutboundAt);
+  const direction = timeline.lastDirection ?? null;
+
+  if (direction === 'INBOUND' && inboundDate) {
+    return inboundDate;
+  }
+
+  if (direction === 'OUTBOUND' && outboundDate) {
+    return outboundDate;
+  }
+
+  if (inboundDate && outboundDate) {
+    return inboundDate > outboundDate ? inboundDate : outboundDate;
+  }
+
+  return inboundDate ?? outboundDate ?? null;
 };
 
 const normalizeStage = (value) => {
@@ -463,6 +573,35 @@ const ContactSummary = ({ ticket }) => {
   const lastInbound = timeline.lastInboundAt ? formatDateTime(timeline.lastInboundAt) : '—';
   const lastOutbound = timeline.lastOutboundAt ? formatDateTime(timeline.lastOutboundAt) : '—';
   const lastDirection = timeline.lastDirection ?? null;
+  const lastChannel =
+    timeline.lastChannel ??
+    timeline.lastMessageChannel ??
+    (lastDirection === 'INBOUND' ? timeline.lastInboundChannel : timeline.lastOutboundChannel) ??
+    timeline.lastInboundChannel ??
+    timeline.lastOutboundChannel ??
+    timeline.channel ??
+    ticket?.channel ??
+    ticket?.metadata?.lastChannel ??
+    null;
+
+  const channelInfo = useMemo(() => resolveChannelInfo(lastChannel), [lastChannel]);
+
+  const lastInteractionDate = useMemo(
+    () => getLastInteractionTimestamp(timeline),
+    [timeline.lastDirection, timeline.lastInboundAt, timeline.lastOutboundAt],
+  );
+
+  const relativeTime = useMemo(() => formatRelativeTime(lastInteractionDate), [lastInteractionDate]);
+
+  const directionActor = useMemo(() => {
+    if (lastDirection === 'INBOUND') {
+      return 'Cliente';
+    }
+    if (lastDirection === 'OUTBOUND') {
+      return 'Equipe';
+    }
+    return null;
+  }, [lastDirection]);
 
   const directionLabel = useMemo(() => {
     switch (lastDirection) {
@@ -475,11 +614,41 @@ const ContactSummary = ({ ticket }) => {
     }
   }, [lastDirection]);
 
+  const directionSummary = useMemo(() => {
+    if (directionActor && relativeTime) {
+      return `${directionActor} • ${relativeTime}`;
+    }
+
+    if (directionActor) {
+      return directionActor;
+    }
+
+    if (relativeTime) {
+      return relativeTime;
+    }
+
+    return 'Sem interações registradas';
+  }, [directionActor, relativeTime]);
+
+  const ChannelIcon = channelInfo.icon;
+
   return (
     <div className="grid gap-3 text-sm">
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Última interação</span>
-        <span className="text-foreground">{directionLabel}</span>
+        <div className="flex flex-wrap items-center gap-2 text-foreground">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium',
+              channelInfo.className,
+            )}
+          >
+            <ChannelIcon className="h-3.5 w-3.5" aria-hidden data-testid={`channel-icon-${channelInfo.id}`} />
+            {channelInfo.label}
+          </span>
+          <span className="text-sm text-foreground">{directionLabel}</span>
+        </div>
+        <span className="text-xs text-foreground-muted">{directionSummary}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="flex flex-col gap-1">
