@@ -70,6 +70,7 @@ This document summarises the public surface of each internal package under `pack
 
 - Message payload schemas (`SendByTicketSchema`, `SendByContactSchema`, `SendByInstanceSchema`) and normalisation helpers used to validate outbound requests.【F:packages/contracts/src/messages.ts†L333-L420】
 - Generated OpenAPI types re-exported from the root index for API clients.【F:packages/contracts/src/index.ts†L1-L2】
+- Contact response schemas have been retired; clients should source typings from the generated OpenAPI definitions instead of the removed `contacts.ts` module.【F:packages/contracts/src/index.ts†L1-L2】
 
 **Consumers**
 
