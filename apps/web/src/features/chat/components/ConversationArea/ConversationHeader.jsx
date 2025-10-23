@@ -486,7 +486,10 @@ const PrimaryActionButton = ({ action, jroState, onExecute, disabled }) => {
       type="button"
       onClick={onExecute}
       disabled={disabled}
-      className={cn('flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]', toneClass)}
+      className={cn(
+        'flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]',
+        toneClass,
+      )}
     >
       <span>{action.label}</span>
     </Button>
@@ -730,8 +733,14 @@ export const ConversationHeader = ({
     }
   }, [handleCall, onEditContact, onFocusComposer, onGenerateProposal, onScheduleFollowUp, onSendTemplate, openDialog, primaryAction, ticket]);
 
+  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
+  const handleAssign = useCallback(() => {
+    if (!ticket) return;
+    onAssign?.(ticket);
+  }, [onAssign, ticket]);
+
   const summaryContent = (
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar className="h-12 w-12">
           <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
@@ -753,8 +762,49 @@ export const ConversationHeader = ({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <TypingIndicator agents={typingAgents} />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {(() => {
+            const assigneeBadge = (
+              <Badge
+                variant="outline"
+                className="flex min-w-0 max-w-[200px] items-center gap-1 border-surface-overlay-glass-border text-xs text-foreground"
+              >
+                <UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="truncate">
+                  {assigneeInfo.label}
+                </span>
+              </Badge>
+            );
+
+            if (currentUser?.id && (ticket?.assignee?.id ?? ticket?.assignedTo?.id) !== currentUser.id) {
+              return (
+                <>
+                  {assigneeBadge}
+                  <Button type="button" size="xs" variant="outline" onClick={handleAssign} className="shrink-0">
+                    Assumir
+                  </Button>
+                </>
+              );
+            }
+
+            const tooltipLabel = assigneeInfo.assignee
+              ? `Responsável: ${assigneeInfo.label}`
+              : 'Disponível para atendimento';
+
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>{assigneeBadge}</TooltipTrigger>
+                <TooltipContent>
+                  <span className="text-xs font-medium text-foreground">{tooltipLabel}</span>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })()}
+        </div>
+        <div className="shrink-0">
+          <TypingIndicator agents={typingAgents} />
+        </div>
         <PrimaryActionButton
           action={primaryAction}
           jroState={jro.state}
@@ -763,14 +813,14 @@ export const ConversationHeader = ({
         />
         <CommandBar
           context={commandContext}
-          className="w-auto flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
+          className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
         />
         <CollapsibleTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="h-9 w-9 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
+            className="h-9 w-9 shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
             aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
           >
             <ChevronDown
@@ -783,28 +833,9 @@ export const ConversationHeader = ({
     </div>
   );
 
-  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
-  const handleAssign = useCallback(() => {
-    if (!ticket) return;
-    onAssign?.(ticket);
-  }, [onAssign, ticket]);
-
   const contactContent = (
     <div className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">Contato</h4>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="gap-1 border-surface-overlay-glass-border text-xs text-foreground">
-            <UserCheck className="h-3.5 w-3.5" aria-hidden />
-            {assigneeInfo.label}
-          </Badge>
-          {currentUser?.id && ticket?.assignee?.id !== currentUser.id ? (
-            <Button type="button" size="xs" variant="outline" onClick={handleAssign}>
-              Assumir
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <h4 className="text-sm font-semibold text-foreground">Contato</h4>
       <InlineField
         label="Nome"
         value={ticket?.contact?.name ?? ''}
