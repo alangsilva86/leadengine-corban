@@ -2,10 +2,11 @@ import '@testing-library/jest-dom/vitest';
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
-import {
+import ConversationHeader, {
   normalizeStage,
   resolvePrimaryAction,
   PrimaryActionButton,
+  formatStageLabel,
 } from '../ConversationHeader.jsx';
 
 const STAGE_SCENARIOS = [
@@ -45,6 +46,25 @@ describe('ConversationHeader helpers', () => {
         <PrimaryActionButton action={action} jroState="neutral" onExecute={() => {}} disabled={false} />,
       );
       expect(screen.getByRole('button', { name: action.label })).toBeInTheDocument();
+      unmount();
+    });
+  });
+
+  it('renders a chip with the formatted stage label for each scenario', () => {
+    STAGE_SCENARIOS.forEach(({ raw, key }) => {
+      const ticket = {
+        id: `ticket-${key}`,
+        status: 'OPEN',
+        pipelineStep: raw,
+        contact: { name: 'Cliente Teste' },
+        window: {},
+        lead: {},
+      };
+
+      const { unmount } = render(<ConversationHeader ticket={ticket} />);
+
+      expect(screen.getByText(formatStageLabel(key))).toBeInTheDocument();
+
       unmount();
     });
   });
