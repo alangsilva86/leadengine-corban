@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Brain, Paperclip, Smile, Send, Loader2, X } from 'lucide-react';
@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge.jsx';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
 import { useUploadWhatsAppMedia } from '../../api/useUploadWhatsAppMedia.js';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 
 const DEFAULT_REPLIES = [
   { id: 'hello', label: 'Saudação', text: 'Olá! Aqui é da Corban, tudo bem?' },
@@ -18,6 +19,79 @@ const COMMANDS = {
   '/nota': 'note',
   '/follow': 'follow-up',
 };
+
+const DEFAULT_EMOJIS = [
+  '😀',
+  '😁',
+  '😂',
+  '🤣',
+  '😃',
+  '😄',
+  '😅',
+  '😆',
+  '😉',
+  '😊',
+  '😋',
+  '😎',
+  '😍',
+  '😘',
+  '🥰',
+  '😗',
+  '😙',
+  '😚',
+  '🙂',
+  '🤗',
+  '🤩',
+  '🤔',
+  '🤨',
+  '😐',
+  '😑',
+  '😶',
+  '🙄',
+  '😏',
+  '😣',
+  '😥',
+  '😮',
+  '🤐',
+  '😯',
+  '😪',
+  '😫',
+  '🥱',
+  '😴',
+  '😌',
+  '😛',
+  '😜',
+  '🤪',
+  '😝',
+  '🤤',
+  '😒',
+  '😓',
+  '😔',
+  '😕',
+  '🙃',
+  '🤑',
+  '😭',
+  '😤',
+  '😡',
+  '😱',
+  '😳',
+  '🤯',
+  '🥳',
+  '🥺',
+  '🤠',
+  '🤡',
+  '🥶',
+  '🥵',
+  '🤧',
+  '🤮',
+  '🤒',
+  '🤕',
+  '🫠',
+  '🫡',
+  '🫢',
+  '🫣',
+  '🫠',
+];
 
 const detectCommand = (value) => {
   const trimmed = value.trimStart();
@@ -48,6 +122,7 @@ export const Composer = forwardRef(function Composer(
 ) {
   const [value, setValue] = useState('');
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -80,10 +155,17 @@ export const Composer = forwardRef(function Composer(
     }
   }, [attachments.length, uploadError]);
 
+  useEffect(() => {
+    if (disabled) {
+      setEmojiPickerOpen(false);
+    }
+  }, [disabled]);
+
   const resetComposer = () => {
     setValue('');
     setAttachments([]);
     setTemplatePickerOpen(false);
+    setEmojiPickerOpen(false);
     setUploadError(null);
   };
 
@@ -179,6 +261,18 @@ export const Composer = forwardRef(function Composer(
     setAttachments((current) => current.filter((item) => item.id !== id));
   };
 
+  const handleSelectEmoji = useCallback(
+    (emoji) => {
+      if (!emoji || disabled) {
+        return;
+      }
+      setValue((current) => `${current ?? ''}${emoji}`);
+      setEmojiPickerOpen(false);
+      textareaRef.current?.focus();
+    },
+    [disabled]
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -252,15 +346,35 @@ export const Composer = forwardRef(function Composer(
               multiple
               onChange={handleFilesSelected}
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
-              onClick={() => setTemplatePickerOpen((open) => !open)}
-            >
-              <Smile className="h-4 w-4" />
-              <span className="sr-only">Abrir sugestões</span>
-            </Button>
+            <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
+                  disabled={disabled || isSending || isUploading}
+                >
+                  <Smile className="h-4 w-4" />
+                  <span className="sr-only">Abrir emojis</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 max-h-60 overflow-y-auto rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet p-3">
+                <div className="grid grid-cols-8 gap-1">
+                  {DEFAULT_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-surface-overlay-strong"
+                      onClick={() => handleSelectEmoji(emoji)}
+                    >
+                      <span role="img" aria-label="emoji">
+                        {emoji}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               variant="ghost"
               size="icon"
