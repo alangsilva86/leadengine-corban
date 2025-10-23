@@ -71,34 +71,46 @@ const CHIP_STYLES = {
   success: 'border-success-soft-border bg-success-soft text-success-strong',
 };
 
-const PRIMARY_ACTION_MAP = {
-  NOVO: {
+const PRIMARY_ACTION_PRESETS = {
+  initialContact: {
     whatsapp: { id: 'send-initial-wa', label: 'Enviar 1ª mensagem (WhatsApp)' },
     fallback: { id: 'call-now', label: 'Ligar agora' },
   },
-  CONECTADO: {
+  keepEngagement: {
     whatsapp: { id: 'send-wa', label: 'Enviar mensagem (WhatsApp)' },
     fallback: { id: 'call-now', label: 'Ligar agora' },
   },
-  QUALIFICACAO: {
+  qualify: {
     default: { id: 'qualify', label: 'Registrar próximo passo' },
   },
-  QUALIFICACAO_: {
-    default: { id: 'qualify', label: 'Registrar próximo passo' },
-  },
-  PROPOSTA: {
+  proposal: {
     default: { id: 'generate-proposal', label: 'Gerar proposta' },
   },
-  DOCUMENTACAO: {
+  documentation: {
     default: { id: 'send-steps', label: 'Enviar passo a passo' },
   },
-  AGUARDANDO: {
+  followUp: {
     whatsapp: { id: 'send-followup', label: 'Enviar follow-up' },
     fallback: { id: 'call-followup', label: 'Ligar (follow-up)' },
   },
-  LIQUIDACAO: {
+  closeDeal: {
     default: { id: 'close-register', label: 'Registrar resultado' },
   },
+};
+
+const PRIMARY_ACTION_MAP = {
+  NOVO: PRIMARY_ACTION_PRESETS.initialContact,
+  CONECTADO: PRIMARY_ACTION_PRESETS.keepEngagement,
+  QUALIFICACAO: PRIMARY_ACTION_PRESETS.qualify,
+  QUALIFICACAO_: PRIMARY_ACTION_PRESETS.qualify,
+  PROPOSTA: PRIMARY_ACTION_PRESETS.proposal,
+  DOCUMENTACAO: PRIMARY_ACTION_PRESETS.documentation,
+  DOCUMENTOS_AVERBACAO: PRIMARY_ACTION_PRESETS.documentation,
+  AGUARDANDO: PRIMARY_ACTION_PRESETS.followUp,
+  AGUARDANDO_CLIENTE: PRIMARY_ACTION_PRESETS.followUp,
+  LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
+  APROVADO_LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
+  RECICLAR: PRIMARY_ACTION_PRESETS.followUp,
 };
 
 const JRO_TONE_CLASSES = {
@@ -129,13 +141,17 @@ const PRIMARY_BUTTON_TONE = {
 
 const normalizeStage = (value) => {
   if (!value) return 'DESCONHECIDO';
-  return value
+  const canonical = value
     .toString()
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, '_');
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+
+  return canonical || 'DESCONHECIDO';
 };
 
 const getStatusInfo = (status) => {
@@ -917,4 +933,5 @@ export const ConversationHeader = ({
   );
 };
 
+export { normalizeStage, resolvePrimaryAction, PRIMARY_ACTION_MAP, PrimaryActionButton };
 export default ConversationHeader;
