@@ -351,6 +351,41 @@ const getTicketStage = (ticket) => {
   return normalizeStage(stage);
 };
 
+const STAGE_LABELS = {
+  NOVO: 'Novo',
+  CONECTADO: 'Conectado',
+  QUALIFICACAO: 'Qualificação',
+  PROPOSTA: 'Proposta',
+  DOCUMENTACAO: 'Documentação',
+  DOCUMENTOS_AVERBACAO: 'Documentos/Averbação',
+  AGUARDANDO: 'Aguardando',
+  AGUARDANDO_CLIENTE: 'Aguardando Cliente',
+  LIQUIDACAO: 'Liquidação',
+  APROVADO_LIQUIDACAO: 'Aprovado/Liquidação',
+  RECICLAR: 'Reciclar',
+  DESCONHECIDO: 'Desconhecido',
+};
+
+const formatFallbackStageLabel = (stageKey) =>
+  stageKey
+    .split('_')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0) + segment.slice(1).toLowerCase())
+    .join(' ');
+
+const formatStageLabel = (stageKey) => {
+  const normalized = normalizeStage(stageKey);
+  if (STAGE_LABELS[normalized]) {
+    return STAGE_LABELS[normalized];
+  }
+
+  if (normalized === 'DESCONHECIDO') {
+    return STAGE_LABELS.DESCONHECIDO;
+  }
+
+  return formatFallbackStageLabel(normalized);
+};
+
 const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
   const preset = PRIMARY_ACTION_MAP[stageKey] ?? PRIMARY_ACTION_MAP[`${stageKey}_`];
   if (!preset) {
@@ -558,6 +593,7 @@ export const ConversationHeader = ({
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
+  const stageLabel = useMemo(() => formatStageLabel(stageKey), [stageKey]);
 
   const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
@@ -709,6 +745,7 @@ export const ConversationHeader = ({
               </span>
             ) : null}
             <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
+            {stageKey ? <Chip tone="neutral">{stageLabel}</Chip> : null}
             {origin ? <Chip tone="neutral">{origin}</Chip> : null}
           </div>
           <div className="mt-2">
@@ -915,5 +952,5 @@ export const ConversationHeader = ({
   );
 };
 
-export { normalizeStage, resolvePrimaryAction, PRIMARY_ACTION_MAP, PrimaryActionButton };
+export { normalizeStage, resolvePrimaryAction, formatStageLabel, PRIMARY_ACTION_MAP, PrimaryActionButton };
 export default ConversationHeader;
