@@ -13,6 +13,7 @@ import { useManualConversationLauncher } from './hooks/useManualConversationLaun
 import emitInboxTelemetry from './utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import useUpdateContactField from './api/useUpdateContactField.js';
+import useUpdateNextStep from './api/useUpdateNextStep.js';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
@@ -44,6 +45,9 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const selectedContact = selectedTicket?.contact ?? null;
   const updateContactFieldMutation = useUpdateContactField({
     contactId: selectedContact?.id,
+  });
+  const updateNextStepMutation = useUpdateNextStep({
+    ticketId: selectedTicket?.id,
   });
   const [nextStepDraft, setNextStepDraft] = useState('');
   const {
@@ -193,10 +197,68 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     [selectedContact?.id, selectedContact?.name, selectedContact?.document, selectedContact?.email, selectedContact?.phone, updateContactFieldMutation]
   );
 
-  const handleUpdateNextStep = useCallback(async (value) => {
-    setNextStepDraft(value);
-    return Promise.resolve();
-  }, []);
+  const handleUpdateNextStep = useCallback(
+    async (value) => {
+      const nextValue = value ?? '';
+      setNextStepDraft(nextValue);
+
+      const ticketId = selectedTicket?.id ?? controller.selectedTicketId;
+
+      if (!ticketId) {
+        const error = new Error('Ticket indisponível para atualização.');
+        toast.error('Não foi possível atualizar o próximo passo', {
+          description: error.message,
+        });
+        throw error;
+      }
+
+      const normalizedValue =
+        typeof nextValue === 'string' ? nextValue.trim() : String(nextValue ?? '');
+
+      const currentDescription =
+        selectedTicket?.metadata?.nextAction?.description ??
+        selectedTicket?.nextStep?.description ??
+        '';
+
+      if ((normalizedValue ?? '') === (currentDescription ?? '')) {
+        return null;
+      }
+
+      if (typeof updateNextStepMutation?.mutateAsync !== 'function') {
+        return null;
+      }
+
+      try {
+        const metadata = {
+          updatedFrom: 'chat-command-center',
+        };
+
+        if (currentUser?.id) {
+          metadata.updatedBy = currentUser.id;
+        }
+
+        const result = await updateNextStepMutation.mutateAsync({
+          targetTicketId: ticketId,
+          description: normalizedValue,
+          metadata,
+        });
+
+        return result;
+      } catch (error) {
+        const description = error?.message ?? 'Tente novamente mais tarde.';
+        toast.error('Não foi possível atualizar o próximo passo', { description });
+        throw error;
+      }
+    },
+    [
+      controller.selectedTicketId,
+      currentUser?.id,
+      selectedTicket?.id,
+      selectedTicket?.metadata?.nextAction?.description,
+      selectedTicket?.nextStep?.description,
+      updateNextStepMutation,
+    ]
+  );
 
   const sendMessage = ({ content, attachments = [], template, caption }) => {
     const trimmed = (content ?? '').trim();
