@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -10,6 +12,57 @@ import ConversationHeader, {
   PrimaryActionButton,
   formatStageLabel,
 } from '../ConversationHeader.jsx';
+import ConversationHeader from '../ConversationHeader.jsx';
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
+vi.mock('../../utils/telemetry.js', () => ({
+  __esModule: true,
+  default: vi.fn(),
+}));
+
+vi.mock('../../hooks/usePhoneActions.js', () => ({
+  __esModule: true,
+  usePhoneActions: vi.fn(() => vi.fn()),
+}));
+
+vi.mock('@/hooks/use-clipboard.js', () => ({
+  __esModule: true,
+  useClipboard: () => ({
+    copy: vi.fn(),
+  }),
+}));
+
+vi.mock('../QuickComposer.jsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="quick-composer" />,
+}));
+
+vi.mock('../CallResultDialog.jsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="call-result-dialog" />,
+}));
+
+vi.mock('../LossReasonDialog.jsx', () => ({
+  __esModule: true,
+  default: () => <div data-testid="loss-reason-dialog" />,
+}));
+
+vi.mock('../CommandBar.jsx', () => ({
+  __esModule: true,
+  CommandBar: () => <div data-testid="command-bar" />,
+}));
+
+vi.mock('../../hooks/useTicketJro.js', () => ({
+  __esModule: true,
+  default: () => ({ state: 'neutral', label: 'Em andamento', progress: 0.5 }),
+}));
 
 vi.mock('sonner', () => ({
   toast: {
@@ -175,5 +228,88 @@ describe('ContactSummary channel icons', () => {
   it('renders email icon when last interaction is via email', async () => {
     await renderHeaderWithChannel('email');
     expect(await screen.findByTestId('channel-icon-email')).toBeInTheDocument();
+  });
+});
+
+describe('ConversationHeader component', () => {
+  beforeAll(() => {
+    vi.stubGlobal('requestAnimationFrame', (callback) => {
+      const id = setTimeout(() => callback(Date.now()), 0);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (handle) => {
+      clearTimeout(handle);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders liquidation panel only for liquidation stages', async () => {
+    const ticket = {
+      id: 'ticket-liquid',
+      pipelineStep: 'Liquidação',
+      contact: { id: 'contact-1', name: 'Cliente Especial' },
+      metadata: {},
+      lead: {
+        id: 'lead-1',
+        customFields: {
+          deal: {
+            installmentValue: 512.75,
+            netValue: 10000,
+            term: 24,
+            product: 'Consignado',
+            bank: 'Banco Z',
+          },
+        },
+      },
+    };
+
+    const openLabel = 'Abrir painel';
+    const { rerender } = render(
+      <ConversationHeader
+        ticket={ticket}
+        onDealFieldSave={() => {}}
+        renderSummary={(summary, helpers) => (
+          <div>
+            {summary}
+            <button type="button" onClick={() => helpers.onOpenChange(true)}>
+              {openLabel}
+            </button>
+          </div>
+        )}
+      />
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.click(screen.getByRole('button', { name: openLabel }));
+
+    expect(await screen.findByText('Anexos recentes')).toBeInTheDocument();
+    expect(screen.getByText('Parcela')).toBeInTheDocument();
+
+    rerender(
+      <ConversationHeader
+        ticket={{ ...ticket, pipelineStep: 'Proposta' }}
+        onDealFieldSave={() => {}}
+        renderSummary={(summary, helpers) => (
+          <div>
+            {summary}
+            <button type="button" onClick={() => helpers.onOpenChange(true)}>
+              {openLabel}
+            </button>
+          </div>
+        )}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Parcela')).not.toBeInTheDocument();
+    });
   });
 });

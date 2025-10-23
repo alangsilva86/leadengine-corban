@@ -24,6 +24,7 @@ import CallResultDialog from './CallResultDialog.jsx';
 import LossReasonDialog from './LossReasonDialog.jsx';
 import { CommandBar } from './CommandBar.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
+import { formatCurrencyField, formatTermField } from '../../utils/deal-fields.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -131,6 +132,7 @@ const PRIMARY_BUTTON_TONE = {
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
 };
 
+const DEAL_STAGE_KEYS = new Set(['LIQUIDACAO', 'APROVADO_LIQUIDACAO']);
 const CHANNEL_PRESENTATION = {
   WHATSAPP: {
     id: 'whatsapp',
@@ -718,6 +720,7 @@ export const ConversationHeader = ({
   isRegisteringResult = false,
   renderSummary,
   onContactFieldSave,
+  onDealFieldSave,
   nextStepValue,
   onNextStepSave,
   onFocusComposer,
@@ -1062,6 +1065,68 @@ export const ConversationHeader = ({
     </div>
   );
 
+  const shouldShowDealPanel = DEAL_STAGE_KEYS.has(stageKey);
+
+  const dealFields = useMemo(() => {
+    if (!shouldShowDealPanel) {
+      return {};
+    }
+
+    const leadDeal =
+      ticket?.lead?.customFields?.deal && typeof ticket.lead.customFields.deal === 'object'
+        ? ticket.lead.customFields.deal
+        : null;
+    const metadataDeal =
+      ticket?.metadata?.deal && typeof ticket.metadata.deal === 'object'
+        ? ticket.metadata.deal
+        : null;
+
+    return leadDeal ?? metadataDeal ?? {};
+  }, [shouldShowDealPanel, ticket?.lead?.customFields?.deal, ticket?.metadata?.deal]);
+
+  const dealContent = shouldShowDealPanel ? (
+    <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-foreground">Liquidação</h4>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <InlineField
+          label="Parcela"
+          value={dealFields?.installmentValue ?? ''}
+          placeholder="R$ 0,00"
+          formatter={formatCurrencyField}
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('installmentValue', value) : undefined}
+        />
+        <InlineField
+          label="Líquido"
+          value={dealFields?.netValue ?? ''}
+          placeholder="R$ 0,00"
+          formatter={formatCurrencyField}
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('netValue', value) : undefined}
+        />
+        <InlineField
+          label="Prazo"
+          value={dealFields?.term ?? ''}
+          placeholder="12 meses"
+          formatter={formatTermField}
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('term', value) : undefined}
+        />
+        <InlineField
+          label="Produto"
+          value={dealFields?.product ?? ''}
+          placeholder="Produto contratado"
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('product', value) : undefined}
+        />
+        <InlineField
+          label="Banco"
+          value={dealFields?.bank ?? ''}
+          placeholder="Banco parceiro"
+          onSave={onDealFieldSave ? (value) => onDealFieldSave('bank', value) : undefined}
+        />
+      </div>
+    </div>
+  ) : null;
+
   const attachments = useMemo(() => {
     const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
     if (Array.isArray(source)) return source.filter(Boolean);
@@ -1073,6 +1138,7 @@ export const ConversationHeader = ({
     <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
       {contactContent}
       <div className="flex min-h-0 flex-col gap-4">
+        {dealContent}
         <div className="rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4 text-xs text-foreground-muted">
           <div className="flex items-center gap-2 text-foreground">
             <AlertTriangle className="h-4 w-4" aria-hidden />
