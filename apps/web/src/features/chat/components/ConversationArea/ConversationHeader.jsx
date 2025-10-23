@@ -488,7 +488,6 @@ const getTicketStage = (ticket) => {
   return normalizeStage(stage);
 };
 
-const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = false }) => {
 const STAGE_LABELS = {
   NOVO: 'Novo',
   CONECTADO: 'Conectado',
@@ -524,7 +523,7 @@ const formatStageLabel = (stageKey) => {
   return formatFallbackStageLabel(normalized);
 };
 
-const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
+const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = false }) => {
   const preset = PRIMARY_ACTION_MAP[stageKey] ?? PRIMARY_ACTION_MAP[`${stageKey}_`];
   if (!preset) {
     return null;
