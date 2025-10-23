@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 
-const DEFAULT_WINDOW_MINUTES = 30;
 const MS_IN_MINUTE = 60 * 1000;
 const MS_IN_SECOND = 1000;
 
@@ -17,12 +16,18 @@ const clamp = (value, min = 0, max = 1) => {
   return value;
 };
 
-const getWindowMs = (windowMinutes) => {
-  const parsed = Number(windowMinutes);
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed * MS_IN_MINUTE;
+const getWindowMs = ({ windowMinutes, windowMs }) => {
+  const parsedWindowMs = Number(windowMs);
+  if (Number.isFinite(parsedWindowMs) && parsedWindowMs > 0) {
+    return parsedWindowMs;
   }
-  return DEFAULT_WINDOW_MINUTES * MS_IN_MINUTE;
+
+  const parsedWindowMinutes = Number(windowMinutes);
+  if (Number.isFinite(parsedWindowMinutes) && parsedWindowMinutes > 0) {
+    return parsedWindowMinutes * MS_IN_MINUTE;
+  }
+
+  return null;
 };
 
 const deriveJroConfig = (ticket) => {
@@ -34,7 +39,10 @@ const deriveJroConfig = (ticket) => {
 
   const deadline = parseDate(internalSla?.deadline ?? internalSla?.expiresAt ?? ticket?.window?.expiresAt);
   const startedAt = parseDate(internalSla?.startedAt ?? internalSla?.openedAt ?? ticket?.window?.startedAt);
-  const windowMs = getWindowMs(internalSla?.windowMinutes ?? internalSla?.windowMs ? internalSla.windowMs / MS_IN_MINUTE : undefined);
+  const windowMs = getWindowMs({
+    windowMinutes: internalSla?.windowMinutes ?? ticket?.window?.windowMinutes,
+    windowMs: internalSla?.windowMs ?? ticket?.window?.windowMs,
+  });
 
   return {
     deadline,
@@ -91,16 +99,14 @@ export const useTicketJro = (ticket) => {
 
   const msRemaining = deadline ? deadline.getTime() - now : null;
   const state = computeState(msRemaining);
-  const totalWindowMs = windowMs;
-
   const progress = useMemo(() => {
-    if (!deadline || !totalWindowMs) {
+    if (!deadline || !startedAt || !windowMs) {
       return 0;
     }
-    const effectiveStartedAt = startedAt ?? new Date(deadline.getTime() - totalWindowMs);
-    const elapsed = now - effectiveStartedAt.getTime();
-    return clamp(elapsed / totalWindowMs);
-  }, [deadline, startedAt, totalWindowMs, now]);
+    const remaining = deadline.getTime() - now;
+    const ratio = remaining / windowMs;
+    return clamp(ratio);
+  }, [deadline, startedAt, windowMs, now]);
 
   const remainingLabel = deadline ? formatDuration(msRemaining ?? 0) : null;
   const label = deadline

@@ -9,7 +9,6 @@ import {
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
@@ -39,6 +38,7 @@ import {
   UserCheck,
   UserClock,
 } from 'lucide-react';
+import { ChevronDown, Phone, Edit3, Copy as CopyIcon, AlertTriangle, MessageCircle, Mail } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import emitInboxTelemetry from '../../utils/telemetry.js';
@@ -579,20 +579,6 @@ const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = 
   return preset.default ?? preset.fallback ?? null;
 };
 
-const getAssigneeLabel = (ticket) => {
-  const assignee = ticket?.assignee ?? ticket?.assignedTo ?? null;
-  if (!assignee) {
-    return { label: 'Disponível', tone: 'neutral', assignee: null };
-  }
-
-  const name = assignee.name ?? assignee.displayName ?? assignee.email ?? 'Responsável';
-  return {
-    label: name,
-    tone: 'info',
-    assignee,
-  };
-};
-
 const TypingIndicator = ({ agents = [] }) => {
   if (!agents.length) return null;
   const label = agents[0]?.userName ?? 'Agente';
@@ -862,7 +848,6 @@ const ConversationHeader = ({
   nextStepValue,
   onNextStepSave,
   onFocusComposer,
-  currentUser,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -1146,12 +1131,6 @@ const ConversationHeader = ({
     ticket,
   ]);
 
-  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
-  const handleAssign = useCallback(() => {
-    if (!ticket) return;
-    onAssign?.(ticket);
-  }, [onAssign, ticket]);
-
   const summaryContent = (
     <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1199,45 +1178,6 @@ const ConversationHeader = ({
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          {(() => {
-            const assigneeBadge = (
-              <Badge
-                variant="outline"
-                className="flex min-w-0 max-w-[200px] items-center gap-1 border-surface-overlay-glass-border text-xs text-foreground"
-              >
-                <UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                <span className="truncate">
-                  {assigneeInfo.label}
-                </span>
-              </Badge>
-            );
-
-            if (currentUser?.id && (ticket?.assignee?.id ?? ticket?.assignedTo?.id) !== currentUser.id) {
-              return (
-                <>
-                  {assigneeBadge}
-                  <Button type="button" size="xs" variant="outline" onClick={handleAssign} className="shrink-0">
-                    Assumir
-                  </Button>
-                </>
-              );
-            }
-
-            const tooltipLabel = assigneeInfo.assignee
-              ? `Responsável: ${assigneeInfo.label}`
-              : 'Disponível para atendimento';
-
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>{assigneeBadge}</TooltipTrigger>
-                <TooltipContent>
-                  <span className="text-xs font-medium text-foreground">{tooltipLabel}</span>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })()}
-        </div>
         <div className="shrink-0">
           <TypingIndicator agents={typingAgents} />
         </div>
