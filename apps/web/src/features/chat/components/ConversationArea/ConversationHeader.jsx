@@ -1168,7 +1168,7 @@ const ConversationHeader = ({
   );
 
   const contactContent = (
-    <div className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+    <div className="flex w-full flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
       <h4 className="text-sm font-semibold text-foreground">Contato</h4>
       <InlineField
         label="Nome"
@@ -1247,7 +1247,7 @@ const ConversationHeader = ({
   }, [shouldShowDealPanel, ticket?.lead?.customFields?.deal, ticket?.metadata?.deal]);
 
   const dealContent = shouldShowDealPanel ? (
-    <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+    <div className="w-full rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
       <div className="mb-2 flex items-center justify-between">
         <h4 className="text-sm font-semibold text-foreground">Liquidação</h4>
       </div>
@@ -1297,11 +1297,11 @@ const ConversationHeader = ({
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
   const detailsContent = (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+    <div className="flex w-full flex-col gap-4">
       {contactContent}
-      <div className="flex min-h-0 flex-col gap-4">
+      <div className="flex w-full flex-col gap-4">
         {dealContent}
-        <div className="rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4 text-xs text-foreground-muted">
+        <div className="w-full rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4 text-xs text-foreground-muted">
           <div className="flex items-center gap-2 text-foreground">
             <AlertTriangle className="h-4 w-4" aria-hidden />
             <span className="font-semibold">Anexos recentes</span>
