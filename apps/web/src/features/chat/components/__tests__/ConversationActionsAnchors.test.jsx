@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ConversationHeader } from '../ConversationArea/ConversationHeader.jsx';
@@ -122,5 +122,56 @@ describe('Conversation actions anchors', () => {
 
     const assignButton = screen.getByRole('button', { name: /Atribuir/i });
     expect(assignButton).toBeInTheDocument();
+  });
+
+  it('expande e foca o editor de próximo passo ao executar a ação de qualificação', async () => {
+    const ticket = {
+      id: 'ticket-qualify',
+      subject: 'Conversa importante',
+      pipelineStep: 'Qualificação',
+      contact: {
+        id: 'contact-qualify',
+        name: 'Cliente Qualificação',
+        phone: '+55 11 91111-1111',
+      },
+      metadata: {},
+    };
+
+    const onScheduleFollowUp = vi.fn();
+    const onFocusComposer = vi.fn();
+
+    render(
+      <ConversationHeader
+        ticket={ticket}
+        typingAgents={[]}
+        onAssign={vi.fn()}
+        onScheduleFollowUp={onScheduleFollowUp}
+        onRegisterResult={vi.fn()}
+        onRegisterCallResult={vi.fn()}
+        onSendTemplate={vi.fn()}
+        onCreateNextStep={vi.fn()}
+        onGenerateProposal={vi.fn()}
+        onAttachFile={vi.fn()}
+        onFocusComposer={onFocusComposer}
+        nextStepValue=""
+        onNextStepSave={vi.fn()}
+      />
+    );
+
+    const primaryAction = screen.getByRole('button', { name: 'Registrar próximo passo' });
+    fireEvent.click(primaryAction);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Recolher detalhes')).toBeInTheDocument();
+    });
+
+    const textarea = screen.getByPlaceholderText('Descreva o próximo passo combinado');
+
+    await waitFor(() => {
+      expect(textarea).toHaveFocus();
+    });
+
+    expect(onScheduleFollowUp).not.toHaveBeenCalled();
+    expect(onFocusComposer).not.toHaveBeenCalled();
   });
 });

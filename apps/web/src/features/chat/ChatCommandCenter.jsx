@@ -253,6 +253,8 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
           metadata,
         });
 
+        toast.success('Próximo passo atualizado.');
+
         return result;
       } catch (error) {
         const description = error?.message ?? 'Tente novamente mais tarde.';
