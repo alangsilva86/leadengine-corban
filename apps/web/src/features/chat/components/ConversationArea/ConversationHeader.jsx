@@ -12,6 +12,32 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
+import {
+  Archive,
+  BadgeCheck,
+  CheckCircle2,
+  ChevronDown,
+  CircleDashed,
+  CircleDollarSign,
+  ClipboardList,
+  Clock3,
+  Copy as CopyIcon,
+  AlertTriangle,
+  Edit3,
+  FileCheck2,
+  FileSignature,
+  FileText,
+  HelpCircle,
+  Hourglass,
+  Link2,
+  Mail,
+  MessageCircle,
+  Phone,
+  RefreshCcw,
+  Sparkles,
+  UserCheck,
+  UserClock,
+} from 'lucide-react';
 import { ChevronDown, Phone, Edit3, Copy as CopyIcon, AlertTriangle, MessageCircle, Mail } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -40,23 +66,15 @@ const LOSS_REASON_HELPERS = LOSS_REASONS.reduce((acc, item) => {
   return acc;
 }, {});
 
-const STATUS_LABELS = {
-  OPEN: 'Aberto',
-  PENDING: 'Pendente',
-  ASSIGNED: 'Em atendimento',
-  RESOLVED: 'Resolvido',
-  CLOSED: 'Fechado',
+const STATUS_PRESENTATION = {
+  OPEN: { label: 'Aberto', tone: 'info', icon: CircleDashed },
+  PENDING: { label: 'Pendente', tone: 'warning', icon: Clock3 },
+  ASSIGNED: { label: 'Em atendimento', tone: 'info', icon: UserCheck },
+  RESOLVED: { label: 'Resolvido', tone: 'success', icon: CheckCircle2 },
+  CLOSED: { label: 'Fechado', tone: 'neutral', icon: Archive },
 };
 
-const STATUS_TONE = {
-  OPEN: 'info',
-  PENDING: 'info',
-  ASSIGNED: 'info',
-  RESOLVED: 'success',
-  CLOSED: 'neutral',
-};
-
-const CHIP_STYLES = {
+const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
   warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
   danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
@@ -259,9 +277,16 @@ const normalizeStage = (value) => {
 
 const getStatusInfo = (status) => {
   const normalized = status ? String(status).toUpperCase() : 'OPEN';
+  const presentation = STATUS_PRESENTATION[normalized] ?? {
+    label: normalized,
+    tone: 'neutral',
+    icon: HelpCircle,
+  };
+
   return {
-    label: STATUS_LABELS[normalized] ?? normalized,
-    tone: STATUS_TONE[normalized] ?? 'neutral',
+    label: presentation.label ?? normalized,
+    tone: presentation.tone ?? 'neutral',
+    icon: presentation.icon ?? HelpCircle,
   };
 };
 
@@ -502,6 +527,21 @@ const STAGE_LABELS = {
   DESCONHECIDO: 'Desconhecido',
 };
 
+const STAGE_PRESENTATION = {
+  NOVO: { icon: Sparkles, tone: 'info' },
+  CONECTADO: { icon: Link2, tone: 'info' },
+  QUALIFICACAO: { icon: ClipboardList, tone: 'info' },
+  PROPOSTA: { icon: FileText, tone: 'info' },
+  DOCUMENTACAO: { icon: FileSignature, tone: 'info' },
+  DOCUMENTOS_AVERBACAO: { icon: FileCheck2, tone: 'info' },
+  AGUARDANDO: { icon: Hourglass, tone: 'warning' },
+  AGUARDANDO_CLIENTE: { icon: UserClock, tone: 'warning' },
+  LIQUIDACAO: { icon: CircleDollarSign, tone: 'success' },
+  APROVADO_LIQUIDACAO: { icon: BadgeCheck, tone: 'success' },
+  RECICLAR: { icon: RefreshCcw, tone: 'neutral' },
+  DESCONHECIDO: { icon: HelpCircle, tone: 'neutral' },
+};
+
 const formatFallbackStageLabel = (stageKey) =>
   stageKey
     .split('_')
@@ -574,18 +614,58 @@ const JroIndicator = ({ jro }) => {
   );
 };
 
-const Chip = ({ tone = 'neutral', className, children, ...props }) => (
-  <span
-    className={cn(
-      'inline-flex min-h-[28px] items-center justify-center rounded-full px-3 text-[12px] font-medium leading-none tracking-wide',
-      CHIP_STYLES[tone] ?? CHIP_STYLES.neutral,
-      className
-    )}
-    {...props}
-  >
-    {children}
-  </span>
-);
+const Indicator = ({
+  icon: Icon,
+  tone = 'neutral',
+  label,
+  description,
+  className,
+  iconClassName,
+}) => {
+  if (!Icon) return null;
+
+  const resolvedToneClass = tone ? INDICATOR_TONES[tone] ?? INDICATOR_TONES.neutral : null;
+  const accessibleLabel = description ?? label;
+  const content = (
+    <span
+      role="img"
+      aria-label={accessibleLabel}
+      className={cn(
+        'inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent bg-surface-overlay-quiet text-sm shadow-sm transition-colors',
+        resolvedToneClass,
+        className
+      )}
+    >
+      <Icon className={cn('h-4 w-4', iconClassName)} aria-hidden />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{content}</TooltipTrigger>
+      <TooltipContent>
+        <span className="text-xs font-medium text-foreground">{accessibleLabel}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+};
+
+const getStageInfo = (stageKey) => {
+  if (!stageKey) {
+    return null;
+  }
+
+  const normalized = normalizeStage(stageKey);
+  const label = formatStageLabel(normalized);
+  const presentation = STAGE_PRESENTATION[normalized] ?? STAGE_PRESENTATION.DESCONHECIDO;
+
+  return {
+    label,
+    tone: presentation.tone ?? 'neutral',
+    icon: presentation.icon ?? HelpCircle,
+  };
+};
 
 const useStageInfo = (ticket) => {
   const stageKey = getTicketStage(ticket);
@@ -871,7 +951,8 @@ const ConversationHeader = ({
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
-  const stageLabel = useMemo(() => formatStageLabel(stageKey), [stageKey]);
+  const originInfo = useMemo(() => (origin ? resolveChannelInfo(origin) : null), [origin]);
+  const stageInfo = useMemo(() => getStageInfo(stageKey), [stageKey]);
 
   const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
@@ -1064,9 +1145,32 @@ const ConversationHeader = ({
                 #{shortId}
               </span>
             ) : null}
-            <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
-            {stageKey ? <Chip tone="neutral">{stageLabel}</Chip> : null}
-            {origin ? <Chip tone="neutral">{origin}</Chip> : null}
+            <Indicator
+              icon={statusInfo.icon}
+              tone={statusInfo.tone}
+              label={statusInfo.label}
+              description={`Status: ${statusInfo.label}`}
+            />
+            {stageInfo ? (
+              <Indicator
+                icon={stageInfo.icon}
+                tone={stageInfo.tone}
+                label={stageInfo.label}
+                description={`Etapa: ${stageInfo.label}`}
+              />
+            ) : null}
+            {originInfo ? (
+              <Indicator
+                icon={originInfo.icon}
+                tone={null}
+                className={cn(
+                  'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+                  originInfo.className
+                )}
+                label={originInfo.label}
+                description={`Origem: ${originInfo.label}`}
+              />
+            ) : null}
           </div>
           <div className="mt-2">
             <JroIndicator jro={jro} />

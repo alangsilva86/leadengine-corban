@@ -2,17 +2,14 @@
 import '@testing-library/jest-dom/vitest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import ConversationHeader, {
-  normalizeStage,
-  resolvePrimaryAction,
   PrimaryActionButton,
   formatStageLabel,
+  normalizeStage,
+  resolvePrimaryAction,
 } from '../ConversationHeader.jsx';
-import ConversationHeader from '../ConversationHeader.jsx';
 
 vi.mock('sonner', () => ({
   toast: {
@@ -41,44 +38,6 @@ vi.mock('@/hooks/use-clipboard.js', () => ({
 
 vi.mock('../QuickComposer.jsx', () => ({
   __esModule: true,
-  default: () => <div data-testid="quick-composer" />,
-}));
-
-vi.mock('../CallResultDialog.jsx', () => ({
-  __esModule: true,
-  default: () => <div data-testid="call-result-dialog" />,
-}));
-
-vi.mock('../LossReasonDialog.jsx', () => ({
-  __esModule: true,
-  default: () => <div data-testid="loss-reason-dialog" />,
-}));
-
-vi.mock('../CommandBar.jsx', () => ({
-  __esModule: true,
-  CommandBar: () => <div data-testid="command-bar" />,
-}));
-
-vi.mock('../../hooks/useTicketJro.js', () => ({
-  __esModule: true,
-  default: () => ({ state: 'neutral', label: 'Em andamento', progress: 0.5 }),
-}));
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: vi.fn(),
-    success: vi.fn(),
-    info: vi.fn(),
-  },
-}));
-
-vi.mock('../../utils/telemetry.js', () => ({
-  __esModule: true,
-  default: vi.fn(),
-}));
-
-vi.mock('../QuickComposer.jsx', () => ({
-  __esModule: true,
   default: () => <div data-testid="quick-composer">QuickComposer</div>,
 }));
 
@@ -90,6 +49,16 @@ vi.mock('../CallResultDialog.jsx', () => ({
 vi.mock('../LossReasonDialog.jsx', () => ({
   __esModule: true,
   default: () => <div data-testid="loss-reason-dialog">LossReasonDialog</div>,
+}));
+
+vi.mock('../CommandBar.jsx', () => ({
+  __esModule: true,
+  CommandBar: () => <div data-testid="command-bar" />,
+}));
+
+vi.mock('../../hooks/useTicketJro.js', () => ({
+  __esModule: true,
+  default: () => ({ state: 'neutral', label: 'Em andamento', progress: 0.5 }),
 }));
 
 afterEach(() => {
@@ -156,7 +125,9 @@ describe('ConversationHeader helpers', () => {
 
     expect(action).toMatchObject({ id: 'call-followup' });
     expect(action.label).toContain('Ligar');
-  it('renders a chip with the formatted stage label for each scenario', () => {
+  });
+
+  it('renderiza um indicador acessível para cada etapa do funil', () => {
     STAGE_SCENARIOS.forEach(({ raw, key }) => {
       const ticket = {
         id: `ticket-${key}`,
@@ -169,7 +140,8 @@ describe('ConversationHeader helpers', () => {
 
       const { unmount } = render(<ConversationHeader ticket={ticket} />);
 
-      expect(screen.getByText(formatStageLabel(key))).toBeInTheDocument();
+      const stageLabel = formatStageLabel(key);
+      expect(screen.getByLabelText(`Etapa: ${stageLabel}`)).toBeInTheDocument();
 
       unmount();
     });
@@ -332,3 +304,4 @@ describe('ConversationHeader component', () => {
     });
   });
 });
+
