@@ -10,19 +10,10 @@ import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { Progress } from '@/components/ui/progress.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
-import {
-  ChevronDown,
-  Phone,
-  FileText,
-  Edit3,
-  Copy as CopyIcon,
-  UserCheck,
-  AlertTriangle,
-} from 'lucide-react';
+import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle } from 'lucide-react';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
@@ -102,7 +93,6 @@ const PRIMARY_ACTION_MAP = {
   NOVO: PRIMARY_ACTION_PRESETS.initialContact,
   CONECTADO: PRIMARY_ACTION_PRESETS.keepEngagement,
   QUALIFICACAO: PRIMARY_ACTION_PRESETS.qualify,
-  QUALIFICACAO_: PRIMARY_ACTION_PRESETS.qualify,
   PROPOSTA: PRIMARY_ACTION_PRESETS.proposal,
   DOCUMENTACAO: PRIMARY_ACTION_PRESETS.documentation,
   DOCUMENTOS_AVERBACAO: PRIMARY_ACTION_PRESETS.documentation,
@@ -520,7 +510,6 @@ export const ConversationHeader = ({
   typingAgents = [],
   isRegisteringResult = false,
   renderSummary,
-  renderDetails,
   onContactFieldSave,
   nextStepValue,
   onNextStepSave,
@@ -530,7 +519,6 @@ export const ConversationHeader = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
   const dialogReturnFocusRef = useRef(null);
-  const { copy: copyToClipboard } = useClipboard();
   const jro = useTicketJro(ticket);
   const { stageKey, primaryAction } = useStageInfo(ticket);
 
@@ -697,9 +685,6 @@ export const ConversationHeader = ({
         break;
       case 'send-followup':
         onScheduleFollowUp?.(ticket);
-        break;
-      case 'validate-contact':
-        onEditContact?.(ticket?.contact?.id ?? null);
         break;
       case 'close-register':
         openDialog('register-result');
@@ -894,7 +879,7 @@ export const ConversationHeader = ({
   const renderedDetails = (
     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
       <div className="mt-4 max-h-[calc(100vh-18rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
-        {renderDetails ? renderDetails(detailsContent, { isExpanded, onOpenChange: setIsExpanded }) : detailsContent}
+        {detailsContent}
       </div>
     </CollapsibleContent>
   );
