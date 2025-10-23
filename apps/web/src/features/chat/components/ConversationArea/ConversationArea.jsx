@@ -40,6 +40,7 @@ export const ConversationArea = ({
   const ai = useAiSuggestions();
   const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
   const [composerOffset, setComposerOffset] = useState(96);
+  const [composerHeight, setComposerHeight] = useState(0);
   const composerRef = useRef(null);
   const composerApiRef = useRef(null);
   const ticketId = ticket?.id ?? null;
@@ -142,7 +143,9 @@ export const ConversationArea = ({
     if (!element) return undefined;
 
     const updateOffset = () => {
-      setComposerOffset(element.offsetHeight + 16);
+      const height = element.offsetHeight;
+      setComposerHeight(height);
+      setComposerOffset(height + 16);
     };
 
     updateOffset();
@@ -193,6 +196,7 @@ export const ConversationArea = ({
             onNextStepSave={onNextStepSave}
             onFocusComposer={handleFocusComposer}
             currentUser={currentUser}
+            composerHeight={composerHeight}
             renderSummary={(summary, { isExpanded }) => (
               <header
                 className={cn(
