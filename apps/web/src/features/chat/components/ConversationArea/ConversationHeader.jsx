@@ -863,11 +863,6 @@ export const ConversationHeader = ({
             <p className="mt-2 text-sm">Nenhum anexo disponível para este ticket.</p>
           )}
         </div>
-        <QuickComposer
-          ticket={ticket}
-          onSendTemplate={onSendTemplate}
-          onCreateNextStep={onCreateNextStep}
-        />
       </div>
     </div>
   );
