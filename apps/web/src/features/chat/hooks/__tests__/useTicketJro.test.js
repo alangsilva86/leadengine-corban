@@ -16,7 +16,7 @@ describe('useTicketJro', () => {
     vi.useRealTimers();
   });
 
-  it('decreases progress as time advances and reaches zero when overdue', () => {
+  it('decreases progress as time advances, updates state, and reaches zero when overdue', () => {
     const startedAt = new Date('2024-01-01T00:00:00.000Z');
     const deadline = new Date(startedAt.getTime() + HALF_HOUR_IN_MS);
 
@@ -35,6 +35,7 @@ describe('useTicketJro', () => {
     const { result } = renderHook(() => useTicketJro(ticket));
 
     expect(result.current.progress).toBeCloseTo(1, 5);
+    expect(result.current.state).toBe('neutral');
 
     const halfway = new Date(startedAt.getTime() + HALF_HOUR_IN_MS / 2);
     act(() => {
@@ -43,6 +44,15 @@ describe('useTicketJro', () => {
     });
 
     expect(result.current.progress).toBeCloseTo(0.5, 2);
+    expect(result.current.state).toBe('yellow');
+
+    const nearDeadline = new Date(deadline.getTime() - HALF_HOUR_IN_MS * 0.15);
+    act(() => {
+      vi.setSystemTime(nearDeadline);
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(result.current.state).toBe('orange');
 
     const overdue = new Date(deadline.getTime() + 5 * 60 * 1000);
     act(() => {
@@ -51,6 +61,7 @@ describe('useTicketJro', () => {
     });
 
     expect(result.current.progress).toBe(0);
+    expect(result.current.state).toBe('overdue');
   });
 
   it('derives window duration when only startedAt and deadline are provided', () => {
@@ -72,6 +83,34 @@ describe('useTicketJro', () => {
     expect(result.current.progress).toBeCloseTo(1, 5);
 
     const halfway = new Date(startedAt.getTime() + HALF_HOUR_IN_MS / 2);
+    act(() => {
+      vi.setSystemTime(halfway);
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(result.current.progress).toBeCloseTo(0.5, 2);
+  });
+
+  it('handles windowMs provided in minutes', () => {
+    const startedAt = new Date('2024-04-01T12:00:00.000Z');
+    const deadline = new Date(startedAt.getTime() + 5 * 60 * 1000);
+
+    vi.setSystemTime(startedAt);
+
+    const ticket = {
+      metadata: {
+        internalSla: {
+          startedAt,
+          deadline,
+          windowMs: 5,
+        },
+      },
+    };
+
+    const { result } = renderHook(() => useTicketJro(ticket));
+    expect(result.current.progress).toBeCloseTo(1, 5);
+
+    const halfway = new Date(startedAt.getTime() + 2.5 * 60 * 1000);
     act(() => {
       vi.setSystemTime(halfway);
       vi.advanceTimersByTime(1000);

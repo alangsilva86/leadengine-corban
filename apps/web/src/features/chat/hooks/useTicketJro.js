@@ -17,14 +17,17 @@ const clamp = (value, min = 0, max = 1) => {
 };
 
 const getWindowMs = ({ windowMinutes, windowMs }) => {
-  const parsedWindowMs = Number(windowMs);
-  if (Number.isFinite(parsedWindowMs) && parsedWindowMs > 0) {
-    return parsedWindowMs;
-  }
-
   const parsedWindowMinutes = Number(windowMinutes);
   if (Number.isFinite(parsedWindowMinutes) && parsedWindowMinutes > 0) {
     return parsedWindowMinutes * MS_IN_MINUTE;
+  }
+
+  const parsedWindowMs = Number(windowMs);
+  if (Number.isFinite(parsedWindowMs) && parsedWindowMs > 0) {
+    if (parsedWindowMs < MS_IN_SECOND) {
+      return parsedWindowMs * MS_IN_MINUTE;
+    }
+    return parsedWindowMs;
   }
 
   return null;
@@ -65,23 +68,6 @@ const formatDuration = (ms) => {
   return `${hours}:${minutes}:${seconds}`;
 };
 
-const computeState = (msRemaining) => {
-  if (msRemaining === null || msRemaining === undefined) {
-    return 'neutral';
-  }
-  if (msRemaining < 0) {
-    return 'overdue';
-  }
-  const minutes = msRemaining / MS_IN_MINUTE;
-  if (minutes <= 5) {
-    return 'orange';
-  }
-  if (minutes >= 11 && minutes <= 29) {
-    return 'yellow';
-  }
-  return 'neutral';
-};
-
 export const useTicketJro = (ticket) => {
   const { deadline, startedAt, windowMs } = useMemo(() => deriveJroConfig(ticket), [ticket]);
   const [now, setNow] = useState(() => Date.now());
@@ -112,7 +98,6 @@ export const useTicketJro = (ticket) => {
   }, [deadline]);
 
   const msRemaining = deadline ? deadline.getTime() - now : null;
-  const state = computeState(msRemaining);
   const progress = useMemo(() => {
     if (!deadline || !effectiveWindowMs) {
       return 0;
@@ -121,6 +106,24 @@ export const useTicketJro = (ticket) => {
     const ratio = remaining / effectiveWindowMs;
     return clamp(ratio);
   }, [deadline, effectiveWindowMs, now]);
+  const state = useMemo(() => {
+    if (msRemaining === null || msRemaining === undefined) {
+      return 'neutral';
+    }
+    if (msRemaining < 0) {
+      return 'overdue';
+    }
+    if (!effectiveWindowMs) {
+      return 'neutral';
+    }
+    if (progress <= 0.2) {
+      return 'orange';
+    }
+    if (progress <= 0.6) {
+      return 'yellow';
+    }
+    return 'neutral';
+  }, [effectiveWindowMs, msRemaining, progress]);
 
   const remainingLabel = deadline ? formatDuration(msRemaining ?? 0) : null;
   const label = deadline
