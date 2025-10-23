@@ -37,6 +37,7 @@ import {
 import { PollChoiceEventSchema } from '../schemas/poll-choice';
 import { recordPollChoiceVote } from '../services/poll-choice-service';
 import { syncPollChoiceState } from '../services/poll-choice-sync-service';
+import { triggerPollChoiceInboxNotification } from '../services/poll-choice-inbox-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -931,14 +932,64 @@ const processPollChoiceEvent = async (
         reason: 'poll_choice',
       });
 
+      let pollMetadataSynced = false;
+
       try {
-        await syncPollChoiceState(pollPayload.pollId, { state: result.state });
+        pollMetadataSynced = await syncPollChoiceState(pollPayload.pollId, { state: result.state });
       } catch (error) {
         logger.error('Failed to sync poll choice state with message metadata', {
           requestId: context.requestId,
           pollId: pollPayload.pollId,
           error,
         });
+      }
+
+      if (!pollMetadataSynced) {
+        let existingPollMessage: { id: string } | null = null;
+
+        try {
+          existingPollMessage = await prisma.message.findFirst({
+            where: { externalId: pollPayload.pollId },
+            select: { id: true },
+          });
+        } catch (lookupError) {
+          logger.error('Failed to check existing poll message before inbox notification', {
+            requestId: context.requestId,
+            pollId: pollPayload.pollId,
+            error: lookupError,
+          });
+        }
+
+        if (!existingPollMessage) {
+          const tenantForInbox = context.tenantOverride;
+
+          if (!tenantForInbox) {
+            logger.warn('Skipping poll choice inbox notification due to missing tenant context', {
+              requestId: context.requestId,
+              pollId: pollPayload.pollId,
+              voterJid: pollPayload.voterJid,
+            });
+          } else {
+            try {
+              await triggerPollChoiceInboxNotification({
+                poll: pollWithSelections,
+                state: result.state,
+                selectedOptions: pollWithSelections.selectedOptions,
+                tenantId: tenantForInbox,
+                instanceId: context.instanceId ?? null,
+                requestId: context.requestId,
+              });
+            } catch (inboxError) {
+              logger.error('Failed to trigger poll choice inbox notification', {
+                requestId: context.requestId,
+                pollId: pollPayload.pollId,
+                voterJid: pollPayload.voterJid,
+                tenantId: tenantForInbox,
+                error: inboxError,
+              });
+            }
+          }
+        }
       }
 
       return { persisted: 1, ignored: 0, failures: 0 };
