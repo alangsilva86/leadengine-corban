@@ -14,6 +14,12 @@ import emitInboxTelemetry from './utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import useUpdateContactField from './api/useUpdateContactField.js';
 import useUpdateNextStep from './api/useUpdateNextStep.js';
+import useUpdateDealFields from './api/useUpdateDealFields.js';
+import {
+  normalizeCurrencyValue,
+  normalizeIntegerValue,
+  normalizeTextValue,
+} from './utils/deal-fields.js';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
@@ -43,11 +49,15 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   const controller = useChatController({ tenantId, currentUser });
   const selectedTicket = controller.selectedTicket;
   const selectedContact = selectedTicket?.contact ?? null;
+  const selectedLead = selectedTicket?.lead ?? null;
   const updateContactFieldMutation = useUpdateContactField({
     contactId: selectedContact?.id,
   });
   const updateNextStepMutation = useUpdateNextStep({
     ticketId: selectedTicket?.id,
+  });
+  const updateDealFieldsMutation = useUpdateDealFields({
+    leadId: selectedLead?.id,
   });
   const [nextStepDraft, setNextStepDraft] = useState('');
   const {
@@ -258,6 +268,60 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
       selectedTicket?.nextStep?.description,
       updateNextStepMutation,
     ]
+  );
+
+  const handleDealFieldSave = useCallback(
+    async (field, rawValue) => {
+      const leadId = selectedLead?.id;
+
+      if (!leadId) {
+        throw new Error('Lead indisponível para atualização.');
+      }
+
+      if (!field) {
+        return;
+      }
+
+      const currentDeal =
+        selectedLead?.customFields?.deal && typeof selectedLead.customFields.deal === 'object'
+          ? selectedLead.customFields.deal
+          : {};
+
+      let normalizedValue = null;
+      let normalizedCurrentValue = null;
+
+      switch (field) {
+        case 'installmentValue':
+        case 'netValue': {
+          normalizedValue = normalizeCurrencyValue(rawValue);
+          normalizedCurrentValue = normalizeCurrencyValue(currentDeal?.[field]);
+          break;
+        }
+        case 'term': {
+          normalizedValue = normalizeIntegerValue(rawValue);
+          normalizedCurrentValue = normalizeIntegerValue(currentDeal?.[field]);
+          break;
+        }
+        case 'product':
+        case 'bank': {
+          normalizedValue = normalizeTextValue(rawValue);
+          normalizedCurrentValue = normalizeTextValue(currentDeal?.[field]);
+          break;
+        }
+        default:
+          return;
+      }
+
+      if (normalizedCurrentValue === normalizedValue) {
+        return;
+      }
+
+      await updateDealFieldsMutation.mutateAsync({
+        targetLeadId: leadId,
+        data: { [field]: normalizedValue },
+      });
+    },
+    [selectedLead?.id, selectedLead?.customFields?.deal, updateDealFieldsMutation]
   );
 
   const sendMessage = ({ content, attachments = [], template, caption }) => {
@@ -650,6 +714,7 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             composerDisabled={Boolean(whatsAppUnavailable)}
             composerDisabledReason={whatsAppUnavailable}
             onContactFieldSave={handleContactFieldSave}
+            onDealFieldSave={handleDealFieldSave}
             nextStepValue={nextStepDraft}
             onNextStepSave={handleUpdateNextStep}
             currentUser={currentUser}
