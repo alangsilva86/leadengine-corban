@@ -21,7 +21,7 @@ import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 import CallResultDialog from './CallResultDialog.jsx';
-import LossReasonDialog from './LossReasonDialog.jsx';
+import OutcomeDialog from './OutcomeDialog.jsx';
 import { CommandBar } from './CommandBar.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
 import { formatCurrencyField, formatTermField } from '../../utils/deal-fields.js';
@@ -788,6 +788,7 @@ export const ConversationHeader = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
+  const [outcomeMode, setOutcomeMode] = useState('success');
   const nextStepEditorRef = useRef(null);
   const collapseFrameRef = useRef(null);
 
@@ -904,6 +905,9 @@ export const ConversationHeader = ({
 
   const openDialog = useCallback((dialog, { returnFocus } = {}) => {
     dialogReturnFocusRef.current = returnFocus ?? null;
+    if (dialog === 'register-result') {
+      setOutcomeMode('success');
+    }
     setActiveDialog(dialog);
   }, []);
 
@@ -934,6 +938,32 @@ export const ConversationHeader = ({
       const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
       try {
         await onRegisterResult({ outcome: 'lost', reason: finalReason });
+        closeDialog();
+      } catch {
+        // feedback tratado a montante
+      }
+    },
+    [closeDialog, onRegisterResult]
+  );
+
+  const handleSuccessSubmit = useCallback(
+    async ({ installment, netAmount, term, product, bank, notes }) => {
+      if (!onRegisterResult) {
+        toast.error('Não foi possível concluir. Tente novamente.');
+        return;
+      }
+      try {
+        await onRegisterResult({
+          outcome: 'won',
+          metadata: {
+            installment,
+            netAmount,
+            term,
+            product,
+            bank,
+          },
+          reason: notes,
+        });
         closeDialog();
       } catch {
         // feedback tratado a montante
@@ -1322,17 +1352,20 @@ export const ConversationHeader = ({
     >
       {renderedSummary}
       {renderedDetails}
-      <LossReasonDialog
+      <OutcomeDialog
         open={activeDialog === 'register-result'}
-        onOpenChange={(open) => {
-          if (open) {
-            setActiveDialog('register-result');
-          } else {
+        mode={outcomeMode}
+        onModeChange={(nextMode) => {
+          if (!nextMode) {
             closeDialog();
+            return;
           }
+          setOutcomeMode(nextMode);
+          setActiveDialog('register-result');
         }}
-        options={LOSS_REASONS}
-        onConfirm={handleLossReasonSubmit}
+        lossOptions={LOSS_REASONS}
+        onConfirmLoss={handleLossReasonSubmit}
+        onConfirmSuccess={handleSuccessSubmit}
         isSubmitting={isRegisteringResult}
       />
       <CallResultDialog
