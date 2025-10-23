@@ -13,7 +13,9 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
-import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Phone, Edit3, Copy as CopyIcon, UserCheck, AlertTriangle, MessageCircle, Mail } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
@@ -131,6 +133,113 @@ const PRIMARY_BUTTON_TONE = {
 };
 
 const DEAL_STAGE_KEYS = new Set(['LIQUIDACAO', 'APROVADO_LIQUIDACAO']);
+const CHANNEL_PRESENTATION = {
+  WHATSAPP: {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    icon: MessageCircle,
+    className:
+      'border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)]',
+  },
+  VOICE: {
+    id: 'voice',
+    label: 'Telefone',
+    icon: Phone,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+  },
+  EMAIL: {
+    id: 'email',
+    label: 'E-mail',
+    icon: Mail,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+  },
+  DEFAULT: {
+    id: 'unknown',
+    label: 'Canal não identificado',
+    icon: MessageCircle,
+    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  },
+};
+
+const normalizeChannel = (value) => {
+  if (!value) return null;
+
+  const normalized = String(value)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toUpperCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'PHONE' || normalized === 'TELEFONE' || normalized === 'CALL') {
+    return 'VOICE';
+  }
+
+  if (normalized === 'E-MAIL' || normalized === 'MAIL') {
+    return 'EMAIL';
+  }
+
+  if (normalized === 'WA') {
+    return 'WHATSAPP';
+  }
+
+  return normalized;
+};
+
+const resolveChannelInfo = (channel) => {
+  const normalized = normalizeChannel(channel);
+  return CHANNEL_PRESENTATION[normalized] ?? CHANNEL_PRESENTATION.DEFAULT;
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+};
+
+const formatRelativeTime = (value) => {
+  const date = parseDateValue(value);
+  if (!date) {
+    return null;
+  }
+
+  try {
+    return formatDistanceToNow(date, { addSuffix: true, locale: ptBR });
+  } catch {
+    return null;
+  }
+};
+
+const getLastInteractionTimestamp = (timeline) => {
+  if (!timeline) {
+    return null;
+  }
+
+  const inboundDate = parseDateValue(timeline.lastInboundAt);
+  const outboundDate = parseDateValue(timeline.lastOutboundAt);
+  const direction = timeline.lastDirection ?? null;
+
+  if (direction === 'INBOUND' && inboundDate) {
+    return inboundDate;
+  }
+
+  if (direction === 'OUTBOUND' && outboundDate) {
+    return outboundDate;
+  }
+
+  if (inboundDate && outboundDate) {
+    return inboundDate > outboundDate ? inboundDate : outboundDate;
+  }
+
+  return inboundDate ?? outboundDate ?? null;
+};
 
 const normalizeStage = (value) => {
   if (!value) return 'DESCONHECIDO';
@@ -354,6 +463,41 @@ const getTicketStage = (ticket) => {
   return normalizeStage(stage);
 };
 
+const STAGE_LABELS = {
+  NOVO: 'Novo',
+  CONECTADO: 'Conectado',
+  QUALIFICACAO: 'Qualificação',
+  PROPOSTA: 'Proposta',
+  DOCUMENTACAO: 'Documentação',
+  DOCUMENTOS_AVERBACAO: 'Documentos/Averbação',
+  AGUARDANDO: 'Aguardando',
+  AGUARDANDO_CLIENTE: 'Aguardando Cliente',
+  LIQUIDACAO: 'Liquidação',
+  APROVADO_LIQUIDACAO: 'Aprovado/Liquidação',
+  RECICLAR: 'Reciclar',
+  DESCONHECIDO: 'Desconhecido',
+};
+
+const formatFallbackStageLabel = (stageKey) =>
+  stageKey
+    .split('_')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0) + segment.slice(1).toLowerCase())
+    .join(' ');
+
+const formatStageLabel = (stageKey) => {
+  const normalized = normalizeStage(stageKey);
+  if (STAGE_LABELS[normalized]) {
+    return STAGE_LABELS[normalized];
+  }
+
+  if (normalized === 'DESCONHECIDO') {
+    return STAGE_LABELS.DESCONHECIDO;
+  }
+
+  return formatFallbackStageLabel(normalized);
+};
+
 const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
   const preset = PRIMARY_ACTION_MAP[stageKey] ?? PRIMARY_ACTION_MAP[`${stageKey}_`];
   if (!preset) {
@@ -454,7 +598,10 @@ const PrimaryActionButton = ({ action, jroState, onExecute, disabled }) => {
       type="button"
       onClick={onExecute}
       disabled={disabled}
-      className={cn('flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]', toneClass)}
+      className={cn(
+        'flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]',
+        toneClass,
+      )}
     >
       <span>{action.label}</span>
     </Button>
@@ -466,6 +613,35 @@ const ContactSummary = ({ ticket }) => {
   const lastInbound = timeline.lastInboundAt ? formatDateTime(timeline.lastInboundAt) : '—';
   const lastOutbound = timeline.lastOutboundAt ? formatDateTime(timeline.lastOutboundAt) : '—';
   const lastDirection = timeline.lastDirection ?? null;
+  const lastChannel =
+    timeline.lastChannel ??
+    timeline.lastMessageChannel ??
+    (lastDirection === 'INBOUND' ? timeline.lastInboundChannel : timeline.lastOutboundChannel) ??
+    timeline.lastInboundChannel ??
+    timeline.lastOutboundChannel ??
+    timeline.channel ??
+    ticket?.channel ??
+    ticket?.metadata?.lastChannel ??
+    null;
+
+  const channelInfo = useMemo(() => resolveChannelInfo(lastChannel), [lastChannel]);
+
+  const lastInteractionDate = useMemo(
+    () => getLastInteractionTimestamp(timeline),
+    [timeline.lastDirection, timeline.lastInboundAt, timeline.lastOutboundAt],
+  );
+
+  const relativeTime = useMemo(() => formatRelativeTime(lastInteractionDate), [lastInteractionDate]);
+
+  const directionActor = useMemo(() => {
+    if (lastDirection === 'INBOUND') {
+      return 'Cliente';
+    }
+    if (lastDirection === 'OUTBOUND') {
+      return 'Equipe';
+    }
+    return null;
+  }, [lastDirection]);
 
   const directionLabel = useMemo(() => {
     switch (lastDirection) {
@@ -478,11 +654,41 @@ const ContactSummary = ({ ticket }) => {
     }
   }, [lastDirection]);
 
+  const directionSummary = useMemo(() => {
+    if (directionActor && relativeTime) {
+      return `${directionActor} • ${relativeTime}`;
+    }
+
+    if (directionActor) {
+      return directionActor;
+    }
+
+    if (relativeTime) {
+      return relativeTime;
+    }
+
+    return 'Sem interações registradas';
+  }, [directionActor, relativeTime]);
+
+  const ChannelIcon = channelInfo.icon;
+
   return (
     <div className="grid gap-3 text-sm">
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Última interação</span>
-        <span className="text-foreground">{directionLabel}</span>
+        <div className="flex flex-wrap items-center gap-2 text-foreground">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium',
+              channelInfo.className,
+            )}
+          >
+            <ChannelIcon className="h-3.5 w-3.5" aria-hidden data-testid={`channel-icon-${channelInfo.id}`} />
+            {channelInfo.label}
+          </span>
+          <span className="text-sm text-foreground">{directionLabel}</span>
+        </div>
+        <span className="text-xs text-foreground-muted">{directionSummary}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="flex flex-col gap-1">
@@ -562,6 +768,7 @@ export const ConversationHeader = ({
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
+  const stageLabel = useMemo(() => formatStageLabel(stageKey), [stageKey]);
 
   const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
@@ -698,8 +905,14 @@ export const ConversationHeader = ({
     }
   }, [handleCall, onEditContact, onFocusComposer, onGenerateProposal, onScheduleFollowUp, onSendTemplate, openDialog, primaryAction, ticket]);
 
+  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
+  const handleAssign = useCallback(() => {
+    if (!ticket) return;
+    onAssign?.(ticket);
+  }, [onAssign, ticket]);
+
   const summaryContent = (
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar className="h-12 w-12">
           <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
@@ -713,6 +926,7 @@ export const ConversationHeader = ({
               </span>
             ) : null}
             <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
+            {stageKey ? <Chip tone="neutral">{stageLabel}</Chip> : null}
             {origin ? <Chip tone="neutral">{origin}</Chip> : null}
           </div>
           <div className="mt-2">
@@ -720,8 +934,49 @@ export const ConversationHeader = ({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <TypingIndicator agents={typingAgents} />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {(() => {
+            const assigneeBadge = (
+              <Badge
+                variant="outline"
+                className="flex min-w-0 max-w-[200px] items-center gap-1 border-surface-overlay-glass-border text-xs text-foreground"
+              >
+                <UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="truncate">
+                  {assigneeInfo.label}
+                </span>
+              </Badge>
+            );
+
+            if (currentUser?.id && (ticket?.assignee?.id ?? ticket?.assignedTo?.id) !== currentUser.id) {
+              return (
+                <>
+                  {assigneeBadge}
+                  <Button type="button" size="xs" variant="outline" onClick={handleAssign} className="shrink-0">
+                    Assumir
+                  </Button>
+                </>
+              );
+            }
+
+            const tooltipLabel = assigneeInfo.assignee
+              ? `Responsável: ${assigneeInfo.label}`
+              : 'Disponível para atendimento';
+
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>{assigneeBadge}</TooltipTrigger>
+                <TooltipContent>
+                  <span className="text-xs font-medium text-foreground">{tooltipLabel}</span>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })()}
+        </div>
+        <div className="shrink-0">
+          <TypingIndicator agents={typingAgents} />
+        </div>
         <PrimaryActionButton
           action={primaryAction}
           jroState={jro.state}
@@ -730,14 +985,14 @@ export const ConversationHeader = ({
         />
         <CommandBar
           context={commandContext}
-          className="w-auto flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
+          className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
         />
         <CollapsibleTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="h-9 w-9 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
+            className="h-9 w-9 shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
             aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
           >
             <ChevronDown
@@ -750,28 +1005,9 @@ export const ConversationHeader = ({
     </div>
   );
 
-  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
-  const handleAssign = useCallback(() => {
-    if (!ticket) return;
-    onAssign?.(ticket);
-  }, [onAssign, ticket]);
-
   const contactContent = (
     <div className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-foreground">Contato</h4>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="gap-1 border-surface-overlay-glass-border text-xs text-foreground">
-            <UserCheck className="h-3.5 w-3.5" aria-hidden />
-            {assigneeInfo.label}
-          </Badge>
-          {currentUser?.id && ticket?.assignee?.id !== currentUser.id ? (
-            <Button type="button" size="xs" variant="outline" onClick={handleAssign}>
-              Assumir
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <h4 className="text-sm font-semibold text-foreground">Contato</h4>
       <InlineField
         label="Nome"
         value={ticket?.contact?.name ?? ''}
@@ -982,5 +1218,5 @@ export const ConversationHeader = ({
   );
 };
 
-export { normalizeStage, resolvePrimaryAction, PRIMARY_ACTION_MAP, PrimaryActionButton };
+export { normalizeStage, resolvePrimaryAction, formatStageLabel, PRIMARY_ACTION_MAP, PrimaryActionButton };
 export default ConversationHeader;
