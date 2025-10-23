@@ -126,36 +126,24 @@ const PRIMARY_ACTION_MAP = {
 
 const JRO_TONE_CLASSES = {
   neutral: {
-    pill: 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_16%,transparent)] text-[color:var(--accent-inbox-primary)]',
-    time: 'text-[color:var(--accent-inbox-primary)]',
-    statusLabel: 'Energia estável',
-    base: 'var(--accent-inbox-primary)',
-    glow: 'color-mix(in srgb, var(--accent-inbox-primary) 55%, transparent)',
-    stripe: 'rgba(255, 255, 255, 0.35)',
+    text: 'text-[color:var(--accent-inbox-primary)]',
+    bar: 'bg-[color:var(--accent-inbox-primary)]',
+    chip: 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)]/80',
   },
   yellow: {
-    pill: 'bg-amber-100 text-amber-700',
-    time: 'text-amber-400',
-    statusLabel: 'Energia em atenção',
-    base: '#facc15',
-    glow: 'rgba(250, 204, 21, 0.6)',
-    stripe: 'rgba(255, 255, 255, 0.45)',
+    text: 'text-amber-300',
+    bar: 'bg-amber-400',
+    chip: 'bg-amber-300/10',
   },
   orange: {
-    pill: 'bg-orange-100 text-orange-700',
-    time: 'text-orange-400',
-    statusLabel: 'Energia crítica',
-    base: '#fb923c',
-    glow: 'rgba(251, 146, 60, 0.65)',
-    stripe: 'rgba(255, 255, 255, 0.5)',
+    text: 'text-orange-300',
+    bar: 'bg-orange-400',
+    chip: 'bg-orange-300/10',
   },
   overdue: {
-    pill: 'bg-red-100 text-red-700',
-    time: 'text-red-400',
-    statusLabel: 'Energia esgotada',
-    base: '#f87171',
-    glow: 'rgba(248, 113, 113, 0.7)',
-    stripe: 'rgba(255, 255, 255, 0.55)',
+    text: 'text-red-400',
+    bar: 'bg-red-500',
+    chip: 'bg-red-400/10',
     pulse: 'animate-pulse',
   },
 };
@@ -613,81 +601,69 @@ const TypingIndicator = ({ agents = [] }) => {
 };
 
 const JroIndicator = ({ jro }) => {
-  const tone = JRO_TONE_CLASSES[jro.state] ?? JRO_TONE_CLASSES.neutral;
   const normalizedProgress = Number.isFinite(jro?.progress)
     ? Math.max(0, Math.min(jro.progress ?? 0, 1))
     : 0;
   const progressPercent = Math.round(normalizedProgress * 100);
   const hasDeadline = Boolean(jro?.deadline);
   const isOverdue = hasDeadline && typeof jro.msRemaining === 'number' && jro.msRemaining < 0;
-  const countdownLabel = hasDeadline ? `${isOverdue ? '-' : ''}${jro.remainingLabel}` : '--:--:--';
-  const countdownSuffix = hasDeadline ? (isOverdue ? 'de atraso' : 'restantes') : 'indisponível';
-  const energyDescriptor = hasDeadline ? `${tone.statusLabel} • ${progressPercent}%` : 'Monitoramento indisponível';
-  const slaMessage = !hasDeadline
-    ? 'Sem SLA configurado'
+  const baseTone = JRO_TONE_CLASSES[jro.state] ?? JRO_TONE_CLASSES.neutral;
+  const tone = hasDeadline
+    ? baseTone
+    : {
+        text: 'text-foreground-muted',
+        bar: 'bg-surface-overlay-glass-border/60',
+        chip: 'bg-surface-overlay-glass/10',
+      };
+  const timeLabel = hasDeadline ? jro.remainingLabel : '--:--:--';
+  const displayTime = hasDeadline ? `${isOverdue ? '-' : ''}${timeLabel}` : '--:--:--';
+  const readableStatus = !hasDeadline
+    ? 'SLA indisponível'
     : isOverdue
-      ? `Atrasado há ${jro.remainingLabel}`
-      : `Responder em até ${jro.remainingLabel}`;
-  const meterStyle = {
-    width: hasDeadline ? `${progressPercent}%` : '0%',
-    background:
-      'linear-gradient(90deg, var(--jro-base) 0%, color-mix(in srgb, var(--jro-base) 65%, transparent) 100%)',
-    boxShadow: '0 0 1.1rem var(--jro-glow)',
-    '--jro-base': tone.base,
-    '--jro-glow': tone.glow,
-  };
-  const stripesStyle = {
-    backgroundImage: `linear-gradient(135deg, ${tone.stripe} 25%, transparent 25%, transparent 50%, ${tone.stripe} 50%, ${tone.stripe} 75%, transparent 75%, transparent)`,
-    backgroundSize: '18px 18px',
-  };
+      ? `SLA atrasado há ${timeLabel}`
+      : `Tempo restante ${timeLabel}`;
+  const meterValue = hasDeadline ? progressPercent : 0;
+  const ariaLabel = `SLA interno. ${readableStatus}`;
 
   return (
-    <div className="w-full rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-glass/20 p-3">
-      <div className="flex items-end justify-between">
-        <span
-          className={cn(
-            'inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide',
-            tone.pill
-          )}
-        >
-          <BatteryCharging className="h-3.5 w-3.5" />
-          <span>SLA interno</span>
-        </span>
-        <div className="flex flex-col items-end leading-tight">
-          <span className={cn('text-sm font-semibold tabular-nums', tone.time)}>{countdownLabel}</span>
-          <span className="text-[10px] uppercase tracking-wide text-foreground-muted">{countdownSuffix}</span>
-        </div>
-      </div>
-      <div className="relative mt-3 h-3 w-full overflow-hidden rounded-full border border-surface-overlay-glass-border/60 bg-surface-overlay-quiet/70">
-        <div className="absolute inset-0 grid grid-cols-10">
-          {Array.from({ length: 10 }).map((_, index) => (
-            <div
-              // eslint-disable-next-line react/no-array-index-key
-              key={`jro-cell-${index}`}
-              className="h-full border-r border-surface-overlay-glass-border/40 last:border-r-0"
-            />
-          ))}
-        </div>
+    <section
+      role="group"
+      aria-label={ariaLabel}
+      title={readableStatus}
+      className="rounded-lg border border-surface-overlay-glass-border/70 bg-surface-overlay-glass/20 px-3 py-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm"
+    >
+      <div className="flex items-center justify-between gap-3">
         <div
-          className={cn('relative h-full rounded-full transition-[width] duration-700 ease-out', tone.pulse)}
-          style={meterStyle}
-        >
-          <div className="absolute inset-0 mix-blend-screen opacity-40" style={stripesStyle} />
-          <div className="absolute inset-y-0 right-0 w-[3px] bg-white/70 mix-blend-screen" />
-        </div>
-      </div>
-      <div className="mt-3 flex items-center justify-between text-xs">
-        <span
           className={cn(
-            'font-semibold uppercase tracking-wide',
-            hasDeadline ? tone.time : 'text-foreground-muted'
+            'inline-flex items-center gap-2 rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-wide',
+            tone.text,
+            tone.chip
           )}
         >
-          {energyDescriptor}
-        </span>
-        <span className="text-right text-foreground-muted">{slaMessage}</span>
+          <BatteryCharging className="h-3.5 w-3.5" aria-hidden />
+          <span>SLA interno</span>
+        </div>
+        <time
+          className={cn('text-sm font-semibold tabular-nums', tone.text)}
+          aria-live={hasDeadline ? 'polite' : 'off'}
+        >
+          {displayTime}
+        </time>
       </div>
-    </div>
+      <div className="mt-2">
+        <div className="h-[2px] w-full rounded bg-white/10" aria-hidden="true">
+          <div
+            className={cn(
+              'h-full rounded transition-[width] duration-500 ease-out motion-reduce:transition-none',
+              tone.bar,
+              tone.pulse
+            )}
+            style={{ width: `${meterValue}%` }}
+          />
+        </div>
+        <meter className="sr-only" min={0} max={100} value={meterValue} aria-label="Progresso do SLA" />
+      </div>
+    </section>
   );
 };
 
