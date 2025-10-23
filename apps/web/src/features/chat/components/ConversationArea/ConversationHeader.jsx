@@ -65,10 +65,12 @@ const CHIP_STYLES = {
 const PRIMARY_ACTION_PRESETS = {
   initialContact: {
     whatsapp: { id: 'send-initial-wa', label: 'Enviar 1ª mensagem (WhatsApp)' },
+    validateContact: { id: 'validate-contact', label: 'Validar contato' },
     fallback: { id: 'call-now', label: 'Ligar agora' },
   },
   keepEngagement: {
     whatsapp: { id: 'send-wa', label: 'Enviar mensagem (WhatsApp)' },
+    validateContact: { id: 'validate-contact', label: 'Validar contato' },
     fallback: { id: 'call-now', label: 'Ligar agora' },
   },
   qualify: {
@@ -351,7 +353,7 @@ const getTicketStage = (ticket) => {
   return normalizeStage(stage);
 };
 
-const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
+const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = false }) => {
   const preset = PRIMARY_ACTION_MAP[stageKey] ?? PRIMARY_ACTION_MAP[`${stageKey}_`];
   if (!preset) {
     return null;
@@ -359,6 +361,10 @@ const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
 
   if (preset.whatsapp && hasWhatsApp) {
     return preset.whatsapp;
+  }
+
+  if (preset.validateContact && needsContactValidation) {
+    return preset.validateContact;
   }
 
   return preset.default ?? preset.fallback ?? null;
@@ -429,13 +435,43 @@ const Chip = ({ tone = 'neutral', className, children, ...props }) => (
 const useStageInfo = (ticket) => {
   const stageKey = getTicketStage(ticket);
   const primaryAction = useMemo(() => {
-    const leadHasWhatsApp = Boolean(
+    const hasPhone = Boolean(
       ticket?.contact?.phone ??
         (Array.isArray(ticket?.contact?.phones) && ticket.contact.phones.length > 0) ??
         ticket?.metadata?.contactPhone
     );
-    return resolvePrimaryAction({ stageKey, hasWhatsApp: leadHasWhatsApp });
-  }, [stageKey, ticket?.contact?.phone, ticket?.contact?.phones, ticket?.metadata?.contactPhone]);
+    const whatsappChannel =
+      ticket?.metadata?.channels?.whatsapp ??
+      ticket?.channels?.whatsapp ??
+      null;
+    const whatsappIsInvalid =
+      (typeof whatsappChannel?.valid === 'boolean' && whatsappChannel.valid === false) ||
+      (typeof whatsappChannel?.isValid === 'boolean' && whatsappChannel.isValid === false) ||
+      whatsappChannel === false ||
+      whatsappChannel?.status === 'invalid';
+
+    const leadHasWhatsApp = hasPhone && !whatsappIsInvalid;
+    const needsContactValidation = hasPhone && whatsappIsInvalid;
+
+    return resolvePrimaryAction({
+      stageKey,
+      hasWhatsApp: leadHasWhatsApp,
+      needsContactValidation,
+    });
+  }, [
+    stageKey,
+    ticket?.channels?.whatsapp,
+    ticket?.channels?.whatsapp?.isValid,
+    ticket?.channels?.whatsapp?.status,
+    ticket?.channels?.whatsapp?.valid,
+    ticket?.contact?.phone,
+    ticket?.contact?.phones,
+    ticket?.metadata?.channels?.whatsapp,
+    ticket?.metadata?.channels?.whatsapp?.isValid,
+    ticket?.metadata?.channels?.whatsapp?.status,
+    ticket?.metadata?.channels?.whatsapp?.valid,
+    ticket?.metadata?.contactPhone,
+  ]);
 
   return { stageKey, primaryAction };
 };
@@ -673,6 +709,9 @@ export const ConversationHeader = ({
       case 'call-now':
       case 'call-followup':
         handleCall();
+        break;
+      case 'validate-contact':
+        onEditContact?.(ticket?.contact?.id ?? null);
         break;
       case 'qualify':
         onScheduleFollowUp?.(ticket);
