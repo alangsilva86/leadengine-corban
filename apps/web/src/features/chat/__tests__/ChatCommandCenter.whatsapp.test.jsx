@@ -84,6 +84,17 @@ vi.mock('../hooks/useManualConversationLauncher.js', () => ({
   }),
 }));
 
+const { useUpdateNextStepMock, nextStepMutationHolder } = vi.hoisted(() => {
+  const holder = { current: { mutateAsync: vi.fn(), isPending: false } };
+  const mock = vi.fn(() => holder.current);
+  return { useUpdateNextStepMock: mock, nextStepMutationHolder: holder };
+});
+
+vi.mock('../api/useUpdateNextStep.js', () => ({
+  __esModule: true,
+  default: useUpdateNextStepMock,
+}));
+
 vi.mock('../api/useUpdateContactField.js', () => ({
   __esModule: true,
   default: () => ({
@@ -102,6 +113,13 @@ let sendMessageMutate;
 
 describe('ChatCommandCenter WhatsApp integration errors', () => {
   beforeEach(() => {
+    nextStepMutationHolder.current = {
+      mutateAsync: vi.fn(async () => ({})),
+      isPending: false,
+    };
+    useUpdateNextStepMock.mockClear();
+    useUpdateNextStepMock.mockImplementation(() => nextStepMutationHolder.current);
+
     sendMessageMutate = vi.fn();
     mockController = {
       tickets: [],

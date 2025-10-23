@@ -887,14 +887,26 @@ export const ConversationHeader = ({
     </div>
   );
 
-  const content = (
-    <div className="flex flex-col gap-4">
-      {summaryContent}
-      <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-        <div className="mt-4 max-h-[calc(100vh-18rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
-          {detailsContent}
-        </div>
-      </CollapsibleContent>
+  const renderedSummary = renderSummary
+    ? renderSummary(summaryContent, { isExpanded, onOpenChange: setIsExpanded })
+    : summaryContent;
+
+  const renderedDetails = (
+    <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+      <div className="mt-4 max-h-[calc(100vh-18rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
+        {renderDetails ? renderDetails(detailsContent, { isExpanded, onOpenChange: setIsExpanded }) : detailsContent}
+      </div>
+    </CollapsibleContent>
+  );
+
+  return (
+    <Collapsible
+      open={isExpanded}
+      onOpenChange={setIsExpanded}
+      className="relative z-10 flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur"
+    >
+      {renderedSummary}
+      {renderedDetails}
       <LossReasonDialog
         open={activeDialog === 'register-result'}
         onOpenChange={(open) => {
@@ -919,16 +931,6 @@ export const ConversationHeader = ({
         }}
         onSubmit={handleCallResultSubmit}
       />
-    </div>
-  );
-
-  if (renderSummary) {
-    return renderSummary(content, { isExpanded, onOpenChange: setIsExpanded });
-  }
-
-  return (
-    <Collapsible open={isExpanded} onOpenChange={setIsExpanded} className="relative z-10 flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur">
-      {content}
     </Collapsible>
   );
 };
