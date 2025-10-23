@@ -6,10 +6,23 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible.jsx';
+import { Button } from '@/components/ui/button.jsx';
+import { Input } from '@/components/ui/input.jsx';
+import { Textarea } from '@/components/ui/textarea.jsx';
+import { Badge } from '@/components/ui/badge.jsx';
+import { Progress } from '@/components/ui/progress.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
-import { ChevronDown, FileText, IdCard, Phone } from 'lucide-react';
+import {
+  ChevronDown,
+  Phone,
+  FileText,
+  Edit3,
+  Copy as CopyIcon,
+  UserCheck,
+  AlertTriangle,
+} from 'lucide-react';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import QuickComposer from './QuickComposer.jsx';
@@ -17,6 +30,7 @@ import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 import CallResultDialog from './CallResultDialog.jsx';
 import LossReasonDialog from './LossReasonDialog.jsx';
 import { CommandBar } from './CommandBar.jsx';
+import useTicketJro from '../../hooks/useTicketJro.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -27,6 +41,11 @@ const LOSS_REASONS = [
   { value: 'documentacao', label: 'Documentação incompleta' },
   { value: 'outro', label: 'Outro' },
 ];
+
+const LOSS_REASON_HELPERS = LOSS_REASONS.reduce((acc, item) => {
+  acc[item.value] = item.label;
+  return acc;
+}, {});
 
 const STATUS_LABELS = {
   OPEN: 'Aberto',
@@ -52,25 +71,71 @@ const CHIP_STYLES = {
   success: 'border-success-soft-border bg-success-soft text-success-strong',
 };
 
-const LOSS_REASON_HELPERS = LOSS_REASONS.reduce((acc, item) => {
-  acc[item.value] = item.label;
-  return acc;
-}, {});
-
-const formatPotential = (value) => {
-  if (value === null || value === undefined) return 'R$ —';
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) {
-    return `R$ ${value}`;
-  }
-  return `R$ ${numeric.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`;
+const PRIMARY_ACTION_MAP = {
+  NOVO: {
+    whatsapp: { id: 'send-initial-wa', label: 'Enviar 1ª mensagem (WhatsApp)' },
+    fallback: { id: 'call-now', label: 'Ligar agora' },
+  },
+  CONECTADO: {
+    whatsapp: { id: 'send-wa', label: 'Enviar mensagem (WhatsApp)' },
+    fallback: { id: 'call-now', label: 'Ligar agora' },
+  },
+  QUALIFICACAO: {
+    default: { id: 'qualify', label: 'Registrar próximo passo' },
+  },
+  QUALIFICACAO_: {
+    default: { id: 'qualify', label: 'Registrar próximo passo' },
+  },
+  PROPOSTA: {
+    default: { id: 'generate-proposal', label: 'Gerar proposta' },
+  },
+  DOCUMENTACAO: {
+    default: { id: 'send-steps', label: 'Enviar passo a passo' },
+  },
+  AGUARDANDO: {
+    whatsapp: { id: 'send-followup', label: 'Enviar follow-up' },
+    fallback: { id: 'call-followup', label: 'Ligar (follow-up)' },
+  },
+  LIQUIDACAO: {
+    default: { id: 'close-register', label: 'Registrar resultado' },
+  },
 };
 
-const formatProbability = (value) => {
-  if (value === null || value === undefined) return '—';
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return String(value);
-  return `${Math.round(numeric)}%`;
+const JRO_TONE_CLASSES = {
+  neutral: {
+    bar: 'bg-[color:var(--accent-inbox-primary)]',
+    pill: 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_16%,transparent)] text-[color:var(--accent-inbox-primary)]',
+  },
+  yellow: {
+    bar: 'bg-amber-400',
+    pill: 'bg-amber-100 text-amber-700',
+  },
+  orange: {
+    bar: 'bg-orange-500',
+    pill: 'bg-orange-200 text-orange-700',
+  },
+  overdue: {
+    bar: 'bg-red-500 animate-pulse',
+    pill: 'bg-red-100 text-red-700 animate-pulse',
+  },
+};
+
+const PRIMARY_BUTTON_TONE = {
+  neutral: 'bg-[color:var(--accent-inbox-primary)] text-white hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]',
+  yellow: 'bg-amber-500 text-white hover:bg-amber-500/90',
+  orange: 'bg-orange-500 text-white hover:bg-orange-500/90',
+  overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
+};
+
+const normalizeStage = (value) => {
+  if (!value) return 'DESCONHECIDO';
+  return value
+    .toString()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '_');
 };
 
 const getStatusInfo = (status) => {
@@ -81,74 +146,231 @@ const getStatusInfo = (status) => {
   };
 };
 
-const buildShortId = (value) => {
-  if (!value) return null;
-  const normalized = String(value);
-  if (normalized.length <= 8) return normalized;
-  if (normalized.includes('-')) {
-    const segments = normalized.split('-');
-    return segments[segments.length - 1].slice(0, 8).toUpperCase();
-  }
-  return normalized.slice(-8).toUpperCase();
+const useInlineEditor = (initialValue, onSave, debounceMs = 500) => {
+  const [draft, setDraft] = useState(initialValue ?? '');
+  const [status, setStatus] = useState('idle');
+  const timeoutRef = useRef(null);
+  const lastSavedRef = useRef(initialValue ?? '');
+
+  useEffect(() => {
+    setDraft(initialValue ?? '');
+    lastSavedRef.current = initialValue ?? '';
+    setStatus('idle');
+  }, [initialValue]);
+
+  useEffect(() => () => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+    }
+  }, []);
+
+  const scheduleSave = useCallback(
+    (nextValue) => {
+      if (!onSave) {
+        return;
+      }
+
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+
+      if ((nextValue ?? '') === (lastSavedRef.current ?? '')) {
+        setStatus('idle');
+        return;
+      }
+
+      setStatus('saving');
+      timeoutRef.current = window.setTimeout(async () => {
+        try {
+          await onSave(nextValue ?? '');
+          lastSavedRef.current = nextValue ?? '';
+          setStatus('saved');
+          window.setTimeout(() => setStatus('idle'), 1500);
+        } catch (error) {
+          console.error('Failed to save inline field', error);
+          setStatus('error');
+        }
+      }, debounceMs);
+    },
+    [debounceMs, onSave]
+  );
+
+  const handleChange = useCallback(
+    (valueOrEvent) => {
+      const next = valueOrEvent?.target ? valueOrEvent.target.value : valueOrEvent;
+      setDraft(next);
+      scheduleSave(next);
+    },
+    [scheduleSave]
+  );
+
+  return { draft, status, handleChange, setDraft };
 };
 
-const minutesToHoursLabel = (minutes) => {
-  if (minutes === undefined || minutes === null) return null;
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-  const hours = Math.round(minutes / 60);
-  return `${hours} h`;
+const CopyButton = ({ value, label }) => {
+  const { copy } = useClipboard();
+
+  const handleCopy = useCallback(async () => {
+    if (!value) {
+      toast.info('Não há dados para copiar.');
+      return;
+    }
+
+    const content = typeof value === 'string' ? value : String(value);
+    const success = await copy(content, {
+      successMessage: `${label} copiado.`,
+      emptyMessage: null,
+    });
+
+    if (!success) {
+      toast.error('Não foi possível copiar.');
+    }
+  }, [copy, label, value]);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 rounded-full text-foreground-muted hover:text-foreground"
+          onClick={handleCopy}
+        >
+          <CopyIcon className="h-4 w-4" aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Copiar {label}</TooltipContent>
+    </Tooltip>
+  );
 };
 
-const getExpirationInfo = (windowInfo = {}) => {
-  const { remainingMinutes, isOpen } = windowInfo;
+const InlineField = ({
+  label,
+  value,
+  placeholder,
+  onSave,
+  formatter,
+  copyable = false,
+  type = 'text',
+  disabled = false,
+}) => {
+  const { draft, status, handleChange } = useInlineEditor(value ?? '', onSave);
+  const labelId = useId();
+  const formattedValue = formatter ? formatter(draft) : draft;
 
-  if (isOpen === false) {
-    return { label: 'Janela expirada', tone: 'danger' };
-  }
-
-  if (remainingMinutes === undefined || remainingMinutes === null) {
-    return { label: 'Expira em breve', tone: 'warning' };
-  }
-
-  if (remainingMinutes <= 120) {
-    const label = remainingMinutes <= 60
-      ? `Expira em ${remainingMinutes} min`
-      : `Expira em ${Math.round(remainingMinutes / 60)} h`;
-    return { label, tone: 'danger' };
-  }
-
-  if (remainingMinutes < 1440) {
-    const label = remainingMinutes <= 180
-      ? `Expira em ${Math.round(remainingMinutes / 60)} h`
-      : 'Expira em 24h';
-    return { label, tone: 'warning' };
-  }
-
-  const days = Math.floor(remainingMinutes / 1440);
-  return { label: `Expira em ${days}d`, tone: 'warning' };
+  return (
+    <div className="flex flex-col gap-1" role="group" aria-labelledby={labelId}>
+      <div className="flex items-center justify-between gap-2">
+        <span id={labelId} className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+          {label}
+        </span>
+        {status === 'saving' ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">salvando…</span>
+        ) : null}
+        {status === 'saved' ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-600">salvo</span>
+        ) : null}
+        {status === 'error' ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-destructive">erro</span>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          value={formattedValue}
+          onChange={handleChange}
+          placeholder={placeholder}
+          type={type}
+          disabled={disabled || !onSave}
+          className={cn(
+            'h-9 flex-1 rounded-lg border-surface-overlay-glass-border bg-transparent text-sm',
+            status === 'error' && 'border-destructive focus-visible:ring-destructive'
+          )}
+        />
+        {copyable ? <CopyButton value={draft} label={label.toLowerCase()} /> : null}
+      </div>
+    </div>
+  );
 };
 
-const buildSlaTooltip = (windowInfo = {}) => {
-  const lastInteraction = minutesToHoursLabel(windowInfo.lastInteractionMinutes);
-  if (!lastInteraction) {
-    return 'Prazo para primeira resposta.';
-  }
-  return `Prazo para primeira resposta. Último contato há ${lastInteraction}.`;
+const NextStepEditor = ({ value, onSave }) => {
+  const { draft, status, handleChange } = useInlineEditor(value ?? '', onSave, 700);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Próximo passo</span>
+        {status === 'saving' ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600">salvando…</span>
+        ) : null}
+        {status === 'saved' ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-600">salvo</span>
+        ) : null}
+        {status === 'error' ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-destructive">erro</span>
+        ) : null}
+      </div>
+      <Textarea
+        value={draft}
+        onChange={handleChange}
+        placeholder="Descreva o próximo passo combinado"
+        className={cn(
+          'min-h-[90px] rounded-xl border-surface-overlay-glass-border bg-transparent text-sm',
+          status === 'error' && 'border-destructive focus-visible:ring-destructive'
+        )}
+      />
+    </div>
+  );
 };
 
-const Chip = ({ tone = 'neutral', className, children, ...props }) => (
-  <span
-    className={cn(
-      'inline-flex min-h-[28px] items-center justify-center rounded-full px-3 text-[12px] font-medium leading-none tracking-wide',
-      CHIP_STYLES[tone] ?? CHIP_STYLES.neutral,
-      className,
-    )}
-    {...props}>
-    {children}
-  </span>
-);
+const getOriginLabel = (ticket) => {
+  const origin =
+    ticket?.metadata?.origin ??
+    ticket?.metadata?.source ??
+    ticket?.origin ??
+    ticket?.source ??
+    null;
+  if (!origin) {
+    return null;
+  }
+  return origin;
+};
+
+const getTicketStage = (ticket) => {
+  const stage =
+    ticket?.pipelineStep ??
+    ticket?.metadata?.pipelineStep ??
+    ticket?.stage ??
+    null;
+  return normalizeStage(stage);
+};
+
+const resolvePrimaryAction = ({ stageKey, hasWhatsApp }) => {
+  const preset = PRIMARY_ACTION_MAP[stageKey] ?? PRIMARY_ACTION_MAP[`${stageKey}_`];
+  if (!preset) {
+    return null;
+  }
+
+  if (preset.whatsapp && hasWhatsApp) {
+    return preset.whatsapp;
+  }
+
+  return preset.default ?? preset.fallback ?? null;
+};
+
+const getAssigneeLabel = (ticket) => {
+  const assignee = ticket?.assignee ?? ticket?.assignedTo ?? null;
+  if (!assignee) {
+    return { label: 'Disponível', tone: 'neutral', assignee: null };
+  }
+
+  const name = assignee.name ?? assignee.displayName ?? assignee.email ?? 'Responsável';
+  return {
+    label: name,
+    tone: 'info',
+    assignee,
+  };
+};
 
 const TypingIndicator = ({ agents = [] }) => {
   if (!agents.length) return null;
@@ -167,66 +389,105 @@ const TypingIndicator = ({ agents = [] }) => {
   );
 };
 
-const InfoRow = ({
-  label,
-  children,
-  className,
-  labelClassName,
-  valueClassName,
-  ...props
-}) => {
-  const labelId = useId();
+const JroIndicator = ({ jro }) => {
+  const tone = JRO_TONE_CLASSES[jro.state] ?? JRO_TONE_CLASSES.neutral;
 
   return (
-    <div
-      role="group"
-      aria-labelledby={labelId}
-      className={cn('flex flex-col gap-1', className)}
-      {...props}>
-      <span
-        id={labelId}
-        className={cn('text-xs font-medium uppercase tracking-wide text-foreground-muted', labelClassName)}
-      >
-        {label}
-      </span>
-      <div className={cn('text-sm font-medium text-foreground', valueClassName)}>{children ?? '—'}</div>
+    <div className="flex w-full flex-col gap-1">
+      <div className={cn('flex items-center gap-2 text-xs font-medium', tone.pill)}>
+        {jro.label}
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-surface-overlay-quiet">
+        <div
+          className={cn('h-full rounded-full transition-[width] duration-500 ease-out', tone.bar)}
+          style={{ width: `${Math.round(jro.progress * 100)}%` }}
+        />
+      </div>
     </div>
   );
 };
 
-export const ConversationCardBody = ({ children, className }) => (
-  <div
+const Chip = ({ tone = 'neutral', className, children, ...props }) => (
+  <span
     className={cn(
-      'mt-3 grid gap-4 border-t border-surface-overlay-glass-border pt-4 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]',
-      className,
+      'inline-flex min-h-[28px] items-center justify-center rounded-full px-3 text-[12px] font-medium leading-none tracking-wide',
+      CHIP_STYLES[tone] ?? CHIP_STYLES.neutral,
+      className
     )}
+    {...props}
   >
     {children}
-  </div>
+  </span>
 );
 
-ConversationCardBody.Left = function ConversationCardBodyLeft({ children, className }) {
-  return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
+const useStageInfo = (ticket) => {
+  const stageKey = getTicketStage(ticket);
+  const primaryAction = useMemo(() => {
+    const leadHasWhatsApp = Boolean(
+      ticket?.contact?.phone ??
+        (Array.isArray(ticket?.contact?.phones) && ticket.contact.phones.length > 0) ??
+        ticket?.metadata?.contactPhone
+    );
+    return resolvePrimaryAction({ stageKey, hasWhatsApp: leadHasWhatsApp });
+  }, [stageKey, ticket?.contact?.phone, ticket?.contact?.phones, ticket?.metadata?.contactPhone]);
+
+  return { stageKey, primaryAction };
 };
 
-ConversationCardBody.Right = function ConversationCardBodyRight({ children, className }) {
-  return <div className={cn('flex flex-col gap-4', className)}>{children}</div>;
+const PrimaryActionButton = ({ action, jroState, onExecute, disabled }) => {
+  if (!action) {
+    return null;
+  }
+  const toneClass = PRIMARY_BUTTON_TONE[jroState] ?? PRIMARY_BUTTON_TONE.neutral;
+
+  return (
+    <Button
+      type="button"
+      onClick={onExecute}
+      disabled={disabled}
+      className={cn('flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]', toneClass)}
+    >
+      <span>{action.label}</span>
+    </Button>
+  );
 };
 
-export { ConversationCardBody as CardBody };
+const ContactSummary = ({ ticket }) => {
+  const timeline = ticket?.timeline ?? {};
+  const lastInbound = timeline.lastInboundAt ? formatDateTime(timeline.lastInboundAt) : '—';
+  const lastOutbound = timeline.lastOutboundAt ? formatDateTime(timeline.lastOutboundAt) : '—';
+  const lastDirection = timeline.lastDirection ?? null;
 
-const SectionLink = ({ actionId, label, onActivate }) => (
-  <a
-    href={`#command-${actionId}`}
-    onClick={(event) => {
-      event.preventDefault();
-      onActivate(actionId);
-    }}
-    className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-surface-overlay-glass-border px-3 py-1 text-xs font-medium text-foreground hover:bg-surface-overlay-quiet"
-  >
-    {label}
-  </a>
-);
+  const directionLabel = useMemo(() => {
+    switch (lastDirection) {
+      case 'INBOUND':
+        return 'Cliente aguardando resposta';
+      case 'OUTBOUND':
+        return 'Aguardando cliente';
+      default:
+        return 'Sem interações recentes';
+    }
+  }, [lastDirection]);
+
+  return (
+    <div className="grid gap-3 text-sm">
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Última interação</span>
+        <span className="text-foreground">{directionLabel}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className="flex flex-col gap-1">
+          <span className="font-medium text-foreground-muted uppercase tracking-wide">Cliente</span>
+          <span className="text-sm text-foreground">{lastInbound}</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="font-medium text-foreground-muted uppercase tracking-wide">Equipe</span>
+          <span className="text-sm text-foreground">{lastOutbound}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const ConversationHeader = ({
   ticket,
@@ -244,20 +505,25 @@ export const ConversationHeader = ({
   isRegisteringResult = false,
   renderSummary,
   renderDetails,
+  onContactFieldSave,
+  nextStepValue,
+  onNextStepSave,
+  onFocusComposer,
+  currentUser,
 }) => {
-  const [isFadeIn, setIsFadeIn] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
   const dialogReturnFocusRef = useRef(null);
   const { copy: copyToClipboard } = useClipboard();
+  const jro = useTicketJro(ticket);
+  const { stageKey, primaryAction } = useStageInfo(ticket);
 
   useEffect(() => {
     if (!ticket) return;
-    setIsFadeIn(false);
     setIsExpanded(false);
-    const frame = requestAnimationFrame(() => setIsFadeIn(true));
+    const frame = requestAnimationFrame(() => setIsExpanded(false));
     return () => cancelAnimationFrame(frame);
-  }, [ticket?.id, ticket]);
+  }, [ticket?.id]);
 
   useEffect(() => {
     emitInboxTelemetry('chat.header.toggle', {
@@ -270,85 +536,37 @@ export const ConversationHeader = ({
   const company = ticket?.metadata?.company ?? ticket?.contact?.company ?? null;
   const title = company ? `${name} | ${company}` : name;
   const leadIdentifier = ticket?.lead?.id ?? ticket?.id ?? null;
-  const shortId = useMemo(() => buildShortId(leadIdentifier), [leadIdentifier]);
+  const shortId = useMemo(() => {
+    if (!leadIdentifier) return null;
+    const normalized = String(leadIdentifier);
+    if (normalized.length <= 8) return normalized.toUpperCase();
+    if (normalized.includes('-')) {
+      const segments = normalized.split('-');
+      return segments[segments.length - 1].slice(0, 8).toUpperCase();
+    }
+    return normalized.slice(-8).toUpperCase();
+  }, [leadIdentifier]);
+
   const phoneDisplay = formatPhoneNumber(ticket?.contact?.phone || ticket?.metadata?.contactPhone);
   const rawPhone = ticket?.contact?.phone || ticket?.metadata?.contactPhone || null;
   const document = ticket?.contact?.document ?? null;
   const email = ticket?.contact?.email ?? ticket?.metadata?.contactEmail ?? null;
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
-  const expirationInfo = useMemo(() => getExpirationInfo(ticket?.window), [ticket?.window]);
-  const slaTooltip = useMemo(() => buildSlaTooltip(ticket?.window), [ticket?.window]);
-  const remainingMinutes = ticket?.window?.remainingMinutes ?? null;
-  const lastInteractionLabel = useMemo(
-    () => minutesToHoursLabel(ticket?.window?.lastInteractionMinutes),
-    [ticket?.window?.lastInteractionMinutes],
-  );
-
-  const potential = useMemo(() => formatPotential(ticket?.lead?.value), [ticket?.lead?.value]);
-  const probability = useMemo(() => formatProbability(ticket?.lead?.probability), [ticket?.lead?.probability]);
-  const stage = useMemo(
-    () => ticket?.pipelineStep ?? ticket?.metadata?.pipelineStep ?? '—',
-    [ticket?.pipelineStep, ticket?.metadata?.pipelineStep],
-  );
-
-  const timeline = ticket?.timeline ?? {};
-  const lastInboundLabel = useMemo(() => formatDateTime(timeline.lastInboundAt), [timeline.lastInboundAt]);
-  const lastOutboundLabel = useMemo(() => formatDateTime(timeline.lastOutboundAt), [timeline.lastOutboundAt]);
-  const directionMeta = useMemo(() => {
-    switch (timeline.lastDirection) {
-      case 'INBOUND':
-        return { tone: 'warning', label: 'Cliente aguardando resposta' };
-      case 'OUTBOUND':
-        return { tone: 'info', label: 'Aguardando cliente' };
-      default:
-        return { tone: 'neutral', label: 'Sem interações recentes' };
-    }
-  }, [timeline.lastDirection]);
-  const unreadInboundCount = timeline.unreadInboundCount ?? 0;
-
-  const subtitle = useMemo(() => {
-    const parts = [];
-    if (stage && stage !== '—') {
-      parts.push(`Etapa: ${stage}`);
-    }
-    if (lastInteractionLabel) {
-      parts.push(`Último contato há ${lastInteractionLabel}`);
-    }
-    if (unreadInboundCount > 0) {
-      const hasMany = unreadInboundCount > 1;
-      parts.push(`${unreadInboundCount} mensagem${hasMany ? 's' : ''} pendente${hasMany ? 's' : ''}`);
-    }
-    return parts.join(' • ');
-  }, [stage, lastInteractionLabel, unreadInboundCount]);
-
-  const attachments = useMemo(() => {
-    const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
-    if (Array.isArray(source)) return source.filter(Boolean);
-    if (source && typeof source === 'object') return Object.values(source).filter(Boolean);
-    return [];
-  }, [ticket?.attachments, ticket?.metadata?.attachments]);
+  const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
 
   const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
   });
 
-  const handleCall = useCallback(
-    (phone) => {
-      phoneAction('call', phone);
-    },
-    [phoneAction],
-  );
+  const handleCall = useCallback(() => {
+    phoneAction('call');
+  }, [phoneAction]);
 
-  const handleSendSms = useCallback(
-    (phone) => {
-      const executed = phoneAction('sms', phone);
-      if (executed) {
-        onSendSMS?.(phone);
-      }
-    },
-    [onSendSMS, phoneAction],
-  );
+  const handleSendSms = useCallback(() => {
+    phoneAction('sms');
+    onSendSMS?.(rawPhone);
+  }, [onSendSMS, phoneAction, rawPhone]);
 
   const openDialog = useCallback((dialog, { returnFocus } = {}) => {
     dialogReturnFocusRef.current = returnFocus ?? null;
@@ -369,103 +587,25 @@ export const ConversationHeader = ({
       onRegisterCallResult?.({ outcome, notes });
       closeDialog();
     },
-    [closeDialog, onRegisterCallResult],
+    [closeDialog, onRegisterCallResult]
   );
 
-  const handleCopyDocument = useCallback(() => {
-    const fallbackMessage =
-      document && document !== '—' ? (value) => `Copie manualmente: ${value}` : null;
-    copyToClipboard(document, {
-      emptyMessage: 'Nenhum documento disponível para copiar.',
-      successMessage: 'Documento copiado.',
-      errorMessage: 'Não foi possível concluir. Tente novamente.',
-      fallbackMessage,
-    });
-  }, [copyToClipboard, document]);
-
-  const handleGenerateProposal = useCallback(() => {
-    onGenerateProposal?.(ticket);
-  }, [onGenerateProposal, ticket]);
-
-  useEffect(() => {
-    if (!ticket) {
-      return undefined;
-    }
-
-    const handleShortcut = (event) => {
-      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+  const handleLossReasonSubmit = useCallback(
+    async ({ reason, notes }) => {
+      if (!onRegisterResult) {
+        toast.error('Não foi possível concluir. Tente novamente.');
         return;
       }
-
-      const key = event.key?.toLowerCase();
-      switch (key) {
-        case 'e':
-          setIsExpanded((previous) => !previous);
-          event.preventDefault();
-          break;
-        case 'g':
-          handleGenerateProposal();
-          event.preventDefault();
-          break;
-        case 'n':
-          onAssign?.(ticket);
-          event.preventDefault();
-          break;
-        case 'x':
-          onScheduleFollowUp?.(ticket);
-          event.preventDefault();
-          break;
-        default:
-          break;
+      const reasonLabel = LOSS_REASON_HELPERS[reason] ?? reason;
+      const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
+      try {
+        await onRegisterResult({ outcome: 'lost', reason: finalReason });
+        closeDialog();
+      } catch {
+        // feedback tratado a montante
       }
-    };
-
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [ticket, onAssign, onScheduleFollowUp, handleGenerateProposal]);
-
-  const handleAssign = useCallback(() => {
-    onAssign?.(ticket);
-  }, [onAssign, ticket]);
-
-  const handleScheduleFollowUp = useCallback(() => {
-    onScheduleFollowUp?.(ticket);
-  }, [onScheduleFollowUp, ticket]);
-
-  const handleLossReasonSubmit = useCallback(async ({ reason, notes }) => {
-    if (!onRegisterResult) {
-      toast.error('Não foi possível concluir. Tente novamente.');
-      return;
-    }
-    const reasonLabel = LOSS_REASON_HELPERS[reason] ?? reason;
-    const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
-    try {
-      await onRegisterResult({ outcome: 'lost', reason: finalReason });
-      closeDialog();
-    } catch {
-      // feedback tratado a montante
-    }
-  }, [closeDialog, onRegisterResult]);
-
-  const handleCommandLink = useCallback((actionId) => {
-    const element = document.getElementById(`command-${actionId}`);
-    if (!element) return;
-    element.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    element.focus({ preventScroll: true });
-  }, []);
-
-  const commandCapabilities = useMemo(
-    () => ({
-      canGenerateProposal: Boolean(ticket),
-      canAssign: Boolean(ticket),
-      canRegisterResult: Boolean(ticket),
-      canCall: Boolean(rawPhone),
-      canSendSms: Boolean(rawPhone),
-      canQuickFollowUp: Boolean(ticket),
-      canAttachFile: true,
-      canEditContact: Boolean(ticket?.contact?.id),
-    }),
-    [ticket, rawPhone],
+    },
+    [closeDialog, onRegisterResult]
   );
 
   const commandContext = useMemo(
@@ -473,16 +613,25 @@ export const ConversationHeader = ({
       ticket,
       handlers: {
         onGenerateProposal,
-        onAssign: handleAssign,
+        onAssign,
         onRegisterResult,
-        onRegisterCallResult: handleCallResultSubmit,
-        onScheduleFollowUp: handleScheduleFollowUp,
+        onRegisterCallResult,
+        onScheduleFollowUp,
         onAttachFile,
         onEditContact,
         onCall: handleCall,
         onSendSMS: handleSendSms,
       },
-      capabilities: commandCapabilities,
+      capabilities: {
+        canGenerateProposal: Boolean(ticket),
+        canAssign: Boolean(ticket),
+        canRegisterResult: Boolean(ticket),
+        canCall: Boolean(rawPhone),
+        canSendSms: Boolean(rawPhone),
+        canQuickFollowUp: Boolean(ticket),
+        canAttachFile: true,
+        canEditContact: Boolean(ticket?.contact?.id),
+      },
       phoneNumber: rawPhone ?? null,
       loadingStates: {
         registerResult: isRegisteringResult,
@@ -491,206 +640,243 @@ export const ConversationHeader = ({
       analytics: ({ id }) => emitInboxTelemetry('chat.command.execute', { ticketId: ticket?.id ?? null, actionId: id }),
     }),
     [
-      ticket,
-      onGenerateProposal,
-      handleAssign,
-      onRegisterResult,
-      handleCallResultSubmit,
-      handleScheduleFollowUp,
-      onAttachFile,
-      onEditContact,
       handleCall,
       handleSendSms,
-      commandCapabilities,
-      rawPhone,
       isRegisteringResult,
+      onAttachFile,
+      onAssign,
+      onEditContact,
+      onGenerateProposal,
+      onRegisterCallResult,
+      onRegisterResult,
+      onScheduleFollowUp,
       openDialog,
-    ],
+      rawPhone,
+      ticket,
+    ]
   );
 
-  if (!ticket) {
-    return (
-      <div className="flex h-24 items-center justify-center rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet text-sm text-foreground-muted shadow-inner shadow-slate-950/40 backdrop-blur">
-        Selecione um ticket para visualizar a conversa.
-      </div>
-    );
-  }
+  const handlePrimaryAction = useCallback(() => {
+    if (!primaryAction) {
+      return;
+    }
+
+    switch (primaryAction.id) {
+      case 'send-initial-wa':
+      case 'send-wa':
+        onFocusComposer?.();
+        break;
+      case 'call-now':
+      case 'call-followup':
+        handleCall();
+        break;
+      case 'qualify':
+        onScheduleFollowUp?.(ticket);
+        break;
+      case 'generate-proposal':
+        onGenerateProposal?.(ticket);
+        break;
+      case 'send-steps':
+        onSendTemplate?.({ id: 'steps' });
+        break;
+      case 'send-followup':
+        onScheduleFollowUp?.(ticket);
+        break;
+      case 'validate-contact':
+        onEditContact?.(ticket?.contact?.id ?? null);
+        break;
+      case 'close-register':
+        openDialog('register-result');
+        break;
+      default:
+        break;
+    }
+  }, [handleCall, onEditContact, onFocusComposer, onGenerateProposal, onScheduleFollowUp, onSendTemplate, openDialog, primaryAction, ticket]);
 
   const summaryContent = (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
-          {shortId ? (
-            <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
-              #{shortId}
-            </span>
-          ) : null}
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <Avatar className="h-12 w-12">
+          <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
+            {shortId ? (
+              <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
+                #{shortId}
+              </span>
+            ) : null}
+            <Chip tone={statusInfo.tone}>{statusInfo.label}</Chip>
+            {origin ? <Chip tone="neutral">{origin}</Chip> : null}
+          </div>
+          <div className="mt-2">
+            <JroIndicator jro={jro} />
+          </div>
         </div>
-        <Chip tone={statusInfo.tone} className="px-2.5 py-1 text-[11px]">
-          {statusInfo.label}
-        </Chip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Chip tone={expirationInfo.tone} className="cursor-default select-none px-2.5 py-1 text-[11px]">
-              {expirationInfo.label}
-            </Chip>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="start">
-            <p className="max-w-[220px] text-xs text-foreground-muted">{slaTooltip}</p>
-          </TooltipContent>
-        </Tooltip>
-        {typingAgents.length > 0 ? <TypingIndicator agents={typingAgents} /> : null}
       </div>
       <div className="flex items-center gap-2">
+        <TypingIndicator agents={typingAgents} />
+        <PrimaryActionButton
+          action={primaryAction}
+          jroState={jro.state}
+          onExecute={handlePrimaryAction}
+          disabled={!primaryAction}
+        />
         <CommandBar
           context={commandContext}
-          className="w-auto flex-nowrap gap-1 rounded-none border-none bg-transparent p-0 shadow-none"
+          className="w-auto flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
         />
         <CollapsibleTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
             aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
           >
             <ChevronDown
-              className={cn('size-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
+              className={cn('h-4 w-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
               aria-hidden
             />
-          </button>
+          </Button>
         </CollapsibleTrigger>
       </div>
     </div>
   );
 
+  const assigneeInfo = useMemo(() => getAssigneeLabel(ticket), [ticket]);
+  const handleAssign = useCallback(() => {
+    if (!ticket) return;
+    onAssign?.(ticket);
+  }, [onAssign, ticket]);
+
   const contactContent = (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-foreground">Contato</h4>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="gap-1 border-surface-overlay-glass-border text-xs text-foreground">
+            <UserCheck className="h-3.5 w-3.5" aria-hidden />
+            {assigneeInfo.label}
+          </Badge>
+          {currentUser?.id && ticket?.assignee?.id !== currentUser.id ? (
+            <Button type="button" size="xs" variant="outline" onClick={handleAssign}>
+              Assumir
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <InlineField
+        label="Nome"
+        value={ticket?.contact?.name ?? ''}
+        placeholder="Nome completo"
+        onSave={onContactFieldSave ? (value) => onContactFieldSave('name', value) : undefined}
+      />
       <div className="grid gap-3 sm:grid-cols-2">
-        <InfoRow label="Telefone">
-          <span className="flex items-center gap-2 text-foreground">
-            <Phone className="size-4 text-foreground-muted" aria-hidden />
-            <span>{phoneDisplay ?? '—'}</span>
-          </span>
-        </InfoRow>
-        <InfoRow label="E-mail">{email ?? '—'}</InfoRow>
-        <InfoRow label="Documento">
-          <button
-            type="button"
-            className="inline-flex min-h-[32px] items-center gap-2 rounded-lg border border-surface-overlay-glass-border px-3 text-xs text-foreground-muted hover:bg-surface-overlay-quiet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-overlay-glass-border"
-            onClick={handleCopyDocument}
-          >
-            <IdCard className="size-4" aria-hidden />
-            <span>{document ?? '—'}</span>
-          </button>
-        </InfoRow>
-        <InfoRow label="ID do contato">{ticket?.contact?.id ?? '—'}</InfoRow>
+        <InlineField
+          label="Telefone"
+          value={ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? ''}
+          placeholder="(00) 00000-0000"
+          onSave={onContactFieldSave ? (value) => onContactFieldSave('phone', value) : undefined}
+          formatter={formatPhoneNumber}
+          copyable
+        />
+        <InlineField
+          label="Documento"
+          value={document ?? ''}
+          placeholder="000.000.000-00"
+          onSave={onContactFieldSave ? (value) => onContactFieldSave('document', value) : undefined}
+          copyable
+        />
+        <InlineField
+          label="E-mail"
+          value={email ?? ''}
+          placeholder="nome@exemplo.com"
+          onSave={onContactFieldSave ? (value) => onContactFieldSave('email', value) : undefined}
+          type="email"
+          copyable
+        />
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Ações de contato</span>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={handleCall}>
+              <Phone className="mr-2 h-3.5 w-3.5" aria-hidden />
+              Ligar agora
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={handleSendSms}>
+              Enviar SMS
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onEditContact?.(ticket?.contact?.id ?? null)}
+            >
+              <Edit3 className="mr-2 h-3.5 w-3.5" aria-hidden />
+              Editar contato
+            </Button>
+          </div>
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
-        <span>Precisa agir?</span>
-        <SectionLink actionId="generate-proposal" label="Gerar proposta" onActivate={handleCommandLink} />
-        <SectionLink actionId="assign-owner" label="Atribuir ticket" onActivate={handleCommandLink} />
-        <SectionLink actionId="phone-call" label="Abrir ações de telefone" onActivate={handleCommandLink} />
-      </div>
+      <ContactSummary ticket={ticket} />
+      <NextStepEditor value={nextStepValue} onSave={onNextStepSave} />
     </div>
   );
 
-  const opportunityContent = (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <InfoRow label="Potencial">{potential}</InfoRow>
-      <InfoRow label="Probabilidade">{probability}</InfoRow>
-      <InfoRow label="Etapa atual">{stage}</InfoRow>
-      <InfoRow label="Próximo SLA">{remainingMinutes ? `${remainingMinutes} min` : '—'}</InfoRow>
-      <div className="sm:col-span-2">
-        <SectionLink actionId="register-result" label="Registrar resultado" onActivate={handleCommandLink} />
-      </div>
-    </div>
-  );
-
-  const timelineContent = (
-    <div className="flex flex-col gap-3">
-      <InfoRow label="Último cliente">{lastInboundLabel ?? '—'}</InfoRow>
-      <InfoRow label="Último agente">{lastOutboundLabel ?? '—'}</InfoRow>
-      <InfoRow label="Situação">
-        <Chip tone={directionMeta.tone}>{directionMeta.label}</Chip>
-      </InfoRow>
-      <InfoRow label="Pendências">{unreadInboundCount > 0 ? `${unreadInboundCount} mensagens` : 'Nenhuma'}</InfoRow>
-    </div>
-  );
-
-  const attachmentsContent = attachments.length
-    ? (
-        <ul className="space-y-2 text-sm text-foreground">
-          {attachments.map((item, index) => {
-            const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
-            const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
-            return (
-              <li
-                key={key}
-                className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]">{label}</span>
-                <span className="text-xs text-foreground-muted">{item?.size ? `${Math.round(item.size / 1024)} KB` : ''}</span>
-              </li>
-            );
-          })}
-        </ul>
-      )
-    : (
-        <p className="text-sm text-foreground-muted">Nenhum anexo disponível para este ticket.</p>
-      );
+  const attachments = useMemo(() => {
+    const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
+    if (Array.isArray(source)) return source.filter(Boolean);
+    if (source && typeof source === 'object') return Object.values(source).filter(Boolean);
+    return [];
+  }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
   const detailsContent = (
-    <>
-      <CollapsibleContent
-        className={cn(
-          'data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden'
-        )}
-      >
-        <div className="max-h-[calc(100vh-20rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
-          <div className="mt-3 flex flex-col gap-4 border-t border-surface-overlay-glass-border pt-4">
-            <ConversationCardBody>
-              <ConversationCardBody.Left>
-                <QuickComposer
-                  ticket={ticket}
-                  onSendTemplate={onSendTemplate}
-                  onCreateNextStep={onCreateNextStep}
-                />
-              </ConversationCardBody.Left>
-              <ConversationCardBody.Right>
-                <p className="text-xs text-foreground-muted">{subtitle}</p>
-                {contactContent}
-                <div className="rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/30 p-3 text-xs text-foreground-muted">
-                  <p className="font-medium text-foreground">Atalhos disponíveis</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <SectionLink actionId="quick-followup" label="Agendar follow-up (/t)" onActivate={handleCommandLink} />
-                    <SectionLink actionId="attach-file" label="Anexar arquivo" onActivate={handleCommandLink} />
-                    <SectionLink actionId="edit-contact" label="Editar contato" onActivate={handleCommandLink} />
-                  </div>
-                </div>
-              </ConversationCardBody.Right>
-            </ConversationCardBody>
-
-            <div className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Oportunidade</h3>
-              <div className="mt-3">{opportunityContent}</div>
-            </div>
-
-            <div className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Timeline resumida</h3>
-              <div className="mt-3">{timelineContent}</div>
-              <SectionLink
-                actionId="register-result"
-                label="Registrar novo resultado"
-                onActivate={handleCommandLink}
-              />
-            </div>
-
-            <div className="rounded-3xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Anexos recentes</h3>
-              <div className="mt-3">{attachmentsContent}</div>
-              <SectionLink actionId="attach-file" label="Adicionar novo anexo" onActivate={handleCommandLink} />
-            </div>
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+      {contactContent}
+      <div className="flex min-h-0 flex-col gap-4">
+        <div className="rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4 text-xs text-foreground-muted">
+          <div className="flex items-center gap-2 text-foreground">
+            <AlertTriangle className="h-4 w-4" aria-hidden />
+            <span className="font-semibold">Anexos recentes</span>
           </div>
+          {attachments.length ? (
+            <ul className="mt-2 space-y-2">
+              {attachments.slice(0, 5).map((item, index) => {
+                const key = item?.id ?? item?.name ?? item?.fileName ?? item?.url ?? index;
+                const label = item?.name ?? item?.fileName ?? item?.filename ?? item?.originalName ?? 'Anexo';
+                return (
+                  <li
+                    key={key}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground"
+                  >
+                    <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]">{label}</span>
+                    <span className="text-xs text-foreground-muted">
+                      {item?.size ? `${Math.round(item.size / 1024)} KB` : ''}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm">Nenhum anexo disponível para este ticket.</p>
+          )}
+        </div>
+        <QuickComposer
+          ticket={ticket}
+          onSendTemplate={onSendTemplate}
+          onCreateNextStep={onCreateNextStep}
+        />
+      </div>
+    </div>
+  );
+
+  const content = (
+    <div className="flex flex-col gap-4">
+      {summaryContent}
+      <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        <div className="mt-4 max-h-[calc(100vh-18rem)] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]">
+          {detailsContent}
         </div>
       </CollapsibleContent>
       <LossReasonDialog
@@ -717,20 +903,16 @@ export const ConversationHeader = ({
         }}
         onSubmit={handleCallResultSubmit}
       />
-    </>
+    </div>
   );
 
+  if (renderSummary) {
+    return renderSummary(content, { isExpanded, onOpenChange: setIsExpanded });
+  }
+
   return (
-    <Collapsible
-      open={isExpanded}
-      onOpenChange={setIsExpanded}
-      className={cn(
-        'relative z-10 flex flex-col rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur transition-opacity duration-150',
-        isFadeIn ? 'opacity-100' : 'opacity-0',
-      )}
-    >
-      {renderSummary ? renderSummary(summaryContent, { isExpanded, onOpenChange: setIsExpanded }) : summaryContent}
-      {renderDetails ? renderDetails(detailsContent, { isExpanded, onOpenChange: setIsExpanded }) : detailsContent}
+    <Collapsible open={isExpanded} onOpenChange={setIsExpanded} className="relative z-10 flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur">
+      {content}
     </Collapsible>
   );
 };

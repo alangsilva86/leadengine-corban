@@ -12,6 +12,7 @@ import ManualConversationDialog from './components/ManualConversationDialog.jsx'
 import { useManualConversationLauncher } from './hooks/useManualConversationLauncher.js';
 import emitInboxTelemetry from './utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
+import useUpdateContactField from './api/useUpdateContactField.js';
 
 const MANUAL_CONVERSATION_TOAST_ID = 'manual-conversation';
 
@@ -40,6 +41,11 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
 
   const controller = useChatController({ tenantId, currentUser });
   const selectedTicket = controller.selectedTicket;
+  const selectedContact = selectedTicket?.contact ?? null;
+  const updateContactFieldMutation = useUpdateContactField({
+    contactId: selectedContact?.id,
+  });
+  const [nextStepDraft, setNextStepDraft] = useState('');
   const {
     launch: launchManualConversation,
     isPending: manualConversationPending,
@@ -58,6 +64,18 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
   useEffect(() => {
     setWhatsAppUnavailable(null);
   }, [controller.selectedTicketId]);
+
+  useEffect(() => {
+    const nextStep =
+      selectedTicket?.metadata?.nextAction?.description ??
+      selectedTicket?.nextStep?.description ??
+      '';
+    setNextStepDraft(nextStep);
+  }, [
+    selectedTicket?.id,
+    selectedTicket?.metadata?.nextAction?.description,
+    selectedTicket?.nextStep?.description,
+  ]);
 
   const handleManualConversationSubmit = useCallback(
     async (payload) => {
@@ -127,6 +145,58 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
     },
     [controller.selectTicket, controller.ticketsQuery]
   );
+
+  const handleContactFieldSave = useCallback(
+    async (field, rawValue) => {
+      if (!selectedContact?.id) {
+        throw new Error('Contato indisponível para atualização.');
+      }
+
+      if (!field) {
+        return;
+      }
+
+      const normalizedValue = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+      const payload = {};
+
+      switch (field) {
+        case 'name':
+          payload.name = normalizedValue || null;
+          break;
+        case 'document':
+          payload.document = normalizedValue || null;
+          break;
+        case 'email':
+          payload.email = normalizedValue || null;
+          break;
+        case 'phone':
+          payload.phone = normalizedValue ? String(normalizedValue).replace(/\D/g, '') : null;
+          break;
+        default:
+          return;
+      }
+
+      const currentValue = selectedContact?.[field];
+      if (
+        typeof currentValue === 'string' &&
+        typeof payload[field] === 'string' &&
+        currentValue.trim() === payload[field]
+      ) {
+        return;
+      }
+
+      await updateContactFieldMutation.mutateAsync({
+        targetContactId: selectedContact.id,
+        data: payload,
+      });
+    },
+    [selectedContact?.id, selectedContact?.name, selectedContact?.document, selectedContact?.email, selectedContact?.phone, updateContactFieldMutation]
+  );
+
+  const handleUpdateNextStep = useCallback(async (value) => {
+    setNextStepDraft(value);
+    return Promise.resolve();
+  }, []);
 
   const sendMessage = ({ content, attachments = [], template, caption }) => {
     const trimmed = (content ?? '').trim();
@@ -517,6 +587,10 @@ export const ChatCommandCenter = ({ tenantId: tenantIdProp, currentUser }) => {
             sendError={controller.sendMessageMutation.error}
             composerDisabled={Boolean(whatsAppUnavailable)}
             composerDisabledReason={whatsAppUnavailable}
+            onContactFieldSave={handleContactFieldSave}
+            nextStepValue={nextStepDraft}
+            onNextStepSave={handleUpdateNextStep}
+            currentUser={currentUser}
           />
         </InboxAppShell>
       </div>

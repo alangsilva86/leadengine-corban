@@ -84,6 +84,13 @@ vi.mock('../hooks/useManualConversationLauncher.js', () => ({
   }),
 }));
 
+vi.mock('../api/useUpdateContactField.js', () => ({
+  __esModule: true,
+  default: () => ({
+    mutateAsync: vi.fn(async () => ({})),
+  }),
+}));
+
 let mockController;
 
 vi.mock('../hooks/useChatController.js', () => ({
@@ -99,7 +106,19 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
     mockController = {
       tickets: [],
       selectedTicketId: 'ticket-1',
-      selectedTicket: { id: 'ticket-1' },
+      selectedTicket: {
+        id: 'ticket-1',
+        contact: {
+          id: 'contact-1',
+          name: 'Cliente Teste',
+          phone: '+5511999999999',
+          email: 'cliente@example.com',
+        },
+        metadata: {
+          pipelineStep: 'Novo',
+          contactPhone: '+5511999999999',
+        },
+      },
       conversation: {
         timeline: [
           { id: 'divider-1', type: 'divider' },

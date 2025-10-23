@@ -29,6 +29,10 @@ export const ConversationArea = ({
   sendError,
   composerDisabled = false,
   composerDisabledReason = null,
+  onContactFieldSave = async () => {},
+  nextStepValue = '',
+  onNextStepSave = async () => {},
+  currentUser = null,
 }) => {
   const disabled = Boolean(composerDisabled);
   const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
@@ -160,6 +164,10 @@ export const ConversationArea = ({
     api?.openAttachmentDialog?.();
   }, []);
 
+  const handleFocusComposer = useCallback(() => {
+    composerApiRef.current?.focusInput?.();
+  }, []);
+
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-visible">
@@ -178,6 +186,11 @@ export const ConversationArea = ({
             onEditContact={onEditContact}
             isRegisteringResult={isRegisteringResult}
             typingAgents={typingIndicator?.agentsTyping ?? []}
+            onContactFieldSave={onContactFieldSave}
+            nextStepValue={nextStepValue}
+            onNextStepSave={onNextStepSave}
+            onFocusComposer={handleFocusComposer}
+            currentUser={currentUser}
             renderSummary={(summary, { isExpanded }) => (
               <header
                 className={cn(
