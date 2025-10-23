@@ -37,7 +37,6 @@ import {
   RefreshCcw,
   Sparkles,
   UserCheck,
-  UserClock,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -552,7 +551,7 @@ const STAGE_PRESENTATION = {
   DOCUMENTACAO: { icon: FileSignature, tone: 'info' },
   DOCUMENTOS_AVERBACAO: { icon: FileCheck2, tone: 'info' },
   AGUARDANDO: { icon: Hourglass, tone: 'warning' },
-  AGUARDANDO_CLIENTE: { icon: UserClock, tone: 'warning' },
+  AGUARDANDO_CLIENTE: { icon: Clock3, tone: 'warning' },
   LIQUIDACAO: { icon: CircleDollarSign, tone: 'success' },
   APROVADO_LIQUIDACAO: { icon: BadgeCheck, tone: 'success' },
   RECICLAR: { icon: RefreshCcw, tone: 'neutral' },
