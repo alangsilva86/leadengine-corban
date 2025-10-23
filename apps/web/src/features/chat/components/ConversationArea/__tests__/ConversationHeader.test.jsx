@@ -303,5 +303,47 @@ describe('ConversationHeader component', () => {
       expect(screen.queryByText('Parcela')).not.toBeInTheDocument();
     });
   });
+
+  it('propagates composer height as a CSS variable when provided', async () => {
+    const now = Date.now();
+    const ticket = {
+      id: 'ticket-dynamic-height',
+      status: 'OPEN',
+      channel: 'WHATSAPP',
+      pipelineStep: 'Novo',
+      contact: { id: 'contact-11', name: 'Cliente Dinâmico', phone: '+55 11 99999-0000' },
+      metadata: { contactPhone: '+55 11 99999-0000' },
+      timeline: {
+        lastDirection: 'INBOUND',
+        lastInboundAt: new Date(now - 3 * 60 * 1000).toISOString(),
+        lastOutboundAt: new Date(now - 8 * 60 * 1000).toISOString(),
+        lastChannel: 'whatsapp',
+      },
+    };
+
+    render(
+      <ConversationHeader
+        ticket={ticket}
+        composerHeight={264}
+        typingAgents={[]}
+        onAssign={() => {}}
+        onScheduleFollowUp={() => {}}
+        onRegisterResult={() => {}}
+        onRegisterCallResult={() => {}}
+        onSendTemplate={() => {}}
+        onCreateNextStep={() => {}}
+        onGenerateProposal={() => {}}
+        onSendSMS={() => {}}
+        onAttachFile={() => {}}
+      />
+    );
+
+    const user = userEvent.setup();
+    const toggleButton = screen.getByRole('button', { name: /Expandir detalhes/i });
+    await user.click(toggleButton);
+
+    const details = await screen.findByTestId('conversation-header-details');
+    expect(details.style.getPropertyValue('--conversation-header-composer')).toBe('264px');
+  });
 });
 
