@@ -764,7 +764,7 @@ const ContactSummary = ({ ticket }) => {
   );
 };
 
-export const ConversationHeader = ({
+const ConversationHeader = ({
   ticket,
   onRegisterResult,
   onRegisterCallResult,
@@ -1383,5 +1383,5 @@ export const ConversationHeader = ({
   );
 };
 
-export { normalizeStage, resolvePrimaryAction, formatStageLabel, PRIMARY_ACTION_MAP, PrimaryActionButton };
+export { ConversationHeader, normalizeStage, resolvePrimaryAction, formatStageLabel, PRIMARY_ACTION_MAP, PrimaryActionButton };
 export default ConversationHeader;
