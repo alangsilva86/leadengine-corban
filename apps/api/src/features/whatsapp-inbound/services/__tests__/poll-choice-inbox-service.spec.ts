@@ -6,7 +6,10 @@ const hoistedMocks = vi.hoisted(() => ({
 
 vi.mock('../inbound-lead-service', () => hoistedMocks);
 
-import { triggerPollChoiceInboxNotification } from '../poll-choice-inbox-service';
+import {
+  PollChoiceInboxNotificationStatus,
+  triggerPollChoiceInboxNotification,
+} from '../poll-choice-inbox-service';
 
 const ingestInboundWhatsAppMessageMock = hoistedMocks.ingestInboundWhatsAppMessage;
 
@@ -52,7 +55,7 @@ describe('triggerPollChoiceInboxNotification', () => {
   it('builds a synthetic message envelope and delegates ingestion', async () => {
     ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
 
-    const persisted = await triggerPollChoiceInboxNotification({
+    const result = await triggerPollChoiceInboxNotification({
       poll: basePoll,
       state: baseState,
       selectedOptions: basePoll.selectedOptions,
@@ -61,7 +64,7 @@ describe('triggerPollChoiceInboxNotification', () => {
       requestId: 'req-1',
     });
 
-    expect(persisted).toBe(true);
+    expect(result).toEqual({ status: PollChoiceInboxNotificationStatus.Ok, persisted: true });
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
     const [envelope] = ingestInboundWhatsAppMessageMock.mock.calls[0] ?? [];
     expect(envelope).toMatchObject({
@@ -82,7 +85,7 @@ describe('triggerPollChoiceInboxNotification', () => {
   });
 
   it('skips ingestion when tenant is missing', async () => {
-    const persisted = await triggerPollChoiceInboxNotification({
+    const result = await triggerPollChoiceInboxNotification({
       poll: basePoll,
       state: baseState,
       selectedOptions: basePoll.selectedOptions,
@@ -91,7 +94,63 @@ describe('triggerPollChoiceInboxNotification', () => {
       requestId: null,
     });
 
-    expect(persisted).toBe(false);
+    expect(result).toEqual({
+      status: PollChoiceInboxNotificationStatus.MissingTenant,
+      persisted: false,
+    });
     expect(ingestInboundWhatsAppMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('skips ingestion when chat id cannot be normalized', async () => {
+    const result = await triggerPollChoiceInboxNotification({
+      poll: { ...basePoll, voterJid: undefined as unknown as string },
+      state: baseState,
+      selectedOptions: basePoll.selectedOptions,
+      tenantId: 'tenant-abc',
+      instanceId: null,
+      requestId: 'req-2',
+    });
+
+    expect(result).toEqual({
+      status: PollChoiceInboxNotificationStatus.InvalidChatId,
+      persisted: false,
+    });
+    expect(ingestInboundWhatsAppMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('returns rejected status when ingestion declines persistence', async () => {
+    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(false);
+
+    const result = await triggerPollChoiceInboxNotification({
+      poll: basePoll,
+      state: baseState,
+      selectedOptions: basePoll.selectedOptions,
+      tenantId: 'tenant-abc',
+      instanceId: 'instance-xyz',
+      requestId: 'req-3',
+    });
+
+    expect(result).toEqual({
+      status: PollChoiceInboxNotificationStatus.IngestRejected,
+      persisted: false,
+    });
+  });
+
+  it('returns error status when ingestion throws', async () => {
+    ingestInboundWhatsAppMessageMock.mockRejectedValueOnce(new Error('boom'));
+
+    const result = await triggerPollChoiceInboxNotification({
+      poll: basePoll,
+      state: baseState,
+      selectedOptions: basePoll.selectedOptions,
+      tenantId: 'tenant-abc',
+      instanceId: 'instance-xyz',
+      requestId: 'req-4',
+    });
+
+    expect(result).toEqual({
+      status: PollChoiceInboxNotificationStatus.IngestError,
+      persisted: false,
+    });
   });
 });

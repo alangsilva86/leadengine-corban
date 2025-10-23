@@ -37,7 +37,10 @@ import {
 import { PollChoiceEventSchema } from '../schemas/poll-choice';
 import { recordPollChoiceVote } from '../services/poll-choice-service';
 import { syncPollChoiceState } from '../services/poll-choice-sync-service';
-import { triggerPollChoiceInboxNotification } from '../services/poll-choice-inbox-service';
+import {
+  PollChoiceInboxNotificationStatus,
+  triggerPollChoiceInboxNotification,
+} from '../services/poll-choice-inbox-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -924,14 +927,6 @@ const processPollChoiceEvent = async (
     });
 
     if (result.updated) {
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: context.tenantOverride ?? 'unknown',
-        instanceId: context.instanceId ?? 'unknown',
-        result: 'accepted',
-        reason: 'poll_choice',
-      });
-
       let pollMetadataSynced = false;
 
       try {
@@ -969,9 +964,17 @@ const processPollChoiceEvent = async (
               pollId: pollPayload.pollId,
               voterJid: pollPayload.voterJid,
             });
+            whatsappWebhookEventsCounter.inc({
+              origin: 'webhook',
+              tenantId: context.tenantOverride ?? 'unknown',
+              instanceId: context.instanceId ?? 'unknown',
+              result: 'failed',
+              reason: 'poll_choice_inbox_missing_tenant',
+            });
+            return { persisted: 0, ignored: 0, failures: 1 };
           } else {
             try {
-              await triggerPollChoiceInboxNotification({
+              const inboxResult = await triggerPollChoiceInboxNotification({
                 poll: pollWithSelections,
                 state: result.state,
                 selectedOptions: pollWithSelections.selectedOptions,
@@ -979,6 +982,31 @@ const processPollChoiceEvent = async (
                 instanceId: context.instanceId ?? null,
                 requestId: context.requestId,
               });
+
+              if (inboxResult.status !== PollChoiceInboxNotificationStatus.Ok) {
+                logger.warn('Poll choice inbox notification returned non-success status', {
+                  requestId: context.requestId,
+                  pollId: pollPayload.pollId,
+                  voterJid: pollPayload.voterJid,
+                  tenantId: tenantForInbox,
+                  status: inboxResult.status,
+                });
+                const inboxReason: Record<Exclude<PollChoiceInboxNotificationStatus, PollChoiceInboxNotificationStatus.Ok>, string> = {
+                  [PollChoiceInboxNotificationStatus.MissingTenant]: 'poll_choice_inbox_missing_tenant',
+                  [PollChoiceInboxNotificationStatus.InvalidChatId]: 'poll_choice_inbox_invalid_chat_id',
+                  [PollChoiceInboxNotificationStatus.IngestRejected]: 'poll_choice_inbox_ingest_rejected',
+                  [PollChoiceInboxNotificationStatus.IngestError]: 'poll_choice_inbox_ingest_error',
+                };
+
+                whatsappWebhookEventsCounter.inc({
+                  origin: 'webhook',
+                  tenantId: tenantForInbox,
+                  instanceId: context.instanceId ?? 'unknown',
+                  result: 'failed',
+                  reason: inboxReason[inboxResult.status],
+                });
+                return { persisted: 0, ignored: 0, failures: 1 };
+              }
             } catch (inboxError) {
               logger.error('Failed to trigger poll choice inbox notification', {
                 requestId: context.requestId,
@@ -987,10 +1015,26 @@ const processPollChoiceEvent = async (
                 tenantId: tenantForInbox,
                 error: inboxError,
               });
+              whatsappWebhookEventsCounter.inc({
+                origin: 'webhook',
+                tenantId: tenantForInbox,
+                instanceId: context.instanceId ?? 'unknown',
+                result: 'failed',
+                reason: 'poll_choice_inbox_error',
+              });
+              return { persisted: 0, ignored: 0, failures: 1 };
             }
           }
         }
       }
+
+      whatsappWebhookEventsCounter.inc({
+        origin: 'webhook',
+        tenantId: context.tenantOverride ?? 'unknown',
+        instanceId: context.instanceId ?? 'unknown',
+        result: 'accepted',
+        reason: 'poll_choice',
+      });
 
       return { persisted: 1, ignored: 0, failures: 0 };
     }

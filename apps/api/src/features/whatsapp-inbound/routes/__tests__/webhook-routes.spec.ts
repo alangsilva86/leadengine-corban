@@ -70,6 +70,13 @@ vi.mock('../../services/poll-choice-sync-service', () => ({
 }));
 
 vi.mock('../../services/poll-choice-inbox-service', () => ({
+  PollChoiceInboxNotificationStatus: {
+    Ok: 'ok',
+    MissingTenant: 'missing_tenant',
+    InvalidChatId: 'invalid_chat_id',
+    IngestRejected: 'ingest_rejected',
+    IngestError: 'ingest_error',
+  },
   triggerPollChoiceInboxNotification: hoistedMocks.triggerPollChoiceInboxNotificationMock,
 }));
 
@@ -133,7 +140,7 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
-    triggerPollChoiceInboxNotificationMock.mockResolvedValue(false);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
   });
 
   it('rejects requests without signature when enforcement is enabled', async () => {
@@ -259,7 +266,7 @@ describe('WhatsApp webhook Baileys event logging', () => {
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
-    triggerPollChoiceInboxNotificationMock.mockResolvedValue(false);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
   });
 
   it('persists a debug snapshot before ingesting normalized messages', async () => {
@@ -513,7 +520,7 @@ describe('WhatsApp webhook instance resolution', () => {
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
-    triggerPollChoiceInboxNotificationMock.mockResolvedValue(false);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
   });
 
   const createInstanceApp = () => {
@@ -679,14 +686,17 @@ describe('WhatsApp webhook poll choice events', () => {
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
-    triggerPollChoiceInboxNotificationMock.mockResolvedValue(false);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
   });
 
   it('delegates poll choice events to dedicated service', async () => {
     const now = new Date().toISOString();
     syncPollChoiceStateMock.mockResolvedValueOnce(false);
     prismaMock.message.findFirst.mockResolvedValueOnce(null);
-    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce(true);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
+      status: 'ok',
+      persisted: true,
+    });
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
       state: {
@@ -765,6 +775,109 @@ describe('WhatsApp webhook poll choice events', () => {
     const metrics = renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice"[^}]*result="accepted"[^}]*\} 1/
+    );
+  });
+
+  it('records poll choice inbox failure when tenant context is unavailable', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    prismaMock.message.findFirst.mockResolvedValueOnce(null);
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-missing-tenant',
+        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+            messageId: 'wamid-missing-tenant',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/webhooks', whatsappWebhookRouter);
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      payload: {
+        pollId: 'poll-missing-tenant',
+        voterJid: '5511999999999@s.whatsapp.net',
+        selectedOptionIds: ['opt-1'],
+        options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(triggerPollChoiceInboxNotificationMock).not.toHaveBeenCalled();
+
+    const metrics = renderMetrics();
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_missing_tenant"[^}]*result="failed"[^}]*\} 1/
+    );
+  });
+
+  it('records poll choice inbox failure when synthetic message ingestion is rejected', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    prismaMock.message.findFirst.mockResolvedValueOnce(null);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
+      status: 'ingest_rejected',
+      persisted: false,
+    });
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-ingest-rejected',
+        options: [{ id: 'opt-2', title: 'Option 2', index: 0 }],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-2'],
+            selectedOptions: [{ id: 'opt-2', title: 'Option 2' }],
+            messageId: 'wamid-ingest',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-2': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-2': 1 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-2', title: 'Option 2' }],
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/webhooks', whatsappWebhookRouter);
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      tenantId: 'tenant-abc',
+      payload: {
+        pollId: 'poll-ingest-rejected',
+        voterJid: '5511999999999@s.whatsapp.net',
+        selectedOptionIds: ['opt-2'],
+        options: [{ id: 'opt-2', title: 'Option 2', selected: true }],
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-2': 1 } },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledTimes(1);
+
+    const metrics = renderMetrics();
+    expect(metrics).toMatch(
+      /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_ingest_rejected"[^}]*result="failed"[^}]*\} 1/
     );
   });
 

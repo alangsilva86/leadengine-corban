@@ -10,6 +10,25 @@ import type {
 } from '../schemas/poll-choice';
 import type { InboundWhatsAppEnvelopeMessage } from './types';
 
+export enum PollChoiceInboxNotificationStatus {
+  Ok = 'ok',
+  MissingTenant = 'missing_tenant',
+  InvalidChatId = 'invalid_chat_id',
+  IngestRejected = 'ingest_rejected',
+  IngestError = 'ingest_error',
+}
+
+export type PollChoiceInboxNotificationResult =
+  | { status: PollChoiceInboxNotificationStatus.Ok; persisted: true }
+  | {
+      status:
+        | PollChoiceInboxNotificationStatus.MissingTenant
+        | PollChoiceInboxNotificationStatus.InvalidChatId
+        | PollChoiceInboxNotificationStatus.IngestRejected
+        | PollChoiceInboxNotificationStatus.IngestError;
+      persisted: false;
+    };
+
 const normalizeChatId = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -131,7 +150,7 @@ export const triggerPollChoiceInboxNotification = async ({
   tenantId,
   instanceId,
   requestId,
-}: TriggerParams): Promise<boolean> => {
+}: TriggerParams): Promise<PollChoiceInboxNotificationResult> => {
   const normalizedTenantId = typeof tenantId === 'string' ? tenantId.trim() : '';
   if (!normalizedTenantId) {
     logger.warn('Poll choice inbox notification skipped due to missing tenant', {
@@ -139,7 +158,7 @@ export const triggerPollChoiceInboxNotification = async ({
       voterJid: poll.voterJid,
       requestId: requestId ?? null,
     });
-    return false;
+    return { status: PollChoiceInboxNotificationStatus.MissingTenant, persisted: false };
   }
 
   const chatId = normalizeChatId(poll.voterJid);
@@ -150,7 +169,7 @@ export const triggerPollChoiceInboxNotification = async ({
       tenantId: normalizedTenantId,
       requestId: requestId ?? null,
     });
-    return false;
+    return { status: PollChoiceInboxNotificationStatus.InvalidChatId, persisted: false };
   }
 
   const phone = extractPhoneFromChatId(chatId);
@@ -265,7 +284,9 @@ export const triggerPollChoiceInboxNotification = async ({
         messageId: syntheticMessageId,
       });
     }
-    return persisted;
+    return persisted
+      ? { status: PollChoiceInboxNotificationStatus.Ok, persisted: true }
+      : { status: PollChoiceInboxNotificationStatus.IngestRejected, persisted: false };
   } catch (error) {
     logger.error('Failed to ingest poll choice inbox notification', {
       pollId: poll.pollId,
@@ -274,6 +295,6 @@ export const triggerPollChoiceInboxNotification = async ({
       requestId: requestId ?? null,
       error,
     });
-    return false;
+    return { status: PollChoiceInboxNotificationStatus.IngestError, persisted: false };
   }
 };
