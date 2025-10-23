@@ -85,6 +85,20 @@ const computeState = (msRemaining) => {
 export const useTicketJro = (ticket) => {
   const { deadline, startedAt, windowMs } = useMemo(() => deriveJroConfig(ticket), [ticket]);
   const [now, setNow] = useState(() => Date.now());
+  const effectiveWindowMs = useMemo(() => {
+    if (Number.isFinite(windowMs) && windowMs > 0) {
+      return windowMs;
+    }
+
+    if (deadline && startedAt) {
+      const diff = deadline.getTime() - startedAt.getTime();
+      if (Number.isFinite(diff) && diff > 0) {
+        return diff;
+      }
+    }
+
+    return null;
+  }, [deadline, startedAt, windowMs]);
 
   useEffect(() => {
     if (!deadline) {
@@ -100,13 +114,13 @@ export const useTicketJro = (ticket) => {
   const msRemaining = deadline ? deadline.getTime() - now : null;
   const state = computeState(msRemaining);
   const progress = useMemo(() => {
-    if (!deadline || !startedAt || !windowMs) {
+    if (!deadline || !effectiveWindowMs) {
       return 0;
     }
     const remaining = deadline.getTime() - now;
-    const ratio = remaining / windowMs;
+    const ratio = remaining / effectiveWindowMs;
     return clamp(ratio);
-  }, [deadline, startedAt, windowMs, now]);
+  }, [deadline, effectiveWindowMs, now]);
 
   const remainingLabel = deadline ? formatDuration(msRemaining ?? 0) : null;
   const label = deadline

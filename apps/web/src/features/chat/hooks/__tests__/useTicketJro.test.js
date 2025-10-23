@@ -53,7 +53,53 @@ describe('useTicketJro', () => {
     expect(result.current.progress).toBe(0);
   });
 
-  it('keeps progress empty when required data is missing', () => {
+  it('derives window duration when only startedAt and deadline are provided', () => {
+    const startedAt = new Date('2024-03-01T00:00:00.000Z');
+    const deadline = new Date(startedAt.getTime() + HALF_HOUR_IN_MS);
+
+    vi.setSystemTime(startedAt);
+
+    const ticket = {
+      metadata: {
+        internalSla: {
+          startedAt,
+          deadline,
+        },
+      },
+    };
+
+    const { result } = renderHook(() => useTicketJro(ticket));
+    expect(result.current.progress).toBeCloseTo(1, 5);
+
+    const halfway = new Date(startedAt.getTime() + HALF_HOUR_IN_MS / 2);
+    act(() => {
+      vi.setSystemTime(halfway);
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(result.current.progress).toBeCloseTo(0.5, 2);
+  });
+
+  it('uses configured window even when startedAt is missing', () => {
+    const deadline = new Date('2024-02-02T00:30:00.000Z');
+    const windowLength = HALF_HOUR_IN_MS;
+
+    vi.setSystemTime(new Date('2024-02-02T00:00:00.000Z'));
+
+    const ticket = {
+      metadata: {
+        internalSla: {
+          deadline,
+          windowMs: windowLength,
+        },
+      },
+    };
+
+    const { result } = renderHook(() => useTicketJro(ticket));
+    expect(result.current.progress).toBeCloseTo(1, 5);
+  });
+
+  it('keeps progress empty when deadline is missing or window cannot be derived', () => {
     const baseStartedAt = new Date('2024-02-02T00:00:00.000Z');
     const baseDeadline = new Date(baseStartedAt.getTime() + HALF_HOUR_IN_MS);
 
@@ -69,25 +115,8 @@ describe('useTicketJro', () => {
     const { result: missingDeadline } = renderHook(() => useTicketJro(withoutDeadline));
     expect(missingDeadline.current.progress).toBe(0);
 
-    const withoutStartedAt = {
-      metadata: {
-        internalSla: {
-          deadline: baseDeadline,
-          windowMs: HALF_HOUR_IN_MS,
-        },
-      },
-    };
-
-    const { result: missingStartedAt } = renderHook(() => useTicketJro(withoutStartedAt));
-    expect(missingStartedAt.current.progress).toBe(0);
-
     const withoutWindow = {
-      metadata: {
-        internalSla: {
-          startedAt: baseStartedAt,
-          deadline: baseDeadline,
-        },
-      },
+      metadata: {},
     };
 
     const { result: missingWindow } = renderHook(() => useTicketJro(withoutWindow));

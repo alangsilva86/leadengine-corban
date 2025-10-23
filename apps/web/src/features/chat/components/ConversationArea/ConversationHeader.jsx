@@ -630,9 +630,20 @@ const JroIndicator = ({ jro }) => {
       role="group"
       aria-label={ariaLabel}
       title={readableStatus}
-      className="rounded-lg border border-surface-overlay-glass-border/70 bg-surface-overlay-glass/20 px-3 py-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur-sm"
+      className="rounded-lg bg-surface-overlay-glass/15 px-3 py-2 backdrop-blur-sm"
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="h-[2px] w-full rounded bg-white/10" aria-hidden="true">
+        <div
+          className={cn(
+            'h-full rounded transition-[width] duration-500 ease-out motion-reduce:transition-none',
+            tone.bar,
+            tone.pulse
+          )}
+          style={{ width: `${meterValue}%` }}
+        />
+      </div>
+      <meter className="sr-only" min={0} max={100} value={meterValue} aria-label="Progresso do SLA" />
+      <div className="mt-2 flex items-center justify-between gap-3">
         <div
           className={cn(
             'inline-flex items-center gap-2 rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-wide',
@@ -649,19 +660,6 @@ const JroIndicator = ({ jro }) => {
         >
           {displayTime}
         </time>
-      </div>
-      <div className="mt-2">
-        <div className="h-[2px] w-full rounded bg-white/10" aria-hidden="true">
-          <div
-            className={cn(
-              'h-full rounded transition-[width] duration-500 ease-out motion-reduce:transition-none',
-              tone.bar,
-              tone.pulse
-            )}
-            style={{ width: `${meterValue}%` }}
-          />
-        </div>
-        <meter className="sr-only" min={0} max={100} value={meterValue} aria-label="Progresso do SLA" />
       </div>
     </section>
   );
