@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, useId, useImperativeHandle } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useId, useImperativeHandle } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import {
@@ -1183,8 +1183,51 @@ const ConversationHeader = ({
     ticket,
   ]);
 
+  const summaryRef = useRef(null);
+  const [summaryHeight, setSummaryHeight] = useState(null);
+
+  useLayoutEffect(() => {
+    const node = summaryRef.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const updateHeight = () => {
+      const height = node.getBoundingClientRect().height;
+      setSummaryHeight((current) => (Math.abs((current ?? 0) - height) > 0.5 ? height : current ?? height));
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(() => updateHeight());
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    window.addEventListener('resize', updateHeight, { passive: true });
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const node = summaryRef.current;
+    if (!node) return;
+    const timeout = window.setTimeout(() => {
+      const height = node.getBoundingClientRect().height;
+      setSummaryHeight((current) => (Math.abs((current ?? 0) - height) > 0.5 ? height : current ?? height));
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [isExpanded, ticket?.id, jro.progress, jro.state]);
+
   const summaryContent = (
-    <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
+    <div ref={summaryRef} className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar className="h-12 w-12">
           <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
@@ -1431,19 +1474,21 @@ const ConversationHeader = ({
     : summaryContent;
 
   const detailsStyle = useMemo(() => {
-    if (typeof composerHeight !== 'number' || Number.isNaN(composerHeight) || composerHeight <= 0) {
-      return undefined;
+    const style = {};
+    if (Number.isFinite(composerHeight) && composerHeight > 0) {
+      style['--conversation-header-composer'] = `${composerHeight}px`;
     }
-    return {
-      '--conversation-header-composer': `${composerHeight}px`,
-    };
-  }, [composerHeight]);
+    if (Number.isFinite(summaryHeight) && summaryHeight > 0) {
+      style['--conversation-header-summary'] = `${summaryHeight}px`;
+    }
+    return Object.keys(style).length ? style : undefined;
+  }, [composerHeight, summaryHeight]);
 
   const renderedDetails = (
     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
       <div
         data-testid="conversation-header-details"
-        className="mt-4 max-h-[calc(100vh-var(--conversation-header-composer,18rem))] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]"
+        className="mt-4 max-h-[calc(100vh-var(--conversation-header-composer,18rem)-var(--conversation-header-summary,12rem)-var(--conversation-header-safe-area,3rem))] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]"
         style={detailsStyle}
       >
         {detailsContent}
