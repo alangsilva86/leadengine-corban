@@ -1492,7 +1492,7 @@ const ConversationHeader = ({
     <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
       <div
         data-testid="conversation-header-details"
-        className="mt-4 max-h-[calc(100vh-var(--conversation-header-composer,18rem)-var(--conversation-header-summary,12rem)-var(--conversation-header-safe-area,3rem))] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]"
+        className="mt-4 max-h-[calc(100vh-var(--conversation-header-composer,18rem)-var(--conversation-header-summary,14rem)-var(--conversation-header-safe-area,3rem))] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]"
         style={detailsStyle}
       >
         {detailsContent}
