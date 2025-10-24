@@ -26,7 +26,7 @@ O **Ticketz LeadEngine** reúne o fluxo de tickets do ecossistema Ticketz, a orq
 - 👥 **Pipeline de leads** com qualificação, tags, campanhas e dashboards alimentados pela API oficial do LeadEngine.
 - 📱 **Integração WhatsApp** utilizando exclusivamente o broker HTTP, com ingestão inbound consolidada no webhook (persistência imediata + Socket.IO) e fila interna para orquestrar o processamento com pipeline único.
 - 🏢 **Multi-tenant completo**: cada requisição exige `tenantId`, há bypass controlado para demos e todas as entidades principais carregam isolamento lógico.
-- 🧱 **Arquitetura modular** com pacotes de domínio, storage, integrações e contratos compartilhados entre backend e frontend.
+- 🧱 **Arquitetura modular** com pacotes de domínio, storage e contratos compartilhados entre backend e frontend.
 
 ---
 
@@ -40,7 +40,6 @@ leadengine-corban/
 ├── packages/
 │   ├── contracts/            # OpenAPI + tipos TypeScript gerados
 │   ├── core/                 # Regras de negócio (tickets, leads, erros comuns)
-│   ├── integrations/         # Utilidades compartilhadas para integrações HTTP
 │   ├── shared/               # Logger Winston, config e helpers cross-app
 │   └── storage/              # Prisma Client e repositórios de dados
 ├── prisma/                   # schema.prisma, migrations e seeds
@@ -78,7 +77,6 @@ Cada pasta tem owner claro:
 ### Pacotes compartilhados
 - **@ticketz/contracts**: contrato OpenAPI (`openapi.yaml`) e tipos gerados para mensagens & APIs.
 - **@ticketz/core**: domínios `tickets`/`leads`, erros (`ValidationError`, `NotFoundError`) e helpers comuns.
-- **@ticketz/integrations**: utilidades compartilhadas para integrações HTTP (logger leve, helpers de mídia, contratos base).
 - **@ticketz/shared**: configuração central (`src/config`), logger (`src/logger`), parseadores e formatação.
 - **@ticketz/storage**: bootstrap do Prisma Client, factories de repositório e operações de dados.
 
@@ -160,7 +158,7 @@ Sobe Postgres, Redis, API e Web com variáveis lidas de `.env` na raiz. Para adi
 
 ### 8. Build & testes antes do deploy
 ```bash
-pnpm run build:libs   # contracts → shared → core → storage → integrations
+pnpm run build:libs   # contracts → shared → core → storage
 pnpm run build:api    # tsup + Prisma generate automático
 pnpm run build:web    # scripts/run-build.mjs + Vite
 pnpm run test         # Vitest e2e da API
@@ -219,7 +217,6 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 | ------ | ---------------- | --------- |
 | `@ticketz/contracts` | Contratos compartilhados | `openapi.yaml`, geração de tipos (`src/types.gen.ts`) e mensagens padronizadas (`src/messages.ts`). |
 | `@ticketz/core` | Domínios puros | Serviços de tickets/leads, modelos, erros (`ValidationError`, `NotFoundError`) e utilidades em `src/common`. |
-| `@ticketz/integrations` | Adaptadores externos | Provider Baileys, gerenciador de instâncias e helpers para normalizar payloads. |
 | `@ticketz/shared` | Infraestrutura cross-cutting | Logger Winston, config centralizada (`src/config`), parsers/formatadores. |
 | `@ticketz/storage` | Persistência e repositórios | Prisma Client singleton (`prisma-client.ts`), repositórios por domínio (`src/repositories`). |
 
@@ -314,7 +311,7 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
 - **Linting**: `pnpm run lint` aplica `eslint.config.js` com regras personalizadas (ex.: `no-forbidden-tailwind-colors`).
 - **Storybook**: `pnpm --filter web run storybook` documenta componentes; use `storybook:build`/`storybook:deploy` para Chromatic.
 - **Testes**: `pnpm run test` roda os E2E da API (`apps/api/src/routes/__tests__`). Frontend utiliza Vitest/Testing Library sob demanda.
-- **Typecheck**: `pnpm run typecheck` reforça que integrações estejam saudáveis antes do build.
+- **Typecheck**: `pnpm run typecheck` reforça que os módulos TypeScript estejam saudáveis antes do build.
 - **CI-friendly**: `pnpm -C apps/web exec vite build --config apps/web/vite.build.ci.mjs` economiza memória em ambientes restritos.
 - **Checklist web**: no frontend, priorize `pnpm --filter web lint`, `pnpm --filter web exec vitest run --coverage`, `pnpm --filter web exec jscpd` (instale `jscpd` globalmente ou adicione como devDependency antes de executar) e `pnpm --filter web exec tsc --noEmit` para validar tokens Tailwind, cobertura e tipos.
 

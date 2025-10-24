@@ -62,7 +62,6 @@ COPY prisma ./prisma
 COPY packages/core/package.json ./packages/core/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/storage/package.json ./packages/storage/
-COPY packages/integrations/package.json ./packages/integrations/
 COPY apps/api/package.json ./apps/api/
 
 # Instalar apenas dependências de produção
@@ -93,14 +92,12 @@ COPY --from=builder --chown=ticketz:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=ticketz:nodejs /app/packages/core/dist ./packages/core/dist
 COPY --from=builder --chown=ticketz:nodejs /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder --chown=ticketz:nodejs /app/packages/storage/dist ./packages/storage/dist
-COPY --from=builder --chown=ticketz:nodejs /app/packages/integrations/dist ./packages/integrations/dist
 
 # Copiar package.json necessários
 COPY --from=builder --chown=ticketz:nodejs /app/apps/api/package.json ./package.json
 COPY --from=builder --chown=ticketz:nodejs /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder --chown=ticketz:nodejs /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=builder --chown=ticketz:nodejs /app/packages/storage/package.json ./packages/storage/package.json
-COPY --from=builder --chown=ticketz:nodejs /app/packages/integrations/package.json ./packages/integrations/package.json
 
 # Copiar schema do Prisma e cliente gerado
 COPY --from=deps --chown=ticketz:nodejs /app/prisma ./prisma

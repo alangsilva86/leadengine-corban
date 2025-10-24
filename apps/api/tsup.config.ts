@@ -15,7 +15,6 @@ export default defineConfig({
     '@ticketz/core',
     '@ticketz/shared',
     '@ticketz/storage',
-    '@ticketz/integrations',
     '@prisma/client',
     'prisma',
   ],

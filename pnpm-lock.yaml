@@ -96,9 +96,6 @@ importers:
       '@ticketz/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@ticketz/integrations':
-        specifier: workspace:*
-        version: link:../../packages/integrations
       '@ticketz/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -478,18 +475,6 @@ importers:
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
-
-  packages/integrations:
-    devDependencies:
-      tsup:
-        specifier: ^8.5.0
-        version: 8.5.0(jiti@2.6.1)(postcss@8.5.6)(tsx@4.20.6)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.3.3
-        version: 5.9.3
-      vitest:
-        specifier: ^1.6.1
-        version: 1.6.1(@types/node@20.19.22)(jsdom@27.0.0(postcss@8.5.6))(lightningcss@1.30.1)(sass@1.93.2)
 
   packages/shared:
     dependencies:

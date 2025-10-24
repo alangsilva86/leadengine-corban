@@ -82,15 +82,11 @@ Antes de iniciar qualquer estratégia de deploy, valide a geração dos artefato
 corepack enable
 corepack prepare pnpm@9.12.3 --activate
 pnpm -w install --frozen-lockfile
-pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run build:clean
-pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations run typecheck
+pnpm --filter @ticketz/core --filter @ticketz/storage run build:clean
+pnpm --filter @ticketz/core --filter @ticketz/storage run typecheck
 ```
 
-Os dois últimos comandos garantem que os pacotes de domínio (`@ticketz/core`), persistência (`@ticketz/storage`) e integrações (`@ticketz/integrations`) gerem artefatos consistentes **antes** de qualquer build da API. A geração limpa vem primeiro para produzir as declarações e, em seguida, o `typecheck` valida os tipos (`TS6307`, `TS2307`, etc.) já com o contexto completo, evitando surpresas em produção.
-pnpm --filter @ticketz/core build
-pnpm --filter @ticketz/core typecheck
-```
-
+Os dois últimos comandos garantem que os pacotes de domínio (`@ticketz/core`) e persistência (`@ticketz/storage`) gerem artefatos consistentes **antes** de qualquer build da API. A geração limpa vem primeiro para produzir as declarações e, em seguida, o `typecheck` valida os tipos (`TS6307`, `TS2307`, etc.) já com o contexto completo, evitando surpresas em produção.
 O primeiro comando executa o bundle e recompila apenas as declarações TypeScript necessárias para o pacote, garantindo que os módulos `common`, `tickets` e `leads` estejam listados corretamente. Na sequência, o `typecheck` roda o `tsc --noEmit` e confirma que os tipos usados pelos serviços (`common/types.ts`, `tickets/types.ts`, `tickets/services.ts` e `leads/types.ts`) não geram o erro `TS6307` durante o pipeline.
 
 ### 1. Deploy Automatizado

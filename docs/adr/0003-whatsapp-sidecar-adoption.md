@@ -6,7 +6,7 @@
 ## Contexto
 
 A integração atual com o WhatsApp depende de um broker HTTP externo. O modo sidecar já
-existe em `packages/integrations`, mas a API não tem uma estratégia formal para alternar o
+existia em um pacote de integrações dedicado (posteriormente descontinuado), mas a API não tem uma estratégia formal para alternar o
 transporte ou coordenar o ciclo de vida das sessões. Variáveis de ambiente são lidas em
 arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configuração.
 

@@ -32,21 +32,6 @@ This document summarises the public surface of each internal package under `pack
 
 - No runtime imports reference the package yet; it is only marked as an external dependency in the API bundler configuration, so future code can adopt it without bundling overhead.【F:apps/api/tsup.config.ts†L1-L21】
 
-## `@ticketz/integrations`
-
-**Exports**
-
-- Version flag plus media storage helper and related types for integration adapters.【F:packages/integrations/src/index.ts†L1-L11】【F:packages/integrations/src/utils/media-storage.ts†L1-L40】
-- `MessageProvider` contract for outbound integration providers.【F:packages/integrations/src/types/message-provider.ts†L1-L9】
-
-**Consumers**
-
-- No first-party code imports the helpers yet; the package is wired as an external for the API bundle, so future integration workers can depend on it without duplicate code paths.【F:apps/api/tsup.config.ts†L1-L21】
-
-**Notes**
-
-- The ad-hoc console logger previously duplicated the shared logger surface and had no dependants; it has been removed so the package only exposes the canonical media helper types.【F:packages/integrations/src/index.ts†L1-L11】
-
 ## `@ticketz/storage`
 
 **Exports**
