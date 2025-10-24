@@ -1227,7 +1227,11 @@ const ConversationHeader = ({
   }, [isExpanded, ticket?.id, jro.progress, jro.state]);
 
   const summaryContent = (
-    <div ref={summaryRef} className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
+    <div
+      ref={summaryRef}
+      data-testid="conversation-header-summary"
+      className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between"
+    >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar className="h-12 w-12">
           <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>

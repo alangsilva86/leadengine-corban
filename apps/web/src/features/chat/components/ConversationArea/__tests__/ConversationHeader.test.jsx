@@ -345,5 +345,72 @@ describe('ConversationHeader component', () => {
     const details = await screen.findByTestId('conversation-header-details');
     expect(details.style.getPropertyValue('--conversation-header-composer')).toBe('264px');
   });
-});
 
+  it('uses measured summary height to cap the details area', async () => {
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+
+    const rectFor = (height) => ({
+      width: 640,
+      height,
+      top: 0,
+      left: 0,
+      right: 640,
+      bottom: height,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.dataset?.testid === 'conversation-header-summary') {
+        return rectFor(192);
+      }
+
+      return rectFor(0);
+    };
+
+    try {
+      const ticket = {
+        id: 'ticket-summary-height',
+        status: 'OPEN',
+        channel: 'WHATSAPP',
+        pipelineStep: 'Novo',
+        contact: { id: 'contact-11', name: 'Cliente Dinâmico', phone: '+55 11 99999-0000' },
+        metadata: { contactPhone: '+55 11 99999-0000' },
+        timeline: {
+          lastDirection: 'INBOUND',
+          lastInboundAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+          lastOutboundAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+          lastChannel: 'whatsapp',
+        },
+      };
+
+      render(
+        <ConversationHeader
+          ticket={ticket}
+          typingAgents={[]}
+          onAssign={() => {}}
+          onScheduleFollowUp={() => {}}
+          onRegisterResult={() => {}}
+          onRegisterCallResult={() => {}}
+          onSendTemplate={() => {}}
+          onCreateNextStep={() => {}}
+          onGenerateProposal={() => {}}
+          onSendSMS={() => {}}
+          onAttachFile={() => {}}
+        />
+      );
+
+      const user = userEvent.setup();
+      const toggleButton = screen.getByRole('button', { name: /Expandir detalhes/i });
+      await user.click(toggleButton);
+
+      const details = await screen.findByTestId('conversation-header-details');
+      await waitFor(() => {
+        expect(details.style.getPropertyValue('--conversation-header-summary')).toBe('192px');
+      });
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+});
