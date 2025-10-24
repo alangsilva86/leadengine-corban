@@ -149,15 +149,64 @@ export const PollMessage = {
       type: 'poll',
       metadata: {
         ...baseMetadata,
-        interactive: {
-          poll: {
-            title: 'Qual horário prefere?',
-            totalVotes: 12,
-            options: [
-              { title: '09:00', votes: 5 },
-              { title: '14:00', votes: 4 },
-              { title: '17:00', votes: 3 },
-            ],
+        poll: {
+          id: 'poll-1',
+          pollId: 'poll-1',
+          question: 'Qual horário prefere?',
+          options: [
+            { id: 'opt-1', title: '09:00', votes: 5, index: 0 },
+            { id: 'opt-2', title: '14:00', votes: 4, index: 1 },
+            { id: 'opt-3', title: '17:00', votes: 3, index: 2 },
+          ],
+          selectedOptions: [{ id: 'opt-2', title: '14:00' }],
+          totalVotes: 12,
+          totalVoters: 9,
+          optionTotals: { 'opt-1': 5, 'opt-2': 4, 'opt-3': 3 },
+          aggregates: { totalVotes: 12, totalVoters: 9, optionTotals: { 'opt-1': 5, 'opt-2': 4, 'opt-3': 3 } },
+          updatedAt: '2024-01-01T13:05:00.000Z',
+        },
+      },
+    }),
+  },
+};
+
+export const PollChoiceResponse = {
+  args: {
+    message: createMessage({
+      type: 'text',
+      direction: 'inbound',
+      text: 'Resposta de enquete recebida.\nEnquete: poll-1\nOpções escolhidas:\n• 14:00',
+      metadata: {
+        ...baseMetadata,
+        origin: 'poll_choice',
+        poll: {
+          id: 'poll-1',
+          pollId: 'poll-1',
+          question: 'Qual horário prefere?',
+          options: [
+            { id: 'opt-1', title: '09:00', votes: 5, index: 0 },
+            { id: 'opt-2', title: '14:00', votes: 6, index: 1 },
+            { id: 'opt-3', title: '17:00', votes: 1, index: 2 },
+          ],
+          selectedOptions: [{ id: 'opt-2', title: '14:00' }],
+          totalVotes: 12,
+          totalVoters: 9,
+          optionTotals: { 'opt-1': 5, 'opt-2': 6, 'opt-3': 1 },
+          aggregates: { totalVotes: 12, totalVoters: 9, optionTotals: { 'opt-1': 5, 'opt-2': 6, 'opt-3': 1 } },
+          updatedAt: '2024-01-01T14:10:00.000Z',
+        },
+        pollChoice: {
+          pollId: 'poll-1',
+          voterJid: '5511999999999@s.whatsapp.net',
+          options: [
+            { id: 'opt-1', title: '09:00', index: 0 },
+            { id: 'opt-2', title: '14:00', index: 1 },
+            { id: 'opt-3', title: '17:00', index: 2 },
+          ],
+          vote: {
+            optionIds: ['opt-2'],
+            selectedOptions: [{ id: 'opt-2', title: '14:00' }],
+            timestamp: '2024-01-01T14:10:00.000Z',
           },
         },
       },

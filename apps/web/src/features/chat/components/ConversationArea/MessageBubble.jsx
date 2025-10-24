@@ -54,6 +54,16 @@ export const MessageBubble = ({
   );
   const metadata = (message.metadata && typeof message.metadata === 'object' ? message.metadata : {}) ?? {};
   const brokerMetadata = metadata?.broker && typeof metadata.broker === 'object' ? metadata.broker : {};
+  const interactiveMetadata =
+    metadata?.interactive && typeof metadata.interactive === 'object' ? metadata.interactive : null;
+  const metadataPoll =
+    metadata?.poll && typeof metadata.poll === 'object' && !Array.isArray(metadata.poll) ? metadata.poll : null;
+  const interactivePoll =
+    interactiveMetadata?.poll && typeof interactiveMetadata.poll === 'object' ? interactiveMetadata.poll : null;
+  const pollChoiceMetadata =
+    metadata?.pollChoice && typeof metadata.pollChoice === 'object' && !Array.isArray(metadata.pollChoice)
+      ? metadata.pollChoice
+      : null;
   const rawKeyMeta = metadata.rawKey && typeof metadata.rawKey === 'object' ? metadata.rawKey : {};
   const sourceInstance = metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'desconhecido';
   const remoteJid = metadata.remoteJid ?? metadata.chatId ?? rawKeyMeta.remoteJid ?? null;
@@ -98,6 +108,278 @@ export const MessageBubble = ({
 
   const resolvedType = messageType === 'media' && mediaType ? mediaType : messageType;
 
+  const pollAggregates =
+    metadataPoll && metadataPoll.aggregates && typeof metadataPoll.aggregates === 'object'
+      ? metadataPoll.aggregates
+      : null;
+
+  const pollOptionTotals =
+    (metadataPoll && metadataPoll.optionTotals && typeof metadataPoll.optionTotals === 'object'
+      ? metadataPoll.optionTotals
+      : null) ?? (pollAggregates && typeof pollAggregates.optionTotals === 'object' ? pollAggregates.optionTotals : null);
+
+  const pollTotalVotes =
+    typeof metadataPoll?.totalVotes === 'number'
+      ? metadataPoll.totalVotes
+      : typeof pollAggregates?.totalVotes === 'number'
+        ? pollAggregates.totalVotes
+        : typeof interactivePoll?.totalVotes === 'number'
+          ? interactivePoll.totalVotes
+          : null;
+
+  const pollTotalVoters =
+    typeof metadataPoll?.totalVoters === 'number'
+      ? metadataPoll.totalVoters
+      : typeof pollAggregates?.totalVoters === 'number'
+        ? pollAggregates.totalVoters
+        : typeof interactivePoll?.totalVoters === 'number'
+          ? interactivePoll.totalVoters
+          : null;
+
+  const pollId = (() => {
+    const candidates = [metadataPoll?.pollId, metadataPoll?.id, pollChoiceMetadata?.pollId, pollChoiceMetadata?.id];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+    return null;
+  })();
+
+  const pollQuestion = (() => {
+    const candidates = [
+      metadataPoll?.question,
+      metadataPoll?.title,
+      metadataPoll?.name,
+      interactivePoll?.question,
+      interactivePoll?.title,
+      interactivePoll?.name,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+    return null;
+  })();
+
+  const pollUpdatedAtIso = (() => {
+    const candidates = [metadataPoll?.updatedAt, metadataPoll?.timestamp, pollChoiceMetadata?.vote?.timestamp];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+    return null;
+  })();
+
+  const pollOptionsLookup = (() => {
+    const lookup = new Map();
+
+    const register = (option, index) => {
+      if (option === null || option === undefined) {
+        return;
+      }
+
+      const buildEntry = (label, normalizedIndex) => ({
+        label: label ?? `Opção ${normalizedIndex + 1}`,
+        index: normalizedIndex,
+      });
+
+      if (typeof option === 'string') {
+        const trimmed = option.trim();
+        if (!trimmed) {
+          return;
+        }
+        const entry = buildEntry(trimmed, index);
+        if (!lookup.has(trimmed)) {
+          lookup.set(trimmed, entry);
+        }
+        const indexKey = `__index:${index}`;
+        if (!lookup.has(indexKey)) {
+          lookup.set(indexKey, entry);
+        }
+        return;
+      }
+
+      if (typeof option !== 'object') {
+        return;
+      }
+
+      const rawIndex =
+        typeof option.index === 'number' && Number.isInteger(option.index) && option.index >= 0
+          ? option.index
+          : index;
+      const normalizedIndex = rawIndex >= 0 ? rawIndex : index;
+      const labelCandidate = [option.title, option.text, option.name, option.description].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      const label = labelCandidate ? labelCandidate.trim() : null;
+      const entry = buildEntry(label, normalizedIndex);
+
+      const idCandidate = [option.id, option.optionId, option.key, option.value].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      const normalizedId = idCandidate ? idCandidate.trim() : null;
+
+      if (normalizedId && !lookup.has(normalizedId)) {
+        lookup.set(normalizedId, entry);
+      }
+
+      const indexKey = `__index:${normalizedIndex}`;
+      if (!lookup.has(indexKey)) {
+        lookup.set(indexKey, entry);
+      }
+    };
+
+    const registerFromArray = (value) => {
+      if (!Array.isArray(value)) {
+        return;
+      }
+      value.forEach((option, index) => register(option, index));
+    };
+
+    registerFromArray(metadataPoll?.options);
+    registerFromArray(pollChoiceMetadata?.options);
+    registerFromArray(interactivePoll?.options);
+
+    return lookup;
+  })();
+
+  const pollSelectedOptions = (() => {
+    const selections = [];
+    const seen = new Set();
+
+    const pushSelection = (id, title, indexHint) => {
+      const normalizedId = typeof id === 'string' && id.trim().length > 0 ? id.trim() : null;
+      const normalizedTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
+      const lookupById = normalizedId ? pollOptionsLookup.get(normalizedId) : null;
+      const lookupByIndex =
+        typeof indexHint === 'number' ? pollOptionsLookup.get(`__index:${indexHint}`) : null;
+      const resolvedIndex =
+        typeof indexHint === 'number'
+          ? indexHint
+          : lookupById?.index ?? lookupByIndex?.index ?? selections.length;
+      const resolvedTitle =
+        normalizedTitle ??
+        lookupById?.label ??
+        lookupByIndex?.label ??
+        (normalizedId ? normalizedId : `Opção ${resolvedIndex + 1}`);
+      const key = normalizedId ?? `__synthetic:${resolvedIndex}:${resolvedTitle}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      selections.push({
+        id: normalizedId ?? key,
+        title: resolvedTitle,
+        index: resolvedIndex,
+      });
+    };
+
+    const fromMetadata = Array.isArray(metadataPoll?.selectedOptions)
+      ? metadataPoll.selectedOptions
+      : [];
+    fromMetadata.forEach((selection, index) => {
+      if (selection === null || selection === undefined) {
+        return;
+      }
+      if (typeof selection === 'string') {
+        pushSelection(selection, selection, index);
+        return;
+      }
+      if (typeof selection !== 'object') {
+        return;
+      }
+      const idCandidate = [selection.id, selection.optionId].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      const indexCandidate = [selection.index, selection.position].find(
+        (value) => typeof value === 'number' && Number.isInteger(value)
+      );
+      const titleCandidate = [selection.title, selection.text, selection.name].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      pushSelection(idCandidate ?? null, titleCandidate ?? null, indexCandidate ?? index);
+    });
+
+    const pollChoiceVote =
+      pollChoiceMetadata && typeof pollChoiceMetadata.vote === 'object' ? pollChoiceMetadata.vote : null;
+
+    const voteSelections = Array.isArray(pollChoiceVote?.selectedOptions)
+      ? pollChoiceVote.selectedOptions
+      : [];
+    voteSelections.forEach((selection, index) => {
+      if (selection === null || selection === undefined) {
+        return;
+      }
+      if (typeof selection === 'string') {
+        pushSelection(selection, selection, index);
+        return;
+      }
+      if (typeof selection !== 'object') {
+        return;
+      }
+      const idCandidate = [selection.id, selection.optionId].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      const indexCandidate = [selection.index, selection.position].find(
+        (value) => typeof value === 'number' && Number.isInteger(value)
+      );
+      const titleCandidate = [selection.title, selection.text, selection.name].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      pushSelection(idCandidate ?? null, titleCandidate ?? null, indexCandidate ?? index);
+    });
+
+    if (selections.length === 0) {
+      const optionIds = Array.isArray(pollChoiceVote?.optionIds) ? pollChoiceVote.optionIds : [];
+      optionIds.forEach((optionId, index) => {
+        if (typeof optionId !== 'string') {
+          return;
+        }
+        const normalizedId = optionId.trim();
+        if (!normalizedId) {
+          return;
+        }
+        const lookupEntry = pollOptionsLookup.get(normalizedId) ?? pollOptionsLookup.get(`__index:${index}`);
+        pushSelection(normalizedId, lookupEntry?.label ?? normalizedId, lookupEntry?.index ?? index);
+      });
+    }
+
+    selections.sort((a, b) => a.index - b.index);
+    return selections;
+  })();
+
+  const pollSelectedIdSet = new Set(
+    pollSelectedOptions
+      .map((entry) => (typeof entry.id === 'string' ? entry.id : null))
+      .filter((id) => id && !id.startsWith('__synthetic:'))
+  );
+
+  const pollSelectedTitleSet = new Set(
+    pollSelectedOptions
+      .map((entry) => (typeof entry.title === 'string' ? entry.title : null))
+      .filter(Boolean)
+  );
+
+  const formatPollTimestamp = (value) => {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   const resolveFileName = () => {
     if (typeof message.fileName === 'string' && message.fileName.trim().length > 0) {
       return message.fileName;
@@ -130,6 +412,57 @@ export const MessageBubble = ({
   );
 
   const renderBody = () => {
+    if (
+      resolvedType === 'text' &&
+      (metadata?.origin === 'poll_choice' || pollChoiceMetadata || pollSelectedOptions.length > 0)
+    ) {
+      const formattedTimestamp = formatPollTimestamp(pollUpdatedAtIso);
+      const hasSelections = pollSelectedOptions.length > 0;
+
+      return (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <ListChecks className="h-4 w-4" aria-hidden="true" />
+            Resposta de enquete
+          </div>
+          {pollQuestion ? <span className="text-xs text-foreground-muted">{pollQuestion}</span> : null}
+          <div className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground-muted">
+              Opções escolhidas
+            </span>
+            {hasSelections ? (
+              <ul className="ml-4 list-disc space-y-1 text-xs text-foreground">
+                {pollSelectedOptions.map((selection, index) => (
+                  <li key={`poll-selection-${selection.id ?? index}`}>{selection.title}</li>
+                ))}
+              </ul>
+            ) : (
+              <span className="text-xs text-foreground-muted">Nenhuma opção identificada</span>
+            )}
+          </div>
+          {pollId ? (
+            <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
+              ID da enquete: {pollId}
+            </span>
+          ) : null}
+          {pollTotalVotes !== null || pollTotalVoters !== null ? (
+            <div className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wide text-foreground-muted">
+              {pollTotalVotes !== null ? <span>Total de votos: {pollTotalVotes}</span> : null}
+              {pollTotalVoters !== null ? <span>Total de participantes: {pollTotalVoters}</span> : null}
+            </div>
+          ) : null}
+          {formattedTimestamp ? (
+            <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
+              Atualizado em: {formattedTimestamp}
+            </span>
+          ) : null}
+          {textContent ? (
+            <p className="whitespace-pre-wrap break-words text-xs text-foreground-muted">{textContent}</p>
+          ) : null}
+        </div>
+      );
+    }
+
     if (resolvedType === 'text') {
       return <p className="whitespace-pre-wrap break-words text-sm leading-tight">{textContent}</p>;
     }
@@ -332,17 +665,21 @@ export const MessageBubble = ({
     }
 
     if (resolvedType === 'poll') {
-      const poll =
-        (metadata?.interactive && typeof metadata.interactive === 'object'
-          ? metadata.interactive.poll
-          : null) ?? metadata?.poll;
+      const pollOptionsSource =
+        Array.isArray(metadataPoll?.options) && metadataPoll.options.length > 0
+          ? metadataPoll.options
+          : Array.isArray(interactivePoll?.options)
+            ? interactivePoll.options
+            : [];
 
-      if (!poll) {
+      const poll = metadataPoll ?? interactivePoll;
+
+      if (!poll && pollOptionsSource.length === 0) {
         return renderUnsupported('enquete');
       }
 
-      const pollTitle = poll.title ?? poll.name ?? 'Enquete';
-      const pollOptions = Array.isArray(poll.options) ? poll.options : [];
+      const pollTitle = pollQuestion ?? 'Enquete';
+      const pollOptions = pollOptionsSource;
 
       return (
         <div className="flex flex-col gap-2">
@@ -353,16 +690,41 @@ export const MessageBubble = ({
           {pollOptions.length > 0 ? (
             <ul className="ml-5 list-disc space-y-1 text-xs text-foreground-muted">
               {pollOptions.map((option, index) => {
-                const label = option?.title ?? option?.name ?? option?.text ?? `Opção ${index + 1}`;
+                const optionId =
+                  typeof option?.id === 'string' && option.id.trim().length > 0
+                    ? option.id.trim()
+                    : typeof option?.optionId === 'string' && option.optionId.trim().length > 0
+                      ? option.optionId.trim()
+                      : null;
+                const label = (() => {
+                  const candidate = [option?.title, option?.name, option?.text, option?.description].find(
+                    (value) => typeof value === 'string' && value.trim().length > 0
+                  );
+                  if (candidate) {
+                    return candidate.trim();
+                  }
+                  const lookupEntry =
+                    (optionId ? pollOptionsLookup.get(optionId) : null) ?? pollOptionsLookup.get(`__index:${index}`);
+                  if (lookupEntry?.label) {
+                    return lookupEntry.label;
+                  }
+                  return `Opção ${index + 1}`;
+                })();
                 const votes =
                   typeof option?.votes === 'number'
                     ? option.votes
                     : typeof option?.count === 'number'
                       ? option.count
-                      : null;
+                      : optionId && pollOptionTotals && typeof pollOptionTotals === 'object'
+                        ? pollOptionTotals[optionId] ?? null
+                        : null;
+                const isSelected =
+                  (optionId && pollSelectedIdSet.has(optionId)) || pollSelectedTitleSet.has(label);
                 return (
                   <li key={`poll-option-${index}`} className="flex items-center gap-2">
-                    <span>{label}</span>
+                    <span className={cn('text-foreground-muted', isSelected && 'font-semibold text-foreground')}>
+                      {label}
+                    </span>
                     {votes !== null ? (
                       <span className="rounded-full bg-surface-overlay-quiet px-2 py-0.5 text-[10px] text-foreground">
                         {votes} voto{votes === 1 ? '' : 's'}
@@ -375,9 +737,11 @@ export const MessageBubble = ({
           ) : (
             <span className="text-xs opacity-60">Nenhuma opção disponível</span>
           )}
-          {typeof poll.totalVotes === 'number' ? (
+          {pollTotalVotes !== null || pollTotalVoters !== null ? (
             <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
-              Total de votos: {poll.totalVotes}
+              {pollTotalVotes !== null ? `Total de votos: ${pollTotalVotes}` : null}
+              {pollTotalVotes !== null && pollTotalVoters !== null ? ' • ' : null}
+              {pollTotalVoters !== null ? `Total de participantes: ${pollTotalVoters}` : null}
             </span>
           ) : null}
           {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
