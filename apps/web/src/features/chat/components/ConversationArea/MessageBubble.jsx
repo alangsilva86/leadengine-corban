@@ -673,13 +673,10 @@ export const MessageBubble = ({
             : [];
 
       const poll = metadataPoll ?? interactivePoll;
-
-      if (!poll && pollOptionsSource.length === 0) {
-        return renderUnsupported('enquete');
-      }
-
-      const pollTitle = pollQuestion ?? 'Enquete';
+      const pollTitleSource = pollQuestion ?? textContent;
+      const pollTitle = pollTitleSource && pollTitleSource.trim().length > 0 ? pollTitleSource.trim() : 'Enquete';
       const pollOptions = pollOptionsSource;
+      const isMetadataMissing = !poll && pollOptionsSource.length === 0;
 
       return (
         <div className="flex flex-col gap-2">
@@ -735,7 +732,18 @@ export const MessageBubble = ({
               })}
             </ul>
           ) : (
-            <span className="text-xs opacity-60">Nenhuma opção disponível</span>
+            <div className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground-muted">
+                Opções indisponíveis
+              </span>
+              <ul className="ml-4 list-disc space-y-1 text-xs text-foreground-muted">
+                <li className="italic">
+                  {isMetadataMissing
+                    ? 'As opções desta enquete ainda não foram recebidas.'
+                    : 'Nenhuma opção disponível.'}
+                </li>
+              </ul>
+            </div>
           )}
           {pollTotalVotes !== null || pollTotalVoters !== null ? (
             <span className="text-[10px] uppercase tracking-wide text-foreground-muted">

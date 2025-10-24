@@ -170,6 +170,18 @@ export const PollMessage = {
   },
 };
 
+export const PollMessageWithoutMetadata = {
+  args: {
+    message: createMessage({
+      type: 'poll',
+      text: 'Qual é o tema da reunião?',
+      metadata: {
+        ...baseMetadata,
+      },
+    }),
+  },
+};
+
 export const PollChoiceResponse = {
   args: {
     message: createMessage({
