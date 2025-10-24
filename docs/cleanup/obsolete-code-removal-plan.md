@@ -7,7 +7,7 @@
 
 ## Repository Inventory
 - **Applications**: `apps/api` (Express backend) e `apps/web` (React/Vite frontend).
-- **Shared packages**: Domain contracts (`packages/contracts`), core domain logic (`packages/core`), shared utilities (`packages/shared`), storage abstractions (`packages/storage`), third-party integrations (`packages/integrations`), and WhatsApp specific contracts (`packages/wa-contracts`).
+- **Shared packages**: Domain contracts (`packages/contracts`), core domain logic (`packages/core`), shared utilities (`packages/shared`), storage abstractions (`packages/storage`), and WhatsApp specific contracts (`packages/wa-contracts`).
 - **Docs & scripts**: Extensive documentation in `docs/**` plus maintenance scripts under `scripts/`.
 
 ## Discovery Tooling
@@ -64,7 +64,7 @@
 
 ### 9. Documentation sweep
 - Legacy WhatsApp broker docs (`docs/whatsapp-broker-refactor.md`, `docs/whatsapp-broker-contracts.md`) may no longer describe the active implementation.  
-- **Plan**: cross-check with current integration under `packages/integrations` and either archive outdated docs or update them to align with present flows.
+- **Plan**: cross-check with the current WhatsApp HTTP integration (`apps/api/src/routes/integrations.ts`) and either archive outdated docs or update them to align with present flows.
 
 ## Verification Checklist Before Deletion
 1. Run `pnpm lint`, `pnpm typecheck`, and the API e2e suite after each removal batch.

@@ -16,7 +16,6 @@ pnpm --filter @ticketz/storage run prisma:generate
 pnpm --filter @ticketz/shared build
 pnpm --filter @ticketz/core build
 pnpm --filter @ticketz/storage build
-pnpm --filter @ticketz/integrations build
 pnpm --filter @ticketz/api build
 
 pnpm prune --prod

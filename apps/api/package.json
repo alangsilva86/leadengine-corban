@@ -4,7 +4,7 @@
   "description": "API REST para o sistema Ticketz-LeadEngine",
   "main": "dist/server.js",
   "scripts": {
-    "build:dependencies": "pnpm -r install --frozen-lockfile --prod=false && pnpm --filter @ticketz/storage run prisma:generate && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations --filter @ticketz/wa-contracts run typecheck && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/integrations --filter @ticketz/wa-contracts run build:clean && pnpm --filter @ticketz/contracts run build:clean",
+    "build:dependencies": "pnpm -r install --frozen-lockfile --prod=false && pnpm --filter @ticketz/storage run prisma:generate && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/wa-contracts run typecheck && pnpm --filter @ticketz/core --filter @ticketz/storage --filter @ticketz/wa-contracts run build:clean && pnpm --filter @ticketz/contracts run build:clean",
     "build": "pnpm run build:dependencies && pnpm run db:generate && tsup",
     "dev": "tsx watch src/server.ts",
     "prestart": "pnpm run build:dependencies && pnpm run db:generate",
@@ -21,7 +21,6 @@
     "@prisma/client": "5.22.0",
     "@ticketz/contracts": "workspace:*",
     "@ticketz/core": "workspace:*",
-    "@ticketz/integrations": "workspace:*",
     "@ticketz/wa-contracts": "workspace:*",
     "@ticketz/shared": "workspace:*",
     "@aws-sdk/client-s3": "^3.712.0",

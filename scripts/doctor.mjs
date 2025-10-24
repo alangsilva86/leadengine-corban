@@ -6,7 +6,7 @@ const repo = process.cwd();
 const npmrcPath = path.join(repo, ".npmrc");
 const vscSettings = path.join(repo, ".vscode", "settings.json");
 const pnpmStore = path.join(repo, "node_modules", ".pnpm");
-const integrationsPkgJson = path.join(repo, "packages", "integrations", "package.json");
+const repoPkgJson = path.join(repo, "package.json");
 
 let ok = true;
 const fail = (msg) => {
@@ -42,18 +42,12 @@ if (fs.existsSync(pnpmStore)) {
   fail("store virtual NÃO encontrada em node_modules/.pnpm");
 }
 
-// 3) resolve deps a partir do pacote @ticketz/integrations
-if (!fs.existsSync(integrationsPkgJson)) {
-  fail("packages/integrations/package.json não encontrado.");
-} else {
-  createRequire(integrationsPkgJson);
-  pass("@ticketz/integrations detectado (package.json presente)");
-  try {
-    const tsFromRepo = createRequire(path.join(repo, "package.json")).resolve("typescript");
-    pass(`TypeScript do repo resolvido: ${tsFromRepo}`);
-  } catch {
-    fail("TypeScript do repo NÃO resolvido (ver devDependencies/root).");
-  }
+// 3) TypeScript disponível a partir do root package.json?
+try {
+  const tsFromRepo = createRequire(repoPkgJson).resolve("typescript");
+  pass(`TypeScript do repo resolvido: ${tsFromRepo}`);
+} catch {
+  fail("TypeScript do repo NÃO resolvido (ver devDependencies/root).");
 }
 
 // 4) VS Code usando TS do repo?

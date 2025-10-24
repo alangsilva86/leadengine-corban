@@ -123,10 +123,4 @@ export default tseslint.config(
       },
     },
   },
-  {
-    files: ['packages/integrations/src/whatsapp/**/*.{ts,tsx,js,jsx,mts,mjs}'],
-    rules: {
-      'react-hooks/rules-of-hooks': 'off',
-    },
-  },
 )
