@@ -725,6 +725,42 @@ const normalizeMessagePayload = (
     quotedParticipant: quoted ? readString(quoted.quotedParticipant) ?? undefined : undefined,
   });
 
+  const pollCreationLog = asRecord(normalizedMessage.pollCreationMessage);
+  const pollUpdateLog = asRecord(normalizedMessage.pollUpdateMessage);
+  if (pollCreationLog || pollUpdateLog) {
+    const optionEntries = Array.isArray(pollCreationLog?.options) ? pollCreationLog?.options : [];
+    const optionHints = optionEntries
+      .map((entry, index) => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const record = entry as UnknownRecord;
+        const title =
+          readString(record.title, record.name, record.text, record.description, record.optionName) ??
+          `opção_${index}`;
+        return title;
+      })
+      .filter((value): value is string => Boolean(value));
+    const pollKeyRecord = asRecord(pollUpdateLog?.pollCreationMessageKey);
+    const voteRecord = asRecord(pollUpdateLog?.vote);
+    const encPayload = readString(voteRecord?.encPayload);
+    const votePreview =
+      Array.isArray(voteRecord?.values) && voteRecord?.values.length
+        ? voteRecord.values.slice(0, 3)
+        : undefined;
+    const selectableCount = pollCreationLog?.selectableOptionsCount;
+    logger.info('🌈 Etapa2-Normalize: enigma de enquete catalogado', {
+      pollCreationId: readString(pollUpdateLog?.pollCreationMessageId, pollKeyRecord?.id, pollCreationLog?.id),
+      remoteJid: readString(asRecord(normalizedMessage.key)?.remoteJid),
+      optionsFound: optionHints.length,
+      optionHints,
+      selectableOptionsCount:
+        typeof selectableCount === 'number' ? selectableCount : pollCreationLog?.allowMultipleAnswers ? 'multi' : 1,
+      encryptedVote: Boolean(encPayload),
+      votePreview,
+    });
+  }
+
   const mediaPriority = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'] as const;
   const matchedMedia = mediaPriority.find((candidate) => normalizedMessage[candidate]);
 

@@ -32,6 +32,7 @@ import {
 } from '../services/ticket-service';
 import { getSocketServer } from '../lib/socket-registry';
 import { getDefaultInstanceId, getDefaultTenantId } from '../config/whatsapp';
+import { logger } from '../config/logger';
 import {
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
@@ -718,6 +719,23 @@ router.get(
 
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const result = await listMessages(tenantId, ticketId, pagination);
+    const windowState = typeof req.query.window === 'string' ? req.query.window.trim().toLowerCase() : undefined;
+    if (windowState === 'open') {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+    const requestIdHeader =
+      typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined;
+    res.once('finish', () => {
+      logger.info('🧾 Etapa5-Serialize: timeline entregue', {
+        requestId: requestIdHeader ?? null,
+        ticketId,
+        tenantId,
+        page: result.page,
+        messageCount: result.items.length,
+        cacheControl: res.getHeader('Cache-Control') ?? null,
+        etag: res.getHeader('ETag') ?? null,
+      });
+    });
 
     const nextCursor = result.hasNext ? encodeCursor(result.page + 1) : null;
     const prevCursor = result.hasPrev ? encodeCursor(Math.max(1, result.page - 1)) : null;

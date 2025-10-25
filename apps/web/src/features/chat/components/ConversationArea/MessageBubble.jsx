@@ -369,6 +369,21 @@ export const MessageBubble = ({
       ? pollFallbackText
       : rawTextContent;
 
+  if (typeof window !== 'undefined') {
+    const silenceLogs = Boolean(window.__LE_SILENCE_POLL_LOGS);
+    if (!silenceLogs && (metadataPoll || pollChoiceMetadata)) {
+      const pollLogSelections = pollSelectedOptions.map((selection) => selection.title);
+      // eslint-disable-next-line no-console
+      console.info('🪄 Etapa6-Render: bolha decifrada', {
+        messageId: message.id,
+        hasPlaceholder: POLL_PLACEHOLDER_MESSAGES.has(normalizedRawText),
+        usedFallback: textContent === pollFallbackText && pollFallbackText !== null,
+        selectedOptions: pollLogSelections,
+        finalText: textContent,
+      });
+    }
+  }
+
   const pollSelectedIdSet = new Set(
     pollSelectedOptions
       .map((entry) => (typeof entry.id === 'string' ? entry.id : null))

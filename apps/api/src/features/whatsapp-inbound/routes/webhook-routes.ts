@@ -275,6 +275,11 @@ const updatePollVoteMessage = async (params: {
   }
 
   if (!existingMessage) {
+    logger.debug('🎯 Etapa3-Rewrite: mensagem alvo não encontrada', {
+      tenantId,
+      messageId,
+      pollId: params.pollId,
+    });
     return;
   }
 
@@ -284,6 +289,10 @@ const updatePollVoteMessage = async (params: {
   }
 
   const shouldUpdateContent = shouldUpdatePollMessageContent(existingMessage.content);
+  const existingCaption = typeof existingMessage.caption === 'string' ? existingMessage.caption.trim() : '';
+  const shouldUpdateCaption =
+    shouldUpdateContent &&
+    (existingCaption.length === 0 || POLL_PLACEHOLDER_MESSAGES.has(existingCaption));
 
   const metadataRecord = asJsonRecord(existingMessage.metadata);
   const selectedSummaries = buildSelectedOptionSummaries(params.selectedOptions);
@@ -301,7 +310,13 @@ const updatePollVoteMessage = async (params: {
   const metadataChanged =
     JSON.stringify(existingPollVote ?? null) !== JSON.stringify(pollVoteMetadata);
 
-  if (!shouldUpdateContent && !metadataChanged) {
+  if (!shouldUpdateContent && !metadataChanged && !shouldUpdateCaption) {
+    logger.info('🎯 Etapa3-Rewrite: voto idêntico detectado, nenhuma alteração necessária', {
+      tenantId,
+      messageId,
+      pollId: params.pollId,
+      selectedOptions: selectedSummaries,
+    });
     return;
   }
 
@@ -330,6 +345,7 @@ const updatePollVoteMessage = async (params: {
   try {
     const updatedMessage = await storageUpdateMessage(tenantId, existingMessage.id, {
       ...(shouldUpdateContent ? { content: contentCandidate, text: contentCandidate } : {}),
+      ...(shouldUpdateCaption ? { caption: contentCandidate } : {}),
       metadata: sanitizeJsonPayload(metadataRecord),
     });
 
@@ -339,9 +355,24 @@ const updatePollVoteMessage = async (params: {
       'tenantId' in updatedMessage &&
       'ticketId' in updatedMessage
     ) {
+      logger.info('🎯 Etapa3-Rewrite: voto persistido com sucesso', {
+        tenantId,
+        messageId,
+        pollId: params.pollId,
+        selectedOptions: selectedSummaries,
+        captionTouched: shouldUpdateCaption,
+        updatedAt: (updatedMessage as { updatedAt?: unknown }).updatedAt ?? null,
+      });
       const updatedRecord = updatedMessage as { tenantId: string; ticketId: string | null };
       if (updatedRecord.ticketId) {
         await emitMessageUpdatedEvents(tenantId, updatedRecord.ticketId, updatedMessage, null);
+        logger.info('📡 Etapa4-Emit: atualização de mensagem transmitida', {
+          tenantId,
+          ticketId: updatedRecord.ticketId,
+          messageId,
+          pollId: params.pollId,
+          voteOptionCount: selectedSummaries.length,
+        });
       }
     }
   } catch (error) {
@@ -1443,6 +1474,10 @@ const processPollChoiceEvent = async (
 
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const requestId = readString(req.header('x-request-id')) ?? randomUUID();
+  const remoteIp = readString(
+    req.header('x-forwarded-for'),
+    req.socket.remoteAddress ?? null
+  );
   const providedApiKey = normalizeApiKey(
     readString(req.header('x-api-key'), req.header('authorization'), req.header('x-authorization'))
   );
@@ -1451,7 +1486,10 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
   if (expectedApiKey) {
     if (!providedApiKey) {
-      logger.warn('WhatsApp webhook API key missing', { requestId });
+      logger.warn('🕵️ Etapa1-UPSERT rejeitada: API key ausente', {
+        requestId,
+        remoteIp: remoteIp ?? 'unknown',
+      });
       whatsappWebhookEventsCounter.inc({
         origin: 'webhook',
         tenantId: 'unknown',
@@ -1464,7 +1502,10 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     }
 
     if (providedApiKey !== expectedApiKey) {
-      logger.warn('WhatsApp webhook API key mismatch', { requestId });
+      logger.warn('🕵️ Etapa1-UPSERT rejeitada: API key inválida', {
+        requestId,
+        remoteIp: remoteIp ?? 'unknown',
+      });
       whatsappWebhookEventsCounter.inc({
         origin: 'webhook',
         tenantId: 'unknown',
@@ -1481,7 +1522,10 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const signature = readString(req.header('x-signature'), req.header('x-signature-sha256'));
     const secret = getWebhookSignatureSecret();
     if (!signature || !secret) {
-      logger.warn('WhatsApp webhook missing signature while required', { requestId });
+      logger.warn('🕵️ Etapa1-UPSERT rejeitada: assinatura ausente', {
+        requestId,
+        remoteIp: remoteIp ?? 'unknown',
+      });
       whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
       res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
       return;
@@ -1496,7 +1540,10 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         crypto.timingSafeEqual(providedBuffer, expectedBuffer);
 
       if (!matches) {
-        logger.warn('WhatsApp webhook signature mismatch', { requestId });
+        logger.warn('🕵️ Etapa1-UPSERT rejeitada: assinatura inválida', {
+          requestId,
+          remoteIp: remoteIp ?? 'unknown',
+        });
         whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
         res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
         return;
@@ -1508,6 +1555,12 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       return;
     }
   }
+
+  logger.info('🕵️ Etapa1-UPSERT liberada: credenciais verificadas', {
+    requestId,
+    remoteIp: remoteIp ?? 'unknown',
+    signatureEnforced: signatureRequired,
+  });
 
   const rawBodyParseError = (req as Request & { rawBodyParseError?: SyntaxError | null }).rawBodyParseError;
   if (rawBodyParseError) {
