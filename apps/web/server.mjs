@@ -124,34 +124,24 @@ if (proxyServer) {
   proxyServer.on('error', (error, req, res) => {
     const message = 'API proxy request failed'
 
-    const respondWithJson = () => {
-      res.writeHead(502, { 'Content-Type': 'application/json' })
-      res.end(
-        JSON.stringify({
-          success: false,
-          error: {
-            code: 'API_PROXY_ERROR',
-            message,
-            details: error?.message ?? 'Unknown proxy error',
-          },
-        })
-      )
-    }
-
-    if (res && typeof res.writeHead === 'function') {
+    if (res && typeof res.writeHead === 'function' && typeof res.end === 'function') {
       if (!res.headersSent) {
-        respondWithJson()
+        res.writeHead(502, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            success: false,
+            error: {
+              code: 'API_PROXY_ERROR',
+              message,
+              details: error?.message ?? 'Unknown proxy error',
+            },
+          })
+        )
       }
-    } else if (res && typeof res.end === 'function') {
-      res.end()
     } else if (res && typeof res.destroy === 'function') {
       res.destroy()
     } else if (req?.socket && !req.socket.destroyed) {
-      try {
-        req.socket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n')
-      } catch {
-        req.socket.destroy()
-      }
+      req.socket.destroy()
     }
 
     console.error(`❌ ${message}`, {

@@ -292,10 +292,22 @@ const updatePollVoteMessage = async (params: {
   metadataRecord.pollVote = pollVoteMetadata;
 
   try {
-    await storageUpdateMessage(tenantId, existingMessage.id, {
+    const updatedMessage = await storageUpdateMessage(tenantId, existingMessage.id, {
       ...(shouldUpdateContent ? { content: contentCandidate } : {}),
       metadata: sanitizeJsonPayload(metadataRecord),
     });
+
+    if (
+      updatedMessage &&
+      typeof updatedMessage === 'object' &&
+      'tenantId' in updatedMessage &&
+      'ticketId' in updatedMessage
+    ) {
+      const updatedRecord = updatedMessage as { tenantId: string; ticketId: string | null };
+      if (updatedRecord.ticketId) {
+        await emitMessageUpdatedEvents(tenantId, updatedRecord.ticketId, updatedMessage, null);
+      }
+    }
   } catch (error) {
     logger.warn('Failed to persist poll vote message update', {
       tenantId,
