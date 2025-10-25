@@ -240,6 +240,19 @@ const updatePollVoteMessage = async (params: {
   voterJid: string;
   selectedOptions: PollChoiceSelectedOptionPayload[];
   timestamp?: string | null;
+  aggregates?: {
+    totalVoters?: number | null;
+    totalVotes?: number | null;
+    optionTotals?: Record<string, number> | null;
+  } | null;
+  options?: PollChoiceSelectedOptionPayload[] | null;
+  vote?: {
+    optionIds?: string[] | null;
+    selectedOptions?: PollChoiceSelectedOptionPayload[] | null;
+    encryptedVote?: Record<string, unknown> | null;
+    messageId?: string | null;
+    timestamp?: string | null;
+  } | null;
 }): Promise<void> => {
   const tenantId = readString(params.tenantId);
   const messageId = readString(params.messageId);
@@ -279,6 +292,9 @@ const updatePollVoteMessage = async (params: {
     voterJid: params.voterJid,
     selectedOptions: selectedSummaries,
     updatedAt: normalizeTimestamp(params.timestamp) ?? new Date().toISOString(),
+    aggregates: params.aggregates ?? undefined,
+    options: params.options ?? undefined,
+    vote: params.vote ?? undefined,
   };
 
   const existingPollVote = metadataRecord.pollVote as Record<string, unknown> | undefined;
@@ -290,10 +306,30 @@ const updatePollVoteMessage = async (params: {
   }
 
   metadataRecord.pollVote = pollVoteMetadata;
+  const existingPollMetadata = asRecord(metadataRecord.poll);
+  metadataRecord.poll = {
+    ...(existingPollMetadata ?? {}),
+    id: existingPollMetadata?.id ?? params.pollId,
+    pollId: params.pollId,
+    selectedOptionIds: selectedSummaries.map((entry) => entry.id),
+    selectedOptions: selectedSummaries,
+    aggregates: params.aggregates ?? existingPollMetadata?.aggregates ?? undefined,
+    updatedAt: pollVoteMetadata.updatedAt,
+  };
+  metadataRecord.pollChoice = {
+    pollId: params.pollId,
+    voterJid: params.voterJid,
+    options: params.options ?? undefined,
+    vote: params.vote ?? {
+      optionIds: params.selectedOptions.map((entry) => entry.id),
+      selectedOptions: params.selectedOptions,
+      timestamp: normalizeTimestamp(params.timestamp),
+    },
+  };
 
   try {
     const updatedMessage = await storageUpdateMessage(tenantId, existingMessage.id, {
-      ...(shouldUpdateContent ? { content: contentCandidate } : {}),
+      ...(shouldUpdateContent ? { content: contentCandidate, text: contentCandidate } : {}),
       metadata: sanitizeJsonPayload(metadataRecord),
     });
 
@@ -1205,6 +1241,7 @@ const processPollChoiceEvent = async (
 
     if (pollPayload.messageId && context.tenantOverride) {
       try {
+        const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
         await updatePollVoteMessage({
           tenantId: context.tenantOverride,
           messageId: pollPayload.messageId,
@@ -1212,6 +1249,21 @@ const processPollChoiceEvent = async (
           voterJid: pollPayload.voterJid,
           selectedOptions: pollWithSelections.selectedOptions,
           timestamp: pollPayload.timestamp ?? null,
+          aggregates: result.state.aggregates ?? null,
+          options: result.state.options ?? null,
+          vote: voterState
+            ? {
+                optionIds: Array.isArray(voterState.optionIds) ? voterState.optionIds : null,
+                selectedOptions: Array.isArray(voterState.selectedOptions) ? voterState.selectedOptions : null,
+                encryptedVote: voterState.encryptedVote ?? null,
+                messageId: voterState.messageId ?? null,
+                timestamp: voterState.timestamp ?? null,
+              }
+            : {
+                optionIds: pollWithSelections.selectedOptions.map((entry) => entry.id),
+                selectedOptions: pollWithSelections.selectedOptions,
+                timestamp: pollPayload.timestamp ?? null,
+              },
         });
       } catch (error) {
         logger.warn('Failed to update poll vote message content', {
