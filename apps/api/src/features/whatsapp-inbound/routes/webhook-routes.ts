@@ -1270,7 +1270,9 @@ const processPollChoiceEvent = async (
           : pollPayload.selectedOptions ?? [],
     };
 
-    if (context.tenantOverride) {
+    const tenantForUpdate = context.tenantOverride ?? result.state.context?.tenantId ?? null;
+
+    if (tenantForUpdate) {
       const candidateMessageIds = Array.from(
         new Set(
           [
@@ -1287,7 +1289,7 @@ const processPollChoiceEvent = async (
         try {
           const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
           await updatePollVoteMessage({
-            tenantId: context.tenantOverride,
+            tenantId: tenantForUpdate,
             messageId: candidateMessageId,
             pollId: pollPayload.pollId,
             voterJid: pollPayload.voterJid,
@@ -1314,11 +1316,17 @@ const processPollChoiceEvent = async (
             requestId: context.requestId,
             pollId: pollPayload.pollId,
             messageId: candidateMessageId,
-            tenantId: context.tenantOverride,
+            tenantId: tenantForUpdate,
             error,
           });
         }
       }
+    } else {
+      logger.warn('Skipping poll vote message update due to missing tenant context', {
+        requestId: context.requestId,
+        pollId: pollPayload.pollId,
+        messageId: pollPayload.messageId ?? null,
+      });
     }
 
     emitWhatsAppDebugPhase({
