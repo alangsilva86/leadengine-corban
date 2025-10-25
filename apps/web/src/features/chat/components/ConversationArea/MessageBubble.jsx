@@ -108,7 +108,16 @@ export const MessageBubble = ({
         ? message.content
         : '';
 
-  const resolvedType = messageType === 'media' && mediaType ? mediaType : messageType;
+  const trimmedRawText = typeof rawTextContent === 'string' ? rawTextContent.trim() : '';
+  const hasMeaningfulText = trimmedRawText.length > 0 && !POLL_PLACEHOLDER_MESSAGES.has(trimmedRawText);
+  const pollLikeMetadata =
+    metadata?.origin === 'poll_choice' || metadataPoll || pollChoiceMetadata || interactivePoll;
+  const shouldForceText =
+    hasMeaningfulText &&
+    (messageType === 'poll_update' || messageType === 'poll' || (pollLikeMetadata && messageType !== 'text'));
+  const effectiveMessageType = shouldForceText ? 'text' : messageType;
+
+  const resolvedType = effectiveMessageType === 'media' && mediaType ? mediaType : effectiveMessageType;
 
   const pollAggregates =
     metadataPoll && metadataPoll.aggregates && typeof metadataPoll.aggregates === 'object'
@@ -363,7 +372,7 @@ export const MessageBubble = ({
           .join(', ')
       : null;
 
-  const normalizedRawText = rawTextContent.trim();
+  const normalizedRawText = trimmedRawText;
   const textContent =
     pollFallbackText && normalizedRawText && POLL_PLACEHOLDER_MESSAGES.has(normalizedRawText)
       ? pollFallbackText

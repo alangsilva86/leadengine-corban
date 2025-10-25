@@ -40,6 +40,7 @@ export {
   createOutboundMessage,
   updateMessage,
   findMessageByExternalId,
+  findPollVoteMessageCandidate,
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
   mapPassthroughMessage,
@@ -82,4 +83,3 @@ export {
   type InboundMediaJobStatus,
   type EnqueueInboundMediaJobInput,
 } from './repositories/inbound-media-job-repository';
-

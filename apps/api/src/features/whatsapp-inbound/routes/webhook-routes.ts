@@ -17,6 +17,7 @@ import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import {
   applyBrokerAck,
   findMessageByExternalId as storageFindMessageByExternalId,
+  findPollVoteMessageCandidate,
   updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
 import {
@@ -235,7 +236,9 @@ const normalizeTimestamp = (value: string | null | undefined): string | null => 
 
 const updatePollVoteMessage = async (params: {
   tenantId: string | null | undefined;
-  messageId: string | null | undefined;
+  chatId?: string | null | undefined;
+  messageId?: string | null | undefined;
+  messageIds?: Array<string | null | undefined> | null;
   pollId: string;
   voterJid: string;
   selectedOptions: PollChoiceSelectedOptionPayload[];
@@ -255,36 +258,113 @@ const updatePollVoteMessage = async (params: {
   } | null;
 }): Promise<void> => {
   const tenantId = readString(params.tenantId);
-  const messageId = readString(params.messageId);
-  if (!tenantId || !messageId) {
+  if (!tenantId) {
+    logger.debug('rewrite.poll_vote.skip_missing_context', {
+      pollId: params.pollId,
+      voterJid: params.voterJid,
+    });
     return;
   }
 
-  let existingMessage: Awaited<ReturnType<typeof storageFindMessageByExternalId>> | null = null;
+  const chatId = readString(params.chatId);
+  const candidateSet = new Set<string>();
 
-  try {
-    existingMessage = await storageFindMessageByExternalId(tenantId, messageId);
-  } catch (error) {
-    logger.warn('Failed to lookup poll vote message for update', {
-      tenantId,
-      messageId,
-      pollId: params.pollId,
-      error,
+  if (Array.isArray(params.messageIds)) {
+    params.messageIds.forEach((candidate) => {
+      const normalized = readString(candidate);
+      if (normalized) {
+        candidateSet.add(normalized);
+      }
     });
-    return;
+  }
+
+  const primaryMessageId = readString(params.messageId);
+  if (primaryMessageId) {
+    candidateSet.add(primaryMessageId);
+  }
+
+  const candidateIdentifiers = Array.from(candidateSet.values());
+  if (candidateIdentifiers.length === 0) {
+    candidateIdentifiers.push(params.pollId);
+  }
+
+  logger.info('rewrite.poll_vote.start', {
+    tenantId,
+    chatId: chatId ?? null,
+    pollId: params.pollId,
+    voterJid: params.voterJid,
+    identifiers: candidateIdentifiers,
+  });
+
+  let existingMessage:
+    | Awaited<ReturnType<typeof storageFindMessageByExternalId>>
+    | Awaited<ReturnType<typeof findPollVoteMessageCandidate>>
+    | null = null;
+
+  for (const identifier of candidateIdentifiers) {
+    try {
+      existingMessage = await storageFindMessageByExternalId(tenantId, identifier);
+    } catch (error) {
+      logger.warn('rewrite.poll_vote.lookup_external_id_failed', {
+        tenantId,
+        identifier,
+        pollId: params.pollId,
+        error,
+      });
+      continue;
+    }
+    if (existingMessage) {
+      break;
+    }
   }
 
   if (!existingMessage) {
-    logger.debug('🎯 Etapa3-Rewrite: mensagem alvo não encontrada', {
+    try {
+      existingMessage = await findPollVoteMessageCandidate({
+        tenantId,
+        chatId,
+        identifiers: candidateIdentifiers,
+        pollId: params.pollId,
+      });
+    } catch (error) {
+      logger.warn('rewrite.poll_vote.lookup_candidate_failed', {
+        tenantId,
+        chatId: chatId ?? null,
+        pollId: params.pollId,
+        identifiers: candidateIdentifiers,
+        error,
+      });
+      return;
+    }
+  }
+
+  if (!existingMessage) {
+    logger.debug('rewrite.poll_vote.not_found', {
       tenantId,
-      messageId,
+      chatId: chatId ?? null,
       pollId: params.pollId,
+      voterJid: params.voterJid,
+      identifiersTried: candidateIdentifiers,
     });
     return;
   }
 
+  logger.info('rewrite.poll_vote.matched', {
+    tenantId,
+    chatId: chatId ?? null,
+    pollId: params.pollId,
+    storageMessageId: existingMessage.id,
+    externalId: readString(existingMessage.externalId),
+    identifiersTried: candidateIdentifiers,
+  });
+
   const contentCandidate = buildPollVoteMessageContent(params.selectedOptions);
   if (!contentCandidate) {
+    logger.debug('rewrite.poll_vote.skip_empty_content', {
+      tenantId,
+      storageMessageId: existingMessage.id,
+      pollId: params.pollId,
+    });
     return;
   }
 
@@ -296,29 +376,21 @@ const updatePollVoteMessage = async (params: {
 
   const metadataRecord = asJsonRecord(existingMessage.metadata);
   const selectedSummaries = buildSelectedOptionSummaries(params.selectedOptions);
+  const voteTimestampIso = normalizeTimestamp(params.timestamp) ?? new Date().toISOString();
+  const rewriteAppliedAt = new Date().toISOString();
   const pollVoteMetadata = {
     pollId: params.pollId,
     voterJid: params.voterJid,
     selectedOptions: selectedSummaries,
-    updatedAt: normalizeTimestamp(params.timestamp) ?? new Date().toISOString(),
+    updatedAt: voteTimestampIso,
+    rewriteAppliedAt,
     aggregates: params.aggregates ?? undefined,
     options: params.options ?? undefined,
     vote: params.vote ?? undefined,
   };
 
   const existingPollVote = metadataRecord.pollVote as Record<string, unknown> | undefined;
-  const metadataChanged =
-    JSON.stringify(existingPollVote ?? null) !== JSON.stringify(pollVoteMetadata);
-
-  if (!shouldUpdateContent && !metadataChanged && !shouldUpdateCaption) {
-    logger.info('🎯 Etapa3-Rewrite: voto idêntico detectado, nenhuma alteração necessária', {
-      tenantId,
-      messageId,
-      pollId: params.pollId,
-      selectedOptions: selectedSummaries,
-    });
-    return;
-  }
+  const metadataSnapshotBefore = sanitizeJsonPayload(metadataRecord);
 
   metadataRecord.pollVote = pollVoteMetadata;
   const existingPollMetadata = asRecord(metadataRecord.poll);
@@ -330,7 +402,9 @@ const updatePollVoteMessage = async (params: {
     selectedOptions: selectedSummaries,
     aggregates: params.aggregates ?? existingPollMetadata?.aggregates ?? undefined,
     updatedAt: pollVoteMetadata.updatedAt,
+    rewriteAppliedAt,
   };
+
   metadataRecord.pollChoice = {
     pollId: params.pollId,
     voterJid: params.voterJid,
@@ -342,11 +416,51 @@ const updatePollVoteMessage = async (params: {
     },
   };
 
+  const passthroughMetadata = asRecord(metadataRecord.passthrough);
+  if (passthroughMetadata) {
+    if (passthroughMetadata.placeholder === true || passthroughMetadata.placeholder === 'true') {
+      passthroughMetadata.placeholder = false;
+    }
+    metadataRecord.passthrough = passthroughMetadata;
+  }
+
+  if (metadataRecord.placeholder === true || metadataRecord.placeholder === 'true') {
+    metadataRecord.placeholder = false;
+  }
+
+  const rewriteMetadataRecord = asRecord(metadataRecord.rewrite);
+  metadataRecord.rewrite = {
+    ...(rewriteMetadataRecord ?? {}),
+    pollVote: {
+      ...(asRecord(rewriteMetadataRecord?.pollVote) ?? {}),
+      appliedAt: rewriteAppliedAt,
+      pollId: params.pollId,
+      storageMessageId: existingMessage.id,
+    },
+  };
+
+  const metadataSnapshotAfter = sanitizeJsonPayload(metadataRecord);
+  const metadataChanged =
+    JSON.stringify(metadataSnapshotBefore) !== JSON.stringify(metadataSnapshotAfter);
+
+  if (!shouldUpdateContent && !metadataChanged && !shouldUpdateCaption) {
+    logger.info('rewrite.poll_vote.noop', {
+      tenantId,
+      storageMessageId: existingMessage.id,
+      pollId: params.pollId,
+      selectedOptions: selectedSummaries,
+    });
+    return;
+  }
+
+  const shouldUpdateType = typeof existingMessage.type === 'string' && existingMessage.type.toUpperCase() !== 'TEXT';
+
   try {
     const updatedMessage = await storageUpdateMessage(tenantId, existingMessage.id, {
       ...(shouldUpdateContent ? { content: contentCandidate, text: contentCandidate } : {}),
       ...(shouldUpdateCaption ? { caption: contentCandidate } : {}),
-      metadata: sanitizeJsonPayload(metadataRecord),
+      ...(shouldUpdateType ? { type: 'TEXT' as const } : {}),
+      ...(metadataChanged ? { metadata: metadataSnapshotAfter } : {}),
     });
 
     if (
@@ -355,30 +469,35 @@ const updatePollVoteMessage = async (params: {
       'tenantId' in updatedMessage &&
       'ticketId' in updatedMessage
     ) {
-      logger.info('🎯 Etapa3-Rewrite: voto persistido com sucesso', {
+      logger.info('rewrite.poll_vote.updated', {
         tenantId,
-        messageId,
+        chatId: chatId ?? null,
+        messageId: readString(updatedMessage.externalId) ?? existingMessage.id,
+        storageMessageId: existingMessage.id,
         pollId: params.pollId,
         selectedOptions: selectedSummaries,
         captionTouched: shouldUpdateCaption,
+        typeAdjusted: shouldUpdateType,
         updatedAt: (updatedMessage as { updatedAt?: unknown }).updatedAt ?? null,
       });
       const updatedRecord = updatedMessage as { tenantId: string; ticketId: string | null };
       if (updatedRecord.ticketId) {
         await emitMessageUpdatedEvents(tenantId, updatedRecord.ticketId, updatedMessage, null);
-        logger.info('📡 Etapa4-Emit: atualização de mensagem transmitida', {
+        logger.info('rewrite.poll_vote.emit', {
           tenantId,
           ticketId: updatedRecord.ticketId,
-          messageId,
+          messageId: readString(updatedMessage.externalId) ?? existingMessage.id,
+          storageMessageId: existingMessage.id,
           pollId: params.pollId,
           voteOptionCount: selectedSummaries.length,
         });
       }
     }
   } catch (error) {
-    logger.warn('Failed to persist poll vote message update', {
+    logger.warn('rewrite.poll_vote.persist_failed', {
       tenantId,
-      messageId,
+      storageMessageId: existingMessage.id,
+      chatId: chatId ?? null,
       pollId: params.pollId,
       error,
     });
@@ -1285,41 +1404,41 @@ const processPollChoiceEvent = async (
         )
       );
 
-      for (const candidateMessageId of candidateMessageIds) {
-        try {
-          const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
-          await updatePollVoteMessage({
-            tenantId: tenantForUpdate,
-            messageId: candidateMessageId,
-            pollId: pollPayload.pollId,
-            voterJid: pollPayload.voterJid,
-            selectedOptions: pollWithSelections.selectedOptions,
-            timestamp: pollPayload.timestamp ?? null,
-            aggregates: result.state.aggregates ?? null,
-            options: result.state.options ?? null,
-            vote: voterState
-              ? {
-                  optionIds: Array.isArray(voterState.optionIds) ? voterState.optionIds : null,
-                  selectedOptions: Array.isArray(voterState.selectedOptions) ? voterState.selectedOptions : null,
-                  encryptedVote: voterState.encryptedVote ?? null,
-                  messageId: voterState.messageId ?? null,
-                  timestamp: voterState.timestamp ?? null,
-                }
-              : {
-                  optionIds: pollWithSelections.selectedOptions.map((entry) => entry.id),
-                  selectedOptions: pollWithSelections.selectedOptions,
-                  timestamp: pollPayload.timestamp ?? null,
-                },
-          });
-        } catch (error) {
-          logger.warn('Failed to update poll vote message content', {
-            requestId: context.requestId,
-            pollId: pollPayload.pollId,
-            messageId: candidateMessageId,
-            tenantId: tenantForUpdate,
-            error,
-          });
-        }
+      try {
+        const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
+        await updatePollVoteMessage({
+          tenantId: tenantForUpdate,
+          chatId: normalizeChatId(pollPayload.voterJid),
+          messageId: candidateMessageIds[0] ?? null,
+          messageIds: candidateMessageIds,
+          pollId: pollPayload.pollId,
+          voterJid: pollPayload.voterJid,
+          selectedOptions: pollWithSelections.selectedOptions,
+          timestamp: pollPayload.timestamp ?? null,
+          aggregates: result.state.aggregates ?? null,
+          options: result.state.options ?? null,
+          vote: voterState
+            ? {
+                optionIds: Array.isArray(voterState.optionIds) ? voterState.optionIds : null,
+                selectedOptions: Array.isArray(voterState.selectedOptions) ? voterState.selectedOptions : null,
+                encryptedVote: voterState.encryptedVote ?? null,
+                messageId: voterState.messageId ?? null,
+                timestamp: voterState.timestamp ?? null,
+              }
+            : {
+                optionIds: pollWithSelections.selectedOptions.map((entry) => entry.id),
+                selectedOptions: pollWithSelections.selectedOptions,
+                timestamp: pollPayload.timestamp ?? null,
+              },
+        });
+      } catch (error) {
+        logger.warn('Failed to update poll vote message content', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          messageId: candidateMessageIds[0] ?? pollPayload.pollId ?? null,
+          tenantId: tenantForUpdate,
+          error,
+        });
       }
     } else {
       logger.warn('Skipping poll vote message update due to missing tenant context', {

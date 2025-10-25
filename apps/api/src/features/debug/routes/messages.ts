@@ -181,6 +181,86 @@ router.get(
 );
 
 router.get(
+  '/_debug/message-by-provider',
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = normalizeQueryValue(req.query.tenantId);
+    const chatId = normalizeQueryValue(req.query.chatId);
+    const providerMessageId =
+      normalizeQueryValue(req.query.providerMessageId) ??
+      normalizeQueryValue(req.query.messageId) ??
+      normalizeQueryValue(req.query.externalId);
+
+    if (!tenantId || !providerMessageId) {
+      res.status(400).json({
+        success: false,
+        message: 'tenantId e providerMessageId são obrigatórios.',
+      });
+      return;
+    }
+
+    const where: Prisma.MessageWhereInput = {
+      tenantId,
+      OR: [
+        { externalId: providerMessageId },
+        { metadata: { path: ['broker', 'messageId'], equals: providerMessageId } },
+        { metadata: { path: ['broker', 'wamid'], equals: providerMessageId } },
+        { metadata: { path: ['poll', 'pollId'], equals: providerMessageId } },
+        { metadata: { path: ['poll', 'creationMessageId'], equals: providerMessageId } },
+        { metadata: { path: ['pollVote', 'pollId'], equals: providerMessageId } },
+        { metadata: { path: ['pollChoice', 'pollId'], equals: providerMessageId } },
+      ],
+    };
+
+    if (chatId) {
+      where.AND = [
+        {
+          OR: [
+            { metadata: { path: ['remoteJid'], equals: chatId } },
+            { metadata: { path: ['chatId'], equals: chatId } },
+            { metadata: { path: ['broker', 'remoteJid'], equals: chatId } },
+            { metadata: { path: ['passthrough', 'chatId'], equals: chatId } },
+            { metadata: { path: ['contact', 'remoteJid'], equals: chatId } },
+            { metadata: { path: ['contact', 'jid'], equals: chatId } },
+          ],
+        },
+      ];
+    }
+
+    const record = await prisma.message.findFirst({
+      where,
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    if (!record) {
+      res.status(404).json({
+        success: false,
+        message: 'Nenhum registro encontrado para os parâmetros informados.',
+      });
+      return;
+    }
+
+    const responsePayload = {
+      id: record.id,
+      tenantId: record.tenantId,
+      ticketId: record.ticketId,
+      type: record.type,
+      direction: record.direction,
+      content: record.content,
+      caption: record.caption ?? null,
+      externalId: record.externalId ?? null,
+      metadata: record.metadata,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+
+    res.json({
+      success: true,
+      data: responsePayload,
+    });
+  })
+);
+
+router.get(
   '/debug/baileys-events',
   asyncHandler(async (req: Request, res: Response) => {
     const rawLimit = normalizeQueryValue(req.query.limit);

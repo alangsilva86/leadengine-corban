@@ -196,6 +196,22 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
         return;
       }
 
+      const resolveProviderMessageId = (entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+        const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
+        if (!metadata) {
+          return null;
+        }
+        const broker = metadata.broker && typeof metadata.broker === 'object' ? metadata.broker : null;
+        if (!broker) {
+          return null;
+        }
+        const candidate = broker.messageId ?? broker.id ?? broker.wamid ?? null;
+        return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : null;
+      };
+
       const ticketId = payload.ticketId ?? message.ticketId;
       if (!ticketId) {
         return;
@@ -220,9 +236,12 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
               return item;
             }
 
+            const itemProviderMessageId = resolveProviderMessageId(item);
+            const messageProviderMessageId = resolveProviderMessageId(message);
             const matches =
               item.id === message.id ||
-              (item.externalId && message.externalId && item.externalId === message.externalId);
+              (item.externalId && message.externalId && item.externalId === message.externalId) ||
+              (itemProviderMessageId && messageProviderMessageId && itemProviderMessageId === messageProviderMessageId);
 
             if (!matches) {
               return item;

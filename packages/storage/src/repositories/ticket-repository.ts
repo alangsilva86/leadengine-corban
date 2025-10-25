@@ -1160,6 +1160,7 @@ export const updateMessage = async (
   messageId: string,
   updates: {
     status?: Message['status'];
+    type?: Message['type'];
     externalId?: string | null;
     content?: string | null;
     text?: string | null;
@@ -1189,6 +1190,10 @@ export const updateMessage = async (
 
   if (updates.externalId !== undefined) {
     data.externalId = updates.externalId ?? null;
+  }
+
+  if (updates.type !== undefined) {
+    data.type = normalizeMessageTypeForWrite(updates.type);
   }
 
   const nextContentCandidate =
@@ -1260,6 +1265,113 @@ export const findMessageByExternalId = async (
   });
 
   return existing ? mapMessage(existing) : null;
+};
+
+type PollVoteMessageLookupInput = {
+  tenantId: string;
+  chatId?: string | null;
+  identifiers?: string[];
+  pollId?: string | null;
+};
+
+const normalizeIdentifierSet = (identifiers: string[] | undefined): string[] => {
+  if (!Array.isArray(identifiers)) {
+    return [];
+  }
+
+  const unique = new Set<string>();
+  identifiers.forEach((candidate) => {
+    if (typeof candidate !== 'string') {
+      return;
+    }
+    const trimmed = candidate.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    unique.add(trimmed);
+  });
+
+  return Array.from(unique.values());
+};
+
+const buildJsonEqualsFilter = (path: string[], value: string): Prisma.MessageWhereInput => ({
+  metadata: {
+    path,
+    equals: value,
+  },
+});
+
+export const findPollVoteMessageCandidate = async ({
+  tenantId,
+  chatId,
+  identifiers,
+  pollId,
+}: PollVoteMessageLookupInput): Promise<Message | null> => {
+  const prisma = getPrismaClient();
+  const normalizedIdentifiers = normalizeIdentifierSet(identifiers);
+  const normalizedPollId = typeof pollId === 'string' && pollId.trim().length > 0 ? pollId.trim() : null;
+  const normalizedChatId = typeof chatId === 'string' && chatId.trim().length > 0 ? chatId.trim() : null;
+
+  const andClauses: Prisma.MessageWhereInput[] = [];
+
+  if (normalizedChatId) {
+    const chatFilters: Prisma.MessageWhereInput[] = [
+      buildJsonEqualsFilter(['remoteJid'], normalizedChatId),
+      buildJsonEqualsFilter(['chatId'], normalizedChatId),
+      buildJsonEqualsFilter(['broker', 'remoteJid'], normalizedChatId),
+      buildJsonEqualsFilter(['passthrough', 'chatId'], normalizedChatId),
+      buildJsonEqualsFilter(['contact', 'remoteJid'], normalizedChatId),
+      buildJsonEqualsFilter(['contact', 'jid'], normalizedChatId),
+    ];
+    andClauses.push({ OR: chatFilters });
+  }
+
+  if (normalizedIdentifiers.length > 0) {
+    const identifierFilters: Prisma.MessageWhereInput[] = [];
+
+    normalizedIdentifiers.forEach((id) => {
+      identifierFilters.push({ externalId: id });
+      identifierFilters.push(buildJsonEqualsFilter(['externalId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['broker', 'messageId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['broker', 'id'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['broker', 'wamid'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['rawKey', 'id'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['poll', 'creationMessageId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['poll', 'pollId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['poll', 'id'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['pollVote', 'messageId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['pollChoice', 'pollId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['pollChoice', 'vote', 'messageId'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['interactive', 'poll', 'id'], id));
+      identifierFilters.push(buildJsonEqualsFilter(['interactive', 'id'], id));
+    });
+
+    andClauses.push({ OR: identifierFilters });
+  }
+
+  if (normalizedPollId) {
+    andClauses.push({
+      OR: [
+        buildJsonEqualsFilter(['poll', 'pollId'], normalizedPollId),
+        buildJsonEqualsFilter(['poll', 'id'], normalizedPollId),
+        buildJsonEqualsFilter(['pollVote', 'pollId'], normalizedPollId),
+        buildJsonEqualsFilter(['pollChoice', 'pollId'], normalizedPollId),
+        buildJsonEqualsFilter(['pollChoice', 'vote', 'pollId'], normalizedPollId),
+      ],
+    });
+  }
+
+  const where: Prisma.MessageWhereInput = { tenantId };
+  if (andClauses.length > 0) {
+    where.AND = andClauses;
+  }
+
+  const record = await prisma.message.findFirst({
+    where,
+    orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  return record ? mapMessage(record) : null;
 };
 
 export const findOrCreateOpenTicketByChat = async (
