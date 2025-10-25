@@ -1270,12 +1270,18 @@ const processPollChoiceEvent = async (
           : pollPayload.selectedOptions ?? [],
     };
 
-    if (pollPayload.messageId && context.tenantOverride) {
+    if (context.tenantOverride) {
       try {
         const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
         await updatePollVoteMessage({
           tenantId: context.tenantOverride,
-          messageId: pollPayload.messageId,
+          messageId:
+            readString(
+              pollPayload.pollId,
+              (pollPayload as { pollCreationMessageKey?: { id?: string | null } | null }).pollCreationMessageKey
+                ?.id,
+              pollPayload.messageId
+            ) ?? pollPayload.pollId,
           pollId: pollPayload.pollId,
           voterJid: pollPayload.voterJid,
           selectedOptions: pollWithSelections.selectedOptions,
