@@ -1161,6 +1161,9 @@ export const updateMessage = async (
   updates: {
     status?: Message['status'];
     externalId?: string | null;
+    content?: string | null;
+    text?: string | null;
+    caption?: string | null;
     metadata?: Record<string, unknown> | null;
     deliveredAt?: Date | null;
     readAt?: Date | null;
@@ -1186,6 +1189,17 @@ export const updateMessage = async (
 
   if (updates.externalId !== undefined) {
     data.externalId = updates.externalId ?? null;
+  }
+
+  const nextContentCandidate =
+    updates.content !== undefined ? updates.content : updates.text !== undefined ? updates.text : undefined;
+
+  if (nextContentCandidate !== undefined && typeof nextContentCandidate === 'string') {
+    data.content = nextContentCandidate;
+  }
+
+  if (updates.caption !== undefined) {
+    data.caption = updates.caption ?? null;
   }
 
   if (updates.metadata !== undefined) {

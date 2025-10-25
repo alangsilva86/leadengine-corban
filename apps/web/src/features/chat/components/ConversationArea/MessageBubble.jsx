@@ -21,6 +21,8 @@ const STATUS_ICONS = {
   FAILED: { icon: AlertTriangle, tone: 'text-status-error', label: 'Falha no envio' },
 };
 
+const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
+
 const formatTime = (value) => {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
@@ -99,7 +101,7 @@ export const MessageBubble = ({
       : typeof media?.caption === 'string'
         ? media.caption
         : null;
-  const textContent =
+  const rawTextContent =
     typeof message.text === 'string' && message.text.trim().length > 0
       ? message.text
       : typeof message.content === 'string'
@@ -350,6 +352,22 @@ export const MessageBubble = ({
     selections.sort((a, b) => a.index - b.index);
     return selections;
   })();
+
+  const pollFallbackText =
+    pollSelectedOptions.length > 0
+      ? pollSelectedOptions
+          .map((selection) =>
+            typeof selection.title === 'string' && selection.title.trim().length > 0 ? selection.title.trim() : null
+          )
+          .filter(Boolean)
+          .join(', ')
+      : null;
+
+  const normalizedRawText = rawTextContent.trim();
+  const textContent =
+    pollFallbackText && normalizedRawText && POLL_PLACEHOLDER_MESSAGES.has(normalizedRawText)
+      ? pollFallbackText
+      : rawTextContent;
 
   const pollSelectedIdSet = new Set(
     pollSelectedOptions

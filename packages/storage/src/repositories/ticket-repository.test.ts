@@ -28,7 +28,7 @@ vi.mock('../prisma-client', () => ({
   }),
 }));
 
-import { upsertMessageByExternalId } from './ticket-repository';
+import { upsertMessageByExternalId, updateMessage } from './ticket-repository';
 
 const baseExistingMessage = {
   id: 'message-1',
@@ -56,12 +56,12 @@ const baseExistingMessage = {
   updatedAt: new Date('2023-01-01T00:00:00Z'),
 };
 
-describe('upsertMessageByExternalId', () => {
-  beforeEach(() => {
-    findFirstMock.mockReset();
-    updateMock.mockReset();
-  });
+beforeEach(() => {
+  findFirstMock.mockReset();
+  updateMock.mockReset();
+});
 
+describe('upsertMessageByExternalId', () => {
   it('preserves media classification when only base64 media payload is provided', async () => {
     const existing = { ...baseExistingMessage };
 
@@ -111,5 +111,47 @@ describe('upsertMessageByExternalId', () => {
     expect(result.message.media?.base64).toBe('data-123');
     expect(result.message.media?.mediaType).toBe('image');
     expect(result.message.media?.url).toBeNull();
+  });
+});
+
+describe('updateMessage', () => {
+  it('updates content when provided directly', async () => {
+    const existing = { ...baseExistingMessage };
+
+    findFirstMock.mockResolvedValue(existing);
+    updateMock.mockImplementation(async ({ data }) => ({
+      ...existing,
+      ...data,
+      metadata: (data.metadata as Record<string, unknown>) ?? existing.metadata,
+      updatedAt: new Date('2024-01-01T00:00:00Z'),
+    }));
+
+    const result = await updateMessage('tenant-1', 'message-1', { content: 'Option 1' });
+
+    expect(findFirstMock).toHaveBeenCalledWith({ where: { id: 'message-1', tenantId: 'tenant-1' } });
+    expect(updateMock).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      data: expect.objectContaining({ content: 'Option 1' }),
+    });
+    expect(result?.content).toBe('Option 1');
+  });
+
+  it('maps text alias to content when direct content is omitted', async () => {
+    const existing = { ...baseExistingMessage };
+
+    findFirstMock.mockResolvedValue(existing);
+    updateMock.mockImplementation(async ({ data }) => ({
+      ...existing,
+      ...data,
+      metadata: (data.metadata as Record<string, unknown>) ?? existing.metadata,
+      updatedAt: new Date('2024-01-01T00:00:00Z'),
+    }));
+
+    await updateMessage('tenant-1', 'message-1', { text: 'Alias content' });
+
+    expect(updateMock).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      data: expect.objectContaining({ content: 'Alias content' }),
+    });
   });
 });
