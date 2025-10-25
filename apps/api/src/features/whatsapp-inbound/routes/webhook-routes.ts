@@ -17,6 +17,7 @@ import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import {
   applyBrokerAck,
   findMessageByExternalId as storageFindMessageByExternalId,
+  updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
 import {
   normalizeUpsertEvent,
@@ -24,7 +25,7 @@ import {
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
 import { enqueueInboundWebhookJob } from '../services/inbound-queue';
-import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
+import { logBaileysDebugEvent, sanitizeJsonPayload } from '../utils/baileys-event-logger';
 import { prisma } from '../../../lib/prisma';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
@@ -34,7 +35,7 @@ import {
   type BrokerInboundContact,
   type BrokerInboundEvent,
 } from '../schemas/broker-contracts';
-import { PollChoiceEventSchema } from '../schemas/poll-choice';
+import { PollChoiceEventSchema, type PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
 import { recordPollChoiceVote } from '../services/poll-choice-service';
 import { syncPollChoiceState } from '../services/poll-choice-sync-service';
 import {
@@ -119,6 +120,170 @@ const normalizeApiKey = (value: string | null): string | null => {
   const normalized = (bearerMatch?.[1] ?? value).trim();
 
   return normalized.length > 0 ? normalized : null;
+};
+
+const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
+
+const sanitizeOptionText = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const extractPollOptionLabel = (option: PollChoiceSelectedOptionPayload): string | null => {
+  const label =
+    sanitizeOptionText(option.title) ??
+    sanitizeOptionText((option as { text?: unknown }).text) ??
+    sanitizeOptionText((option as { description?: unknown }).description) ??
+    sanitizeOptionText(option.id);
+
+  return label;
+};
+
+const buildSelectedOptionSummaries = (
+  selectedOptions: PollChoiceSelectedOptionPayload[]
+): Array<{ id: string; title: string }> => {
+  const normalized: Array<{ id: string; title: string }> = [];
+  const seen = new Set<string>();
+
+  for (const option of selectedOptions) {
+    const id = sanitizeOptionText(option.id) ?? option.id;
+    const title = extractPollOptionLabel(option);
+    if (!title) {
+      continue;
+    }
+
+    const dedupeKey = `${id}|${title}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+    normalized.push({ id, title });
+  }
+
+  return normalized;
+};
+
+const buildPollVoteMessageContent = (selectedOptions: PollChoiceSelectedOptionPayload[]): string | null => {
+  const normalized = buildSelectedOptionSummaries(selectedOptions);
+  if (normalized.length === 0) {
+    return null;
+  }
+  if (normalized.length === 1) {
+    return normalized[0]!.title;
+  }
+  return normalized.map((entry) => entry.title).join(', ');
+};
+
+const asJsonRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+};
+
+const shouldUpdatePollMessageContent = (content: unknown): boolean => {
+  if (typeof content !== 'string') {
+    return true;
+  }
+
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  return POLL_PLACEHOLDER_MESSAGES.has(trimmed);
+};
+
+const normalizeTimestamp = (value: string | null | undefined): string | null => {
+  const trimmed = sanitizeOptionText(value);
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString();
+  }
+
+  return trimmed;
+};
+
+const updatePollVoteMessage = async (params: {
+  tenantId: string | null | undefined;
+  messageId: string | null | undefined;
+  pollId: string;
+  voterJid: string;
+  selectedOptions: PollChoiceSelectedOptionPayload[];
+  timestamp?: string | null;
+}): Promise<void> => {
+  const tenantId = readString(params.tenantId);
+  const messageId = readString(params.messageId);
+  if (!tenantId || !messageId) {
+    return;
+  }
+
+  let existingMessage: Awaited<ReturnType<typeof storageFindMessageByExternalId>> | null = null;
+
+  try {
+    existingMessage = await storageFindMessageByExternalId(tenantId, messageId);
+  } catch (error) {
+    logger.warn('Failed to lookup poll vote message for update', {
+      tenantId,
+      messageId,
+      pollId: params.pollId,
+      error,
+    });
+    return;
+  }
+
+  if (!existingMessage) {
+    return;
+  }
+
+  const contentCandidate = buildPollVoteMessageContent(params.selectedOptions);
+  if (!contentCandidate) {
+    return;
+  }
+
+  const shouldUpdateContent = shouldUpdatePollMessageContent(existingMessage.content);
+
+  const metadataRecord = asJsonRecord(existingMessage.metadata);
+  const selectedSummaries = buildSelectedOptionSummaries(params.selectedOptions);
+  const pollVoteMetadata = {
+    pollId: params.pollId,
+    voterJid: params.voterJid,
+    selectedOptions: selectedSummaries,
+    updatedAt: normalizeTimestamp(params.timestamp) ?? new Date().toISOString(),
+  };
+
+  const existingPollVote = metadataRecord.pollVote as Record<string, unknown> | undefined;
+  const metadataChanged =
+    JSON.stringify(existingPollVote ?? null) !== JSON.stringify(pollVoteMetadata);
+
+  if (!shouldUpdateContent && !metadataChanged) {
+    return;
+  }
+
+  metadataRecord.pollVote = pollVoteMetadata;
+
+  try {
+    await storageUpdateMessage(tenantId, existingMessage.id, {
+      ...(shouldUpdateContent ? { content: contentCandidate } : {}),
+      metadata: sanitizeJsonPayload(metadataRecord),
+    });
+  } catch (error) {
+    logger.warn('Failed to persist poll vote message update', {
+      tenantId,
+      messageId,
+      pollId: params.pollId,
+      error,
+    });
+  }
 };
 
 const normalizeChatId = (value: unknown): string | null => {
@@ -898,6 +1063,27 @@ const processPollChoiceEvent = async (
           ? result.selectedOptions
           : pollPayload.selectedOptions ?? [],
     };
+
+    if (pollPayload.messageId && context.tenantOverride) {
+      try {
+        await updatePollVoteMessage({
+          tenantId: context.tenantOverride,
+          messageId: pollPayload.messageId,
+          pollId: pollPayload.pollId,
+          voterJid: pollPayload.voterJid,
+          selectedOptions: pollWithSelections.selectedOptions,
+          timestamp: pollPayload.timestamp ?? null,
+        });
+      } catch (error) {
+        logger.warn('Failed to update poll vote message content', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          messageId: pollPayload.messageId,
+          tenantId: context.tenantOverride,
+          error,
+        });
+      }
+    }
 
     emitWhatsAppDebugPhase({
       phase: 'webhook:poll_choice',

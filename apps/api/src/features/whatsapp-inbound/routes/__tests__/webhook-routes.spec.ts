@@ -19,6 +19,9 @@ const hoistedMocks = vi.hoisted(() => {
   const syncPollChoiceStateMock = vi.fn();
   const triggerPollChoiceInboxNotificationMock = vi.fn();
   const messageFindFirstMock = vi.fn();
+  const applyBrokerAckMock = vi.fn();
+  const storageFindMessageByExternalIdMock = vi.fn();
+  const storageUpdateMessageMock = vi.fn();
 
   const prisma = {
     processedIntegrationEvent: {
@@ -48,6 +51,9 @@ const hoistedMocks = vi.hoisted(() => {
     syncPollChoiceStateMock,
     triggerPollChoiceInboxNotificationMock,
     messageFindFirstMock,
+    applyBrokerAckMock,
+    storageFindMessageByExternalIdMock,
+    storageUpdateMessageMock,
   };
 });
 
@@ -82,6 +88,9 @@ vi.mock('../../services/poll-choice-inbox-service', () => ({
 
 vi.mock('@ticketz/storage', () => ({
   $Enums: { MessageType: {} },
+  applyBrokerAck: hoistedMocks.applyBrokerAckMock,
+  findMessageByExternalId: hoistedMocks.storageFindMessageByExternalIdMock,
+  updateMessage: hoistedMocks.storageUpdateMessageMock,
 }));
 
 const prismaMock = hoistedMocks.prisma;
@@ -97,6 +106,9 @@ const {
   syncPollChoiceStateMock,
   triggerPollChoiceInboxNotificationMock,
   messageFindFirstMock,
+  applyBrokerAckMock,
+  storageFindMessageByExternalIdMock,
+  storageUpdateMessageMock,
 } = hoistedMocks;
 
 
@@ -137,6 +149,10 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     ingestInboundWhatsAppMessageMock.mockReset();
     normalizeUpsertEventMock.mockReset();
     normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
+    applyBrokerAckMock.mockReset();
+    storageFindMessageByExternalIdMock.mockReset();
+    storageFindMessageByExternalIdMock.mockResolvedValue(null);
+    storageUpdateMessageMock.mockReset();
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -263,6 +279,10 @@ describe('WhatsApp webhook Baileys event logging', () => {
         },
       ],
     });
+    applyBrokerAckMock.mockReset();
+    storageFindMessageByExternalIdMock.mockReset();
+    storageFindMessageByExternalIdMock.mockResolvedValue(null);
+    storageUpdateMessageMock.mockReset();
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -517,6 +537,10 @@ describe('WhatsApp webhook instance resolution', () => {
     ingestInboundWhatsAppMessageMock.mockReset();
     normalizeUpsertEventMock.mockReset();
     normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
+    applyBrokerAckMock.mockReset();
+    storageFindMessageByExternalIdMock.mockReset();
+    storageFindMessageByExternalIdMock.mockResolvedValue(null);
+    storageUpdateMessageMock.mockReset();
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -681,6 +705,10 @@ describe('WhatsApp webhook poll choice events', () => {
     recordPollChoiceVoteMock.mockReset();
     processedIntegrationEventCreateMock.mockReset();
     processedIntegrationEventCreateMock.mockResolvedValue({} as never);
+    applyBrokerAckMock.mockReset();
+    storageFindMessageByExternalIdMock.mockReset();
+    storageFindMessageByExternalIdMock.mockResolvedValue(null);
+    storageUpdateMessageMock.mockReset();
     prismaMock.message.findFirst.mockReset();
     prismaMock.message.findFirst.mockResolvedValue(null);
     syncPollChoiceStateMock.mockReset();
@@ -730,6 +758,12 @@ describe('WhatsApp webhook poll choice events', () => {
 
     const app = buildApp();
 
+    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
+      id: 'message-db-id',
+      content: '[Mensagem recebida via WhatsApp]',
+      metadata: {},
+    } as never);
+
     const response = await request(app).post('/api/webhooks/whatsapp').send({
       event: 'POLL_CHOICE',
       tenantId: 'tenant-123',
@@ -771,6 +805,15 @@ describe('WhatsApp webhook poll choice events', () => {
       state: expect.objectContaining({ pollId: 'poll-1' }),
       selectedOptions: expect.arrayContaining([{ id: 'opt-1', title: 'Option 1' }]),
     });
+    expect(storageFindMessageByExternalIdMock).toHaveBeenCalledWith('tenant-123', 'wamid-poll-1');
+    expect(storageUpdateMessageMock).toHaveBeenCalledWith(
+      'tenant-123',
+      'message-db-id',
+      expect.objectContaining({
+        content: 'Option 1',
+        metadata: expect.anything(),
+      })
+    );
 
     const metrics = renderMetrics();
     expect(metrics).toMatch(
