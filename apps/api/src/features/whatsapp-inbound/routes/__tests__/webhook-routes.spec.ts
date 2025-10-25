@@ -900,7 +900,7 @@ describe('WhatsApp webhook poll choice events', () => {
       state: expect.objectContaining({ pollId: 'poll-1' }),
       selectedOptions: expect.arrayContaining([{ id: 'opt-1', title: 'Option 1' }]),
     });
-    expect(storageFindMessageByExternalIdMock).toHaveBeenCalledWith('tenant-123', 'poll-1');
+    expect(storageFindMessageByExternalIdMock).toHaveBeenCalledWith('tenant-123', 'wamid-poll-1');
     expect(storageUpdateMessageMock).toHaveBeenCalledWith(
       'tenant-123',
       'message-db-id',

@@ -1271,45 +1271,53 @@ const processPollChoiceEvent = async (
     };
 
     if (context.tenantOverride) {
-      try {
-        const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
-        await updatePollVoteMessage({
-          tenantId: context.tenantOverride,
-          messageId:
-            readString(
-              pollPayload.pollId,
-              (pollPayload as { pollCreationMessageKey?: { id?: string | null } | null }).pollCreationMessageKey
-                ?.id,
-              pollPayload.messageId
-            ) ?? pollPayload.pollId,
-          pollId: pollPayload.pollId,
-          voterJid: pollPayload.voterJid,
-          selectedOptions: pollWithSelections.selectedOptions,
-          timestamp: pollPayload.timestamp ?? null,
-          aggregates: result.state.aggregates ?? null,
-          options: result.state.options ?? null,
-          vote: voterState
-            ? {
-                optionIds: Array.isArray(voterState.optionIds) ? voterState.optionIds : null,
-                selectedOptions: Array.isArray(voterState.selectedOptions) ? voterState.selectedOptions : null,
-                encryptedVote: voterState.encryptedVote ?? null,
-                messageId: voterState.messageId ?? null,
-                timestamp: voterState.timestamp ?? null,
-              }
-            : {
-                optionIds: pollWithSelections.selectedOptions.map((entry) => entry.id),
-                selectedOptions: pollWithSelections.selectedOptions,
-                timestamp: pollPayload.timestamp ?? null,
-              },
-        });
-      } catch (error) {
-        logger.warn('Failed to update poll vote message content', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          messageId: pollPayload.messageId,
-          tenantId: context.tenantOverride,
-          error,
-        });
+      const candidateMessageIds = Array.from(
+        new Set(
+          [
+            pollPayload.messageId,
+            (pollPayload as { pollCreationMessageKey?: { id?: string | null } | null }).pollCreationMessageKey?.id,
+            pollPayload.pollId,
+          ]
+            .map((value) => readString(value))
+            .filter((value): value is string => Boolean(value))
+        )
+      );
+
+      for (const candidateMessageId of candidateMessageIds) {
+        try {
+          const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
+          await updatePollVoteMessage({
+            tenantId: context.tenantOverride,
+            messageId: candidateMessageId,
+            pollId: pollPayload.pollId,
+            voterJid: pollPayload.voterJid,
+            selectedOptions: pollWithSelections.selectedOptions,
+            timestamp: pollPayload.timestamp ?? null,
+            aggregates: result.state.aggregates ?? null,
+            options: result.state.options ?? null,
+            vote: voterState
+              ? {
+                  optionIds: Array.isArray(voterState.optionIds) ? voterState.optionIds : null,
+                  selectedOptions: Array.isArray(voterState.selectedOptions) ? voterState.selectedOptions : null,
+                  encryptedVote: voterState.encryptedVote ?? null,
+                  messageId: voterState.messageId ?? null,
+                  timestamp: voterState.timestamp ?? null,
+                }
+              : {
+                  optionIds: pollWithSelections.selectedOptions.map((entry) => entry.id),
+                  selectedOptions: pollWithSelections.selectedOptions,
+                  timestamp: pollPayload.timestamp ?? null,
+                },
+          });
+        } catch (error) {
+          logger.warn('Failed to update poll vote message content', {
+            requestId: context.requestId,
+            pollId: pollPayload.pollId,
+            messageId: candidateMessageId,
+            tenantId: context.tenantOverride,
+            error,
+          });
+        }
       }
     }
 
