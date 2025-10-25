@@ -101,14 +101,25 @@ export const MessageBubble = ({
       : typeof media?.caption === 'string'
         ? media.caption
         : null;
-  const rawTextContent =
+  const structuredTextContent =
+    message &&
+    message.content &&
+    typeof message.content === 'object' &&
+    typeof message.content.text === 'string' &&
+    message.content.text.trim().length > 0
+      ? message.content.text
+      : null;
+
+  const rawTextContentCandidate =
     typeof message.text === 'string' && message.text.trim().length > 0
       ? message.text
-      : typeof message.content === 'string'
-        ? message.content
-        : '';
+      : structuredTextContent ??
+        (typeof message.content === 'string'
+          ? message.content
+          : '');
 
-  const trimmedRawText = typeof rawTextContent === 'string' ? rawTextContent.trim() : '';
+  const rawTextContent = typeof rawTextContentCandidate === 'string' ? rawTextContentCandidate : '';
+  const trimmedRawText = rawTextContent.trim();
   const hasMeaningfulText = trimmedRawText.length > 0 && !POLL_PLACEHOLDER_MESSAGES.has(trimmedRawText);
   const pollLikeMetadata =
     metadata?.origin === 'poll_choice' || metadataPoll || pollChoiceMetadata || interactivePoll;

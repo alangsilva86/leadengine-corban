@@ -11,6 +11,7 @@ import useRealtimeTickets from './useRealtimeTickets.js';
 import useConversationState from './useConversationState.js';
 import useTypingIndicator from './useTypingIndicator.js';
 import mergeTicketIntoList from '../utils/updateTicketsList.js';
+import { resolveProviderMessageId } from '../utils/messageIdentity.js';
 
 const DEFAULT_FILTERS = {
   scope: 'team',
@@ -146,8 +147,27 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
           return current;
         }
 
+        const messageProviderId = resolveProviderMessageId(message);
+
         const alreadyExists = current.pages.some((page) =>
-          Array.isArray(page?.items) && page.items.some((item) => item?.id === message.id || (item?.externalId && item.externalId === message.externalId))
+          Array.isArray(page?.items) &&
+          page.items.some((item) => {
+            if (!item) {
+              return false;
+            }
+            if (item.id === message.id) {
+              return true;
+            }
+            if (item.externalId && message.externalId && item.externalId === message.externalId) {
+              return true;
+            }
+            const itemProviderId = resolveProviderMessageId(item);
+            return (
+              itemProviderId &&
+              messageProviderId &&
+              itemProviderId === messageProviderId
+            );
+          })
         );
 
         if (alreadyExists) {
@@ -196,22 +216,6 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
         return;
       }
 
-      const resolveProviderMessageId = (entry) => {
-        if (!entry || typeof entry !== 'object') {
-          return null;
-        }
-        const metadata = entry.metadata && typeof entry.metadata === 'object' ? entry.metadata : null;
-        if (!metadata) {
-          return null;
-        }
-        const broker = metadata.broker && typeof metadata.broker === 'object' ? metadata.broker : null;
-        if (!broker) {
-          return null;
-        }
-        const candidate = broker.messageId ?? broker.id ?? broker.wamid ?? null;
-        return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate.trim() : null;
-      };
-
       const ticketId = payload.ticketId ?? message.ticketId;
       if (!ticketId) {
         return;
@@ -224,6 +228,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
         }
 
         let hasChanges = false;
+        const messageProviderId = resolveProviderMessageId(message);
 
         const nextPages = current.pages.map((page) => {
           if (!page || !Array.isArray(page.items)) {
@@ -237,11 +242,10 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
             }
 
             const itemProviderMessageId = resolveProviderMessageId(item);
-            const messageProviderMessageId = resolveProviderMessageId(message);
             const matches =
               item.id === message.id ||
               (item.externalId && message.externalId && item.externalId === message.externalId) ||
-              (itemProviderMessageId && messageProviderMessageId && itemProviderMessageId === messageProviderMessageId);
+              (itemProviderMessageId && messageProviderId && itemProviderMessageId === messageProviderId);
 
             if (!matches) {
               return item;

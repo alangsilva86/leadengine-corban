@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
+import { resolveMessageKey } from '../utils/messageIdentity.js';
 
 const asDate = (value) => {
   if (!value) return null;
@@ -63,12 +64,19 @@ const buildTimeline = ({ messages, ticket, notes }) => {
 
   const timeline = [];
 
-  messages.forEach((message) => {
+  messages.forEach((message, index) => {
     const createdAt = asDate(message.createdAt);
     ensureDivider(createdAt);
+    const canonicalKey =
+      resolveMessageKey(message) ??
+      (typeof message.externalId === 'string' && message.externalId.trim().length > 0
+        ? message.externalId.trim()
+        : null) ??
+      (message.id ? String(message.id) : null) ??
+      `message-${index}`;
     timeline.push({
       type: 'message',
-      id: message.id,
+      id: canonicalKey,
       date: createdAt,
       payload: message,
     });
