@@ -16,12 +16,14 @@ const hoistedMocks = vi.hoisted(() => {
   const ingestInboundWhatsAppMessageMock = vi.fn();
   const normalizeUpsertEventMock = vi.fn();
   const recordPollChoiceVoteMock = vi.fn();
+  const recordEncryptedPollVoteMock = vi.fn();
   const syncPollChoiceStateMock = vi.fn();
   const triggerPollChoiceInboxNotificationMock = vi.fn();
   const messageFindFirstMock = vi.fn();
   const applyBrokerAckMock = vi.fn();
   const storageFindMessageByExternalIdMock = vi.fn();
   const storageUpdateMessageMock = vi.fn();
+  const upsertPollMetadataMock = vi.fn();
 
   const prisma = {
     processedIntegrationEvent: {
@@ -54,6 +56,8 @@ const hoistedMocks = vi.hoisted(() => {
     applyBrokerAckMock,
     storageFindMessageByExternalIdMock,
     storageUpdateMessageMock,
+    recordEncryptedPollVoteMock,
+    upsertPollMetadataMock,
   };
 });
 
@@ -69,6 +73,7 @@ vi.mock('../../services/baileys-raw-normalizer', () => ({
 
 vi.mock('../../services/poll-choice-service', () => ({
   recordPollChoiceVote: hoistedMocks.recordPollChoiceVoteMock,
+  recordEncryptedPollVote: hoistedMocks.recordEncryptedPollVoteMock,
 }));
 
 vi.mock('../../services/poll-choice-sync-service', () => ({
@@ -86,6 +91,9 @@ vi.mock('../../services/poll-choice-inbox-service', () => ({
   triggerPollChoiceInboxNotification: hoistedMocks.triggerPollChoiceInboxNotificationMock,
 }));
 
+vi.mock('../../services/poll-metadata-service', () => ({
+  upsertPollMetadata: hoistedMocks.upsertPollMetadataMock,
+}));
 vi.mock('@ticketz/storage', () => ({
   $Enums: { MessageType: {} },
   applyBrokerAck: hoistedMocks.applyBrokerAckMock,
@@ -103,12 +111,14 @@ const {
   ingestInboundWhatsAppMessageMock,
   normalizeUpsertEventMock,
   recordPollChoiceVoteMock,
+  recordEncryptedPollVoteMock,
   syncPollChoiceStateMock,
   triggerPollChoiceInboxNotificationMock,
   messageFindFirstMock,
   applyBrokerAckMock,
   storageFindMessageByExternalIdMock,
   storageUpdateMessageMock,
+  upsertPollMetadataMock,
 } = hoistedMocks;
 
 
@@ -149,10 +159,15 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     ingestInboundWhatsAppMessageMock.mockReset();
     normalizeUpsertEventMock.mockReset();
     normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
+    recordPollChoiceVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockResolvedValue(undefined);
     applyBrokerAckMock.mockReset();
     storageFindMessageByExternalIdMock.mockReset();
     storageFindMessageByExternalIdMock.mockResolvedValue(null);
     storageUpdateMessageMock.mockReset();
+    upsertPollMetadataMock.mockReset();
+    upsertPollMetadataMock.mockResolvedValue(undefined);
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -279,10 +294,15 @@ describe('WhatsApp webhook Baileys event logging', () => {
         },
       ],
     });
+    recordPollChoiceVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockResolvedValue(undefined);
     applyBrokerAckMock.mockReset();
     storageFindMessageByExternalIdMock.mockReset();
     storageFindMessageByExternalIdMock.mockResolvedValue(null);
     storageUpdateMessageMock.mockReset();
+    upsertPollMetadataMock.mockReset();
+    upsertPollMetadataMock.mockResolvedValue(undefined);
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -537,10 +557,15 @@ describe('WhatsApp webhook instance resolution', () => {
     ingestInboundWhatsAppMessageMock.mockReset();
     normalizeUpsertEventMock.mockReset();
     normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
+    recordPollChoiceVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockResolvedValue(undefined);
     applyBrokerAckMock.mockReset();
     storageFindMessageByExternalIdMock.mockReset();
     storageFindMessageByExternalIdMock.mockResolvedValue(null);
     storageUpdateMessageMock.mockReset();
+    upsertPollMetadataMock.mockReset();
+    upsertPollMetadataMock.mockResolvedValue(undefined);
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -703,18 +728,88 @@ describe('WhatsApp webhook poll choice events', () => {
     refreshWhatsAppEnv();
     resetMetrics();
     recordPollChoiceVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockReset();
+    recordEncryptedPollVoteMock.mockResolvedValue(undefined);
+    normalizeUpsertEventMock.mockReset();
+    normalizeUpsertEventMock.mockReturnValue({ normalized: [] });
     processedIntegrationEventCreateMock.mockReset();
     processedIntegrationEventCreateMock.mockResolvedValue({} as never);
     applyBrokerAckMock.mockReset();
     storageFindMessageByExternalIdMock.mockReset();
     storageFindMessageByExternalIdMock.mockResolvedValue(null);
     storageUpdateMessageMock.mockReset();
+    upsertPollMetadataMock.mockReset();
+    upsertPollMetadataMock.mockResolvedValue(undefined);
     prismaMock.message.findFirst.mockReset();
     prismaMock.message.findFirst.mockResolvedValue(null);
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
     triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
+  });
+
+  it('captures poll metadata from poll creation messages', async () => {
+    normalizeUpsertEventMock.mockReset();
+    normalizeUpsertEventMock.mockReturnValueOnce({
+      normalized: [
+        {
+          messageIndex: 0,
+          messageId: 'poll-msg-1',
+          sessionId: null,
+          brokerId: null,
+          tenantId: 'tenant-123',
+          messageType: 'poll',
+          messageUpsertType: 'notify',
+          isGroup: false,
+          data: {
+            instanceId: 'instance-1',
+            tenantId: 'tenant-123',
+            direction: 'INBOUND',
+            metadata: {
+              contact: { remoteJid: '5511999999999@s.whatsapp.net' },
+            },
+            message: {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'poll-msg-1' },
+              text: 'Você confirma?',
+              pollCreationMessage: {
+                name: 'Você confirma?',
+                options: [
+                  { id: 'opt-1', title: 'Sim 👍', index: 0 },
+                  { id: 'opt-2', title: 'Não', index: 1 },
+                ],
+                selectableOptionsCount: 1,
+                allowMultipleAnswers: false,
+              },
+              pollContextInfo: {
+                messageSecret: 'secret-value',
+                messageSecretVersion: 1,
+              },
+            },
+            contact: { phone: '+55 11 99999-9999' },
+          },
+        },
+      ],
+    });
+    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
+
+    const response = await request(buildApp())
+      .post('/api/webhooks/whatsapp')
+      .send({
+        event: 'WHATSAPP_MESSAGES_UPSERT',
+        instanceId: 'instance-1',
+        payload: { messages: [] },
+      });
+
+    expect(response.status).toBe(204);
+    await inboundQueueTesting.waitForIdle();
+    expect(upsertPollMetadataMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pollId: 'poll-msg-1',
+        question: 'Você confirma?',
+        options: expect.arrayContaining([expect.objectContaining({ id: 'opt-1' })]),
+        messageSecret: 'secret-value',
+      })
+    );
   });
 
   it('delegates poll choice events to dedicated service', async () => {

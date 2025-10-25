@@ -41,6 +41,13 @@ export const PollChoiceVoteSchema = z.object({
   selectedOptions: z.array(PollChoiceSelectedOptionSchema).default([]),
   messageId: z.string().nullable().optional(),
   timestamp: z.string().nullable().optional(),
+  encryptedVote: z
+    .object({
+      encPayload: z.string().nullable().optional(),
+      encIv: z.string().nullable().optional(),
+      ciphertext: z.string().nullable().optional(),
+    })
+    .optional(),
 });
 
 export const PollChoiceStateSchema = z.object({
@@ -58,6 +65,26 @@ export const PollChoiceStateSchema = z.object({
   aggregates: PollChoiceAggregatesSchema,
   brokerAggregates: PollChoiceAggregatesSchema.optional(),
   updatedAt: z.string(),
+  context: z
+    .object({
+      question: z.string().nullable().optional(),
+      selectableOptionsCount: z.number().int().min(0).nullable().optional(),
+      allowMultipleAnswers: z.boolean().optional(),
+      creationMessageId: z.string().nullable().optional(),
+      creationMessageKey: z
+        .object({
+          remoteJid: z.string().nullable().optional(),
+          participant: z.string().nullable().optional(),
+          fromMe: z.boolean().optional(),
+        })
+        .nullable()
+        .optional(),
+      messageSecret: z.string().nullable().optional(),
+      messageSecretVersion: z.number().nullable().optional(),
+      tenantId: z.string().nullable().optional(),
+      instanceId: z.string().nullable().optional(),
+    })
+    .optional(),
 });
 
 export type PollChoiceOptionPayload = z.infer<typeof PollChoiceOptionSchema>;

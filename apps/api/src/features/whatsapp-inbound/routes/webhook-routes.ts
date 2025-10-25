@@ -36,12 +36,13 @@ import {
   type BrokerInboundEvent,
 } from '../schemas/broker-contracts';
 import { PollChoiceEventSchema, type PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
-import { recordPollChoiceVote } from '../services/poll-choice-service';
+import { recordPollChoiceVote, recordEncryptedPollVote } from '../services/poll-choice-service';
 import { syncPollChoiceState } from '../services/poll-choice-sync-service';
 import {
   PollChoiceInboxNotificationStatus,
   triggerPollChoiceInboxNotification,
 } from '../services/poll-choice-inbox-service';
+import { upsertPollMetadata, type PollMetadataOption } from '../services/poll-metadata-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -105,6 +106,25 @@ const readString = (...candidates: unknown[]): string | null => {
       const trimmed = candidate.trim();
       if (trimmed.length > 0) {
         return trimmed;
+      }
+    }
+  }
+  return null;
+};
+
+const readNumber = (...candidates: unknown[]): number | null => {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const parsed = Number(trimmed);
+      if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+        return parsed;
       }
     }
   }
@@ -581,10 +601,117 @@ const processNormalizedMessage = async (
     const externalId = readString(messageRecord.id, messageKey.id, normalized.messageId);
     const timestamp = readString(data.timestamp) ?? null;
 
+    const pollCreationRecord = asRecord(messageRecord.pollCreationMessage);
+    if (pollCreationRecord) {
+      const metadataOptions = Array.isArray(pollCreationRecord.options)
+        ? (pollCreationRecord.options as Array<Record<string, unknown>>)
+            .map((entry, index) => {
+              const optionId =
+                readString(
+                  entry.id,
+                  (entry as { optionName?: unknown }).optionName,
+                  (entry as { title?: unknown }).title
+                ) ?? `option_${index}`;
+              const title =
+                readString(
+                  (entry as { title?: unknown }).title,
+                  (entry as { optionName?: unknown }).optionName,
+                  (entry as { name?: unknown }).name,
+                  (entry as { description?: unknown }).description
+                ) ?? null;
+              const normalizedOption: PollMetadataOption = {
+                id: optionId,
+                title,
+                index: readNumber((entry as { index?: unknown }).index) ?? index,
+              };
+              const optionName = readString((entry as { optionName?: unknown }).optionName);
+              if (optionName && optionName !== title) {
+                normalizedOption.optionName = optionName;
+              }
+              const description = readString((entry as { description?: unknown }).description);
+              if (description && description !== title) {
+                normalizedOption.description = description;
+              }
+              return normalizedOption;
+            })
+            .filter(Boolean) as PollMetadataOption[]
+        : [];
+
+      const pollContext = asRecord(messageRecord.pollContextInfo);
+      const creationKey = {
+        remoteJid:
+          readString(messageKey.remoteJid, metadataContact?.remoteJid, metadataContact?.jid) ??
+          remoteJid ??
+          null,
+        participant:
+          readString(messageKey.participant, metadataContact?.participant) ??
+          null,
+        fromMe: messageKey.fromMe === true,
+      };
+
+      try {
+        await upsertPollMetadata({
+          pollId: normalized.messageId,
+          question:
+            readString(messageRecord.text, pollCreationRecord.name, pollCreationRecord.title) ?? null,
+          selectableOptionsCount: readNumber(pollCreationRecord.selectableOptionsCount),
+          allowMultipleAnswers: pollCreationRecord.allowMultipleAnswers === true ? true : undefined,
+          options: metadataOptions,
+          creationMessageId: normalized.messageId,
+          creationMessageKey: creationKey,
+          messageSecret: readString(pollContext?.messageSecret),
+          messageSecretVersion: readNumber(pollContext?.messageSecretVersion),
+          tenantId: tenantId ?? null,
+          instanceId: instanceId ?? null,
+        });
+      } catch (metadataError) {
+        logger.warn('Failed to persist poll metadata from webhook message', {
+          requestId,
+          pollId: normalized.messageId,
+          tenantId,
+          instanceId,
+          error: metadataError,
+        });
+      }
+    }
+
     const brokerMetadata =
       metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
         ? { ...(metadataBase.broker as Record<string, unknown>) }
         : ({} as Record<string, unknown>);
+    const pollUpdateRecord = asRecord(messageRecord.pollUpdateMessage);
+    if (pollUpdateRecord) {
+      const pollUpdateVote = asRecord(pollUpdateRecord.vote);
+      const pollCreationKeyRecord = asRecord(pollUpdateRecord.pollCreationMessageKey);
+      const pollIdFromUpdate =
+        readString(
+          pollUpdateRecord.pollCreationMessageId,
+          pollCreationKeyRecord?.id
+        ) ?? null;
+
+      try {
+        await recordEncryptedPollVote({
+          pollId: pollIdFromUpdate ?? normalized.messageId,
+          voterJid: remoteJid,
+          messageId: externalId,
+          encryptedVote: pollUpdateVote
+            ? {
+                encPayload: readString(pollUpdateVote.encPayload),
+                encIv: readString(pollUpdateVote.encIv),
+                ciphertext: readString(pollUpdateVote.ciphertext),
+              }
+            : null,
+          timestamp,
+        });
+      } catch (encryptedVoteError) {
+        logger.warn('Failed to persist encrypted poll vote details', {
+          requestId,
+          pollId: pollIdFromUpdate ?? normalized.messageId,
+          voterJid: remoteJid,
+          error: encryptedVoteError,
+        });
+      }
+    }
 
     const existingBrokerMessageType = brokerMetadata.messageType;
     const messageUpsertType = normalized.messageUpsertType;

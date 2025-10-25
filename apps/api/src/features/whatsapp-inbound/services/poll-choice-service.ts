@@ -11,6 +11,7 @@ import {
   type PollChoiceVoteEntry,
 } from '../schemas/poll-choice';
 import { sanitizeJsonPayload } from '../utils/baileys-event-logger';
+import { getPollMetadata, type PollMetadataOption } from './poll-metadata-service';
 
 interface PollChoiceContext {
   tenantId?: string | null;
@@ -84,7 +85,8 @@ const normalizeOptionTitle = (option: { title?: string | null; text?: string | n
 
 const mergeOptions = (
   existing: PollChoiceState['options'],
-  incoming: PollChoiceEventPayload['options']
+  incoming: PollChoiceEventPayload['options'],
+  metadataOptions: PollMetadataOption[] | null | undefined
 ): PollChoiceState['options'] => {
   const map = new Map<string, { id: string; title?: string | null; index?: number | null }>();
 
@@ -93,6 +95,19 @@ const mergeOptions = (
       id: option.id,
       title: option.title ?? null,
       index: option.index ?? null,
+    });
+  }
+
+  for (const option of metadataOptions ?? []) {
+    if (!option.id) {
+      continue;
+    }
+
+    const current = map.get(option.id) ?? { id: option.id };
+    map.set(option.id, {
+      id: option.id,
+      title: option.title ?? current.title ?? null,
+      index: typeof option.index === 'number' ? option.index : current.index ?? null,
     });
   }
 
@@ -207,6 +222,7 @@ const ensureState = (payload: unknown, pollId: string): PollChoiceState => {
     aggregates: PollChoiceAggregatesSchema.parse({}),
     brokerAggregates: undefined,
     updatedAt: new Date(0).toISOString(),
+    context: undefined,
   };
 };
 
@@ -231,12 +247,15 @@ export const recordPollChoiceVote = async (
   const selectedOptionIds = resolveSelectedOptionIds(parsed);
   const stateId = buildStateId(pollId);
 
-  const existingRecord = await prisma.processedIntegrationEvent.findUnique({
-    where: { id: stateId },
-  });
+  const [existingRecord, pollMetadata] = await Promise.all([
+    prisma.processedIntegrationEvent.findUnique({
+      where: { id: stateId },
+    }),
+    getPollMetadata(pollId),
+  ]);
 
   const existingState = ensureState(existingRecord?.payload, pollId);
-  const options = mergeOptions(existingState.options, parsed.options);
+  const options = mergeOptions(existingState.options, parsed.options, pollMetadata?.options);
   const selectedOptions = deriveSelectedOptions(
     selectedOptionIds,
     options,
@@ -245,11 +264,54 @@ export const recordPollChoiceVote = async (
   );
   const previousVote = existingState.votes[voterJid];
 
+  const resolvedQuestion =
+    pollMetadata?.question ?? existingState.context?.question ?? null;
+  const resolvedSelectableCount =
+    pollMetadata?.selectableOptionsCount ??
+    existingState.context?.selectableOptionsCount ??
+    (parsed.options.length > 0 ? parsed.options.length : null);
+
+  let resolvedAllowMultiple =
+    pollMetadata?.allowMultipleAnswers ??
+    existingState.context?.allowMultipleAnswers ??
+    undefined;
+
+  if (resolvedAllowMultiple === undefined && typeof resolvedSelectableCount === 'number') {
+    resolvedAllowMultiple = resolvedSelectableCount > 1;
+  }
+
+  const resolvedCreationKey =
+    pollMetadata?.creationMessageKey ?? existingState.context?.creationMessageKey ?? null;
+
+  const resolvedContext = {
+    question: resolvedQuestion,
+    selectableOptionsCount: resolvedSelectableCount,
+    allowMultipleAnswers: resolvedAllowMultiple ?? undefined,
+    creationMessageId:
+      pollMetadata?.creationMessageId ?? existingState.context?.creationMessageId ?? null,
+    creationMessageKey: resolvedCreationKey,
+    messageSecret: pollMetadata?.messageSecret ?? existingState.context?.messageSecret ?? null,
+    messageSecretVersion:
+      pollMetadata?.messageSecretVersion ?? existingState.context?.messageSecretVersion ?? null,
+    tenantId: context.tenantId ?? pollMetadata?.tenantId ?? existingState.context?.tenantId ?? null,
+    instanceId:
+      context.instanceId ?? pollMetadata?.instanceId ?? existingState.context?.instanceId ?? null,
+  };
+
+  const normalizedContextEntries = Object.entries(resolvedContext).filter(([, value]) => value !== undefined);
+  const normalizedContext =
+    normalizedContextEntries.length > 0
+      ? (Object.fromEntries(normalizedContextEntries) as NonNullable<PollChoiceState['context']>)
+      : undefined;
+
+  const contextChanged =
+    JSON.stringify(normalizedContext ?? null) !== JSON.stringify(existingState.context ?? null);
+
   const sameSelection = selectionsMatch(previousVote?.optionIds, selectedOptionIds);
   const sameMessage = previousVote?.messageId === (parsed.messageId ?? null);
   const sameTimestamp = previousVote?.timestamp === (parsed.timestamp ?? null);
 
-  if (existingRecord && sameSelection && sameMessage && sameTimestamp) {
+  if (existingRecord && sameSelection && sameMessage && sameTimestamp && !contextChanged) {
     const previousSelected = Array.isArray(previousVote?.selectedOptions)
       ? (previousVote?.selectedOptions as PollChoiceSelectedOptionPayload[])
       : [];
@@ -267,6 +329,7 @@ export const recordPollChoiceVote = async (
       selectedOptions,
       messageId: parsed.messageId ?? null,
       timestamp: parsed.timestamp ?? null,
+      encryptedVote: previousVote?.encryptedVote,
     },
   };
 
@@ -278,6 +341,7 @@ export const recordPollChoiceVote = async (
     aggregates,
     brokerAggregates: parsed.aggregates,
     updatedAt: new Date().toISOString(),
+    ...(normalizedContext ? { context: normalizedContext } : {}),
   };
 
   try {
@@ -305,6 +369,75 @@ export const recordPollChoiceVote = async (
   }
 
   return { updated: true, state: updatedState, selectedOptions };
+};
+
+export const recordEncryptedPollVote = async (params: {
+  pollId?: string | null;
+  voterJid?: string | null;
+  messageId?: string | null;
+  encryptedVote?: { encPayload?: string | null; encIv?: string | null; ciphertext?: string | null } | null;
+  timestamp?: string | null;
+}): Promise<void> => {
+  const pollId = params.pollId?.trim();
+  const voterJid = params.voterJid?.trim();
+
+  if (!pollId || !voterJid) {
+    return;
+  }
+
+  const stateId = buildStateId(pollId);
+
+  const existingRecord = await prisma.processedIntegrationEvent.findUnique({
+    where: { id: stateId },
+  });
+
+  const state = ensureState(existingRecord?.payload, pollId);
+  const voteEntry: PollChoiceVoteEntry = state.votes[voterJid] ?? {
+    optionIds: [],
+    selectedOptions: [],
+    messageId: params.messageId ?? null,
+    timestamp: params.timestamp ?? null,
+  };
+
+  voteEntry.encryptedVote = {
+    encPayload: params.encryptedVote?.encPayload ?? voteEntry.encryptedVote?.encPayload ?? null,
+    encIv: params.encryptedVote?.encIv ?? voteEntry.encryptedVote?.encIv ?? null,
+    ciphertext: params.encryptedVote?.ciphertext ?? voteEntry.encryptedVote?.ciphertext ?? null,
+  };
+
+  if (params.messageId) {
+    voteEntry.messageId = params.messageId;
+  }
+
+  if (params.timestamp) {
+    voteEntry.timestamp = params.timestamp;
+  }
+
+  state.votes[voterJid] = voteEntry;
+  state.aggregates = computeAggregates(state.votes);
+  state.updatedAt = new Date().toISOString();
+
+  try {
+    await prisma.processedIntegrationEvent.upsert({
+      where: { id: stateId },
+      create: {
+        id: stateId,
+        source: POLL_STATE_SOURCE,
+        cursor: pollId,
+        payload: sanitizeJsonPayload(state),
+      },
+      update: {
+        cursor: pollId,
+        payload: sanitizeJsonPayload(state),
+      },
+    });
+  } catch (error) {
+    logger.warn('Failed to persist encrypted poll vote metadata', {
+      pollId,
+      voterJid,
+      error,
+    });
+  }
 };
 
 export const __testing = {

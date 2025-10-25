@@ -110,6 +110,109 @@ const compactRecord = (input: UnknownRecord): UnknownRecord => {
   );
 };
 
+const resolvePollCreationRecord = (content: UnknownRecord): UnknownRecord | null => {
+  return (
+    asRecord(content.pollCreationMessageV3) ??
+    asRecord(content.pollCreationMessageV2) ??
+    asRecord(content.pollCreationMessage) ??
+    null
+  );
+};
+
+const normalizePollOptions = (value: unknown): Array<UnknownRecord> => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry, index) => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+
+      const optionId =
+        readString(record.id, record.optionId, record.optionName, record.name, record.title) ??
+        `option_${index}`;
+      const title =
+        readString(record.title, record.name, record.optionName, record.text, record.description) ?? null;
+      const normalized: UnknownRecord = {
+        id: optionId,
+        title,
+      };
+
+      const resolvedIndex = readNumber(record.index);
+      if (resolvedIndex !== null) {
+        normalized.index = resolvedIndex;
+      } else {
+        normalized.index = index;
+      }
+
+      const optionName = readString(record.optionName);
+      if (optionName && optionName !== title) {
+        normalized.optionName = optionName;
+      }
+
+      const description = readString(record.description);
+      if (description && description !== title) {
+        normalized.description = description;
+      }
+
+      return compactRecord(normalized);
+    })
+    .filter(Boolean) as Array<UnknownRecord>;
+};
+
+const extractMessageContextInfo = (content: UnknownRecord): UnknownRecord | null => {
+  if ('messageContextInfo' in content) {
+    const direct = asRecord((content as { messageContextInfo?: unknown }).messageContextInfo);
+    if (direct) {
+      return direct;
+    }
+  }
+
+  for (const value of Object.values(content)) {
+    if (!value || typeof value !== 'object') {
+      continue;
+    }
+
+    const record = asRecord(value);
+    if (!record) {
+      continue;
+    }
+
+    if ('messageContextInfo' in record) {
+      const nested = asRecord((record as { messageContextInfo?: unknown }).messageContextInfo);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+};
+
+const normalizePollContextInfo = (context: UnknownRecord | null): UnknownRecord | null => {
+  if (!context) {
+    return null;
+  }
+
+  const normalized = compactRecord({
+    messageSecret: readString(context.messageSecret),
+    messageSecretVersion: readNumber(context.messageSecretVersion),
+    messageFingerprint: readString(context.messageFingerprint),
+    parentMessageId: readString(context.parentMessageId),
+    parentMessageAuthorJid: readString(context.parentMessageAuthorJid),
+    messageAddOnKey: readString(context.messageAddOnKey),
+  });
+
+  if (Object.keys(normalized).length === 0) {
+    return null;
+  }
+
+  return normalized;
+};
+
 const toIsoTimestamp = (value: number | null): string | null => {
   if (value === null) {
     return null;
@@ -310,13 +413,26 @@ const extractInteractiveDetails = (content: UnknownRecord): {
   const pollUpdate = asRecord(content.pollUpdateMessage);
   if (pollUpdate) {
     const vote = asRecord(pollUpdate.vote);
+    const keyRecord = asRecord((pollUpdate as { pollCreationMessageKey?: unknown }).pollCreationMessageKey);
     return {
       type: 'poll_choice',
       payload: compactRecord({
-        pollCreationMessageId: readString(pollUpdate.pollCreationMessageId),
+        pollCreationMessageId:
+          readString(pollUpdate.pollCreationMessageId, keyRecord?.id) ?? undefined,
+        pollCreationMessageKey: keyRecord
+          ? compactRecord({
+              id: readString(keyRecord.id) ?? undefined,
+              remoteJid: readString(keyRecord.remoteJid) ?? undefined,
+              participant: readString(keyRecord.participant) ?? undefined,
+              fromMe: keyRecord.fromMe === true ? true : undefined,
+            })
+          : undefined,
         vote: vote
           ? compactRecord({
               values: Array.isArray(vote.values) ? vote.values : undefined,
+              encPayload: readString(vote.encPayload) ?? undefined,
+              encIv: readString(vote.encIv) ?? undefined,
+              ciphertext: readString(vote.ciphertext) ?? undefined,
             })
           : undefined,
       }),
@@ -328,7 +444,7 @@ const extractInteractiveDetails = (content: UnknownRecord): {
 };
 
 const determineMessageType = (content: UnknownRecord): string => {
-  if (content.pollCreationMessage) {
+  if (content.pollCreationMessage || content.pollCreationMessageV2 || content.pollCreationMessageV3) {
     return 'poll';
   }
   if (content.pollUpdateMessage) {
@@ -384,9 +500,12 @@ const extractPrimaryText = (
     return interactive.text;
   }
 
-  const pollName = readString(asRecord(content.pollCreationMessage)?.name);
-  if (pollName) {
-    return pollName;
+  const pollCreationRecord = resolvePollCreationRecord(content);
+  if (pollCreationRecord) {
+    const pollName = readString(pollCreationRecord.name, pollCreationRecord.title);
+    if (pollName) {
+      return pollName;
+    }
   }
 
   return null;
@@ -563,6 +682,8 @@ const normalizeMessagePayload = (
   const interactive = extractInteractiveDetails(messageContent);
   const messageType = determineMessageType(messageContent);
   const quoted = extractQuotedDetails(messageContent);
+  const pollCreationRecord = resolvePollCreationRecord(messageContent);
+  const pollContextInfo = normalizePollContextInfo(extractMessageContextInfo(messageContent));
 
   const normalizedMessage = compactRecord({
     id: messageId,
@@ -585,17 +706,16 @@ const normalizeMessagePayload = (
     buttonsResponseMessage: interactive.type === 'buttons_response' ? interactive.payload ?? undefined : undefined,
     listResponseMessage: interactive.type === 'list_response' ? interactive.payload ?? undefined : undefined,
     pollUpdateMessage: interactive.type === 'poll_choice' ? interactive.payload ?? undefined : undefined,
-    pollCreationMessage: asRecord(messageContent.pollCreationMessage)
+    pollCreationMessage: pollCreationRecord
       ? compactRecord({
-          name: readString(asRecord(messageContent.pollCreationMessage)?.name),
-          options: Array.isArray(asRecord(messageContent.pollCreationMessage)?.options)
-            ? asRecord(messageContent.pollCreationMessage)?.options
-            : undefined,
-          selectableOptionsCount: readNumber(
-            asRecord(messageContent.pollCreationMessage)?.selectableOptionsCount
-          ),
+          name: readString(pollCreationRecord.name, pollCreationRecord.title),
+          title: readString(pollCreationRecord.title) ?? undefined,
+          selectableOptionsCount: readNumber(pollCreationRecord.selectableOptionsCount),
+          options: normalizePollOptions(pollCreationRecord.options),
+          allowMultipleAnswers: pollCreationRecord.allowMultipleAnswers === true ? true : undefined,
         })
       : undefined,
+    pollContextInfo: pollContextInfo ?? undefined,
     caption:
       readString(asRecord(messageContent.imageMessage)?.caption) ??
       readString(asRecord(messageContent.videoMessage)?.caption) ??
