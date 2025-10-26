@@ -248,6 +248,7 @@ const updatePollVoteMessage = async (params: {
   voterJid: string;
   selectedOptions: PollChoiceSelectedOptionPayload[];
   timestamp?: string | null;
+  question?: string | null;
   aggregates?: {
     totalVoters?: number | null;
     totalVotes?: number | null;
@@ -399,10 +400,17 @@ const updatePollVoteMessage = async (params: {
 
   metadataRecord.pollVote = pollVoteMetadata;
   const existingPollMetadata = asRecord(metadataRecord.poll);
+  const existingPollQuestionValue =
+    typeof existingPollMetadata?.question === 'string' && existingPollMetadata.question.trim().length > 0
+      ? existingPollMetadata.question
+      : null;
+  const providedPollQuestion = readString(params.question);
+  const pollMetadataQuestion = existingPollQuestionValue ?? providedPollQuestion ?? undefined;
   metadataRecord.poll = {
     ...(existingPollMetadata ?? {}),
     id: existingPollMetadata?.id ?? params.pollId,
     pollId: params.pollId,
+    ...(pollMetadataQuestion !== undefined ? { question: pollMetadataQuestion } : {}),
     selectedOptionIds: selectedSummaries.map((entry) => entry.id),
     selectedOptions: selectedSummaries,
     aggregates: params.aggregates ?? existingPollMetadata?.aggregates ?? undefined,
@@ -410,9 +418,19 @@ const updatePollVoteMessage = async (params: {
     rewriteAppliedAt,
   };
 
+  const existingPollChoiceMetadata = asRecord(metadataRecord.pollChoice);
+  const existingPollChoiceQuestionValue =
+    typeof existingPollChoiceMetadata?.question === 'string' &&
+    existingPollChoiceMetadata.question.trim().length > 0
+      ? existingPollChoiceMetadata.question
+      : null;
+  const pollChoiceQuestion = existingPollChoiceQuestionValue ?? pollMetadataQuestion ?? undefined;
+
   metadataRecord.pollChoice = {
+    ...(existingPollChoiceMetadata ?? {}),
     pollId: params.pollId,
     voterJid: params.voterJid,
+    ...(pollChoiceQuestion !== undefined ? { question: pollChoiceQuestion } : {}),
     options: params.options ?? undefined,
     vote: params.vote ?? {
       optionIds: params.selectedOptions.map((entry) => entry.id),
@@ -1451,6 +1469,7 @@ const processPollChoiceEvent = async (
           voterJid: pollPayload.voterJid,
           selectedOptions: pollWithSelections.selectedOptions,
           timestamp: pollPayload.timestamp ?? null,
+          question: result.state.context?.question ?? null,
           aggregates: result.state.aggregates ?? null,
           options: result.state.options ?? null,
           vote: voterState

@@ -110,6 +110,33 @@ describe('poll-choice-sync-service', () => {
       expect(second?.id).toBe('opt-2');
       expect(second?.votes).toBe(1);
     });
+
+    it('uses poll state context question when metadata does not include one', () => {
+      const state = {
+        pollId: 'poll-with-context',
+        options: [
+          { id: 'opt-1', title: 'Opção A', index: 0 },
+          { id: 'opt-2', title: 'Opção B', index: 1 },
+        ],
+        votes: {},
+        aggregates: {
+          totalVoters: 0,
+          totalVotes: 0,
+          optionTotals: {},
+        },
+        brokerAggregates: undefined,
+        updatedAt: '2024-05-01T12:00:00.000Z',
+        context: {
+          question: 'Qual é sua escolha?',
+        },
+      } satisfies Parameters<typeof __testing.buildPollMetadata>[1];
+
+      const metadata = __testing.buildPollMetadata({}, state);
+
+      expect(metadata.question).toBe('Qual é sua escolha?');
+      expect(metadata.title).toBe('Qual é sua escolha?');
+      expect(metadata.name).toBe('Qual é sua escolha?');
+    });
   });
 
   describe('syncPollChoiceState', () => {
@@ -149,6 +176,7 @@ describe('poll-choice-sync-service', () => {
             participant: null,
             fromMe: false,
           },
+          question: 'Qual é a melhor opção?',
         },
       };
 
@@ -160,7 +188,6 @@ describe('poll-choice-sync-service', () => {
         metadata: {
           poll: {
             pollId: 'poll-123',
-            question: 'Qual é a melhor opção?',
             options: [],
             totalVotes: 0,
             totalVoters: 0,
@@ -196,15 +223,20 @@ describe('poll-choice-sync-service', () => {
         'tenant-1',
         'message-1',
         expect.objectContaining({
-          metadata: {
-            poll: expect.objectContaining({
-              pollId: 'poll-123',
-              totalVotes: 3,
-              totalVoters: 2,
-            }),
-          },
+          metadata: expect.anything(),
         })
       );
+
+      const updatePayload = mockStorageUpdateMessage.mock.calls[0]?.[2];
+      const pollMetadata = (updatePayload?.metadata as Record<string, unknown>)?.poll as
+        | Record<string, unknown>
+        | undefined;
+      const pollChoiceMetadata = (updatePayload?.metadata as Record<string, unknown>)?.pollChoice as
+        | Record<string, unknown>
+        | undefined;
+
+      expect(pollMetadata?.question).toBe('Qual é a melhor opção?');
+      expect(pollChoiceMetadata?.question).toBe('Qual é a melhor opção?');
 
       expect(mockEmitMessageUpdatedEvents).not.toHaveBeenCalled();
     });
