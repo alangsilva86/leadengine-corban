@@ -1095,6 +1095,11 @@ describe('WhatsApp webhook poll choice events', () => {
     syncPollChoiceStateMock.mockResolvedValueOnce(false);
     findPollVoteMessageCandidateMock.mockResolvedValueOnce({
       id: 'existing-poll-message-id',
+      metadata: {
+        poll: { selectedOptionIds: ['opt-1'] },
+        pollChoice: { vote: { optionIds: ['opt-1'] } },
+        pollVote: { selectedOptions: [{ id: 'opt-1', title: 'Option 1' }] },
+      },
     } as never);
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
@@ -1199,6 +1204,73 @@ describe('WhatsApp webhook poll choice events', () => {
       chatId: '5511999999999@s.whatsapp.net',
       identifiers: expect.arrayContaining(['poll-existing', 'wamid-poll-existing']),
     });
+  });
+
+  it('triggers poll choice inbox notification when existing poll metadata is outdated', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    findPollVoteMessageCandidateMock.mockResolvedValueOnce({
+      id: 'stale-poll-message-id',
+      metadata: {
+        poll: { selectedOptionIds: ['opt-old'] },
+        pollChoice: { vote: { optionIds: ['opt-old'] } },
+      },
+    } as never);
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-existing',
+        options: [
+          { id: 'opt-1', title: 'Option 1', index: 0 },
+          { id: 'opt-2', title: 'Option 2', index: 1 },
+        ],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+            messageId: 'wamid-vote',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1, 'opt-2': 0 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1, 'opt-2': 0 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+    });
+
+    const app = buildApp();
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      tenantId: 'tenant-123',
+      payload: {
+        pollId: 'poll-existing',
+        voterJid: '5511999999999@s.whatsapp.net',
+        messageId: 'wamid-poll-existing',
+        selectedOptionIds: ['opt-1'],
+        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+        options: [
+          { id: 'opt-1', title: 'Option 1', selected: true },
+          { id: 'opt-2', title: 'Option 2', selected: false },
+        ],
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1, 'opt-2': 0 },
+        },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledTimes(1);
+    expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        poll: expect.objectContaining({ pollId: 'poll-existing' }),
+        selectedOptions: expect.arrayContaining([expect.objectContaining({ id: 'opt-1' })]),
+      })
+    );
   });
 
   it('records poll choice inbox failure when tenant context is unavailable', async () => {
