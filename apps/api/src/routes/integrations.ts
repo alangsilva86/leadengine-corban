@@ -40,6 +40,15 @@ const normalizeQueryValue = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const readInstanceIdParam = (req: Request): string | null => {
+  const raw = req.params?.id;
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const resolveRequestTenantId = (req: Request): string => {
   const queryTenant = normalizeQueryValue(req.query.tenantId);
   if (queryTenant) {
@@ -339,12 +348,23 @@ const scheduleWhatsAppDisconnectRetry = async (
     nextJobs.push(normalizedJob);
 
     const trimmedJobs = nextJobs.slice(-MAX_DISCONNECT_RETRY_JOBS);
-    const value = { jobs: trimmedJobs } as WhatsAppDisconnectRetryState;
+    const jobsPayload: Prisma.JsonArray = trimmedJobs.map((job): Prisma.JsonObject => ({
+      instanceId: job.instanceId,
+      tenantId: job.tenantId,
+      requestedAt: job.requestedAt,
+      status: job.status,
+      requestId: job.requestId,
+      wipe: job.wipe,
+    }));
+
+    const value: Prisma.JsonObject = {
+      jobs: jobsPayload,
+    };
 
     if (existing) {
       await tx.integrationState.update({
         where: { key },
-        data: { value: value as unknown as Prisma.JsonValue },
+        data: { value },
       });
       return;
     }
@@ -352,7 +372,7 @@ const scheduleWhatsAppDisconnectRetry = async (
     await tx.integrationState.create({
       data: {
         key,
-        value: value as unknown as Prisma.JsonValue,
+        value,
       },
     });
   });
@@ -1450,14 +1470,14 @@ const serializeStoredInstance = (
       asRecord((instance.metadata as Record<string, unknown> | null)?.stats)
     ) ?? undefined;
 
-  let metrics =
+  let metrics: Record<string, unknown> | null =
     mergeRecords(
       asRecord(brokerStatus?.metrics),
       asRecord(brokerStatus?.rateUsage),
       asRecord(rawStatus?.metrics),
       asRecord(rawStatus?.messages),
       asRecord(rawStatus?.stats)
-    ) ?? undefined;
+    ) ?? null;
 
   const messages =
     asRecord(brokerStatus?.messages) ??
@@ -1557,9 +1577,11 @@ const serializeStoredInstance = (
     normalizedMetrics.rateUsage = normalizedRateUsage;
   }
 
-  metrics = Object.keys(normalizedMetrics).length > 0 ? normalizedMetrics : undefined;
-  if (metrics) {
+  if (Object.keys(normalizedMetrics).length > 0) {
+    metrics = normalizedMetrics;
     metadata.normalizedMetrics = normalizedMetrics;
+  } else {
+    metrics = null;
   }
 
   const agreementId = extractAgreementIdFromMetadata(metadata) ?? null;
@@ -2007,81 +2029,85 @@ const buildFallbackInstancesFromSnapshots = (
   tenantId: string,
   snapshots: WhatsAppBrokerInstanceSnapshot[]
 ): NormalizedInstance[] => {
-  return snapshots
-    .map((snapshot) => {
-      const normalized = normalizeInstance(snapshot.instance);
-      const status = normalizeInstanceStatusResponse(snapshot.status);
-      const fallbackMetadataBase =
-        (normalized?.metadata && typeof normalized.metadata === 'object'
-          ? (normalized.metadata as Record<string, unknown>)
-          : {}) ?? {};
-      const fallbackMetadata: Record<string, unknown> = {
-        ...fallbackMetadataBase,
-        fallbackSource: 'broker-snapshot',
-      };
+  const instances: NormalizedInstance[] = [];
 
-      if (snapshot.status?.raw && typeof snapshot.status.raw === 'object') {
-        fallbackMetadata.lastBrokerSnapshot = snapshot.status.raw;
-      }
+  for (const snapshot of snapshots) {
+    const normalized = normalizeInstance(snapshot.instance);
+    const status = normalizeInstanceStatusResponse(snapshot.status);
+    const fallbackMetadataBase =
+      (normalized?.metadata && typeof normalized.metadata === 'object'
+        ? (normalized.metadata as Record<string, unknown>)
+        : {}) ?? {};
 
-      if (normalized) {
-        return {
-          ...normalized,
-          tenantId: normalized.tenantId ?? snapshot.instance?.tenantId ?? tenantId ?? null,
-          status: status.status,
-          connected: status.connected,
-          stats: normalized.stats ?? snapshot.status?.stats ?? undefined,
-          metrics: normalized.metrics ?? snapshot.status?.metrics ?? null,
-          messages: normalized.messages ?? snapshot.status?.messages ?? null,
-          rate:
-            normalized.rate ??
-            snapshot.status?.rate ??
-            snapshot.status?.rateUsage ??
-            null,
-          rawStatus: normalized.rawStatus ?? snapshot.status?.raw ?? null,
-          metadata: fallbackMetadata,
-        } satisfies NormalizedInstance;
-      }
+    const fallbackMetadata: Record<string, unknown> = {
+      ...fallbackMetadataBase,
+      fallbackSource: 'broker-snapshot',
+    };
 
-      const instanceSource = snapshot.instance ?? ({} as BrokerWhatsAppInstance);
-      const instanceId =
-        typeof instanceSource.id === 'string' && instanceSource.id.trim().length > 0
-          ? instanceSource.id.trim()
-          : null;
+    if (snapshot.status?.raw && typeof snapshot.status.raw === 'object') {
+      fallbackMetadata.lastBrokerSnapshot = snapshot.status.raw;
+    }
 
-      if (!instanceId) {
-        return null;
-      }
-
-      const agreementId = (() => {
-        if (typeof (instanceSource as { agreementId?: unknown }).agreementId === 'string') {
-          const value = ((instanceSource as { agreementId?: string }).agreementId ?? '').trim();
-          return value.length > 0 ? value : null;
-        }
-        return null;
-      })();
-
-      return {
-        id: instanceId,
-        tenantId: instanceSource.tenantId ?? tenantId ?? null,
-        name: instanceSource.name ?? instanceId,
+    if (normalized) {
+      instances.push({
+        ...normalized,
+        tenantId: normalized.tenantId ?? snapshot.instance?.tenantId ?? tenantId ?? null,
         status: status.status,
         connected: status.connected,
-        createdAt: instanceSource.createdAt ?? null,
-        lastActivity: instanceSource.lastActivity ?? null,
-        phoneNumber: instanceSource.phoneNumber ?? null,
-        user: instanceSource.user ?? null,
-        agreementId,
-        stats: snapshot.status?.stats ?? undefined,
-        metrics: snapshot.status?.metrics ?? null,
-        messages: snapshot.status?.messages ?? null,
-        rate: snapshot.status?.rate ?? snapshot.status?.rateUsage ?? null,
-        rawStatus: snapshot.status?.raw ?? null,
+        stats: normalized.stats ?? snapshot.status?.stats ?? undefined,
+        metrics: normalized.metrics ?? snapshot.status?.metrics ?? null,
+        messages: normalized.messages ?? snapshot.status?.messages ?? null,
+        rate:
+          normalized.rate ??
+          snapshot.status?.rate ??
+          snapshot.status?.rateUsage ??
+          null,
+        rawStatus: normalized.rawStatus ?? snapshot.status?.raw ?? null,
         metadata: fallbackMetadata,
-        lastError: null,
-      } satisfies NormalizedInstance;
-    })
-    .filter((instance): instance is NormalizedInstance => Boolean(instance));
+      });
+      continue;
+    }
+
+    const instanceSource = snapshot.instance ?? ({} as BrokerWhatsAppInstance);
+    const instanceId =
+      typeof instanceSource.id === 'string' && instanceSource.id.trim().length > 0
+        ? instanceSource.id.trim()
+        : null;
+
+    if (!instanceId) {
+      continue;
+    }
+
+    const agreementId = (() => {
+      if (typeof (instanceSource as { agreementId?: unknown }).agreementId === 'string') {
+        const value = ((instanceSource as { agreementId?: string }).agreementId ?? '').trim();
+        return value.length > 0 ? value : null;
+      }
+      return null;
+    })();
+
+    instances.push({
+      id: instanceId,
+      tenantId: instanceSource.tenantId ?? tenantId ?? null,
+      name: instanceSource.name ?? instanceId,
+      status: status.status,
+      connected: status.connected,
+      createdAt: instanceSource.createdAt ?? null,
+      lastActivity: instanceSource.lastActivity ?? null,
+      phoneNumber: instanceSource.phoneNumber ?? null,
+      user: instanceSource.user ?? null,
+      agreementId,
+      stats: snapshot.status?.stats ?? undefined,
+      metrics: snapshot.status?.metrics ?? null,
+      messages: snapshot.status?.messages ?? null,
+      rate: snapshot.status?.rate ?? snapshot.status?.rateUsage ?? null,
+      rawStatus: snapshot.status?.raw ?? null,
+      metadata: fallbackMetadata,
+      lastError: null,
+    });
+  }
+
+  return instances;
 };
 
 const collectInstancesForTenant = async (
@@ -2202,8 +2228,8 @@ const resolveInstanceOperationContext = async (
   options: { refresh?: boolean; fetchSnapshots?: boolean } = {}
 ): Promise<InstanceOperationContext> => {
   const collection = await collectInstancesForTenant(tenantId, {
-    refresh: options.refresh,
-    fetchSnapshots: options.fetchSnapshots,
+    ...(typeof options.refresh === 'boolean' ? { refresh: options.refresh } : {}),
+    ...(typeof options.fetchSnapshots === 'boolean' ? { fetchSnapshots: options.fetchSnapshots } : {}),
   });
 
   const entry =
@@ -2847,7 +2873,17 @@ router.post(
 );
 
 const connectInstanceHandler = async (req: Request, res: Response) => {
-  const instanceId = req.params.id;
+  const instanceId = readInstanceIdParam(req);
+  if (!instanceId) {
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVALID_INSTANCE_ID',
+        message: INVALID_INSTANCE_ID_MESSAGE,
+      },
+    });
+    return;
+  }
   const tenantId = resolveRequestTenantId(req);
   const actorId = req.user?.id ?? 'system';
   const rawPhoneNumber = typeof req.body?.phoneNumber === 'string' ? req.body.phoneNumber : null;
@@ -3157,7 +3193,17 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
     const disconnectOptions = wipe === undefined ? undefined : { wipe };
     const tenantId = resolveRequestTenantId(req);
@@ -3286,7 +3332,17 @@ router.delete(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id.trim();
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
     const wipe = typeof req.query?.wipe === 'boolean' ? (req.query.wipe as boolean) : false;
 
@@ -3388,7 +3444,7 @@ router.delete(
 
         logger.warn('whatsapp.instance.delete.brokerFailed', {
           tenantId,
-          instanceId: instance?.id ?? req.params.id,
+          instanceId: instance?.id ?? readInstanceIdParam(req),
           status: brokerStatus,
           code: brokerError.code,
           requestId: brokerError.requestId,
@@ -3495,7 +3551,17 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = resolveRequestTenantId(req);
     const actorId = req.user?.id ?? 'system';
-    const instanceId = req.params.id.trim();
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const wipe = typeof req.body?.wipe === 'boolean' ? (req.body.wipe as boolean) : undefined;
 
     try {
@@ -3693,7 +3759,17 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
 
     try {
@@ -3762,7 +3838,17 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
 
     try {
@@ -3905,7 +3991,17 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
 
     try {
@@ -3965,7 +4061,17 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
     const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
 
@@ -4015,7 +4121,17 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
 
     try {
@@ -4063,7 +4179,17 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = req.params.id;
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_INSTANCE_ID',
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      });
+      return;
+    }
     const tenantId = resolveRequestTenantId(req);
 
     try {
@@ -4180,14 +4306,16 @@ router.post(
 
     try {
       const transport = getWhatsAppTransport();
-      const poll = await transport.createPoll({
+      const pollPayload = {
         sessionId: instance.id,
         instanceId: instance.id,
         to,
         question,
         options,
-        allowMultipleAnswers,
-      });
+        ...(typeof allowMultipleAnswers === 'boolean' ? { allowMultipleAnswers } : {}),
+      } satisfies Parameters<typeof transport.createPoll>[0];
+
+      const poll = await transport.createPoll(pollPayload);
 
       const ack = normalizeBaileysAck(poll?.ack);
       const statusValue = poll?.status;
