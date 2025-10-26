@@ -121,4 +121,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 ENTRYPOINT ["dumb-init", "--"]
 
 # Comando de inicialização
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/server.mjs"]

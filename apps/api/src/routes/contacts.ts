@@ -12,9 +12,9 @@ import {
   UpdateContactPayloadSchema,
   UpdateContactTaskPayloadSchema,
   WhatsappActionPayloadSchema,
-} from '@ticketz/core' with { "resolution-mode": "import" };
-import type { ContactFilters } from '@ticketz/core' with { "resolution-mode": "import" };
-import type { NormalizedMessagePayload } from '@ticketz/contracts' with { "resolution-mode": "import" };
+} from '@ticketz/core';
+import type { ContactFilters } from '@ticketz/core';
+import type { NormalizedMessagePayload } from '@ticketz/contracts';
 import {
   applyBulkContactsAction,
   createContact,
@@ -29,20 +29,20 @@ import {
   mergeContacts,
   updateContact,
   updateContactTask,
-} from '@ticketz/storage' with { "resolution-mode": "import" };
+} from '@ticketz/storage';
 
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { respondWithValidationError } from '../utils/http-validation';
 import { sendToContact } from '../services/ticket-service';
-import { ConflictError, NotFoundError } from '@ticketz/core' with { "resolution-mode": "import" };
+import { ConflictError, NotFoundError } from '@ticketz/core';
 
 type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) => NormalizedMessagePayload;
 
 let normalizePayloadCached: NormalizePayloadFn | null = null;
 const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
   if (!normalizePayloadCached) {
-    const mod = await import('@ticketz/contracts', { with: { 'resolution-mode': 'import' } });
+    const mod = await import('@ticketz/contracts');
     normalizePayloadCached = mod.normalizePayload as NormalizePayloadFn;
   }
   return normalizePayloadCached;

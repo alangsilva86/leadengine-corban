@@ -143,7 +143,7 @@ O ambiente da Render deve ser dividido em **dois serviços**: a API (serviço No
 | Campo | Valor |
 | --- | --- |
 | Build Command | `bash scripts/build-api-render.sh` |
-| Start Command | `NODE_ENV=production NODE_OPTIONS="--max-old-space-size=320" node apps/api/dist/server.js` |
+| Start Command | `NODE_ENV=production NODE_OPTIONS="--max-old-space-size=320" node apps/api/dist/server.mjs` |
 | Node version | Defina `NODE_VERSION=20` (ou deixe o Render usar a versão declarada no `package.json`) |
 
 - **Cache**: habilite o diretório `./.pnpm-store` no menu de _Build Cache_ da Render. Os scripts já exportam `PNPM_STORE_PATH=.pnpm-store`, portanto a restauração será automática entre deploys.
