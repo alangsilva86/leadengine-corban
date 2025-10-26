@@ -9,9 +9,11 @@ import {
   findPollVoteMessageCandidate,
   updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
+import { getPollMetadata } from './poll-metadata-service';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
 
 const POLL_STATE_PREFIX = 'poll-state:';
+const POLL_STATE_SOURCE = 'whatsapp.poll_state';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -217,13 +219,73 @@ export const syncPollChoiceState = async (
     return false;
   }
 
-  const state = options.state ?? (await fetchPollState(trimmedPollId));
+  let state = options.state ?? (await fetchPollState(trimmedPollId));
   if (!state) {
     logger.warn('Poll choice state not found', { pollId: trimmedPollId });
     return false;
   }
 
-  const tenantId = toTrimmedString(state.context?.tenantId);
+  const stateId = `${POLL_STATE_PREFIX}${trimmedPollId}`;
+
+  let tenantId = toTrimmedString(state.context?.tenantId);
+  if (!tenantId) {
+    const metadata = await getPollMetadata(trimmedPollId);
+    const metadataTenantId = toTrimmedString(metadata?.tenantId);
+    const metadataCreationMessageId = toTrimmedString(metadata?.creationMessageId);
+    const metadataCreationMessageKey = metadata?.creationMessageKey ?? null;
+
+    if (!metadata || !metadataTenantId) {
+      logger.error('Poll choice state missing tenant context and metadata unavailable', {
+        pollId: trimmedPollId,
+      });
+      throw new Error('Poll choice state context unavailable');
+    }
+
+    const recoveredContext = {
+      ...(state.context ?? {}),
+      tenantId: metadataTenantId,
+      ...(metadataCreationMessageId ? { creationMessageId: metadataCreationMessageId } : {}),
+      ...(metadataCreationMessageKey ? { creationMessageKey: metadataCreationMessageKey } : {}),
+    };
+
+    const nextState: PollChoiceState = {
+      ...state,
+      context: recoveredContext,
+    };
+
+    try {
+      await prisma.processedIntegrationEvent.upsert({
+        where: { id: stateId },
+        create: {
+          id: stateId,
+          source: POLL_STATE_SOURCE,
+          cursor: trimmedPollId,
+          payload: sanitizeJsonPayload(nextState),
+        },
+        update: {
+          cursor: trimmedPollId,
+          payload: sanitizeJsonPayload(nextState),
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to persist recovered poll choice state context', {
+        pollId: trimmedPollId,
+        error,
+      });
+      throw error;
+    }
+
+    logger.info('poll_state.recovered_context', {
+      pollId: trimmedPollId,
+      tenantId: metadataTenantId,
+      hasCreationMessageKey: Boolean(metadataCreationMessageKey),
+      creationMessageId: metadataCreationMessageId ?? null,
+    });
+
+    state = nextState;
+    tenantId = metadataTenantId;
+  }
+
   if (!tenantId) {
     logger.warn('Poll choice state missing tenant context', {
       pollId: trimmedPollId,
