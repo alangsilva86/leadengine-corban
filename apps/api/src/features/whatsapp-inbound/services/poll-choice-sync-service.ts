@@ -5,7 +5,10 @@ import {
   type PollChoiceState,
 } from '../schemas/poll-choice';
 import { sanitizeJsonPayload } from '../utils/baileys-event-logger';
-import { updateMessage as storageUpdateMessage } from '@ticketz/storage';
+import {
+  findPollVoteMessageCandidate,
+  updateMessage as storageUpdateMessage,
+} from '@ticketz/storage';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
 
 const POLL_STATE_PREFIX = 'poll-state:';
@@ -220,15 +223,56 @@ export const syncPollChoiceState = async (
     return false;
   }
 
-  const messageRecord = await prisma.message.findFirst({
-    where: { externalId: trimmedPollId },
-    select: {
-      id: true,
-      tenantId: true,
-      ticketId: true,
-      metadata: true,
-    },
+  const tenantId = toTrimmedString(state.context?.tenantId);
+  if (!tenantId) {
+    logger.warn('Poll choice state missing tenant context', {
+      pollId: trimmedPollId,
+    });
+    return false;
+  }
+
+  const identifiers = new Set<string>();
+  identifiers.add(trimmedPollId);
+
+  const creationMessageId = toTrimmedString(state.context?.creationMessageId);
+  if (creationMessageId) {
+    identifiers.add(creationMessageId);
+  }
+
+  Object.values(state.votes ?? {}).forEach((vote) => {
+    const messageId = toTrimmedString(vote?.messageId);
+    if (messageId) {
+      identifiers.add(messageId);
+    }
   });
+
+  const chatId =
+    toTrimmedString(state.context?.creationMessageKey?.remoteJid) ??
+    toTrimmedString(state.context?.creationMessageKey?.participant) ??
+    null;
+
+  const identifierList = Array.from(identifiers.values());
+
+  let messageRecord = null as Awaited<
+    ReturnType<typeof findPollVoteMessageCandidate>
+  > | null;
+  try {
+    messageRecord = await findPollVoteMessageCandidate({
+      tenantId,
+      pollId: trimmedPollId,
+      chatId: chatId ?? undefined,
+      identifiers: identifierList,
+    });
+  } catch (error) {
+    logger.error('Failed to lookup poll vote message candidate', {
+      pollId: trimmedPollId,
+      tenantId,
+      chatId: chatId ?? null,
+      identifiers: identifierList,
+      error,
+    });
+    return false;
+  }
 
   if (!messageRecord) {
     logger.warn('No message found for poll choice state', {
