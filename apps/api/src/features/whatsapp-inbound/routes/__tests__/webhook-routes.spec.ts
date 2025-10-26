@@ -27,6 +27,7 @@ const hoistedMocks = vi.hoisted(() => {
   const findPollVoteMessageCandidateMock = vi.fn();
   const storageUpdateMessageMock = vi.fn();
   const upsertPollMetadataMock = vi.fn();
+  const getPollMetadataMock = vi.fn();
 
   const prisma = {
     processedIntegrationEvent: {
@@ -62,6 +63,7 @@ const hoistedMocks = vi.hoisted(() => {
     storageUpdateMessageMock,
     recordEncryptedPollVoteMock,
     upsertPollMetadataMock,
+    getPollMetadataMock,
   };
 });
 
@@ -97,6 +99,7 @@ vi.mock('../../services/poll-choice-inbox-service', () => ({
 
 vi.mock('../../services/poll-metadata-service', () => ({
   upsertPollMetadata: hoistedMocks.upsertPollMetadataMock,
+  getPollMetadata: hoistedMocks.getPollMetadataMock,
 }));
 vi.mock('@ticketz/storage', () => ({
   $Enums: { MessageType: {} },
@@ -125,6 +128,7 @@ const {
   findPollVoteMessageCandidateMock,
   storageUpdateMessageMock,
   upsertPollMetadataMock,
+  getPollMetadataMock,
 } = hoistedMocks;
 
 
@@ -176,6 +180,8 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     storageUpdateMessageMock.mockReset();
     upsertPollMetadataMock.mockReset();
     upsertPollMetadataMock.mockResolvedValue(undefined);
+    getPollMetadataMock.mockReset();
+    getPollMetadataMock.mockResolvedValue(null);
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
@@ -748,6 +754,8 @@ describe('WhatsApp webhook poll choice events', () => {
     storageUpdateMessageMock.mockReset();
     upsertPollMetadataMock.mockReset();
     upsertPollMetadataMock.mockResolvedValue(undefined);
+    getPollMetadataMock.mockReset();
+    getPollMetadataMock.mockResolvedValue(null);
     prismaMock.message.findFirst.mockReset();
     prismaMock.message.findFirst.mockResolvedValue(null);
     syncPollChoiceStateMock.mockReset();
@@ -924,6 +932,150 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice"[^}]*result="accepted"[^}]*\} 1/
     );
+  });
+
+  it('falls back to poll metadata tenant when vote context is missing', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    prismaMock.message.findFirst.mockResolvedValueOnce(null);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
+      status: 'ok',
+      persisted: true,
+    });
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-metadata',
+        context: {},
+        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+            messageId: 'wamid-metadata',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+    });
+
+    getPollMetadataMock.mockResolvedValueOnce({ pollId: 'poll-metadata', tenantId: 'tenant-meta' });
+
+    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
+      id: 'message-db-id',
+      content: '[Mensagem recebida via WhatsApp]',
+      metadata: {},
+    } as never);
+
+    const app = buildApp();
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      payload: {
+        pollId: 'poll-metadata',
+        voterJid: '5511999999999@s.whatsapp.net',
+        messageId: 'wamid-metadata',
+        selectedOptionIds: ['opt-1'],
+        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+        options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(getPollMetadataMock).toHaveBeenCalledWith('poll-metadata');
+    expect(storageUpdateMessageMock).toHaveBeenCalledWith(
+      'tenant-meta',
+      'message-db-id',
+      expect.objectContaining({
+        content: 'Option 1',
+      })
+    );
+  });
+
+  it('retries poll vote message update after tenant metadata becomes available', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    prismaMock.message.findFirst.mockResolvedValueOnce(null);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
+      status: 'ok',
+      persisted: true,
+    });
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-retry',
+        context: {},
+        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+            messageId: 'wamid-retry',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+    });
+
+    getPollMetadataMock.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      pollId: 'poll-retry',
+      tenantId: 'tenant-delayed',
+    });
+
+    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
+      id: 'message-db-id',
+      content: '[Mensagem recebida via WhatsApp]',
+      metadata: {},
+    } as never);
+
+    const schedulerSpy = vi.fn(async (callback, delayMs) => {
+      expect(delayMs).toBe(500);
+      await callback();
+    });
+
+    webhookRoutes.__testing.setPollVoteRetryScheduler(schedulerSpy);
+
+    try {
+      const app = buildApp();
+
+      const response = await request(app).post('/api/webhooks/whatsapp').send({
+        event: 'POLL_CHOICE',
+        payload: {
+          pollId: 'poll-retry',
+          voterJid: '5511999999999@s.whatsapp.net',
+          messageId: 'wamid-retry',
+          selectedOptionIds: ['opt-1'],
+          selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+          options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
+          aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+          timestamp: now,
+        },
+      });
+
+      expect(response.status).toBe(204);
+      expect(schedulerSpy).toHaveBeenCalledTimes(1);
+      expect(getPollMetadataMock).toHaveBeenCalledWith('poll-retry');
+      expect(getPollMetadataMock).toHaveBeenCalledTimes(2);
+      expect(storageUpdateMessageMock).toHaveBeenCalledWith(
+        'tenant-delayed',
+        'message-db-id',
+        expect.objectContaining({
+          content: 'Option 1',
+        })
+      );
+    } finally {
+      webhookRoutes.__testing.resetPollVoteRetryScheduler();
+    }
   });
 
   it('includes poll creation message id when updating vote messages', async () => {
