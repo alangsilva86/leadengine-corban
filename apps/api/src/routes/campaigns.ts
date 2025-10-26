@@ -78,6 +78,15 @@ const appendCampaignHistory = (metadata: CampaignMetadata, entry: ReturnType<typ
   return base as Prisma.JsonObject;
 };
 
+const readCampaignIdParam = (req: Request): string | null => {
+  const rawId = req.params?.id;
+  if (typeof rawId !== 'string') {
+    return null;
+  }
+  const trimmed = rawId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const readMetadata = (metadata: CampaignMetadata): Record<string, unknown> => {
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     return metadata as Record<string, unknown>;
@@ -1320,8 +1329,7 @@ router.patch(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const campaignIdRaw = req.params.id;
-    const campaignId = typeof campaignIdRaw === 'string' ? campaignIdRaw.trim() : '';
+    const campaignId = readCampaignIdParam(req);
 
     if (!campaignId) {
       res.status(400).json({
@@ -1467,7 +1475,6 @@ router.patch(
         } else {
           const timestamp = new Date().toISOString();
           updates.whatsappInstance = { disconnect: true };
-          updates.whatsappInstanceId = null;
           instanceReassigned = true;
           updateMetadata((base) => {
             base.reassignedAt = timestamp;
@@ -1532,11 +1539,24 @@ router.delete(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user?.tenantId ?? DEFAULT_TENANT_ID;
-    const campaignId = req.params.id;
+    const campaignId = readCampaignIdParam(req);
+    if (!campaignId) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'CAMPAIGN_ID_REQUIRED',
+          message: 'Campaign id is required.',
+        },
+      });
+      return;
+    }
     const actorId = req.user?.id ?? 'system';
 
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, tenantId },
+      where: {
+        id: campaignId,
+        tenantId,
+      },
       include: {
         whatsappInstance: {
           select: {

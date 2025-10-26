@@ -5,7 +5,7 @@ import {
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
   type PassthroughMessageMedia,
-} from '@ticketz/storage';
+} from '@ticketz/storage' with { "resolution-mode": "import" };
 import type {
   CreateTicketDTO,
   UpdateTicketDTO,
@@ -29,6 +29,7 @@ import {
   updateTicket,
   type CreateTicketNoteInput,
   type TicketIncludeOption,
+  type ListTicketsOptions,
 } from '../services/ticket-service';
 import { getSocketServer } from '../lib/socket-registry';
 import { getDefaultInstanceId, getDefaultTenantId } from '../config/whatsapp';
@@ -41,7 +42,7 @@ import {
   getWhatsAppTransport,
   type WhatsAppTransportSendMessagePayload,
 } from '../features/whatsapp-transport';
-import { WhatsAppTransportError } from '@ticketz/wa-contracts';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts' with { "resolution-mode": "import" };
 import {
   hasStructuredContactData,
   hasValidLocationData,
