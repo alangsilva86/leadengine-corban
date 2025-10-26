@@ -162,6 +162,7 @@ export const buildPollMetadata = (existing: unknown, state: PollChoiceState): Un
     toTrimmedString(existingRecord.question) ??
     toTrimmedString(existingRecord.title) ??
     toTrimmedString(existingRecord.name) ??
+    toTrimmedString(state.context?.question) ??
     null;
 
   const base = {
@@ -345,19 +346,54 @@ export const syncPollChoiceState = async (
 
   const existingMetadata = asRecord(messageRecord.metadata) ?? {};
   const existingPoll = existingMetadata.poll;
+  const existingPollChoice = asRecord(existingMetadata.pollChoice);
   const nextPollMetadata = buildPollMetadata(existingPoll, state);
 
   const normalizedExisting = normalizeJson(existingPoll);
   const normalizedNext = normalizeJson(nextPollMetadata);
 
-  if (JSON.stringify(normalizedExisting) === JSON.stringify(normalizedNext)) {
+  const pollQuestion = toTrimmedString((nextPollMetadata as { question?: unknown })?.question);
+  const existingPollChoiceQuestion = toTrimmedString(existingPollChoice?.question);
+
+  const pollMetadataChanged =
+    JSON.stringify(normalizedExisting) !== JSON.stringify(normalizedNext);
+  const shouldUpdatePollChoiceQuestion = Boolean(
+    pollQuestion && pollQuestion !== existingPollChoiceQuestion
+  );
+
+  if (!pollMetadataChanged && !shouldUpdatePollChoiceQuestion) {
+    return false;
+  }
+
+  const metadataPayload: UnknownRecord = {};
+
+  if (pollMetadataChanged) {
+    metadataPayload.poll = normalizedNext as UnknownRecord;
+  }
+
+  let pollChoiceUpdateApplied = false;
+  if (shouldUpdatePollChoiceQuestion) {
+    const sanitizedPollChoice = sanitizeJsonPayload({
+      ...(existingPollChoice ?? {}),
+      question: pollQuestion,
+    });
+
+    if (
+      sanitizedPollChoice &&
+      typeof sanitizedPollChoice === 'object' &&
+      !Array.isArray(sanitizedPollChoice)
+    ) {
+      metadataPayload.pollChoice = sanitizedPollChoice as UnknownRecord;
+      pollChoiceUpdateApplied = true;
+    }
+  }
+
+  if (!metadataPayload.poll && !pollChoiceUpdateApplied) {
     return false;
   }
 
   const updated = await storageUpdateMessage(messageRecord.tenantId, messageRecord.id, {
-    metadata: {
-      poll: normalizedNext as UnknownRecord,
-    },
+    metadata: metadataPayload,
   }).catch((error: unknown) => {
     logger.error('Failed to persist poll metadata on message', {
       pollId: trimmedPollId,
