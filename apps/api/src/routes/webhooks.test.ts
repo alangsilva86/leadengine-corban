@@ -385,7 +385,7 @@ describe('WhatsApp webhook (integration)', () => {
       .send({});
 
     expect(response.status).toBe(401);
-    expect(response.body).toMatchObject({ ok: false, code: 'INVALID_API_KEY' });
+    expect(response.text).toBe('');
   });
 
   it('rejects webhook with invalid API key value', async () => {
@@ -397,7 +397,7 @@ describe('WhatsApp webhook (integration)', () => {
       .send({});
 
     expect(response.status).toBe(401);
-    expect(response.body).toMatchObject({ ok: false, code: 'INVALID_API_KEY' });
+    expect(response.text).toBe('');
   });
 
   it('accepts webhook when API key is provided via bearer authorization header', async () => {

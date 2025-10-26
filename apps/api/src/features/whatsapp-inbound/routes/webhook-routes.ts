@@ -1,5 +1,6 @@
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 
@@ -145,6 +146,68 @@ const normalizeApiKey = (value: string | null): string | null => {
   const normalized = (bearerMatch?.[1] ?? value).trim();
 
   return normalized.length > 0 ? normalized : null;
+};
+
+type WhatsAppWebhookContext = {
+  requestId: string;
+  remoteIp: string | null;
+  userAgent: string | null;
+  signatureRequired: boolean;
+};
+
+type WebhookResponseLocals = Record<string, unknown> & {
+  whatsappWebhook?: WhatsAppWebhookContext;
+};
+
+const ensureWebhookContext = (req: Request, res: Response): WhatsAppWebhookContext => {
+  const locals = res.locals as WebhookResponseLocals;
+  if (locals.whatsappWebhook) {
+    return locals.whatsappWebhook;
+  }
+
+  const requestId =
+    readString(req.rid, req.header('x-request-id'), req.header('x-correlation-id')) ?? randomUUID();
+  const remoteIp = readString(
+    req.header('x-real-ip'),
+    req.header('x-forwarded-for'),
+    req.ip,
+    req.socket.remoteAddress ?? null
+  );
+  const userAgent = readString(req.header('user-agent'), req.header('x-user-agent'));
+
+  const context: WhatsAppWebhookContext = {
+    requestId,
+    remoteIp,
+    userAgent,
+    signatureRequired: isWebhookSignatureRequired(),
+  };
+
+  locals.whatsappWebhook = context;
+  return context;
+};
+
+const logWebhookEvent = (
+  level: 'info' | 'warn' | 'error' | 'debug',
+  message: string,
+  context: WhatsAppWebhookContext,
+  extra?: Record<string, unknown>
+) => {
+  logger[level](message, {
+    requestId: context.requestId,
+    remoteIp: context.remoteIp ?? 'unknown',
+    userAgent: context.userAgent ?? 'unknown',
+    ...extra,
+  });
+};
+
+const trackWebhookRejection = (reason: 'invalid_api_key' | 'invalid_signature' | 'rate_limited') => {
+  whatsappWebhookEventsCounter.inc({
+    origin: 'webhook',
+    tenantId: 'unknown',
+    instanceId: 'unknown',
+    result: 'rejected',
+    reason,
+  });
 };
 
 const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
@@ -1741,64 +1804,82 @@ const processPollChoiceEvent = async (
   }
 };
 
-const handleWhatsAppWebhook = async (req: Request, res: Response) => {
-  const requestId = readString(req.header('x-request-id')) ?? randomUUID();
-  const remoteIp = readString(
-    req.header('x-forwarded-for'),
-    req.socket.remoteAddress ?? null
+const WEBHOOK_RATE_LIMIT_WINDOW_MS = 10_000;
+const WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60;
+
+const resolveClientAddress = (req: Request): string => {
+  return (
+    readString(
+      req.header('x-real-ip'),
+      req.header('x-forwarded-for'),
+      req.ip,
+      req.socket.remoteAddress ?? null
+    ) ?? req.ip ?? 'unknown'
   );
-  const providedApiKey = normalizeApiKey(
-    readString(req.header('x-api-key'), req.header('authorization'), req.header('x-authorization'))
-  );
+};
+
+const webhookRateLimiter = rateLimit({
+  windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+  max: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+  standardHeaders: false,
+  legacyHeaders: false,
+  keyGenerator: resolveClientAddress,
+  handler: (req: Request, res: Response) => {
+    const context = ensureWebhookContext(req, res);
+    logWebhookEvent('warn', '🛑 WhatsApp webhook rate limit exceeded', context, {
+      limit: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+      windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+    });
+    trackWebhookRejection('rate_limited');
+    res.status(429).end();
+  },
+});
+
+const verifyWhatsAppWebhookRequest = async (req: Request, res: Response, next: NextFunction) => {
+  const context = ensureWebhookContext(req, res);
   const expectedApiKey = getWebhookApiKey();
-  const signatureRequired = isWebhookSignatureRequired();
 
   if (expectedApiKey) {
+    const providedApiKey = normalizeApiKey(
+      readString(
+        req.header('x-webhook-token'),
+        req.header('x-api-key'),
+        req.header('authorization'),
+        req.header('x-authorization')
+      )
+    );
+
     if (!providedApiKey) {
-      logger.warn('🕵️ Etapa1-UPSERT rejeitada: API key ausente', {
-        requestId,
-        remoteIp: remoteIp ?? 'unknown',
-      });
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: 'unknown',
-        instanceId: 'unknown',
-        result: 'rejected',
-        reason: 'invalid_api_key',
-      });
-      res.status(401).json({ ok: false, code: 'INVALID_API_KEY' });
+      logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: authorization header missing', context);
+      trackWebhookRejection('invalid_api_key');
+      res.status(401).end();
       return;
     }
 
     if (providedApiKey !== expectedApiKey) {
-      logger.warn('🕵️ Etapa1-UPSERT rejeitada: API key inválida', {
-        requestId,
-        remoteIp: remoteIp ?? 'unknown',
-      });
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: 'unknown',
-        instanceId: 'unknown',
-        result: 'rejected',
-        reason: 'invalid_api_key',
-      });
-      res.status(401).json({ ok: false, code: 'INVALID_API_KEY' });
+      logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: invalid authorization token', context);
+      trackWebhookRejection('invalid_api_key');
+      res.status(401).end();
       return;
     }
   }
 
-  if (signatureRequired) {
-    const signature = readString(req.header('x-signature'), req.header('x-signature-sha256'));
+  if (context.signatureRequired) {
     const secret = getWebhookSignatureSecret();
+    const signature = readString(
+      req.header('x-webhook-signature'),
+      req.header('x-webhook-signature-sha256'),
+      req.header('x-signature'),
+      req.header('x-signature-sha256')
+    );
+
     if (!signature || !secret) {
-      logger.warn('🕵️ Etapa1-UPSERT rejeitada: assinatura ausente', {
-        requestId,
-        remoteIp: remoteIp ?? 'unknown',
-      });
-      whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
-      res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
+      logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature missing', context);
+      trackWebhookRejection('invalid_signature');
+      res.status(401).end();
       return;
     }
+
     try {
       const crypto = await import('node:crypto');
       const expectedBuffer = crypto.createHmac('sha256', secret).update(req.rawBody ?? '').digest();
@@ -1809,31 +1890,35 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         crypto.timingSafeEqual(providedBuffer, expectedBuffer);
 
       if (!matches) {
-        logger.warn('🕵️ Etapa1-UPSERT rejeitada: assinatura inválida', {
-          requestId,
-          remoteIp: remoteIp ?? 'unknown',
-        });
-        whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
-        res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
+        logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature mismatch', context);
+        trackWebhookRejection('invalid_signature');
+        res.status(401).end();
         return;
       }
     } catch (error) {
-      logger.warn('Failed to verify WhatsApp webhook signature', { requestId, error });
-      whatsappWebhookEventsCounter.inc({ result: 'rejected', reason: 'invalid_signature' });
-      res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
+      logWebhookEvent('warn', 'Failed to verify WhatsApp webhook signature', context, { error });
+      trackWebhookRejection('invalid_signature');
+      res.status(401).end();
       return;
     }
   }
 
-  logger.info('🕵️ Etapa1-UPSERT liberada: credenciais verificadas', {
-    requestId,
-    remoteIp: remoteIp ?? 'unknown',
+  return next();
+};
+
+const handleWhatsAppWebhook = async (req: Request, res: Response) => {
+  const context = ensureWebhookContext(req, res);
+  const { requestId, signatureRequired } = context;
+
+  logWebhookEvent('info', '🕵️ Etapa1-UPSERT liberada: credenciais verificadas', context, {
     signatureEnforced: signatureRequired,
   });
 
   const rawBodyParseError = (req as Request & { rawBodyParseError?: SyntaxError | null }).rawBodyParseError;
   if (rawBodyParseError) {
-    logger.warn('WhatsApp webhook received invalid JSON payload', { requestId, error: rawBodyParseError.message });
+    logWebhookEvent('warn', 'WhatsApp webhook received invalid JSON payload', context, {
+      error: rawBodyParseError.message,
+    });
     whatsappWebhookEventsCounter.inc({
       origin: 'webhook',
       tenantId: 'unknown',
@@ -2061,8 +2146,18 @@ const handleVerification = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).send(DEFAULT_VERIFY_RESPONSE);
 });
 
-webhookRouter.post('/whatsapp', asyncHandler(handleWhatsAppWebhook));
-integrationWebhookRouter.post('/whatsapp/webhook', asyncHandler(handleWhatsAppWebhook));
+webhookRouter.post(
+  '/whatsapp',
+  webhookRateLimiter,
+  asyncHandler(verifyWhatsAppWebhookRequest),
+  asyncHandler(handleWhatsAppWebhook)
+);
+integrationWebhookRouter.post(
+  '/whatsapp/webhook',
+  webhookRateLimiter,
+  asyncHandler(verifyWhatsAppWebhookRequest),
+  asyncHandler(handleWhatsAppWebhook)
+);
 webhookRouter.get('/whatsapp', handleVerification);
 
 export const __testing = {
