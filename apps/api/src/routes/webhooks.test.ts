@@ -2,6 +2,13 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message, Ticket } from '../types/tickets';
+import { refreshFeatureFlags } from '../config/feature-flags.js';
+import { refreshWhatsAppEnv } from '../config/whatsapp.js';
+import { prisma } from '../lib/prisma.js';
+import { addAllocations } from '../data/lead-allocation-store.js';
+import { resetInboundLeadServiceTestState } from '../features/whatsapp-inbound/services/inbound-lead-service.js';
+import * as ticketsModule from '../services/ticket-service.js';
+import * as socketModule from '../lib/socket-registry.js';
 
 import { integrationWebhooksRouter } from './webhooks';
 
@@ -24,7 +31,7 @@ vi.mock('@ticketz/storage', () => ({
   applyBrokerAck: applyBrokerAckMock,
 }));
 
-vi.mock('../lib/prisma', () => {
+vi.mock('../lib/prisma.js', () => {
   const instanceMock = {
     findUnique: vi.fn(),
     upsert: vi.fn(),
@@ -75,7 +82,6 @@ vi.mock('../lib/prisma', () => {
     },
   };
 });
-
 const buildDefaultAllocationResult = () => ({
   newlyAllocated: [
     {
@@ -104,21 +110,11 @@ vi.mock('../data/lead-allocation-store.js', () => ({
   updateAllocation: vi.fn(),
 }));
 
-const { refreshFeatureFlags } = await import('../config/feature-flags.js');
-const { refreshWhatsAppEnv } = await import('../config/whatsapp.js');
-
-const { prisma } = await import('../lib/prisma.js');
-const { addAllocations } = await import('../data/lead-allocation-store.js');
-const { resetInboundLeadServiceTestState } = await import(
-  '../features/whatsapp-inbound/services/inbound-lead-service.js'
-);
-const ticketsModule = await import('../services/ticket-service.js');
 const createTicketSpy = vi.spyOn(ticketsModule, 'createTicket');
 const sendMessageSpy = vi.spyOn(ticketsModule, 'sendMessage');
 const emitMessageUpdatedEventsSpy = vi
   .spyOn(ticketsModule, 'emitMessageUpdatedEvents')
   .mockResolvedValue(undefined);
-const socketModule = await import('../lib/socket-registry.js');
 const emitToTenantSpy = vi.spyOn(socketModule, 'emitToTenant').mockImplementation(() => {});
 
 const buildCanonicalWebhookPayload = ({
@@ -178,7 +174,10 @@ const createApp = () => {
 
   app.use('/api/integrations/whatsapp/webhook', rawParser, (req, _res, next) => {
     const buffer: Buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.alloc(0);
-    const enrichedReq = req as express.Request & { rawBody?: Buffer; rawBodyParseError?: SyntaxError | null };
+    const enrichedReq = req as express.Request & {
+      rawBody: Buffer | undefined;
+      rawBodyParseError: SyntaxError | null | undefined;
+    };
 
     enrichedReq.rawBody = buffer.length > 0 ? buffer : undefined;
     enrichedReq.rawBodyParseError = null;
@@ -468,7 +467,7 @@ describe('WhatsApp webhook (integration)', () => {
     expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
     expect(typeof response.body.persisted).toBe('number');
     expect(response.body.persisted).toBeGreaterThanOrEqual(0);
-
+  });
     expect(prisma.whatsAppInstance.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -547,7 +546,6 @@ describe('WhatsApp webhook (integration)', () => {
     expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
     expect(typeof response.body.persisted).toBe('number');
     expect(response.body.persisted).toBeGreaterThanOrEqual(0);
-
     expect(prisma.campaign.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -623,9 +621,9 @@ describe('WhatsApp webhook (integration)', () => {
     expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
     expect(typeof response.body.persisted).toBe('number');
     expect(response.body.persisted).toBeGreaterThanOrEqual(0);
-
   });
 
+  it('queues inbound message when API key is optional', async () => {
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
     refreshWhatsAppEnv();
 
