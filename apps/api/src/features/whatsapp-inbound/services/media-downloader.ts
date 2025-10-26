@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { downloadContentFromMessage, downloadMediaMessage, type MediaType } from '@whiskeysockets/baileys';
 import { fetch } from 'undici';
 
-import { logger } from '../../../config/logger';
+import { logger } from '../../../config/logger.js';
 import {
   buildWhatsAppBrokerUrl,
   createBrokerTimeoutSignal,
@@ -10,7 +10,8 @@ import {
   resolveWhatsAppBrokerConfig,
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
-} from '../../../services/whatsapp-broker-client';
+} from '../../../services/whatsapp-broker-client.js';
+import { mapErrorForLog } from './logging.js';
 
 export interface InboundMediaDownloadInput {
   brokerId?: string | null;
@@ -196,7 +197,10 @@ const BAILEYS_MEDIA_TYPE_BY_MESSAGE: Record<string, BaileysMediaConfig> = {
   STICKER: { messageKey: 'stickerMessage', downloadType: 'sticker' },
 };
 
-const DEFAULT_BAILEYS_MEDIA_CONFIG: BaileysMediaConfig = BAILEYS_MEDIA_TYPE_BY_MESSAGE.DOCUMENT;
+const DEFAULT_BAILEYS_MEDIA_CONFIG: BaileysMediaConfig = {
+  messageKey: 'documentMessage',
+  downloadType: 'document',
+};
 
 const resolveBaileysMediaType = (mediaType: string | null): BaileysMediaConfig => {
   if (!mediaType) {
@@ -208,7 +212,8 @@ const resolveBaileysMediaType = (mediaType: string | null): BaileysMediaConfig =
     return DEFAULT_BAILEYS_MEDIA_CONFIG;
   }
 
-  return BAILEYS_MEDIA_TYPE_BY_MESSAGE[normalized] ?? DEFAULT_BAILEYS_MEDIA_CONFIG;
+  const candidate = BAILEYS_MEDIA_TYPE_BY_MESSAGE[normalized];
+  return candidate ?? DEFAULT_BAILEYS_MEDIA_CONFIG;
 };
 
 const buildWhatsAppMediaUrl = (
@@ -254,6 +259,20 @@ const downloadMediaViaMediaKey = async ({
     return null;
   }
 
+  let mediaKeyBuffer: Buffer;
+  try {
+    mediaKeyBuffer = Buffer.from(normalizedMediaKey, 'base64');
+  } catch (error) {
+    logger.debug('WhatsApp Baileys media download: invalid media key base64', {
+      error: mapErrorForLog(error),
+    });
+    return null;
+  }
+
+  if (mediaKeyBuffer.length === 0) {
+    return null;
+  }
+
   const downloadFields = buildWhatsAppMediaUrl(normalizedDirectPath);
   if (!downloadFields) {
     return null;
@@ -281,9 +300,9 @@ const downloadMediaViaMediaKey = async ({
   });
 
   const downloadInput: Parameters<typeof downloadContentFromMessage>[0] = {
-    mediaKey: normalizedMediaKey,
-    directPath: downloadFields.directPath,
-    url: downloadFields.url,
+    mediaKey: mediaKeyBuffer,
+    directPath: downloadFields.directPath ?? null,
+    url: downloadFields.url ?? null,
   };
 
   const mediaRecord: Record<string, unknown> = {
@@ -294,6 +313,8 @@ const downloadMediaViaMediaKey = async ({
     mediaRecord.mimetype = fallbackMime;
   }
 
+  mediaRecord.mediaKey = mediaKeyBuffer;
+
   const minimalMessage = {
     key: { remoteJid: 'status@broadcast', id: 'media-download', fromMe: false },
     message: {
@@ -303,12 +324,8 @@ const downloadMediaViaMediaKey = async ({
 
   try {
     const buffer = await downloadMediaMessage(minimalMessage, 'buffer', { options: axiosOptions });
-    const resolvedBuffer = Buffer.isBuffer(buffer)
-      ? buffer
-      : buffer instanceof Uint8Array
-        ? Buffer.from(buffer)
-        : null;
-    if (resolvedBuffer && resolvedBuffer.length > 0) {
+    const resolvedBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    if (resolvedBuffer.length > 0) {
       return {
         buffer: resolvedBuffer,
         mimeType: fallbackMime,

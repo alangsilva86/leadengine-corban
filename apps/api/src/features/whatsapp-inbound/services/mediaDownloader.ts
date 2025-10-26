@@ -6,13 +6,13 @@ import {
   type WAMessage,
 } from '@whiskeysockets/baileys';
 
-import { logger } from '../../../config/logger';
-import { mapErrorForLog } from './logging';
+import { logger } from '../../../config/logger.js';
+import { mapErrorForLog } from './logging.js';
 import {
   downloadInboundMediaFromBroker,
   type InboundMediaDownloadInput,
   type InboundMediaDownloadResult,
-} from './media-downloader';
+} from './media-downloader.js';
 
 type DownloadableMessageKey = 'imageMessage' | 'videoMessage' | 'audioMessage' | 'documentMessage' | 'stickerMessage';
 
@@ -108,6 +108,22 @@ interface MediaCandidate {
   downloadType: DownloadContentType;
 }
 
+const sanitizeDownloadableMessageRecord = (record: Record<string, unknown>): Record<string, unknown> => {
+  const clone: Record<string, unknown> = { ...record };
+  const rawMediaKey = clone.mediaKey ?? (clone as { mediakey?: unknown }).mediakey;
+  if (typeof rawMediaKey === 'string' && rawMediaKey.trim().length > 0) {
+    try {
+      const buffer = Buffer.from(rawMediaKey.trim(), 'base64');
+      if (buffer.length > 0) {
+        clone.mediaKey = buffer;
+      }
+    } catch {
+      delete clone.mediaKey;
+    }
+  }
+  return clone;
+};
+
 const collectCandidates = (
   rawMessage: Record<string, unknown>,
   preferredKey?: DownloadableMessageKey | null
@@ -170,7 +186,7 @@ export const downloadViaBaileys = async (
 
   if (isRecord(rawMessage.message)) {
     try {
-      const buffer = await downloadMediaMessage(rawMessage as unknown as WAMessage, 'buffer');
+      const buffer = await downloadMediaMessage(rawMessage as unknown as WAMessage, 'buffer', {});
 
       const normalizedBuffer = normalizeToBuffer(buffer);
       if (normalizedBuffer && normalizedBuffer.length > 0) {
@@ -185,8 +201,9 @@ export const downloadViaBaileys = async (
 
   for (const candidate of candidates) {
     try {
+      const sanitizedRecord = sanitizeDownloadableMessageRecord(candidate.record);
       const stream = await downloadContentFromMessage(
-        candidate.record as unknown as Record<string, unknown>,
+        sanitizedRecord as unknown as Record<string, unknown>,
         candidate.downloadType
       );
       const buffer = await consumeStream(stream);
@@ -209,4 +226,3 @@ export const downloadViaBroker = async (
 ): Promise<InboundMediaDownloadResult | null> => downloadInboundMediaFromBroker(input);
 
 export type { InboundMediaDownloadInput, InboundMediaDownloadResult } from './media-downloader';
-

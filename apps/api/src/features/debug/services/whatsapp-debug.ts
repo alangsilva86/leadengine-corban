@@ -3,14 +3,14 @@ import type { IncomingHttpHeaders } from 'http';
 import { ForbiddenError, NotFoundError, ValidationError } from '@ticketz/core';
 import { mapPassthroughMessage } from '@ticketz/storage';
 
-import { prisma } from '../../../lib/prisma';
+import { prisma } from '../../../lib/prisma.js';
 import {
   ingestInboundWhatsAppMessage,
   type InboundWhatsAppEnvelope,
   type InboundWhatsAppEnvelopeMessage,
-} from '../../whatsapp-inbound/services/inbound-lead-service';
-import { isWhatsappDebugToolsEnabled } from '../../../config/feature-flags';
-import { asRecord, buildWhereClause, normalizeJsonRecord } from '../routes/messages';
+} from '../../whatsapp-inbound/services/inbound-lead-service.js';
+import { isWhatsappDebugToolsEnabled } from '../../../config/feature-flags.js';
+import { asRecord, buildWhereClause, normalizeJsonRecord } from '../routes/messages.js';
 
 const readHeaderValue = (value: string | string[] | undefined): string | null => {
   if (Array.isArray(value)) {

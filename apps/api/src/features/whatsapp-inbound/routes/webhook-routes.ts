@@ -440,6 +440,10 @@ const updatePollVoteMessage = async (params: {
   };
 
   const metadataSnapshotAfter = sanitizeJsonPayload(metadataRecord);
+  const metadataForUpdate =
+    metadataSnapshotAfter && typeof metadataSnapshotAfter === 'object' && !Array.isArray(metadataSnapshotAfter)
+      ? (metadataSnapshotAfter as Record<string, unknown>)
+      : null;
   const metadataChanged =
     JSON.stringify(metadataSnapshotBefore) !== JSON.stringify(metadataSnapshotAfter);
 
@@ -460,7 +464,7 @@ const updatePollVoteMessage = async (params: {
       ...(shouldUpdateContent ? { content: contentCandidate, text: contentCandidate } : {}),
       ...(shouldUpdateCaption ? { caption: contentCandidate } : {}),
       ...(shouldUpdateType ? { type: 'TEXT' as const } : {}),
-      ...(metadataChanged ? { metadata: metadataSnapshotAfter } : {}),
+      ...(metadataChanged ? { metadata: metadataForUpdate } : {}),
     });
 
     if (
@@ -853,7 +857,7 @@ const processNormalizedMessage = async (
           question:
             readString(messageRecord.text, pollCreationRecord.name, pollCreationRecord.title) ?? null,
           selectableOptionsCount: readNumber(pollCreationRecord.selectableOptionsCount),
-          allowMultipleAnswers: pollCreationRecord.allowMultipleAnswers === true ? true : undefined,
+          allowMultipleAnswers: pollCreationRecord.allowMultipleAnswers === true,
           options: metadataOptions,
           creationMessageId: normalized.messageId,
           creationMessageKey: creationKey,

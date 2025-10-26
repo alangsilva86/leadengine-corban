@@ -2112,3 +2112,5 @@ export const __testing = {
   emitRealtimeUpdatesForInbound,
   processStandardInboundEvent,
 };
+
+export type { InboundWhatsAppEnvelope, InboundWhatsAppEnvelopeMessage } from './types';
