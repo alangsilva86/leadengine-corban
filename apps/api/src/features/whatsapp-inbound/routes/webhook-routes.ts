@@ -508,6 +508,10 @@ const updatePollVoteMessage = async (params: {
   }
 };
 
+type UpdatePollVoteMessageHandler = typeof updatePollVoteMessage;
+
+let updatePollVoteMessageHandler: UpdatePollVoteMessageHandler = updatePollVoteMessage;
+
 const normalizeChatId = (value: unknown): string | null => {
   const text = readString(value);
   if (!text) {
@@ -1400,7 +1404,8 @@ const processPollChoiceEvent = async (
         new Set(
           [
             pollPayload.messageId,
-            (pollPayload as { pollCreationMessageKey?: { id?: string | null } | null }).pollCreationMessageKey?.id,
+            pollPayload.pollCreationMessageId,
+            pollPayload.pollCreationMessageKey?.id,
             pollPayload.pollId,
           ]
             .map((value) => readString(value))
@@ -1410,7 +1415,7 @@ const processPollChoiceEvent = async (
 
       try {
         const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
-        await updatePollVoteMessage({
+        await updatePollVoteMessageHandler({
           tenantId: tenantForUpdate,
           chatId: normalizeChatId(pollPayload.voterJid),
           messageId: candidateMessageIds[0] ?? null,
@@ -1940,5 +1945,15 @@ const handleVerification = asyncHandler(async (req: Request, res: Response) => {
 webhookRouter.post('/whatsapp', asyncHandler(handleWhatsAppWebhook));
 integrationWebhookRouter.post('/whatsapp/webhook', asyncHandler(handleWhatsAppWebhook));
 webhookRouter.get('/whatsapp', handleVerification);
+
+export const __testing = {
+  updatePollVoteMessage,
+  setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
+    updatePollVoteMessageHandler = handler;
+  },
+  resetUpdatePollVoteMessageHandler() {
+    updatePollVoteMessageHandler = updatePollVoteMessage;
+  },
+};
 
 export { integrationWebhookRouter as whatsappIntegrationWebhookRouter, webhookRouter as whatsappWebhookRouter };

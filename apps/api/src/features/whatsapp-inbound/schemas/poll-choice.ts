@@ -29,6 +29,18 @@ export const PollChoiceEventSchema = z.object({
   pollId: z.string().min(1, 'pollId is required'),
   voterJid: z.string().min(1, 'voterJid is required'),
   messageId: z.string().min(1).optional(),
+  pollCreationMessageId: z.string().min(1).optional(),
+  pollCreationMessageKey: z
+    .object({
+      id: z.string().nullable().optional(),
+      remoteJid: z.string().nullable().optional(),
+      participant: z.string().nullable().optional(),
+      fromMe: z.boolean().optional(),
+      participantDevice: z.number().nullable().optional(),
+      device: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   selectedOptionIds: z.array(z.string().min(1)).optional(),
   selectedOptions: z.array(PollChoiceSelectedOptionSchema).optional(),
   options: z.array(PollChoiceOptionSchema).min(1),

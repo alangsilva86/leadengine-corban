@@ -2,7 +2,9 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { whatsappWebhookRouter } from '../webhook-routes';
+import * as webhookRoutes from '../webhook-routes';
+
+const { whatsappWebhookRouter } = webhookRoutes;
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
 import { __testing as inboundQueueTesting } from '../../services/inbound-queue';
@@ -914,6 +916,67 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice"[^}]*result="accepted"[^}]*\} 1/
     );
+  });
+
+  it('includes poll creation message id when updating vote messages', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    prismaMock.message.findFirst.mockResolvedValueOnce(null);
+    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
+      status: 'ok',
+      persisted: true,
+    });
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-with-creation',
+        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+            messageId: 'wamid-vote',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+    });
+
+    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue(undefined);
+    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+
+    try {
+      const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+        event: 'POLL_CHOICE',
+        tenantId: 'tenant-321',
+        payload: {
+          pollId: 'poll-with-creation',
+          voterJid: '5511999999999@s.whatsapp.net',
+          messageId: 'wamid-vote',
+          pollCreationMessageKey: {
+            id: 'wamid-creation',
+            remoteJid: '5511999999999@s.whatsapp.net',
+          },
+          options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
+          aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+          timestamp: now,
+        },
+      });
+
+      expect(response.status).toBe(204);
+      expect(updatePollVoteMessageSpy).toHaveBeenCalledTimes(1);
+      expect(updatePollVoteMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageIds: expect.arrayContaining(['wamid-vote', 'wamid-creation', 'poll-with-creation']),
+        })
+      );
+    } finally {
+      webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+    }
   });
 
   it('records poll choice inbox failure when tenant context is unavailable', async () => {
