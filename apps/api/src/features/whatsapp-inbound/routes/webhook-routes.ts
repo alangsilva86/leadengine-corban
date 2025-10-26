@@ -268,6 +268,188 @@ const buildPollVoteMessageContent = (selectedOptions: PollChoiceSelectedOptionPa
   return normalized.map((entry) => entry.title).join(', ');
 };
 
+const normalizeSelectionId = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value.toString();
+  }
+
+  return null;
+};
+
+const extractSelectionIdSet = (value: unknown): Set<string> | null => {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const ids = new Set<string>();
+
+  for (const entry of value) {
+    if (typeof entry === 'string' || typeof entry === 'number') {
+      const normalized = normalizeSelectionId(entry);
+      if (normalized) {
+        ids.add(normalized);
+      }
+      continue;
+    }
+
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const record = entry as Record<string, unknown>;
+      const id =
+        normalizeSelectionId((record as { id?: unknown }).id) ??
+        normalizeSelectionId((record as { optionId?: unknown }).optionId) ??
+        normalizeSelectionId((record as { value?: unknown }).value);
+
+      if (id) {
+        ids.add(id);
+      }
+    }
+  }
+
+  return ids.size > 0 ? ids : null;
+};
+
+const collectSelectionIdSetsFromMetadata = (
+  metadata: Record<string, unknown> | null | undefined
+): Array<Set<string>> => {
+  if (!metadata) {
+    return [];
+  }
+
+  const candidates: Array<Set<string>> = [];
+
+  const pollMetadata = asRecord(metadata.poll);
+  if (pollMetadata) {
+    const pollIds = extractSelectionIdSet((pollMetadata as { selectedOptionIds?: unknown }).selectedOptionIds);
+    if (pollIds) {
+      candidates.push(pollIds);
+    }
+
+    const pollOptions = extractSelectionIdSet((pollMetadata as { selectedOptions?: unknown }).selectedOptions);
+    if (pollOptions) {
+      candidates.push(pollOptions);
+    }
+  }
+
+  const pollChoiceMetadata = asRecord(metadata.pollChoice);
+  if (pollChoiceMetadata) {
+    const pollChoiceIds = extractSelectionIdSet(
+      (pollChoiceMetadata as { selectedOptionIds?: unknown }).selectedOptionIds
+    );
+    if (pollChoiceIds) {
+      candidates.push(pollChoiceIds);
+    }
+
+    const pollChoiceOptions = extractSelectionIdSet(
+      (pollChoiceMetadata as { selectedOptions?: unknown }).selectedOptions
+    );
+    if (pollChoiceOptions) {
+      candidates.push(pollChoiceOptions);
+    }
+
+    const pollChoiceVote = asRecord((pollChoiceMetadata as { vote?: unknown }).vote);
+    if (pollChoiceVote) {
+      const pollChoiceVoteIds = extractSelectionIdSet((pollChoiceVote as { optionIds?: unknown }).optionIds);
+      if (pollChoiceVoteIds) {
+        candidates.push(pollChoiceVoteIds);
+      }
+
+      const pollChoiceVoteOptions = extractSelectionIdSet(
+        (pollChoiceVote as { selectedOptions?: unknown }).selectedOptions
+      );
+      if (pollChoiceVoteOptions) {
+        candidates.push(pollChoiceVoteOptions);
+      }
+    }
+  }
+
+  const pollVoteMetadata = asRecord(metadata.pollVote);
+  if (pollVoteMetadata) {
+    const pollVoteIds = extractSelectionIdSet((pollVoteMetadata as { selectedOptionIds?: unknown }).selectedOptionIds);
+    if (pollVoteIds) {
+      candidates.push(pollVoteIds);
+    }
+
+    const pollVoteOptions = extractSelectionIdSet((pollVoteMetadata as { selectedOptions?: unknown }).selectedOptions);
+    if (pollVoteOptions) {
+      candidates.push(pollVoteOptions);
+    }
+
+    const pollVoteVote = asRecord((pollVoteMetadata as { vote?: unknown }).vote);
+    if (pollVoteVote) {
+      const pollVoteVoteIds = extractSelectionIdSet((pollVoteVote as { optionIds?: unknown }).optionIds);
+      if (pollVoteVoteIds) {
+        candidates.push(pollVoteVoteIds);
+      }
+
+      const pollVoteVoteOptions = extractSelectionIdSet(
+        (pollVoteVote as { selectedOptions?: unknown }).selectedOptions
+      );
+      if (pollVoteVoteOptions) {
+        candidates.push(pollVoteVoteOptions);
+      }
+    }
+  }
+
+  return candidates;
+};
+
+const pollMessageMetadataMatchesSelections = (
+  message: Awaited<ReturnType<typeof findPollVoteMessageCandidate>> | null,
+  selectedOptions: PollChoiceSelectedOptionPayload[]
+): boolean => {
+  if (!message) {
+    return false;
+  }
+
+  const expectedIds = new Set<string>();
+  const summaries = buildSelectedOptionSummaries(selectedOptions);
+  if (summaries.length > 0) {
+    for (const summary of summaries) {
+      const normalized = normalizeSelectionId(summary.id);
+      if (normalized) {
+        expectedIds.add(normalized);
+      }
+    }
+  }
+
+  if (expectedIds.size === 0) {
+    for (const option of selectedOptions) {
+      const normalized = normalizeSelectionId(option.id);
+      if (normalized) {
+        expectedIds.add(normalized);
+      }
+    }
+  }
+
+  if (expectedIds.size === 0) {
+    return true;
+  }
+
+  const metadataCandidates = collectSelectionIdSetsFromMetadata(message.metadata);
+  if (metadataCandidates.length === 0) {
+    return false;
+  }
+
+  return metadataCandidates.some((candidate) => {
+    if (candidate.size !== expectedIds.size) {
+      return false;
+    }
+
+    for (const id of expectedIds) {
+      if (!candidate.has(id)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+};
+
 const asJsonRecord = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return { ...(value as Record<string, unknown>) };
@@ -1705,7 +1887,11 @@ const processPollChoiceEvent = async (
           });
         }
 
-        if (existingPollMessage) {
+        const shouldTriggerInboxFallback =
+          !existingPollMessage ||
+          !pollMessageMetadataMatchesSelections(existingPollMessage, pollWithSelections.selectedOptions);
+
+        if (!shouldTriggerInboxFallback && existingPollMessage) {
           logger.info('Skipping poll choice inbox notification because poll message already exists', {
             requestId: context.requestId,
             pollId: pollPayload.pollId,
@@ -1714,6 +1900,19 @@ const processPollChoiceEvent = async (
             messageId: existingPollMessage.id,
           });
         } else {
+          if (existingPollMessage) {
+            logger.info(
+              'Triggering poll choice inbox notification fallback due to outdated poll message metadata',
+              {
+                requestId: context.requestId,
+                pollId: pollPayload.pollId,
+                tenantId: tenantForInbox,
+                chatId: normalizedChatId,
+                messageId: existingPollMessage.id,
+              }
+            );
+          }
+
           try {
             const inboxResult = await triggerPollChoiceInboxNotification({
               poll: pollWithSelections,
