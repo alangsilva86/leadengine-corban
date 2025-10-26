@@ -14,7 +14,7 @@ import {
   WhatsappActionPayloadSchema,
 } from '@ticketz/core';
 import type { ContactFilters } from '@ticketz/core';
-import type { NormalizedMessagePayload } from '@ticketz/contracts' with { "resolution-mode": "import" };
+import type { NormalizedMessagePayload } from '@ticketz/contracts';
 import {
   applyBulkContactsAction,
   createContact,
@@ -42,7 +42,7 @@ type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) =>
 let normalizePayloadCached: NormalizePayloadFn | null = null;
 const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
   if (!normalizePayloadCached) {
-    const mod = await import('@ticketz/contracts', { with: { 'resolution-mode': 'import' } });
+    const mod = await import('@ticketz/contracts');
     normalizePayloadCached = mod.normalizePayload as NormalizePayloadFn;
   }
   return normalizePayloadCached;
