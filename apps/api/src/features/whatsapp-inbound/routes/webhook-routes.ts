@@ -1493,90 +1493,111 @@ const processPollChoiceEvent = async (
       }
 
       if (!pollMetadataSynced) {
-        let existingPollMessage: { id: string } | null = null;
+        const tenantForInbox = context.tenantOverride;
+
+        if (!tenantForInbox) {
+          logger.warn('Skipping poll choice inbox notification due to missing tenant context', {
+            requestId: context.requestId,
+            pollId: pollPayload.pollId,
+            voterJid: pollPayload.voterJid,
+          });
+          whatsappWebhookEventsCounter.inc({
+            origin: 'webhook',
+            tenantId: context.tenantOverride ?? 'unknown',
+            instanceId: context.instanceId ?? 'unknown',
+            result: 'failed',
+            reason: 'poll_choice_inbox_missing_tenant',
+          });
+          return { persisted: 0, ignored: 0, failures: 1 };
+        }
+
+        const lookupIdentifiers = [
+          pollPayload.pollId,
+          pollPayload.messageId,
+          (pollPayload as { pollCreationMessageKey?: { id?: string | null } | null }).pollCreationMessageKey?.id,
+        ]
+          .map((value) => readString(value))
+          .filter((value): value is string => Boolean(value));
+
+        const normalizedChatId = normalizeChatId(pollPayload.voterJid);
+        let existingPollMessage: Awaited<ReturnType<typeof findPollVoteMessageCandidate>> | null = null;
 
         try {
-          existingPollMessage = await prisma.message.findFirst({
-            where: { externalId: pollPayload.pollId },
-            select: { id: true },
+          existingPollMessage = await findPollVoteMessageCandidate({
+            tenantId: tenantForInbox,
+            pollId: pollPayload.pollId,
+            chatId: normalizedChatId,
+            identifiers: lookupIdentifiers,
           });
         } catch (lookupError) {
           logger.error('Failed to check existing poll message before inbox notification', {
             requestId: context.requestId,
             pollId: pollPayload.pollId,
+            tenantId: tenantForInbox,
+            chatId: normalizedChatId,
             error: lookupError,
           });
         }
 
-        if (!existingPollMessage) {
-          const tenantForInbox = context.tenantOverride;
-
-          if (!tenantForInbox) {
-            logger.warn('Skipping poll choice inbox notification due to missing tenant context', {
+        if (existingPollMessage) {
+          logger.info('Skipping poll choice inbox notification because poll message already exists', {
+            requestId: context.requestId,
+            pollId: pollPayload.pollId,
+            tenantId: tenantForInbox,
+            chatId: normalizedChatId,
+            messageId: existingPollMessage.id,
+          });
+        } else {
+          try {
+            const inboxResult = await triggerPollChoiceInboxNotification({
+              poll: pollWithSelections,
+              state: result.state,
+              selectedOptions: pollWithSelections.selectedOptions,
+              tenantId: tenantForInbox,
+              instanceId: context.instanceId ?? null,
               requestId: context.requestId,
-              pollId: pollPayload.pollId,
-              voterJid: pollPayload.voterJid,
             });
-            whatsappWebhookEventsCounter.inc({
-              origin: 'webhook',
-              tenantId: context.tenantOverride ?? 'unknown',
-              instanceId: context.instanceId ?? 'unknown',
-              result: 'failed',
-              reason: 'poll_choice_inbox_missing_tenant',
-            });
-            return { persisted: 0, ignored: 0, failures: 1 };
-          } else {
-            try {
-              const inboxResult = await triggerPollChoiceInboxNotification({
-                poll: pollWithSelections,
-                state: result.state,
-                selectedOptions: pollWithSelections.selectedOptions,
-                tenantId: tenantForInbox,
-                instanceId: context.instanceId ?? null,
-                requestId: context.requestId,
-              });
 
-              if (inboxResult.status !== PollChoiceInboxNotificationStatus.Ok) {
-                logger.warn('Poll choice inbox notification returned non-success status', {
-                  requestId: context.requestId,
-                  pollId: pollPayload.pollId,
-                  voterJid: pollPayload.voterJid,
-                  tenantId: tenantForInbox,
-                  status: inboxResult.status,
-                });
-                const inboxReason: Record<Exclude<PollChoiceInboxNotificationStatus, PollChoiceInboxNotificationStatus.Ok>, string> = {
-                  [PollChoiceInboxNotificationStatus.MissingTenant]: 'poll_choice_inbox_missing_tenant',
-                  [PollChoiceInboxNotificationStatus.InvalidChatId]: 'poll_choice_inbox_invalid_chat_id',
-                  [PollChoiceInboxNotificationStatus.IngestRejected]: 'poll_choice_inbox_ingest_rejected',
-                  [PollChoiceInboxNotificationStatus.IngestError]: 'poll_choice_inbox_ingest_error',
-                };
-
-                whatsappWebhookEventsCounter.inc({
-                  origin: 'webhook',
-                  tenantId: tenantForInbox,
-                  instanceId: context.instanceId ?? 'unknown',
-                  result: 'failed',
-                  reason: inboxReason[inboxResult.status],
-                });
-                return { persisted: 0, ignored: 0, failures: 1 };
-              }
-            } catch (inboxError) {
-              logger.error('Failed to trigger poll choice inbox notification', {
+            if (inboxResult.status !== PollChoiceInboxNotificationStatus.Ok) {
+              logger.warn('Poll choice inbox notification returned non-success status', {
                 requestId: context.requestId,
                 pollId: pollPayload.pollId,
                 voterJid: pollPayload.voterJid,
                 tenantId: tenantForInbox,
-                error: inboxError,
+                status: inboxResult.status,
               });
+              const inboxReason: Record<Exclude<PollChoiceInboxNotificationStatus, PollChoiceInboxNotificationStatus.Ok>, string> = {
+                [PollChoiceInboxNotificationStatus.MissingTenant]: 'poll_choice_inbox_missing_tenant',
+                [PollChoiceInboxNotificationStatus.InvalidChatId]: 'poll_choice_inbox_invalid_chat_id',
+                [PollChoiceInboxNotificationStatus.IngestRejected]: 'poll_choice_inbox_ingest_rejected',
+                [PollChoiceInboxNotificationStatus.IngestError]: 'poll_choice_inbox_ingest_error',
+              };
+
               whatsappWebhookEventsCounter.inc({
                 origin: 'webhook',
                 tenantId: tenantForInbox,
                 instanceId: context.instanceId ?? 'unknown',
                 result: 'failed',
-                reason: 'poll_choice_inbox_error',
+                reason: inboxReason[inboxResult.status],
               });
               return { persisted: 0, ignored: 0, failures: 1 };
             }
+          } catch (inboxError) {
+            logger.error('Failed to trigger poll choice inbox notification', {
+              requestId: context.requestId,
+              pollId: pollPayload.pollId,
+              voterJid: pollPayload.voterJid,
+              tenantId: tenantForInbox,
+              error: inboxError,
+            });
+            whatsappWebhookEventsCounter.inc({
+              origin: 'webhook',
+              tenantId: tenantForInbox,
+              instanceId: context.instanceId ?? 'unknown',
+              result: 'failed',
+              reason: 'poll_choice_inbox_error',
+            });
+            return { persisted: 0, ignored: 0, failures: 1 };
           }
         }
       }
