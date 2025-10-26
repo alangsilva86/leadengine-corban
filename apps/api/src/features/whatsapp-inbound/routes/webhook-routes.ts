@@ -257,15 +257,41 @@ const buildSelectedOptionSummaries = (
   return normalized;
 };
 
-const buildPollVoteMessageContent = (selectedOptions: PollChoiceSelectedOptionPayload[]): string | null => {
-  const normalized = buildSelectedOptionSummaries(selectedOptions);
-  if (normalized.length === 0) {
-    return null;
+const toTrimmedString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
-  if (normalized.length === 1) {
-    return normalized[0]!.title;
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const asString = value.toString().trim();
+    return asString.length > 0 ? asString : null;
   }
-  return normalized.map((entry) => entry.title).join(', ');
+
+  return null;
+};
+
+const pickFirstString = (candidates: unknown[]): string | null => {
+  for (const candidate of candidates) {
+    const normalized = toTrimmedString(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
+};
+
+const buildRenderedPollVoteText = (question: string | null, choice: string | null): string => {
+  if (question && choice) {
+    return `Obrigado! Você votou em "${choice}" para "${question}".`;
+  }
+  if (choice) {
+    return `Obrigado! Seu voto: "${choice}".`;
+  }
+  if (question) {
+    return `Obrigado! Seu voto foi registrado para a enquete: "${question}".`;
+  }
+  return 'Obrigado! Seu voto foi registrado.';
 };
 
 const normalizeSelectionId = (value: unknown): string | null => {
