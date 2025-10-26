@@ -43,7 +43,11 @@ import {
   PollChoiceInboxNotificationStatus,
   triggerPollChoiceInboxNotification,
 } from '../services/poll-choice-inbox-service';
-import { upsertPollMetadata, type PollMetadataOption } from '../services/poll-metadata-service';
+import {
+  getPollMetadata,
+  upsertPollMetadata,
+  type PollMetadataOption,
+} from '../services/poll-metadata-service';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -144,6 +148,7 @@ const normalizeApiKey = (value: string | null): string | null => {
 };
 
 const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
+const POLL_VOTE_RETRY_DELAY_MS = 500;
 
 const sanitizeOptionText = (value: unknown): string | null => {
   if (typeof value !== 'string') {
@@ -511,6 +516,27 @@ const updatePollVoteMessage = async (params: {
 type UpdatePollVoteMessageHandler = typeof updatePollVoteMessage;
 
 let updatePollVoteMessageHandler: UpdatePollVoteMessageHandler = updatePollVoteMessage;
+
+type SchedulePollVoteRetryHandler = (
+  callback: () => void | Promise<void>,
+  delayMs: number
+) => void;
+
+const defaultPollVoteRetryScheduler: SchedulePollVoteRetryHandler = (callback, delayMs) => {
+  const timer = setTimeout(() => {
+    try {
+      void callback();
+    } catch (error) {
+      logger.error('rewrite.poll_vote.retry_callback_failed', { error });
+    }
+  }, delayMs);
+
+  if (typeof timer === 'object' && typeof (timer as NodeJS.Timeout).unref === 'function') {
+    timer.unref();
+  }
+};
+
+let schedulePollVoteRetry: SchedulePollVoteRetryHandler = defaultPollVoteRetryScheduler;
 
 const normalizeChatId = (value: unknown): string | null => {
   const text = readString(value);
@@ -1397,26 +1423,27 @@ const processPollChoiceEvent = async (
           : pollPayload.selectedOptions ?? [],
     };
 
-    const tenantForUpdate = context.tenantOverride ?? result.state.context?.tenantId ?? null;
+    let tenantForUpdate = context.tenantOverride ?? result.state.context?.tenantId ?? null;
 
-    if (tenantForUpdate) {
-      const candidateMessageIds = Array.from(
-        new Set(
-          [
-            pollPayload.messageId,
-            pollPayload.pollCreationMessageId,
-            pollPayload.pollCreationMessageKey?.id,
-            pollPayload.pollId,
-          ]
-            .map((value) => readString(value))
-            .filter((value): value is string => Boolean(value))
-        )
-      );
+    const candidateMessageIds = Array.from(
+      new Set(
+        [
+          pollPayload.messageId,
+          pollPayload.pollCreationMessageId,
+          pollPayload.pollCreationMessageKey?.id,
+          pollPayload.pollId,
+        ]
+          .map((value) => readString(value))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
 
+    const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
+
+    const attemptPollVoteMessageUpdate = async (tenantId: string): Promise<void> => {
       try {
-        const voterState = result.state.votes?.[pollPayload.voterJid] ?? null;
         await updatePollVoteMessageHandler({
-          tenantId: tenantForUpdate,
+          tenantId,
           chatId: normalizeChatId(pollPayload.voterJid),
           messageId: candidateMessageIds[0] ?? null,
           messageIds: candidateMessageIds,
@@ -1429,7 +1456,9 @@ const processPollChoiceEvent = async (
           vote: voterState
             ? {
                 optionIds: Array.isArray(voterState.optionIds) ? voterState.optionIds : null,
-                selectedOptions: Array.isArray(voterState.selectedOptions) ? voterState.selectedOptions : null,
+                selectedOptions: Array.isArray(voterState.selectedOptions)
+                  ? voterState.selectedOptions
+                  : null,
                 encryptedVote: voterState.encryptedVote ?? null,
                 messageId: voterState.messageId ?? null,
                 timestamp: voterState.timestamp ?? null,
@@ -1445,16 +1474,66 @@ const processPollChoiceEvent = async (
           requestId: context.requestId,
           pollId: pollPayload.pollId,
           messageId: candidateMessageIds[0] ?? pollPayload.pollId ?? null,
-          tenantId: tenantForUpdate,
+          tenantId,
           error,
         });
       }
+    };
+
+    if (!tenantForUpdate) {
+      try {
+        const metadata = readString(pollPayload.pollId)
+          ? await getPollMetadata(pollPayload.pollId)
+          : null;
+        if (metadata?.tenantId) {
+          tenantForUpdate = metadata.tenantId;
+        }
+      } catch (error) {
+        logger.warn('Failed to load poll metadata while resolving tenant', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          error,
+        });
+      }
+    }
+
+    if (tenantForUpdate) {
+      await attemptPollVoteMessageUpdate(tenantForUpdate);
     } else {
-      logger.warn('Skipping poll vote message update due to missing tenant context', {
+      logger.info('rewrite.poll_vote.retry_missing_tenant', {
         requestId: context.requestId,
         pollId: pollPayload.pollId,
+        voterJid: pollPayload.voterJid,
         messageId: pollPayload.messageId ?? null,
+        delayMs: POLL_VOTE_RETRY_DELAY_MS,
       });
+
+      schedulePollVoteRetry(async () => {
+        try {
+          const metadata = readString(pollPayload.pollId)
+            ? await getPollMetadata(pollPayload.pollId)
+            : null;
+          const retryTenantId = metadata?.tenantId ?? null;
+
+          if (!retryTenantId) {
+            logger.warn('Skipping poll vote message retry due to missing tenant metadata', {
+              pollId: pollPayload.pollId,
+              voterJid: pollPayload.voterJid,
+              messageId: pollPayload.messageId ?? null,
+            });
+            return;
+          }
+
+          await attemptPollVoteMessageUpdate(retryTenantId);
+        } catch (error) {
+          logger.error('Failed to retry poll vote message update after missing tenant', {
+            pollId: pollPayload.pollId,
+            voterJid: pollPayload.voterJid,
+            messageId: pollPayload.messageId ?? null,
+            error,
+          });
+        }
+      }, POLL_VOTE_RETRY_DELAY_MS);
     }
 
     emitWhatsAppDebugPhase({
@@ -1974,6 +2053,12 @@ export const __testing = {
   },
   resetUpdatePollVoteMessageHandler() {
     updatePollVoteMessageHandler = updatePollVoteMessage;
+  },
+  setPollVoteRetryScheduler(handler: SchedulePollVoteRetryHandler) {
+    schedulePollVoteRetry = handler;
+  },
+  resetPollVoteRetryScheduler() {
+    schedulePollVoteRetry = defaultPollVoteRetryScheduler;
   },
 };
 
