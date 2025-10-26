@@ -13,7 +13,6 @@ import {
   UpdateContactTaskPayloadSchema,
   WhatsappActionPayloadSchema,
 } from '@ticketz/core';
-import { normalizePayload } from '@ticketz/contracts';
 import {
   applyBulkContactsAction,
   createContact,
@@ -36,8 +35,19 @@ import { respondWithValidationError } from '../utils/http-validation';
 import { sendToContact } from '../services/ticket-service';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 
-const router = Router();
-const tasksRouter = Router();
+type NormalizePayloadFn = typeof import('@ticketz/contracts').normalizePayload;
+
+let normalizePayloadCached: NormalizePayloadFn | null = null;
+const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
+  if (!normalizePayloadCached) {
+    const mod = await import('@ticketz/contracts');
+    normalizePayloadCached = mod.normalizePayload;
+  }
+  return normalizePayloadCached;
+};
+
+const router: Router = Router();
+const tasksRouter: Router = Router();
 
 const TagsParamSchema = z.preprocess((value) => {
   if (Array.isArray(value)) {
@@ -188,20 +198,32 @@ router.get(
       hasWhatsapp,
     } = query;
 
-    const response = await listContacts(
-      tenantId,
-      { page, limit, sortBy, sortOrder },
-      {
-        search: search?.trim() ? search.trim() : undefined,
-        status: status && status.length ? status : undefined,
-        tags,
-        lastInteractionFrom,
-        lastInteractionTo,
-        hasOpenTickets,
-        isBlocked,
-        hasWhatsapp,
-      }
-    );
+    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
+    if (typeof page === 'number' && Number.isFinite(page)) {
+      pagination.page = page;
+    }
+    if (typeof limit === 'number' && Number.isFinite(limit)) {
+      pagination.limit = limit;
+    }
+    if (typeof sortBy === 'string' && sortBy.trim()) {
+      pagination.sortBy = sortBy.trim();
+    }
+    if (sortOrder) {
+      pagination.sortOrder = sortOrder;
+    }
+
+    const statusFilter = Array.isArray(status) && status.length > 0 ? status : undefined;
+
+    const response = await listContacts(tenantId, pagination, {
+      search: search?.trim() ? search.trim() : undefined,
+      status: statusFilter,
+      tags,
+      lastInteractionFrom,
+      lastInteractionTo,
+      hasOpenTickets,
+      isBlocked,
+      hasWhatsapp,
+    });
 
     res.json({ success: true, data: response });
   })
@@ -246,7 +268,12 @@ router.post(
     }
 
     const tenantId = req.user!.tenantId;
-    const result = await mergeContacts({ tenantId, ...payload });
+    const result = await mergeContacts({
+      tenantId,
+      targetId: payload.targetId,
+      sourceIds: payload.sourceIds,
+      preserve: payload.preserve ?? {},
+    });
 
     if (!result) {
       throw new NotFoundError('Contact', payload.targetId);
@@ -344,6 +371,7 @@ router.post(
       throw new NotFoundError('Contact', payload.contactIds.join(','));
     }
 
+    const normalizePayload = await loadNormalizePayload();
     const responses = [] as Array<{ contactId: string; status: string }>;
 
     for (const contact of contacts) {
@@ -387,7 +415,25 @@ router.get(
     }
 
     const tenantId = req.user!.tenantId;
-    const result = await listContactInteractions({ tenantId, contactId: params.contactId, ...query });
+    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
+    if (typeof query.page === 'number' && Number.isFinite(query.page)) {
+      pagination.page = query.page;
+    }
+    if (typeof query.limit === 'number' && Number.isFinite(query.limit)) {
+      pagination.limit = query.limit;
+    }
+    if (typeof query.sortBy === 'string' && query.sortBy.trim()) {
+      pagination.sortBy = query.sortBy.trim();
+    }
+    if (query.sortOrder) {
+      pagination.sortOrder = query.sortOrder;
+    }
+
+    const result = await listContactInteractions({
+      tenantId,
+      contactId: params.contactId,
+      ...pagination,
+    });
     res.json({ success: true, data: result });
   })
 );
@@ -427,7 +473,26 @@ router.get(
     }
 
     const tenantId = req.user!.tenantId;
-    const result = await listContactTasks({ tenantId, contactId: params.contactId, ...query });
+    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
+    if (typeof query.page === 'number' && Number.isFinite(query.page)) {
+      pagination.page = query.page;
+    }
+    if (typeof query.limit === 'number' && Number.isFinite(query.limit)) {
+      pagination.limit = query.limit;
+    }
+    if (typeof query.sortBy === 'string' && query.sortBy.trim()) {
+      pagination.sortBy = query.sortBy.trim();
+    }
+    if (query.sortOrder) {
+      pagination.sortOrder = query.sortOrder;
+    }
+
+    const result = await listContactTasks({
+      tenantId,
+      contactId: params.contactId,
+      ...pagination,
+      ...(Array.isArray(query.status) && query.status.length ? { status: query.status } : {}),
+    });
     res.json({ success: true, data: result });
   })
 );

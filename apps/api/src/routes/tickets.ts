@@ -71,6 +71,13 @@ const validateTicketId = (value: unknown): true => {
   return true;
 };
 
+const ensureTicketId = (value: unknown): string => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+  throw new Error('Ticket ID missing');
+};
+
 const parseListParam = (value: unknown): string[] | undefined => {
   if (typeof value === 'string') {
     return value.split(',').map((item) => item.trim()).filter(Boolean);
@@ -193,25 +200,43 @@ const normalizeOutboundMedia = (
   const mediaKey = normalizeString(mediaRecord.mediaKey ?? mediaRecord.media_key);
   const directPath = normalizeString(mediaRecord.directPath ?? mediaRecord.direct_path);
 
-  const broker = {
+  const broker: {
+    mediaType: 'image' | 'video' | 'audio' | 'document';
+    mimetype?: string;
+    base64?: string;
+    mediaUrl?: string;
+    fileName?: string;
+    caption?: string;
+  } = {
     mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
-    mimetype: mimetype ?? undefined,
-    base64: base64 ?? undefined,
-    mediaUrl: mediaUrl ?? undefined,
-    fileName: fileName ?? undefined,
-    caption: caption ?? undefined,
   };
+
+  if (mimetype) {
+    broker.mimetype = mimetype;
+  }
+  if (base64) {
+    broker.base64 = base64;
+  }
+  if (mediaUrl) {
+    broker.mediaUrl = mediaUrl;
+  }
+  if (fileName) {
+    broker.fileName = fileName;
+  }
+  if (caption) {
+    broker.caption = caption;
+  }
 
   const storage: PassthroughMessageMedia = {
     mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
-    caption: caption ?? undefined,
-    mimeType: mimetype ?? undefined,
-    fileName: fileName ?? undefined,
+    caption: caption ?? null,
+    mimeType: mimetype ?? null,
+    fileName: fileName ?? null,
     url: mediaUrl ?? null,
     size: null,
-    base64: base64 ?? undefined,
-    mediaKey: mediaKey ?? undefined,
-    directPath: directPath ?? undefined,
+    base64: base64 ?? null,
+    mediaKey: mediaKey ?? null,
+    directPath: directPath ?? null,
   };
 
   return { broker, storage };
@@ -519,7 +544,7 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
     const include = sanitizeIncludeOptions(parseListParam(req.query.include));
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const ticket = await getTicketById(tenantId, ticketId, {
@@ -565,7 +590,7 @@ router.put(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
 
     const updateData: UpdateTicketDTO = {
@@ -595,7 +620,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
     const status = req.body.status as TicketStatus;
     const reason = typeof req.body.reason === 'string' ? req.body.reason : undefined;
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
@@ -623,7 +648,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
     const userId = req.body.userId as string;
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const ticket = await assignTicket(tenantId, ticketId, userId);
@@ -643,7 +668,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
     const payload: CreateTicketNoteInput = {
       body: req.body.body,
       visibility: req.body.visibility,
@@ -677,7 +702,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
     const reason = req.body.reason as string | undefined;
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
     const ticket = await closeTicket(tenantId, ticketId, reason, req.user!.id);
@@ -698,7 +723,7 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const ticketId = req.params.id;
+    const ticketId = ensureTicketId(req.params.id);
 
     const { page = 1, limit = 50, sortOrder = 'asc' } = req.query as Partial<{
       page: number;
@@ -950,18 +975,45 @@ router.post(
       const messagePayload: WhatsAppTransportSendMessagePayload = {
         to: normalizedChatId,
         content: text ?? mediaPayload?.broker.caption ?? '',
-        caption: mediaPayload?.broker.caption,
         type: normalizedType,
-        media: mediaPayload ? (mediaPayload.broker as Record<string, unknown>) : undefined,
-        mediaUrl: mediaPayload?.broker.mediaUrl,
-        mediaMimeType: mediaPayload?.broker.mimetype,
-        mediaFileName: mediaPayload?.broker.fileName,
         previewUrl: Boolean(req.body?.previewUrl),
-        location: normalizedType === 'location' ? (normalizedLocation ?? undefined) : undefined,
-        template: normalizedType === 'template' ? (normalizedTemplate ?? undefined) : undefined,
-        contacts: normalizedType === 'contact' ? (normalizedContacts ?? undefined) : undefined,
-        metadata: Object.keys(messageMetadata).length > 0 ? messageMetadata : undefined,
       };
+
+      if (mediaPayload?.broker.caption) {
+        messagePayload.caption = mediaPayload.broker.caption;
+      }
+
+      if (mediaPayload) {
+        messagePayload.media = mediaPayload.broker as Record<string, unknown>;
+      }
+
+      if (mediaPayload?.broker.mediaUrl) {
+        messagePayload.mediaUrl = mediaPayload.broker.mediaUrl;
+      }
+
+      if (mediaPayload?.broker.mimetype) {
+        messagePayload.mediaMimeType = mediaPayload.broker.mimetype;
+      }
+
+      if (mediaPayload?.broker.fileName) {
+        messagePayload.mediaFileName = mediaPayload.broker.fileName;
+      }
+
+      if (normalizedType === 'location' && normalizedLocation) {
+        messagePayload.location = normalizedLocation;
+      }
+
+      if (normalizedType === 'template' && normalizedTemplate) {
+        messagePayload.template = normalizedTemplate;
+      }
+
+      if (normalizedType === 'contact' && normalizedContacts) {
+        messagePayload.contacts = normalizedContacts;
+      }
+
+      if (Object.keys(messageMetadata).length > 0) {
+        messagePayload.metadata = messageMetadata;
+      }
 
       const brokerResponse = await transport.sendMessage(instanceId, messagePayload);
 
