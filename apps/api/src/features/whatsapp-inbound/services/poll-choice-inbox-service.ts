@@ -180,9 +180,20 @@ export const triggerPollChoiceInboxNotification = async ({
       ? voteSelections.map((selection) => `• ${selection.title}`).join('\n')
       : '• Resposta não identificada';
 
+  const pollQuestion = (() => {
+    const rawQuestion = state.context?.question;
+    if (typeof rawQuestion !== 'string') {
+      return null;
+    }
+
+    const trimmed = rawQuestion.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  })();
+  const pollLabel = pollQuestion ?? poll.pollId;
+
   const messageText = [
     'Resposta de enquete recebida.',
-    `Enquete: ${poll.pollId}`,
+    `Enquete: ${pollLabel}`,
     'Opções escolhidas:',
     selectionsText,
   ].join('\n');
@@ -240,6 +251,8 @@ export const triggerPollChoiceInboxNotification = async ({
         requestId: requestId ?? null,
         poll: {
           id: poll.pollId,
+          label: pollLabel,
+          question: pollQuestion,
           selectedOptionIds: voteSelections.map((selection) => selection.id),
           selectedOptions: voteSelections,
           aggregates: state.aggregates,
@@ -250,6 +263,8 @@ export const triggerPollChoiceInboxNotification = async ({
           voterJid: poll.voterJid,
           options: state.options,
           vote: state.votes?.[poll.voterJid] ?? null,
+          label: pollLabel,
+          question: pollQuestion,
         },
         contact: {
           phone: phone ?? null,

@@ -46,6 +46,7 @@ describe('triggerPollChoiceInboxNotification', () => {
     aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1, 'opt-2': 0 } },
     brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1, 'opt-2': 0 } },
     updatedAt: baseTimestamp,
+    context: { question: '  Qual é a sua cor favorita?  ' },
   } satisfies Parameters<typeof triggerPollChoiceInboxNotification>[0]['state'];
 
   beforeEach(() => {
@@ -76,12 +77,14 @@ describe('triggerPollChoiceInboxNotification', () => {
         metadata: expect.objectContaining({
           poll: expect.objectContaining({
             id: 'poll-xyz',
+            label: 'Qual é a sua cor favorita?',
             selectedOptionIds: ['opt-1'],
           }),
         }),
       },
     });
     expect(envelope.message?.payload?.text).toContain('Resposta de enquete recebida.');
+    expect(envelope.message?.payload?.text).toContain('Enquete: Qual é a sua cor favorita?');
   });
 
   it('skips ingestion when tenant is missing', async () => {
