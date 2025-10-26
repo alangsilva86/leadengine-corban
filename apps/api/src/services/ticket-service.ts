@@ -41,8 +41,12 @@ import {
   whatsappSocketReconnectsCounter,
 } from '../lib/metrics';
 import { WhatsAppBrokerError, translateWhatsAppBrokerError } from './whatsapp-broker-client';
-import { getWhatsAppTransport, type WhatsAppTransport } from '../features/whatsapp-transport';
-import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
+import {
+  getWhatsAppTransport,
+  type WhatsAppTransport,
+  type WhatsAppTransportSendMessagePayload,
+} from '../features/whatsapp-transport';
+import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts' with { "resolution-mode": "import" };
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
@@ -67,7 +71,7 @@ import type {
   NormalizedMessagePayload,
   OutboundMessageError,
   OutboundMessageResponse,
-} from '@ticketz/contracts';
+} from '@ticketz/contracts' with { "resolution-mode": "import" };
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
@@ -301,7 +305,13 @@ const handleDatabaseError = (error: unknown, context: Record<string, unknown> = 
 
 export type TicketIncludeOption = 'contact' | 'lead' | 'notes';
 
-export type TicketContactSummary = Pick<Contact, 'id' | 'name' | 'phone' | 'email' | 'document' | 'avatar'> & {
+export type TicketContactSummary = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  document?: string | null;
+  avatar?: string | null;
   consent?: {
     granted: boolean;
     base?: string | null;
@@ -507,12 +517,19 @@ const buildMessageRealtimeEnvelope = ({
     ticket,
     message,
     messageId: message.id,
-    providerMessageId,
-    instanceId,
+    providerMessageId: providerMessageId ?? null,
+    instanceId: instanceId ?? null,
   });
 
   return {
-    ...base,
+    tenantId: base.tenantId,
+    ticketId: base.ticketId,
+    agreementId: base.agreementId,
+    instanceId: base.instanceId,
+    messageId: message.id,
+    providerMessageId: base.providerMessageId,
+    ticketStatus: base.ticketStatus,
+    ticketUpdatedAt: base.ticketUpdatedAt,
     message,
   };
 };
@@ -535,10 +552,10 @@ const buildTicketRealtimeEnvelope = ({
   const base = buildRealtimeEnvelopeBase({
     tenantId,
     ticket,
-    message,
-    messageId,
-    providerMessageId,
-    instanceId,
+    message: message ?? null,
+    messageId: messageId ?? null,
+    providerMessageId: providerMessageId ?? null,
+    instanceId: instanceId ?? null,
   });
 
   return {
@@ -696,20 +713,39 @@ export const normalizeBrokerStatus = (status: string | undefined): Message['stat
 };
 
 const resolveProviderMessageId = (metadata: unknown): string | null => {
+  const readCandidate = (value: unknown): string | null => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
   if (!metadata || typeof metadata !== 'object') {
     return null;
   }
 
-  const broker = (metadata as Record<string, unknown>).broker;
-  if (!broker || typeof broker !== 'object') {
-    return null;
+  const metadataRecord = metadata as Record<string, unknown>;
+  const broker = metadataRecord.broker as Record<string, unknown> | undefined;
+  const candidates: (string | null | undefined)[] = [
+    readCandidate(metadataRecord.providerMessageId),
+    readCandidate(metadataRecord.providerId),
+    readCandidate(metadataRecord.externalId),
+    readCandidate(metadataRecord.messageId),
+  ];
+
+  if (broker && typeof broker === 'object') {
+    candidates.push(
+      readCandidate(broker.providerMessageId),
+      readCandidate(broker.messageId),
+      readCandidate(broker.wamid),
+      readCandidate(broker.id)
+    );
   }
 
-  const messageId = (broker as Record<string, unknown>).messageId;
-  if (typeof messageId === 'string') {
-    const trimmed = messageId.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
+  for (const candidate of candidates) {
+    if (candidate) {
+      return candidate;
     }
   }
 
@@ -912,13 +948,21 @@ const safeResolveContacts = async (
               }
             : null;
 
+        const fullName = typeof contact.fullName === 'string' && contact.fullName.trim().length > 0 ? contact.fullName.trim() : null;
+        const displayName = typeof contact.displayName === 'string' && contact.displayName.trim().length > 0 ? contact.displayName.trim() : null;
+        const composedName = [contact.firstName, contact.lastName]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .map((value) => value.trim())
+          .join(' ');
+        const fallbackName = composedName.length > 0 ? composedName : null;
+
         const summary: TicketContactSummary = {
           id: contact.id,
-          name: contact.name,
-          phone: contact.phone ?? undefined,
-          email: contact.email ?? undefined,
-          document: contact.document ?? undefined,
-          avatar: contact.avatar ?? undefined,
+          name: fullName ?? displayName ?? fallbackName ?? 'Contato',
+          phone: typeof contact.primaryPhone === 'string' && contact.primaryPhone.trim().length > 0 ? contact.primaryPhone.trim() : null,
+          email: typeof contact.primaryEmail === 'string' && contact.primaryEmail.trim().length > 0 ? contact.primaryEmail.trim() : null,
+          document: contact.document ?? null,
+          avatar: contact.avatar ?? null,
           consent: normalizedConsent,
         };
 
@@ -968,9 +1012,9 @@ const safeResolveLeads = async (
         probability: record.probability ?? undefined,
         source: record.source,
         tags: record.tags ?? [],
-        expectedCloseDate: record.expectedCloseDate ?? undefined,
-        lastContactAt: record.lastContactAt ?? undefined,
-        nextFollowUpAt: record.nextFollowUpAt ?? undefined,
+        expectedCloseDate: record.expectedCloseDate ?? null,
+        lastContactAt: record.lastContactAt ?? null,
+        nextFollowUpAt: record.nextFollowUpAt ?? null,
         qualityRating:
           typeof record.customFields === 'object' && record.customFields !== null && 'qualityRating' in record.customFields
             ? Number((record.customFields as Record<string, unknown>).qualityRating)
@@ -1012,10 +1056,18 @@ const calculateMedian = (values: number[]): number | null => {
   const middle = Math.floor(sorted.length / 2);
 
   if (sorted.length % 2 === 0) {
-    return Math.round(((sorted[middle - 1] + sorted[middle]) / 2) * 100) / 100;
+    const leftIndex = Math.max(0, middle - 1);
+    const rightIndex = Math.min(sorted.length - 1, middle);
+    const left = sorted[leftIndex];
+    const right = sorted[rightIndex];
+    if (left === undefined || right === undefined) {
+      return null;
+    }
+    return Math.round(((left + right) / 2) * 100) / 100;
   }
 
-  return Math.round(sorted[middle] * 100) / 100;
+  const median = sorted[middle];
+  return typeof median === 'number' ? Math.round(median * 100) / 100 : null;
 };
 
 const calculatePercentile = (values: number[], percentile: number): number | null => {
@@ -1025,7 +1077,8 @@ const calculatePercentile = (values: number[], percentile: number): number | nul
 
   const sorted = [...values].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((percentile / 100) * sorted.length) - 1));
-  return Math.round(sorted[index] * 100) / 100;
+  const value = sorted[index];
+  return typeof value === 'number' ? Math.round(value * 100) / 100 : null;
 };
 
 const calculateStatusEntropy = (tickets: Ticket[]): number | null => {
@@ -1175,8 +1228,8 @@ export const listTickets = async (
       ...ticket,
       pipelineStep,
       qualityScore,
-      window: stats?.window,
-      timeline: stats?.timeline,
+      ...(stats?.window ? { window: stats.window } : {}),
+      ...(stats?.timeline ? { timeline: stats.timeline } : {}),
     };
 
     if (includeSet.has('contact')) {
@@ -1196,11 +1249,16 @@ export const listTickets = async (
 
   const metrics = options.includeMetrics ? calculateInboxMetrics(rawItems, conversations, leads) : undefined;
 
-  return {
+  const response: TicketListResult = {
     ...baseResult,
     items: hydratedItems,
-    metrics,
   };
+
+  if (metrics !== undefined) {
+    response.metrics = metrics;
+  }
+
+  return response;
 };
 
 export const getTicketById = async (
@@ -1230,8 +1288,8 @@ export const getTicketById = async (
     ...ticket,
     pipelineStep,
     qualityScore,
-    window: stats?.window,
-    timeline: stats?.timeline,
+    ...(stats?.window ? { window: stats.window } : {}),
+    ...(stats?.timeline ? { timeline: stats.timeline } : {}),
   };
 
   if (includeSet.has('contact')) {
@@ -1286,6 +1344,7 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
       contactId: input.contactId,
       queueId: input.queueId,
     });
+    throw error;
   }
 };
 
@@ -1294,7 +1353,7 @@ export const updateTicket = async (
   ticketId: string,
   input: UpdateTicketDTO
 ): Promise<Ticket> => {
-  let updated: Ticket | null;
+  let updated: Ticket | null = null;
 
   try {
     updated = await storageUpdateTicket(tenantId, ticketId, input);
@@ -1308,6 +1367,7 @@ export const updateTicket = async (
       tenantId,
       ticketId,
     });
+    throw error;
   }
   if (!updated) {
     throw new NotFoundError('Ticket', ticketId);
@@ -1328,7 +1388,7 @@ export const assignTicket = async (
   ticketId: string,
   userId: string
 ): Promise<Ticket> => {
-  let updated: Ticket | null;
+  let updated: Ticket | null = null;
 
   try {
     updated = await storageAssignTicket(tenantId, ticketId, userId);
@@ -1339,6 +1399,7 @@ export const assignTicket = async (
       ticketId,
       userId,
     });
+    throw error;
   }
   if (!updated) {
     throw new NotFoundError('Ticket', ticketId);
@@ -1360,7 +1421,7 @@ export const closeTicket = async (
   reason: string | undefined,
   userId: string | undefined
 ): Promise<Ticket> => {
-  let updated: Ticket | null;
+  let updated: Ticket | null = null;
 
   try {
     updated = await storageCloseTicket(tenantId, ticketId, reason, userId);
@@ -1370,6 +1431,7 @@ export const closeTicket = async (
       tenantId,
       ticketId,
     });
+    throw error;
   }
   if (!updated) {
     throw new NotFoundError('Ticket', ticketId);
@@ -1392,7 +1454,83 @@ export const listMessages = async (
   pagination: Pagination
 ): Promise<PaginatedResult<Message>> => {
   await getTicketById(tenantId, ticketId);
-  return storageListMessages(tenantId, { ticketId }, pagination);
+  const result = await storageListMessages(tenantId, { ticketId }, pagination);
+
+  const normalizeMetadata = (
+    metadata: Record<string, unknown> | null | undefined,
+    providerMessageId: string | null
+  ): Record<string, unknown> => {
+    const base =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? { ...(metadata as Record<string, unknown>) }
+        : {};
+
+    if (!providerMessageId) {
+      return base;
+    }
+
+    const readCandidate = (value: unknown): string | null => {
+      if (typeof value !== 'string') {
+        return null;
+      }
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    if (!readCandidate(base.providerMessageId)) {
+      base.providerMessageId = providerMessageId;
+    }
+
+    const brokerSource =
+      base.broker && typeof base.broker === 'object' && !Array.isArray(base.broker)
+        ? (base.broker as Record<string, unknown>)
+        : {};
+
+    const broker = { ...brokerSource };
+
+    if (!readCandidate(broker.providerMessageId)) {
+      broker.providerMessageId = providerMessageId;
+    }
+    if (!readCandidate(broker.messageId)) {
+      broker.messageId = providerMessageId;
+    }
+    if (!readCandidate(broker.id)) {
+      broker.id = providerMessageId;
+    }
+    if (!readCandidate(broker.wamid)) {
+      broker.wamid = providerMessageId;
+    }
+
+    base.broker = broker;
+    return base;
+  };
+
+  const items = result.items.map((message) => {
+    const existingProviderId =
+      'providerMessageId' in message &&
+      typeof (message as { providerMessageId?: unknown }).providerMessageId === 'string' &&
+      ((message as { providerMessageId: string }).providerMessageId.trim().length > 0)
+        ? (message as { providerMessageId: string }).providerMessageId.trim()
+        : null;
+
+    const providerMessageId =
+      existingProviderId ??
+      resolveProviderMessageId(message.metadata) ??
+      (typeof message.externalId === 'string' && message.externalId.trim().length > 0
+        ? message.externalId.trim()
+        : null);
+
+    return {
+      ...message,
+      providerMessageId: providerMessageId ?? null,
+      metadata: normalizeMetadata(message.metadata, providerMessageId ?? null),
+    };
+  });
+
+  return {
+    ...result,
+    items,
+  };
 };
 
 export const sendMessage = async (
@@ -1413,31 +1551,70 @@ export const sendMessage = async (
     effectiveInstanceId && tenantId ? buildCircuitBreakerKey(tenantId, effectiveInstanceId) : null;
   const circuitConfig = getCircuitBreakerConfig();
 
-  let messageRecord: Message | null;
+  let messageRecord: Message | null = null;
   let wasDuplicate = false;
   const direction = input.direction;
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
   const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
 
   try {
-    messageRecord = await storageCreateMessage(tenantId, input.ticketId, {
-      ...input,
-      content: input.content ?? input.caption ?? '',
+    type StorageCreateMessageInput = Parameters<typeof storageCreateMessage>[2];
+    const createPayload: StorageCreateMessageInput = {
+      ticketId: input.ticketId,
       direction,
-      userId,
+      content: input.content ?? input.caption ?? '',
       status: inferredStatus,
-      instanceId: effectiveInstanceId ?? undefined,
-      idempotencyKey: input.idempotencyKey ?? undefined,
-      externalId: input.externalId ?? undefined,
       metadata: messageMetadata,
-    });
+    };
+
+    if (effectiveInstanceId) {
+      createPayload.instanceId = effectiveInstanceId;
+    }
+
+    if (input.idempotencyKey) {
+      createPayload.idempotencyKey = input.idempotencyKey;
+    }
+
+    if (typeof input.externalId === 'string' && input.externalId.trim().length > 0) {
+      createPayload.externalId = input.externalId.trim();
+    }
+
+    if (typeof userId === 'string' && userId.trim().length > 0) {
+      createPayload.userId = userId.trim();
+    }
+
+    if (input.type !== undefined) {
+      createPayload.type = input.type;
+    }
+
+    if (input.caption !== undefined) {
+      createPayload.caption = input.caption;
+    }
+
+    if (input.mediaUrl !== undefined) {
+      createPayload.mediaUrl = input.mediaUrl;
+    }
+
+    if (input.mediaFileName !== undefined) {
+      createPayload.mediaFileName = input.mediaFileName;
+    }
+
+    if (input.mediaMimeType !== undefined) {
+      createPayload.mediaMimeType = input.mediaMimeType;
+    }
+
+    if (input.quotedMessageId !== undefined) {
+      createPayload.quotedMessageId = input.quotedMessageId;
+    }
+
+    messageRecord = await storageCreateMessage(tenantId, input.ticketId, createPayload);
   } catch (error) {
     if (isUniqueViolation(error) && input.externalId) {
       const existing = await storageFindMessageByExternalId(tenantId, input.externalId);
       if (existing) {
         const merged = await storageUpdateMessage(tenantId, existing.id, {
           metadata: messageMetadata,
-          instanceId: effectiveInstanceId ?? undefined,
+          ...(effectiveInstanceId ? { instanceId: effectiveInstanceId } : {}),
         });
         messageRecord = merged ?? existing;
         wasDuplicate = true;
@@ -1450,6 +1627,7 @@ export const sendMessage = async (
         tenantId,
         ticketId: input.ticketId,
       });
+      throw error;
     }
   }
 
@@ -1541,13 +1719,13 @@ export const sendMessage = async (
       (metadata.broker as Record<string, unknown>).rawError = errorDetails.raw;
     }
 
-    let failed: Message | null;
+    let failed: Message | null = null;
 
     try {
       failed = await storageUpdateMessage(tenantId, message.id, {
         status: 'FAILED',
         metadata,
-        instanceId: effectiveInstanceId ?? undefined,
+        ...(effectiveInstanceId ? { instanceId: effectiveInstanceId } : {}),
       });
     } catch (error) {
       handleDatabaseError(error, {
@@ -1555,6 +1733,7 @@ export const sendMessage = async (
         tenantId,
         messageId: message.id,
       });
+      throw error;
     }
 
     if (failed) {
@@ -1576,7 +1755,7 @@ export const sendMessage = async (
       await markAsFailed({ message: 'whatsapp_instance_missing' });
     } else {
       const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
-      const phone = (contact?.primaryPhone ?? contact?.phone ?? '').trim();
+      const phone = (contact?.primaryPhone ?? '').trim();
 
       if (!phone) {
         logger.warn('whatsapp.outbound.contactPhoneMissing', {
@@ -1605,49 +1784,83 @@ export const sendMessage = async (
             resolvedDispatchId: dispatchInstanceId,
             brokerId: dispatchBrokerId,
           });
-          const locationMetadata = normalizeLocationPayload(messageMetadata.location);
-          const templateMetadata = normalizeTemplatePayload(messageMetadata.template);
-          const contactsMetadata = normalizeContactsPayload(messageMetadata.contacts);
+         const locationMetadata = normalizeLocationPayload(messageMetadata.location);
+         const templateMetadata = normalizeTemplatePayload(messageMetadata.template);
+         const contactsMetadata = normalizeContactsPayload(messageMetadata.contacts);
+          const transportPayload: WhatsAppTransportSendMessagePayload = {
+            to: phone,
+            content: input.content ?? input.caption ?? '',
+            externalId: message.id,
+            metadata: messageMetadata,
+          };
+
+          if (typeof input.caption === 'string' && input.caption.trim().length > 0) {
+            transportPayload.caption = input.caption;
+          }
+
+          if (input.type) {
+            transportPayload.type = input.type;
+          }
+
+          if (typeof input.mediaUrl === 'string' && input.mediaUrl.trim().length > 0) {
+            transportPayload.mediaUrl = input.mediaUrl;
+          }
+
+          if (typeof input.mediaMimeType === 'string' && input.mediaMimeType.trim().length > 0) {
+            transportPayload.mediaMimeType = input.mediaMimeType;
+          }
+
+          if (typeof input.mediaFileName === 'string' && input.mediaFileName.trim().length > 0) {
+            transportPayload.mediaFileName = input.mediaFileName;
+          }
+
+          if (typeof messageMetadata.previewUrl === 'boolean') {
+            transportPayload.previewUrl = messageMetadata.previewUrl;
+          }
+
+          if (locationMetadata) {
+            transportPayload.location = locationMetadata;
+          }
+
+          if (templateMetadata) {
+            transportPayload.template = templateMetadata;
+          }
+
+          if (contactsMetadata) {
+            transportPayload.contacts = contactsMetadata;
+          }
+
           const dispatchResult = await transport.sendMessage(
             dispatchInstanceId,
-            {
-              to: phone,
-              content: input.content ?? input.caption ?? '',
-              caption: input.caption,
-              type: input.type,
-              externalId: message.id,
-              mediaUrl: input.mediaUrl,
-              mediaMimeType: input.mediaMimeType,
-              mediaFileName: input.mediaFileName,
-              previewUrl: Boolean(messageMetadata.previewUrl),
-              location: locationMetadata ?? undefined,
-              template: templateMetadata ?? undefined,
-              contacts: contactsMetadata ?? undefined,
-              metadata: messageMetadata,
-            },
+            transportPayload,
             { idempotencyKey: message.id }
           );
 
-          const metadata = {
-            ...(message.metadata ?? {}),
-            broker: {
-              provider: 'whatsapp',
-              instanceId,
-              externalId: dispatchResult.externalId,
-              status: dispatchResult.status,
-              dispatchedAt: dispatchResult.timestamp,
-              raw: dispatchResult.raw ?? undefined,
-            },
-          } as Record<string, unknown>;
+          const brokerMetadata: Record<string, unknown> = {
+            provider: 'whatsapp',
+            instanceId,
+            externalId: dispatchResult.externalId,
+            status: dispatchResult.status,
+            dispatchedAt: dispatchResult.timestamp,
+          };
 
-          let updated: Message | null;
+          if (dispatchResult.raw) {
+            brokerMetadata.raw = dispatchResult.raw;
+          }
+
+          const metadata: Record<string, unknown> = {
+            ...(message.metadata ?? {}),
+            broker: brokerMetadata,
+          };
+
+          let updated: Message | null = null;
 
           try {
             updated = await storageUpdateMessage(tenantId, message.id, {
               status: normalizeBrokerStatus(dispatchResult.status),
               externalId: dispatchResult.externalId,
               metadata,
-              instanceId,
+              ...(instanceId ? { instanceId } : {}),
             });
           } catch (error) {
             handleDatabaseError(error, {
@@ -1655,6 +1868,7 @@ export const sendMessage = async (
               tenantId,
               messageId: message.id,
             });
+            throw error;
           }
 
           if (updated) {
@@ -1722,24 +1936,39 @@ export const sendMessage = async (
               reason: 'INSTANCE_NOT_CONNECTED',
             });
           }
-          await markAsFailed({
+          const failurePayload: Parameters<typeof markAsFailed>[0] = {
             message: reason,
-            code,
-            status,
-            requestId,
-            normalized: normalizedTransportError,
-            raw: transportError
-              ? {
-                  code: transportError.code,
-                  message: error instanceof Error ? error.message : null,
-                }
-              : brokerError
-              ? {
-                  code: brokerError.code ?? null,
-                  message: error instanceof Error ? error.message : null,
-                }
-              : undefined,
-          });
+          };
+
+          if (typeof code === 'string') {
+            failurePayload.code = code;
+          }
+
+          if (typeof status === 'number') {
+            failurePayload.status = status;
+          }
+
+          if (requestId) {
+            failurePayload.requestId = requestId;
+          }
+
+          if (normalizedTransportError) {
+            failurePayload.normalized = normalizedTransportError;
+          }
+
+          if (transportError) {
+            failurePayload.raw = {
+              code: transportError.code,
+              message: error instanceof Error ? error.message : null,
+            };
+          } else if (brokerError) {
+            failurePayload.raw = {
+              code: brokerError.code ?? null,
+              message: error instanceof Error ? error.message : null,
+            };
+          }
+
+          await markAsFailed(failurePayload);
 
           if (circuitKey) {
             const result = recordCircuitFailure(circuitKey);
@@ -1845,7 +2074,7 @@ export const sendOnTicket = async (
     throw new NotFoundError('Contact', ticket.contactId);
   }
 
-  const phone = contact.phone?.trim();
+  const phone = (contact.primaryPhone ?? '').trim();
 
   if (!phone) {
     throw new PhoneNormalizationError('Contato não possui telefone cadastrado.');
@@ -2002,17 +2231,17 @@ export const sendToContact = async (
     await resolveDispatchInstanceId(instanceId);
   }
 
-  let normalizedPhone = contact.phone?.trim() ?? undefined;
+  let normalizedPhone = contact.primaryPhone?.trim() ?? null;
 
   if (to) {
     const normalized = normalizePhoneNumber(to);
     normalizedPhone = normalized.e164;
 
-    if (contact.phone !== normalizedPhone) {
+    if ((contact.primaryPhone ?? null) !== normalizedPhone) {
       await prisma.contact.update({
         where: { id: contactId },
         data: {
-          phone: normalizedPhone,
+          primaryPhone: normalizedPhone,
           lastInteractionAt: new Date(),
         },
       });
@@ -2040,18 +2269,26 @@ export const sendToContact = async (
     });
   }
 
-  return sendOnTicket(
-    {
-      tenantId: resolvedTenantId,
-      operatorId,
-      ticketId: activeTicket.id,
-      payload,
-      instanceId,
-      idempotencyKey,
-      rateLimitConsumed,
-    },
-    dependencies
-  );
+  const sendParams: SendOnTicketParams = {
+    tenantId: resolvedTenantId,
+    ticketId: activeTicket.id,
+    payload,
+    rateLimitConsumed,
+  };
+
+  if (instanceId) {
+    sendParams.instanceId = instanceId;
+  }
+
+  if (idempotencyKey) {
+    sendParams.idempotencyKey = idempotencyKey;
+  }
+
+  if (operatorId) {
+    sendParams.operatorId = operatorId;
+  }
+
+  return sendOnTicket(sendParams, dependencies);
 };
 
 type SendAdHocParams = {
@@ -2094,9 +2331,9 @@ export const sendAdHoc = async (
 
   let contact = await prisma.contact.findUnique({
     where: {
-      tenantId_phone: {
+      tenantId_primaryPhone: {
         tenantId,
-        phone: normalized.e164,
+        primaryPhone: normalized.e164,
       },
     },
   });
@@ -2105,9 +2342,9 @@ export const sendAdHoc = async (
     contact = await prisma.contact.create({
       data: {
         tenantId,
-        name: normalized.e164,
-        phone: normalized.e164,
-        tags: ['whatsapp', 'outbound'],
+        fullName: normalized.e164,
+        displayName: normalized.e164,
+        primaryPhone: normalized.e164,
         lastInteractionAt: new Date(),
       },
     });
@@ -2116,24 +2353,32 @@ export const sendAdHoc = async (
       where: { id: contact.id },
       data: {
         lastInteractionAt: new Date(),
-        phone: normalized.e164,
+        primaryPhone: normalized.e164,
       },
     });
   }
 
-  return sendToContact(
-    {
-      tenantId,
-      operatorId,
-      contactId: contact.id,
-      payload,
-      instanceId,
-      to: normalized.e164,
-      idempotencyKey,
-      rateLimitConsumed,
-    },
-    dependencies
-  );
+  const sendParams: SendToContactParams = {
+    tenantId,
+    contactId: contact.id,
+    payload,
+    to: normalized.e164,
+    rateLimitConsumed,
+  };
+
+  if (instanceId) {
+    sendParams.instanceId = instanceId;
+  }
+
+  if (idempotencyKey) {
+    sendParams.idempotencyKey = idempotencyKey;
+  }
+
+  if (operatorId) {
+    sendParams.operatorId = operatorId;
+  }
+
+  return sendToContact(sendParams, dependencies);
 };
 
 export const addTicketNote = async (
@@ -2144,17 +2389,28 @@ export const addTicketNote = async (
 ): Promise<TicketNote> => {
   await getTicketById(tenantId, ticketId);
 
-  const note = await createTicketNote({
+  const notePayload: Parameters<typeof createTicketNote>[0] = {
     tenantId,
     ticketId,
     authorId: author.id,
     authorName: author.name ?? null,
     authorAvatar: author.avatar ?? null,
     body: input.body,
-    visibility: input.visibility,
-    tags: input.tags,
-    metadata: input.metadata,
-  });
+  };
+
+  if (input.visibility) {
+    notePayload.visibility = input.visibility;
+  }
+
+  if (Array.isArray(input.tags)) {
+    notePayload.tags = input.tags;
+  }
+
+  if (input.metadata) {
+    notePayload.metadata = input.metadata;
+  }
+
+  const note = await createTicketNote(notePayload);
 
   emitTicketEvent(tenantId, ticketId, 'ticket.note.created', note, author.id);
 

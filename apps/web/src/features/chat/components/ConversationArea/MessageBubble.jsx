@@ -725,11 +725,9 @@ export const MessageBubble = ({
             ? interactivePoll.options
             : [];
 
-      const poll = metadataPoll ?? interactivePoll;
       const pollTitleSource = pollQuestion ?? textContent;
       const pollTitle = pollTitleSource && pollTitleSource.trim().length > 0 ? pollTitleSource.trim() : 'Enquete';
-      const pollOptions = pollOptionsSource;
-      const isMetadataMissing = !poll && pollOptionsSource.length === 0;
+      const isMetadataMissing = !metadataPoll && !interactivePoll && pollOptionsSource.length === 0;
 
       return (
         <div className="flex flex-col gap-2">
@@ -737,9 +735,9 @@ export const MessageBubble = ({
             <ListChecks className="h-4 w-4" aria-hidden="true" />
             {pollTitle}
           </div>
-          {pollOptions.length > 0 ? (
+          {pollOptionsSource.length > 0 ? (
             <ul className="ml-5 list-disc space-y-1 text-xs text-foreground-muted">
-              {pollOptions.map((option, index) => {
+              {pollOptionsSource.map((option, index) => {
                 const optionId =
                   typeof option?.id === 'string' && option.id.trim().length > 0
                     ? option.id.trim()
@@ -807,19 +805,6 @@ export const MessageBubble = ({
           ) : null}
           {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
-      );
-    }
-
-    if (mediaUrl && mediaType === 'image') {
-      return (
-        <figure className="flex flex-col gap-2">
-          <img
-            src={mediaUrl}
-            alt={caption ?? 'Imagem recebida'}
-            className="max-h-64 w-full rounded-lg object-contain"
-          />
-          {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
-        </figure>
       );
     }
 

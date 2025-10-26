@@ -98,27 +98,27 @@ const buildDefaultAllocationResult = () => ({
   summary: { total: 1, contacted: 0, won: 0, lost: 0 },
 });
 
-vi.mock('../data/lead-allocation-store', () => ({
+vi.mock('../data/lead-allocation-store.js', () => ({
   addAllocations: vi.fn(async () => buildDefaultAllocationResult()),
   listAllocations: vi.fn(),
   updateAllocation: vi.fn(),
 }));
 
-const { refreshFeatureFlags } = await import('../config/feature-flags');
-const { refreshWhatsAppEnv } = await import('../config/whatsapp');
+const { refreshFeatureFlags } = await import('../config/feature-flags.js');
+const { refreshWhatsAppEnv } = await import('../config/whatsapp.js');
 
-const { prisma } = await import('../lib/prisma');
-const { addAllocations } = await import('../data/lead-allocation-store');
+const { prisma } = await import('../lib/prisma.js');
+const { addAllocations } = await import('../data/lead-allocation-store.js');
 const { resetInboundLeadServiceTestState } = await import(
-  '../features/whatsapp-inbound/services/inbound-lead-service'
+  '../features/whatsapp-inbound/services/inbound-lead-service.js'
 );
-const ticketsModule = await import('../services/ticket-service');
+const ticketsModule = await import('../services/ticket-service.js');
 const createTicketSpy = vi.spyOn(ticketsModule, 'createTicket');
 const sendMessageSpy = vi.spyOn(ticketsModule, 'sendMessage');
 const emitMessageUpdatedEventsSpy = vi
   .spyOn(ticketsModule, 'emitMessageUpdatedEvents')
   .mockResolvedValue(undefined);
-const socketModule = await import('../lib/socket-registry');
+const socketModule = await import('../lib/socket-registry.js');
 const emitToTenantSpy = vi.spyOn(socketModule, 'emitToTenant').mockImplementation(() => {});
 
 const buildCanonicalWebhookPayload = ({
@@ -177,7 +177,7 @@ const createApp = () => {
   const rawParser = express.raw({ type: '*/*' });
 
   app.use('/api/integrations/whatsapp/webhook', rawParser, (req, _res, next) => {
-    const buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.alloc(0);
+    const buffer: Buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.alloc(0);
     const enrichedReq = req as express.Request & { rawBody?: Buffer; rawBodyParseError?: SyntaxError | null };
 
     enrichedReq.rawBody = buffer.length > 0 ? buffer : undefined;

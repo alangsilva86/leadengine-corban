@@ -116,6 +116,7 @@ export interface Message {
   tenantId: string;
   ticketId: string;
   contactId: string;
+  providerMessageId?: string | null | undefined;
   userId?: string | undefined;
   instanceId?: string | undefined;
   direction: MessageDirection;
@@ -140,16 +141,31 @@ export interface Message {
 export interface Contact {
   id: string;
   tenantId: string;
-  name: string;
+  fullName: string;
+  name?: string | undefined;
+  displayName?: string | undefined;
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+  organization?: string | undefined;
+  jobTitle?: string | undefined;
+  department?: string | undefined;
+  primaryPhone?: string | undefined;
   phone?: string | undefined;
+  primaryEmail?: string | undefined;
   email?: string | undefined;
   document?: string | undefined;
   avatar?: string | undefined;
   isBlocked: boolean;
+  isVip?: boolean | undefined;
+  timezone?: string | undefined;
+  locale?: string | undefined;
+  birthDate?: Date | undefined;
   tags: string[];
   customFields: Record<string, unknown>;
   lastInteractionAt?: Date | undefined;
+  lastActivityAt?: Date | undefined;
   notes?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
   createdAt: Date;
   updatedAt: Date;
 }
