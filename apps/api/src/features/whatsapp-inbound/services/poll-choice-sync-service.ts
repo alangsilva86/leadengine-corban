@@ -260,7 +260,7 @@ export const syncPollChoiceState = async (
     messageRecord = await findPollVoteMessageCandidate({
       tenantId,
       pollId: trimmedPollId,
-      chatId: chatId ?? undefined,
+      chatId: chatId ?? null,
       identifiers: identifierList,
     });
   } catch (error) {
@@ -296,7 +296,7 @@ export const syncPollChoiceState = async (
     metadata: {
       poll: normalizedNext as UnknownRecord,
     },
-  }).catch((error) => {
+  }).catch((error: unknown) => {
     logger.error('Failed to persist poll metadata on message', {
       pollId: trimmedPollId,
       messageId: messageRecord.id,

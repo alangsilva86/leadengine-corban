@@ -6,6 +6,9 @@ const POLL_METADATA_SOURCE = 'whatsapp.poll_meta';
 
 const buildMetadataId = (pollId: string): string => `poll-meta:${pollId}`;
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
 export interface PollMetadataOption {
   id: string;
   title: string | null;
@@ -48,8 +51,17 @@ export const getPollMetadata = async (pollId: string): Promise<PollMetadataPaylo
       return null;
     }
 
-    const payload = record.payload as PollMetadataPayload | null;
-    return payload ?? null;
+    const rawPayload = record.payload as unknown;
+    if (!isPlainObject(rawPayload)) {
+      return null;
+    }
+
+    const pollIdValue = rawPayload.pollId;
+    if (typeof pollIdValue !== 'string' || !pollIdValue.trim()) {
+      return null;
+    }
+
+    return rawPayload as unknown as PollMetadataPayload;
   } catch (error) {
     logger.warn('Failed to load WhatsApp poll metadata', {
       pollId: trimmed,
@@ -62,18 +74,24 @@ export const getPollMetadata = async (pollId: string): Promise<PollMetadataPaylo
 const mergeOptions = (
   existing: PollMetadataOption[] | undefined,
   incoming: PollMetadataOption[] | undefined
-): PollMetadataOption[] | undefined => {
+): PollMetadataOption[] => {
   if ((!existing || existing.length === 0) && (!incoming || incoming.length === 0)) {
-    return existing ?? incoming;
+    return [];
   }
 
   const map = new Map<string, PollMetadataOption>();
 
   for (const option of existing ?? []) {
+    if (!option || !option.id) {
+      continue;
+    }
     map.set(option.id, option);
   }
 
   for (const option of incoming ?? []) {
+    if (!option || !option.id) {
+      continue;
+    }
     map.set(option.id, {
       ...map.get(option.id),
       ...option,
@@ -121,35 +139,39 @@ export const upsertPollMetadata = async (payload: PollMetadataPayload): Promise<
     };
 
     if (existing?.payload) {
-      const existingPayload = existing.payload as PollMetadataPayload;
+      const existingPayloadRaw = existing.payload as unknown;
+      const existingPayload = isPlainObject(existingPayloadRaw)
+        ? ((existingPayloadRaw as unknown) as PollMetadataPayload)
+        : null;
+      const mergedOptions = mergeOptions(existingPayload?.options, payload.options);
       merged = {
         pollId,
-        question: payload.question ?? existingPayload.question ?? null,
+        question: payload.question ?? existingPayload?.question ?? null,
         selectableOptionsCount:
-          payload.selectableOptionsCount ?? existingPayload.selectableOptionsCount ?? null,
+          payload.selectableOptionsCount ?? existingPayload?.selectableOptionsCount ?? null,
         allowMultipleAnswers:
-          payload.allowMultipleAnswers ?? existingPayload.allowMultipleAnswers ?? false,
-        options: mergeOptions(existingPayload.options, payload.options),
-        creationMessageId: payload.creationMessageId ?? existingPayload.creationMessageId ?? null,
+          payload.allowMultipleAnswers ?? existingPayload?.allowMultipleAnswers ?? false,
+        options: mergedOptions,
+        creationMessageId: payload.creationMessageId ?? existingPayload?.creationMessageId ?? null,
         creationMessageKey: {
           remoteJid:
             payload.creationMessageKey?.remoteJid ??
-            existingPayload.creationMessageKey?.remoteJid ??
+            existingPayload?.creationMessageKey?.remoteJid ??
             null,
           participant:
             payload.creationMessageKey?.participant ??
-            existingPayload.creationMessageKey?.participant ??
+            existingPayload?.creationMessageKey?.participant ??
             null,
           fromMe:
             payload.creationMessageKey?.fromMe ??
-            existingPayload.creationMessageKey?.fromMe ??
+            existingPayload?.creationMessageKey?.fromMe ??
             false,
         },
-        messageSecret: payload.messageSecret ?? existingPayload.messageSecret ?? null,
+        messageSecret: payload.messageSecret ?? existingPayload?.messageSecret ?? null,
         messageSecretVersion:
-          payload.messageSecretVersion ?? existingPayload.messageSecretVersion ?? null,
-        tenantId: payload.tenantId ?? existingPayload.tenantId ?? null,
-        instanceId: payload.instanceId ?? existingPayload.instanceId ?? null,
+          payload.messageSecretVersion ?? existingPayload?.messageSecretVersion ?? null,
+        tenantId: payload.tenantId ?? existingPayload?.tenantId ?? null,
+        instanceId: payload.instanceId ?? existingPayload?.instanceId ?? null,
       };
     }
 

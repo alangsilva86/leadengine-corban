@@ -70,7 +70,13 @@ const computeAggregates = (votes: Record<string, PollChoiceVoteEntry>): PollChoi
   };
 };
 
-const normalizeOptionTitle = (option: { title?: string | null; text?: string | null; description?: string | null }): string | null => {
+type OptionLabelSource = {
+  title?: string | null | undefined;
+  text?: string | null | undefined;
+  description?: string | null | undefined;
+};
+
+const normalizeOptionTitle = (option: OptionLabelSource): string | null => {
   if (typeof option.title === 'string' && option.title.trim().length > 0) {
     return option.title.trim();
   }
@@ -88,7 +94,8 @@ const mergeOptions = (
   incoming: PollChoiceEventPayload['options'],
   metadataOptions: PollMetadataOption[] | null | undefined
 ): PollChoiceState['options'] => {
-  const map = new Map<string, { id: string; title?: string | null; index?: number | null }>();
+  type NormalizedOption = { id: string; title: string | null; index: number | null };
+  const map = new Map<string, NormalizedOption>();
 
   for (const option of existing) {
     map.set(option.id, {
@@ -103,16 +110,19 @@ const mergeOptions = (
       continue;
     }
 
-    const current = map.get(option.id) ?? { id: option.id };
+    const current =
+      map.get(option.id) ?? { id: option.id, title: null, index: null };
     map.set(option.id, {
       id: option.id,
       title: option.title ?? current.title ?? null,
-      index: typeof option.index === 'number' ? option.index : current.index ?? null,
+      index:
+        typeof option.index === 'number' ? option.index : current.index ?? null,
     });
   }
 
   for (const option of incoming) {
-    const current = map.get(option.id) ?? { id: option.id };
+    const current =
+      map.get(option.id) ?? { id: option.id, title: null, index: null };
     const title = normalizeOptionTitle(option) ?? current.title ?? null;
     const index = option.index ?? current.index ?? null;
 
