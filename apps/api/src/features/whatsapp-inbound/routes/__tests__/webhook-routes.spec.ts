@@ -24,6 +24,7 @@ const hoistedMocks = vi.hoisted(() => {
   const messageFindFirstMock = vi.fn();
   const applyBrokerAckMock = vi.fn();
   const storageFindMessageByExternalIdMock = vi.fn();
+  const findPollVoteMessageCandidateMock = vi.fn();
   const storageUpdateMessageMock = vi.fn();
   const upsertPollMetadataMock = vi.fn();
 
@@ -57,6 +58,7 @@ const hoistedMocks = vi.hoisted(() => {
     messageFindFirstMock,
     applyBrokerAckMock,
     storageFindMessageByExternalIdMock,
+    findPollVoteMessageCandidateMock,
     storageUpdateMessageMock,
     recordEncryptedPollVoteMock,
     upsertPollMetadataMock,
@@ -100,6 +102,7 @@ vi.mock('@ticketz/storage', () => ({
   $Enums: { MessageType: {} },
   applyBrokerAck: hoistedMocks.applyBrokerAckMock,
   findMessageByExternalId: hoistedMocks.storageFindMessageByExternalIdMock,
+  findPollVoteMessageCandidate: hoistedMocks.findPollVoteMessageCandidateMock,
   updateMessage: hoistedMocks.storageUpdateMessageMock,
 }));
 
@@ -119,6 +122,7 @@ const {
   messageFindFirstMock,
   applyBrokerAckMock,
   storageFindMessageByExternalIdMock,
+  findPollVoteMessageCandidateMock,
   storageUpdateMessageMock,
   upsertPollMetadataMock,
 } = hoistedMocks;
@@ -167,6 +171,8 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     applyBrokerAckMock.mockReset();
     storageFindMessageByExternalIdMock.mockReset();
     storageFindMessageByExternalIdMock.mockResolvedValue(null);
+    findPollVoteMessageCandidateMock.mockReset();
+    findPollVoteMessageCandidateMock.mockResolvedValue(null);
     storageUpdateMessageMock.mockReset();
     upsertPollMetadataMock.mockReset();
     upsertPollMetadataMock.mockResolvedValue(undefined);
@@ -889,9 +895,11 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(payloadArg).toMatchObject({ pollId: 'poll-1', voterJid: '5511999999999@s.whatsapp.net' });
     expect(contextArg).toMatchObject({ tenantId: 'tenant-123' });
     expect(syncPollChoiceStateMock).toHaveBeenCalledTimes(1);
-    expect(prismaMock.message.findFirst).toHaveBeenCalledWith({
-      where: { externalId: 'poll-1' },
-      select: { id: true },
+    expect(findPollVoteMessageCandidateMock).toHaveBeenCalledWith({
+      tenantId: 'tenant-123',
+      pollId: 'poll-1',
+      chatId: '5511999999999@s.whatsapp.net',
+      identifiers: expect.arrayContaining(['poll-1', 'wamid-poll-1']),
     });
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledTimes(1);
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledWith({
@@ -930,6 +938,16 @@ describe('WhatsApp webhook poll choice events', () => {
       updated: true,
       state: {
         pollId: 'poll-with-creation',
+  it('skips poll choice inbox notification when existing poll message is found', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    findPollVoteMessageCandidateMock.mockResolvedValueOnce({
+      id: 'existing-poll-message-id',
+    } as never);
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-existing',
         options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
         votes: {
           '5511999999999@s.whatsapp.net': {
@@ -941,6 +959,20 @@ describe('WhatsApp webhook poll choice events', () => {
         },
         aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
         brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
+            messageId: 'wamid-poll-existing',
+            timestamp: now,
+          },
+        },
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
+        brokerAggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1 },
+        },
         updatedAt: now,
       },
       selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
@@ -977,6 +1009,44 @@ describe('WhatsApp webhook poll choice events', () => {
     } finally {
       webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
     }
+    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
+      id: 'message-db-id',
+      content: '[Mensagem recebida via WhatsApp]',
+      metadata: {},
+    } as never);
+
+    const app = buildApp();
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      tenantId: 'tenant-123',
+      payload: {
+        pollId: 'poll-existing',
+        voterJid: '5511999999999@s.whatsapp.net',
+        messageId: 'wamid-poll-existing',
+        selectedOptionIds: ['opt-1'],
+        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+        options: [
+          { id: 'opt-1', title: 'Option 1', selected: true },
+          { id: 'opt-2', title: 'Option 2', selected: false },
+        ],
+        aggregates: {
+          totalVoters: 1,
+          totalVotes: 1,
+          optionTotals: { 'opt-1': 1, 'opt-2': 0 },
+        },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(triggerPollChoiceInboxNotificationMock).not.toHaveBeenCalled();
+    expect(findPollVoteMessageCandidateMock).toHaveBeenCalledWith({
+      tenantId: 'tenant-123',
+      pollId: 'poll-existing',
+      chatId: '5511999999999@s.whatsapp.net',
+      identifiers: expect.arrayContaining(['poll-existing', 'wamid-poll-existing']),
+    });
   });
 
   it('records poll choice inbox failure when tenant context is unavailable', async () => {
