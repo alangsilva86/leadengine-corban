@@ -2,7 +2,7 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig({
   entry: ['src/server.ts'],
-  format: ['cjs'],
+  format: ['esm'],
   bundle: true,
   dts: false,
   splitting: false,
@@ -11,6 +11,10 @@ export default defineConfig({
   minify: false,
   target: 'node20',
   outDir: 'dist',
+  platform: 'node',
+  outExtension: () => ({
+    js: '.mjs',
+  }),
   external: [
     '@ticketz/core',
     '@ticketz/shared',

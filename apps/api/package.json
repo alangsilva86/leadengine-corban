@@ -2,10 +2,10 @@
   "name": "@ticketz/api",
   "version": "1.0.0",
   "description": "API REST para o sistema Ticketz-LeadEngine",
-  "main": "dist/server.js",
+  "main": "dist/server.mjs",
   "scripts": {
     "build": "tsup --clean && pnpm -w --filter @ticketz/storage run prisma:generate",
-    "start": "node dist/server.js",
+    "start": "node dist/server.mjs",
     "dev": "tsx watch src/server.ts"
   },
   "dependencies": {

@@ -46,7 +46,7 @@ import {
   type WhatsAppTransport,
   type WhatsAppTransportSendMessagePayload,
 } from '../features/whatsapp-transport';
-import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts' with { "resolution-mode": "import" };
+import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { assertWithinRateLimit, RateLimitError } from '../utils/rate-limit';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../utils/phone';
@@ -71,7 +71,7 @@ import type {
   NormalizedMessagePayload,
   OutboundMessageError,
   OutboundMessageResponse,
-} from '@ticketz/contracts' with { "resolution-mode": "import" };
+} from '@ticketz/contracts';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
