@@ -13,6 +13,8 @@ import {
   UpdateContactTaskPayloadSchema,
   WhatsappActionPayloadSchema,
 } from '@ticketz/core';
+import type { ContactFilters } from '@ticketz/core';
+import type { NormalizedMessagePayload } from '@ticketz/contracts' with { "resolution-mode": "import" };
 import {
   applyBulkContactsAction,
   createContact,
@@ -35,13 +37,13 @@ import { respondWithValidationError } from '../utils/http-validation';
 import { sendToContact } from '../services/ticket-service';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 
-type NormalizePayloadFn = typeof import('@ticketz/contracts').normalizePayload;
+type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) => NormalizedMessagePayload;
 
 let normalizePayloadCached: NormalizePayloadFn | null = null;
 const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
   if (!normalizePayloadCached) {
-    const mod = await import('@ticketz/contracts');
-    normalizePayloadCached = mod.normalizePayload;
+    const mod = await import('@ticketz/contracts', { with: { 'resolution-mode': 'import' } });
+    normalizePayloadCached = mod.normalizePayload as NormalizePayloadFn;
   }
   return normalizePayloadCached;
 };
@@ -214,16 +216,38 @@ router.get(
 
     const statusFilter = Array.isArray(status) && status.length > 0 ? status : undefined;
 
-    const response = await listContacts(tenantId, pagination, {
-      search: search?.trim() ? search.trim() : undefined,
-      status: statusFilter,
-      tags,
-      lastInteractionFrom,
-      lastInteractionTo,
-      hasOpenTickets,
-      isBlocked,
-      hasWhatsapp,
-    });
+    const filters: ContactFilters = {};
+    const trimmedSearch = search?.trim();
+    if (trimmedSearch) {
+      filters.search = trimmedSearch;
+    }
+    if (statusFilter) {
+      filters.status = statusFilter;
+    }
+    if (tags && tags.length > 0) {
+      filters.tags = tags;
+    }
+    if (lastInteractionFrom) {
+      filters.lastInteractionFrom = lastInteractionFrom;
+    }
+    if (lastInteractionTo) {
+      filters.lastInteractionTo = lastInteractionTo;
+    }
+    if (typeof hasOpenTickets === 'boolean') {
+      filters.hasOpenTickets = hasOpenTickets;
+    }
+    if (typeof isBlocked === 'boolean') {
+      filters.isBlocked = isBlocked;
+    }
+    if (typeof hasWhatsapp === 'boolean') {
+      filters.hasWhatsapp = hasWhatsapp;
+    }
+
+    const response = await listContacts(
+      tenantId,
+      pagination,
+      Object.keys(filters).length > 0 ? filters : undefined
+    );
 
     res.json({ success: true, data: response });
   })
@@ -429,10 +453,16 @@ router.get(
       pagination.sortOrder = query.sortOrder;
     }
 
+    const pageValue = pagination.page ?? 1;
+    const limitValue = pagination.limit ?? 20;
+    const sortOrderValue = pagination.sortOrder ?? 'desc';
     const result = await listContactInteractions({
       tenantId,
       contactId: params.contactId,
-      ...pagination,
+      page: pageValue,
+      limit: limitValue,
+      sortOrder: sortOrderValue,
+      ...(pagination.sortBy ? { sortBy: pagination.sortBy } : {}),
     });
     res.json({ success: true, data: result });
   })
@@ -453,7 +483,15 @@ router.post(
     }
 
     const tenantId = req.user!.tenantId;
-    const interaction = await logContactInteraction({ tenantId, contactId: params.contactId, payload: body });
+    const payloadWithDirection = {
+      ...body,
+      direction: body.direction ?? 'INBOUND',
+    };
+    const interaction = await logContactInteraction({
+      tenantId,
+      contactId: params.contactId,
+      payload: payloadWithDirection,
+    });
     res.status(201).json({ success: true, data: interaction });
   })
 );
@@ -487,11 +525,20 @@ router.get(
       pagination.sortOrder = query.sortOrder;
     }
 
+    const pageValue = pagination.page ?? 1;
+    const limitValue = pagination.limit ?? 20;
+    const sortOrderValue = pagination.sortOrder ?? 'desc';
+    const statusFilterTasks =
+      Array.isArray(query.status) && query.status.length > 0 ? query.status : undefined;
+
     const result = await listContactTasks({
       tenantId,
       contactId: params.contactId,
-      ...pagination,
-      ...(Array.isArray(query.status) && query.status.length ? { status: query.status } : {}),
+      page: pageValue,
+      limit: limitValue,
+      sortOrder: sortOrderValue,
+      ...(pagination.sortBy ? { sortBy: pagination.sortBy } : {}),
+      ...(statusFilterTasks ? { status: statusFilterTasks } : {}),
     });
     res.json({ success: true, data: result });
   })

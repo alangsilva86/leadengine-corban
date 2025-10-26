@@ -509,21 +509,19 @@ router.get(
     const include = sanitizeIncludeOptions(parseListParam(req.query.include));
     const includeMetrics = parseBooleanParam(req.query.metrics) ?? parseBooleanParam(req.query.includeMetrics);
 
-    const options: {
-      include?: TicketIncludeOption[];
-      includeMetrics?: boolean;
-    } = {};
-
-    if (include && include.length > 0) {
-      options.include = include;
-    }
-
-    if (includeMetrics === true) {
-      options.includeMetrics = true;
-    }
+    const includeOptions = include && include.length > 0 ? include : undefined;
+    const options =
+      includeOptions || includeMetrics === true
+        ? ({
+            ...(includeOptions ? { include: includeOptions } : {}),
+            ...(includeMetrics === true ? { includeMetrics: true } : {}),
+          } satisfies ListTicketsOptions)
+        : undefined;
 
     const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
-    const result = await listTickets(tenantId, filters, pagination, options);
+    const result = options
+      ? await listTickets(tenantId, filters, pagination, options)
+      : await listTickets(tenantId, filters, pagination);
 
     res.json({
       success: true,
