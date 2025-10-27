@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as webhookRoutes from '../webhook-routes';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
+import type { PollChoiceSelectedOptionPayload } from '../../schemas/poll-choice';
 
 const { whatsappWebhookRouter } = webhookRoutes;
 
@@ -126,6 +127,28 @@ const buildApp = () => {
   app.use('/api/webhooks', whatsappWebhookRouter);
   return app;
 };
+
+describe('buildPollVoteMessageContent', () => {
+  it('returns normalized text for a single selected option', () => {
+    const selected: PollChoiceSelectedOptionPayload[] = [
+      { id: 'opt-yes', title: ' Sim 👍 ' },
+    ];
+
+    const result = webhookRoutes.__testing.buildPollVoteMessageContent(selected);
+
+    expect(result).toBe('Sim 👍');
+  });
+
+  it('returns null when no normalized titles are available', () => {
+    const selected: PollChoiceSelectedOptionPayload[] = [
+      { id: '   ', title: '   ' },
+    ];
+
+    const result = webhookRoutes.__testing.buildPollVoteMessageContent(selected);
+
+    expect(result).toBeNull();
+  });
+});
 
 describe('WhatsApp webhook poll question propagation', () => {
   beforeEach(() => {

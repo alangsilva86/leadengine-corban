@@ -286,7 +286,11 @@ const buildPollVoteMessageContent = (
     return null;
   }
 
-  return uniqueTitles.length === 1 ? uniqueTitles[0] : uniqueTitles.join(', ');
+  if (uniqueTitles.length === 1) {
+    return uniqueTitles.at(0) ?? null;
+  }
+
+  return uniqueTitles.join(', ');
 };
 
 const toTrimmedString = (value: unknown): string | null => {
@@ -2452,6 +2456,7 @@ integrationWebhookRouter.post(
 webhookRouter.get('/whatsapp', handleVerification);
 
 export const __testing = {
+  buildPollVoteMessageContent,
   updatePollVoteMessage,
   setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
     updatePollVoteMessageHandler = handler;
