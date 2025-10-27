@@ -33,6 +33,10 @@ const INBOUND_MESSAGES_HELP =
   '# HELP inbound_messages_processed_total Contador de mensagens inbound processadas por tenant';
 const INBOUND_MESSAGES_TYPE = '# TYPE inbound_messages_processed_total counter';
 
+const INBOUND_LATENCY_METRIC = 'whatsapp_inbound_latency_ms';
+const INBOUND_LATENCY_HELP = '# HELP whatsapp_inbound_latency_ms Latência de processamento inbound em milissegundos';
+const INBOUND_LATENCY_TYPE = '# TYPE whatsapp_inbound_latency_ms summary';
+
 const INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC = 'inbound_media_retry_attempts_total';
 const INBOUND_MEDIA_RETRY_ATTEMPTS_HELP =
   '# HELP inbound_media_retry_attempts_total Tentativas de reprocessamento de mídia inbound';
@@ -83,6 +87,7 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
   [WEBHOOK_METRIC]: BASE_LABEL_CONSTRAINTS,
   [OUTBOUND_TOTAL_METRIC]: BASE_LABEL_CONSTRAINTS,
   [OUTBOUND_LATENCY_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [INBOUND_LATENCY_METRIC]: BASE_LABEL_CONSTRAINTS,
   [OUTBOUND_DELIVERY_SUCCESS_METRIC]: BASE_LABEL_CONSTRAINTS,
   [SOCKET_RECONNECT_METRIC]: BASE_LABEL_CONSTRAINTS,
   [INBOUND_MESSAGES_METRIC]: BASE_LABEL_CONSTRAINTS,
@@ -96,6 +101,7 @@ const labelValueTracker = new Map<string, Map<string, Set<string>>>();
 const webhookCounterStore = new Map<string, number>();
 const outboundTotalStore = new Map<string, number>();
 const outboundLatencyStore = new Map<string, { sum: number; count: number }>();
+const inboundLatencyStore = new Map<string, { sum: number; count: number }>();
 const outboundDeliverySuccessStore = new Map<string, number>();
 const socketReconnectCounterStore = new Map<string, number>();
 const httpRequestCounterStore = new Map<string, number>();
@@ -281,6 +287,21 @@ export const inboundMessagesProcessedCounter = {
   },
 };
 
+export const whatsappInboundMetrics = {
+  observeLatency(labels: CounterLabels = {}, latencyMs: number): void {
+    if (!Number.isFinite(latencyMs) || latencyMs < 0) {
+      return;
+    }
+
+    const key = buildLabelKey(INBOUND_LATENCY_METRIC, labels);
+    const current = inboundLatencyStore.get(key) ?? { sum: 0, count: 0 };
+    inboundLatencyStore.set(key, {
+      sum: current.sum + latencyMs,
+      count: current.count + 1,
+    });
+  },
+};
+
 const buildCounter = (metric: string, store: Map<string, number>) => ({
   inc(labels: CounterLabels = {}, value = 1): void {
     const key = buildLabelKey(metric, labels);
@@ -400,6 +421,18 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(INBOUND_LATENCY_HELP, INBOUND_LATENCY_TYPE);
+  if (inboundLatencyStore.size === 0) {
+    lines.push(`${INBOUND_LATENCY_METRIC}_sum 0`);
+    lines.push(`${INBOUND_LATENCY_METRIC}_count 0`);
+  } else {
+    for (const [labelString, stats] of inboundLatencyStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${INBOUND_LATENCY_METRIC}_sum${suffix} ${stats.sum}`);
+      lines.push(`${INBOUND_LATENCY_METRIC}_count${suffix} ${stats.count}`);
+    }
+  }
+
   lines.push(INBOUND_MEDIA_RETRY_ATTEMPTS_HELP, INBOUND_MEDIA_RETRY_ATTEMPTS_TYPE);
   if (inboundMediaRetryAttemptsStore.size === 0) {
     lines.push(`${INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC} 0`);
@@ -447,6 +480,7 @@ export const resetMetrics = (): void => {
   webhookCounterStore.clear();
   outboundTotalStore.clear();
   outboundLatencyStore.clear();
+  inboundLatencyStore.clear();
   outboundDeliverySuccessStore.clear();
   socketReconnectCounterStore.clear();
   httpRequestCounterStore.clear();

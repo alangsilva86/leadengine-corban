@@ -33,7 +33,9 @@ import { maskDocument, maskPhone } from '../../../lib/pii';
 import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
+  whatsappInboundMetrics,
 } from '../../../lib/metrics';
+import { createPerformanceTracker } from '../../../lib/performance-tracker';
 import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
@@ -1036,6 +1038,9 @@ const extractPollVote = (payload: unknown): PollVote => {
 export const ingestInboundWhatsAppMessage = async (
   envelope: InboundWhatsAppEnvelope
 ): Promise<boolean> => {
+  const perfTracker = createPerformanceTracker({ operation: 'ingestInboundWhatsAppMessage' });
+  perfTracker.start('total');
+
   // Proteção inicial: envelope ou mensagem malformada.
   if (!envelope || !(envelope as any).message) {
     logger.warn('whatsappInbound.ingest.malformedEnvelope', { envelopeKeys: Object.keys(envelope || {}) });
@@ -1919,6 +1924,20 @@ const processStandardInboundEvent = async (
         phone: maskPhone(normalizedPhone ?? null),
       });
     }
+  }
+
+  const totalDuration = perfTracker.end('total');
+  
+  // Registra métrica de latência
+  whatsappInboundMetrics.observeLatency({
+    origin: 'webhook',
+    tenantId: tenantId ?? 'unknown',
+    instanceId: (instanceId as string) ?? 'unknown',
+  }, totalDuration);
+
+  // Log de performance (apenas em debug)
+  if (totalDuration > 1000) {
+    perfTracker.logSummary('info');
   }
 
   return !!persistedMessage;
