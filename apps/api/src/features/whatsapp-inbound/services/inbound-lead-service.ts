@@ -528,9 +528,14 @@ const ensureContact = async (
   };
 
   const persisted = await prisma.$transaction(async (tx) => {
+    // Otimização: include apenas no update/create, eliminando query adicional
     const target =
       existing !== null
-        ? await tx.contact.update({ where: { id: existing.id }, data: contactData })
+        ? await tx.contact.update({
+            where: { id: existing.id },
+            data: contactData,
+            include: CONTACT_RELATIONS_INCLUDE,
+          })
         : await tx.contact.create({
             data: {
               tenantId,
@@ -543,15 +548,14 @@ const ensureContact = async (
               lastInteractionAt: interactionDate,
               lastActivityAt: interactionDate,
             },
+            include: CONTACT_RELATIONS_INCLUDE,
           });
 
     await upsertPrimaryPhone(tx, tenantId, target.id, normalizedPhone ?? undefined);
     await syncContactTags(tx, tenantId, target.id, tags);
 
-    return tx.contact.findUniqueOrThrow({
-      where: { id: target.id },
-      include: CONTACT_RELATIONS_INCLUDE,
-    });
+    // Retorna diretamente o target com relações já carregadas
+    return target;
   });
 
   return persisted;
@@ -1426,8 +1430,16 @@ const processStandardInboundEvent = async (
   const tenantId = instance.tenantId;
 
   // Busca campanhas ativas; se inexistentes, provisiona fallback.
+  // Otimização: select apenas campos necessários para redução de carga
   const campaigns = await prisma.campaign.findMany({
     where: { tenantId, whatsappInstanceId: instanceId as string, status: 'active' },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      whatsappInstanceId: true,
+      tenantId: true,
+    },
   });
 
   if (!campaigns.length) {
