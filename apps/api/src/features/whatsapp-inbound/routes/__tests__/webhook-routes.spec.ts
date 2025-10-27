@@ -14,6 +14,7 @@ const hoistedMocks = vi.hoisted(() => {
   const processedIntegrationEventFindUniqueMock = vi.fn();
   const processedIntegrationEventUpsertMock = vi.fn();
   const whatsAppInstanceFindFirstMock = vi.fn();
+  const whatsAppInstanceFindUniqueMock = vi.fn();
   const whatsAppInstanceUpdateMock = vi.fn();
   const ingestInboundWhatsAppMessageMock = vi.fn();
   const normalizeUpsertEventMock = vi.fn();
@@ -37,6 +38,7 @@ const hoistedMocks = vi.hoisted(() => {
     },
     whatsAppInstance: {
       findFirst: whatsAppInstanceFindFirstMock,
+      findUnique: whatsAppInstanceFindUniqueMock,
       update: whatsAppInstanceUpdateMock,
     },
     message: {
@@ -50,6 +52,7 @@ const hoistedMocks = vi.hoisted(() => {
     processedIntegrationEventFindUniqueMock,
     processedIntegrationEventUpsertMock,
     whatsAppInstanceFindFirstMock,
+    whatsAppInstanceFindUniqueMock,
     whatsAppInstanceUpdateMock,
     ingestInboundWhatsAppMessageMock,
     normalizeUpsertEventMock,
@@ -115,6 +118,7 @@ const {
   processedIntegrationEventFindUniqueMock,
   processedIntegrationEventUpsertMock,
   whatsAppInstanceFindFirstMock,
+  whatsAppInstanceFindUniqueMock,
   whatsAppInstanceUpdateMock: _whatsAppInstanceUpdateMock,
   ingestInboundWhatsAppMessageMock,
   normalizeUpsertEventMock,
@@ -135,6 +139,7 @@ const {
 const ORIGINAL_ENV = {
   enforce: process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE,
   secret: process.env.WHATSAPP_WEBHOOK_HMAC_SECRET,
+  defaultInstanceId: process.env.WHATSAPP_DEFAULT_INSTANCE_ID,
 };
 
 const buildApp = () => {
@@ -160,9 +165,15 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
   beforeEach(() => {
     process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'true';
     process.env.WHATSAPP_WEBHOOK_HMAC_SECRET = 'unit-secret';
+    if (ORIGINAL_ENV.defaultInstanceId) {
+      process.env.WHATSAPP_DEFAULT_INSTANCE_ID = ORIGINAL_ENV.defaultInstanceId;
+    } else {
+      delete process.env.WHATSAPP_DEFAULT_INSTANCE_ID;
+    }
     refreshWhatsAppEnv();
     resetMetrics();
     prismaMock.whatsAppInstance.findFirst.mockReset();
+    prismaMock.whatsAppInstance.findUnique.mockReset();
     prismaMock.whatsAppInstance.update.mockReset();
     prismaMock.message.findFirst.mockReset();
     prismaMock.message.findFirst.mockResolvedValue(null);
@@ -722,7 +733,7 @@ describe('WhatsApp webhook instance resolution', () => {
 
     expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
       where: { id: 'stored-instance' },
-      data: { brokerId: 'stored-instance' },
+      data: { brokerId: uuid },
     });
 
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledWith(
@@ -732,6 +743,212 @@ describe('WhatsApp webhook instance resolution', () => {
       })
     );
   });
+
+  it('reuses persisted instances for sequential Baileys events sharing the same broker id', async () => {
+    const app = buildApp();
+    const storedInstanceId = 'stored-instance';
+    const rawBrokerId = 'baileys-instance';
+    const tenantId = 'tenant-uuid';
+
+    prismaMock.whatsAppInstance.findFirst.mockReset();
+    prismaMock.whatsAppInstance.findFirst
+      .mockResolvedValueOnce({ id: storedInstanceId, brokerId: storedInstanceId, tenantId })
+      .mockResolvedValueOnce({ id: storedInstanceId, brokerId: rawBrokerId, tenantId });
+
+    prismaMock.whatsAppInstance.update.mockReset();
+    prismaMock.whatsAppInstance.update.mockResolvedValue({
+      id: storedInstanceId,
+      brokerId: rawBrokerId,
+      tenantId,
+    });
+
+    ingestInboundWhatsAppMessageMock.mockReset();
+    ingestInboundWhatsAppMessageMock.mockResolvedValue(true);
+
+    normalizeUpsertEventMock.mockReset();
+    normalizeUpsertEventMock.mockReturnValue({
+      normalized: [
+        {
+          messageIndex: 0,
+          messageId: 'wamid-1',
+          sessionId: null,
+          brokerId: rawBrokerId,
+          tenantId,
+          messageType: 'text',
+          messageUpsertType: 'notify',
+          isGroup: false,
+          data: {
+            instanceId: storedInstanceId,
+            tenantId,
+            direction: 'INBOUND',
+            metadata: {
+              instanceId: storedInstanceId,
+              tenantId,
+            },
+            message: {
+              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid-1' },
+            },
+            contact: { phone: '+55 11 99999-9999' },
+          },
+        },
+      ],
+    });
+
+    const payload = {
+      event: 'WHATSAPP_MESSAGES_UPSERT',
+      instanceId: rawBrokerId,
+      tenantId,
+      payload: {
+        instanceId: rawBrokerId,
+        tenantId,
+        messages: [
+          {
+            key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid-1' },
+          },
+        ],
+      },
+    };
+
+    const firstResponse = await request(app).post('/api/webhooks/whatsapp').send(payload);
+    expect(firstResponse.status).toBe(204);
+    await inboundQueueTesting.waitForIdle();
+
+    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
+      where: { id: storedInstanceId },
+      data: { brokerId: rawBrokerId },
+    });
+
+    expect(normalizeUpsertEventMock).toHaveBeenCalledTimes(1);
+    expect(normalizeUpsertEventMock.mock.calls[0]?.[1]).toMatchObject({
+      brokerId: rawBrokerId,
+      instanceId: storedInstanceId,
+      tenantId,
+    });
+
+    const firstEnvelope = ingestInboundWhatsAppMessageMock.mock.calls[0]?.[0];
+    expect(firstEnvelope?.instanceId).toBe(storedInstanceId);
+    expect(firstEnvelope?.tenantId).toBe(tenantId);
+    expect(firstEnvelope?.message?.metadata?.brokerId).toBe(rawBrokerId);
+
+    const secondResponse = await request(app).post('/api/webhooks/whatsapp').send(payload);
+    expect(secondResponse.status).toBe(204);
+    await inboundQueueTesting.waitForIdle();
+
+    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(2);
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
+
+    expect(normalizeUpsertEventMock).toHaveBeenCalledTimes(2);
+    expect(normalizeUpsertEventMock.mock.calls[1]?.[1]).toMatchObject({
+      brokerId: rawBrokerId,
+      instanceId: storedInstanceId,
+      tenantId,
+    });
+
+    const secondEnvelope = ingestInboundWhatsAppMessageMock.mock.calls[1]?.[0];
+    expect(secondEnvelope?.instanceId).toBe(storedInstanceId);
+    expect(secondEnvelope?.tenantId).toBe(tenantId);
+    expect(secondEnvelope?.message?.metadata?.brokerId).toBe(rawBrokerId);
+  });
+
+  it('falls back to the default instance id when direct broker reconciliation misses', async () => {
+    const app = buildApp();
+    const defaultInstanceId = 'default-instance';
+    const rawBrokerId = 'baileys-instance';
+    const tenantId = 'tenant-uuid';
+
+    process.env.WHATSAPP_DEFAULT_INSTANCE_ID = defaultInstanceId;
+    refreshWhatsAppEnv();
+
+    prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(null);
+    prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce({
+      id: defaultInstanceId,
+      brokerId: defaultInstanceId,
+      tenantId,
+    });
+
+    prismaMock.whatsAppInstance.update.mockResolvedValue({
+      id: defaultInstanceId,
+      brokerId: rawBrokerId,
+      tenantId,
+    });
+
+    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
+
+    normalizeUpsertEventMock.mockReturnValue({
+      normalized: [
+        {
+          messageIndex: 0,
+          messageId: 'wamid-legacy',
+          sessionId: null,
+          brokerId: rawBrokerId,
+          tenantId,
+          messageType: 'text',
+          messageUpsertType: 'notify',
+          isGroup: false,
+          data: {
+            instanceId: defaultInstanceId,
+            tenantId,
+            direction: 'INBOUND',
+            metadata: {
+              instanceId: defaultInstanceId,
+              tenantId,
+            },
+            message: {
+              key: { remoteJid: '5511888888888@s.whatsapp.net', id: 'wamid-legacy' },
+            },
+            contact: { phone: '+55 11 88888-8888' },
+          },
+        },
+      ],
+    });
+
+    const payload = {
+      event: 'WHATSAPP_MESSAGES_UPSERT',
+      instanceId: rawBrokerId,
+      tenantId,
+      payload: {
+        instanceId: rawBrokerId,
+        tenantId,
+        messages: [
+          {
+            key: { remoteJid: '5511888888888@s.whatsapp.net', id: 'wamid-legacy' },
+          },
+        ],
+      },
+    };
+
+    const response = await request(app).post('/api/webhooks/whatsapp').send(payload);
+    expect(response.status).toBe(204);
+
+    await inboundQueueTesting.waitForIdle();
+
+    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
+    expect(prismaMock.whatsAppInstance.findUnique).toHaveBeenCalledTimes(1);
+    expect(prismaMock.whatsAppInstance.findUnique).toHaveBeenCalledWith({
+      where: { id: defaultInstanceId },
+      select: { id: true, brokerId: true, tenantId: true },
+    });
+
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
+    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
+      where: { id: defaultInstanceId },
+      data: { brokerId: rawBrokerId },
+    });
+
+    expect(normalizeUpsertEventMock).toHaveBeenCalledTimes(1);
+    expect(normalizeUpsertEventMock.mock.calls[0]?.[1]).toMatchObject({
+      brokerId: rawBrokerId,
+      instanceId: defaultInstanceId,
+      tenantId,
+    });
+
+    const envelope = ingestInboundWhatsAppMessageMock.mock.calls[0]?.[0];
+    expect(envelope?.instanceId).toBe(defaultInstanceId);
+    expect(envelope?.tenantId).toBe(tenantId);
+    expect(envelope?.message?.metadata?.brokerId).toBe(rawBrokerId);
+  });
 });
 
 describe('WhatsApp webhook poll choice events', () => {
@@ -739,6 +956,11 @@ describe('WhatsApp webhook poll choice events', () => {
     process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'false';
     delete process.env.WHATSAPP_WEBHOOK_HMAC_SECRET;
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
+    if (ORIGINAL_ENV.defaultInstanceId) {
+      process.env.WHATSAPP_DEFAULT_INSTANCE_ID = ORIGINAL_ENV.defaultInstanceId;
+    } else {
+      delete process.env.WHATSAPP_DEFAULT_INSTANCE_ID;
+    }
     refreshWhatsAppEnv();
     resetMetrics();
     recordPollChoiceVoteMock.mockReset();
@@ -758,6 +980,7 @@ describe('WhatsApp webhook poll choice events', () => {
     getPollMetadataMock.mockResolvedValue(null);
     prismaMock.message.findFirst.mockReset();
     prismaMock.message.findFirst.mockResolvedValue(null);
+    prismaMock.whatsAppInstance.findUnique.mockReset();
     syncPollChoiceStateMock.mockReset();
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
