@@ -769,10 +769,22 @@ const upsertLeadFromInbound = async ({
       ? message.content.trim().slice(0, 140)
       : null;
 
-  const existingLead = await prisma.lead.findFirst({ where: { tenantId, contactId } });
-  const lead = existingLead
-    ? await prisma.lead.update({ where: { id: existingLead.id }, data: { lastContactAt } })
-    : await prisma.lead.create({ data: { tenantId, contactId, status: 'NEW', source: 'WHATSAPP', lastContactAt } });
+  // Operação idempotente: upsert garante que não haverá duplicação mesmo com retries
+  const lead = await prisma.lead.upsert({
+    where: {
+      tenantId_contactId: { tenantId, contactId },
+    },
+    update: {
+      lastContactAt,
+    },
+    create: {
+      tenantId,
+      contactId,
+      status: 'NEW',
+      source: 'WHATSAPP',
+      lastContactAt,
+    },
+  });
 
   leadLastContactGauge.set({ tenantId, leadId: lead.id }, lastContactAt.getTime());
 
