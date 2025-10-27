@@ -5,7 +5,7 @@ import {
   __testing,
 } from './inbound-lead-service';
 
-import type * as TicketService from '../../../../services/ticket-service';
+import type * as TicketService from '../../../services/ticket-service';
 import type { PrismaClient } from '@prisma/client';
 
 vi.mock('../../../lib/socket-registry.js', () => {
