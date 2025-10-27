@@ -1592,8 +1592,18 @@ const processStandardInboundEvent = async (
 
     let downloadResult: Awaited<ReturnType<typeof downloadViaBaileys>> | Awaited<ReturnType<typeof downloadViaBroker>> | null = null;
 
+    // Otimização: download com timeout curto para não bloquear processamento
     try {
-      downloadResult = await downloadViaBaileys(mediaDetails.raw, mediaDetails.rawKey ?? undefined);
+      downloadResult = await Promise.race([
+        downloadViaBaileys(mediaDetails.raw, mediaDetails.rawKey ?? undefined),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)), // Timeout de 5s
+      ]);
+      
+      if (!downloadResult) {
+        logger.debug('🎯 LeadEngine • WhatsApp :: ⏱️ Download de mídia via Baileys timeout - será processado em background', {
+          requestId, tenantId, instanceId, messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
+        });
+      }
     } catch (error) {
       logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao baixar mídia inbound diretamente via Baileys', {
         error: mapErrorForLog(error), requestId, tenantId, instanceId, brokerId: resolvedBrokerId ?? null,
@@ -1617,16 +1627,26 @@ const processStandardInboundEvent = async (
           hasDirectPath: Boolean(mediaDetails.directPath), hasMediaKey: Boolean(mediaDetails.mediaKey),
         });
 
+        // Otimização: download com timeout curto para não bloquear processamento
         try {
-          downloadResult = await downloadViaBroker({
-            brokerId: resolvedBrokerId ?? null,
-            instanceId: instanceId as string,
-            tenantId,
-            mediaKey: mediaDetails.mediaKey,
-            directPath: mediaDetails.directPath,
-            messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
-            mediaType: (normalizedMessage as any).type,
-          });
+          downloadResult = await Promise.race([
+            downloadViaBroker({
+              brokerId: resolvedBrokerId ?? null,
+              instanceId: instanceId as string,
+              tenantId,
+              mediaKey: mediaDetails.mediaKey,
+              directPath: mediaDetails.directPath,
+              messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
+              mediaType: (normalizedMessage as any).type,
+            }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)), // Timeout de 8s
+          ]);
+          
+          if (!downloadResult) {
+            logger.debug('🎯 LeadEngine • WhatsApp :: ⏱️ Download de mídia via broker timeout - será processado em background', {
+              requestId, tenantId, instanceId, messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
+            });
+          }
         } catch (error) {
           logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao baixar mídia inbound via broker', {
             error: mapErrorForLog(error), requestId, tenantId, instanceId, brokerId: resolvedBrokerId ?? null,
