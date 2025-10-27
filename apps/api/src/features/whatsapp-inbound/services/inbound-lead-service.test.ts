@@ -96,6 +96,38 @@ describe('emitRealtimeUpdatesForInbound', () => {
     );
   });
 
+  it('propagates null instance identifiers in realtime payloads', async () => {
+    (prismaClientMock.ticket.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'ticket-cross',
+      tenantId: 'tenant-database',
+      agreementId: 'agreement-cross',
+      status: 'OPEN',
+      updatedAt: new Date('2024-01-03T09:00:00.000Z'),
+      queueId: 'queue-cross',
+      subject: 'Contato WhatsApp',
+      metadata: {},
+    });
+
+    await emitRealtimeUpdatesForInbound({
+      tenantId: 'tenant-event',
+      ticketId: 'ticket-cross',
+      instanceId: null,
+      message: baseMessage,
+      providerMessageId: 'wamid.cross',
+    });
+
+    expect(emitToTenantMock).toHaveBeenCalledWith(
+      'tenant-event',
+      'tickets.updated',
+      expect.objectContaining({ instanceId: null })
+    );
+    expect(emitToTicketMock).toHaveBeenCalledWith(
+      'ticket-cross',
+      'tickets.updated',
+      expect.objectContaining({ instanceId: null })
+    );
+  });
+
   it('skips redundant realtime updates when message creation already emitted them', async () => {
     await emitRealtimeUpdatesForInbound({
       tenantId: 'tenant-event',

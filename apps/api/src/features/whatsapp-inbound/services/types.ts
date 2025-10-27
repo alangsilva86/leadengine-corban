@@ -32,7 +32,7 @@ export interface InboundMessageDetails {
 
 export interface InboundWhatsAppEvent {
   id: string;
-  instanceId: string;
+  instanceId: string | null;
   direction: 'INBOUND' | 'OUTBOUND';
   chatId: string | null;
   externalId?: string | null;

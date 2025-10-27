@@ -672,7 +672,7 @@ const emitRealtimeUpdatesForInbound = async ({
 }: {
   tenantId: string;
   ticketId: string;
-  instanceId: string;
+  instanceId: string | null;
   message: Awaited<ReturnType<typeof sendMessageService>>;
   providerMessageId: string | null;
   emitTicketRealtimeEvents?: boolean;
@@ -703,7 +703,10 @@ const emitRealtimeUpdatesForInbound = async ({
 
     const agreementId = resolveTicketAgreementId(ticket);
     const ticketPayload = {
-      tenantId, ticketId, agreementId, instanceId,
+      tenantId,
+      ticketId,
+      agreementId,
+      instanceId: instanceId ?? null,
       messageId: message.id, providerMessageId,
       ticketStatus: ticket.status,
       ticketUpdatedAt: ticket.updatedAt?.toISOString?.() ?? new Date().toISOString(),
@@ -1181,7 +1184,7 @@ export const ingestInboundWhatsAppMessage = async (
   // instanceId pode ser null/undefined, conforme tipo revisado (string | null).
   const event: InboundWhatsAppEvent = {
     id: (envelope as any).message.id ?? messageId,
-    instanceId,
+    instanceId: instanceId ?? null,
     direction: (envelope as any).message.direction,
     chatId,
     externalId: (envelope as any).message.externalId ?? messageId,
