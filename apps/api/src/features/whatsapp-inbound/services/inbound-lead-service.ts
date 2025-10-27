@@ -37,6 +37,7 @@ import {
 } from '../../../lib/metrics';
 import { createPerformanceTracker } from '../../../lib/performance-tracker';
 import { createCache, cacheManager, type SimpleCache } from '../../../lib/simple-cache';
+import { sendToFailedMessageDLQ, shouldSendToDLQ } from '../../../lib/failed-message-dlq';
 import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
@@ -1831,6 +1832,19 @@ const processStandardInboundEvent = async (
     logger.error('🎯 LeadEngine • WhatsApp :: 💾 Falha ao salvar a mensagem inbound na timeline do ticket', {
       error: mapErrorForLog(error), requestId, tenantId, ticketId, messageId: (message as any).id ?? null,
     });
+    
+    // Envia para DLQ após falha crítica
+    sendToFailedMessageDLQ(
+      messageExternalId ?? (normalizedMessage as any).id ?? 'unknown',
+      tenantId,
+      error,
+      {
+        instanceId,
+        failureCount: 1,
+        payload: normalizedMessage,
+        metadata: { requestId, ticketId, reason: 'message_persistence_failed' },
+      }
+    );
   }
 
   if (persistedMessage) {
