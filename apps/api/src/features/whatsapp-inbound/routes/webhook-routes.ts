@@ -257,6 +257,38 @@ const buildSelectedOptionSummaries = (
   return normalized;
 };
 
+const buildPollVoteMessageContent = (
+  selectedOptions: PollChoiceSelectedOptionPayload[]
+): string | null => {
+  const summaries = buildSelectedOptionSummaries(selectedOptions);
+  if (summaries.length === 0) {
+    return null;
+  }
+
+  const uniqueTitles: string[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const { title } of summaries) {
+    const normalized = sanitizeOptionText(title);
+    if (!normalized) {
+      continue;
+    }
+
+    if (seenTitles.has(normalized)) {
+      continue;
+    }
+
+    seenTitles.add(normalized);
+    uniqueTitles.push(normalized);
+  }
+
+  if (uniqueTitles.length === 0) {
+    return null;
+  }
+
+  return uniqueTitles.length === 1 ? uniqueTitles[0] : uniqueTitles.join(', ');
+};
+
 const toTrimmedString = (value: unknown): string | null => {
   if (typeof value === 'string') {
     const trimmed = value.trim();

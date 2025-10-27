@@ -162,6 +162,67 @@ describe('WhatsApp webhook poll question propagation', () => {
     vi.clearAllMocks();
   });
 
+  it('replaces poll placeholder content with selected option titles', async () => {
+    const now = new Date().toISOString();
+    const pollId = 'poll-placeholder';
+    const voterJid = '5511999999999@s.whatsapp.net';
+
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId,
+        options: [{ id: 'opt-yes', title: 'Sim 👍', index: 0 }],
+        votes: {
+          [voterJid]: {
+            optionIds: ['opt-yes'],
+            selectedOptions: [{ id: 'opt-yes', title: 'Sim 👍' }],
+            messageId: 'wamid-placeholder',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-yes': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-yes': 1 } },
+        updatedAt: now,
+        context: { tenantId: 'tenant-123' },
+      },
+      selectedOptions: [{ id: 'opt-yes', title: 'Sim 👍' }],
+    });
+
+    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
+      id: 'message-db-id',
+      externalId: 'wamid-placeholder',
+      content: '[Mensagem recebida via WhatsApp]',
+      caption: '',
+      type: 'POLL',
+      metadata: {},
+    } as never);
+
+    storageUpdateMessageMock.mockResolvedValueOnce({ tenantId: 'tenant-123', ticketId: null });
+
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      tenantId: 'tenant-123',
+      payload: {
+        pollId,
+        voterJid,
+        messageId: 'wamid-placeholder',
+        selectedOptionIds: ['opt-yes'],
+        selectedOptions: [{ id: 'opt-yes', title: 'Sim 👍' }],
+        options: [{ id: 'opt-yes', title: 'Sim 👍', selected: true }],
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-yes': 1 } },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(storageUpdateMessageMock).toHaveBeenCalledTimes(1);
+
+    const updatePayload = storageUpdateMessageMock.mock.calls[0]?.[2];
+    expect(updatePayload?.content).toBe('Sim 👍');
+    expect(updatePayload?.text).toBe('Sim 👍');
+    expect(updatePayload?.caption).toBe('Sim 👍');
+  });
+
   it('propagates poll question into rewrite metadata and handler parameters', async () => {
     const now = new Date().toISOString();
     const pollQuestion = 'Qual é a melhor opção?';
