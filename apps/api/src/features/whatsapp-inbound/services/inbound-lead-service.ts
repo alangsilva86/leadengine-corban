@@ -36,6 +36,7 @@ import {
   whatsappInboundMetrics,
 } from '../../../lib/metrics';
 import { createPerformanceTracker } from '../../../lib/performance-tracker';
+import { createCache, cacheManager, type SimpleCache } from '../../../lib/simple-cache';
 import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
@@ -296,9 +297,30 @@ const extractMediaDownloadDetails = (
 /**
  * Reinicia estado interno de deduplicação e caches de filas (apenas para testes).
  */
+// Cache de campanhas ativas por instância (TTL de 5 minutos)
+const campaignCache: SimpleCache<string, Array<{ id: string; name: string; status: string; whatsappInstanceId: string | null; tenantId: string }>> = createCache({
+  name: 'whatsapp-campaigns',
+  ttlMs: 5 * 60 * 1000, // 5 minutos
+  maxSize: 500,
+});
+
+// Registra o cache para limpeza automática
+cacheManager.register(campaignCache);
+
 export const resetInboundLeadServiceTestState = (): void => {
   resetDedupeState();
   queueCacheByTenant.clear();
+  campaignCache.clear();
+};
+
+/**
+ * Invalida cache de campanhas para uma instância específica
+ * (deve ser chamado ao criar/atualizar/desativar campanhas)
+ */
+export const invalidateCampaignCache = (tenantId: string, instanceId: string): void => {
+  const cacheKey = `${tenantId}:${instanceId}`;
+  campaignCache.delete(cacheKey);
+  logger.debug('Campaign cache invalidated', { tenantId, instanceId });
 };
 
 // Configurações de inclusão de relacionamentos para contatos.
@@ -1430,16 +1452,19 @@ const processStandardInboundEvent = async (
   const tenantId = instance.tenantId;
 
   // Busca campanhas ativas; se inexistentes, provisiona fallback.
-  // Otimização: select apenas campos necessários para redução de carga
-  const campaigns = await prisma.campaign.findMany({
-    where: { tenantId, whatsappInstanceId: instanceId as string, status: 'active' },
-    select: {
-      id: true,
-      name: true,
-      status: true,
-      whatsappInstanceId: true,
-      tenantId: true,
-    },
+  // Otimização: usa cache para evitar queries repetidas ao banco
+  const cacheKey = `${tenantId}:${instanceId}`;
+  const campaigns = await campaignCache.getOrSet(cacheKey, async () => {
+    return prisma.campaign.findMany({
+      where: { tenantId, whatsappInstanceId: instanceId as string, status: 'active' },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        whatsappInstanceId: true,
+        tenantId: true,
+      },
+    });
   });
 
   if (!campaigns.length) {
