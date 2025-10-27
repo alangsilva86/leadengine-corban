@@ -1077,12 +1077,23 @@ export const ingestInboundWhatsAppMessage = async (
     const { pollId, question, choiceText } = extractPollVote(payload);
 
     if (choiceText || question) {
+      // Quando a enquete possui texto legível, injeta uma mensagem de texto na timeline
+      // e define o metadata apropriado para que a pipeline padrão processe normalmente.
       const finalText = buildPollVoteText(question, choiceText);
 
-      const metadata = {
+      // Construímos nova mensagem tipo TEXT e substituímos o payload.message
+      (payload as any).message = {
+        type: 'TEXT',
+        text: finalText,
+        // Define um id para a mensagem, reaproveitando o id do envelope se existir
+        id: (envelope as any)?.message?.id ?? externalId,
+      };
+
+      // Define metadata consistente com a pipeline, preservando informações essenciais
+      (payload as any).metadata = {
+        ...metaIn,
         placeholder: false,
-        direction: 'inbound',
-        // chatId é mantido apenas em metadata, não no modelo Message.
+        direction: 'INBOUND',
         chatId: chatId ?? undefined,
         source: { channel: 'whatsapp', transport: 'baileys', event: 'poll_update' },
         poll: {
@@ -1101,61 +1112,23 @@ export const ingestInboundWhatsAppMessage = async (
           },
         },
       };
-
-      try {
-        // Upsert idempotente por (tenantId, externalId). Note que não enviamos chatId ou ticketId aqui.
-        const created = await prisma.message.upsert({
-          where: { tenantId_externalId: { tenantId, externalId } },
-          update: {
-            type: 'TEXT',
-            content: finalText,
-            text: finalText,
-            caption: finalText,
-            metadata,
-            direction: 'INBOUND',
-          },
-          create: {
-            tenantId,
-            externalId,
-            type: 'TEXT',
-            content: finalText,
-            text: finalText,
-            caption: finalText,
-            metadata,
-            direction: 'INBOUND',
-            // instanceId é opcional; omitimos quando indefinido (evita erro de tipo).
-            ...(instanceId ? { instanceId } : {}),
-          },
-        });
-
-        if (created?.tenantId && created?.id) {
-          await emitToTicket(created.ticketId ?? '', 'messages.updated', {
-            tenantId: created.tenantId, ticketId: created.ticketId, messageId: created.id,
-          });
-        }
-
-        inboundMessagesProcessedCounter.inc({ origin: 'webhook', tenantId, instanceId: instanceId ?? 'unknown' });
-        return true;
-      } catch (error) {
-        logger.error('whatsappInbound.ingest.pollUpsertError', {
-          error: mapErrorForLog(error), tenantId, instanceId, externalId,
-        });
-        return false;
-      }
+    } else {
+      // Se não houver texto legível: marca placeholder em metadata e segue pipeline padrão.
+      (payload as any).metadata = {
+        ...metaIn,
+        placeholder: true,
+        direction: 'INBOUND',
+        source: { channel: 'whatsapp', transport: 'baileys', event: 'poll_update' },
+        poll: {
+          ...(asRecord((metaIn as any).poll)),
+          id: asRecord((metaIn as any).poll).id ?? pollId ?? undefined,
+          updatedAt: new Date().toISOString(),
+        },
+      };
     }
 
-    // Se não houver texto legível, marca placeholder em metadata e segue pipeline padrão.
-    (payload as any).metadata = {
-      ...metaIn,
-      placeholder: true,
-      direction: 'inbound',
-      source: { channel: 'whatsapp', transport: 'baileys', event: 'poll_update' },
-      poll: {
-        ...(asRecord((metaIn as any).poll)),
-        id: asRecord((metaIn as any).poll).id ?? pollId ?? undefined,
-        updatedAt: new Date().toISOString(),
-      },
-    };
+    // Após configurar o payload para enquetes, não retorna aqui. A pipeline padrão
+    // continuará e cuidará de persistir a mensagem e disparar os eventos necessários.
   }
 
   // Pipeline padrão (inclusive para poll_update sem texto).
