@@ -33,7 +33,11 @@ import { maskDocument, maskPhone } from '../../../lib/pii';
 import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
+  whatsappInboundMetrics,
 } from '../../../lib/metrics';
+import { createPerformanceTracker } from '../../../lib/performance-tracker';
+import { createCache, cacheManager, type SimpleCache } from '../../../lib/simple-cache';
+import { sendToFailedMessageDLQ, shouldSendToDLQ } from '../../../lib/failed-message-dlq';
 import {
   createTicket as createTicketService,
   sendMessage as sendMessageService,
@@ -294,9 +298,30 @@ const extractMediaDownloadDetails = (
 /**
  * Reinicia estado interno de deduplicação e caches de filas (apenas para testes).
  */
+// Cache de campanhas ativas por instância (TTL de 5 minutos)
+const campaignCache: SimpleCache<string, Array<{ id: string; name: string; status: string; whatsappInstanceId: string | null; tenantId: string }>> = createCache({
+  name: 'whatsapp-campaigns',
+  ttlMs: 5 * 60 * 1000, // 5 minutos
+  maxSize: 500,
+});
+
+// Registra o cache para limpeza automática
+cacheManager.register(campaignCache);
+
 export const resetInboundLeadServiceTestState = (): void => {
   resetDedupeState();
   queueCacheByTenant.clear();
+  campaignCache.clear();
+};
+
+/**
+ * Invalida cache de campanhas para uma instância específica
+ * (deve ser chamado ao criar/atualizar/desativar campanhas)
+ */
+export const invalidateCampaignCache = (tenantId: string, instanceId: string): void => {
+  const cacheKey = `${tenantId}:${instanceId}`;
+  campaignCache.delete(cacheKey);
+  logger.debug('Campaign cache invalidated', { tenantId, instanceId });
 };
 
 // Configurações de inclusão de relacionamentos para contatos.
@@ -526,9 +551,14 @@ const ensureContact = async (
   };
 
   const persisted = await prisma.$transaction(async (tx) => {
+    // Otimização: include apenas no update/create, eliminando query adicional
     const target =
       existing !== null
-        ? await tx.contact.update({ where: { id: existing.id }, data: contactData })
+        ? await tx.contact.update({
+            where: { id: existing.id },
+            data: contactData,
+            include: CONTACT_RELATIONS_INCLUDE,
+          })
         : await tx.contact.create({
             data: {
               tenantId,
@@ -541,15 +571,14 @@ const ensureContact = async (
               lastInteractionAt: interactionDate,
               lastActivityAt: interactionDate,
             },
+            include: CONTACT_RELATIONS_INCLUDE,
           });
 
     await upsertPrimaryPhone(tx, tenantId, target.id, normalizedPhone ?? undefined);
     await syncContactTags(tx, tenantId, target.id, tags);
 
-    return tx.contact.findUniqueOrThrow({
-      where: { id: target.id },
-      include: CONTACT_RELATIONS_INCLUDE,
-    });
+    // Retorna diretamente o target com relações já carregadas
+    return target;
   });
 
   return persisted;
@@ -767,10 +796,22 @@ const upsertLeadFromInbound = async ({
       ? message.content.trim().slice(0, 140)
       : null;
 
-  const existingLead = await prisma.lead.findFirst({ where: { tenantId, contactId } });
-  const lead = existingLead
-    ? await prisma.lead.update({ where: { id: existingLead.id }, data: { lastContactAt } })
-    : await prisma.lead.create({ data: { tenantId, contactId, status: 'NEW', source: 'WHATSAPP', lastContactAt } });
+  // Operação idempotente: upsert garante que não haverá duplicação mesmo com retries
+  const lead = await prisma.lead.upsert({
+    where: {
+      tenantId_contactId: { tenantId, contactId },
+    },
+    update: {
+      lastContactAt,
+    },
+    create: {
+      tenantId,
+      contactId,
+      status: 'NEW',
+      source: 'WHATSAPP',
+      lastContactAt,
+    },
+  });
 
   leadLastContactGauge.set({ tenantId, leadId: lead.id }, lastContactAt.getTime());
 
@@ -1036,6 +1077,9 @@ const extractPollVote = (payload: unknown): PollVote => {
 export const ingestInboundWhatsAppMessage = async (
   envelope: InboundWhatsAppEnvelope
 ): Promise<boolean> => {
+  const perfTracker = createPerformanceTracker({ operation: 'ingestInboundWhatsAppMessage' });
+  perfTracker.start('total');
+
   // Proteção inicial: envelope ou mensagem malformada.
   if (!envelope || !(envelope as any).message) {
     logger.warn('whatsappInbound.ingest.malformedEnvelope', { envelopeKeys: Object.keys(envelope || {}) });
@@ -1409,8 +1453,19 @@ const processStandardInboundEvent = async (
   const tenantId = instance.tenantId;
 
   // Busca campanhas ativas; se inexistentes, provisiona fallback.
-  const campaigns = await prisma.campaign.findMany({
-    where: { tenantId, whatsappInstanceId: instanceId as string, status: 'active' },
+  // Otimização: usa cache para evitar queries repetidas ao banco
+  const cacheKey = `${tenantId}:${instanceId}`;
+  const campaigns = await campaignCache.getOrSet(cacheKey, async () => {
+    return prisma.campaign.findMany({
+      where: { tenantId, whatsappInstanceId: instanceId as string, status: 'active' },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        whatsappInstanceId: true,
+        tenantId: true,
+      },
+    });
   });
 
   if (!campaigns.length) {
@@ -1538,8 +1593,18 @@ const processStandardInboundEvent = async (
 
     let downloadResult: Awaited<ReturnType<typeof downloadViaBaileys>> | Awaited<ReturnType<typeof downloadViaBroker>> | null = null;
 
+    // Otimização: download com timeout curto para não bloquear processamento
     try {
-      downloadResult = await downloadViaBaileys(mediaDetails.raw, mediaDetails.rawKey ?? undefined);
+      downloadResult = await Promise.race([
+        downloadViaBaileys(mediaDetails.raw, mediaDetails.rawKey ?? undefined),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)), // Timeout de 5s
+      ]);
+      
+      if (!downloadResult) {
+        logger.debug('🎯 LeadEngine • WhatsApp :: ⏱️ Download de mídia via Baileys timeout - será processado em background', {
+          requestId, tenantId, instanceId, messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
+        });
+      }
     } catch (error) {
       logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao baixar mídia inbound diretamente via Baileys', {
         error: mapErrorForLog(error), requestId, tenantId, instanceId, brokerId: resolvedBrokerId ?? null,
@@ -1563,16 +1628,26 @@ const processStandardInboundEvent = async (
           hasDirectPath: Boolean(mediaDetails.directPath), hasMediaKey: Boolean(mediaDetails.mediaKey),
         });
 
+        // Otimização: download com timeout curto para não bloquear processamento
         try {
-          downloadResult = await downloadViaBroker({
-            brokerId: resolvedBrokerId ?? null,
-            instanceId: instanceId as string,
-            tenantId,
-            mediaKey: mediaDetails.mediaKey,
-            directPath: mediaDetails.directPath,
-            messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
-            mediaType: (normalizedMessage as any).type,
-          });
+          downloadResult = await Promise.race([
+            downloadViaBroker({
+              brokerId: resolvedBrokerId ?? null,
+              instanceId: instanceId as string,
+              tenantId,
+              mediaKey: mediaDetails.mediaKey,
+              directPath: mediaDetails.directPath,
+              messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
+              mediaType: (normalizedMessage as any).type,
+            }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)), // Timeout de 8s
+          ]);
+          
+          if (!downloadResult) {
+            logger.debug('🎯 LeadEngine • WhatsApp :: ⏱️ Download de mídia via broker timeout - será processado em background', {
+              requestId, tenantId, instanceId, messageId: messageExternalId ?? (normalizedMessage as any).id ?? null,
+            });
+          }
         } catch (error) {
           logger.error('🎯 LeadEngine • WhatsApp :: ❌ Falha ao baixar mídia inbound via broker', {
             error: mapErrorForLog(error), requestId, tenantId, instanceId, brokerId: resolvedBrokerId ?? null,
@@ -1757,6 +1832,19 @@ const processStandardInboundEvent = async (
     logger.error('🎯 LeadEngine • WhatsApp :: 💾 Falha ao salvar a mensagem inbound na timeline do ticket', {
       error: mapErrorForLog(error), requestId, tenantId, ticketId, messageId: (message as any).id ?? null,
     });
+    
+    // Envia para DLQ após falha crítica
+    sendToFailedMessageDLQ(
+      messageExternalId ?? (normalizedMessage as any).id ?? 'unknown',
+      tenantId,
+      error,
+      {
+        instanceId,
+        failureCount: 1,
+        payload: normalizedMessage,
+        metadata: { requestId, ticketId, reason: 'message_persistence_failed' },
+      }
+    );
   }
 
   if (persistedMessage) {
@@ -1919,6 +2007,20 @@ const processStandardInboundEvent = async (
         phone: maskPhone(normalizedPhone ?? null),
       });
     }
+  }
+
+  const totalDuration = perfTracker.end('total');
+  
+  // Registra métrica de latência
+  whatsappInboundMetrics.observeLatency({
+    origin: 'webhook',
+    tenantId: tenantId ?? 'unknown',
+    instanceId: (instanceId as string) ?? 'unknown',
+  }, totalDuration);
+
+  // Log de performance (apenas em debug)
+  if (totalDuration > 1000) {
+    perfTracker.logSummary('info');
   }
 
   return !!persistedMessage;
