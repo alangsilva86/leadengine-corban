@@ -2253,14 +2253,14 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
             ? existingInstance.brokerId.trim()
             : null;
 
-        if (!storedBrokerId || storedBrokerId !== existingInstance.id) {
+        if (!storedBrokerId || storedBrokerId !== rawInstanceId) {
           await prisma.whatsAppInstance.update({
             where: { id: existingInstance.id },
-            data: { brokerId: existingInstance.id },
+            data: { brokerId: rawInstanceId },
           });
         }
 
-        brokerOverride = existingInstance.id;
+        brokerOverride = rawInstanceId;
         if (!tenantOverride && existingInstance.tenantId) {
           tenantOverride = existingInstance.tenantId;
         }
