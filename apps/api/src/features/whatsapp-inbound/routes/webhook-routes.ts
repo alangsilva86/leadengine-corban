@@ -2222,11 +2222,12 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const rawPreview = toRawPreview(entry);
     const eventType = readString(eventRecord.event, (eventRecord as { type?: unknown }).type);
 
+    const defaultInstanceId = getDefaultInstanceId();
     const rawInstanceId =
       readString(
         (eventRecord as { instanceId?: unknown }).instanceId,
         envelopeRecord.instanceId
-      ) ?? getDefaultInstanceId();
+      ) ?? defaultInstanceId;
     let instanceOverride = rawInstanceId;
     let brokerOverride: string | undefined;
     let tenantOverride = readString(
@@ -2234,8 +2235,12 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       envelopeRecord.tenantId
     ) ?? undefined;
 
-    if (rawInstanceId) {
-      const existingInstance = await prisma.whatsAppInstance.findFirst({
+    const resolvedInstance = await (async () => {
+      if (!rawInstanceId) {
+        return null;
+      }
+
+      const directMatch = await prisma.whatsAppInstance.findFirst({
         where: {
           OR: [{ id: rawInstanceId }, { brokerId: rawInstanceId }],
         },
@@ -2246,13 +2251,42 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
         },
       });
 
-      if (existingInstance) {
-        instanceOverride = existingInstance.id;
-        const storedBrokerId =
-          typeof existingInstance.brokerId === 'string' && existingInstance.brokerId.trim().length > 0
-            ? existingInstance.brokerId.trim()
-            : null;
+      if (directMatch) {
+        return directMatch;
+      }
 
+      if (!defaultInstanceId || defaultInstanceId === rawInstanceId) {
+        return null;
+      }
+
+      return prisma.whatsAppInstance.findUnique({
+        where: { id: defaultInstanceId },
+        select: {
+          id: true,
+          brokerId: true,
+          tenantId: true,
+        },
+      });
+    })();
+
+    if (resolvedInstance) {
+      instanceOverride = resolvedInstance.id;
+      const storedBrokerId =
+        typeof resolvedInstance.brokerId === 'string' && resolvedInstance.brokerId.trim().length > 0
+          ? resolvedInstance.brokerId.trim()
+          : null;
+
+      if (rawInstanceId && storedBrokerId !== rawInstanceId) {
+        await prisma.whatsAppInstance.update({
+          where: { id: resolvedInstance.id },
+          data: { brokerId: rawInstanceId },
+        });
+      }
+
+      brokerOverride = rawInstanceId ?? storedBrokerId ?? undefined;
+
+      if (!tenantOverride && resolvedInstance.tenantId) {
+        tenantOverride = resolvedInstance.tenantId;
         if (!storedBrokerId || storedBrokerId !== rawInstanceId) {
           await prisma.whatsAppInstance.update({
             where: { id: existingInstance.id },
