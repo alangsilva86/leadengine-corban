@@ -2227,7 +2227,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       readString(
         (eventRecord as { instanceId?: unknown }).instanceId,
         envelopeRecord.instanceId
-      ) ?? defaultInstanceId;
+      ) ?? defaultInstanceId ?? undefined;
     let instanceOverride = rawInstanceId;
     let brokerOverride: string | undefined;
     let tenantOverride = readString(
@@ -2274,12 +2274,13 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       const storedBrokerId =
         typeof resolvedInstance.brokerId === 'string' && resolvedInstance.brokerId.trim().length > 0
           ? resolvedInstance.brokerId.trim()
-          : null;
+          : undefined;
 
       if (rawInstanceId && storedBrokerId !== rawInstanceId) {
+        const brokerIdToPersist = rawInstanceId;
         await prisma.whatsAppInstance.update({
           where: { id: resolvedInstance.id },
-          data: { brokerId: rawInstanceId },
+          data: { brokerId: brokerIdToPersist },
         });
       }
 
