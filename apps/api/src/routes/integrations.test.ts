@@ -2061,6 +2061,159 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('deletes a WhatsApp instance permanently', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const inboundLeadService = await import('../features/whatsapp-inbound/services/inbound-lead-service');
+
+    const invalidateCampaignCacheSpy = vi
+      .spyOn(inboundLeadService, 'invalidateCampaignCache')
+      .mockImplementation(() => {});
+
+    const storedInstance: PrismaWhatsAppInstance = {
+      id: 'instance-delete',
+      tenantId: 'tenant-123',
+      name: 'Instance to delete',
+      brokerId: 'broker-delete',
+      phoneNumber: '+5511999999999',
+      status: 'connected',
+      connected: true,
+      lastSeenAt: new Date('2024-01-01T00:00:00.000Z'),
+      createdAt: new Date('2023-12-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-05T00:00:00.000Z'),
+      metadata: {
+        history: [{ action: 'created', by: 'user-1', at: '2024-01-05T00:00:00.000Z' }],
+      } as Prisma.JsonValue,
+    };
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockResolvedValueOnce([storedInstance]).mockResolvedValue([]);
+    prisma.campaign.updateMany.mockResolvedValue({ count: 2 } as any);
+    prisma.whatsAppSession.deleteMany.mockResolvedValue({ count: 1 } as any);
+    prisma.whatsAppInstance.delete.mockResolvedValue(storedInstance);
+    prisma.integrationState.upsert.mockResolvedValue(null as any);
+
+    const deleteSpy = vi.spyOn(whatsappBrokerClient, 'deleteInstance').mockResolvedValue();
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${storedInstance.id}?wipe=true`,
+        {
+          method: 'DELETE',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(deleteSpy).toHaveBeenCalledWith('broker-delete', {
+        instanceId: 'instance-delete',
+        wipe: true,
+      });
+      expect(prisma.campaign.updateMany).toHaveBeenCalledWith({
+        where: { tenantId: 'tenant-123', whatsappInstanceId: 'instance-delete' },
+        data: { whatsappInstanceId: null },
+      });
+      expect(prisma.whatsAppSession.deleteMany).toHaveBeenCalledWith({
+        where: { instanceId: 'instance-delete' },
+      });
+      expect(prisma.whatsAppInstance.delete).toHaveBeenCalledWith({
+        where: { id: 'instance-delete' },
+      });
+      expect(prisma.integrationState.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { key: expect.stringContaining('instance-delete') },
+        })
+      );
+      expect(invalidateCampaignCacheSpy).toHaveBeenCalledWith('tenant-123', 'instance-delete');
+      expect(emitToTenantMock).toHaveBeenCalledWith(
+        'tenant-123',
+        'whatsapp.instances.deleted',
+        expect.objectContaining({ id: 'instance-delete' })
+      );
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          id: 'instance-delete',
+          brokerStatus: 'deleted',
+          instances: [],
+        },
+      });
+    } finally {
+      invalidateCampaignCacheSpy.mockRestore();
+      await stopTestServer(server);
+    }
+  });
+
+  it('continues deletion when broker reports missing session', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { prisma } = await import('../lib/prisma');
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+
+    const storedInstance: PrismaWhatsAppInstance = {
+      id: 'instance-missing-broker',
+      tenantId: 'tenant-123',
+      name: 'Instance missing',
+      brokerId: 'broker-missing',
+      phoneNumber: null,
+      status: 'disconnected',
+      connected: false,
+      lastSeenAt: null,
+      createdAt: new Date('2023-12-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-05T00:00:00.000Z'),
+      metadata: { history: [] } as Prisma.JsonValue,
+    };
+
+    prisma.whatsAppInstance.findUnique.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockResolvedValueOnce([storedInstance]).mockResolvedValue([]);
+    prisma.campaign.updateMany.mockResolvedValue({ count: 0 } as any);
+    prisma.whatsAppSession.deleteMany.mockResolvedValue({ count: 0 } as any);
+    prisma.whatsAppInstance.delete.mockResolvedValue(storedInstance);
+    prisma.integrationState.upsert.mockResolvedValue(null as any);
+
+    const brokerError = new WhatsAppBrokerError('not found', {
+      status: 404,
+      code: 'INSTANCE_NOT_FOUND',
+    } as any);
+
+    const deleteSpy = vi
+      .spyOn(whatsappBrokerClient, 'deleteInstance')
+      .mockRejectedValue(brokerError);
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/${storedInstance.id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'x-tenant-id': 'tenant-123',
+          },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(deleteSpy).toHaveBeenCalled();
+      expect(prisma.whatsAppInstance.delete).toHaveBeenCalledWith({
+        where: { id: 'instance-missing-broker' },
+      });
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          id: 'instance-missing-broker',
+          brokerStatus: 'not_found',
+        },
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('disconnects broker-only sessions via the dedicated route and tolerates missing instances', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');

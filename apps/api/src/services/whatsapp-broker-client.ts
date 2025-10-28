@@ -579,7 +579,7 @@ export const performWhatsAppBrokerRequest = async <T>(
   }
 };
 
-type DeleteInstanceOptions = {
+export type DeleteInstanceOptions = {
   instanceId?: string;
   wipe?: boolean;
 };
