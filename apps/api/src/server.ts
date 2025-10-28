@@ -43,11 +43,13 @@ const app: Application = express();
 const server = createServer(app);
 
 const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
+const debugModule = require('./features/debug/routes/messages') as typeof import('./features/debug/routes/messages');
 let debugMessagesRouter: Router | null = null;
 
 if (shouldRegisterWhatsappDebugRoutes) {
-  const debugModule = require('./features/debug/routes/messages') as typeof import('./features/debug/routes/messages');
   debugMessagesRouter = debugModule.debugMessagesRouter;
+} else {
+  debugMessagesRouter = debugModule.buildDisabledDebugMessagesRouter();
 }
 
 type RawBodyIncomingMessage = IncomingMessage & {

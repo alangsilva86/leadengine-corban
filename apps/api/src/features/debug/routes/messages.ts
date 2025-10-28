@@ -330,4 +330,23 @@ router.get(
   })
 );
 
+const buildDisabledDebugResponse = (path: string | undefined) => ({
+  success: false as const,
+  error: {
+    code: 'WHATSAPP_DEBUG_DISABLED' as const,
+    message:
+      'Ferramentas de debug do WhatsApp estão desativadas neste ambiente. Defina FEATURE_DEBUG_WHATSAPP=1 para habilitar as rotas de observabilidade.',
+    path: path ?? null,
+  },
+});
+
+export const buildDisabledDebugMessagesRouter = (): Router => {
+  const disabledRouter: Router = Router();
+  disabledRouter.use((req: Request, res: Response) => {
+    const path = typeof req.originalUrl === 'string' ? req.originalUrl : req.path;
+    res.status(404).json(buildDisabledDebugResponse(path));
+  });
+  return disabledRouter;
+};
+
 export { router as debugMessagesRouter };
