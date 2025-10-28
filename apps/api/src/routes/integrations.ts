@@ -1058,6 +1058,88 @@ const archiveInstanceSnapshot = async (
   });
 };
 
+type InstanceArchiveRecord = {
+  deletedAt: string | null;
+};
+
+const readInstanceArchives = async (
+  tenantId: string,
+  instanceIds: string[]
+): Promise<Map<string, InstanceArchiveRecord>> => {
+  const normalizedIds = Array.from(
+    new Set(
+      instanceIds
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value) => value.length > 0)
+    )
+  );
+
+  if (normalizedIds.length === 0) {
+    return new Map();
+  }
+
+  const keyPrefix = `${WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX}${tenantId}:`;
+  const keys = normalizedIds.map((instanceId) => `${keyPrefix}${instanceId}`);
+
+  const rows = await prisma.integrationState.findMany({
+    where: { key: { in: keys } },
+    select: { key: true, value: true },
+  });
+
+  const archives = new Map<string, InstanceArchiveRecord>();
+
+  for (const row of rows) {
+    if (!row.key.startsWith(keyPrefix)) {
+      continue;
+    }
+
+    const rawInstanceId = row.key.slice(keyPrefix.length);
+    if (!rawInstanceId) {
+      continue;
+    }
+
+    const instanceId = rawInstanceId.trim();
+    if (!instanceId) {
+      continue;
+    }
+
+    let deletedAt: string | null = null;
+    const value = row.value;
+    if (value && typeof value === 'object') {
+      const raw = value as Record<string, unknown>;
+      if (typeof raw.deletedAt === 'string') {
+        const trimmed = raw.deletedAt.trim();
+        if (trimmed.length > 0) {
+          deletedAt = raw.deletedAt;
+        }
+      }
+    }
+
+    archives.set(instanceId, { deletedAt });
+  }
+
+  return archives;
+};
+
+const clearInstanceArchive = async (tenantId: string, instanceId: string): Promise<void> => {
+  const normalized = typeof instanceId === 'string' ? instanceId.trim() : '';
+  if (!normalized) {
+    return;
+  }
+
+  const key = buildInstanceArchiveKey(tenantId, normalized);
+
+  try {
+    await prisma.integrationState.delete({ where: { key } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return;
+    }
+
+    throw error;
+  }
+};
+
 const mapDbStatusToNormalized = (
   status: WhatsAppInstanceStatus | null | undefined
 ): NormalizedInstance['status'] => {
@@ -2029,6 +2111,11 @@ const syncInstancesFromBroker = async (
     return { instances: existing, snapshots: brokerSnapshots };
   }
 
+  const snapshotInstanceIds = brokerSnapshots
+    .map((snapshot) => (typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : ''))
+    .filter((value) => value.length > 0);
+  const archivedInstances = await readInstanceArchives(tenantId, snapshotInstanceIds);
+
   const existingById = new Map(existing.map((item) => [item.id, item]));
   const existingByBrokerId = new Map<string, StoredInstance>();
 
@@ -2250,6 +2337,16 @@ const syncInstancesFromBroker = async (
         unchangedIds.push(existingInstance.id);
       }
     } else {
+      const archiveRecord = archivedInstances.get(instanceId);
+      if (archiveRecord?.deletedAt) {
+        logger.info('whatsapp.instances.sync.skipDeleted', {
+          tenantId,
+          instanceId,
+          deletedAt: archiveRecord.deletedAt,
+        });
+        continue;
+      }
+
       logger.info('whatsapp.instances.sync.createMissing', {
         tenantId,
         instanceId,
@@ -2918,6 +3015,226 @@ const normalizeSessionStatus = (status: BrokerSessionStatus | null | undefined) 
   };
 };
 
+// POST /api/integrations/whatsapp/instances - Create WhatsApp instance
+router.post(
+  '/whatsapp/instances',
+  requireTenant,
+  body('name')
+    .isString()
+    .withMessage('Nome da instância é obrigatório.')
+    .bail()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage('Nome da instância é obrigatório.'),
+  body('id')
+    .optional({ values: 'falsy' })
+    .isString()
+    .withMessage(INVALID_INSTANCE_ID_MESSAGE)
+    .bail()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage(INVALID_INSTANCE_ID_MESSAGE),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = resolveRequestTenantId(req);
+    const actorId = resolveRequestActorId(req);
+
+    const bodyPayload = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+    const name = typeof bodyPayload.name === 'string' ? bodyPayload.name.trim() : '';
+    const explicitId = typeof bodyPayload.id === 'string' ? bodyPayload.id.trim() : '';
+    const instanceId = explicitId || name || resolveDefaultInstanceId();
+
+    let existing: { id: string } | null = null;
+    try {
+      existing = await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_id: {
+            tenantId,
+            id: instanceId,
+          },
+        },
+        select: { id: true },
+      });
+    } catch (error) {
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (existing) {
+      res.status(409).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_ALREADY_EXISTS',
+          message: 'Já existe uma instância WhatsApp com esse identificador.',
+        },
+      });
+      return;
+    }
+
+    logger.info('whatsapp.instances.create.request', {
+      tenantId,
+      actorId,
+      name,
+      instanceId,
+    });
+
+    let brokerInstance: BrokerWhatsAppInstance;
+    try {
+      try {
+        whatsappHttpRequestsCounter?.inc?.();
+      } catch {
+        // metrics are best-effort
+      }
+
+      brokerInstance = await whatsappBrokerClient.createInstance({
+        tenantId,
+        name,
+        instanceId,
+      });
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+      }
+
+      if (error instanceof WhatsAppBrokerError) {
+        logger.error('whatsapp.instances.create.brokerFailed', {
+          tenantId,
+          actorId,
+          instanceId,
+          error: describeErrorForLog(error),
+        });
+        respondWhatsAppBrokerFailure(res, error);
+        return;
+      }
+
+      logger.error('whatsapp.instances.create.unexpected', {
+        tenantId,
+        actorId,
+        instanceId,
+        error: describeErrorForLog(error),
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_CREATE_FAILED',
+          message: 'Falha inesperada ao criar instância WhatsApp.',
+        },
+      });
+      return;
+    }
+
+    const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
+    const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
+    const brokerNameCandidate = typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
+    const displayName = brokerNameCandidate.length > 0 ? brokerNameCandidate : name;
+    const mappedStatus = mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
+    const connected = Boolean(brokerInstance.connected ?? (mappedStatus === 'connected'));
+    const phoneNumber = typeof brokerInstance.phoneNumber === 'string' && brokerInstance.phoneNumber.trim().length > 0
+      ? brokerInstance.phoneNumber.trim()
+      : null;
+
+    const historyEntry = buildHistoryEntry('created', actorId, compactRecord({
+      status: mappedStatus,
+      connected,
+      name: displayName,
+      phoneNumber: phoneNumber ?? undefined,
+    }));
+
+    const baseMetadata: InstanceMetadata = {
+      displayId: instanceId,
+      slug: instanceId,
+      brokerId,
+      displayName,
+      label: displayName,
+      origin: 'api-create',
+    };
+
+    const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry) as Record<string, unknown>;
+    const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+    let stored: StoredInstance;
+    try {
+      stored = (await prisma.whatsAppInstance.create({
+        data: {
+          id: instanceId,
+          tenantId,
+          name: displayName,
+          brokerId,
+          status: mappedStatus,
+          connected,
+          ...(phoneNumber ? { phoneNumber } : {}),
+          metadata: metadataWithoutError,
+        },
+      })) as StoredInstance;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'INSTANCE_ALREADY_EXISTS',
+            message: 'Já existe uma instância WhatsApp com esse identificador.',
+          },
+        });
+        return;
+      }
+
+      if (error instanceof Prisma.PrismaClientValidationError) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_INSTANCE_PAYLOAD',
+            message: 'Não foi possível criar a instância WhatsApp com os dados fornecidos.',
+          },
+        });
+        return;
+      }
+
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+
+      throw error;
+    }
+
+    try {
+      await clearInstanceArchive(tenantId, stored.id);
+    } catch (error) {
+      logger.warn('whatsapp.instances.create.clearArchiveFailed', {
+        tenantId,
+        instanceId: stored.id,
+        error: describeErrorForLog(error),
+      });
+    }
+
+    const serialized = serializeStoredInstance(stored, null);
+
+    await removeCachedSnapshot(tenantId, instanceId, brokerId);
+
+    emitToTenant(tenantId, 'whatsapp.instances.created', {
+      instance: toJsonObject(serialized),
+    });
+
+    logger.info('whatsapp.instances.create.success', {
+      tenantId,
+      actorId,
+      instanceId: serialized.id,
+      brokerId,
+      status: serialized.status,
+      connected: serialized.connected,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: serialized,
+    });
+  })
+);
+
 // GET /api/integrations/whatsapp/instances - List WhatsApp instances
 // simple in-memory rate-limiter (per-process)
 const instancesRateWindow = new Map<string, number[]>();
@@ -3068,6 +3385,7 @@ export const __testing = {
   disconnectStoredInstance,
   deleteStoredInstance,
   archiveInstanceSnapshot,
+  clearInstanceArchive,
   clearWhatsAppDisconnectRetry,
   removeCachedSnapshot,
 };
