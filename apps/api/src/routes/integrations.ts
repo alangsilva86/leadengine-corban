@@ -1058,6 +1058,88 @@ const archiveInstanceSnapshot = async (
   });
 };
 
+type InstanceArchiveRecord = {
+  deletedAt: string | null;
+};
+
+const readInstanceArchives = async (
+  tenantId: string,
+  instanceIds: string[]
+): Promise<Map<string, InstanceArchiveRecord>> => {
+  const normalizedIds = Array.from(
+    new Set(
+      instanceIds
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value) => value.length > 0)
+    )
+  );
+
+  if (normalizedIds.length === 0) {
+    return new Map();
+  }
+
+  const keyPrefix = `${WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX}${tenantId}:`;
+  const keys = normalizedIds.map((instanceId) => `${keyPrefix}${instanceId}`);
+
+  const rows = await prisma.integrationState.findMany({
+    where: { key: { in: keys } },
+    select: { key: true, value: true },
+  });
+
+  const archives = new Map<string, InstanceArchiveRecord>();
+
+  for (const row of rows) {
+    if (!row.key.startsWith(keyPrefix)) {
+      continue;
+    }
+
+    const rawInstanceId = row.key.slice(keyPrefix.length);
+    if (!rawInstanceId) {
+      continue;
+    }
+
+    const instanceId = rawInstanceId.trim();
+    if (!instanceId) {
+      continue;
+    }
+
+    let deletedAt: string | null = null;
+    const value = row.value;
+    if (value && typeof value === 'object') {
+      const raw = value as Record<string, unknown>;
+      if (typeof raw.deletedAt === 'string') {
+        const trimmed = raw.deletedAt.trim();
+        if (trimmed.length > 0) {
+          deletedAt = raw.deletedAt;
+        }
+      }
+    }
+
+    archives.set(instanceId, { deletedAt });
+  }
+
+  return archives;
+};
+
+const clearInstanceArchive = async (tenantId: string, instanceId: string): Promise<void> => {
+  const normalized = typeof instanceId === 'string' ? instanceId.trim() : '';
+  if (!normalized) {
+    return;
+  }
+
+  const key = buildInstanceArchiveKey(tenantId, normalized);
+
+  try {
+    await prisma.integrationState.delete({ where: { key } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return;
+    }
+
+    throw error;
+  }
+};
+
 const mapDbStatusToNormalized = (
   status: WhatsAppInstanceStatus | null | undefined
 ): NormalizedInstance['status'] => {
@@ -2029,6 +2111,11 @@ const syncInstancesFromBroker = async (
     return { instances: existing, snapshots: brokerSnapshots };
   }
 
+  const snapshotInstanceIds = brokerSnapshots
+    .map((snapshot) => (typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : ''))
+    .filter((value) => value.length > 0);
+  const archivedInstances = await readInstanceArchives(tenantId, snapshotInstanceIds);
+
   const existingById = new Map(existing.map((item) => [item.id, item]));
   const existingByBrokerId = new Map<string, StoredInstance>();
 
@@ -2250,6 +2337,16 @@ const syncInstancesFromBroker = async (
         unchangedIds.push(existingInstance.id);
       }
     } else {
+      const archiveRecord = archivedInstances.get(instanceId);
+      if (archiveRecord?.deletedAt) {
+        logger.info('whatsapp.instances.sync.skipDeleted', {
+          tenantId,
+          instanceId,
+          deletedAt: archiveRecord.deletedAt,
+        });
+        continue;
+      }
+
       logger.info('whatsapp.instances.sync.createMissing', {
         tenantId,
         instanceId,
@@ -3104,6 +3201,16 @@ router.post(
       throw error;
     }
 
+    try {
+      await clearInstanceArchive(tenantId, stored.id);
+    } catch (error) {
+      logger.warn('whatsapp.instances.create.clearArchiveFailed', {
+        tenantId,
+        instanceId: stored.id,
+        error: describeErrorForLog(error),
+      });
+    }
+
     const serialized = serializeStoredInstance(stored, null);
 
     await removeCachedSnapshot(tenantId, instanceId, brokerId);
@@ -3278,6 +3385,7 @@ export const __testing = {
   disconnectStoredInstance,
   deleteStoredInstance,
   archiveInstanceSnapshot,
+  clearInstanceArchive,
   clearWhatsAppDisconnectRetry,
   removeCachedSnapshot,
 };
