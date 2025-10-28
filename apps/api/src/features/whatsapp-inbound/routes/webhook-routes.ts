@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../../../middleware/error-handler';
@@ -55,6 +55,45 @@ const integrationWebhookRouter: Router = Router();
 
 const MAX_RAW_PREVIEW_LENGTH = 2_000;
 const DEFAULT_VERIFY_RESPONSE = 'LeadEngine WhatsApp webhook';
+/**
+ * Simple in-process TTL cache for idempotency of inbound messages.
+ * Key: tenantId|instanceId|messageId|index
+ */
+const IDEMPOTENCY_TTL_MS = 60_000;
+const recentIdempotencyKeys = new Map<string, number>();
+const sweepIdempotency = () => {
+  const now = Date.now();
+  for (const [k, expiresAt] of recentIdempotencyKeys.entries()) {
+    if (expiresAt <= now) recentIdempotencyKeys.delete(k);
+  }
+};
+const registerIdempotency = (key: string): boolean => {
+  sweepIdempotency();
+  if (recentIdempotencyKeys.has(key)) return false;
+  recentIdempotencyKeys.set(key, Date.now() + IDEMPOTENCY_TTL_MS);
+  return true;
+};
+const buildIdempotencyKey = (
+  tenantId: string | null | undefined,
+  instanceId: string | null | undefined,
+  messageId: string | null | undefined,
+  index: number | null | undefined
+) => {
+  const raw = `${tenantId ?? 'unknown'}|${instanceId ?? 'unknown'}|${messageId ?? 'unknown'}|${index ?? 0}`;
+  try {
+    return createHash('sha256').update(raw).digest('hex');
+  } catch {
+    return raw;
+  }
+};
+
+// Ack monotonicity helpers
+const ACK_RANK: Record<string, number> = { SENT: 1, DELIVERED: 2, READ: 3 };
+const ackRank = (status: string | null | undefined): number => {
+  if (!status) return 0;
+  const key = status.toString().toUpperCase();
+  return ACK_RANK[key] ?? 0;
+};
 const asArray = (value: unknown): unknown[] => {
   if (!value) {
     return [];
@@ -1543,6 +1582,24 @@ const processMessagesUpdate = async (
       continue;
     }
 
+    // Idempotência para ACK por tenant|instance|messageId
+    const ackIdemKey = buildIdempotencyKey(
+      tenantCandidate ?? 'unknown',
+      context.instanceId ?? null,
+      messageId,
+      0
+    );
+    if (!registerIdempotency(ackIdemKey)) {
+      whatsappWebhookEventsCounter.inc({
+        origin: 'webhook',
+        tenantId: tenantCandidate ?? 'unknown',
+        instanceId: context.instanceId ?? 'unknown',
+        result: 'ignored',
+        reason: 'ack_duplicate',
+      });
+      continue;
+    }
+
     const statusValue =
       updateDetails?.status ?? updateRecord.status ?? (updateDetails as { ack?: unknown })?.ack;
     const normalizedStatus = normalizeBaileysMessageStatus(statusValue);
@@ -1583,63 +1640,124 @@ const processMessagesUpdate = async (
           requestId: context.requestId,
           messageId,
           tenantId: tenantCandidate ?? 'unknown',
+      });
+      continue;
+    }
+
+    // Nunca regredir status e ignore ACKs muito atrasados
+    try {
+      const prevBroker = (lookup.metadata?.broker && typeof lookup.metadata.broker === 'object')
+        ? (lookup.metadata.broker as Record<string, unknown>)
+        : undefined;
+
+      const prevStatusRaw =
+        prevBroker && typeof prevBroker.lastAck === 'object'
+          ? (prevBroker.lastAck as Record<string, unknown>).status
+          : undefined;
+
+      const prevStatus = normalizeBaileysMessageStatus(prevStatusRaw);
+      const prevRank = ackRank(prevStatus);
+      const newRank = ackRank(normalizedStatus);
+
+      if (prevRank > 0 && newRank > 0 && newRank < prevRank) {
+        whatsappWebhookEventsCounter.inc({
+          origin: 'webhook',
+          tenantId: lookup.tenantId ?? 'unknown',
+          instanceId: context.instanceId ?? lookup.instanceId ?? 'unknown',
+          result: 'ignored',
+          reason: 'ack_regression',
+        });
+        logger.debug('ACK regression ignored', {
+          requestId: context.requestId,
+          messageId,
+          prevStatus,
+          nextStatus: normalizedStatus,
         });
         continue;
       }
 
-      const metadataRecord = lookup.metadata ?? {};
-      const existingBroker =
-        metadataRecord.broker && typeof metadataRecord.broker === 'object' && !Array.isArray(metadataRecord.broker)
-          ? { ...(metadataRecord.broker as Record<string, unknown>) }
-          : ({} as Record<string, unknown>);
+      const prevReceivedAtIso =
+        prevBroker && typeof prevBroker.lastAck === 'object'
+          ? (prevBroker.lastAck as Record<string, unknown>).receivedAt
+          : undefined;
 
-      const brokerMetadata: Record<string, unknown> = {
-        ...existingBroker,
-        provider: 'whatsapp',
-        status: normalizedStatus,
-        messageId: existingBroker.messageId ?? lookup.externalId ?? messageId,
-      };
-
-      if (context.instanceId ?? lookup.instanceId ?? existingBroker.instanceId) {
-        brokerMetadata.instanceId = context.instanceId ?? lookup.instanceId ?? existingBroker.instanceId;
+      if (typeof prevReceivedAtIso === 'string') {
+        const prevTs = Date.parse(prevReceivedAtIso);
+        const newTs = ackTimestamp.getTime();
+        if (Number.isFinite(prevTs) && prevTs - newTs > 10 * 60 * 1000) {
+          whatsappWebhookEventsCounter.inc({
+            origin: 'webhook',
+            tenantId: lookup.tenantId ?? 'unknown',
+            instanceId: context.instanceId ?? lookup.instanceId ?? 'unknown',
+            result: 'ignored',
+            reason: 'ack_late',
+          });
+          logger.debug('ACK late arrival ignored', {
+            requestId: context.requestId,
+            messageId,
+            prevReceivedAtIso,
+            newAckAt: ackTimestamp.toISOString(),
+          });
+          continue;
+        }
       }
+    } catch {
+      // Segurança: não travar fluxo caso a checagem falhe
+    }
 
-      if (remoteJid) {
-        brokerMetadata.remoteJid = remoteJid;
-      }
+    const metadataRecord = lookup.metadata ?? {};
+    const existingBroker =
+      metadataRecord.broker && typeof metadataRecord.broker === 'object' && !Array.isArray(metadataRecord.broker)
+        ? { ...(metadataRecord.broker as Record<string, unknown>) }
+        : ({} as Record<string, unknown>);
 
-      const lastAck: Record<string, unknown> = {
-        status: normalizedStatus,
-        receivedAt: ackTimestamp.toISOString(),
-        raw: sanitizeMetadataValue(updateRecord),
-      };
+    const brokerMetadata: Record<string, unknown> = {
+      ...existingBroker,
+      provider: 'whatsapp',
+      status: normalizedStatus,
+      messageId: existingBroker.messageId ?? lookup.externalId ?? messageId,
+    };
 
-      if (participant) {
-        lastAck.participant = participant;
-      }
+    if (context.instanceId ?? lookup.instanceId ?? existingBroker.instanceId) {
+      brokerMetadata.instanceId = context.instanceId ?? lookup.instanceId ?? existingBroker.instanceId;
+    }
 
-      if (Number.isFinite(numericStatus)) {
-        lastAck.numericStatus = Number(numericStatus);
-      }
+    if (remoteJid) {
+      brokerMetadata.remoteJid = remoteJid;
+    }
 
-      brokerMetadata.lastAck = lastAck;
+    const lastAck: Record<string, unknown> = {
+      status: normalizedStatus,
+      receivedAt: ackTimestamp.toISOString(),
+      raw: sanitizeMetadataValue(updateRecord),
+    };
 
-      const metadataUpdate: Record<string, unknown> = {
-        broker: brokerMetadata,
-      };
+    if (participant) {
+      lastAck.participant = participant;
+    }
 
-      const ackInput: Parameters<typeof applyBrokerAck>[2] = {
-        status: normalizedStatus,
-        metadata: metadataUpdate,
-      };
+    if (Number.isFinite(numericStatus)) {
+      lastAck.numericStatus = Number(numericStatus);
+    }
 
-      if (normalizedStatus === 'DELIVERED' || normalizedStatus === 'READ') {
-        ackInput.deliveredAt = ackTimestamp;
-      }
+    brokerMetadata.lastAck = lastAck;
 
-      if (normalizedStatus === 'READ') {
-        ackInput.readAt = ackTimestamp;
-      }
+    const metadataUpdate: Record<string, unknown> = {
+      broker: brokerMetadata,
+    };
+
+    const ackInput: Parameters<typeof applyBrokerAck>[2] = {
+      status: normalizedStatus,
+      metadata: metadataUpdate,
+    };
+
+    if (normalizedStatus === 'DELIVERED' || normalizedStatus === 'READ') {
+      ackInput.deliveredAt = ackTimestamp;
+    }
+
+    if (normalizedStatus === 'READ') {
+      ackInput.readAt = ackTimestamp;
+    }
 
       const ackInstanceId = context.instanceId ?? lookup.instanceId;
       const metricsInstanceId = ackInstanceId ?? 'unknown';
@@ -1733,6 +1851,24 @@ const processPollChoiceEvent = async (
   }
 
   const pollPayload = parsed.data;
+
+  // Idempotência por pollId|voterJid
+  const pollIdemKey = buildIdempotencyKey(
+    context.tenantOverride ?? null,
+    context.instanceId ?? null,
+    `${pollPayload.pollId}|${pollPayload.voterJid}`,
+    0
+  );
+  if (!registerIdempotency(pollIdemKey)) {
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: context.tenantOverride ?? 'unknown',
+      instanceId: context.instanceId ?? 'unknown',
+      result: 'ignored',
+      reason: 'poll_choice_duplicate_event',
+    });
+    return { persisted: 0, ignored: 1, failures: 0 };
+  }
 
   try {
     const result = await recordPollChoiceVote(pollPayload, {
@@ -2084,7 +2220,12 @@ const webhookRateLimiter = rateLimit({
   max: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
   standardHeaders: false,
   legacyHeaders: false,
-  keyGenerator: resolveClientAddress,
+  keyGenerator: (req: Request) => {
+    const base = resolveClientAddress(req);
+    const tenantHint = readString(req.header('x-tenant-id')) ?? 'no-tenant';
+    const refreshHint = readString(req.header('x-refresh')) ?? 'no';
+    return `${base}|${tenantHint}|${refreshHint}`;
+  },
   handler: (req: Request, res: Response) => {
     const context = ensureWebhookContext(req, res);
     logWebhookEvent('warn', '🛑 WhatsApp webhook rate limit exceeded', context, {
@@ -2170,6 +2311,7 @@ const verifyWhatsAppWebhookRequest = async (req: Request, res: Response, next: N
 const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const context = ensureWebhookContext(req, res);
   const { requestId, signatureRequired } = context;
+  const startedAt = Date.now();
 
   logWebhookEvent('info', '🕵️ Etapa1-UPSERT liberada: credenciais verificadas', context, {
     signatureEnforced: signatureRequired,
@@ -2275,34 +2417,25 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
 
     if (resolvedInstance) {
       instanceOverride = resolvedInstance.id;
+
       const storedBrokerId =
         typeof resolvedInstance.brokerId === 'string' && resolvedInstance.brokerId.trim().length > 0
           ? resolvedInstance.brokerId.trim()
           : undefined;
 
+      // Se o rawInstanceId veio do broker e difere do armazenado, persiste para manter o mapeamento
       if (rawInstanceId && storedBrokerId !== rawInstanceId) {
-        const brokerIdToPersist = rawInstanceId;
         await prisma.whatsAppInstance.update({
           where: { id: resolvedInstance.id },
-          data: { brokerId: brokerIdToPersist },
+          data: { brokerId: rawInstanceId },
         });
       }
 
       brokerOverride = rawInstanceId ?? storedBrokerId ?? undefined;
 
+      // Herdar tenant da instância quando o envelope não trouxe
       if (!tenantOverride && resolvedInstance.tenantId) {
         tenantOverride = resolvedInstance.tenantId;
-        if (!storedBrokerId || storedBrokerId !== rawInstanceId) {
-          await prisma.whatsAppInstance.update({
-            where: { id: existingInstance.id },
-            data: { brokerId: rawInstanceId },
-          });
-        }
-
-        brokerOverride = rawInstanceId;
-        if (!tenantOverride && existingInstance.tenantId) {
-          tenantOverride = existingInstance.tenantId;
-        }
       }
     }
 
@@ -2348,7 +2481,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           instanceId: instanceOverride ?? 'unknown',
           result: 'ignored',
           reason: 'invalid_contract',
-          event: eventType,
         });
         continue;
       }
@@ -2362,7 +2494,6 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
           instanceId: instanceOverride ?? 'unknown',
           result: 'ignored',
           reason: 'unsupported_event',
-          event: eventType,
         });
         continue;
       }
@@ -2381,6 +2512,24 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     }
 
     for (const normalized of normalizedMessages) {
+      // Idempotência por tenant|instance|messageId|index para evitar reprocesso
+      const normalizedIdemKey = buildIdempotencyKey(
+        tenantOverride ?? normalized.tenantId ?? 'unknown',
+        instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
+        normalized.messageId ?? null,
+        normalized.messageIndex ?? 0
+      );
+      if (!registerIdempotency(normalizedIdemKey)) {
+        whatsappWebhookEventsCounter.inc({
+          origin: 'webhook',
+          tenantId: tenantOverride ?? normalized.tenantId ?? 'unknown',
+          instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? 'unknown',
+          result: 'ignored',
+          reason: 'message_duplicate',
+        });
+        continue;
+      }
+
       const processed = await processNormalizedMessage({
         normalized,
         eventRecord,
@@ -2423,6 +2572,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     pollPersisted,
     pollIgnored,
     pollFailures,
+    durationMs: Date.now() - startedAt,
   });
 
   res.status(204).send();

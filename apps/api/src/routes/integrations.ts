@@ -1461,7 +1461,8 @@ const resolvePhoneNumber = (
 
   if (phone) {
     try {
-      return normalizePhoneNumber(phone);
+      const normalized = normalizePhoneNumber(phone);
+      return normalized.e164;
     } catch (e) {
       if (!(e instanceof PhoneNormalizationError)) {
         logger.warn('whatsapp.instances.phone.normalizeUnexpected', { tenantId: instance.tenantId, error: String(e) });
@@ -2224,8 +2225,9 @@ const collectInstancesForTenant = async (
   options: InstanceCollectionOptions = {}
 ): Promise<InstanceCollectionResult> => {
   const refreshFlag = options.refresh;
-  const fetchSnapshots = options.fetchSnapshots ?? true;
+  const fetchSnapshots = options.fetchSnapshots ?? false;
 
+  // Load stored instances first (DB)
   let storedInstances =
     options.existing ??
     ((await prisma.whatsAppInstance.findMany({
@@ -2233,21 +2235,21 @@ const collectInstancesForTenant = async (
       orderBy: { createdAt: 'asc' },
     })) as StoredInstance[]);
 
+  // Prefer snapshots provided by caller
   let snapshots = options.snapshots ?? null;
 
-  // TTL/cooldown logic
+  // Decide if we should actually refresh (sync DB with broker)
   let shouldRefresh = false;
   if (refreshFlag === true) {
-    // explicit force
-    shouldRefresh = true;
+    shouldRefresh = true; // explicit force
   } else if (refreshFlag === false) {
     shouldRefresh = false;
   } else {
-    // default behavior when not specified: do NOT sync unless fetchSnapshots is true and TTL allows it.
+    // default: do NOT sync unless we have nothing stored and caller allows snapshots
     shouldRefresh = Boolean(fetchSnapshots) && storedInstances.length === 0;
   }
 
-  // Apply TTL only if we're about to refresh and it's not an explicit force
+  // TTL: only applies when refresh wasn't explicitly forced
   if (shouldRefresh && refreshFlag !== true) {
     const last = await getLastSyncAt(tenantId);
     if (last && Date.now() - last.getTime() < SYNC_TTL_MS) {
@@ -2256,9 +2258,9 @@ const collectInstancesForTenant = async (
   }
 
   let synced = false;
+
   if (shouldRefresh) {
     try {
-      // observability: count broker calls
       try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
       const syncResult = await syncInstancesFromBroker(
         tenantId,
@@ -2268,32 +2270,48 @@ const collectInstancesForTenant = async (
       storedInstances = syncResult.instances;
       snapshots = syncResult.snapshots;
       await setLastSyncAt(tenantId, new Date());
+      // cache snapshots for short TTL to reduce pressure
+      if (snapshots && snapshots.length > 0) {
+        await setCachedSnapshots(tenantId, snapshots, 30);
+      }
       synced = true;
-      // annotate result flags
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         if (options.refresh) {
           throw error;
         }
-        logger.info('whatsapp.instances.sync.brokerNotConfigured', {
-          tenantId,
-        });
+        logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
         snapshots = [];
       } else {
         throw error;
       }
     }
   } else if (fetchSnapshots) {
+    // Snapshot mode (read-only): use cache first, then broker, and cache the result
     if (!snapshots) {
-      try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
-      snapshots = await whatsappBrokerClient.listInstances(tenantId);
+      snapshots = await getCachedSnapshots(tenantId);
+    }
+    if (!snapshots) {
+      try {
+        try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
+        snapshots = await whatsappBrokerClient.listInstances(tenantId);
+        if (snapshots && snapshots.length > 0) {
+          await setCachedSnapshots(tenantId, snapshots, 30);
+        }
+      } catch (error) {
+        if (error instanceof WhatsAppBrokerNotConfiguredError) {
+          snapshots = [];
+        } else {
+          throw error;
+        }
+      }
     }
   } else if (!snapshots) {
     snapshots = [];
   }
 
+  // Index snapshots by id for quick lookups
   const snapshotMap = new Map<string, WhatsAppBrokerInstanceSnapshot>();
-
   if (snapshots) {
     for (const snapshot of snapshots) {
       const rawId = snapshot.instance?.id;
@@ -2312,6 +2330,7 @@ const collectInstancesForTenant = async (
     const brokerStatus = snapshot?.status ?? null;
     const serialized = serializeStoredInstance(stored, brokerStatus);
 
+    // Keep E.164 normalized phone in DB when we discover a better one
     if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
       await prisma.whatsAppInstance.update({
         where: { id: stored.id },
@@ -2339,10 +2358,11 @@ const collectInstancesForTenant = async (
     rawInstances: entries.map(({ serialized }) => serialized),
     map,
     snapshots: snapshots ?? [],
+    shouldRefresh,
+    fetchSnapshots,
+    synced,
   };
-  result.shouldRefresh = shouldRefresh;
-  result.fetchSnapshots = fetchSnapshots;
-  result.synced = synced;
+
   return result;
 };
 
@@ -2664,19 +2684,20 @@ router.get(
     const tenantId = resolveRequestTenantId(req);
     const t0 = Date.now();
 
+    // refresh override (legacy)
     const refreshQuery = req.query.refresh;
     const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
     const normalizedRefresh = typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
     const refreshRequested = normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes';
 
+    // mode = db | snapshot | sync
     const mode = typeof req.query.mode === 'string' ? (req.query.mode as string) : 'db';
-    // db => no broker; snapshot => broker read only; sync => sync DB with broker
     const baseOptions =
       mode === 'sync' ? { refresh: true, fetchSnapshots: true } :
       mode === 'snapshot' ? { refresh: false, fetchSnapshots: true } :
       { refresh: false, fetchSnapshots: false }; // db default
 
-    // if ?refresh was provided, override options
+    // if ?refresh was provided, override options fully
     const collectionOptions = { ...baseOptions };
     if (normalizedRefresh !== null) {
       collectionOptions.refresh = refreshRequested;
@@ -2690,1898 +2711,80 @@ router.get(
       options: collectionOptions,
     });
 
-    let instances: NormalizedInstance[] = [];
-    let usedStorageFallback = false;
-
     try {
       const result = await collectInstancesForTenant(tenantId, collectionOptions);
       let instancesResult = result.instances;
 
+      // selective fields: basic | metrics | full
       const fields = typeof req.query.fields === 'string' ? req.query.fields : 'basic';
-      const pickBasic = (i: any) => ({ id: i.id, tenantId: i.tenantId, name: i.name, status: i.status, connected: i.connected, phoneNumber: i.phoneNumber, lastActivity: i.lastActivity });
-      const pickMetrics = (i: any) => ({ ...pickBasic(i), metrics: i.metrics ?? null, rate: i.rate ?? null, ...(i.metrics?.statusCounts ? { statusCounts: i.metrics.statusCounts } : {}) });
-      const dataInstances = fields === 'full' ? instancesResult : fields === 'metrics' ? instancesResult.map(pickMetrics) : instancesResult.map(pickBasic);
 
-      const durationMs = Date.now() - t0;
+      const pickBasic = (i: NormalizedInstance) => ({
+        id: i.id,
+        tenantId: i.tenantId,
+        name: i.name,
+        status: i.status,
+        connected: i.connected,
+        phoneNumber: i.phoneNumber,
+        lastActivity: i.lastActivity,
+      });
+
+      const pickMetrics = (i: NormalizedInstance) => ({
+        ...pickBasic(i),
+        metrics: i.metrics ?? null,
+        rate: i.rate ?? null,
+      });
+
+      const instances =
+        fields === 'full'
+          ? instancesResult
+          : fields === 'metrics'
+            ? instancesResult.map(pickMetrics)
+            : instancesResult.map(pickBasic);
+
+      const payload = {
+        success: true,
+        data: { instances },
+        meta: {
+          tenantId,
+          mode,
+          refreshRequested,
+          shouldRefresh: result.shouldRefresh ?? false,
+          fetchSnapshots: result.fetchSnapshots ?? false,
+          synced: result.synced ?? false,
+          instancesCount: instances.length,
+          durationMs: Date.now() - t0,
+        },
+      };
+
       logger.info('whatsapp.instances.list.response', {
         tenantId,
-        count: dataInstances.length,
-        refreshRequested,
         mode,
-        storageFallback: usedStorageFallback,
+        refreshRequested,
         shouldRefresh: result.shouldRefresh ?? false,
         fetchSnapshots: result.fetchSnapshots ?? false,
         synced: result.synced ?? false,
-        durationMs,
+        instancesCount: instances.length,
+        durationMs: payload.meta.durationMs,
       });
 
-      const responsePayload: {
-        success: true;
-        data: { instances: typeof dataInstances };
-        meta?: { storageFallback?: boolean };
-      } = {
-        success: true,
-        data: { instances: dataInstances },
-      };
-      if (usedStorageFallback) {
-        responsePayload.meta = { storageFallback: true };
-      }
-      res.json(responsePayload);
-      return;
-    } catch (error: unknown) {
-      const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
-
-      if (isStorageError) {
-        usedStorageFallback = true;
-        logger.warn('whatsapp.instances.list.storageFallbackTriggered', {
-          tenantId,
-          refreshRequested,
-          prismaCode,
-          error: describeErrorForLog(error),
-        });
-
-        let fallbackSnapshots: WhatsAppBrokerInstanceSnapshot[] = [];
-        try {
-          const cached = await getCachedSnapshots(tenantId);
-          if (cached) {
-            fallbackSnapshots = cached;
-          } else {
-            try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
-            fallbackSnapshots = await whatsappBrokerClient.listInstances(tenantId);
-            await setCachedSnapshots(tenantId, fallbackSnapshots, 30);
-          }
-        } catch (fallbackError) {
-          if (
-            fallbackError instanceof WhatsAppBrokerError ||
-            hasErrorName(fallbackError, 'WhatsAppBrokerError')
-          ) {
-            respondWhatsAppBrokerFailure(res, fallbackError as WhatsAppBrokerError);
-            return;
-          }
-
-          if (handleWhatsAppIntegrationError(res, fallbackError)) {
-            return;
-          }
-
-          throw fallbackError;
-        }
-
-        const fallbackInstances = buildFallbackInstancesFromSnapshots(
-          tenantId,
-          fallbackSnapshots
-        );
-
-        instances = fallbackInstances;
-
-        const fields = typeof req.query.fields === 'string' ? req.query.fields : 'basic';
-        const pickBasic = (i: any) => ({ id: i.id, tenantId: i.tenantId, name: i.name, status: i.status, connected: i.connected, phoneNumber: i.phoneNumber, lastActivity: i.lastActivity });
-        const pickMetrics = (i: any) => ({ ...pickBasic(i), metrics: i.metrics ?? null, rate: i.rate ?? null, ...(i.metrics?.statusCounts ? { statusCounts: i.metrics.statusCounts } : {}) });
-        const dataInstances = fields === 'full' ? instances : fields === 'metrics' ? instances.map(pickMetrics) : instances.map(pickBasic);
-
-        logger.info('whatsapp.instances.list.snapshotFallbackServed', {
-          tenantId,
-          refreshRequested,
-          instances: dataInstances.length,
-          snapshots: fallbackSnapshots.length,
-          prismaCode,
-        });
-
-        const responsePayload: {
-          success: true;
-          data: { instances: typeof dataInstances };
-          meta?: { storageFallback?: boolean };
-        } = {
-          success: true,
-          data: { instances: dataInstances },
-          meta: { storageFallback: true },
-        };
-        res.json(responsePayload);
-        return;
-      } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      } else if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      } else {
-        throw error;
-      }
-    }
-  })
-);
-
-// POST /api/integrations/whatsapp/instances - Create a WhatsApp instance
-router.post(
-  '/whatsapp/instances',
-  body('id').optional().isString().isLength({ min: 1 }),
-  body('name').isString().isLength({ min: 1 }),
-  body('agreementId').optional().isString().isLength({ min: 1 }),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = resolveRequestTenantId(req);
-    const { id, name, agreementId } = req.body as {
-      id?: string;
-      name: string;
-      agreementId?: string;
-    };
-
-    const normalizedName = name.trim();
-
-    if (!normalizedName) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_NAME',
-          message: 'Informe um nome válido para a nova instância.',
-        },
-      });
-      return;
-    }
-
-    if (normalizedName.length > 120) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_NAME',
-          message: 'O nome da instância deve ter no máximo 120 caracteres.',
-        },
-      });
-      return;
-    }
-
-    const providedId = typeof id === 'string' ? id : undefined;
-    const requestedIdSource =
-      typeof providedId === 'string' && providedId.length > 0 ? providedId : normalizedName;
-
-    if (!requestedIdSource || requestedIdSource.length === 0) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: 'Informe um identificador válido para a instância WhatsApp.',
-        },
-      });
-      return;
-    }
-
-    const validatedName = normalizedName;
-    const normalizedAgreementId =
-      typeof agreementId === 'string' && agreementId.trim().length > 0
-        ? agreementId.trim()
-        : null;
-    try {
-      try {
-        const existingInstance = await prisma.whatsAppInstance.findUnique({
-          where: { tenantId_id: { tenantId, id: requestedIdSource } },
-          select: { id: true },
-        });
-
-        if (existingInstance) {
-          res.status(409).json({
-            success: false,
-            error: {
-              code: 'INSTANCE_ALREADY_EXISTS',
-              message: 'Já existe uma instância WhatsApp com este identificador.',
-            },
-          });
-          return;
-        }
-      } catch (lookupError) {
-        if (respondWhatsAppStorageUnavailable(res, lookupError)) {
-          return;
-        }
-
-        throw lookupError;
-      }
-
-      const normalizedId = requestedIdSource;
-      let brokerInstance: BrokerWhatsAppInstance | null = null;
-
-      try {
-        brokerInstance = await whatsappBrokerClient.createInstance({
-          tenantId,
-          name: validatedName,
-          instanceId: normalizedId,
-        });
-      } catch (brokerError) {
-        if (brokerError instanceof WhatsAppBrokerError || hasErrorName(brokerError, 'WhatsAppBrokerError')) {
-          const normalizedError = brokerError as WhatsAppBrokerError;
-          const brokerStatus = readBrokerErrorStatus(normalizedError);
-          logger.warn('whatsapp.instance.create.brokerRejected', {
-            tenantId,
-            name: validatedName,
-            error: normalizedError.message,
-            code: normalizedError.code,
-            status: brokerStatus,
-            requestId: normalizedError.requestId,
-          });
-
-          res.status(502).json({
-            success: false,
-            error: {
-              code: normalizedError.code || 'BROKER_ERROR',
-              message: normalizedError.message || 'WhatsApp broker request failed',
-              details: compactRecord({
-                status: brokerStatus,
-                requestId: normalizedError.requestId ?? undefined,
-              }),
-            },
-          });
-          return;
-        }
-
-        if (handleWhatsAppIntegrationError(res, brokerError)) {
-          return;
-        }
-
-        throw brokerError;
-      }
-
-      const brokerId =
-        typeof brokerInstance?.id === 'string' && brokerInstance.id.trim().length > 0
-          ? brokerInstance.id.trim()
-          : null;
-      if (brokerId && brokerId !== normalizedId) {
-        logger.warn('whatsapp.instance.create.brokerIdMismatch', {
-          tenantId,
-          requestedId: normalizedId,
-          brokerId,
-        });
-      }
-      const resolvedBrokerId = normalizedId;
-      const actorId = req.user?.id ?? 'system';
-      const historyEntry = buildHistoryEntry(
-        'created',
-        actorId,
-        compactRecord({
-          name: validatedName,
-          brokerId: resolvedBrokerId,
-          agreementId: normalizedAgreementId ?? undefined,
-        })
-      );
-      const metadata = appendInstanceHistory(
-        compactRecord({
-          displayId: normalizedId,
-          slug: normalizedId,
-          brokerId: resolvedBrokerId,
-          displayName: validatedName,
-          label: validatedName,
-          ...(normalizedAgreementId
-            ? { agreementId: normalizedAgreementId, agreement: { id: normalizedAgreementId } }
-            : {}),
-        }),
-        historyEntry
-      );
-      const metadataWithoutError = withInstanceLastError(metadata, null);
-      const derivedStatus = brokerInstance
-        ? mapBrokerInstanceStatusToDbStatus(brokerInstance.status)
-        : 'pending';
-      const isConnected = brokerInstance?.connected ?? false;
-      const instance = await prisma.whatsAppInstance.create({
-        data: {
-          id: normalizedId,
-          tenantId,
-          name: validatedName,
-          brokerId: resolvedBrokerId,
-          status: derivedStatus,
-          connected: isConnected,
-          phoneNumber: brokerInstance?.phoneNumber ?? null,
-          metadata: metadataWithoutError,
-        },
-      });
-
-      const { brokerId: _brokerId, ...payload } = serializeStoredInstance(instance as StoredInstance, null);
-
-      logger.info('whatsapp.instance.create.success', {
-        tenantId,
-        instanceId: normalizedId,
-        brokerId: resolvedBrokerId,
-        actorId,
-      });
-
-      emitToTenant(tenantId, 'whatsapp.instance.created', {
-        id: instance.id,
-        status: instance.status,
-        connected: instance.connected,
-        ...(normalizedAgreementId ? { agreementId: normalizedAgreementId } : {}),
-        ...(instance.phoneNumber ? { phoneNumber: instance.phoneNumber } : {}),
-        brokerId: resolvedBrokerId,
-        syncedAt: new Date().toISOString(),
-        history: historyEntry,
-      });
-
-      res.status(201).json({
-        success: true,
-        data: payload,
-      });
-    } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_ALREADY_EXISTS',
-            message: 'Já existe uma instância WhatsApp com este identificador.',
-          },
-        });
-        return;
-      }
-
-      if (error instanceof Prisma.PrismaClientValidationError) {
-        logger.error('whatsapp.instance.create.invalidPayload', {
-          tenantId,
-          error,
-        });
-
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_INSTANCE_PAYLOAD',
-            message:
-              'Não foi possível criar a instância WhatsApp. Verifique os dados enviados e tente novamente.',
-          },
-        });
-        return;
-      }
-
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        logger.error('whatsapp.instance.create.storageError', {
-          tenantId,
-          code: error.code,
-          meta: error.meta,
-        });
-
-        res.status(503).json({
-          success: false,
-          error: {
-            code: 'WHATSAPP_STORAGE_UNAVAILABLE',
-            message:
-              'Serviço de armazenamento das instâncias WhatsApp indisponível. Verifique a conexão com o banco ou execute as migrações pendentes.',
-          },
-        });
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-const connectInstanceHandler = async (req: Request, res: Response) => {
-  const instanceId = readInstanceIdParam(req);
-  if (!instanceId) {
-    res.status(400).json({
-      success: false,
-      error: {
-        code: 'INVALID_INSTANCE_ID',
-        message: INVALID_INSTANCE_ID_MESSAGE,
-      },
-    });
-    return;
-  }
-  const tenantId = resolveRequestTenantId(req);
-  const actorId = req.user?.id ?? 'system';
-  const rawPhoneNumber = typeof req.body?.phoneNumber === 'string' ? req.body.phoneNumber : null;
-  const rawPairingCode = typeof req.body?.code === 'string' ? req.body.code : null;
-  let pairingPhoneNumber: string | null = null;
-  let pairingCode: string | null = null;
-
-  try {
-    const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-    if (!instance || instance.tenantId !== tenantId) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'INSTANCE_NOT_FOUND',
-          message: 'Instância WhatsApp não encontrada.',
-        },
-      });
-      return;
-    }
-
-    if (rawPhoneNumber) {
-      const trimmedPhone = rawPhoneNumber.trim();
-      if (trimmedPhone.length > 0) {
-        try {
-          pairingPhoneNumber = normalizePhoneNumber(trimmedPhone).e164;
-        } catch (error) {
-          const message =
-            error instanceof PhoneNormalizationError ? error.message : 'Informe um telefone válido.';
-          res.locals.errorCode = 'VALIDATION_ERROR';
-          res.status(400).json({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Corpo da requisição inválido.',
-              details: {
-                errors: [
-                  {
-                    field: 'phoneNumber',
-                    message,
-                  },
-                ],
-              },
-            },
-          });
-          return;
-        }
-      }
-    }
-
-    if (rawPairingCode && rawPairingCode.trim().length > 0) {
-      pairingCode = rawPairingCode.trim();
-    }
-
-    const finalizeWithContext = async (
-      context: InstanceOperationContext,
-      options: { recordHistory?: boolean; clearLastError?: boolean; warnIfDisconnected?: boolean; pairingPhoneNumber?: string | null } = {}
-    ) => {
-      const recordHistory = options.recordHistory !== false;
-      const clearLastError = options.clearLastError !== false;
-      const warnIfDisconnected = options.warnIfDisconnected ?? recordHistory;
-      const historyPhoneNumber = options.pairingPhoneNumber ?? null;
-
-      if (warnIfDisconnected && !context.status.connected) {
-        logger.warn('whatsapp.instance.connect.stillDisconnected', {
-          tenantId,
-          instanceId: instance.id,
-          status: context.status.status,
-        });
-      }
-
-      let metadataToPersist: Prisma.JsonObject | InstanceMetadata =
-        context.stored.metadata as InstanceMetadata;
-
-      if (recordHistory) {
-        const historyEntry = buildHistoryEntry('connect-instance', actorId, {
-          status: context.status.status,
-          connected: context.status.connected,
-          ...(historyPhoneNumber ? { phoneNumber: historyPhoneNumber } : {}),
-        });
-        metadataToPersist = appendInstanceHistory(metadataToPersist as InstanceMetadata, historyEntry);
-      }
-
-      if (clearLastError) {
-        metadataToPersist = withInstanceLastError(metadataToPersist as InstanceMetadata, null);
-      }
-
-      const derivedStatus = context.brokerStatus
-        ? mapBrokerStatusToDbStatus(context.brokerStatus)
-        : mapBrokerInstanceStatusToDbStatus(context.status.status);
-
-      const updateData: Prisma.WhatsAppInstanceUpdateInput = {
-        status: derivedStatus,
-        connected: context.status.connected,
-        lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
-      };
-
-      if (recordHistory || clearLastError) {
-        updateData.metadata = metadataToPersist as Prisma.JsonObject;
-      }
-
-      await prisma.whatsAppInstance.update({
-        where: { id: context.stored.id },
-        data: updateData,
-      });
-
-      res.json({
-        success: true,
-        data: {
-          instance: context.instance,
-          status: context.status,
-          connected: context.status.connected,
-          qr: context.qr,
-          instances: context.instances,
-        },
-      });
-    };
-
-    const shouldRequestPairing = Boolean(pairingPhoneNumber || pairingCode);
-
-    if (!shouldRequestPairing) {
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        refresh: true,
-      });
-      await finalizeWithContext(context, {
-        recordHistory: false,
-        clearLastError: false,
-        warnIfDisconnected: false,
-      });
-      return;
-    }
-
-    try {
-      await whatsappBrokerClient.connectInstance(instance.brokerId, {
-        instanceId: instance.id,
-        ...(pairingCode ? { code: pairingCode } : {}),
-        ...(pairingPhoneNumber ? { phoneNumber: pairingPhoneNumber } : {}),
-      });
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        refresh: true,
-      });
-      await finalizeWithContext(context, {
-        pairingPhoneNumber,
-      });
-      return;
+      res.status(200).json(payload);
     } catch (error) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        const brokerError = error as WhatsAppBrokerError;
-        const brokerStatus = readBrokerErrorStatus(brokerError);
-
-        if (isBrokerAlreadyConnectedError(brokerError) || brokerStatus === 409) {
-          logger.info('whatsapp.instance.connect.alreadyConnected', {
-            tenantId,
-            instanceId: instance.id,
-            status: brokerStatus,
-            code: brokerError.code,
-            requestId: brokerError.requestId,
-          });
-
-          const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-            refresh: true,
-          });
-          await finalizeWithContext(context);
-          return;
-        }
-
-        logger.warn('whatsapp.instance.connect.brokerRejected', {
-          tenantId,
-          instanceId: instance.id,
-          status: brokerStatus,
-          code: brokerError.code,
-          requestId: brokerError.requestId,
-        });
-
-        const failureHistory = buildHistoryEntry('connect-instance-failed', actorId, {
-          code: brokerError.code,
-          message: brokerError.message,
-          requestId: brokerError.requestId ?? null,
-        });
-
-        const metadataWithHistory = appendInstanceHistory(
-          instance.metadata as InstanceMetadata,
-          failureHistory
-        );
-        const metadataWithError = withInstanceLastError(metadataWithHistory, {
-          code: brokerError.code,
-          message: brokerError.message,
-          requestId: brokerError.requestId ?? null,
-        });
-
-        await prisma.whatsAppInstance.update({
-          where: { id: instance.id },
-          data: {
-            status: 'failed',
-            connected: false,
-            metadata: metadataWithError,
-          },
-        });
-
-        if (isBrokerMissingInstanceError(brokerError)) {
-          res.status(422).json({
-            success: false,
-            error: {
-              code: 'BROKER_NOT_FOUND',
-              message: 'Instance not found in broker',
-              details: compactRecord({
-                instanceId: instance.id,
-                requestId: brokerError.requestId ?? undefined,
-              }),
-            },
-          });
-          return;
-        }
-
-        res.status(502).json({
-          success: false,
-          error: {
-            code: brokerError.code || 'BROKER_ERROR',
-            message: brokerError.message || 'WhatsApp broker request failed',
-            details: compactRecord({
-              status: brokerStatus,
-              requestId: brokerError.requestId ?? undefined,
-            }),
-          },
-        });
-        return;
-      }
-
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }
 
-      throw error;
-    }
-  } catch (error: unknown) {
-    if (handleWhatsAppIntegrationError(res, error)) {
-      return;
-    }
-    throw error;
-  }
-};
-
-const pairInstanceMiddleware = [
-  instanceIdParamValidator(),
-  body('phoneNumber')
-    .optional({ nullable: true })
-    .custom((value, { req }) => {
-      if (value === undefined || value === null) {
-        return true;
-      }
-
-      if (typeof value !== 'string') {
-        throw new Error('Informe um telefone válido para parear por código.');
-      }
-
-      const trimmed = value.trim();
-
-      if (!trimmed) {
-        throw new Error('Informe um telefone válido para parear por código.');
-      }
-
-      try {
-        const normalized = normalizePhoneNumber(trimmed);
-        const request = req as Request;
-        (request.body as Record<string, unknown>).phoneNumber = normalized.e164;
-        return true;
-      } catch (error) {
-        const message =
-          error instanceof PhoneNormalizationError
-            ? error.message
-            : 'Informe um telefone válido para parear por código.';
-        throw new Error(message);
-      }
-    }),
-  body('code').optional({ nullable: true }).isString().bail().trim().isLength({ min: 1 }).withMessage('Informe um código de pareamento válido.'),
-  validateRequest,
-  requireTenant,
-  asyncHandler(connectInstanceHandler),
-];
-
-// POST /api/integrations/whatsapp/instances/:id/pair - Pair a WhatsApp instance
-router.post('/whatsapp/instances/:id/pair', ...pairInstanceMiddleware);
-
-// POST /api/integrations/whatsapp/instances/pair - Pair the default WhatsApp instance
-router.post(
-  '/whatsapp/instances/pair',
-  body('instanceId').optional().isString().trim().notEmpty(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (_req: Request, res: Response) => {
-    res.status(410).json({
-      success: false,
-      error: {
-        code: 'PAIR_ROUTE_MISSING_ID',
-        message:
-          'Esta rota foi descontinuada. Utilize POST /api/integrations/whatsapp/instances/:id/pair com o ID da instância.',
-      },
-    });
-  })
-);
-
-// POST /api/integrations/whatsapp/instances/:id/stop - Disconnect a WhatsApp instance
-router.post(
-  '/whatsapp/instances/:id/stop',
-  instanceIdParamValidator(),
-  body('wipe').optional().isBoolean(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
-    const disconnectOptions = wipe === undefined ? undefined : { wipe };
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      let cachedContext: InstanceOperationContext | null = null;
-
-      try {
-        await whatsappBrokerClient.disconnectInstance(instance.brokerId, {
-          ...(disconnectOptions ?? {}),
-          instanceId: instance.id,
-        });
-      } catch (error) {
-        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-          const brokerError = error as WhatsAppBrokerError;
-          const brokerStatus = readBrokerErrorStatus(brokerError);
-
-          if (
-            isBrokerAlreadyDisconnectedError(brokerError) ||
-            brokerStatus === 409 ||
-            brokerStatus === 410
-          ) {
-            logger.info('whatsapp.instance.disconnect.alreadyBroker', {
-              tenantId,
-              instanceId: instance.id,
-              status: brokerStatus,
-              code: brokerError.code,
-              requestId: brokerError.requestId,
-            });
-            cachedContext = await resolveInstanceOperationContext(
-              tenantId,
-              instance as StoredInstance,
-              {
-                refresh: true,
-              }
-            );
-          } else {
-            throw brokerError;
-          }
-        } else {
-          throw error;
-        }
-      }
-
-      const context =
-        cachedContext ??
-        (await resolveInstanceOperationContext(tenantId, instance as StoredInstance, { refresh: true }));
-
-      if (context.status.connected) {
-        logger.warn('whatsapp.instance.disconnect.stillConnected', {
-          tenantId,
-          instanceId: instance.id,
-          status: context.status.status,
-        });
-      }
-
-      const historyEntry = buildHistoryEntry('disconnect-instance', req.user?.id ?? 'system', {
-        status: context.status.status,
-        connected: context.status.connected,
-        wipe: Boolean(wipe),
-      });
-
-      const metadataWithHistory = appendInstanceHistory(
-        context.stored.metadata as InstanceMetadata,
-        historyEntry
-      );
-      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-      const derivedStatus = context.brokerStatus
-        ? mapBrokerStatusToDbStatus(context.brokerStatus)
-        : mapBrokerInstanceStatusToDbStatus(context.status.status);
-
-      const lastSeenAt = context.status.connected ? context.stored.lastSeenAt : new Date();
-
-      await prisma.whatsAppInstance.update({
-        where: { id: context.stored.id },
-        data: {
-          status: derivedStatus,
-          connected: context.status.connected,
-          metadata: metadataWithoutError,
-          lastSeenAt,
-        },
-      });
-
-      res.json({
-        success: true,
-        data: {
-          instance: context.instance,
-          status: context.status,
-          connected: context.status.connected,
-          qr: context.qr,
-          instances: context.instances,
-        },
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-router.delete(
-  '/whatsapp/instances/:id',
-  instanceIdParamValidator(),
-  query('wipe').optional().isBoolean().toBoolean(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-    const wipe = typeof req.query?.wipe === 'boolean' ? (req.query.wipe as boolean) : false;
-
-    let instance: PrismaWhatsAppInstance | null = null;
-
-    try {
-      if (looksLikeWhatsAppJid(instanceId)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'USE_DISCONNECT_FOR_JID',
-            message:
-              'Instâncias sincronizadas diretamente com o WhatsApp devem ser desconectadas via POST /api/integrations/whatsapp/instances/:id/disconnect.',
-            details: { instanceId },
-          },
-        });
-        return;
-      }
-
-      instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const ensuredInstance = instance;
-
-      const campaignsToRemove: Array<{ id: string; name: string | null }> = await prisma.campaign.findMany({
-        where: {
-          tenantId,
-          whatsappInstanceId: ensuredInstance.id,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
-      });
-
-      let brokerReportedMissing = false;
-      try {
-        await whatsappBrokerClient.deleteInstance(ensuredInstance.brokerId, {
-          instanceId: ensuredInstance.id,
-          wipe,
-        });
-      } catch (error) {
-        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-          const brokerError = error as WhatsAppBrokerError;
-          const brokerStatus = readBrokerErrorStatus(brokerError);
-
-          if (brokerStatus === 404 || isBrokerMissingInstanceError(brokerError)) {
-            brokerReportedMissing = true;
-            logger.info('whatsapp.instance.delete.brokerMissing', {
-              tenantId,
-              instanceId: ensuredInstance.id,
-              brokerId: ensuredInstance.brokerId,
-              status: brokerStatus,
-              code: brokerError.code,
-              requestId: brokerError.requestId,
-            });
-          } else {
-            throw brokerError;
-          }
-        } else {
-          throw error;
-        }
-      }
-
-      await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-        if (campaignsToRemove.length > 0) {
-          const campaignIds = campaignsToRemove.map((campaign) => campaign.id);
-          await tx.campaign.deleteMany({ where: { id: { in: campaignIds } } });
-        }
-
-        await tx.whatsAppInstance.delete({ where: { id: ensuredInstance.id } });
-      });
-
-      logger.info('whatsapp.instance.delete.success', {
+      logger.error('whatsapp.instances.list.unexpected', {
         tenantId,
-        instanceId: ensuredInstance.id,
-        actorId: req.user?.id ?? 'unknown',
-        removedCampaigns: campaignsToRemove.length,
-        campaignIds: campaignsToRemove.map((campaign) => campaign.id),
-        wipe,
-        brokerReportedMissing,
+        error: describeErrorForLog(error),
       });
 
-      res.status(204).send();
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        const brokerError = error as WhatsAppBrokerError;
-        const brokerStatus = readBrokerErrorStatus(brokerError);
-
-        logger.warn('whatsapp.instance.delete.brokerFailed', {
-          tenantId,
-          instanceId: instance?.id ?? readInstanceIdParam(req),
-          status: brokerStatus,
-          code: brokerError.code,
-          requestId: brokerError.requestId,
-        });
-        res.sendStatus(502);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// POST /api/integrations/whatsapp/instances/disconnect - Disconnect the default WhatsApp instance
-router.post(
-  '/whatsapp/instances/disconnect',
-  body('wipe').optional().isBoolean(),
-  body('instanceId').optional().isString().trim().notEmpty(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const requestedInstanceId =
-      typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
-    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
-    const wipe = typeof req.body?.wipe === 'boolean' ? req.body.wipe : undefined;
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const result = await disconnectStoredInstance(
-        tenantId,
-        instance as StoredInstance,
-        req.user?.id ?? 'system',
-        wipe === undefined ? {} : { wipe }
-      );
-
-      if (result.outcome === 'retry') {
-        res.status(202).json({
-          success: true,
-          data: {
-            instanceId: instance.id,
-            disconnected: false,
-            existed: true,
-            connected: null,
-            pending: true,
-            retry: {
-              scheduledAt: result.retry.scheduledAt,
-              status: result.retry.status,
-              requestId: result.retry.requestId,
-            },
-          },
-        });
-        return;
-      }
-
-      const context = result.context;
-
-      res.json({
-        success: true,
-        data: {
-          instanceId: context.instance.id,
-          instance: context.instance,
-          status: context.status,
-          connected: context.status.connected,
-          qr: context.qr,
-          instances: context.instances,
-        },
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-router.post(
-  '/whatsapp/instances/:id/disconnect',
-  instanceIdParamValidator(),
-  body('wipe').optional().isBoolean(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = resolveRequestTenantId(req);
-    const actorId = req.user?.id ?? 'system';
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
+      res.status(500).json({
         success: false,
         error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
+          code: 'INTERNAL_ERROR',
+          message: 'Falha ao listar instâncias do WhatsApp.',
         },
       });
-      return;
-    }
-    const wipe = typeof req.body?.wipe === 'boolean' ? (req.body.wipe as boolean) : undefined;
-
-    try {
-      const storedInstance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (storedInstance && storedInstance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      if (storedInstance) {
-        const result = await disconnectStoredInstance(
-          tenantId,
-          storedInstance as StoredInstance,
-          actorId,
-          wipe === undefined ? {} : { wipe }
-        );
-
-        if (result.outcome === 'retry') {
-          res.status(202).json({
-            success: true,
-            data: {
-              instanceId: storedInstance.id,
-              disconnected: false,
-              existed: true,
-              connected: null,
-              pending: true,
-              retry: {
-                scheduledAt: result.retry.scheduledAt,
-                status: result.retry.status,
-                requestId: result.retry.requestId,
-              },
-            },
-          });
-          return;
-        }
-
-        const context = result.context;
-
-        res.json({
-          success: true,
-          data: {
-            instanceId: context.instance.id,
-            instance: context.instance,
-            status: context.status,
-            connected: context.status.connected,
-            qr: context.qr,
-            instances: context.instances,
-            existed: true,
-          },
-        });
-        return;
-      }
-
-      if (!looksLikeWhatsAppJid(instanceId)) {
-        res.json({
-          success: true,
-          data: {
-            instanceId,
-            disconnected: true,
-            existed: false,
-          },
-        });
-        return;
-      }
-
-      try {
-        await whatsappBrokerClient.disconnectInstance(instanceId, {
-          instanceId,
-          ...(wipe === undefined ? {} : { wipe }),
-        });
-
-        res.json({
-          success: true,
-          data: {
-            instanceId,
-            disconnected: true,
-            existed: true,
-            connected: false,
-          },
-        });
-      } catch (error) {
-        if (isBrokerMissingInstanceError(error)) {
-          res.json({
-            success: true,
-            data: {
-              instanceId,
-              disconnected: true,
-              existed: false,
-            },
-          });
-          return;
-        }
-
-        if (
-          (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) &&
-          (isBrokerAlreadyDisconnectedError(error) || readBrokerErrorStatus(error) === 409 || readBrokerErrorStatus(error) === 410)
-        ) {
-          const brokerError = error as WhatsAppBrokerError;
-          const brokerStatus = readBrokerErrorStatus(brokerError);
-
-          logger.info('whatsapp.instance.disconnect.directAlready', {
-            tenantId,
-            instanceId,
-            status: brokerStatus,
-            code: brokerError.code,
-            requestId: brokerError.requestId,
-          });
-
-          res.json({
-            success: true,
-            data: {
-              instanceId,
-              disconnected: true,
-              existed: true,
-              connected: false,
-            },
-          });
-          return;
-        }
-
-        if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-          const brokerError = error as WhatsAppBrokerError;
-          const brokerStatus = readBrokerErrorStatus(brokerError);
-
-          if (brokerStatus !== null && brokerStatus >= 500) {
-            logger.warn('whatsapp.instance.disconnect.retryScheduled', {
-              tenantId,
-              instanceId,
-              status: brokerStatus,
-              code: brokerError.code,
-              requestId: brokerError.requestId,
-              wipe: Boolean(wipe),
-            });
-
-            const scheduledAt = new Date().toISOString();
-
-            await scheduleWhatsAppDisconnectRetry(tenantId, {
-              instanceId,
-              status: brokerStatus,
-              requestId: brokerError.requestId ?? null,
-              wipe: Boolean(wipe),
-              requestedAt: scheduledAt,
-            });
-
-            res.status(202).json({
-              success: true,
-              data: {
-                instanceId,
-                disconnected: false,
-                pending: true,
-                existed: true,
-                connected: null,
-                retry: {
-                  scheduledAt,
-                  status: brokerStatus,
-                  requestId: brokerError.requestId ?? null,
-                },
-              },
-            });
-            return;
-          }
-        }
-
-        if (handleWhatsAppIntegrationError(res, error)) {
-          return;
-        }
-
-        throw error;
-      }
-    } catch (error) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
     }
   })
 );
-
-// GET /api/integrations/whatsapp/instances/:id/qr - Fetch QR code for a WhatsApp instance
-router.get(
-  '/whatsapp/instances/:id/qr',
-  instanceIdParamValidator(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        fetchSnapshots: false,
-      });
-
-      const qr = normalizeQr({ ...context.qr, ...qrCode });
-
-      res.json({
-        success: true,
-        data: {
-          instance: context.instance,
-          status: context.status,
-          qr,
-          instances: context.instances,
-        },
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        const brokerError = error as WhatsAppBrokerError;
-        const brokerStatus = readBrokerErrorStatus(brokerError);
-
-        if (brokerStatus === 404 || isBrokerMissingInstanceError(brokerError)) {
-          res.sendStatus(404);
-          return;
-        }
-
-        logger.warn('whatsapp.instance.qr.brokerFailed', {
-          tenantId,
-          instanceId,
-          status: brokerStatus,
-          code: brokerError.code,
-          requestId: brokerError.requestId,
-        });
-        res.sendStatus(502);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// GET /api/integrations/whatsapp/instances/:id/qr.png - Fetch QR code image for a WhatsApp instance
-router.get(
-  '/whatsapp/instances/:id/qr.png',
-  instanceIdParamValidator(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.sendStatus(404);
-        return;
-      }
-
-      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
-      const normalized = normalizeQr(qrCode);
-      const buffer = extractQrImageBuffer(normalized);
-
-      if (!buffer) {
-        res.sendStatus(404);
-        return;
-      }
-
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'private, max-age=5');
-      res.send(buffer);
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// GET /api/integrations/whatsapp/instances/qr - Fetch QR code for the default WhatsApp instance
-router.get(
-  '/whatsapp/instances/qr',
-  query('instanceId').optional().isString().trim().notEmpty(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const requestedInstanceId =
-      typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
-    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        fetchSnapshots: false,
-      });
-
-      const qr = normalizeQr({ ...context.qr, ...qrCode });
-
-      res.json({
-        success: true,
-        data: {
-          instanceId: context.instance.id,
-          instance: context.instance,
-          status: context.status,
-          qr,
-          connected: context.status.connected,
-          instances: context.instances,
-        },
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// GET /api/integrations/whatsapp/instances/qr.png - Fetch QR code image for the default WhatsApp instance
-router.get(
-  '/whatsapp/instances/qr.png',
-  query('instanceId').optional().isString().trim().notEmpty(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const requestedInstanceId =
-      typeof req.query.instanceId === 'string' ? req.query.instanceId.trim() : '';
-    const instanceId = requestedInstanceId || resolveDefaultInstanceId();
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.sendStatus(404);
-        return;
-      }
-
-      const qrCode = await whatsappBrokerClient.getQrCode(instance.brokerId, { instanceId: instance.id });
-      const normalized = normalizeQr(qrCode);
-      const buffer = extractQrImageBuffer(normalized);
-
-      if (!buffer) {
-        res.sendStatus(404);
-        return;
-      }
-
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'private, max-age=5');
-      res.send(buffer);
-    } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-// GET /api/integrations/whatsapp/instances/:id/status - Retrieve instance status
-router.get(
-  '/whatsapp/instances/:id/status',
-  instanceIdParamValidator(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const context = await resolveInstanceOperationContext(tenantId, instance as StoredInstance, {
-        refresh: true,
-      });
-
-      const derivedStatus = context.brokerStatus
-        ? mapBrokerStatusToDbStatus(context.brokerStatus)
-        : mapBrokerInstanceStatusToDbStatus(context.status.status);
-
-      await prisma.whatsAppInstance.update({
-        where: { id: context.stored.id },
-        data: {
-          status: derivedStatus,
-          connected: context.status.connected,
-          lastSeenAt: context.status.connected ? new Date() : context.stored.lastSeenAt,
-        },
-      });
-
-      res.json({
-        success: true,
-        data: {
-          instance: context.instance,
-          status: context.status,
-          connected: context.status.connected,
-          qr: context.qr,
-          instances: context.instances,
-        },
-      });
-    } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-router.post(
-  '/whatsapp/instances/:id/exists',
-  instanceIdParamValidator(),
-  body('to').isString().trim().notEmpty(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-    const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const transport = getWhatsAppTransport();
-      const exists = await transport.checkRecipient({
-        sessionId: instance.brokerId,
-        instanceId: instance.id,
-        to,
-      });
-
-      res.json({
-        success: true,
-        data: exists,
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-router.get(
-  '/whatsapp/instances/:id/groups',
-  instanceIdParamValidator(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const transport = getWhatsAppTransport();
-      const groups = await transport.getGroups({
-        sessionId: instance.brokerId,
-        instanceId: instance.id,
-      });
-
-      res.json({
-        success: true,
-        data: groups,
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-router.get(
-  '/whatsapp/instances/:id/metrics',
-  instanceIdParamValidator(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const instanceId = readInstanceIdParam(req);
-    if (!instanceId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: INVALID_INSTANCE_ID_MESSAGE,
-        },
-      });
-      return;
-    }
-    const tenantId = resolveRequestTenantId(req);
-
-    try {
-      const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-      if (!instance || instance.tenantId !== tenantId) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância WhatsApp não encontrada.',
-          },
-        });
-        return;
-      }
-
-      const metrics = await whatsappBrokerClient.getMetrics({
-        sessionId: instance.brokerId,
-        instanceId: instance.id,
-      });
-
-      res.json({
-        success: true,
-        data: metrics,
-      });
-    } catch (error: unknown) {
-      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
-        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
-        return;
-      }
-
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-router.post('/whatsapp/session/connect', requireTenant, (_req: Request, res: Response) => {
-  respondLegacyEndpointGone(
-    res,
-    'Esta rota foi descontinuada. Utilize POST /api/integrations/whatsapp/instances/:id/pair e acompanhe o status via GET /api/integrations/whatsapp/instances/:id/status.'
-  );
-});
-
-router.post('/whatsapp/session/logout', requireTenant, (_req: Request, res: Response) => {
-  respondLegacyEndpointGone(
-    res,
-    'Esta rota foi descontinuada. Utilize POST /api/integrations/whatsapp/instances/:id/logout para encerrar a sessão.'
-  );
-});
-
-router.get('/whatsapp/session/status', requireTenant, (_req: Request, res: Response) => {
-  respondLegacyEndpointGone(
-    res,
-    'Esta rota foi descontinuada. Consulte GET /api/integrations/whatsapp/instances/:id/status para obter o andamento da conexão.'
-  );
-});
-
-// POST /api/integrations/whatsapp/instances/:instanceId/polls - Criar enquete
-router.post(
-  '/whatsapp/instances/:id/polls',
-  instanceIdParamValidator(),
-  body('to').isString().isLength({ min: 1 }),
-  body('question').isString().isLength({ min: 1 }),
-  body('options').isArray({ min: 2 }),
-  body('options.*').isString().isLength({ min: 1 }),
-  body('allowMultipleAnswers').optional().isBoolean().toBoolean(),
-  validateRequest,
-  asyncHandler(async (req: Request, res: Response) => {
-    const { id: instanceId } = req.params as { id: string };
-
-    const instance = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-
-    if (!instance) {
-      res.locals.errorCode = 'INSTANCE_NOT_FOUND';
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'INSTANCE_NOT_FOUND',
-          message: 'Instância WhatsApp não encontrada.',
-        },
-      });
-      return;
-    }
-
-    const isConnected =
-      instance.connected ?? (typeof instance.status === 'string' && instance.status === 'connected');
-
-    if (!isConnected) {
-      res.locals.errorCode = 'INSTANCE_DISCONNECTED';
-      res.status(409).json({
-        success: false,
-        error: {
-          code: 'INSTANCE_DISCONNECTED',
-          message: 'A instância de WhatsApp está desconectada.',
-          details: {
-            status: instance.status ?? null,
-            connected: instance.connected ?? null,
-          },
-        },
-      });
-      return;
-    }
-
-    const { to, question, options, allowMultipleAnswers } = req.body as {
-      to: string;
-      question: string;
-      options: string[];
-      allowMultipleAnswers?: boolean;
-    };
-
-    try {
-      const transport = getWhatsAppTransport();
-      const pollPayload = {
-        sessionId: instance.id,
-        instanceId: instance.id,
-        to,
-        question,
-        options,
-        ...(typeof allowMultipleAnswers === 'boolean' ? { allowMultipleAnswers } : {}),
-      } satisfies Parameters<typeof transport.createPoll>[0];
-
-      const poll = await transport.createPoll(pollPayload);
-
-      const ack = normalizeBaileysAck(poll?.ack);
-      const statusValue = poll?.status;
-      const status =
-        typeof statusValue === 'string' && statusValue.trim().length > 0
-          ? statusValue
-          : 'queued';
-
-      if (isBaileysAckFailure(ack, statusValue)) {
-        res.status(502).json({
-          success: false,
-          error: {
-            code: 'WHATSAPP_POLL_FAILED',
-            message: 'WhatsApp retornou falha ao criar a enquete.',
-            details: {
-              ack,
-              status: typeof statusValue === 'string' ? statusValue : null,
-              id: poll?.id ?? null,
-            },
-          },
-        });
-        return;
-      }
-
-      res.status(201).json({
-        success: true,
-        data: {
-          poll: {
-            id: poll?.id ?? null,
-            status,
-            ack,
-            raw: poll?.raw ?? null,
-          },
-          rate: parseRateLimit(poll?.rate ?? null),
-        },
-      });
-    } catch (error: unknown) {
-      if (handleWhatsAppIntegrationError(res, error)) {
-        return;
-      }
-      throw error;
-    }
-  })
-);
-
-export const __testing = {
-  collectNumericFromSources,
-  locateStatusCountsCandidate,
-  normalizeStatusCountsData,
-  locateRateSourceCandidate,
-  normalizeRateUsageData,
-  serializeStoredInstance,
-  syncInstancesFromBroker,
-};
-
-export { router as integrationsRouter };
-
-export const processWhatsAppDisconnectRetry = async (tenantId: string): Promise<void> => {
-  const key = `${WHATSAPP_DISCONNECT_RETRY_KEY_PREFIX}${tenantId}`;
-  const state = await prisma.integrationState.findUnique({ where: { key } });
-  const parsed = readDisconnectRetryState(state?.value) ?? { jobs: [] };
-  const jobs = parsed.jobs.slice(0, MAX_DISCONNECT_RETRY_JOBS);
-  for (const job of jobs) {
-    try {
-      await whatsappBrokerClient.disconnectInstance(job.instanceId, { wipe: job.wipe });
-      logger.info('whatsapp.instances.disconnect.retrySuccess', { tenantId, instanceId: job.instanceId });
-    } catch (err) {
-      logger.warn('whatsapp.instances.disconnect.retryFailed', { tenantId, instanceId: job.instanceId, error: describeErrorForLog(err) });
-    }
-  }
-};
