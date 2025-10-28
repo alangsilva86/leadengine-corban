@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -28,6 +28,8 @@ import {
   ChevronDown,
   History,
   AlertTriangle,
+  MoreVertical,
+  Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
@@ -46,6 +48,21 @@ import CreateCampaignDialog from './components/CreateCampaignDialog.jsx';
 import CreateInstanceDialog from './components/CreateInstanceDialog.jsx';
 import ReassignCampaignDialog from './components/ReassignCampaignDialog.jsx';
 import QrPreview from './components/QrPreview.jsx';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table.jsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
 import { toast } from 'sonner';
 import { resolveWhatsAppErrorCopy } from './utils/whatsapp-error-codes.js';
 import useWhatsAppInstances, { looksLikeWhatsAppJid } from './hooks/useWhatsAppInstances.jsx';
@@ -830,6 +847,7 @@ const WhatsAppConnect = ({
   const [instancePendingDelete, setInstancePendingDelete] = useState(null);
   const [isCreateInstanceOpen, setCreateInstanceOpen] = useState(false);
   const [isCreateCampaignOpen, setCreateCampaignOpen] = useState(false);
+  const [expandedInstanceId, setExpandedInstanceId] = useState(null);
   const [pendingReassign, setPendingReassign] = useState(null);
   const [reassignIntent, setReassignIntent] = useState('reassign');
   const [persistentWarning, setPersistentWarning] = useState(null);
@@ -1555,301 +1573,306 @@ const WhatsAppConnect = ({
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-                <div
-                  className={cn(
-                    'grid gap-4 rounded-[var(--radius)] p-4 text-sm',
-                    SURFACE_COLOR_UTILS.glassTile
-                  )}
-                >
-              <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">
-                    {agreementDisplayName}
+            <div className="grid gap-3 rounded-[var(--radius)] border border-border/60 bg-surface-overlay-glass p-4 text-sm sm:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{agreementDisplayName}</p>
+                {selectedAgreement?.region ? (
+                  <p className="text-xs text-muted-foreground">{selectedAgreement.region}</p>
+                ) : null}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância selecionada</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    {instance?.name || instance?.id || 'Escolha uma instância'}
                   </p>
-                  {selectedAgreement?.region ? (
-                    <p className="text-xs text-muted-foreground">{selectedAgreement.region}</p>
+                  {selectedInstanceStatusInfo ? (
+                    <Badge variant={selectedInstanceStatusInfo.variant} className="px-2 py-0 text-[0.65rem]">
+                      {selectedInstanceStatusInfo.label}
+                    </Badge>
                   ) : null}
                 </div>
-                <div className="max-w-[260px] sm:max-w-full">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância selecionada</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-foreground">
-                      {instance?.name || instance?.id || 'Escolha uma instância'}
-                    </p>
-                    {selectedInstanceStatusInfo ? (
-                      <Badge variant={selectedInstanceStatusInfo.variant} className="px-2 py-0 text-[0.65rem]">
-                        {selectedInstanceStatusInfo.label}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {instance ? `Telefone: ${formatPhoneNumber(selectedInstancePhone)}` : '—'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Campanha</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">
-                    {hasCampaign ? campaign.name : 'Será criada após a confirmação'}
-                  </p>
-                  {hasCampaign && campaign.updatedAt ? (
-                    <p className="text-xs text-muted-foreground">
-                      Atualizada em {new Date(campaign.updatedAt).toLocaleString('pt-BR')}
-                    </p>
-                  ) : hasCampaign ? (
-                    <p className="text-xs text-muted-foreground">
-                      Instância vinculada: {campaign.instanceName || campaign.instanceId}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Será ligada ao número selecionado.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">
-                <span>Instâncias disponíveis</span>
-                <div className="flex items-center gap-2">
-                  {instancesReady && hasHiddenInstances && hasRenderableInstances ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="link"
-                      className="h-auto px-0 text-[0.65rem] uppercase"
-                      onClick={() => setShowAllInstances((current) => !current)}
-                    >
-                      {showAllInstances ? 'Ocultar desconectadas' : 'Mostrar todas'}
-                    </Button>
-                  ) : null}
-                  <span>{instancesCountLabel}</span>
-                </div>
-              </div>
-              {showFilterNotice ? (
-                <p className="text-[0.7rem] text-muted-foreground">
-                  Mostrando apenas instâncias conectadas. Use “Mostrar todas” para acessar sessões desconectadas.
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {instance ? `Telefone: ${formatPhoneNumber(selectedInstancePhone)}` : '—'}
                 </p>
-              ) : null}
-              {!instancesReady ? (
-                <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                  {Array.from({ length: 2 }).map((_, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        'flex h-full w-full flex-col rounded-2xl p-4',
-                        SURFACE_COLOR_UTILS.glassTile
-                      )}
-                    >
-                      <Skeleton className="h-5 w-3/4" />
-                      <Skeleton className="mt-2 h-4 w-1/2" />
-                      <Skeleton className="mt-2 h-4 w-2/3" />
-                      <div className="mt-4 grid gap-2">
-                        <Skeleton className="h-16 w-full" />
-                        <Skeleton className="h-16 w-full" />
-                      </div>
-                      <Skeleton className="mt-4 h-10 w-24" />
-                    </div>
-                  ))}
-                </div>
-              ) : hasRenderableInstances ? (
-                <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                  {renderInstances.map((item, index) => {
-                    const isCurrent = instance?.id === item.id;
-                    const statusInfo = getStatusInfo(item);
-                    const metrics = getInstanceMetrics(item);
-                    const statusValues = metrics.status || {};
-                    const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
-                    const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
-                    const phoneLabel = resolveInstancePhone(item);
-                    const addressLabel = item.address || item.jid || item.session || '';
-                    const lastUpdated = item.updatedAt || item.lastSeen || item.connectedAt;
-                    const lastUpdatedLabel = lastUpdated
-                      ? new Date(lastUpdated).toLocaleString('pt-BR')
-                      : '—';
-
-                    return (
-                      <div
-                        key={item.id || item.name || index}
-                        className={cn(
-                          'flex h-full w-full flex-col rounded-2xl border p-4 transition-colors',
-                          isCurrent
-                            ? SURFACE_COLOR_UTILS.glassTileActive
-                            : SURFACE_COLOR_UTILS.glassTileIdle
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">{item.name || item.id}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatPhoneNumber(phoneLabel) || '—'}
-                        </p>
-                        {addressLabel && addressLabel !== phoneLabel ? (
-                          <p className="text-xs text-muted-foreground">{addressLabel}</p>
-                        ) : null}
-                      </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Remover instância"
-                            title="Remover instância"
-                            disabled={deletingInstanceId === item.id}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setInstancePendingDelete(item);
-                            }}
-                          >
-                            {deletingInstanceId === item.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                          <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
-                            <div
-                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                            >
-                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
-                              <p className="mt-1 text-base font-semibold text-foreground">
-                                {formatMetricValue(metrics.sent)}
-                              </p>
-                            </div>
-                            <div
-                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                            >
-                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
-                              <p className="mt-1 text-base font-semibold text-foreground">
-                                {formatMetricValue(metrics.queued)}
-                              </p>
-                            </div>
-                            <div
-                              className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                            >
-                              <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
-                              <p className="mt-1 text-base font-semibold text-foreground">
-                                {formatMetricValue(metrics.failed)}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-2 text-center sm:grid-cols-3 lg:grid-cols-5">
-                            {statusCodeMeta.map((meta) => (
-                              <div
-                                key={meta.code}
-                                className={cn('rounded-lg p-3', SURFACE_COLOR_UTILS.glassTile)}
-                                title={meta.description}
-                              >
-                                <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                                  {meta.label}
-                                </p>
-                                <p className="mt-1 text-base font-semibold text-foreground">
-                                  {formatMetricValue(statusValues[meta.code])}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-
-                          <div
-                            className={cn(
-                              'rounded-lg p-3 text-left',
-                              SURFACE_COLOR_UTILS.glassTile
-                            )}
-                            title="Uso do limite de envio reportado pelo broker."
-                          >
-                            <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                              <span>Utilização do limite</span>
-                              <span>{ratePercentage}%</span>
-                            </div>
-                            <div
-                              className={cn(
-                                'mt-2 h-2 w-full overflow-hidden rounded-full',
-                                SURFACE_COLOR_UTILS.progressTrack
-                              )}
-                            >
-                              <div
-                                className={cn(
-                                  'h-full rounded-full transition-all',
-                                  SURFACE_COLOR_UTILS.progressIndicator
-                                )}
-                                style={{ width: `${ratePercentage}%` }}
-                              />
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                              <span>Usadas: {formatMetricValue(rateUsage.used)}</span>
-                              <span>Disponível: {formatMetricValue(rateUsage.remaining)}</span>
-                              <span>Limite: {formatMetricValue(rateUsage.limit)}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <span>Atualizado: {lastUpdatedLabel}</span>
-                          {item.user ? <span>Operador: {item.user}</span> : null}
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant={isCurrent ? 'default' : 'outline'}
-                            onClick={() => void handleInstanceSelect(item)}
-                            disabled={isBusy}
-                          >
-                            {isCurrent ? 'Instância selecionada' : 'Selecionar'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => void handleViewQr(item)}
-                            disabled={isBusy || !isAuthenticated}
-                          >
-                            <QrCode className="mr-2 h-3.5 w-3.5" /> Ver QR
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : hasHiddenInstances ? (
-                <div
-                  className={cn(
-                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
-                    SURFACE_COLOR_UTILS.glassTileDashed
-                  )}
-                >
-                  <p>Nenhuma instância conectada no momento. Mostre todas para gerenciar sessões desconectadas.</p>
-                  <Button
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => setShowAllInstances(true)}
-                    disabled={isBusy}
-                  >
-                    Mostrar todas
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  className={cn(
-                    'rounded-2xl p-6 text-center text-sm text-muted-foreground',
-                    SURFACE_COLOR_UTILS.glassTileDashed
-                  )}
-                >
-                  <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o Lead Engine.</p>
-                  <Button
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => void handleCreateInstance()}
-                  >
-                    Criar instância agora
-                  </Button>
-                </div>
-              )}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Campanha</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {hasCampaign ? campaign.name : 'Será criada após a confirmação'}
+                </p>
+                {hasCampaign && campaign.updatedAt ? (
+                  <p className="text-xs text-muted-foreground">
+                    Atualizada em {new Date(campaign.updatedAt).toLocaleString('pt-BR')}
+                  </p>
+                ) : hasCampaign ? (
+                  <p className="text-xs text-muted-foreground">
+                    Instância vinculada: {campaign.instanceName || campaign.instanceId}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Será vinculada ao número selecionado.</p>
+                )}
+              </div>
             </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{instancesCountLabel}</span>
+                {showFilterNotice ? (
+                  <span className="ml-2 text-xs text-muted-foreground/80">
+                    Mostrando apenas instâncias ativas.
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowAllInstances((previous) => !previous)}
+                  disabled={isBusy}
+                >
+                  {showAllInstances ? 'Ocultar desconectadas' : 'Mostrar desconectadas'}
+                </Button>
+              </div>
+            </div>
+
+            {!instancesReady ? (
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="rounded-lg border border-border/60 bg-surface-overlay-glass p-4"
+                  >
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="mt-2 h-3 w-1/4" />
+                    <Skeleton className="mt-4 h-3 w-1/2" />
+                  </div>
+                ))}
+              </div>
+            ) : hasRenderableInstances ? (
+              <div className="overflow-hidden rounded-[var(--radius)] border border-border/60">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Instância</TableHead>
+                      <TableHead>Contato</TableHead>
+                      <TableHead>Mensagens</TableHead>
+                      <TableHead>Atualização</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {renderInstances.map((item) => {
+                      const isCurrent = instance?.id === item.id;
+                      const isExpanded = expandedInstanceId === item.id;
+                      const statusInfo = getStatusInfo(item);
+                      const metrics = getInstanceMetrics(item);
+                      const statusValues = metrics.status || {};
+                      const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
+                      const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
+                      const phoneLabel = resolveInstancePhone(item);
+                      const addressLabel = item.address || item.jid || item.session || '';
+                      const lastUpdated =
+                        item.updatedAt || item.lastSeen || item.connectedAt || item.lastActivity || null;
+                      const lastUpdatedLabel = formatTimestampLabel(lastUpdated);
+
+                      return (
+                        <Fragment key={item.id || item.name}>
+                          <TableRow data-state={isCurrent ? 'selected' : undefined}>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium text-foreground">
+                                    {item.name || item.displayId || item.id}
+                                  </span>
+                                  <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                  <span>ID: {item.id}</span>
+                                  {addressLabel && addressLabel !== item.id ? (
+                                    <span className="break-all">{addressLabel}</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                                <span className="font-medium text-foreground">
+                                  {formatPhoneNumber(phoneLabel)}
+                                </span>
+                                {item.metadata?.agreementId ? (
+                                  <span>Convênio: {item.metadata.agreementId}</span>
+                                ) : null}
+                                {item.metadata?.label ? <span>{item.metadata.label}</span> : null}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5">
+                                  <span className="font-medium text-foreground">Enviadas</span>
+                                  <span>{formatMetricValue(metrics.sent)}</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5">
+                                  <span className="font-medium text-foreground">Fila</span>
+                                  <span>{formatMetricValue(metrics.queued)}</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5">
+                                  <span className="font-medium text-foreground">Falhas</span>
+                                  <span>{formatMetricValue(metrics.failed)}</span>
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+                                <span>Atualizado: {lastUpdatedLabel}</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="h-1.5 w-28 overflow-hidden rounded-full bg-border/50">
+                                    <div
+                                      className="h-full rounded-full bg-primary transition-all"
+                                      style={{ width: `${ratePercentage}%` }}
+                                    />
+                                  </div>
+                                  <span>{ratePercentage}%</span>
+                                </div>
+                                <span>
+                                  Limite: {formatMetricValue(rateUsage.limit)} • Restante: {formatMetricValue(rateUsage.remaining)}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant={isCurrent ? 'default' : 'outline'}
+                                  onClick={() => void handleInstanceSelect(item)}
+                                  disabled={isBusy}
+                                >
+                                  {isCurrent ? 'Selecionada' : 'Selecionar'}
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label="Ações da instância">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      onSelect={(event) => {
+                                        event.preventDefault();
+                                        void handleViewQr(item);
+                                      }}
+                                      disabled={isBusy || !isAuthenticated}
+                                    >
+                                      <QrCode className="h-4 w-4" />
+                                      Ver QR Code
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={(event) => {
+                                        event.preventDefault();
+                                        setExpandedInstanceId((current) => (current === item.id ? null : item.id));
+                                      }}
+                                    >
+                                      <Info className="h-4 w-4" />
+                                      {isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      onSelect={(event) => {
+                                        event.preventDefault();
+                                        setInstancePendingDelete(item);
+                                      }}
+                                      disabled={deletingInstanceId === item.id}
+                                    >
+                                      {deletingInstanceId === item.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                      )}
+                                      {looksLikeWhatsAppJid(item.id) ? 'Desconectar sessão' : 'Remover instância'}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="bg-muted/40">
+                                <div className="space-y-3 rounded-lg border border-border/60 bg-background/60 p-4 text-xs text-muted-foreground">
+                                  <div className="flex flex-wrap items-center gap-2 text-[0.7rem] uppercase tracking-wide text-muted-foreground">
+                                    Códigos de status
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {Object.entries(statusValues).map(([code, value]) => (
+                                      <span
+                                        key={code}
+                                        className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs"
+                                      >
+                                        <span className="font-medium text-foreground">#{code}</span>
+                                        <span>{formatMetricValue(value)}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                    <span>
+                                      Broker ID:{' '}
+                                      <span className="font-medium text-foreground">{item.brokerId || '—'}</span>
+                                    </span>
+                                    {item.metadata?.origin ? (
+                                      <span>
+                                        Origem:{' '}
+                                        <span className="font-medium text-foreground">{item.metadata.origin}</span>
+                                      </span>
+                                    ) : null}
+                                    {item.user ? (
+                                      <span>
+                                        Operador:{' '}
+                                        <span className="font-medium text-foreground">{item.user}</span>
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : hasHiddenInstances ? (
+              <div
+                className={cn(
+                  'rounded-2xl p-6 text-center text-sm text-muted-foreground',
+                  SURFACE_COLOR_UTILS.glassTileDashed
+                )}
+              >
+                <p>Nenhuma instância conectada no momento. Habilite desconectadas para gerenciar sessões pendentes.</p>
+                <Button
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setShowAllInstances(true)}
+                  disabled={isBusy}
+                >
+                  Mostrar desconectadas
+                </Button>
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  'rounded-2xl p-6 text-center text-sm text-muted-foreground',
+                  SURFACE_COLOR_UTILS.glassTileDashed
+                )}
+              >
+                <p>Nenhuma instância encontrada. Crie uma nova para iniciar a sincronização com o Lead Engine.</p>
+                <Button size="sm" className="mt-4" onClick={() => void handleCreateInstance()}>
+                  Criar instância agora
+                </Button>
+              </div>
+            )}
 
             {errorState ? (
               <div
