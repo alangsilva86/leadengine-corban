@@ -122,6 +122,7 @@ router.post(
           error: {
             code: error.code,
             message: error.message,
+            details: error.suggestedId ? { suggestedId: error.suggestedId } : undefined,
           },
         });
         return;
@@ -189,8 +190,8 @@ const rateLimitInstances = (req: Request, res: Response, next: Function) => {
   const mode = typeof req.query.mode === 'string' ? req.query.mode : 'db';
   const key = `${tenantId}|${forced ? 'refresh' : mode}`;
   const now = Date.now();
-  const windowMs = forced || mode === 'sync' ? 30_000 : 15_000;
-  const max = forced || mode === 'sync' ? 2 : 10;
+  const windowMs = forced ? 60_000 : mode === 'sync' ? 30_000 : 15_000;
+  const max = forced ? 5 : mode === 'sync' ? 3 : 10;
   const arr = (instancesRateWindow.get(key) ?? []).filter(ts => now - ts < windowMs);
   if (arr.length >= max) {
     res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message: 'Muitas requisições. Tente novamente em instantes.' } });

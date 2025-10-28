@@ -247,7 +247,6 @@ const PRISMA_STORAGE_ERROR_CODES = new Set([
   'P2022',
   'P2023',
   'P2024',
-  'P2025',
 ]);
 
 const DATABASE_DISABLED_ERROR_CODES = new Set([
@@ -983,13 +982,49 @@ export const executeSideEffects = async (
   }
 };
 
+export 
+const slugifyInstanceId = (value: string): string => {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+};
+
+const generateInstanceIdSuggestion = async (tenantId: string, baseName: string, fallbackId: string): Promise<string> => {
+  const base = slugifyInstanceId(baseName) || slugifyInstanceId(fallbackId) || 'whatsapp-instance';
+  const maxLength = 48;
+  let candidate = base.slice(0, maxLength);
+  const suffix = () => Math.random().toString(36).slice(2, 6);
+
+  const exists = async (id: string) => {
+    const existing = await prisma.whatsAppInstance.findUnique({
+      where: { tenantId_id: { tenantId, id } },
+      select: { id: true },
+    });
+    return Boolean(existing);
+  };
+
+  let attempts = 0;
+  while (await exists(candidate) && attempts < 5) {
+    const suffixValue = suffix();
+    const trimmedBase = candidate.slice(0, Math.max(0, maxLength - suffixValue.length - 1));
+    candidate = `${trimmedBase}-${suffixValue}`.replace(/^-+/, '');
+    attempts += 1;
+  }
+
+  return candidate || fallbackId || `instance-${suffix()}`;
+};
 export class WhatsAppInstanceAlreadyExistsError extends Error {
   readonly code = 'INSTANCE_ALREADY_EXISTS';
   readonly status = 409;
+  readonly suggestedId: string | null;
 
-  constructor(message = 'Já existe uma instância WhatsApp com esse identificador.') {
+  constructor(message = 'Já existe uma instância WhatsApp com esse identificador.', suggestedId: string | null = null) {
     super(message);
     this.name = 'WhatsAppInstanceAlreadyExistsError';
+    this.suggestedId = suggestedId;
   }
 }
 
@@ -1077,7 +1112,8 @@ export const createWhatsAppInstance = async ({
   }
 
   if (existing) {
-    throw new WhatsAppInstanceAlreadyExistsError();
+    const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
+    throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
   }
 
   let brokerInstance: BrokerWhatsAppInstance;
@@ -1147,7 +1183,8 @@ export const createWhatsAppInstance = async ({
     })) as StoredInstance;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw new WhatsAppInstanceAlreadyExistsError();
+      const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
+      throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
     }
 
     if (error instanceof Prisma.PrismaClientValidationError) {
@@ -3242,15 +3279,23 @@ export const deleteStoredInstance = async (
 
   await archiveInstanceSnapshot(prisma, { tenantId, stored, context, actorId, deletedAt });
 
-  await prisma.$transaction(async (tx) => {
-    await tx.campaign.updateMany({
-      where: { tenantId, whatsappInstanceId: stored.id },
-      data: { whatsappInstanceId: null },
-    });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.campaign.updateMany({
+        where: { tenantId, whatsappInstanceId: stored.id },
+        data: { whatsappInstanceId: null },
+      });
 
-    await tx.whatsAppSession.deleteMany({ where: { instanceId: stored.id } });
-    await tx.whatsAppInstance.delete({ where: { id: stored.id } });
-  });
+      await tx.whatsAppSession.deleteMany({ where: { instanceId: stored.id } });
+      await tx.whatsAppInstance.delete({ where: { id: stored.id } });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      logger.warn('whatsapp.instances.delete.notFound', { tenantId, instanceId: stored.id });
+    } else {
+      throw error;
+    }
+  }
 
   try {
     await clearWhatsAppDisconnectRetry(tenantId, stored.id);

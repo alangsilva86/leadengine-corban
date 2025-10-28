@@ -11,7 +11,7 @@ const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
 const INSTANCES_CACHE_VERSION = 2;
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
-const FORCE_REFRESH_DEBOUNCE_MS = 5 * 1000;
+const FORCE_REFRESH_DEBOUNCE_MS = 15 * 1000;
 
 const noop = () => {};
 const skippedResult = Object.freeze({ success: false, skipped: true });
@@ -1620,6 +1620,12 @@ function useWhatsAppInstancesController({
         toast.error(friendly.title ?? 'Falha ao criar instância', {
           description: friendly.message,
         });
+        const suggestedId = err?.response?.data?.error?.details?.suggestedId ?? null;
+        if (suggestedId) {
+          toast.message('Identificador sugerido', {
+            description: `Experimente usar o id "${suggestedId}" ao criar a instância.`,
+          });
+        }
         const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
         throw errorToThrow;
       } finally {
