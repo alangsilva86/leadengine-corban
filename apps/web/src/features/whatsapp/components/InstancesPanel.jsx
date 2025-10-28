@@ -3,8 +3,16 @@ import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
-import { AlertCircle, Link2, Loader2, QrCode, RefreshCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, Link2, Loader2, QrCode, RefreshCcw, Trash2, MoreVertical, Check } from 'lucide-react';
 import CampaignHistoryDialog from './CampaignHistoryDialog.jsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 
 const InstancesPanel = ({
   surfaceStyles,
@@ -197,24 +205,43 @@ const InstancesPanel = ({
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Remover instância"
-                          title="Remover instância"
-                          disabled={deletingInstanceId === item.id}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onRequestDelete?.(item);
-                          }}
-                        >
-                          {deletingInstanceId === item.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Ações da instância"
+                              disabled={deletingInstanceId === item.id}
+                            >
+                              {deletingInstanceId === item.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <MoreVertical className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => onViewQr?.(item)}
+                              disabled={isBusy || !isAuthenticated}
+                            >
+                              <QrCode className="mr-2 h-4 w-4" />
+                              Ver QR Code
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                onRequestDelete?.(item);
+                              }}
+                              disabled={deletingInstanceId === item.id}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remover instância
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
 
@@ -240,20 +267,32 @@ const InstancesPanel = ({
                         </div>
                       </div>
 
-                      <div className="grid gap-2 text-center sm:grid-cols-3 lg:grid-cols-5">
-                        {statusCodeMeta.map((meta) => (
-                          <div
-                            key={meta.code}
-                            className={cn('rounded-lg p-3', surfaceStyles.glassTile)}
-                            title={meta.description}
-                          >
-                            <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">{meta.label}</p>
-                            <p className="mt-1 text-base font-semibold text-foreground">
-                              {formatMetricValue(statusValues[meta.code])}
-                            </p>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="rounded-lg p-3 text-center cursor-help" style={{ gridColumn: 'span 3' }}>
+                            <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Códigos de Status</p>
+                            <div className="mt-2 flex items-center justify-around gap-2">
+                              {statusCodeMeta.map((meta) => (
+                                <div key={meta.code} className="text-center">
+                                  <p className="text-xs text-muted-foreground">{meta.label}</p>
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {formatMetricValue(statusValues[meta.code])}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        ))}
-                      </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <div className="space-y-1 text-xs">
+                            {statusCodeMeta.map((meta) => (
+                              <div key={meta.code}>
+                                <strong>Código {meta.label}:</strong> {meta.description}
+                              </div>
+                            ))}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
 
                       <div
                         className={cn('rounded-lg p-3 text-left', surfaceStyles.glassTile)}
@@ -284,22 +323,22 @@ const InstancesPanel = ({
                       {item.user ? <span>Operador: {item.user}</span> : null}
                     </div>
 
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-4">
                       <Button
                         size="sm"
                         variant={isCurrent ? 'default' : 'outline'}
                         onClick={() => onSelectInstance?.(item)}
                         disabled={isBusy}
+                        className="w-full"
                       >
-                        {isCurrent ? 'Instância selecionada' : 'Selecionar'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => onViewQr?.(item)}
-                        disabled={isBusy || !isAuthenticated}
-                      >
-                        <QrCode className="mr-2 h-3.5 w-3.5" /> Ver QR
+                        {isCurrent ? (
+                          <>
+                            <Check className="mr-2 h-4 w-4" />
+                            Instância selecionada
+                          </>
+                        ) : (
+                          'Selecionar instância'
+                        )}
                       </Button>
                     </div>
                   </div>
