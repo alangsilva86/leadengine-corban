@@ -11,6 +11,7 @@ const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
 const INSTANCES_CACHE_VERSION = 2;
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+const FORCE_REFRESH_DEBOUNCE_MS = 5 * 1000;
 
 const noop = () => {};
 const skippedResult = Object.freeze({ success: false, skipped: true });
@@ -507,6 +508,8 @@ function useWhatsAppInstancesController({
   const loadingQrRef = useRef(false);
   const generatingQrRef = useRef(false);
   const qrAbortRef = useRef(null);
+  const lastForceRefreshAtRef = useRef(0);
+  const rateLimitUntilRef = useRef(0);
 
   const isBusy = () =>
     Boolean(loadingInstancesRef.current || loadingQrRef.current || generatingQrRef.current);
@@ -965,6 +968,9 @@ function useWhatsAppInstancesController({
         forceRefresh,
         campaignInstanceId: campaignInstanceIdOverride,
       } = options;
+      const now = Date.now();
+      const rateLimitActive = now < rateLimitUntilRef.current;
+      const recentlyForced = now - lastForceRefreshAtRef.current < FORCE_REFRESH_DEBOUNCE_MS;
       const hasExplicitPreference = Object.prototype.hasOwnProperty.call(
         options,
         'preferredInstanceId'
@@ -981,13 +987,27 @@ function useWhatsAppInstancesController({
         setInstancesReady(false);
       }
       setLoadingInstances(true);
+      loadingInstancesRef.current = true;
       setErrorMessage(null);
       try {
         log('🚀 Iniciando sincronização de instâncias WhatsApp', {
           tenantAgreement: selectedAgreement?.id ?? null,
           preferredInstanceId: resolvedPreferredInstanceId ?? null,
         });
-        const shouldForceBrokerSync = forceRefresh === true;
+        let shouldForceBrokerSync = forceRefresh === true;
+        if (shouldForceBrokerSync && loadingInstancesRef.current) {
+          shouldForceBrokerSync = false;
+        }
+        if (shouldForceBrokerSync && (rateLimitActive || recentlyForced)) {
+          log('⏳ Forçando sincronização adiado por cooldown', {
+            agreementId,
+            preferredInstanceId: resolvedPreferredInstanceId ?? null,
+            rateLimited: rateLimitActive,
+            recentlyForced,
+            cooldownMs: rateLimitActive ? rateLimitUntilRef.current - now : FORCE_REFRESH_DEBOUNCE_MS,
+          });
+          shouldForceBrokerSync = false;
+        }
 
         log('🛰️ Solicitando lista de instâncias', {
           agreementId,
@@ -998,22 +1018,36 @@ function useWhatsAppInstancesController({
         const instancesUrl = shouldForceBrokerSync ? `${baseInstancesUrl}?refresh=1` : baseInstancesUrl;
         const response = await apiGet(instancesUrl);
         const parsedResponse = parseInstancesPayload(response);
+        if (shouldForceBrokerSync) {
+          lastForceRefreshAtRef.current = Date.now();
+          rateLimitUntilRef.current = 0;
+        }
         setSessionActive(true);
         setAuthDeferred(false);
-    let list = ensureArrayOfObjects(parsedResponse.instances);
-    let hasServerList = Boolean(response);
-    let connectResult = providedConnect || null;
+        let list = ensureArrayOfObjects(parsedResponse.instances);
+        let hasServerList = Boolean(response);
+        let connectResult = providedConnect || null;
     let triedFallbackConnect = false;
 
     if (list.length === 0 && !shouldForceBrokerSync) {
-      const refreshed = await apiGet(`${baseInstancesUrl}?refresh=1`).catch(() => null);
-      if (refreshed) {
-        const parsedRefreshed = parseInstancesPayload(refreshed);
-        const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
-        if (refreshedList.length > 0) {
-          list = refreshedList;
-          hasServerList = true;
+      const canForceFallback = Date.now() >= rateLimitUntilRef.current;
+      if (canForceFallback) {
+        const refreshed = await apiGet(`${baseInstancesUrl}?refresh=1`).catch(() => null);
+        if (refreshed) {
+          const parsedRefreshed = parseInstancesPayload(refreshed);
+          const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
+          if (refreshedList.length > 0) {
+            list = refreshedList;
+            hasServerList = true;
+            lastForceRefreshAtRef.current = Date.now();
+            rateLimitUntilRef.current = 0;
+          }
         }
+      } else {
+        log('⏳ Ignorando fallback de refresh devido a cooldown ativo', {
+          agreementId,
+          preferredInstanceId: resolvedPreferredInstanceId ?? null,
+        });
       }
     }
 
@@ -1154,6 +1188,10 @@ function useWhatsAppInstancesController({
         const errorCode = err?.response?.data?.code ?? err?.code;
         const isMissingInstanceError = status === 404 || errorCode === 'INSTANCE_NOT_FOUND';
 
+        if (status === 429) {
+          const retryAfterMs = parseRetryAfterMs(err?.response?.headers?.['retry-after']);
+          rateLimitUntilRef.current = Date.now() + (retryAfterMs ?? RATE_LIMIT_COOLDOWN_MS);
+        }
         if (isAuthError(err)) {
           handleAuthFallback({ error: err });
         } else if (!isMissingInstanceError) {
@@ -1174,6 +1212,7 @@ function useWhatsAppInstancesController({
       } finally {
         setLoadingInstances(false);
         setInstancesReady(true);
+        loadingInstancesRef.current = false;
       }
     },
     [
