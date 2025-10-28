@@ -28,10 +28,19 @@ import {
   Plus,
   RefreshCcw,
   Trash2,
+  MoreVertical,
+  Link,
 } from 'lucide-react';
 
 import CampaignMetricsGrid from './CampaignMetricsGrid.jsx';
 import { statusMeta } from '../utils/campaign-helpers.js';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
 
 const NO_AGREEMENT_VALUE = '__no_agreement__';
 const NO_INSTANCE_VALUE = '__no_instance__';
@@ -250,15 +259,26 @@ const CampaignsPanel = ({
         className="space-y-4 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-4"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-foreground">{campaign.name}</p>
-            <p className="text-xs text-muted-foreground">ID: {campaign.id}</p>
-            <p className="text-xs text-muted-foreground">
-              Convênio: {agreementLabel}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Instância: {instanceLabel}
-            </p>
+          <div className="space-y-1.5">
+            <p className="text-base font-bold text-foreground">{campaign.name}</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>ID: {campaign.id}</span>
+              <span>•</span>
+              <span>{agreementLabel}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs">
+              {isLinked ? (
+                <>
+                  <Link className="h-3.5 w-3.5 text-success" />
+                  <span className="text-success font-medium">{instanceLabel}</span>
+                </>
+              ) : (
+                <>
+                  <Link2Off className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">{instanceLabel}</span>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {highlight ? <Badge variant="info">Instância selecionada</Badge> : null}
@@ -299,7 +319,7 @@ const CampaignsPanel = ({
             {!isEnded && campaign.status !== 'active' ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="default"
                 onClick={() => onActivate?.(campaign)}
                 disabled={isProcessing(campaign.id)}
               >
@@ -308,7 +328,7 @@ const CampaignsPanel = ({
                 ) : (
                   <PlayCircle className="mr-2 h-4 w-4" />
                 )}
-                Ativar
+                Ativar campanha
               </Button>
             ) : null}
             {!isEnded && campaign.status === 'active' ? (
@@ -327,48 +347,50 @@ const CampaignsPanel = ({
               </Button>
             ) : null}
             {!isEnded ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onReassign?.(campaign)}
-                disabled={isProcessing(campaign.id)}
-              >
-                {isProcessing(campaign.id, 'reassign') ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowLeftRight className="mr-2 h-4 w-4" />
-                )}
-                {isLinked ? 'Reatribuir' : 'Vincular instância'}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isProcessing(campaign.id)}
+                  >
+                    {isProcessing(campaign.id) ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <MoreVertical className="mr-2 h-4 w-4" />
+                    )}
+                    Ações
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => onReassign?.(campaign)}
+                    disabled={isProcessing(campaign.id)}
+                  >
+                    <ArrowLeftRight className="mr-2 h-4 w-4" />
+                    {isLinked ? 'Reatribuir instância' : 'Vincular instância'}
+                  </DropdownMenuItem>
+                  {isLinked ? (
+                    <DropdownMenuItem
+                      onClick={() => onDisconnect?.(campaign)}
+                      disabled={isProcessing(campaign.id)}
+                    >
+                      <Link2Off className="mr-2 h-4 w-4" />
+                      Desvincular instância
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => onDelete?.(campaign)}
+                    disabled={isProcessing(campaign.id)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Encerrar campanha
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
-            {!isEnded && isLinked ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onDisconnect?.(campaign)}
-                disabled={isProcessing(campaign.id)}
-              >
-                {isProcessing(campaign.id, 'reassign') ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Link2Off className="mr-2 h-4 w-4" />
-                )}
-                Desvincular
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => onDelete?.(campaign)}
-              disabled={isProcessing(campaign.id)}
-            >
-              {isProcessing(campaign.id, 'delete') ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="mr-2 h-4 w-4" />
-              )}
-              Encerrar
-            </Button>
           </div>
         </div>
       </div>
