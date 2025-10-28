@@ -1,3 +1,52 @@
+// --- Controls and limits ---
+const SYNC_TTL_MS = 30_000; // 30s cooldown for broker sync per tenant unless forced
+const MAX_BFS_NODES = 5000; // hard cap for BFS scanners
+const LAST_SYNC_KEY_PREFIX = 'whatsapp:instances:lastSync:tenant:';
+const SNAPSHOT_CACHE_KEY_PREFIX = 'whatsapp:instances:snapshotCache:tenant:';
+
+const getLastSyncAt = async (tenantId: string): Promise<Date | null> => {
+  const key = `${LAST_SYNC_KEY_PREFIX}${tenantId}`;
+  const rec = await prisma.integrationState.findUnique({ where: { key }, select: { value: true } });
+  if (!rec?.value || typeof rec.value !== 'object' || rec.value === null) return null;
+  const v = (rec.value as Record<string, unknown>).lastSyncAt;
+  if (typeof v !== 'string') return null;
+  const ts = Date.parse(v);
+  return Number.isFinite(ts) ? new Date(ts) : null;
+};
+
+const setLastSyncAt = async (tenantId: string, at: Date): Promise<void> => {
+  const key = `${LAST_SYNC_KEY_PREFIX}${tenantId}`;
+  const value: Prisma.JsonObject = { lastSyncAt: at.toISOString() };
+  await prisma.integrationState.upsert({
+    where: { key },
+    update: { value },
+    create: { key, value },
+  });
+};
+
+type CachedSnapshots = { expiresAt: string; snapshots: WhatsAppBrokerInstanceSnapshot[] };
+
+const getCachedSnapshots = async (tenantId: string): Promise<WhatsAppBrokerInstanceSnapshot[] | null> => {
+  const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
+  const rec = await prisma.integrationState.findUnique({ where: { key }, select: { value: true } });
+  if (!rec?.value || typeof rec.value !== 'object' || rec.value === null) return null;
+  const v = rec.value as Record<string, unknown>;
+  const expiresAt = typeof v.expiresAt === 'string' ? Date.parse(v.expiresAt) : NaN;
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
+  const raw = (v.snapshots ?? null) as unknown;
+  return Array.isArray(raw) ? (raw as WhatsAppBrokerInstanceSnapshot[]) : null;
+};
+
+const setCachedSnapshots = async (tenantId: string, snapshots: WhatsAppBrokerInstanceSnapshot[], ttlSeconds = 30): Promise<void> => {
+  const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  const value: Prisma.JsonObject = { expiresAt, snapshots: snapshots as unknown as Prisma.JsonArray };
+  await prisma.integrationState.upsert({
+    where: { key },
+    update: { value },
+    create: { key, value },
+  });
+};
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
 import {
@@ -952,6 +1001,7 @@ const collectNumericFromSources = (sources: unknown[], keywords: string[]): numb
 
     const targetKeywords = override ?? normalizedKeywords;
     const queue: unknown[] = Array.isArray(root) ? [...root] : [root];
+    let visitedCount = 0;
 
     while (queue.length > 0) {
       const current = queue.shift();
@@ -963,6 +1013,11 @@ const collectNumericFromSources = (sources: unknown[], keywords: string[]): numb
         continue;
       }
       visited.add(current);
+
+      visitedCount += 1;
+      if (visitedCount > MAX_BFS_NODES) {
+        return null;
+      }
 
       if (Array.isArray(current)) {
         for (const entry of current) {
@@ -1025,7 +1080,7 @@ const locateStatusCountsCandidate = (sources: unknown[]): unknown => {
 
   const visited = new Set<unknown>();
   const queue: unknown[] = sources.filter((item) => item !== undefined && item !== null);
-
+  let visitedCount = 0;
   while (queue.length > 0) {
     const current = queue.shift();
     if (!current || typeof current !== 'object') {
@@ -1035,6 +1090,11 @@ const locateStatusCountsCandidate = (sources: unknown[]): unknown => {
       continue;
     }
     visited.add(current);
+
+    visitedCount += 1;
+    if (visitedCount > MAX_BFS_NODES) {
+      return undefined;
+    }
 
     if (Array.isArray(current)) {
       if (current.length > 0 && current.every((entry) => typeof entry === 'number')) {
@@ -1127,7 +1187,7 @@ const locateRateSourceCandidate = (sources: unknown[]): Record<string, unknown> 
   const normalizedKeywords = keywords.map(normalizeKeyName);
   const visited = new Set<unknown>();
   const queue: unknown[] = sources.filter((item) => item !== undefined && item !== null);
-
+  let visitedCount = 0;
   while (queue.length > 0) {
     const current = queue.shift();
     if (!current || typeof current !== 'object') {
@@ -1137,6 +1197,11 @@ const locateRateSourceCandidate = (sources: unknown[]): Record<string, unknown> 
       continue;
     }
     visited.add(current);
+
+    visitedCount += 1;
+    if (visitedCount > MAX_BFS_NODES) {
+      return null;
+    }
 
     if (Array.isArray(current)) {
       for (const entry of current) {
@@ -1395,7 +1460,16 @@ const resolvePhoneNumber = (
   );
 
   if (phone) {
-    return phone;
+    try {
+      return normalizePhoneNumber(phone);
+    } catch (e) {
+      if (!(e instanceof PhoneNormalizationError)) {
+        logger.warn('whatsapp.instances.phone.normalizeUnexpected', { tenantId: instance.tenantId, error: String(e) });
+      }
+      // fallback: extract digits and prefix once
+      const digits = phone.replace(/\D+/g, '');
+      return digits ? `+${digits}` : phone;
+    }
   }
 
   const brokerRecordObject = isRecord(brokerRecord) ? (brokerRecord as Record<string, unknown>) : null;
@@ -1479,6 +1553,17 @@ const serializeStoredInstance = (
       asRecord(rawStatus?.stats)
     ) ?? null;
 
+  const baseMetadata = (instance.metadata as Record<string, unknown> | null) ?? {};
+  const cachedNormalized = typeof baseMetadata.normalizedMetrics === 'object' ? (baseMetadata.normalizedMetrics as Record<string, unknown>) : null;
+
+  const brokerBroughtNewMetrics =
+    Boolean(brokerStatus?.metrics) || Boolean(brokerStatus?.rateUsage) ||
+    Boolean(rawStatus?.metrics)   || Boolean(rawStatus?.messages)   || Boolean(rawStatus?.stats);
+
+  if (!brokerBroughtNewMetrics && cachedNormalized && (!metrics || Object.keys(metrics).length === 0)) {
+    metrics = { ...cachedNormalized };
+  }
+
   const messages =
     asRecord(brokerStatus?.messages) ??
     asRecord(rawStatus?.messages) ??
@@ -1492,7 +1577,6 @@ const serializeStoredInstance = (
       asRecord(rawStatus?.rateUsage)
     ) ?? null;
 
-  const baseMetadata = (instance.metadata as Record<string, unknown> | null) ?? {};
   const metadata: Record<string, unknown> = { ...baseMetadata };
 
   if (brokerStatus?.metrics && typeof brokerStatus.metrics === 'object') {
@@ -1780,6 +1864,10 @@ const syncInstancesFromBroker = async (
     return null;
   };
 
+  const createdPayload: Array<{ id: string; status: WhatsAppInstanceStatus; connected: boolean; phoneNumber: string | null }> = [];
+  const updatedPayload: Array<{ id: string; status: WhatsAppInstanceStatus; connected: boolean; phoneNumber: string | null }> = [];
+  const unchangedIds: string[] = [];
+
   for (const snapshot of brokerSnapshots) {
     const brokerInstance = snapshot.instance;
     const brokerStatus = snapshot.status ?? null;
@@ -1868,76 +1956,83 @@ const syncInstancesFromBroker = async (
     }
 
     if (existingInstance) {
-      logger.info('whatsapp.instances.sync.updateStored', {
-        tenantId,
-        instanceId,
-        status: derivedStatus,
-        connected: derivedConnected,
-        phoneNumber,
-      });
-      const metadataWithHistory = appendInstanceHistory(
-        existingInstance.metadata as InstanceMetadata,
-        historyEntry
-      ) as Record<string, unknown>;
-      metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
-      const brokerNameCandidate =
-        typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
-      const hasBrokerName = brokerNameCandidate.length > 0;
-      const existingDisplayName =
-        typeof existingInstance.name === 'string' && existingInstance.name.trim().length > 0
-          ? existingInstance.name.trim()
-          : null;
+      const statusChanged = existingInstance.status !== derivedStatus;
+      const connectedChanged = existingInstance.connected !== derivedConnected;
+      const phoneChanged = (existingInstance.phoneNumber ?? null) !== (phoneNumber ?? null);
+      const hasChange = statusChanged || connectedChanged || phoneChanged;
 
-      if (hasBrokerName && existingDisplayName && existingDisplayName !== brokerNameCandidate) {
-        logger.debug('whatsapp.instances.sync.preserveStoredName', {
+      if (hasChange) {
+        logger.info('whatsapp.instances.sync.updateStored', {
           tenantId,
           instanceId,
-          storedName: existingDisplayName,
-          brokerNameCandidate,
-          reason: 'preserve-user-defined-name',
+          status: derivedStatus,
+          connected: derivedConnected,
+          phoneNumber,
         });
-      } else if (hasBrokerName && !existingDisplayName) {
-        logger.debug('whatsapp.instances.sync.useBrokerDisplayNameFallback', {
+        const metadataWithHistory = appendInstanceHistory(
+          existingInstance.metadata as InstanceMetadata,
+          historyEntry
+        ) as Record<string, unknown>;
+        metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
+        const brokerNameCandidate =
+          typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
+        const hasBrokerName = brokerNameCandidate.length > 0;
+        const existingDisplayName =
+          typeof existingInstance.name === 'string' && existingInstance.name.trim().length > 0
+            ? existingInstance.name.trim()
+            : null;
+
+        if (hasBrokerName && existingDisplayName && existingDisplayName !== brokerNameCandidate) {
+          logger.debug('whatsapp.instances.sync.preserveStoredName', {
+            tenantId,
+            instanceId,
+            storedName: existingDisplayName,
+            brokerNameCandidate,
+            reason: 'preserve-user-defined-name',
+          });
+        } else if (hasBrokerName && !existingDisplayName) {
+          logger.debug('whatsapp.instances.sync.useBrokerDisplayNameFallback', {
+            tenantId,
+            instanceId,
+            brokerNameCandidate,
+            reason: 'no-stored-name',
+          });
+        }
+
+        const metadataNickname =
+          typeof metadataWithHistory.displayName === 'string' && metadataWithHistory.displayName.trim().length > 0
+            ? metadataWithHistory.displayName.trim()
+            : null;
+        const preservedDisplayName =
+          metadataNickname ?? existingDisplayName ?? (hasBrokerName ? brokerNameCandidate : instanceId);
+        metadataWithHistory.displayName = preservedDisplayName;
+        metadataWithHistory.label = preservedDisplayName;
+        const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+        const updateData: Prisma.WhatsAppInstanceUpdateArgs['data'] = {
           tenantId,
-          instanceId,
-          brokerNameCandidate,
-          reason: 'no-stored-name',
+          status: derivedStatus,
+          connected: derivedConnected,
+          brokerId: instanceId,
+          ...(phoneNumber ? { phoneNumber } : {}),
+          ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
+          metadata: metadataWithoutError,
+        };
+
+        await prisma.whatsAppInstance.update({
+          where: { id: existingInstance.id },
+          data: updateData,
         });
+
+        updatedPayload.push({
+          id: existingInstance.id,
+          status: derivedStatus,
+          connected: derivedConnected,
+          phoneNumber,
+        });
+      } else {
+        unchangedIds.push(existingInstance.id);
       }
-
-      const metadataNickname =
-        typeof metadataWithHistory.displayName === 'string' && metadataWithHistory.displayName.trim().length > 0
-          ? metadataWithHistory.displayName.trim()
-          : null;
-      const preservedDisplayName =
-        metadataNickname ?? existingDisplayName ?? (hasBrokerName ? brokerNameCandidate : instanceId);
-      metadataWithHistory.displayName = preservedDisplayName;
-      metadataWithHistory.label = preservedDisplayName;
-      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-      const updateData: Prisma.WhatsAppInstanceUpdateArgs['data'] = {
-        tenantId,
-        status: derivedStatus,
-        connected: derivedConnected,
-        brokerId: existingInstance.id,
-        ...(phoneNumber ? { phoneNumber } : {}),
-        ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
-        metadata: metadataWithoutError,
-      };
-
-      await prisma.whatsAppInstance.update({
-        where: { id: existingInstance.id },
-        data: updateData,
-      });
-
-      emitToTenant(tenantId, 'whatsapp.instance.updated', {
-        id: existingInstance.id,
-        status: derivedStatus,
-        connected: derivedConnected,
-        phoneNumber,
-        syncedAt: new Date().toISOString(),
-        history: historyEntry,
-      });
     } else {
       logger.info('whatsapp.instances.sync.createMissing', {
         tenantId,
@@ -1978,13 +2073,11 @@ const syncInstancesFromBroker = async (
         },
       });
 
-      emitToTenant(tenantId, 'whatsapp.instance.created', {
+      createdPayload.push({
         id: instanceId,
         status: derivedStatus,
         connected: derivedConnected,
         phoneNumber,
-        syncedAt: new Date().toISOString(),
-        history: historyEntry,
       });
     }
   }
@@ -1993,6 +2086,18 @@ const syncInstancesFromBroker = async (
     where: { tenantId },
     orderBy: { createdAt: 'asc' },
   })) as StoredInstance[];
+
+  emitToTenant(tenantId, 'whatsapp.instances.synced', {
+    syncedAt: new Date().toISOString(),
+    created: createdPayload,
+    updated: updatedPayload,
+    unchanged: unchangedIds,
+    count: {
+      created: createdPayload.length,
+      updated: updatedPayload.length,
+      unchanged: unchangedIds.length
+    }
+  });
 
   return { instances: refreshed, snapshots: brokerSnapshots };
 };
@@ -2016,6 +2121,10 @@ type InstanceCollectionResult = {
   rawInstances: Array<ReturnType<typeof serializeStoredInstance>>;
   map: Map<string, InstanceCollectionEntry>;
   snapshots: WhatsAppBrokerInstanceSnapshot[];
+  // observability
+  shouldRefresh?: boolean;
+  fetchSnapshots?: boolean;
+  synced?: boolean;
 };
 
 const toPublicInstance = (
@@ -2114,6 +2223,7 @@ const collectInstancesForTenant = async (
   tenantId: string,
   options: InstanceCollectionOptions = {}
 ): Promise<InstanceCollectionResult> => {
+  const refreshFlag = options.refresh;
   const fetchSnapshots = options.fetchSnapshots ?? true;
 
   let storedInstances =
@@ -2125,14 +2235,31 @@ const collectInstancesForTenant = async (
 
   let snapshots = options.snapshots ?? null;
 
-  const refreshFlag = options.refresh;
-  const shouldRefresh =
-    refreshFlag === undefined
-      ? fetchSnapshots
-      : Boolean(refreshFlag) || storedInstances.length === 0;
+  // TTL/cooldown logic
+  let shouldRefresh = false;
+  if (refreshFlag === true) {
+    // explicit force
+    shouldRefresh = true;
+  } else if (refreshFlag === false) {
+    shouldRefresh = false;
+  } else {
+    // default behavior when not specified: do NOT sync unless fetchSnapshots is true and TTL allows it.
+    shouldRefresh = Boolean(fetchSnapshots) && storedInstances.length === 0;
+  }
 
+  // Apply TTL only if we're about to refresh and it's not an explicit force
+  if (shouldRefresh && refreshFlag !== true) {
+    const last = await getLastSyncAt(tenantId);
+    if (last && Date.now() - last.getTime() < SYNC_TTL_MS) {
+      shouldRefresh = false;
+    }
+  }
+
+  let synced = false;
   if (shouldRefresh) {
     try {
+      // observability: count broker calls
+      try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
       const syncResult = await syncInstancesFromBroker(
         tenantId,
         storedInstances,
@@ -2140,6 +2267,9 @@ const collectInstancesForTenant = async (
       );
       storedInstances = syncResult.instances;
       snapshots = syncResult.snapshots;
+      await setLastSyncAt(tenantId, new Date());
+      synced = true;
+      // annotate result flags
     } catch (error) {
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         if (options.refresh) {
@@ -2155,6 +2285,7 @@ const collectInstancesForTenant = async (
     }
   } else if (fetchSnapshots) {
     if (!snapshots) {
+      try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
       snapshots = await whatsappBrokerClient.listInstances(tenantId);
     }
   } else if (!snapshots) {
@@ -2202,13 +2333,17 @@ const collectInstancesForTenant = async (
 
   const instances = entries.map(({ serialized }) => toPublicInstance(serialized));
 
-  return {
+  const result: InstanceCollectionResult = {
     entries,
     instances,
     rawInstances: entries.map(({ serialized }) => serialized),
     map,
     snapshots: snapshots ?? [],
   };
+  result.shouldRefresh = shouldRefresh;
+  result.fetchSnapshots = fetchSnapshots;
+  result.synced = synced;
+  return result;
 };
 
 type InstanceOperationContext = {
@@ -2498,34 +2633,101 @@ const normalizeSessionStatus = (status: BrokerSessionStatus | null | undefined) 
 };
 
 // GET /api/integrations/whatsapp/instances - List WhatsApp instances
+// simple in-memory rate-limiter (per-process)
+const instancesRateWindow = new Map<string, number[]>();
+const rateLimitInstances = (req: Request, res: Response, next: Function) => {
+  const tenantId = resolveRequestTenantId(req);
+  const refreshQuery = req.query.refresh;
+  const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
+  const normalizedRefresh = typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
+  const forced = normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes';
+  const mode = typeof req.query.mode === 'string' ? req.query.mode : 'db';
+  const key = `${tenantId}|${forced ? 'refresh' : mode}`;
+  const now = Date.now();
+  const windowMs = forced || mode === 'sync' ? 30_000 : 15_000;
+  const max = forced || mode === 'sync' ? 2 : 10;
+  const arr = (instancesRateWindow.get(key) ?? []).filter(ts => now - ts < windowMs);
+  if (arr.length >= max) {
+    res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message: 'Muitas requisições. Tente novamente em instantes.' } });
+    return;
+  }
+  arr.push(now);
+  instancesRateWindow.set(key, arr);
+  next();
+};
+
 router.get(
   '/whatsapp/instances',
   requireTenant,
+  rateLimitInstances as any,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = resolveRequestTenantId(req);
+    const t0 = Date.now();
+
     const refreshQuery = req.query.refresh;
     const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
-    const normalizedRefresh =
-      typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
-    const hasRefreshParam = normalizedRefresh !== null;
-    const refreshRequested = hasRefreshParam
-      ? normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes'
-      : undefined;
+    const normalizedRefresh = typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
+    const refreshRequested = normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes';
+
+    const mode = typeof req.query.mode === 'string' ? (req.query.mode as string) : 'db';
+    // db => no broker; snapshot => broker read only; sync => sync DB with broker
+    const baseOptions =
+      mode === 'sync' ? { refresh: true, fetchSnapshots: true } :
+      mode === 'snapshot' ? { refresh: false, fetchSnapshots: true } :
+      { refresh: false, fetchSnapshots: false }; // db default
+
+    // if ?refresh was provided, override options
+    const collectionOptions = { ...baseOptions };
+    if (normalizedRefresh !== null) {
+      collectionOptions.refresh = refreshRequested;
+      collectionOptions.fetchSnapshots = refreshRequested;
+    }
 
     logger.info('whatsapp.instances.list.request', {
       tenantId,
       refreshRequested,
+      mode,
+      options: collectionOptions,
     });
 
     let instances: NormalizedInstance[] = [];
     let usedStorageFallback = false;
 
-    const collectionOptions =
-      refreshRequested === undefined ? {} : { refresh: refreshRequested };
-
     try {
       const result = await collectInstancesForTenant(tenantId, collectionOptions);
-      instances = result.instances;
+      let instancesResult = result.instances;
+
+      const fields = typeof req.query.fields === 'string' ? req.query.fields : 'basic';
+      const pickBasic = (i: any) => ({ id: i.id, tenantId: i.tenantId, name: i.name, status: i.status, connected: i.connected, phoneNumber: i.phoneNumber, lastActivity: i.lastActivity });
+      const pickMetrics = (i: any) => ({ ...pickBasic(i), metrics: i.metrics ?? null, rate: i.rate ?? null, ...(i.metrics?.statusCounts ? { statusCounts: i.metrics.statusCounts } : {}) });
+      const dataInstances = fields === 'full' ? instancesResult : fields === 'metrics' ? instancesResult.map(pickMetrics) : instancesResult.map(pickBasic);
+
+      const durationMs = Date.now() - t0;
+      logger.info('whatsapp.instances.list.response', {
+        tenantId,
+        count: dataInstances.length,
+        refreshRequested,
+        mode,
+        storageFallback: usedStorageFallback,
+        shouldRefresh: result.shouldRefresh ?? false,
+        fetchSnapshots: result.fetchSnapshots ?? false,
+        synced: result.synced ?? false,
+        durationMs,
+      });
+
+      const responsePayload: {
+        success: true;
+        data: { instances: typeof dataInstances };
+        meta?: { storageFallback?: boolean };
+      } = {
+        success: true,
+        data: { instances: dataInstances },
+      };
+      if (usedStorageFallback) {
+        responsePayload.meta = { storageFallback: true };
+      }
+      res.json(responsePayload);
+      return;
     } catch (error: unknown) {
       const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
 
@@ -2540,7 +2742,14 @@ router.get(
 
         let fallbackSnapshots: WhatsAppBrokerInstanceSnapshot[] = [];
         try {
-          fallbackSnapshots = await whatsappBrokerClient.listInstances(tenantId);
+          const cached = await getCachedSnapshots(tenantId);
+          if (cached) {
+            fallbackSnapshots = cached;
+          } else {
+            try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
+            fallbackSnapshots = await whatsappBrokerClient.listInstances(tenantId);
+            await setCachedSnapshots(tenantId, fallbackSnapshots, 30);
+          }
         } catch (fallbackError) {
           if (
             fallbackError instanceof WhatsAppBrokerError ||
@@ -2564,13 +2773,30 @@ router.get(
 
         instances = fallbackInstances;
 
+        const fields = typeof req.query.fields === 'string' ? req.query.fields : 'basic';
+        const pickBasic = (i: any) => ({ id: i.id, tenantId: i.tenantId, name: i.name, status: i.status, connected: i.connected, phoneNumber: i.phoneNumber, lastActivity: i.lastActivity });
+        const pickMetrics = (i: any) => ({ ...pickBasic(i), metrics: i.metrics ?? null, rate: i.rate ?? null, ...(i.metrics?.statusCounts ? { statusCounts: i.metrics.statusCounts } : {}) });
+        const dataInstances = fields === 'full' ? instances : fields === 'metrics' ? instances.map(pickMetrics) : instances.map(pickBasic);
+
         logger.info('whatsapp.instances.list.snapshotFallbackServed', {
           tenantId,
           refreshRequested,
-          instances: instances.length,
+          instances: dataInstances.length,
           snapshots: fallbackSnapshots.length,
           prismaCode,
         });
+
+        const responsePayload: {
+          success: true;
+          data: { instances: typeof dataInstances };
+          meta?: { storageFallback?: boolean };
+        } = {
+          success: true,
+          data: { instances: dataInstances },
+          meta: { storageFallback: true },
+        };
+        res.json(responsePayload);
+        return;
       } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
         respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
         return;
@@ -2580,34 +2806,6 @@ router.get(
         throw error;
       }
     }
-
-    logger.info('whatsapp.instances.list.response', {
-      tenantId,
-      count: instances.length,
-      refreshRequested,
-      storageFallback: usedStorageFallback,
-    });
-
-    const responsePayload: {
-      success: true;
-      data: { instances: NormalizedInstance[] };
-      meta?: {
-        storageFallback?: boolean;
-      };
-    } = {
-      success: true,
-      data: {
-        instances,
-      },
-    };
-
-    if (usedStorageFallback) {
-      responsePayload.meta = {
-        storageFallback: true,
-      };
-    }
-
-    res.json(responsePayload);
   })
 );
 
@@ -4372,3 +4570,18 @@ export const __testing = {
 };
 
 export { router as integrationsRouter };
+
+export const processWhatsAppDisconnectRetry = async (tenantId: string): Promise<void> => {
+  const key = `${WHATSAPP_DISCONNECT_RETRY_KEY_PREFIX}${tenantId}`;
+  const state = await prisma.integrationState.findUnique({ where: { key } });
+  const parsed = readDisconnectRetryState(state?.value) ?? { jobs: [] };
+  const jobs = parsed.jobs.slice(0, MAX_DISCONNECT_RETRY_JOBS);
+  for (const job of jobs) {
+    try {
+      await whatsappBrokerClient.disconnectInstance(job.instanceId, { wipe: job.wipe });
+      logger.info('whatsapp.instances.disconnect.retrySuccess', { tenantId, instanceId: job.instanceId });
+    } catch (err) {
+      logger.warn('whatsapp.instances.disconnect.retryFailed', { tenantId, instanceId: job.instanceId, error: describeErrorForLog(err) });
+    }
+  }
+};
