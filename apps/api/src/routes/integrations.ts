@@ -2828,6 +2828,68 @@ const resolveInstanceOperationContext = async (
   };
 };
 
+type InstanceStatusResponsePayload = {
+  connected: boolean;
+  status: ReturnType<typeof normalizeInstanceStatusResponse>;
+  qr: ReturnType<typeof normalizeQr>;
+  instance: NormalizedInstance;
+  instances: NormalizedInstance[];
+  brokerStatus: WhatsAppStatus | null;
+};
+
+const buildInstanceStatusPayload = (
+  context: InstanceOperationContext,
+  overrideQr?: ReturnType<typeof normalizeQr>
+): InstanceStatusResponsePayload => {
+  const qr = overrideQr ?? context.qr;
+  const status = {
+    ...context.status,
+    qr: qr.qr,
+    qrCode: qr.qrCode,
+    qrExpiresAt: qr.qrExpiresAt,
+    expiresAt: qr.expiresAt,
+  };
+
+  return {
+    connected: status.connected,
+    status,
+    qr,
+    instance: context.instance,
+    instances: context.instances,
+    brokerStatus: context.brokerStatus,
+  };
+};
+
+const fetchStatusWithBrokerQr = async (
+  tenantId: string,
+  stored: StoredInstance,
+  options: { refresh?: boolean; fetchSnapshots?: boolean } = {}
+): Promise<{ context: InstanceOperationContext; qr: ReturnType<typeof normalizeQr> }> => {
+  const context = await resolveInstanceOperationContext(tenantId, stored, {
+    refresh: options.refresh,
+    fetchSnapshots: options.fetchSnapshots,
+  });
+
+  try {
+    try {
+      whatsappHttpRequestsCounter?.inc?.();
+    } catch {
+      // metrics are best effort
+    }
+
+    const brokerQr = await whatsappBrokerClient.getQrCode(stored.brokerId ?? stored.id, {
+      instanceId: stored.id,
+    });
+    const qr = normalizeQr(brokerQr);
+
+    return { context, qr };
+  } catch (error) {
+    // ensure context is returned alongside broker errors when needed
+    (error as { __context__?: InstanceOperationContext }).__context__ = context;
+    throw error;
+  }
+};
+
 type DisconnectStoredInstanceResult =
   | { outcome: 'success'; context: InstanceOperationContext }
   | {
@@ -3468,6 +3530,741 @@ router.get(
           message: 'Falha ao listar instâncias do WhatsApp.',
         },
       });
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/:id/status',
+  requireTenant,
+  instanceIdParamValidator(),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      const issues: ZodIssue[] = [
+        {
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'id'],
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      ];
+      respondWithValidationError(res, issues);
+      return;
+    }
+
+    const refreshQuery = normalizeBooleanValue(req.query.refresh);
+    const snapshotsQuery = normalizeBooleanValue(req.query.snapshots);
+    const refresh = refreshQuery === null ? true : refreshQuery;
+    const fetchSnapshots = snapshotsQuery === null ? true : snapshotsQuery;
+    const tenantId = resolveRequestTenantId(req);
+    const startedAt = Date.now();
+
+    logger.info('whatsapp.instances.status.request', {
+      tenantId,
+      instanceId,
+      refresh,
+      fetchSnapshots,
+    });
+
+    let stored: StoredInstance | null = null;
+    try {
+      stored = (await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_id: {
+            tenantId,
+            id: instanceId,
+          },
+        },
+      })) as StoredInstance | null;
+    } catch (error) {
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (!stored) {
+      logger.warn('whatsapp.instances.status.notFound', {
+        tenantId,
+        instanceId,
+      });
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_NOT_FOUND',
+          message: 'Instância não localizada para o tenant informado.',
+        },
+      });
+      return;
+    }
+
+    try {
+      const context = await resolveInstanceOperationContext(tenantId, stored, {
+        refresh,
+        fetchSnapshots,
+      });
+
+      const payload = buildInstanceStatusPayload(context);
+      const durationMs = Date.now() - startedAt;
+
+      logger.info('whatsapp.instances.status.success', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        status: payload.status.status,
+        connected: payload.connected,
+        durationMs,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: payload,
+        meta: {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          durationMs,
+        },
+      });
+    } catch (error) {
+      if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      }
+
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.error('whatsapp.instances.status.failed', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        durationMs,
+        error: describeErrorForLog(error),
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_STATUS_FAILED',
+          message: 'Falha ao recuperar status da instância WhatsApp.',
+        },
+      });
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/:id/qr',
+  requireTenant,
+  instanceIdParamValidator(),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      const issues: ZodIssue[] = [
+        {
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'id'],
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      ];
+      respondWithValidationError(res, issues);
+      return;
+    }
+
+    const refreshQuery = normalizeBooleanValue(req.query.refresh);
+    const snapshotsQuery = normalizeBooleanValue(req.query.snapshots);
+    const refresh = refreshQuery === null ? true : refreshQuery;
+    const fetchSnapshots = snapshotsQuery === null ? true : snapshotsQuery;
+    const tenantId = resolveRequestTenantId(req);
+    const startedAt = Date.now();
+
+    logger.info('whatsapp.instances.qr.request', {
+      tenantId,
+      instanceId,
+      refresh,
+      fetchSnapshots,
+    });
+
+    let stored: StoredInstance | null = null;
+    try {
+      stored = (await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_id: {
+            tenantId,
+            id: instanceId,
+          },
+        },
+      })) as StoredInstance | null;
+    } catch (error) {
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (!stored) {
+      logger.warn('whatsapp.instances.qr.notFound', {
+        tenantId,
+        instanceId,
+      });
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_NOT_FOUND',
+          message: 'Instância não localizada para o tenant informado.',
+        },
+      });
+      return;
+    }
+
+    const qrUnavailable = () => {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'QR_NOT_AVAILABLE',
+          message: 'QR Code não disponível no momento. Tente novamente em instantes.',
+        },
+      });
+    };
+
+    try {
+      const { context, qr } = await fetchStatusWithBrokerQr(tenantId, stored, {
+        refresh,
+        fetchSnapshots,
+      });
+
+      if (!qr.qr && !qr.qrCode) {
+        logger.warn('whatsapp.instances.qr.empty', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+        });
+        qrUnavailable();
+        return;
+      }
+
+      const payload = buildInstanceStatusPayload(context, qr);
+      const durationMs = Date.now() - startedAt;
+
+      logger.info('whatsapp.instances.qr.success', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        connected: payload.connected,
+        durationMs,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: payload,
+        meta: {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          durationMs,
+        },
+      });
+    } catch (error) {
+      const context = (error as { __context__?: InstanceOperationContext }).__context__ ?? null;
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+      } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const status = readBrokerErrorStatus(error);
+        if (status === 404 || status === 410) {
+          logger.warn('whatsapp.instances.qr.brokerNotReady', {
+            tenantId,
+            instanceId,
+            refresh,
+            fetchSnapshots,
+            status,
+          });
+          qrUnavailable();
+          return;
+        }
+
+        logger.error('whatsapp.instances.qr.brokerFailed', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          status,
+          code: error.code,
+          requestId: error.requestId,
+          error: describeErrorForLog(error),
+        });
+        respondWhatsAppBrokerFailure(res, error);
+        return;
+      } else if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.error('whatsapp.instances.qr.failed', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        durationMs,
+        error: describeErrorForLog(error),
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_QR_FAILED',
+          message: 'Falha ao recuperar QR Code da instância WhatsApp.',
+        },
+        ...(context
+          ? {
+              data: buildInstanceStatusPayload(context),
+            }
+          : {}),
+      });
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/:id/qr.png',
+  requireTenant,
+  instanceIdParamValidator(),
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const instanceId = readInstanceIdParam(req);
+    if (!instanceId) {
+      const issues: ZodIssue[] = [
+        {
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'id'],
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      ];
+      respondWithValidationError(res, issues);
+      return;
+    }
+
+    const refreshQuery = normalizeBooleanValue(req.query.refresh);
+    const snapshotsQuery = normalizeBooleanValue(req.query.snapshots);
+    const refresh = refreshQuery === null ? true : refreshQuery;
+    const fetchSnapshots = snapshotsQuery === null ? true : snapshotsQuery;
+    const tenantId = resolveRequestTenantId(req);
+    const startedAt = Date.now();
+
+    logger.info('whatsapp.instances.qrImage.request', {
+      tenantId,
+      instanceId,
+      refresh,
+      fetchSnapshots,
+    });
+
+    let stored: StoredInstance | null = null;
+    try {
+      stored = (await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_id: {
+            tenantId,
+            id: instanceId,
+          },
+        },
+      })) as StoredInstance | null;
+    } catch (error) {
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (!stored) {
+      logger.warn('whatsapp.instances.qrImage.notFound', {
+        tenantId,
+        instanceId,
+      });
+      res.sendStatus(404);
+      return;
+    }
+
+    try {
+      const { context, qr } = await fetchStatusWithBrokerQr(tenantId, stored, {
+        refresh,
+        fetchSnapshots,
+      });
+
+      const buffer = extractQrImageBuffer(qr);
+      if (!buffer) {
+        logger.warn('whatsapp.instances.qrImage.empty', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+        });
+        res.sendStatus(404);
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.info('whatsapp.instances.qrImage.success', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        connected: context.status.connected,
+        durationMs,
+      });
+
+      res.setHeader('content-type', 'image/png');
+      res.status(200).send(buffer);
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+      } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const status = readBrokerErrorStatus(error);
+        if (status === 404 || status === 410) {
+          logger.warn('whatsapp.instances.qrImage.brokerNotReady', {
+            tenantId,
+            instanceId,
+            refresh,
+            fetchSnapshots,
+            status,
+          });
+          res.sendStatus(404);
+          return;
+        }
+
+        logger.error('whatsapp.instances.qrImage.brokerFailed', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          status,
+          code: error.code,
+          requestId: error.requestId,
+          error: describeErrorForLog(error),
+        });
+        respondWhatsAppBrokerFailure(res, error);
+        return;
+      } else if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.error('whatsapp.instances.qrImage.failed', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        durationMs,
+        error: describeErrorForLog(error),
+      });
+
+      res.sendStatus(500);
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/qr',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = resolveRequestTenantId(req);
+    const instanceId = resolveDefaultInstanceId();
+    const refreshQuery = normalizeBooleanValue(req.query.refresh);
+    const snapshotsQuery = normalizeBooleanValue(req.query.snapshots);
+    const refresh = refreshQuery === null ? true : refreshQuery;
+    const fetchSnapshots = snapshotsQuery === null ? true : snapshotsQuery;
+    const startedAt = Date.now();
+
+    logger.info('whatsapp.instances.qrDefault.request', {
+      tenantId,
+      instanceId,
+      refresh,
+      fetchSnapshots,
+    });
+
+    let stored: StoredInstance | null = null;
+    try {
+      stored = (await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_id: {
+            tenantId,
+            id: instanceId,
+          },
+        },
+      })) as StoredInstance | null;
+    } catch (error) {
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (!stored) {
+      logger.warn('whatsapp.instances.qrDefault.notFound', {
+        tenantId,
+        instanceId,
+      });
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_NOT_FOUND',
+          message: 'Instância padrão não localizada para o tenant informado.',
+        },
+      });
+      return;
+    }
+
+    const qrUnavailable = () => {
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'QR_NOT_AVAILABLE',
+          message: 'QR Code não disponível no momento. Tente novamente em instantes.',
+        },
+      });
+    };
+
+    try {
+      const { context, qr } = await fetchStatusWithBrokerQr(tenantId, stored, {
+        refresh,
+        fetchSnapshots,
+      });
+
+      if (!qr.qr && !qr.qrCode) {
+        logger.warn('whatsapp.instances.qrDefault.empty', {
+          tenantId,
+          refresh,
+          fetchSnapshots,
+        });
+        qrUnavailable();
+        return;
+      }
+
+      const payload = buildInstanceStatusPayload(context, qr);
+      const durationMs = Date.now() - startedAt;
+
+      logger.info('whatsapp.instances.qrDefault.success', {
+        tenantId,
+        refresh,
+        fetchSnapshots,
+        connected: payload.connected,
+        durationMs,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          ...payload,
+          instanceId: payload.instance.id,
+        },
+        meta: {
+          tenantId,
+          instanceId: payload.instance.id,
+          refresh,
+          fetchSnapshots,
+          durationMs,
+        },
+      });
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+      } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const status = readBrokerErrorStatus(error);
+        if (status === 404 || status === 410) {
+          logger.warn('whatsapp.instances.qrDefault.brokerNotReady', {
+            tenantId,
+            refresh,
+            fetchSnapshots,
+            status,
+          });
+          qrUnavailable();
+          return;
+        }
+
+        logger.error('whatsapp.instances.qrDefault.brokerFailed', {
+          tenantId,
+          refresh,
+          fetchSnapshots,
+          status,
+          code: error.code,
+          requestId: error.requestId,
+          error: describeErrorForLog(error),
+        });
+        respondWhatsAppBrokerFailure(res, error);
+        return;
+      } else if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.error('whatsapp.instances.qrDefault.failed', {
+        tenantId,
+        refresh,
+        fetchSnapshots,
+        durationMs,
+        error: describeErrorForLog(error),
+      });
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INSTANCE_QR_FAILED',
+          message: 'Falha ao recuperar QR Code da instância WhatsApp.',
+        },
+      });
+    }
+  })
+);
+
+router.get(
+  '/whatsapp/instances/qr.png',
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = resolveRequestTenantId(req);
+    const instanceId = resolveDefaultInstanceId();
+    const refreshQuery = normalizeBooleanValue(req.query.refresh);
+    const snapshotsQuery = normalizeBooleanValue(req.query.snapshots);
+    const refresh = refreshQuery === null ? true : refreshQuery;
+    const fetchSnapshots = snapshotsQuery === null ? true : snapshotsQuery;
+    const startedAt = Date.now();
+
+    logger.info('whatsapp.instances.qrDefaultImage.request', {
+      tenantId,
+      instanceId,
+      refresh,
+      fetchSnapshots,
+    });
+
+    let stored: StoredInstance | null = null;
+    try {
+      stored = (await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_id: {
+            tenantId,
+            id: instanceId,
+          },
+        },
+      })) as StoredInstance | null;
+    } catch (error) {
+      if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+      throw error;
+    }
+
+    if (!stored) {
+      logger.warn('whatsapp.instances.qrDefaultImage.notFound', {
+        tenantId,
+        instanceId,
+      });
+      res.sendStatus(404);
+      return;
+    }
+
+    try {
+      const { qr } = await fetchStatusWithBrokerQr(tenantId, stored, {
+        refresh,
+        fetchSnapshots,
+      });
+      const buffer = extractQrImageBuffer(qr);
+
+      if (!buffer) {
+        logger.warn('whatsapp.instances.qrDefaultImage.empty', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+        });
+        res.sendStatus(404);
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.info('whatsapp.instances.qrDefaultImage.success', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        durationMs,
+      });
+
+      res.setHeader('content-type', 'image/png');
+      res.status(200).send(buffer);
+    } catch (error) {
+      if (error instanceof WhatsAppBrokerNotConfiguredError) {
+        if (handleWhatsAppIntegrationError(res, error)) {
+          return;
+        }
+      } else if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        const status = readBrokerErrorStatus(error);
+        if (status === 404 || status === 410) {
+          logger.warn('whatsapp.instances.qrDefaultImage.brokerNotReady', {
+            tenantId,
+            instanceId,
+            refresh,
+            fetchSnapshots,
+            status,
+          });
+          res.sendStatus(404);
+          return;
+        }
+
+        logger.error('whatsapp.instances.qrDefaultImage.brokerFailed', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          status,
+          code: error.code,
+          requestId: error.requestId,
+          error: describeErrorForLog(error),
+        });
+        respondWhatsAppBrokerFailure(res, error);
+        return;
+      } else if (handleWhatsAppIntegrationError(res, error)) {
+        return;
+      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+        return;
+      }
+
+      const durationMs = Date.now() - startedAt;
+
+      logger.error('whatsapp.instances.qrDefaultImage.failed', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        durationMs,
+        error: describeErrorForLog(error),
+      });
+
+      res.sendStatus(500);
     }
   })
 );

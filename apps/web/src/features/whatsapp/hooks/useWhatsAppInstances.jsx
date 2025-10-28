@@ -1533,6 +1533,9 @@ function useWhatsAppInstancesController({
         const payload = response?.data ?? {};
         const createdInstance = extractInstanceFromPayload(payload);
         const createdInstanceId = createdInstance?.id ?? createdInstance?.instanceId ?? null;
+        if (createdInstanceId) {
+          preferredInstanceIdRef.current = createdInstanceId;
+        }
         const resolvedCreatedInstance = createdInstance
           ? {
               ...createdInstance,
@@ -1590,19 +1593,33 @@ function useWhatsAppInstancesController({
           };
         }
 
-        await loadInstances({
+        const syncResult = await loadInstances({
           connectResult: connectResult || undefined,
           preferredInstanceId: connectResult?.instance?.id ?? createdInstanceId ?? null,
           forceRefresh: true,
         });
-        toast.success('Instância criada com sucesso. Gere o QR para conectar.');
+        if (syncResult?.success) {
+          toast.success('Instância criada com sucesso. Gere o QR para conectar.');
+        } else {
+          const warningMessage =
+            'Instância criada, mas não conseguimos sincronizar o status. Atualize a lista em alguns instantes e gere o QR novamente.';
+          warn('Sincronização pendente após criação de instância', {
+            agreementId: selectedAgreement?.id ?? null,
+            createdInstanceId,
+          });
+          setErrorMessage(warningMessage, { code: 'INSTANCE_SYNC_PENDING' });
+          toast.warning(warningMessage);
+        }
         return connectResult?.instance ?? resolvedCreatedInstance ?? null;
       } catch (err) {
         const friendly = applyErrorMessageFromError(
           err,
-          'Não foi possível criar uma nova instância'
+          'Instância não foi provisionada. Tente novamente em instantes.'
         );
         logError('Falha ao criar instância WhatsApp', err);
+        toast.error(friendly.title ?? 'Falha ao criar instância', {
+          description: friendly.message,
+        });
         const errorToThrow = err instanceof Error ? err : new Error(friendly.message);
         throw errorToThrow;
       } finally {
@@ -1619,6 +1636,7 @@ function useWhatsAppInstancesController({
       selectedAgreement?.name,
       selectedAgreement?.tenantId,
       setErrorMessage,
+      warn,
     ]
   );
 
