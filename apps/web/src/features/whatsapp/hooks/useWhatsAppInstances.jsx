@@ -8,6 +8,7 @@ import useInstanceLiveUpdates from './useInstanceLiveUpdates.js';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
 
 const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
+const INSTANCES_CACHE_VERSION = 2;
 const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
@@ -53,7 +54,21 @@ const readInstancesCache = () => {
   }
   try {
     const raw = sessionStorage.getItem(INSTANCES_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const version =
+      typeof parsed.schemaVersion === 'number'
+        ? parsed.schemaVersion
+        : typeof parsed.version === 'number'
+          ? parsed.version
+          : null;
+    if (version !== INSTANCES_CACHE_VERSION) {
+      // versão divergente, invalida
+      sessionStorage.removeItem(INSTANCES_CACHE_KEY);
+      return null;
+    }
+    return parsed;
   } catch (error) {
     console.warn('Não foi possível ler o cache de instâncias WhatsApp', error);
     return null;
@@ -68,6 +83,7 @@ const persistInstancesCache = (list, currentId) => {
     sessionStorage.setItem(
       INSTANCES_CACHE_KEY,
       JSON.stringify({
+        schemaVersion: INSTANCES_CACHE_VERSION,
         list,
         currentId,
         updatedAt: Date.now(),
@@ -492,6 +508,9 @@ function useWhatsAppInstancesController({
   const generatingQrRef = useRef(false);
   const qrAbortRef = useRef(null);
 
+  const isBusy = () =>
+    Boolean(loadingInstancesRef.current || loadingQrRef.current || generatingQrRef.current);
+
   const setErrorMessage = useCallback(
     (message, meta = {}) => {
       onError?.(message, meta);
@@ -741,6 +760,7 @@ function useWhatsAppInstancesController({
     async (id, { skipStatus = false } = {}) => {
       if (!id) return;
 
+      generatingQrRef.current = true;
       const myPollId = ++pollIdRef.current;
       const abortController = new AbortController();
       if (qrAbortRef.current) {
@@ -811,6 +831,12 @@ function useWhatsAppInstancesController({
           }
 
           if (connectResult?.connected) {
+            if (qrAbortRef.current === abortController) {
+              try {
+                qrAbortRef.current.abort();
+              } catch {}
+              qrAbortRef.current = null;
+            }
             setQrData(null);
             setSecondsLeft(null);
             return;
@@ -822,8 +848,10 @@ function useWhatsAppInstancesController({
 
         const deadline = Date.now() + 60_000;
         let received = null;
+        let delayMs = 500;
         while (Date.now() < deadline) {
           if (pollIdRef.current !== myPollId) {
+            // outro ciclo iniciou; encerra silenciosamente
             return;
           }
           let qrResponse = null;
@@ -849,9 +877,20 @@ function useWhatsAppInstancesController({
               ...qrPayload,
               image: `/api/integrations/whatsapp/instances/${encodedId}/qr.png?ts=${Date.now()}`,
             };
+            // se o backend forneceu expiresAt/qrExpiresAt, define secondsLeft de forma determinística
+            const exp =
+              (typeof qrPayload.expiresAt === 'string' && qrPayload.expiresAt) ||
+              (typeof qrPayload.qrExpiresAt === 'string' && qrPayload.qrExpiresAt) ||
+              null;
+            if (exp) {
+              const ms = new Date(exp).getTime() - Date.now();
+              setSecondsLeft(ms > 0 ? Math.floor(ms / 1000) : 0);
+            }
             break;
           }
-          await sleep(1000);
+          await sleep(delayMs);
+          // backoff exponencial com teto de 2000 ms
+          delayMs = Math.min(delayMs * 2, 2000);
         }
 
         if (!received) {
@@ -869,6 +908,7 @@ function useWhatsAppInstancesController({
           applyErrorMessageFromError(err, 'Não foi possível gerar o QR Code');
         }
       } finally {
+        generatingQrRef.current = false;
         if (qrAbortRef.current === abortController) {
           qrAbortRef.current = null;
         }
@@ -891,7 +931,18 @@ function useWhatsAppInstancesController({
       const nextInstanceId = instance?.id ?? null;
       preferredInstanceIdRef.current = nextInstanceId;
       persistInstancesCache(instances, nextInstanceId);
-      const statusFromInstance = instance.status || 'disconnected';
+      let statusFromInstance = instance.status || 'disconnected';
+      // se status desconhecido, tenta resolver rapidamente antes do QR
+      if (!instance.status || instance.status === 'unknown') {
+        try {
+          const quick = await connectInstance(instance.id);
+          if (quick?.status) {
+            statusFromInstance = quick.status;
+          }
+        } catch {
+          // ignora: cairemos no caminho de QR abaixo
+        }
+      }
       setLocalStatus(statusFromInstance);
       onStatusChange?.(statusFromInstance);
 
@@ -903,7 +954,7 @@ function useWhatsAppInstancesController({
         setSecondsLeft(null);
       }
     },
-    [generateQr, instances, onStatusChange]
+    [generateQr, instances, onStatusChange, connectInstance]
   );
 
   const loadInstances = useCallback(
@@ -949,39 +1000,47 @@ function useWhatsAppInstancesController({
         const parsedResponse = parseInstancesPayload(response);
         setSessionActive(true);
         setAuthDeferred(false);
-        let list = ensureArrayOfObjects(parsedResponse.instances);
-        let hasServerList = true;
-        let connectResult = providedConnect || null;
+    let list = ensureArrayOfObjects(parsedResponse.instances);
+    let hasServerList = Boolean(response);
+    let connectResult = providedConnect || null;
+    let triedFallbackConnect = false;
 
-        if (list.length === 0 && !shouldForceBrokerSync) {
-          const refreshed = await apiGet(`${baseInstancesUrl}?refresh=1`).catch(() => null);
-          if (refreshed) {
-            const parsedRefreshed = parseInstancesPayload(refreshed);
-            const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
-            if (refreshedList.length > 0) {
-              list = refreshedList;
-            }
-          }
+    if (list.length === 0 && !shouldForceBrokerSync) {
+      const refreshed = await apiGet(`${baseInstancesUrl}?refresh=1`).catch(() => null);
+      if (refreshed) {
+        const parsedRefreshed = parseInstancesPayload(refreshed);
+        const refreshedList = ensureArrayOfObjects(parsedRefreshed.instances);
+        if (refreshedList.length > 0) {
+          list = refreshedList;
+          hasServerList = true;
         }
+      }
+    }
 
-        if (list.length === 0) {
-          const fallbackInstanceId = resolvedPreferredInstanceId || resolvedCampaignInstanceId || null;
-          if (fallbackInstanceId) {
-            connectResult = connectResult || (await connectInstance(fallbackInstanceId));
-          } else {
-            warn('Nenhuma instância padrão disponível para conexão automática', {
-              agreementId,
-              preferredInstanceId: resolvedPreferredInstanceId ?? null,
-              campaignInstanceId: resolvedCampaignInstanceId ?? null,
-            });
-          }
-
-          if (connectResult?.instances?.length) {
-            list = ensureArrayOfObjects(connectResult.instances);
-          } else if (connectResult?.instance) {
-            list = ensureArrayOfObjects([connectResult.instance]);
-          }
+    if (list.length === 0) {
+      const fallbackInstanceId = resolvedPreferredInstanceId || resolvedCampaignInstanceId || null;
+      if (fallbackInstanceId && !triedFallbackConnect) {
+        triedFallbackConnect = true;
+        try {
+          connectResult = connectResult || (await connectInstance(fallbackInstanceId));
+        } catch (e) {
+          // evita loop de fallback
+          triedFallbackConnect = true;
         }
+      } else if (!fallbackInstanceId) {
+        warn('Nenhuma instância padrão disponível para conexão automática', {
+          agreementId,
+          preferredInstanceId: resolvedPreferredInstanceId ?? null,
+          campaignInstanceId: resolvedCampaignInstanceId ?? null,
+        });
+      }
+
+      if (connectResult?.instances?.length) {
+        list = ensureArrayOfObjects(connectResult.instances);
+      } else if (connectResult?.instance) {
+        list = ensureArrayOfObjects([connectResult.instance]);
+      }
+    }
 
         const preferenceOptions = {
           preferredInstanceId: resolvedPreferredInstanceId,
@@ -1046,17 +1105,17 @@ function useWhatsAppInstancesController({
           setCurrentInstance(current);
           preferredInstanceIdRef.current = current?.id ?? null;
           persistInstancesCache(list, current?.id ?? null);
-        } else if (hasServerList) {
-          setInstances([]);
-          setCurrentInstance(null);
-          preferredInstanceIdRef.current = null;
-          clearInstancesCache();
-        } else {
-          warn('Servidor não retornou instâncias; reutilizando cache local', {
-            agreementId,
-            preferredInstanceId: resolvedPreferredInstanceId ?? null,
-          });
-        }
+    } else if (hasServerList) {
+      setInstances([]);
+      setCurrentInstance(null);
+      preferredInstanceIdRef.current = null;
+      clearInstancesCache();
+    } else {
+      warn('Servidor não retornou instâncias válidas; reutilizando cache local', {
+        agreementId,
+        preferredInstanceId: resolvedPreferredInstanceId ?? null,
+      });
+    }
 
         const statusFromInstance =
           connectResult?.status ||
@@ -1148,7 +1207,13 @@ function useWhatsAppInstancesController({
       (item) => item.id === campaignInstanceId || item.name === campaignInstanceId
     );
 
-    if (!matched || currentInstance?.id === matched.id) {
+    if (!matched) {
+      warn('campaignInstanceId informado não corresponde a nenhuma instância carregada', {
+        campaignInstanceId,
+      });
+      return undefined;
+    }
+    if (currentInstance?.id === matched.id) {
       return undefined;
     }
 
@@ -1190,12 +1255,23 @@ function useWhatsAppInstancesController({
           ? parsed.connected
           : parsed.status === 'connected';
 
+      const phoneFromStatus =
+        (parsed.instance && parsed.instance.phoneNumber) ||
+        (parsed.instance && parsed.instance.metadata && parsed.instance.metadata.phoneNumber) ||
+        null;
+
       if (parsed.instance) {
         setCurrentInstance((current) =>
-          current && current.id === parsed.instance.id ? { ...current, ...parsed.instance } : current
+          current && current.id === parsed.instance?.id
+            ? { ...current, ...parsed.instance, ...(phoneFromStatus ? { phoneNumber: phoneFromStatus } : {}) }
+            : current
         );
         setInstances((prev) =>
-          prev.map((item) => (item.id === parsed.instance.id ? { ...item, ...parsed.instance } : item))
+          prev.map((item) =>
+            item.id === parsed.instance?.id
+              ? { ...item, ...parsed.instance, ...(phoneFromStatus ? { phoneNumber: phoneFromStatus } : {}) }
+              : item
+          )
         );
       }
 
@@ -1292,8 +1368,10 @@ function useWhatsAppInstancesController({
             : null) || err?.code || null;
         const isInstanceMissing =
           statusCode === 404 ||
+          statusCode === 409 ||
           errorCode === 'INSTANCE_NOT_FOUND' ||
-          errorCode === 'BROKER_INSTANCE_NOT_FOUND';
+          errorCode === 'BROKER_INSTANCE_NOT_FOUND' ||
+          errorCode === 'SESSION_NOT_CONNECTED';
 
         if (isInstanceMissing) {
           const nextCurrentId = currentInstance?.id === target.id ? null : currentInstance?.id ?? null;
@@ -1572,6 +1650,13 @@ function useWhatsAppInstancesController({
     })();
 
     setLiveEvents((previous) => {
+      let bodyHash = '';
+      try {
+        bodyHash = JSON.stringify(payload).slice(0, 64);
+      } catch {
+        bodyHash = '';
+      }
+
       const next = [
         {
           id: `${event.type}-${eventInstanceId}-${timestampCandidate}`,
@@ -1588,7 +1673,7 @@ function useWhatsAppInstancesController({
       const seen = new Set();
       const deduped = [];
       for (const entry of next) {
-        const key = `${entry.instanceId}-${entry.timestamp}-${entry.type}`;
+        const key = `${entry.instanceId}-${entry.timestamp}-${entry.type}-${bodyHash}`;
         if (seen.has(key)) {
           continue;
         }
@@ -1601,6 +1686,30 @@ function useWhatsAppInstancesController({
 
       return deduped;
     });
+
+    // aplica atualização incremental na lista
+    setInstances((prev) =>
+      prev.map((item) =>
+        item.id === eventInstanceId
+          ? {
+              ...item,
+              ...(typeof statusCandidate === 'string' ? { status: statusCandidate } : {}),
+              ...(typeof connectedCandidate === 'boolean' ? { connected: connectedCandidate } : {}),
+              ...(phoneCandidate ? { phoneNumber: phoneCandidate } : {}),
+            }
+          : item
+      )
+    );
+    setCurrentInstance((cur) =>
+      cur && cur.id === eventInstanceId
+        ? {
+            ...cur,
+            ...(typeof statusCandidate === 'string' ? { status: statusCandidate } : {}),
+            ...(typeof connectedCandidate === 'boolean' ? { connected: connectedCandidate } : {}),
+            ...(phoneCandidate ? { phoneNumber: phoneCandidate } : {}),
+          }
+        : cur
+    );
   }, []);
 
   const tenantRoomId = selectedAgreement?.tenantId ?? selectedAgreement?.id ?? null;
@@ -1666,21 +1775,35 @@ function useWhatsAppInstancesController({
 
     let cancelled = false;
     let timeoutId;
+    let backoffMs = DEFAULT_POLL_INTERVAL_MS;
 
     const resolveNextDelay = (result) => {
+      // sucesso ou skip: reseta backoff
       if (!result || result.success || result.skipped) {
+        backoffMs = DEFAULT_POLL_INTERVAL_MS;
         return DEFAULT_POLL_INTERVAL_MS;
       }
 
+      const status = result.error?.status;
       const retryAfterMs = parseRetryAfterMs(result.error?.retryAfter);
+
       if (retryAfterMs !== null) {
+        backoffMs = DEFAULT_POLL_INTERVAL_MS;
         return retryAfterMs > 0 ? retryAfterMs : DEFAULT_POLL_INTERVAL_MS;
       }
 
-      if (result.error?.status === 429) {
+      if (status === 429) {
+        backoffMs = RATE_LIMIT_COOLDOWN_MS;
         return RATE_LIMIT_COOLDOWN_MS;
       }
 
+      if (typeof status === 'number' && status >= 500) {
+        backoffMs = Math.min(backoffMs * 2, 120000);
+        const jitter = 1 + Math.random() * 0.2; // 10–20% jitter
+        return Math.floor(backoffMs * jitter);
+      }
+
+      backoffMs = DEFAULT_POLL_INTERVAL_MS;
       return DEFAULT_POLL_INTERVAL_MS;
     };
 
@@ -1710,9 +1833,7 @@ function useWhatsAppInstancesController({
         (pauseWhenHidden &&
           typeof document !== 'undefined' &&
           document.hidden) ||
-        loadingInstancesRef.current ||
-        loadingQrRef.current ||
-        generatingQrRef.current
+        isBusy()
       ) {
         scheduleNext(DEFAULT_POLL_INTERVAL_MS);
         return;
@@ -1738,7 +1859,7 @@ function useWhatsAppInstancesController({
         clearTimeout(timeoutId);
       }
     };
-  }, [autoRefresh, isAuthenticated, pauseWhenHidden, selectedAgreement?.id, skipController]);
+  }, [autoRefresh, isAuthenticated, pauseWhenHidden, selectedAgreement?.id, skipController, isBusy]);
 
   useEffect(() => {
     if (skipController) {
@@ -1776,7 +1897,10 @@ function useWhatsAppInstancesController({
 
     const handleVisibilityChange = () => {
       if (!document.hidden && canSynchronize) {
-        void loadInstances({ forceRefresh: true });
+        const jitter = 200 + Math.floor(Math.random() * 400); // 200–600 ms
+        setTimeout(() => {
+          void loadInstances({ forceRefresh: true });
+        }, jitter);
       }
     };
 
@@ -1871,6 +1995,10 @@ export default function useWhatsAppInstances(options = {}) {
     ...options,
     __internalSkip: Boolean(context),
   });
+
+  if (!context && typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
+    console.warn('[WhatsAppInstances] Hook utilizado fora do Provider em produção; criando controlador standalone.');
+  }
 
   return context ?? controller;
 }

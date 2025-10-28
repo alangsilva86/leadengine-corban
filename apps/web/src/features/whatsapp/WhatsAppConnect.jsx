@@ -103,8 +103,6 @@ const statusCodeMeta = [
   { code: '5', label: '5', description: 'Total de mensagens reportadas com o código 5 pelo broker.' },
 ];
 
-const DEFAULT_POLL_INTERVAL_MS = 15000;
-const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
 
@@ -801,7 +799,23 @@ const WhatsAppConnect = ({
   onBack,
 }) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
-  const [showAllInstances, setShowAllInstances] = useState(false);
+  const [showAllInstances, setShowAllInstances] = useState(() => {
+    try {
+      return typeof window !== 'undefined' &&
+        window.localStorage.getItem('wa_show_all_instances') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('wa_show_all_instances', showAllInstances ? '1' : '0');
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [showAllInstances]);
   const [pairingPhoneInput, setPairingPhoneInput] = useState('');
   const [pairingPhoneError, setPairingPhoneError] = useState(null);
   const [requestingPairingCode, setRequestingPairingCode] = useState(false);
@@ -889,8 +903,71 @@ const WhatsAppConnect = ({
 
   const isAuthError = (error) => {
     const statusCode = typeof error?.status === 'number' ? error.status : null;
-    return statusCode === 401 || statusCode === 403;
+    const code = error?.payload?.error?.code || error?.code || null;
+    return (
+      statusCode === 401 ||
+      statusCode === 403 ||
+      code === 'AUTH_EXPIRED' ||
+      code === 'UNAUTHENTICATED' ||
+      code === 'FORBIDDEN'
+    );
   };
+  const loadCampaigns = useCallback(
+    async ({
+      preferredAgreementId,
+      preferredCampaignId,
+      preferredInstanceId,
+    } = {}) => {
+      const agreementId = preferredAgreementId ?? selectedAgreement?.id ?? null;
+
+      // Reset early if there's no agreement
+      if (!agreementId) {
+        setCampaigns([]);
+        setCampaignError(null);
+        return;
+      }
+
+      setCampaignsLoading(true);
+      setCampaignError(null);
+      try {
+        const params = new URLSearchParams();
+        if (agreementId) params.set('agreementId', agreementId);
+        if (preferredInstanceId) params.set('instanceId', preferredInstanceId);
+
+        const resp = await apiGet(`/api/campaigns${params.toString() ? `?${params}` : ''}`);
+        const items = Array.isArray(resp?.data) ? resp.data : [];
+
+        setCampaigns(items);
+
+        if (preferredCampaignId) {
+          const found = items.find((c) => c && c.id === preferredCampaignId) || null;
+          setCampaign(found);
+        }
+      } catch (err) {
+        const message =
+          err?.payload?.error?.message ||
+          (err instanceof Error ? err.message : 'Falha ao carregar campanhas');
+        setCampaignError(message);
+      } finally {
+        setCampaignsLoading(false);
+      }
+    },
+    [selectedAgreement?.id]
+  );
+
+  // Register loader for external triggers
+  useEffect(() => {
+    loadCampaignsRef.current = loadCampaigns;
+  }, [loadCampaigns]);
+
+  // Initial and reactive load
+  useEffect(() => {
+    void loadCampaigns({
+      preferredAgreementId: selectedAgreement?.id ?? null,
+      preferredCampaignId: campaign?.id ?? null,
+      preferredInstanceId: instance?.id ?? null,
+    });
+  }, [selectedAgreement?.id, instance?.id]);
 
   const applyErrorMessageFromError = (error, fallbackMessage, meta = {}) => {
     const friendly = resolveFriendlyError(error, fallbackMessage);
@@ -1017,7 +1094,7 @@ const WhatsAppConnect = ({
       return;
     }
     void loadInstances({ forceRefresh: true });
-  }, [canSynchronize, selectedAgreement?.id]);
+  }, [canSynchronize, selectedAgreement?.id, loadInstances]);
 
   useEffect(() => {
     setQrPanelOpen(localStatus !== 'connected');
@@ -1044,8 +1121,10 @@ const WhatsAppConnect = ({
       const diff = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setSecondsLeft(diff);
       if (diff === 0) {
-        setStatus('qr_required');
-        onStatusChange?.('disconnected');
+        if (localStatus !== 'connected' && localStatus !== 'connecting') {
+          setStatus('qr_required');
+          onStatusChange?.('disconnected');
+        }
       }
     };
 
@@ -1390,11 +1469,12 @@ const WhatsAppConnect = ({
     instancePendingDelete?.displayId ||
     instancePendingDelete?.id ||
     'selecionada';
-  const removalTargetIsJid = instancePendingDelete?.id
-    ? looksLikeWhatsAppJid(instancePendingDelete.id)
-    : false;
-  const removalDialogTitle = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
-  const removalDialogAction = removalTargetIsJid ? 'Desconectar sessão' : 'Remover instância';
+  const removalKind = instancePendingDelete?.kind || (instancePendingDelete?.isSession ? 'session' : null);
+  const removalTargetIsSession =
+    removalKind === 'session' ||
+    (instancePendingDelete?.id ? looksLikeWhatsAppJid(instancePendingDelete.id) : false);
+  const removalDialogTitle = removalTargetIsSession ? 'Desconectar sessão' : 'Remover instância';
+  const removalDialogAction = removalTargetIsSession ? 'Desconectar sessão' : 'Remover instância';
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -2068,7 +2148,7 @@ const WhatsAppConnect = ({
         <AlertDialogHeader>
           <AlertDialogTitle>{removalDialogTitle}</AlertDialogTitle>
           <AlertDialogDescription>
-            {removalTargetIsJid ? (
+            {removalTargetIsSession ? (
               <>
                 Esta ação desconecta a sessão <strong>{removalTargetLabel}</strong>. Utilize quando precisar encerrar um
                 dispositivo sincronizado com o broker.
