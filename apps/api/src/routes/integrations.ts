@@ -88,6 +88,7 @@ import {
 } from '@prisma/client';
 import process from 'node:process';
 import { Buffer } from 'node:buffer';
+import { z, type ZodIssue } from 'zod';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -1042,12 +1043,12 @@ const archiveInstanceSnapshot = async (
     brokerId: stored.brokerId,
     deletedAt,
     actorId,
-    stored: serialized as unknown as Prisma.JsonObject,
-    status: context.status,
-    qr: context.qr,
-    brokerStatus: context.brokerStatus,
-    history,
-    instancesBeforeDeletion: context.instances,
+    stored: toJsonObject(serialized),
+    status: toJsonValue(context.status) ?? null,
+    qr: toJsonValue(context.qr) ?? null,
+    brokerStatus: toJsonValue(context.brokerStatus) ?? null,
+    history: toJsonArray(history),
+    instancesBeforeDeletion: toJsonArray(context.instances),
   };
 
   await client.integrationState.upsert({
@@ -1127,6 +1128,57 @@ const mergeRecords = (
   }
 
   return hasValue ? merged : undefined;
+};
+
+const toJsonValue = (value: unknown): Prisma.JsonValue => {
+  if (value === null || value === Prisma.JsonNull) {
+    return null;
+  }
+
+  if (value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'bigint') {
+    const asNumber = Number(value);
+    return Number.isSafeInteger(asNumber) ? asNumber : value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    const jsonArray: Prisma.JsonArray = value.map((entry) => toJsonValue(entry));
+    return jsonArray;
+  }
+
+  if (typeof value === 'object') {
+    const jsonObject: Prisma.JsonObject = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      jsonObject[key] = toJsonValue(entry);
+    }
+    return jsonObject;
+  }
+
+  return null;
+};
+
+const toJsonObject = (value: unknown): Prisma.JsonObject => {
+  const json = toJsonValue(value);
+  if (json && typeof json === 'object' && !Array.isArray(json)) {
+    return json as Prisma.JsonObject;
+  }
+  return {};
+};
+
+const toJsonArray = (value: unknown): Prisma.JsonArray => {
+  const json = toJsonValue(value);
+  return Array.isArray(json) ? (json as Prisma.JsonArray) : [];
 };
 
 const normalizeKeyName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1619,7 +1671,7 @@ const resolvePhoneNumber = (
   if (phone) {
     try {
       const normalized = normalizePhoneNumber(phone);
-      return normalized.e164;
+      return normalized.e164 as string;
     } catch (e) {
       if (!(e instanceof PhoneNormalizationError)) {
         logger.warn('whatsapp.instances.phone.normalizeUnexpected', { tenantId: instance.tenantId, error: String(e) });
@@ -3028,21 +3080,26 @@ router.delete(
   asyncHandler(async (req: Request, res: Response) => {
     const instanceId = readInstanceIdParam(req);
     if (!instanceId) {
-      respondWithValidationError(res, {
-        code: 'INVALID_INSTANCE_ID',
-        message: INVALID_INSTANCE_ID_MESSAGE,
-      });
+      const issues: ZodIssue[] = [
+        {
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'id'],
+          message: INVALID_INSTANCE_ID_MESSAGE,
+        },
+      ];
+      respondWithValidationError(res, issues);
       return;
     }
 
     if (looksLikeWhatsAppJid(instanceId)) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'USE_DISCONNECT_FOR_JID',
+      const issues: ZodIssue[] = [
+        {
+          code: z.ZodIssueCode.custom,
+          path: ['params', 'id'],
           message: 'Para desconectar um JID use a rota de disconnect.',
         },
-      });
+      ];
+      respondWithValidationError(res, issues);
       return;
     }
 

@@ -49,7 +49,7 @@ export type WhatsAppBrokerErrorOptions = {
   brokerStatus?: number | undefined;
   brokerCode?: string | undefined;
   requestId?: string | undefined;
-  override cause?: unknown;
+  cause?: unknown;
 };
 
 export class WhatsAppBrokerError extends Error {
@@ -1215,8 +1215,8 @@ class WhatsAppBrokerClient {
     const rateUsageValue = rateUsageCandidate ?? rateCandidate ?? null;
     statusPayload.rateUsage = rateUsageValue;
 
-    const rawValue = primary ?? (extendedSources.length > 0 ? extendedSources[0] : null);
-    statusPayload.raw = rawValue;
+    const rawValue = primary ?? extendedSources[0] ?? null;
+    statusPayload.raw = rawValue ?? null;
 
     return statusPayload;
   }

@@ -262,11 +262,13 @@ router.get(
     });
 
     try {
-      const campaigns = await listCampaigns({
+      const filters: Parameters<typeof listCampaigns>[0] = {
         tenantId,
-        agreementId,
-        status: statusFilter,
-      });
+        ...(agreementId ? { agreementId } : {}),
+        ...(statusFilter ? { status: statusFilter } : {}),
+      };
+
+      const campaigns = await listCampaigns(filters);
 
       res.json({
         success: true,
@@ -375,7 +377,7 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req);
 
-    const { agreementId } = req.params;
+    const agreementId = req.params.agreementId as string;
     const take = parseInt(req.query.take as string) || 25;
 
     logger.info('[LeadEngine] GET /leads/by-agreement/:agreementId', {
@@ -526,13 +528,15 @@ router.post(
     });
 
     try {
-      const campaign = await createOrActivateCampaign({
+      const payload: Parameters<typeof createOrActivateCampaign>[0] = {
         tenantId,
         agreementId,
         instanceId,
         name: normalizedName,
-        status,
-      });
+        ...(status ? { status } : {}),
+      };
+
+      const campaign = await createOrActivateCampaign(payload);
 
       res.json({
         success: true,
@@ -577,7 +581,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req);
 
-    const { agreement } = req.params;
+    const agreement = req.params.agreement as string;
     const { leads } = req.body;
 
     logger.info('[LeadEngine] POST /credit/:agreement/ingest', {
@@ -767,12 +771,14 @@ router.get(
     });
 
     try {
-      const allocations = await listTenantAllocations(tenantId, {
-        agreementId,
-        campaignId,
-        instanceId,
-        statuses,
-      });
+      const allocationFilters: Parameters<typeof listTenantAllocations>[1] = {
+        ...(agreementId ? { agreementId } : {}),
+        ...(campaignId ? { campaignId } : {}),
+        ...(instanceId ? { instanceId } : {}),
+        ...(statuses ? { statuses } : {}),
+      };
+
+      const allocations = await listTenantAllocations(tenantId, allocationFilters);
 
       const summary = buildAllocationSummary(allocations);
 
@@ -1019,10 +1025,15 @@ router.patch(
     });
 
     try {
-      const allocation = await updateTenantAllocation(tenantId, allocationId, {
-        status,
-        notes,
-      });
+      const updatePayload: Parameters<typeof updateTenantAllocation>[2] = {};
+      if (status) {
+        updatePayload.status = status;
+      }
+      if (notes !== undefined) {
+        updatePayload.notes = notes;
+      }
+
+      const allocation = await updateTenantAllocation(tenantId, allocationId, updatePayload);
 
       if (!allocation) {
         res.status(404).json({
@@ -1099,12 +1110,14 @@ router.get(
     });
 
     try {
-      const allocations = await listTenantAllocations(tenantId, {
-        agreementId,
-        campaignId,
-        instanceId,
-        statuses,
-      });
+      const exportFilters: Parameters<typeof listTenantAllocations>[1] = {
+        ...(agreementId ? { agreementId } : {}),
+        ...(campaignId ? { campaignId } : {}),
+        ...(instanceId ? { instanceId } : {}),
+        ...(statuses ? { statuses } : {}),
+      };
+
+      const allocations = await listTenantAllocations(tenantId, exportFilters);
 
       const filtered = allocations.filter((allocation) => {
         if (instanceId && allocation.instanceId !== instanceId) {

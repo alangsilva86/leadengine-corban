@@ -1534,7 +1534,14 @@ const processStandardInboundEvent = async (
   if (!campaigns.length) {
     const fallbackCampaign = await provisionFallbackCampaignForInstance(tenantId, instance.id);
     if (fallbackCampaign) {
-      campaigns.push(fallbackCampaign);
+      campaigns.push({
+        id: fallbackCampaign.id,
+        name: fallbackCampaign.name,
+        status: fallbackCampaign.status,
+        whatsappInstanceId: fallbackCampaign.whatsappInstanceId,
+        tenantId: fallbackCampaign.tenantId,
+        agreementId: fallbackCampaign.agreementId,
+      });
       logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa — fallback provisionado', {
         requestId, tenantId, instanceId: instance.id, fallbackCampaignId: fallbackCampaign.id, messageId: (message as any).id ?? null,
       });
