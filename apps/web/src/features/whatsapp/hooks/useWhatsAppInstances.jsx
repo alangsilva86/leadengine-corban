@@ -477,9 +477,9 @@ function useWhatsAppInstancesController({
   logger,
   campaignInstanceId = null,
   autoGenerateQr = true,
-  autoRefresh = true,
+  autoRefresh = false,
   pauseWhenHidden = true,
-  initialFetch = autoRefresh,
+  initialFetch = false,
   __internalSkip = false,
 } = {}) {
   const skipController = Boolean(__internalSkip);
@@ -986,8 +986,9 @@ function useWhatsAppInstancesController({
       if (!hasFetchedOnceRef.current) {
         setInstancesReady(false);
       }
-      setLoadingInstances(true);
+      const wasLoading = Boolean(loadingInstancesRef.current);
       loadingInstancesRef.current = true;
+      setLoadingInstances(true);
       setErrorMessage(null);
       try {
         log('🚀 Iniciando sincronização de instâncias WhatsApp', {
@@ -995,7 +996,7 @@ function useWhatsAppInstancesController({
           preferredInstanceId: resolvedPreferredInstanceId ?? null,
         });
         let shouldForceBrokerSync = forceRefresh === true;
-        if (shouldForceBrokerSync && loadingInstancesRef.current) {
+        if (shouldForceBrokerSync && wasLoading) {
           shouldForceBrokerSync = false;
         }
         if (shouldForceBrokerSync && (rateLimitActive || recentlyForced)) {

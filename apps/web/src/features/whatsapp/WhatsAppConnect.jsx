@@ -1090,13 +1090,6 @@ const WhatsAppConnect = ({
   }, [loadInstances]);
 
   useEffect(() => {
-    if (!canSynchronize) {
-      return;
-    }
-    void loadInstances({ forceRefresh: true });
-  }, [canSynchronize, selectedAgreement?.id, loadInstances]);
-
-  useEffect(() => {
     setQrPanelOpen(localStatus !== 'connected');
   }, [localStatus]);
 
