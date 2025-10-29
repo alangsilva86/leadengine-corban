@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import usePlayfulLogger from '../shared/usePlayfulLogger.js';
-import useOnboardingStepLabel from '../onboarding/useOnboardingStepLabel.js';
+import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
+import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
 import useWhatsAppInstances, { looksLikeWhatsAppJid } from '../hooks/useWhatsAppInstances.jsx';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
 import { pairingPhoneSchema, createInstanceSchema, createCampaignSchema } from './schemas';
