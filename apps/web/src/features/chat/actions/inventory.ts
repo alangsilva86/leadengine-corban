@@ -98,6 +98,9 @@ export type CommandActionDefinition =
 
 const isCapabilityEnabled = (value: boolean | undefined) => value !== false;
 
+const buildReturnFocusOption = (returnFocus: HTMLElement | null | undefined) =>
+  returnFocus === undefined ? undefined : { returnFocus };
+
 export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
   {
     id: 'generate-proposal',
@@ -135,7 +138,7 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
     shortcutDisplay: '/r',
     intent: 'primary',
     run: ({ openDialog, returnFocus }) => {
-      openDialog?.('register-result', { returnFocus });
+      openDialog?.('register-result', buildReturnFocusOption(returnFocus));
     },
     canExecute: ({ ticket, capabilities }) =>
       Boolean(ticket && isCapabilityEnabled(capabilities?.canRegisterResult)),
@@ -165,7 +168,8 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
       {
         id: 'phone-call-register',
         label: 'Registrar ligação',
-        run: ({ openDialog, returnFocus }) => openDialog?.('call-result', { returnFocus }),
+        run: ({ openDialog, returnFocus }) =>
+          openDialog?.('call-result', buildReturnFocusOption(returnFocus)),
       },
     ],
     canExecute: ({ ticket }) => Boolean(ticket),

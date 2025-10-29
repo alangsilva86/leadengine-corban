@@ -34,7 +34,7 @@ describe('chat command inventory', () => {
   it('opens register-result dialog instead of executing directly', () => {
     const action = getAction('register-result');
     const openDialog = vi.fn();
-    const button = { focus: vi.fn() };
+    const button = document.createElement('button');
 
     action?.run?.({
       ticket: null,

@@ -1,6 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createInstancesStore } from '../instancesStore';
+import type { InstancesStoreBundle, InstancesStoreDependencies } from '../instancesStore';
+
+export const makeTestInstancesStore = (
+  overrides: Partial<InstancesStoreDependencies> = {},
+): InstancesStoreBundle => {
+  const deps: InstancesStoreDependencies = {
+    readCache: () => null,
+    persistCache: () => {},
+    clearCache: () => {},
+    ...overrides,
+  };
+  return createInstancesStore(deps);
+};
 
 const makeInstance = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
