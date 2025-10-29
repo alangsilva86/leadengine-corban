@@ -4,7 +4,7 @@ import { act, cleanup, render, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
-import { ChatCommandCenter } from '../ChatCommandCenter.jsx';
+import ChatCommandCenter from '../containers/ChatCommandCenterContainer.tsx';
 
 vi.mock('@/lib/auth.js', () => {
   const getTenantId = vi.fn(() => 'test-tenant');
