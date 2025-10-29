@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 import { ChatCommandCenter } from '../ChatCommandCenter.jsx';
+import type { NotesMutationVariables } from '../api/useNotesMutation.js';
+import type { SendMessageMutationVariables, ChatMessageMetadata, ChatAttachmentMetadata } from '../api/useSendMessage.js';
+import type { TicketAssignMutationVariables } from '../api/useTicketAssignMutation.js';
+import type { TicketStatusMutationVariables } from '../api/useTicketStatusMutation.js';
 import useChatController from '../hooks/useChatController.js';
 import useManualConversationFlow from '../hooks/useManualConversationFlow';
 import useTicketFieldUpdaters from '../hooks/useTicketFieldUpdaters';
@@ -10,6 +14,39 @@ import emitInboxTelemetry from '../utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';
 import { apiPost } from '@/lib/api.js';
+
+type AttachmentLike = {
+  id?: string | null;
+  name?: string | null;
+  size?: number | null;
+  type?: string | null;
+  mimeType?: string | null;
+  fileName?: string | null;
+  mediaUrl?: string | null;
+  mediaMimeType?: string | null;
+  mediaFileName?: string | null;
+  mediaSize?: number | null;
+};
+
+type TemplateLike = {
+  id?: string | null;
+  name?: string | null;
+  label?: string | null;
+  body?: string | null;
+  content?: string | null;
+};
+
+interface SendMessageInput {
+  content?: string | null;
+  attachments?: AttachmentLike[] | null;
+  template?: TemplateLike | null;
+  caption?: string | null;
+}
+
+const pruneUndefined = <T extends Record<string, unknown>>(record: T): T =>
+  Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined && value !== null)
+  ) as T;
 
 const inferMessageTypeFromMime = (mimeType: unknown) => {
   if (typeof mimeType !== 'string') {
@@ -50,39 +87,42 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     selectedTicket,
     selectedContact,
     selectedLead,
-    currentUser,
+    currentUser: currentUser ?? null,
   });
 
   const sendMessage = useCallback(
-    ({ content, attachments = [], template, caption }: any) => {
+    ({ content, attachments = [], template, caption }: SendMessageInput) => {
+      const files = Array.isArray(attachments) ? attachments : [];
       const trimmed = (content ?? '').trim();
-      if (!trimmed && attachments.length === 0 && !template) {
+      if (!trimmed && files.length === 0 && !template) {
         return;
       }
 
-      const metadata: Record<string, unknown> = {};
+      const metadata: ChatMessageMetadata = {};
 
-      if (attachments.length > 0) {
-        const normalizedAttachments = attachments.map((file: any) => {
-          const normalizedMime = file.mimeType ?? file.mediaMimeType ?? file.type ?? null;
-          const normalizedName = file.fileName ?? file.mediaFileName ?? file.name ?? null;
-          const record = {
-            id: file.id,
-            name: file.name ?? normalizedName ?? undefined,
-            size: file.size ?? file.mediaSize ?? undefined,
-            type: file.type ?? undefined,
+      if (files.length > 0) {
+        const normalizedAttachments = files.reduce<ChatAttachmentMetadata[]>((list, file) => {
+          const normalizedMime = file?.mimeType ?? file?.mediaMimeType ?? file?.type ?? null;
+          const normalizedName = file?.fileName ?? file?.mediaFileName ?? file?.name ?? null;
+          const attachment = pruneUndefined<ChatAttachmentMetadata>({
+            id: file?.id ?? undefined,
+            name: file?.name ?? normalizedName ?? undefined,
+            size: file?.size ?? file?.mediaSize ?? undefined,
+            type: file?.type ?? undefined,
             mimeType: normalizedMime ?? undefined,
             fileName: normalizedName ?? undefined,
-            mediaUrl: file.mediaUrl ?? undefined,
-          };
-          return Object.fromEntries(
-            Object.entries(record).filter(([, value]) => value !== undefined && value !== null)
-          );
-        });
+            mediaUrl: file?.mediaUrl ?? undefined,
+          });
 
-        const filtered = normalizedAttachments.filter((entry: Record<string, unknown>) => Object.keys(entry).length > 0);
-        if (filtered.length > 0) {
-          metadata.attachments = filtered;
+          if (Object.keys(attachment).length > 0) {
+            list.push(attachment);
+          }
+
+          return list;
+        }, []);
+
+        if (normalizedAttachments.length > 0) {
+          metadata.attachments = normalizedAttachments;
         }
       }
 
@@ -94,16 +134,16 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         };
       }
 
-      const hasAttachments = attachments.length > 0;
+      const hasAttachments = files.length > 0;
       const payloadContent = hasAttachments
         ? trimmed || '[Anexo enviado]'
         : trimmed || metadata.template?.body || metadata.template?.label || (template ? 'Template enviado' : '');
       const normalizedCaption = hasAttachments ? caption ?? (trimmed.length > 0 ? trimmed : undefined) : caption;
 
-      const [primaryAttachment] = attachments;
-      const primaryMetadata = (metadata.attachments as any)?.[0];
+      const [primaryAttachment] = files;
+      const primaryMetadata = metadata.attachments?.[0];
 
-      const mutationPayload: Record<string, unknown> = {
+      const mutationPayload: SendMessageMutationVariables = {
         ticketId: controller.selectedTicketId,
         content: payloadContent,
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
@@ -118,7 +158,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           primaryMetadata?.type ??
           null;
         mutationPayload.type = inferMessageTypeFromMime(mime ?? undefined);
-        mutationPayload.mediaUrl = primaryAttachment?.mediaUrl ?? primaryMetadata?.mediaUrl;
+        mutationPayload.mediaUrl = primaryAttachment?.mediaUrl ?? primaryMetadata?.mediaUrl ?? undefined;
         mutationPayload.mediaMimeType = mime ?? undefined;
         mutationPayload.mediaFileName =
           primaryAttachment?.fileName ??
@@ -134,8 +174,8 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       }
 
       controller.sendMessageMutation.mutate(mutationPayload, {
-        onSuccess: (result: any) => {
-          const error = result?.error;
+        onSuccess: (result: unknown) => {
+          const error = (result as { error?: { message?: string } } | null)?.error;
           if (error) {
             availability.notifyOutboundError(error, error?.message ?? 'Não foi possível enviar a mensagem.');
             return;
@@ -163,8 +203,9 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
 
   const createNote = useCallback(
     (body: string) => {
+      const payload: NotesMutationVariables = { ticketId: controller.selectedTicketId, body };
       controller.notesMutation.mutate(
-        { ticketId: controller.selectedTicketId, body },
+        payload,
         {
           onSuccess: () => {
             toast.success('Nota registrada');
@@ -186,7 +227,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     async ({ outcome, reason }: { outcome: string; reason?: string }) => {
       if (!controller.selectedTicketId) return;
 
-      const payload = {
+      const payload: TicketStatusMutationVariables = {
         ticketId: controller.selectedTicketId,
         status: outcome === 'won' ? 'RESOLVED' : 'CLOSED',
         reason,
@@ -213,8 +254,12 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         });
         return;
       }
+      const payload: TicketAssignMutationVariables = {
+        ticketId: ticket?.id ?? controller.selectedTicketId,
+        userId: currentUser.id,
+      };
       controller.assignMutation.mutate(
-        { ticketId: ticket?.id ?? controller.selectedTicketId, userId: currentUser.id },
+        payload,
         {
           onSuccess: () => toast.success('Ticket atribuído'),
           onError: (error: any) => toast.error('Erro ao atribuir ticket', { description: error?.message }),
@@ -334,7 +379,10 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     if (!controller.queueAlerts?.length) {
       return;
     }
-    const [latest] = controller.queueAlerts;
+    const latest = controller.queueAlerts?.[0];
+    if (!latest) {
+      return;
+    }
     if (lastQueueAlertRef.current === latest.timestamp) {
       return;
     }
@@ -441,7 +489,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   };
 
   return (
-    <WhatsAppInstancesProvider autoRefresh={false} initialFetch={false}>
+    <WhatsAppInstancesProvider autoRefresh={false} initialFetch={false} logger={{}}>
       <ChatCommandCenter
         currentUser={currentUser}
         manualConversation={manualConversationProps}
