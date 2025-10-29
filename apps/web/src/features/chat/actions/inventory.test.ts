@@ -36,12 +36,22 @@ describe('chat command inventory', () => {
     const openDialog = vi.fn();
     const button = document.createElement('button');
 
-    action?.run?.({
+    if (!action) {
+      throw new Error('Expected action "register-result" to exist.');
+    }
+
+    if (action.type === 'menu') {
+      throw new Error('Expected action "register-result" to be a command action.');
+    }
+
+    const context: CommandActionRuntimeContext = {
       ticket: null,
       handlers: {},
       openDialog,
       returnFocus: button,
-    } as CommandActionRuntimeContext);
+    };
+
+    action.run(context);
 
     expect(openDialog).toHaveBeenCalledWith('register-result', { returnFocus: button });
   });
