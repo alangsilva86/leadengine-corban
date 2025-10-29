@@ -1,5 +1,3 @@
-export { default } from './useOnboardingJourney.ts';
-export * from './useOnboardingJourney.ts';
 import { createElement, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { apiGet } from '../../lib/api.js';
 import { onAuthTokenChange, onTenantIdChange } from '../../lib/auth.js';
