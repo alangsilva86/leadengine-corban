@@ -1,14 +1,8 @@
 import { cn } from '@/lib/utils.js';
 import { History } from 'lucide-react';
+import { formatPhoneNumber, formatTimestampLabel, humanizeLabel } from '../lib/formatting';
 
-const Timeline = ({
-  surfaceStyles,
-  items = [],
-  realtimeConnected,
-  humanizeLabel,
-  formatPhoneNumber,
-  formatTimestampLabel,
-}) => {
+const Timeline = ({ surfaceStyles, items = [], realtimeConnected }) => {
   return (
     <div className={cn('space-y-3 rounded-xl p-4', surfaceStyles.glassTile)}>
       <div className="flex items-center justify-between text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">

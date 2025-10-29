@@ -88,9 +88,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     handleRequestPairingCode,
     timelineItems,
     realtimeConnected,
-    humanizeLabel,
-    formatPhoneNumber,
-    formatTimestampLabel,
     handleInstanceSelect,
     handleViewQr,
     handleGenerateQr,
@@ -104,10 +101,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     isQrDialogOpen,
     hasCampaign,
     statusCodeMeta,
-    getStatusInfo,
-    getInstanceMetrics,
-    formatMetricValue,
-    resolveInstancePhone,
     defaultInstanceName,
     deletingInstanceId,
     errorState,
@@ -224,11 +217,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           onRequestDelete={setInstancePendingDelete}
           deletingInstanceId={deletingInstanceId}
           statusCodeMeta={statusCodeMeta}
-          getStatusInfo={getStatusInfo}
-          getInstanceMetrics={getInstanceMetrics}
-          formatMetricValue={formatMetricValue}
-          resolveInstancePhone={resolveInstancePhone}
-          formatPhoneNumber={formatPhoneNumber}
         />
       </Suspense>
 
@@ -252,9 +240,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           pairingPhoneError={pairingPhoneError}
           timelineItems={timelineItems}
           realtimeConnected={realtimeConnected}
-          humanizeLabel={humanizeLabel}
-          formatPhoneNumber={formatPhoneNumber}
-          formatTimestampLabel={formatTimestampLabel}
         />
       </Suspense>
 

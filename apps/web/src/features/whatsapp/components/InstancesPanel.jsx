@@ -4,6 +4,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
 import { AlertCircle, Link2, Loader2, QrCode, RefreshCcw, Trash2, MoreVertical, Check } from 'lucide-react';
+import { formatMetricValue, formatPhoneNumber } from '../lib/formatting';
+import { getInstanceMetrics } from '../lib/metrics';
+import { getStatusInfo, resolveInstancePhone } from '../lib/instances';
 import CampaignHistoryDialog from './CampaignHistoryDialog.jsx';
 import {
   DropdownMenu,
@@ -53,11 +56,6 @@ const InstancesPanel = ({
   onRequestDelete,
   deletingInstanceId,
   statusCodeMeta,
-  getStatusInfo,
-  getInstanceMetrics,
-  formatMetricValue,
-  resolveInstancePhone,
-  formatPhoneNumber,
 }) => {
   return (
     <Card className={cn(surfaceStyles.instancesPanel)}>

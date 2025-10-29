@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import {
   findRateSource,
   findStatusCountsSource,
@@ -7,7 +8,7 @@ import {
   normalizeStatusCounts,
   pickMetric,
   toNumber,
-} from '../metrics.js';
+} from '../metrics';
 
 describe('WhatsApp metrics helpers', () => {
   it('extracts numeric values across nested objects', () => {
@@ -29,11 +30,11 @@ describe('WhatsApp metrics helpers', () => {
 
   it('normalizes status counts regardless of layout', () => {
     const counts = normalizeStatusCounts({ status1: '3', status2: 4, status3: '7' });
-    expect(counts[1]).toBe(3);
-    expect(counts[2]).toBe(4);
-    expect(counts[3]).toBe(7);
-    expect(counts[4]).toBe(7);
-    expect(counts[5]).toBe(0);
+    expect(counts['1']).toBe(3);
+    expect(counts['2']).toBe(4);
+    expect(counts['3']).toBe(7);
+    expect(counts['4']).toBe(7);
+    expect(counts['5']).toBe(0);
 
     const fromArray = normalizeStatusCounts([1, 2, 3, 4, 5]);
     expect(fromArray).toMatchObject({ 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 });

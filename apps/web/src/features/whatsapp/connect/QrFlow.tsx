@@ -21,9 +21,6 @@ interface QrFlowProps {
   pairingPhoneError: string | null;
   timelineItems: any[];
   realtimeConnected: boolean;
-  humanizeLabel: (value: unknown) => string;
-  formatPhoneNumber: (value: unknown) => string;
-  formatTimestampLabel: (value: unknown) => string;
 }
 
 const FallbackQrPreview = () => (
@@ -51,9 +48,6 @@ const QrFlow = ({
   pairingPhoneError,
   timelineItems,
   realtimeConnected,
-  humanizeLabel,
-  formatPhoneNumber,
-  formatTimestampLabel,
 }: QrFlowProps) => {
   return (
     <Suspense fallback={<FallbackQrPreview />}>
@@ -76,9 +70,6 @@ const QrFlow = ({
         pairingPhoneError={pairingPhoneError}
         timelineItems={timelineItems}
         realtimeConnected={realtimeConnected}
-        humanizeLabel={humanizeLabel}
-        formatPhoneNumber={formatPhoneNumber}
-        formatTimestampLabel={formatTimestampLabel}
       />
     </Suspense>
   );
