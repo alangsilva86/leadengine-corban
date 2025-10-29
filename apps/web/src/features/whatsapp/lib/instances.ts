@@ -381,6 +381,59 @@ export const resolveInstanceStatus = (instance: unknown): string | null => {
   return null;
 };
 
+export interface InstanceStatusInfo {
+  label: string;
+  variant: string;
+}
+
+export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
+  const record = isPlainRecord(instance) ? instance : {};
+  const resolvedStatus = resolveInstanceStatus(instance);
+  const rawStatus =
+    (typeof resolvedStatus === 'string' && resolvedStatus) ||
+    (record.connected ? 'connected' : 'disconnected');
+
+  const map: Record<string, InstanceStatusInfo> = {
+    connected: { label: 'Conectado', variant: 'success' },
+    connecting: { label: 'Conectando', variant: 'info' },
+    disconnected: { label: 'Desconectado', variant: 'secondary' },
+    qr_required: { label: 'QR necessário', variant: 'warning' },
+    error: { label: 'Erro', variant: 'destructive' },
+  };
+
+  return map[rawStatus] || { label: rawStatus || 'Indefinido', variant: 'secondary' };
+};
+
+export const resolveInstancePhone = (instance: unknown): string => {
+  if (!instance || typeof instance !== 'object') {
+    return '';
+  }
+
+  const record = instance as Record<string, unknown>;
+  const metadata = isPlainRecord(record.metadata) ? record.metadata : {};
+  const candidates = [
+    record.phoneNumber,
+    record.number,
+    record.msisdn,
+    metadata.phoneNumber,
+    metadata.phone_number,
+    metadata.msisdn,
+    record.jid,
+    record.session,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+
+  return '';
+};
+
 export const shouldDisplayInstance = (instance: unknown): boolean => {
   if (!instance || typeof instance !== 'object') {
     return false;

@@ -30,9 +30,6 @@ const QrSection = ({
   pairingPhoneError,
   timelineItems,
   realtimeConnected,
-  humanizeLabel,
-  formatPhoneNumber,
-  formatTimestampLabel,
 }) => {
   return (
     <Card className={cn(surfaceStyles.qrInstructionsPanel)}>
@@ -136,9 +133,6 @@ const QrSection = ({
               surfaceStyles={surfaceStyles}
               items={timelineItems}
               realtimeConnected={realtimeConnected}
-              humanizeLabel={humanizeLabel}
-              formatPhoneNumber={formatPhoneNumber}
-              formatTimestampLabel={formatTimestampLabel}
             />
           </CardContent>
           <CardFooter className="rounded-lg bg-muted/40 px-6 py-4 text-xs text-muted-foreground">

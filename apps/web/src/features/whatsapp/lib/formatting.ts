@@ -1,4 +1,4 @@
-export const formatMetricValue = (value) => {
+export const formatMetricValue = (value: unknown): string => {
   if (typeof value === 'number') {
     return value.toLocaleString('pt-BR');
   }
@@ -8,12 +8,12 @@ export const formatMetricValue = (value) => {
   return '—';
 };
 
-export const formatTimestampLabel = (value) => {
+export const formatTimestampLabel = (value: unknown): string => {
   if (!value) {
     return '—';
   }
 
-  const date = new Date(value);
+  const date = new Date(value as any);
   if (Number.isNaN(date.getTime())) {
     return '—';
   }
@@ -28,10 +28,10 @@ export const formatTimestampLabel = (value) => {
   }
 };
 
-export const formatPhoneNumber = (value) => {
+export const formatPhoneNumber = (value: unknown): string => {
   if (!value) return '—';
   const digits = `${value}`.replace(/\D/g, '');
-  if (digits.length < 10) return value;
+  if (digits.length < 10) return `${value}`;
   const ddd = digits.slice(0, 2);
   const nine = digits.length > 10 ? digits.slice(2, 3) : '';
   const prefix = digits.length > 10 ? digits.slice(3, 7) : digits.slice(2, 6);
@@ -39,7 +39,7 @@ export const formatPhoneNumber = (value) => {
   return `(${ddd}) ${nine}${prefix}-${suffix}`;
 };
 
-export const humanizeLabel = (value) => {
+export const humanizeLabel = (value: unknown): string => {
   if (typeof value !== 'string' || !value.trim()) {
     return 'Atualização';
   }
