@@ -75,6 +75,53 @@ import type {
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
+const normalizeNullableString = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const syncContactPrimaryPhone = async (
+  tenantId: string,
+  contactId: string,
+  phone: string | null | undefined
+): Promise<void> => {
+  const normalized = normalizeNullableString(phone);
+
+  await prisma.contactPhone.updateMany({
+    where: { tenantId, contactId, isPrimary: true },
+    data: { isPrimary: false },
+  });
+
+  if (!normalized) {
+    return;
+  }
+
+  await prisma.contactPhone.upsert({
+    where: {
+      tenantId_phoneNumber: {
+        tenantId,
+        phoneNumber: normalized,
+      },
+    },
+    update: {
+      contactId,
+      isPrimary: true,
+    },
+    create: {
+      tenantId,
+      contactId,
+      phoneNumber: normalized,
+      type: 'MOBILE',
+      label: 'Principal',
+      isPrimary: true,
+    },
+  });
+};
+
 type WhatsAppTransportDependencies = {
   transport?: WhatsAppTransport;
   emitMessageUpdatedEvents?: typeof emitMessageUpdatedEvents;
@@ -2248,6 +2295,7 @@ export const sendToContact = async (
           lastInteractionAt: new Date(),
         },
       });
+      await syncContactPrimaryPhone(resolvedTenantId, contactId, normalizedPhone);
     }
   }
 
@@ -2351,6 +2399,7 @@ export const sendAdHoc = async (
         lastInteractionAt: new Date(),
       },
     });
+    await syncContactPrimaryPhone(tenantId, contact.id, normalized.e164);
   } else {
     contact = await prisma.contact.update({
       where: { id: contact.id },
@@ -2359,6 +2408,7 @@ export const sendAdHoc = async (
         primaryPhone: normalized.e164,
       },
     });
+    await syncContactPrimaryPhone(tenantId, contact.id, normalized.e164);
   }
 
   const sendParams: SendToContactParams = {

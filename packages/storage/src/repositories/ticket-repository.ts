@@ -1418,6 +1418,11 @@ export const findOrCreateOpenTicketByChat = async (
     });
 
     if (phone) {
+      await tx.contactPhone.updateMany({
+        where: { tenantId: input.tenantId, contactId: contact.id, isPrimary: true },
+        data: { isPrimary: false },
+      });
+
       await tx.contactPhone.upsert({
         where: {
           tenantId_phoneNumber: {
