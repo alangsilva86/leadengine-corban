@@ -702,7 +702,67 @@ async function main() {
     },
   });
 
+  const brokerLead = await prisma.brokerLead.upsert({
+    where: {
+      tenantId_document: {
+        tenantId: demoTenant.id,
+        document: '09941751919',
+      },
+    },
+    update: {
+      tags: { set: ['respondido', 'whatsapp'] },
+      registrations: { set: ['1839'] },
+      margin: 487.5,
+      netMargin: 390,
+      score: 92,
+    },
+    create: {
+      tenant: { connect: { id: demoTenant.id } },
+      agreementId: demoCampaign.agreementId ?? 'saec-goiania',
+      fullName: 'Maria Helena Souza',
+      document: '09941751919',
+      matricula: '1839',
+      phone: '+5562999887766',
+      registrations: ['1839'],
+      tags: ['respondido', 'whatsapp'],
+      margin: 487.5,
+      netMargin: 390,
+      score: 92,
+      raw: {
+        seed: true,
+        source: 'demo',
+      },
+    },
+  });
+
+  await prisma.leadAllocation.upsert({
+    where: {
+      tenantId_leadId_campaignId: {
+        tenantId: demoTenant.id,
+        leadId: brokerLead.id,
+        campaignId: demoCampaign.id,
+      },
+    },
+    update: {
+      status: 'contacted',
+      notes: 'Lead de demonstração atualizado pelo seed.',
+    },
+    create: {
+      tenant: { connect: { id: demoTenant.id } },
+      lead: { connect: { id: brokerLead.id } },
+      campaign: { connect: { id: demoCampaign.id } },
+      status: 'allocated',
+      notes: 'Lead de demonstração criado pelo seed.',
+      payload: {
+        seed: true,
+        source: 'demo',
+      },
+    },
+  });
+
   console.log('✅ Leads demo criados');
+
+  console.log('✅ Alocação de lead demo criada');
 
   // Criar atividades para os leads
   await prisma.leadActivity.createMany({
