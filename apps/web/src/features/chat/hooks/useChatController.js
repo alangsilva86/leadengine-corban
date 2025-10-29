@@ -135,9 +135,13 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
 
   const handleMessageCreated = useCallback(
     (payload) => {
-      const ticketId = payload?.ticketId;
-      const message = payload?.message;
-      if (!ticketId || !message) {
+      const message = payload?.message ?? payload ?? null;
+      if (!message || typeof message !== 'object') {
+        return;
+      }
+
+      const ticketId = payload?.ticketId ?? message.ticketId ?? payload?.ticket?.id ?? null;
+      if (!ticketId) {
         return;
       }
 
