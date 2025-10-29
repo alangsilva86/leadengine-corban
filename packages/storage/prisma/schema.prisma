@@ -539,6 +539,7 @@ model BrokerLead {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   allocations LeadAllocation[]
 
   @@unique([tenantId, document], map: "broker_leads_tenant_document_unique")
@@ -563,6 +564,7 @@ model LeadAllocation {
   receivedAt DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
 
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lead     BrokerLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
   campaign Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 

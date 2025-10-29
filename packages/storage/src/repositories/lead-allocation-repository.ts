@@ -6,7 +6,7 @@ export type LeadAllocationStatus = 'allocated' | 'contacted' | 'won' | 'lost';
 type PrismaLeadAllocationStatus = $Enums.LeadAllocationStatus;
 
 type LeadAllocationRecord = Prisma.LeadAllocationGetPayload<{
-  include: { lead: true; campaign: true };
+  include: { lead: { include: { tenant: true } }; campaign: true; tenant: true };
 }>;
 
 type BrokerLead = LeadAllocationRecord['lead'];
@@ -169,7 +169,7 @@ const mapAllocation = (allocation: LeadAllocationRecord): LeadAllocationDto => {
   const result: LeadAllocationDto = {
     allocationId: allocation.id,
     leadId: allocation.leadId,
-    tenantId: allocation.tenantId,
+    tenantId: allocation.tenant.id,
     campaignId: allocation.campaignId,
     campaignName: campaignInfo.campaignName,
     agreementId:
@@ -327,7 +327,7 @@ export const listAllocations = async (filters: AllocationFilters): Promise<LeadA
   const allocations = await prisma.leadAllocation.findMany({
     where,
     orderBy: { receivedAt: 'desc' },
-    include: { lead: true, campaign: true },
+    include: { lead: { include: { tenant: true } }, campaign: true, tenant: true },
   });
 
   return allocations.map(mapAllocation);
@@ -405,7 +405,7 @@ export const allocateBrokerLeads = async (params: {
           raw: (leadInput.raw ?? null) as Prisma.InputJsonValue,
         },
         create: {
-          tenantId: params.tenantId,
+          tenant: { connect: { id: params.tenantId } },
           agreementId: leadInput.agreementId,
           fullName: leadInput.fullName,
           document,
@@ -436,7 +436,7 @@ export const allocateBrokerLeads = async (params: {
 
       const createdAllocation = await tx.leadAllocation.create({
         data: {
-          tenantId: params.tenantId,
+          tenant: { connect: { id: params.tenantId } },
           campaignId: targetCampaignId!,
           leadId: lead.id,
           status: 'allocated',
@@ -444,7 +444,7 @@ export const allocateBrokerLeads = async (params: {
           payload: (leadInput.raw ?? null) as Prisma.InputJsonValue,
           receivedAt: now,
         },
-        include: { lead: true, campaign: true },
+        include: { lead: { include: { tenant: true } }, campaign: true, tenant: true },
       });
 
       allocations.push(createdAllocation);
@@ -488,7 +488,7 @@ export const updateAllocation = async (params: {
   const updated = await prisma.leadAllocation.update({
     where: { id: existing.id },
     data,
-    include: { lead: true, campaign: true },
+    include: { lead: { include: { tenant: true } }, campaign: true, tenant: true },
   });
 
   return mapAllocation(updated);
