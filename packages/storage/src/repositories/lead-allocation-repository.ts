@@ -437,8 +437,8 @@ export const allocateBrokerLeads = async (params: {
       const createdAllocation = await tx.leadAllocation.create({
         data: {
           tenant: { connect: { id: params.tenantId } },
-          campaignId: targetCampaignId!,
-          leadId: lead.id,
+          campaign: { connect: { id: targetCampaignId! } },
+          lead: { connect: { id: lead.id } },
           status: 'allocated',
           notes: null,
           payload: (leadInput.raw ?? null) as Prisma.InputJsonValue,
