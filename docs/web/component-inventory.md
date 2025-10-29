@@ -114,5 +114,4 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 - `features/shared/usePlayfulLogger.js`
 - `features/whatsapp/hooks/useInstanceLiveUpdates.js`
 - `features/whatsapp/hooks/useQrImageSource.js`
-- `features/whatsapp/hooks/useWhatsAppCampaigns.js`
 - `features/whatsapp/hooks/useWhatsAppInstances.js`
