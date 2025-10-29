@@ -11,14 +11,18 @@ vi.mock('sonner', () => ({
   toast: toastMock,
 }));
 
-const apiPatchMock = vi.hoisted(() => vi.fn(async () => ({ data: {} })));
+const apiPatchMock = vi.hoisted(() => {
+  type ApiPatch = typeof import('@/lib/api.js').apiPatch;
+  return vi.fn<Parameters<ApiPatch>, ReturnType<ApiPatch>>(() =>
+    Promise.resolve({ data: {} }) as ReturnType<ApiPatch>,
+  );
+});
 
 vi.mock('@/lib/api.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api.js')>();
   return {
     ...actual,
-    apiPatch: (...args: Parameters<typeof actual.apiPatch>) =>
-      apiPatchMock(...(args as Parameters<typeof actual.apiPatch>)),
+    apiPatch: (...args: Parameters<typeof actual.apiPatch>) => apiPatchMock(...args),
   } satisfies typeof import('@/lib/api.js');
 });
 

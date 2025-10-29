@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import useUpdateContactField from '../api/useUpdateContactField.js';
-import useUpdateDealFields from '../api/useUpdateDealFields.js';
-import useUpdateNextStep from '../api/useUpdateNextStep.js';
+import useUpdateContactField, {
+  type UpdateContactFieldVariables,
+} from '../api/useUpdateContactField.js';
+import useUpdateDealFields, {
+  type UpdateDealFieldsVariables,
+} from '../api/useUpdateDealFields.js';
+import useUpdateNextStep, {
+  type UpdateNextStepMetadata,
+  type UpdateNextStepVariables,
+} from '../api/useUpdateNextStep.js';
 import {
   contactFieldUpdateSchema,
   dealFieldUpdateSchema,
@@ -19,11 +26,16 @@ interface EntityLike {
 }
 
 interface LeadLike extends EntityLike {
-  customFields?: Record<string, unknown> | null;
+  customFields?: { deal?: Record<string, unknown> | null } | null;
+}
+
+interface TicketMetadata {
+  nextAction?: { description?: string | null } | null;
+  [key: string]: unknown;
 }
 
 interface TicketLike extends EntityLike {
-  metadata?: Record<string, unknown> | null;
+  metadata?: TicketMetadata | null;
   nextStep?: { description?: string | null } | null;
 }
 
@@ -61,22 +73,28 @@ export const useTicketFieldUpdaters = ({
   selectedLead,
   currentUser,
 }: UseTicketFieldUpdatersInput) => {
-  const updateContactFieldMutation = useUpdateContactField({ contactId: selectedContact?.id as string | undefined });
-  const updateNextStepMutation = useUpdateNextStep({ ticketId: selectedTicket?.id as string | undefined });
-  const updateDealFieldsMutation = useUpdateDealFields({ leadId: selectedLead?.id as string | undefined });
+  const updateContactFieldMutation = useUpdateContactField({
+    contactId: selectedContact?.id ?? undefined,
+  });
+  const updateNextStepMutation = useUpdateNextStep({
+    ticketId: selectedTicket?.id ?? undefined,
+  });
+  const updateDealFieldsMutation = useUpdateDealFields({
+    leadId: selectedLead?.id ?? undefined,
+  });
 
   const [nextStepDraft, setNextStepDraft] = useState('');
 
   useEffect(() => {
     const nextStep =
-      (selectedTicket?.metadata as any)?.nextAction?.description ??
-      (selectedTicket?.nextStep as any)?.description ??
+      selectedTicket?.metadata?.nextAction?.description ??
+      selectedTicket?.nextStep?.description ??
       '';
     setNextStepDraft(nextStep ?? '');
   }, [
     selectedTicket?.id,
-    (selectedTicket?.metadata as any)?.nextAction?.description,
-    (selectedTicket?.nextStep as any)?.description,
+    selectedTicket?.metadata?.nextAction?.description,
+    selectedTicket?.nextStep?.description,
   ]);
 
   const ticketId = useMemo(() => selectedTicket?.id ?? controller.selectedTicketId ?? null, [
@@ -99,15 +117,25 @@ export const useTicketFieldUpdaters = ({
         throw result.error;
       }
 
-      const normalizedCurrent = normalizeContactFieldValue(result.data.field, selectedContact?.[result.data.field]);
+      const normalizedCurrent = normalizeContactFieldValue(
+        result.data.field,
+        selectedContact?.[result.data.field],
+      );
       if (normalizedCurrent === result.data.value) {
         return;
       }
 
-      await updateContactFieldMutation.mutateAsync({
-        targetContactId: selectedContact.id as string,
+      const contactId = selectedContact.id;
+      if (!contactId) {
+        throw new Error('Contato indisponível para atualização.');
+      }
+
+      const payload: UpdateContactFieldVariables = {
+        targetContactId: contactId,
         data: { [result.data.field]: result.data.value },
-      });
+      };
+
+      await updateContactFieldMutation.mutateAsync(payload);
     },
     [selectedContact?.id, selectedContact, updateContactFieldMutation]
   );
@@ -127,8 +155,8 @@ export const useTicketFieldUpdaters = ({
 
       const normalizedValue = nextValue.trim();
       const currentDescription =
-        (selectedTicket?.metadata as any)?.nextAction?.description ??
-        (selectedTicket?.nextStep as any)?.description ??
+        selectedTicket?.metadata?.nextAction?.description ??
+        selectedTicket?.nextStep?.description ??
         '';
 
       if ((normalizedValue ?? '') === (currentDescription ?? '')) {
@@ -140,7 +168,7 @@ export const useTicketFieldUpdaters = ({
       }
 
       try {
-        const metadata: Record<string, unknown> = {
+        const metadata: UpdateNextStepMetadata = {
           updatedFrom: 'chat-command-center',
         };
 
@@ -148,11 +176,13 @@ export const useTicketFieldUpdaters = ({
           metadata.updatedBy = currentUser.id;
         }
 
-        const result = await updateNextStepMutation.mutateAsync({
+        const payload: UpdateNextStepVariables = {
           targetTicketId: ticketId,
           description: normalizedValue,
           metadata,
-        });
+        };
+
+        const result = await updateNextStepMutation.mutateAsync(payload);
 
         toast.success('Próximo passo atualizado.');
 
@@ -183,7 +213,7 @@ export const useTicketFieldUpdaters = ({
 
       const currentDeal =
         selectedLead?.customFields && typeof selectedLead.customFields === 'object'
-          ? (selectedLead.customFields as Record<string, any>).deal ?? {}
+          ? selectedLead.customFields.deal ?? {}
           : {};
 
       const normalizedCurrent = normalizeDealFieldValue(field, currentDeal?.[field]);
@@ -192,10 +222,17 @@ export const useTicketFieldUpdaters = ({
         return;
       }
 
-      await updateDealFieldsMutation.mutateAsync({
-        targetLeadId: selectedLead.id as string,
+      const leadId = selectedLead.id;
+      if (!leadId) {
+        throw new Error('Lead indisponível para atualização.');
+      }
+
+      const payload: UpdateDealFieldsVariables = {
+        targetLeadId: leadId,
         data: { [field]: result.data.value },
-      });
+      };
+
+      await updateDealFieldsMutation.mutateAsync(payload);
     },
     [selectedLead?.id, selectedLead, updateDealFieldsMutation]
   );
