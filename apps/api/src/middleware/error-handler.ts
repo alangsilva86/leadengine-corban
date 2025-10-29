@@ -5,6 +5,7 @@ import {
   ValidationError,
   NotFoundError,
   ConflictError,
+  ServiceUnavailableError,
   UnauthorizedError,
   ForbiddenError,
 } from '@ticketz/core';
@@ -136,6 +137,16 @@ export const errorHandler = (
       status: 403,
       code: 'FORBIDDEN',
       message: error.message,
+    };
+  } else if (
+    error instanceof ServiceUnavailableError ||
+    hasErrorName(error, 'ServiceUnavailableError')
+  ) {
+    apiError = {
+      status: 503,
+      code: 'SERVICE_UNAVAILABLE',
+      message: error.message,
+      details: readErrorDetails(error),
     };
   } else if (error instanceof DomainError || hasErrorName(error, 'DomainError')) {
     apiError = {

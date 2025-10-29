@@ -1,4 +1,4 @@
-import { ConflictError, NotFoundError } from '@ticketz/core';
+import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '@ticketz/core';
 import type {
   Contact,
   CreateTicketDTO,
@@ -290,10 +290,13 @@ const handleDatabaseError = (error: unknown, context: Record<string, unknown> = 
   if (
     error instanceof Prisma.PrismaClientInitializationError ||
     error instanceof Prisma.PrismaClientRustPanicError ||
-    error instanceof Prisma.PrismaClientUnknownRequestError ||
-    error instanceof Prisma.PrismaClientValidationError
+    error instanceof Prisma.PrismaClientUnknownRequestError
   ) {
-    throw new ConflictError('Não foi possível concluir a operação no banco de dados.', { cause: error });
+    throw new ServiceUnavailableError('Falha de conectividade com o banco de dados.', { cause: error });
+  }
+
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    throw new ValidationError('Parâmetros inválidos para a operação no banco de dados.', { cause: error });
   }
 
   if (isUniqueViolation(error)) {
