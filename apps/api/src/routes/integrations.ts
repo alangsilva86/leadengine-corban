@@ -350,12 +350,10 @@ router.get(
 
     let stored: StoredInstance | null = null;
     try {
-      stored = (await prisma.whatsAppInstance.findUnique({
+      stored = (await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: instanceId,
-          },
+          tenantId,
+          id: instanceId,
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
@@ -476,12 +474,10 @@ router.get(
 
     let stored: StoredInstance | null = null;
     try {
-      stored = (await prisma.whatsAppInstance.findUnique({
+      stored = (await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: instanceId,
-          },
+          tenantId,
+          id: instanceId,
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
@@ -657,12 +653,10 @@ router.get(
 
     let stored: StoredInstance | null = null;
     try {
-      stored = (await prisma.whatsAppInstance.findUnique({
+      stored = (await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: instanceId,
-          },
+          tenantId,
+          id: instanceId,
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
@@ -787,12 +781,10 @@ router.get(
 
     let stored: StoredInstance | null = null;
     try {
-      stored = (await prisma.whatsAppInstance.findUnique({
+      stored = (await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: instanceId,
-          },
+          tenantId,
+          id: instanceId,
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
@@ -946,12 +938,10 @@ router.get(
 
     let stored: StoredInstance | null = null;
     try {
-      stored = (await prisma.whatsAppInstance.findUnique({
+      stored = (await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: instanceId,
-          },
+          tenantId,
+          id: instanceId,
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
@@ -1063,12 +1053,10 @@ router.post(
     const defaultInstanceId = resolveDefaultInstanceId();
 
     try {
-      const stored = await prisma.whatsAppInstance.findUnique({
+      const stored = await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: defaultInstanceId,
-          },
+          tenantId,
+          id: defaultInstanceId,
         },
       });
 
@@ -1311,12 +1299,10 @@ router.post(
     }
 
     try {
-      const stored = await prisma.whatsAppInstance.findUnique({
+      const stored = await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId_id: {
-            tenantId,
-            id: instanceId,
-          },
+          tenantId,
+          id: instanceId,
         },
       });
 
@@ -1449,12 +1435,10 @@ router.delete(
     const tenantId = resolveRequestTenantId(req);
     const actorId = resolveRequestActorId(req);
 
-    const stored = await prisma.whatsAppInstance.findUnique({
+    const stored = await prisma.whatsAppInstance.findFirst({
       where: {
-        tenantId_id: {
-          tenantId,
-          id: instanceId,
-        },
+        tenantId,
+        id: instanceId,
       },
     });
 

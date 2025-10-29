@@ -633,9 +633,7 @@ model WhatsAppInstance {
 
   campaigns Campaign[]
 
-  @@unique([tenantId, id])
   @@unique([tenantId, brokerId])
-  @@unique([brokerId])
   @@index([tenantId])
   @@map("whatsapp_instances")
 }

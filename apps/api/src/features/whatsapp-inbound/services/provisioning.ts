@@ -570,7 +570,7 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
             },
           },
         })) ??
-        (await prisma.whatsAppInstance.findUnique({ where: { brokerId } })) ??
+        (await prisma.whatsAppInstance.findFirst({ where: { brokerId } })) ??
         (await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere }));
       if (existing) {
         const enriched = await ensureAutopProvisionMetadata(existing, autopProvisionMetadataPayload);
