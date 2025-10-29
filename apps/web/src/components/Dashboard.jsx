@@ -15,10 +15,10 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
-import { useDashboardData } from './dashboard/useDashboardData.ts';
-import { DashboardStatsWidget } from './dashboard/widgets/DashboardStatsWidget.tsx';
-import { TicketsDailyWidget } from './dashboard/widgets/TicketsDailyWidget.tsx';
-import { ChannelDistributionWidget } from './dashboard/widgets/ChannelDistributionWidget.tsx';
+import { useDashboardData } from './dashboard/useDashboardData';
+import { DashboardStatsWidget } from './dashboard/widgets/DashboardStatsWidget';
+import { TicketsDailyWidget } from './dashboard/widgets/TicketsDailyWidget';
+import { ChannelDistributionWidget } from './dashboard/widgets/ChannelDistributionWidget';
 
 const getStatusBadge = (status) => {
   const variants = {

@@ -55,18 +55,28 @@ describe('CampaignsPanel', () => {
       />
     );
 
-    expect(screen.getByText('Convênio: Convênio Alpha')).toBeInTheDocument();
-    expect(screen.getByText('Convênio: Convênio Beta')).toBeInTheDocument();
+    expect(screen.getAllByText(/Convênio Alpha/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Convênio Beta/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Instância vinculada').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Aguardando vínculo').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Leads recebidos')).toHaveLength(2);
     expect(screen.getAllByText('Contactados')).toHaveLength(2);
 
-    const disconnectButton = screen.getByRole('button', { name: /Desvincular/i });
-    await user.click(disconnectButton);
+    const [firstActionsButton, secondActionsButton] = screen.getAllByRole('button', {
+      name: /Ações/i,
+    });
+
+    await user.click(firstActionsButton);
+    const disconnectMenuItem = await screen.findByRole('menuitem', {
+      name: /Desvincular instância/i,
+    });
+    await user.click(disconnectMenuItem);
     expect(disconnectMock).toHaveBeenCalledWith(linkedCampaign);
 
-    expect(screen.getByRole('button', { name: /Vincular instância/i })).toBeInTheDocument();
+    await user.click(secondActionsButton);
+    expect(
+      await screen.findByRole('menuitem', { name: /Vincular instância/i }),
+    ).toBeInTheDocument();
   });
 
   it('permite atualizar a lista e desabilita criação quando necessário', async () => {

@@ -21,8 +21,8 @@ vi.mock('recharts', () => {
   };
 });
 
-import { TicketsDailyWidget } from '../TicketsDailyWidget.tsx';
-import type { TicketSeriesEntry } from '../../useDashboardData.ts';
+import { TicketsDailyWidget } from '../TicketsDailyWidget';
+import type { TicketSeriesEntry } from '../../useDashboardData';
 
 afterEach(() => {
   cleanup();

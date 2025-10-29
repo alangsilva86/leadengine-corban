@@ -4,7 +4,7 @@ import { act, cleanup, render, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
-import ChatCommandCenter from '../containers/ChatCommandCenterContainer.tsx';
+import ChatCommandCenter from '../containers/ChatCommandCenterContainer.js';
 
 vi.mock('@/lib/auth.js', () => {
   const getTenantId = vi.fn(() => 'test-tenant');
@@ -85,6 +85,13 @@ vi.mock('../hooks/useManualConversationLauncher.js', () => ({
 }));
 
 vi.mock('../api/useUpdateContactField.js', () => ({
+  __esModule: true,
+  default: () => ({
+    mutateAsync: vi.fn(async () => ({})),
+  }),
+}));
+
+vi.mock('../api/useUpdateDealFields.js', () => ({
   __esModule: true,
   default: () => ({
     mutateAsync: vi.fn(async () => ({})),

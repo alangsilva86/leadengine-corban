@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
-import type { ChannelDistributionEntry } from '../useDashboardData.ts';
+import type { ChannelDistributionEntry } from '../useDashboardData';
 
 export interface ChannelDistributionWidgetProps {
   data: ChannelDistributionEntry[];

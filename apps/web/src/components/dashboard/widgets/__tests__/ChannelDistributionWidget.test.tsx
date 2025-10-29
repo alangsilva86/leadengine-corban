@@ -19,8 +19,8 @@ vi.mock('recharts', () => {
   };
 });
 
-import { ChannelDistributionWidget } from '../ChannelDistributionWidget.tsx';
-import type { ChannelDistributionEntry } from '../../useDashboardData.ts';
+import { ChannelDistributionWidget } from '../ChannelDistributionWidget';
+import type { ChannelDistributionEntry } from '../../useDashboardData';
 
 afterEach(() => {
   cleanup();

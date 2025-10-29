@@ -1,13 +1,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import useManualConversationFlow from '../useManualConversationFlow.ts';
 
-const toastMock = {
+const toastMock = vi.hoisted(() => ({
   error: vi.fn(),
   loading: vi.fn(),
   success: vi.fn(),
-};
+}));
 
 vi.mock('sonner', () => ({
   toast: toastMock,
@@ -24,7 +23,9 @@ vi.mock('../useManualConversationLauncher.js', () => ({
 }));
 
 describe('useManualConversationFlow', () => {
-  beforeEach(() => {
+  let useManualConversationFlowHook: typeof import('../useManualConversationFlow').default;
+
+  beforeEach(async () => {
     launchMock.mockReset();
     launchMock.mockResolvedValue({ ticketId: 'ticket-99' });
     refetchMock.mockReset();
@@ -39,6 +40,7 @@ describe('useManualConversationFlow', () => {
       isAvailable: true,
       unavailableReason: null,
     });
+    ({ default: useManualConversationFlowHook } = await import('../useManualConversationFlow'));
   });
 
   afterEach(() => {
@@ -51,7 +53,7 @@ describe('useManualConversationFlow', () => {
       selectTicket: selectTicketMock,
     };
 
-    const { result } = renderHook(() => useManualConversationFlow({ controller }));
+    const { result } = renderHook(() => useManualConversationFlowHook({ controller }));
 
     act(() => result.current.setDialogOpen(true));
     expect(result.current.isDialogOpen).toBe(true);
@@ -77,7 +79,7 @@ describe('useManualConversationFlow', () => {
     });
 
     const controller = {};
-    const { result } = renderHook(() => useManualConversationFlow({ controller }));
+    const { result } = renderHook(() => useManualConversationFlowHook({ controller }));
 
     await expect(
       result.current.onSubmit({ phone: '123', message: 'Olá', instanceId: 'iid-1' })
@@ -97,7 +99,7 @@ describe('useManualConversationFlow', () => {
     });
 
     const controller = {};
-    const { result } = renderHook(() => useManualConversationFlow({ controller }));
+    const { result } = renderHook(() => useManualConversationFlowHook({ controller }));
 
     await expect(
       result.current.onSubmit({ phone: '123', message: 'Olá', instanceId: 'iid-1' })

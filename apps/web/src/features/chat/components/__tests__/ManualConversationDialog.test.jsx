@@ -42,7 +42,10 @@ describe('ManualConversationDialog', () => {
     vi.resetModules();
     mockUseWhatsAppInstances.mockReset();
     mockToastError.mockReset();
-    mockUseWhatsAppInstances.mockReturnValue({ instances: [] });
+    mockUseWhatsAppInstances.mockReturnValue({
+      instances: [],
+      loadInstances: vi.fn(),
+    });
     ManualConversationDialog = (await import('../ManualConversationDialog.jsx')).default;
   });
 
@@ -58,6 +61,7 @@ describe('ManualConversationDialog', () => {
         { id: 'connected-2', displayId: 'inst-002', status: 'connected' },
         { id: 'pending-3', name: 'Pendente', status: 'connecting' },
       ],
+      loadInstances: vi.fn(),
     });
 
     render(
@@ -79,6 +83,7 @@ describe('ManualConversationDialog', () => {
       instances: [
         { id: 'connected-1', name: 'Instância A', connected: true },
       ],
+      loadInstances: vi.fn(),
     });
 
     const onSubmit = vi.fn().mockResolvedValue({});

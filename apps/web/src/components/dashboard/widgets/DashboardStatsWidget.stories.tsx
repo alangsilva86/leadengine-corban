@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { MessageSquare, Ticket, TrendingUp, Users } from 'lucide-react';
-import { DashboardStatsWidget } from './DashboardStatsWidget.tsx';
-import type { DashboardStat } from '../useDashboardData.ts';
+import { DashboardStatsWidget } from './DashboardStatsWidget';
+import type { DashboardStat } from '../useDashboardData';
 
 const sampleStats: DashboardStat[] = [
   {

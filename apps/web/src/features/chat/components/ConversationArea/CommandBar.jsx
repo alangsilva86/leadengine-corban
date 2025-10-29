@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils.js';
 import {
   DEFAULT_QUICK_ACTIONS,
   PRIMARY_ACTION_IDS,
-} from '@/features/chat/actions/inventory.ts';
+} from '@/features/chat/actions/inventory';
 import {
   Tooltip,
   TooltipContent,

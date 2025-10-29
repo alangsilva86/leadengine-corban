@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { TicketsDailyWidget } from './TicketsDailyWidget.tsx';
-import type { TicketSeriesEntry } from '../useDashboardData.ts';
+import { TicketsDailyWidget } from './TicketsDailyWidget';
+import type { TicketSeriesEntry } from '../useDashboardData';
 
 const sampleData: TicketSeriesEntry[] = [
   { name: 'Seg', abertos: 12, pendentes: 6, fechados: 8 },

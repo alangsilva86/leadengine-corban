@@ -28,7 +28,8 @@ describe('api buildUrl', () => {
   it('handles relative base paths without duplicating segments', async () => {
     process.env.VITE_API_URL = '/api';
     const { buildUrl } = await importApiModule();
-    expect(buildUrl('/api/auth/me')).toBe('/api/auth/me');
-    expect(buildUrl('auth/me')).toBe('/api/auth/me');
+    const expected = new URL('/api/auth/me', window.location.origin).toString();
+    expect(buildUrl('/api/auth/me')).toBe(expected);
+    expect(buildUrl('auth/me')).toBe(expected);
   });
 });

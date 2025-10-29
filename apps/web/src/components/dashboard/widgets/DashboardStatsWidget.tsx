@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
-import type { DashboardStat } from '../useDashboardData.ts';
+import type { DashboardStat } from '../useDashboardData';
 
 const changeBadgeVariants: Record<string, string> = {
   up: 'bg-success/15 text-success-strong-foreground',

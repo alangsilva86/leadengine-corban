@@ -77,7 +77,7 @@ vi.mock('../components/AgreementGrid.jsx', () => ({
   default: () => <div data-testid="agreements-page">Convênios</div>,
 }));
 
-vi.mock('../features/whatsapp/connect/index.tsx', () => ({
+vi.mock('../features/whatsapp/connect/index', () => ({
   default: ({ onContinue }) => (
     <div data-testid="whatsapp-page">
       <button type="button" onClick={() => onContinue?.()}>Continuar para Inbox</button>
@@ -85,7 +85,7 @@ vi.mock('../features/whatsapp/connect/index.tsx', () => ({
   ),
 }));
 
-vi.mock('../features/chat/containers/ChatCommandCenterContainer.tsx', () => ({
+vi.mock('../features/chat/containers/ChatCommandCenterContainer.js', () => ({
   default: () => <div data-testid="inbox-page">Inbox</div>,
 }));
 
@@ -275,4 +275,3 @@ describe('useAgreements hook', () => {
     expect(apiGetMock).toHaveBeenCalledTimes(2);
   });
 });
-

@@ -58,9 +58,9 @@ const badgeVariants = cva(
 )
 
 function Badge({
-  className,
-  variant,
-  tone,
+  className = '',
+  variant = 'default',
+  tone = 'neutral',
   asChild = false,
   ...props
 }) {

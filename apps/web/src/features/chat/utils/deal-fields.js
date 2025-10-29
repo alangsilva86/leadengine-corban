@@ -1,4 +1,4 @@
-import { normalizeCurrencyValue, normalizeIntegerValue } from './validation.ts';
+import { normalizeCurrencyValue, normalizeIntegerValue } from './validation';
 
 const CURRENCY_FORMATTER = new Intl.NumberFormat('pt-BR', {
   style: 'currency',

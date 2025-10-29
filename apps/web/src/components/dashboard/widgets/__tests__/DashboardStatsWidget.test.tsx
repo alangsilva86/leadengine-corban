@@ -3,8 +3,8 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MessageSquare, Users } from 'lucide-react';
-import { DashboardStatsWidget } from '../DashboardStatsWidget.tsx';
-import type { DashboardStat } from '../../useDashboardData.ts';
+import { DashboardStatsWidget } from '../DashboardStatsWidget';
+import type { DashboardStat } from '../../useDashboardData';
 
 afterEach(() => {
   cleanup();

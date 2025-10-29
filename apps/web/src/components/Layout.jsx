@@ -42,7 +42,7 @@ import {
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
 import { getRuntimeEnv } from '@/lib/runtime-env.js';
-import { getFrontendFeatureFlags } from '../../../../config/feature-flags.ts';
+import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
 
 const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
 const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;

@@ -3,9 +3,9 @@ import { toast } from 'sonner';
 
 import { ChatCommandCenter } from '../ChatCommandCenter.jsx';
 import useChatController from '../hooks/useChatController.js';
-import useManualConversationFlow from '../hooks/useManualConversationFlow.ts';
-import useTicketFieldUpdaters from '../hooks/useTicketFieldUpdaters.ts';
-import useWhatsAppAvailability from '../hooks/useWhatsAppAvailability.ts';
+import useManualConversationFlow from '../hooks/useManualConversationFlow';
+import useTicketFieldUpdaters from '../hooks/useTicketFieldUpdaters';
+import useWhatsAppAvailability from '../hooks/useWhatsAppAvailability';
 import emitInboxTelemetry from '../utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';

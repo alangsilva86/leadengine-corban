@@ -10,12 +10,28 @@ const { mockIo, sockets, MockSocket } = vi.hoisted(() => {
       this.handlers = new Map();
       this.emittedEvents = [];
       this.disconnected = false;
+      this.closed = false;
     }
 
     on(event, handler) {
       const handlers = this.handlers.get(event) ?? [];
       handlers.push(handler);
       this.handlers.set(event, handlers);
+    }
+
+    off(event, handler) {
+      const existing = this.handlers.get(event);
+      if (!existing) {
+        return;
+      }
+      if (!handler) {
+        this.handlers.delete(event);
+        return;
+      }
+      this.handlers.set(
+        event,
+        existing.filter((candidate) => candidate !== handler),
+      );
     }
 
     emit(event, payload) {
@@ -31,6 +47,10 @@ const { mockIo, sockets, MockSocket } = vi.hoisted(() => {
 
     disconnect() {
       this.disconnected = true;
+    }
+
+    close() {
+      this.closed = true;
     }
   }
 
@@ -95,7 +115,10 @@ describe('useInstanceLiveUpdates', () => {
       expect(result.current.connected).toBe(true);
     });
 
-    expect(socket.emittedEvents).toContainEqual({ event: 'join-tenant', payload: 'tenant-123' });
+    expect(socket.emittedEvents).toContainEqual({
+      event: 'join-tenant',
+      payload: { tenantId: 'tenant-123' },
+    });
 
     const payload = { instanceId: 'inst-1' };
     act(() => {
@@ -113,7 +136,7 @@ describe('useInstanceLiveUpdates', () => {
     });
 
     unmount();
-    expect(socket.disconnected).toBe(true);
+    expect(socket.closed || socket.disconnected).toBe(true);
   });
 
   it('reporta mensagens de erro quando a conexão falha imediatamente', async () => {

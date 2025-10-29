@@ -11,7 +11,7 @@ import {
   normalizeDealFieldValue,
   type ContactField,
   type DealField,
-} from '../utils/validation.ts';
+} from '../utils/validation';
 
 interface EntityLike {
   id?: string | null;

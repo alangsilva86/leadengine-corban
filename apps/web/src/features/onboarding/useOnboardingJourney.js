@@ -3,14 +3,12 @@ import { apiGet } from '../../lib/api.js';
 import { onAuthTokenChange, onTenantIdChange } from '../../lib/auth.js';
 import { isWhatsAppDebugEnabled } from '../debug/featureFlags.js';
 import { getRuntimeEnv } from '../../lib/runtime-env.js';
-import { getFrontendFeatureFlags } from '../../../../../config/feature-flags.ts';
+import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
 
 const Dashboard = lazy(() => import('../../components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('../../components/AgreementGrid.jsx'));
-const WhatsAppConnect = lazy(() => import('../whatsapp/connect/index.tsx'));
-const ChatCommandCenter = lazy(() => import('../chat/ChatCommandCenter.jsx'));
-const WhatsAppConnect = lazy(() => import('../whatsapp/WhatsAppConnect.jsx'));
-const ChatCommandCenter = lazy(() => import('../chat/containers/ChatCommandCenterContainer.tsx'));
+const WhatsAppConnect = lazy(() => import('../whatsapp/connect/index'));
+const ChatCommandCenter = lazy(() => import('../chat/containers/ChatCommandCenterContainer.js'));
 const Reports = lazy(() => import('../../components/Reports.jsx'));
 const Settings = lazy(() => import('../../components/Settings.jsx'));
 const BaileysLogs = lazy(() => import('../debug/BaileysLogs.jsx'));

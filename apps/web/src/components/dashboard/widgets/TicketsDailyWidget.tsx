@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
 import { CartesianGrid, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import type { TicketSeriesEntry } from '../useDashboardData.ts';
+import type { TicketSeriesEntry } from '../useDashboardData';
 
 export interface TicketsDailyWidgetProps {
   data: TicketSeriesEntry[];

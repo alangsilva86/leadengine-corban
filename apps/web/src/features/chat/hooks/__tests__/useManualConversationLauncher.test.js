@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,7 +71,9 @@ describe('useManualConversationLauncher', () => {
       },
     });
 
-    expect(result.current.data.ticketId).toBe('ticket-123');
+    await waitFor(() => {
+      expect(result.current.data?.ticketId).toBe('ticket-123');
+    });
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: ['chat', 'messages', 'ticket-123'],
     });

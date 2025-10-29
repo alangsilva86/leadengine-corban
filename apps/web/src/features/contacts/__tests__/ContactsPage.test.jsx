@@ -43,6 +43,7 @@ vi.mock('../hooks/useContactsApi.js', () => ({
     refetch: vi.fn(),
   }),
   useContactBulkMutation: () => ({ mutate: mockMutate, isPending: false }),
+  useCreateContactMutation: () => ({ mutateAsync: vi.fn() }),
 }));
 
 vi.mock('../hooks/useContactsLiveUpdates.js', () => ({
@@ -75,7 +76,7 @@ describe('ContactsPage', () => {
   it('habilita ações em massa após selecionar um contato', () => {
     renderPage();
 
-    const [checkbox] = screen.getAllByRole('checkbox', { name: 'Alice Doe' });
+    const [checkbox] = screen.getAllByRole('checkbox', { name: /Selecionar Alice Doe/i });
     fireEvent.click(checkbox);
 
     const [dedupeButton] = screen.getAllByRole('button', { name: /Deduplicar/i });

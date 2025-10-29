@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { ChannelDistributionWidget } from './ChannelDistributionWidget.tsx';
-import type { ChannelDistributionEntry } from '../useDashboardData.ts';
+import { ChannelDistributionWidget } from './ChannelDistributionWidget';
+import type { ChannelDistributionEntry } from '../useDashboardData';
 
 const sampleData: ChannelDistributionEntry[] = [
   { name: 'WhatsApp', value: 55.2, color: 'var(--status-whatsapp)' },

@@ -19,6 +19,7 @@
     "vite.config.js",
     "vite.build.ci.mjs",
     "server.mjs",
+    "server.proxy-helpers.mjs",
     "tailwind.config.ts",
     "tailwind.tokens.js"
   ],
