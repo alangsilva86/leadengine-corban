@@ -1,1 +1,1 @@
-export { default } from './ChatCommandCenterContainer';
+export { default } from './ChatCommandCenterContainer.tsx';
