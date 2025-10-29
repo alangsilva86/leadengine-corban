@@ -5,6 +5,8 @@ import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
 import useWhatsAppInstances, { looksLikeWhatsAppJid } from '../hooks/useWhatsAppInstances.jsx';
 import { getStatusInfo, resolveInstancePhone, shouldDisplayInstance } from '../lib/instances';
+import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
+import { looksLikeWhatsAppJid } from '../utils/instanceIdentifiers.js';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
 import { pairingPhoneSchema, createInstanceSchema, createCampaignSchema } from './schemas';
 import {
