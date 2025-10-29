@@ -31,7 +31,7 @@ const inferMessageTypeFromMime = (mimeType: unknown) => {
   return 'DOCUMENT';
 };
 
-interface ChatCommandCenterContainerProps {
+export interface ChatCommandCenterContainerProps {
   tenantId?: string | null;
   currentUser?: { id?: string | null } | null;
 }
