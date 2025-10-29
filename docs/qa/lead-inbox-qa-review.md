@@ -40,7 +40,7 @@
 
 ## Testes realizados
 - ✅ Revisão de código estática com foco em critérios B1/B2 (sem ferramenta automatizada).
-- ❌ `pnpm -C apps/web lint` *(falha preexistente: no-unused-vars em apps/web/src/features/whatsapp/WhatsAppConnect.jsx)*.
+- ❌ `pnpm -C apps/web lint` *(falha preexistente: no-unused-vars em apps/web/src/features/whatsapp/connect/index.tsx).*.
 
 ## Principais achados e itens pendentes
 1. **Cobertura incompleta de estados de ticket** – filtro não contempla estados exigidos pelas regras de negócio, inviabilizando governança de SLA.
