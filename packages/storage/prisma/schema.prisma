@@ -39,6 +39,8 @@ model Tenant {
   tickets             Ticket[]
   leads               Lead[]
   campaigns           Campaign[]
+  brokerLeads         BrokerLead[]
+  leadAllocations     LeadAllocation[]
   queues              Queue[]
 
   @@map("tenants")
