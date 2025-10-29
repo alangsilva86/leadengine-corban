@@ -12,7 +12,7 @@
     "reason": "Componentes herdados do conector WhatsApp ainda utilizam classes `white/surface` para garantir contraste com widgets incorporados."
   },
   {
-    "pattern": "apps/web/src/features/whatsapp/WhatsAppConnect.jsx",
+    "pattern": "apps/web/src/features/whatsapp/connect/index.tsx",
     "reason": "Tela de onboarding WhatsApp possui blocos em revisão com parceiros e seguirá com exceção temporária."
   }
 ]

@@ -14,7 +14,7 @@ The onboarding journey loads the following pages on demand:
 
 1. `components/Dashboard.jsx`
 2. `components/AgreementGrid.jsx`
-3. `features/whatsapp/WhatsAppConnect.jsx`
+3. `features/whatsapp/connect/index.tsx`
 4. `features/chat/ChatCommandCenter.jsx`
 5. `components/Reports.jsx`
 6. `components/Settings.jsx`

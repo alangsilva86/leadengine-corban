@@ -18,4 +18,4 @@
 | Trilha de barras de progresso | `bg-white/10` | Sim | `progress.track.translucent` |
 | Indicador das barras de progresso | `bg-primary` | Sim | `progress.fill.primary` |
 
-> Todos os itens acima foram coletados em `apps/web/src/features/whatsapp/WhatsAppConnect.jsx`. Cada linha indica tokens candidatos que precisarão de nomenclatura semântica dedicada.
+> Todos os itens acima foram coletados em `apps/web/src/features/whatsapp/connect/index.tsx`. Cada linha indica tokens candidatos que precisarão de nomenclatura semântica dedicada.

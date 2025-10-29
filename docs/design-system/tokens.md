@@ -112,7 +112,7 @@ Algumas áreas legadas ainda dependem da paleta `slate`/`white` para garantir co
 - `apps/web/src/components/ui/glass-panel.*` — stories do antigo painel de vidro aguardam estabilização do componente definitivo.
 - `apps/web/src/features/chat/components/**/*` — fluxo de chat com widgets herdados dependentes de estilos externos.
 - `apps/web/src/features/whatsapp/components/**/*` — componentes do conector WhatsApp que compartilham estilos com a SDK do parceiro.
-- `apps/web/src/features/whatsapp/WhatsAppConnect.jsx` — onboarding em revisão junto a parceiros comerciais.
+- `apps/web/src/features/whatsapp/connect/index.tsx` — onboarding em revisão junto a parceiros comerciais.
 
 ## Utilitários de layout e superfície
 

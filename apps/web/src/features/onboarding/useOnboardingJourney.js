@@ -7,7 +7,7 @@ import { getFrontendFeatureFlags } from '../../../../../config/feature-flags.ts'
 
 const Dashboard = lazy(() => import('../../components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('../../components/AgreementGrid.jsx'));
-const WhatsAppConnect = lazy(() => import('../whatsapp/WhatsAppConnect.jsx'));
+const WhatsAppConnect = lazy(() => import('../whatsapp/connect/index.tsx'));
 const ChatCommandCenter = lazy(() => import('../chat/ChatCommandCenter.jsx'));
 const Reports = lazy(() => import('../../components/Reports.jsx'));
 const Settings = lazy(() => import('../../components/Settings.jsx'));

@@ -77,7 +77,7 @@ vi.mock('../components/AgreementGrid.jsx', () => ({
   default: () => <div data-testid="agreements-page">Convênios</div>,
 }));
 
-vi.mock('../features/whatsapp/WhatsAppConnect.jsx', () => ({
+vi.mock('../features/whatsapp/connect/index.tsx', () => ({
   default: ({ onContinue }) => (
     <div data-testid="whatsapp-page">
       <button type="button" onClick={() => onContinue?.()}>Continuar para Inbox</button>
