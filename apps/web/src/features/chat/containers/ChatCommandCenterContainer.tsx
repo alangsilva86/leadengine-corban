@@ -36,17 +36,17 @@ type TemplateLike = {
   content?: string | null;
 };
 
+type QueueAlertLike = {
+  timestamp?: number | null;
+  payload?: { instanceId?: string | null } | null;
+};
+
 interface SendMessageInput {
   content?: string | null;
   attachments?: AttachmentLike[] | null;
   template?: TemplateLike | null;
   caption?: string | null;
 }
-
-const pruneUndefined = <T extends Record<string, unknown>>(record: T): T =>
-  Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined && value !== null)
-  ) as T;
 
 const inferMessageTypeFromMime = (mimeType: unknown) => {
   if (typeof mimeType !== 'string') {
@@ -104,15 +104,31 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         const normalizedAttachments = files.reduce<ChatAttachmentMetadata[]>((list, file) => {
           const normalizedMime = file?.mimeType ?? file?.mediaMimeType ?? file?.type ?? null;
           const normalizedName = file?.fileName ?? file?.mediaFileName ?? file?.name ?? null;
-          const attachment = pruneUndefined<ChatAttachmentMetadata>({
-            id: file?.id ?? undefined,
-            name: file?.name ?? normalizedName ?? undefined,
-            size: file?.size ?? file?.mediaSize ?? undefined,
-            type: file?.type ?? undefined,
-            mimeType: normalizedMime ?? undefined,
-            fileName: normalizedName ?? undefined,
-            mediaUrl: file?.mediaUrl ?? undefined,
-          });
+          const attachment: ChatAttachmentMetadata = {};
+
+          if (file?.id) {
+            attachment.id = file.id;
+          }
+          const resolvedName = file?.name ?? normalizedName ?? undefined;
+          if (typeof resolvedName === 'string' && resolvedName.length > 0) {
+            attachment.name = resolvedName;
+          }
+          const resolvedSize = file?.size ?? file?.mediaSize;
+          if (typeof resolvedSize === 'number' && Number.isFinite(resolvedSize)) {
+            attachment.size = resolvedSize;
+          }
+          if (file?.type) {
+            attachment.type = file.type;
+          }
+          if (normalizedMime) {
+            attachment.mimeType = normalizedMime;
+          }
+          if (normalizedName) {
+            attachment.fileName = normalizedName;
+          }
+          if (file?.mediaUrl) {
+            attachment.mediaUrl = file.mediaUrl;
+          }
 
           if (Object.keys(attachment).length > 0) {
             list.push(attachment);
@@ -127,11 +143,17 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       }
 
       if (template) {
-        metadata.template = {
+        const templateMetadata: NonNullable<ChatMessageMetadata['template']> = {
           id: template.id ?? template.name ?? 'template',
           label: template.label ?? template.name ?? template.id ?? 'template',
-          body: template.body ?? template.content ?? undefined,
         };
+
+        const templateBody = template.body ?? template.content ?? null;
+        if (typeof templateBody === 'string') {
+          templateMetadata.body = templateBody;
+        }
+
+        metadata.template = templateMetadata;
       }
 
       const hasAttachments = files.length > 0;
@@ -144,10 +166,16 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       const primaryMetadata = metadata.attachments?.[0];
 
       const mutationPayload: SendMessageMutationVariables = {
-        ticketId: controller.selectedTicketId,
         content: payloadContent,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       };
+
+      if (controller.selectedTicketId !== undefined) {
+        mutationPayload.ticketId = controller.selectedTicketId;
+      }
+
+      if (metadata.attachments || metadata.template) {
+        mutationPayload.metadata = metadata;
+      }
 
       if (hasAttachments) {
         const mime =
@@ -158,19 +186,27 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           primaryMetadata?.type ??
           null;
         mutationPayload.type = inferMessageTypeFromMime(mime ?? undefined);
-        mutationPayload.mediaUrl = primaryAttachment?.mediaUrl ?? primaryMetadata?.mediaUrl ?? undefined;
-        mutationPayload.mediaMimeType = mime ?? undefined;
-        mutationPayload.mediaFileName =
+        const mediaUrl = primaryAttachment?.mediaUrl ?? primaryMetadata?.mediaUrl ?? undefined;
+        if (mediaUrl !== undefined) {
+          mutationPayload.mediaUrl = mediaUrl ?? null;
+        }
+        if (mime) {
+          mutationPayload.mediaMimeType = mime;
+        }
+        const mediaFileName =
           primaryAttachment?.fileName ??
           primaryAttachment?.mediaFileName ??
           primaryAttachment?.name ??
           primaryMetadata?.fileName ??
-          undefined;
-        if (normalizedCaption) {
-          mutationPayload.caption = normalizedCaption;
+          null;
+        if (mediaFileName) {
+          mutationPayload.mediaFileName = mediaFileName;
         }
-      } else if (normalizedCaption) {
-        mutationPayload.caption = normalizedCaption;
+        if (normalizedCaption !== undefined) {
+          mutationPayload.caption = normalizedCaption ?? null;
+        }
+      } else if (normalizedCaption !== undefined) {
+        mutationPayload.caption = normalizedCaption ?? null;
       }
 
       controller.sendMessageMutation.mutate(mutationPayload, {
@@ -230,8 +266,11 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       const payload: TicketStatusMutationVariables = {
         ticketId: controller.selectedTicketId,
         status: outcome === 'won' ? 'RESOLVED' : 'CLOSED',
-        reason,
       };
+
+      if (typeof reason === 'string') {
+        payload.reason = reason.length > 0 ? reason : null;
+      }
 
       try {
         await controller.statusMutation.mutateAsync(payload);
@@ -376,19 +415,25 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const lastQueueAlertRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!controller.queueAlerts?.length) {
+    const alerts = Array.isArray(controller.queueAlerts)
+      ? (controller.queueAlerts as QueueAlertLike[])
+      : [];
+    if (alerts.length === 0) {
       return;
     }
-    const latest = controller.queueAlerts?.[0];
-    if (!latest) {
+    const [latest] = alerts;
+    const latestTimestamp =
+      typeof latest?.timestamp === 'number' ? latest.timestamp : null;
+    if (latestTimestamp === null) {
       return;
     }
-    if (lastQueueAlertRef.current === latest.timestamp) {
+    if (lastQueueAlertRef.current === latestTimestamp) {
       return;
     }
-    lastQueueAlertRef.current = latest.timestamp;
+    lastQueueAlertRef.current = latestTimestamp;
     toast.warning('🚨 Fila padrão ausente', {
-      description: 'Nenhuma fila ativa foi encontrada para o tenant. Configure em Configurações → Filas para destravar o atendimento inbound.',
+      description:
+        'Nenhuma fila ativa foi encontrada para o tenant. Configure em Configurações → Filas para destravar o atendimento inbound.',
     });
   }, [controller.queueAlerts]);
 

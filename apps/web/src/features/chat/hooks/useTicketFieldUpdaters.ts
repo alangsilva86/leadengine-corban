@@ -73,15 +73,19 @@ export const useTicketFieldUpdaters = ({
   selectedLead,
   currentUser,
 }: UseTicketFieldUpdatersInput) => {
-  const updateContactFieldMutation = useUpdateContactField({
-    contactId: selectedContact?.id ?? undefined,
-  });
-  const updateNextStepMutation = useUpdateNextStep({
-    ticketId: selectedTicket?.id ?? undefined,
-  });
-  const updateDealFieldsMutation = useUpdateDealFields({
-    leadId: selectedLead?.id ?? undefined,
-  });
+  const contactId = selectedContact?.id ?? null;
+  const ticketIdFromSelection = selectedTicket?.id ?? null;
+  const leadId = selectedLead?.id ?? null;
+
+  const updateContactFieldMutation = useUpdateContactField(
+    contactId ? { contactId } : undefined
+  );
+  const updateNextStepMutation = useUpdateNextStep(
+    ticketIdFromSelection ? { ticketId: ticketIdFromSelection } : undefined
+  );
+  const updateDealFieldsMutation = useUpdateDealFields(
+    leadId ? { leadId } : undefined
+  );
 
   const [nextStepDraft, setNextStepDraft] = useState('');
 
