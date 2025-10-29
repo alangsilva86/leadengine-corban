@@ -85,7 +85,7 @@ vi.mock('../features/whatsapp/connect/index.tsx', () => ({
   ),
 }));
 
-vi.mock('../features/chat/ChatCommandCenter.jsx', () => ({
+vi.mock('../features/chat/containers/ChatCommandCenterContainer.tsx', () => ({
   default: () => <div data-testid="inbox-page">Inbox</div>,
 }));
 
