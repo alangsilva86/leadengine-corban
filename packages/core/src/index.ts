@@ -3,6 +3,7 @@ export {
   ValidationError,
   NotFoundError,
   ConflictError,
+  ServiceUnavailableError,
   UnauthorizedError,
   ForbiddenError,
   PaginationSchema,

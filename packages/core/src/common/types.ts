@@ -187,6 +187,13 @@ export class ConflictError extends DomainError {
   }
 }
 
+export class ServiceUnavailableError extends DomainError {
+  constructor(message = 'Service temporarily unavailable', details?: Record<string, unknown>) {
+    super(message, 'SERVICE_UNAVAILABLE', details);
+    this.name = 'ServiceUnavailableError';
+  }
+}
+
 export class UnauthorizedError extends DomainError {
   constructor(message = 'Unauthorized access') {
     super(message, 'UNAUTHORIZED');
