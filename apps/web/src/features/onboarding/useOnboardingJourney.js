@@ -4,6 +4,7 @@ import { onAuthTokenChange, onTenantIdChange } from '../../lib/auth.js';
 import { isWhatsAppDebugEnabled } from '../debug/featureFlags.js';
 import { getRuntimeEnv } from '../../lib/runtime-env.js';
 import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
+import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstances.jsx';
 
 const Dashboard = lazy(() => import('../../components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('../../components/AgreementGrid.jsx'));
@@ -238,20 +239,33 @@ export function useOnboardingJourney() {
             setCurrentPage('whatsapp');
           },
         });
-      case 'whatsapp':
-        return createElement(WhatsAppConnect, {
-          selectedAgreement,
-          status: whatsappStatus,
-          activeCampaign,
-          onboarding: {
-            stages: onboardingStages,
-            activeStep,
-          },
-          onStatusChange: setWhatsappStatus,
-          onCampaignReady: setActiveCampaign,
-          onContinue: () => setCurrentPage('inbox'),
-          onBack: () => setCurrentPage('agreements'),
-        });
+      case 'whatsapp': {
+        const providerProps = {
+          key: selectedAgreement?.id ?? 'default-whatsapp-provider',
+          tenantId: selectedAgreement?.tenantId ?? null,
+          agreementId: selectedAgreement?.id ?? null,
+          autoRefresh: true,
+          initialFetch: true,
+          pauseWhenHidden: false,
+        };
+        return createElement(
+          WhatsAppInstancesProvider,
+          providerProps,
+          createElement(WhatsAppConnect, {
+            selectedAgreement,
+            status: whatsappStatus,
+            activeCampaign,
+            onboarding: {
+              stages: onboardingStages,
+              activeStep,
+            },
+            onStatusChange: setWhatsappStatus,
+            onCampaignReady: setActiveCampaign,
+            onContinue: () => setCurrentPage('inbox'),
+            onBack: () => setCurrentPage('agreements'),
+          })
+        );
+      }
       case 'inbox':
         if (loadingCurrentUser) {
           return createElement(
