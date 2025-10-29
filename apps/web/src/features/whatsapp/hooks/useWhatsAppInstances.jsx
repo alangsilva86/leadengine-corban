@@ -26,12 +26,6 @@ const noop = () => {};
 
 const ServicesContext = createContext(null);
 
-const defaultLogger = {
-  log: noop,
-  warn: noop,
-  error: noop,
-};
-
 const useServices = () => {
   const ctx = useContext(ServicesContext);
   if (!ctx) {
@@ -146,8 +140,15 @@ const ProviderEffects = ({ controller, logger }) => {
   return null;
 };
 
-export const WhatsAppInstancesProvider = ({ children, logger: loggerProp, ...config }) => {
-  const logger = useMemo(() => ({ ...defaultLogger, ...loggerProp }), [loggerProp]);
+export const WhatsAppInstancesProvider = ({ children, logger: loggerProp = {}, ...config }) => {
+  const logger = useMemo(
+    () => ({
+      log: loggerProp?.log ?? noop,
+      warn: loggerProp?.warn ?? noop,
+      error: loggerProp?.error ?? noop,
+    }),
+    [loggerProp],
+  );
   const bundleRef = useRef(null);
 
   if (!bundleRef.current) {

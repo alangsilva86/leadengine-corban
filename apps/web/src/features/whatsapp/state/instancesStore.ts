@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
-import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import type {
   NormalizedInstance,
   ParsedInstancesPayload,
@@ -226,7 +226,7 @@ export interface InstancesStoreDependencies {
 }
 
 export interface InstancesStoreBundle {
-  store: ReturnType<typeof createStore<InstancesStoreState>>;
+  store: StoreApi<InstancesStoreState>;
   events: StoreEvents;
   deps: InstancesStoreDependencies;
 }
@@ -695,7 +695,7 @@ export const createInstancesStore = (
   deps: InstancesStoreDependencies,
 ): InstancesStoreBundle => {
   const events = createEvents();
-  const store = createStore<InstancesStoreState>()((set, get) => ({
+  const store = createStore<InstancesStoreState>((set, get) => ({
     ...createInstancesSlice(set, get, events, deps),
     ...createQrSlice(set, get, events),
     ...createRealtimeSlice(set),
