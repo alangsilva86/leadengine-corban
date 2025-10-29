@@ -569,7 +569,7 @@ router.post(
             }
           }
         } else {
-          instance = await prisma.whatsAppInstance.findUnique({
+          instance = await prisma.whatsAppInstance.findFirst({
             where: { brokerId: candidateBrokerId },
           });
 

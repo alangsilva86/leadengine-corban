@@ -958,7 +958,7 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
   };
 };
 
-export type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>>>;
+export type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findFirst>>>;
 
 export type InstanceMetadata = Record<string, unknown> | null | undefined;
 
@@ -999,8 +999,8 @@ const generateInstanceIdSuggestion = async (tenantId: string, baseName: string, 
   const suffix = () => Math.random().toString(36).slice(2, 6);
 
   const exists = async (id: string) => {
-    const existing = await prisma.whatsAppInstance.findUnique({
-      where: { tenantId_id: { tenantId, id } },
+    const existing = await prisma.whatsAppInstance.findFirst({
+      where: { tenantId, id },
       select: { id: true },
     });
     return Boolean(existing);
@@ -1098,12 +1098,10 @@ export const createWhatsAppInstance = async ({
 
   let existing: { id: string } | null = null;
   try {
-    existing = await prisma.whatsAppInstance.findUnique({
+    existing = await prisma.whatsAppInstance.findFirst({
       where: {
-        tenantId_id: {
-          tenantId,
-          id: instanceId,
-        },
+        tenantId,
+        id: instanceId,
       },
       select: { id: true },
     });
