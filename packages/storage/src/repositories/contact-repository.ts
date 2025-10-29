@@ -258,6 +258,93 @@ const buildPaginationMeta = (
   };
 };
 
+const normalizeNullableString = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const syncPrimaryPhone = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  contactId: string,
+  phone: string | null | undefined
+): Promise<void> => {
+  const normalized = normalizeNullableString(phone);
+
+  await tx.contactPhone.updateMany({
+    where: { tenantId, contactId, isPrimary: true },
+    data: { isPrimary: false },
+  });
+
+  if (!normalized) {
+    return;
+  }
+
+  await tx.contactPhone.upsert({
+    where: {
+      tenantId_phoneNumber: {
+        tenantId,
+        phoneNumber: normalized,
+      },
+    },
+    update: {
+      contactId,
+      isPrimary: true,
+    },
+    create: {
+      tenantId,
+      contactId,
+      phoneNumber: normalized,
+      type: 'MOBILE',
+      label: 'Principal',
+      isPrimary: true,
+    },
+  });
+};
+
+const syncPrimaryEmail = async (
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  contactId: string,
+  email: string | null | undefined
+): Promise<void> => {
+  const normalized = normalizeNullableString(email)?.toLowerCase() ?? null;
+
+  await tx.contactEmail.updateMany({
+    where: { tenantId, contactId, isPrimary: true },
+    data: { isPrimary: false },
+  });
+
+  if (!normalized) {
+    return;
+  }
+
+  await tx.contactEmail.upsert({
+    where: {
+      tenantId_email: {
+        tenantId,
+        email: normalized,
+      },
+    },
+    update: {
+      contactId,
+      isPrimary: true,
+    },
+    create: {
+      tenantId,
+      contactId,
+      email: normalized,
+      type: 'WORK',
+      label: 'Principal',
+      isPrimary: true,
+    },
+  });
+};
+
 const normalizeStatusFilter = (status: ContactStatus[] | undefined): $Enums.ContactStatus[] => {
   if (!status?.length) {
     return [];
@@ -455,6 +542,9 @@ export const createContact = async ({ tenantId, payload }: CreateContactDTO): Pr
       },
     });
 
+    await syncPrimaryPhone(tx, tenantId, created.id, payload.phone ?? null);
+    await syncPrimaryEmail(tx, tenantId, created.id, payload.email ?? null);
+
     const tags = normalizeTagNames(payload.tags);
     if (tags.length) {
       await syncContactTags(tx, tenantId, created.id, tags);
@@ -496,6 +586,14 @@ export const updateContact = async ({ tenantId, contactId, payload }: UpdateCont
           ...(payload.notes !== undefined ? { notes: payload.notes ?? null } : {}),
         },
       });
+
+      if (payload.phone !== undefined) {
+        await syncPrimaryPhone(tx, tenantId, updated.id, payload.phone ?? null);
+      }
+
+      if (payload.email !== undefined) {
+        await syncPrimaryEmail(tx, tenantId, updated.id, payload.email ?? null);
+      }
 
       if (payload.tags !== undefined) {
         await syncContactTags(tx, tenantId, updated.id, payload.tags);

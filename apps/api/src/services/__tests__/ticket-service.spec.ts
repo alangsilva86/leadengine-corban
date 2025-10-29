@@ -46,6 +46,10 @@ const prisma = {
   contact: {
     findUnique: vi.fn(),
   },
+  contactPhone: {
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    upsert: vi.fn().mockResolvedValue({}),
+  },
   whatsAppInstance: {
     findUnique: vi.fn(),
   },
