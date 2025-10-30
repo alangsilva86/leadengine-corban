@@ -1185,7 +1185,7 @@ const normalizeContractEvent = (
   return normalized;
 };
 
-interface ProcessNormalizedMessageOptions {
+export interface ProcessNormalizedMessageOptions {
   normalized: NormalizedRawUpsertMessage;
   eventRecord: Record<string, unknown>;
   envelopeRecord: Record<string, unknown>;
@@ -1195,7 +1195,7 @@ interface ProcessNormalizedMessageOptions {
   instanceOverride?: string | null;
 }
 
-const processNormalizedMessage = async (
+export const processNormalizedMessage = async (
   options: ProcessNormalizedMessageOptions
 ): Promise<boolean> => {
   const { normalized, eventRecord, envelopeRecord, rawPreview, requestId } = options;
@@ -1583,7 +1583,9 @@ const findMessageForStatusUpdate = async ({
   };
 };
 
-const processMessagesUpdate = async (
+export type MessagesUpdateHandlerOutcome = { persisted: number; failures: number };
+
+export const processMessagesUpdate = async (
   eventRecord: RawBaileysUpsertEvent,
   envelopeRecord: Record<string, unknown>,
   context: {
@@ -1591,7 +1593,7 @@ const processMessagesUpdate = async (
     instanceId?: string | null;
     tenantOverride?: string | null;
   }
-): Promise<{ persisted: number; failures: number }> => {
+): Promise<MessagesUpdateHandlerOutcome> => {
   const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
   const rawRecord = asRecord(payloadRecord?.raw);
   const updates = Array.isArray(rawRecord?.updates) ? rawRecord.updates : [];
@@ -1867,7 +1869,9 @@ const processMessagesUpdate = async (
   return { persisted, failures };
 };
 
-const processPollChoiceEvent = async (
+export type PollChoiceHandlerOutcome = { persisted: number; ignored: number; failures: number };
+
+export const processPollChoiceEvent = async (
   eventRecord: RawBaileysUpsertEvent,
   envelopeRecord: Record<string, unknown>,
   context: {
@@ -1875,7 +1879,7 @@ const processPollChoiceEvent = async (
     instanceId?: string | null;
     tenantOverride?: string | null;
   }
-): Promise<{ persisted: number; ignored: number; failures: number }> => {
+): Promise<PollChoiceHandlerOutcome> => {
   const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
   const validation = validatePollChoicePayload(payloadRecord);
   const baseTenantId = context.tenantOverride ?? null;
@@ -2218,6 +2222,72 @@ const processPollChoiceEvent = async (
   }
 };
 
+type SpecialEventType = 'WHATSAPP_MESSAGES_UPDATE' | 'POLL_CHOICE';
+
+type EventHandlerContext = {
+  requestId: string;
+  instanceId?: string | null;
+  tenantOverride?: string | null;
+};
+
+type SpecialEventHandlerEntry =
+  | { kind: 'status'; handler: typeof processMessagesUpdate }
+  | { kind: 'poll'; handler: typeof processPollChoiceEvent };
+
+const defaultEventHandlers = Object.freeze({
+  WHATSAPP_MESSAGES_UPDATE: { kind: 'status', handler: processMessagesUpdate },
+  POLL_CHOICE: { kind: 'poll', handler: processPollChoiceEvent },
+}) satisfies Record<SpecialEventType, SpecialEventHandlerEntry>;
+
+const eventHandlerOverrides = new Map<SpecialEventType, SpecialEventHandlerEntry>();
+
+const normalizeSpecialEventType = (value: unknown): SpecialEventType | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'WHATSAPP_MESSAGES_UPDATE' || normalized === 'POLL_CHOICE') {
+    return normalized;
+  }
+
+  return null;
+};
+
+const getEventHandlerForType = (value: unknown): SpecialEventHandlerEntry | null => {
+  const normalized = normalizeSpecialEventType(value);
+  if (!normalized) {
+    return null;
+  }
+
+  return eventHandlerOverrides.get(normalized) ?? defaultEventHandlers[normalized] ?? null;
+};
+
+type DispatchResult =
+  | { kind: 'status'; outcome: MessagesUpdateHandlerOutcome }
+  | { kind: 'poll'; outcome: PollChoiceHandlerOutcome }
+  | null;
+
+const dispatchSpecialEvent = async (
+  eventType: unknown,
+  eventRecord: RawBaileysUpsertEvent,
+  envelopeRecord: Record<string, unknown>,
+  context: EventHandlerContext
+): Promise<DispatchResult> => {
+  const entry = getEventHandlerForType(eventType);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.kind === 'status') {
+    const outcome = await entry.handler(eventRecord, envelopeRecord, context);
+    return { kind: 'status', outcome };
+  }
+
+  const outcome = await entry.handler(eventRecord, envelopeRecord, context);
+  return { kind: 'poll', outcome };
+};
+
 const WEBHOOK_RATE_LIMIT_WINDOW_MS = 10_000;
 const WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60;
 
@@ -2254,7 +2324,7 @@ const webhookRateLimiter = rateLimit({
   },
 });
 
-const verifyWhatsAppWebhookRequest = async (req: Request, res: Response, next: NextFunction) => {
+export const verifyWhatsAppWebhookRequest = async (req: Request, res: Response, next: NextFunction) => {
   const context = ensureWebhookContext(req, res);
   const expectedApiKey = getWebhookApiKey();
 
@@ -2325,7 +2395,7 @@ const verifyWhatsAppWebhookRequest = async (req: Request, res: Response, next: N
   return next();
 };
 
-const handleWhatsAppWebhook = async (req: Request, res: Response) => {
+export const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   const context = ensureWebhookContext(req, res);
   const { requestId, signatureRequired } = context;
   const startedAt = Date.now();
@@ -2456,28 +2526,26 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
       }
     }
 
-    if (eventType === 'WHATSAPP_MESSAGES_UPDATE') {
-      const ackOutcome = await processMessagesUpdate(eventRecord, envelopeRecord, {
+    const specialResult = await dispatchSpecialEvent(
+      eventType,
+      eventRecord,
+      envelopeRecord,
+      {
         requestId,
         instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
         tenantOverride: tenantOverride ?? null,
-      });
+      }
+    );
 
-      ackPersisted += ackOutcome.persisted;
-      ackFailures += ackOutcome.failures;
-      continue;
-    }
-
-    if (eventType === 'POLL_CHOICE') {
-      const pollOutcome = await processPollChoiceEvent(eventRecord, envelopeRecord, {
-        requestId,
-        instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
-        tenantOverride: tenantOverride ?? null,
-      });
-
-      pollPersisted += pollOutcome.persisted;
-      pollIgnored += pollOutcome.ignored;
-      pollFailures += pollOutcome.failures;
+    if (specialResult) {
+      if (specialResult.kind === 'status') {
+        ackPersisted += specialResult.outcome.persisted;
+        ackFailures += specialResult.outcome.failures;
+      } else {
+        pollPersisted += specialResult.outcome.persisted;
+        pollIgnored += specialResult.outcome.ignored;
+        pollFailures += specialResult.outcome.failures;
+      }
       continue;
     }
 
@@ -2595,7 +2663,7 @@ const handleWhatsAppWebhook = async (req: Request, res: Response) => {
   res.status(204).send();
 };
 
-const handleVerification = asyncHandler(async (req: Request, res: Response) => {
+export const handleVerification = asyncHandler(async (req: Request, res: Response) => {
   const mode = readString(req.query['hub.mode']);
   const challenge = readString(req.query['hub.challenge']);
   const token = readString(req.query['hub.verify_token']);
@@ -2624,26 +2692,44 @@ integrationWebhookRouter.post(
 webhookRouter.get('/whatsapp', handleVerification);
 
 export const __testing = {
-  pollVoteUpdaterTesting,
-  buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
-  updatePollVoteMessage: pollVoteMessageUpdater,
-  setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
-    updatePollVoteMessageHandler = handler;
+  pollChoice: {
+    pollVoteUpdaterTesting,
+    buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
+    updatePollVoteMessage: pollVoteMessageUpdater,
+    setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
+      updatePollVoteMessageHandler = handler;
+    },
+    resetUpdatePollVoteMessageHandler() {
+      updatePollVoteMessageHandler = pollVoteMessageUpdater;
+    },
+    setPollVoteRetryScheduler(handler: SchedulePollVoteRetryHandler) {
+      schedulePollVoteRetry = handler;
+    },
+    resetPollVoteRetryScheduler() {
+      schedulePollVoteRetry = defaultPollVoteRetryScheduler;
+    },
+    subscribe<E extends PollChoiceEventName>(
+      event: E,
+      handler: (payload: PollChoiceEventBusPayloads[E]) => void
+    ) {
+      return pollChoiceEventBus.on(event, handler);
+    },
   },
-  resetUpdatePollVoteMessageHandler() {
-    updatePollVoteMessageHandler = pollVoteMessageUpdater;
-  },
-  setPollVoteRetryScheduler(handler: SchedulePollVoteRetryHandler) {
-    schedulePollVoteRetry = handler;
-  },
-  resetPollVoteRetryScheduler() {
-    schedulePollVoteRetry = defaultPollVoteRetryScheduler;
-  },
-  subscribeToPollChoiceEvent<E extends PollChoiceEventName>(
-    event: E,
-    handler: (payload: PollChoiceEventBusPayloads[E]) => void
-  ) {
-    return pollChoiceEventBus.on(event, handler);
+  eventHandlers: {
+    dispatch: dispatchSpecialEvent,
+    get(value: unknown) {
+      return getEventHandlerForType(value);
+    },
+    override(event: SpecialEventType, entry: SpecialEventHandlerEntry) {
+      eventHandlerOverrides.set(event, entry);
+    },
+    reset(event: SpecialEventType) {
+      eventHandlerOverrides.delete(event);
+    },
+    resetAll() {
+      eventHandlerOverrides.clear();
+    },
+    defaults: defaultEventHandlers,
   },
 };
 
