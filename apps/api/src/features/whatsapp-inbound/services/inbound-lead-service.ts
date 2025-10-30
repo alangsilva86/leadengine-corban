@@ -1067,8 +1067,33 @@ const buildPollVoteText = (q: string | null, c: string | null) => {
  * Resolve o tipo de mensagem do envelope (usado para identificar poll_update).
  */
 const resolveMessageType = (envelope: InboundWhatsAppEnvelope): string | null => {
-  const { message, metadata } = derivePayloadSegments((envelope as any)?.message?.payload);
-  return readString((message as any).type) ?? readString((metadata as any).messageType);
+  const { payload, message, metadata } = derivePayloadSegments((envelope as any)?.message?.payload);
+
+  const baseType = readString((message as any).type) ?? readString((metadata as any).messageType);
+
+  const pollUpdateSource =
+    (message as any)?.pollUpdateMessage ?? (payload as any)?.pollUpdateMessage ?? null;
+  const hasPollUpdatePayload =
+    pollUpdateSource && typeof pollUpdateSource === 'object' && !Array.isArray(pollUpdateSource);
+
+  const brokerMetadata = asRecord((metadata as any)?.broker);
+  const interactiveMetadata = asRecord((metadata as any)?.interactive);
+
+  const brokerContentType = readString((brokerMetadata as any)?.messageContentType);
+  const interactiveType = readString((interactiveMetadata as any)?.type);
+
+  const pollHints = [baseType, brokerContentType, interactiveType]
+    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : null))
+    .filter((value): value is string => Boolean(value));
+
+  if (
+    hasPollUpdatePayload ||
+    pollHints.some((hint) => hint === 'poll_update' || hint === 'poll_choice')
+  ) {
+    return 'poll_update';
+  }
+
+  return baseType ?? null;
 };
 
 /**
