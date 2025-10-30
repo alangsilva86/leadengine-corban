@@ -529,6 +529,415 @@ pollChoiceEventBus.on('pollChoiceCompleted', ({ tenantId, instanceId, outcome, r
 });
 
 type UpdatePollVoteMessageHandler = typeof pollVoteMessageUpdater;
+const sanitizeOptionText = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const extractPollOptionLabel = (option: PollChoiceSelectedOptionPayload): string | null => {
+  const label =
+    sanitizeOptionText(option.title) ??
+    sanitizeOptionText((option as { optionName?: unknown }).optionName) ??
+    sanitizeOptionText((option as { name?: unknown }).name) ??
+    sanitizeOptionText((option as { text?: unknown }).text) ??
+    sanitizeOptionText((option as { description?: unknown }).description) ??
+    sanitizeOptionText(option.id);
+
+  return label;
+};
+
+const buildSelectedOptionSummaries = (
+  selectedOptions: PollChoiceSelectedOptionPayload[]
+): Array<{ id: string; title: string }> => {
+  const normalized: Array<{ id: string; title: string }> = [];
+  const seen = new Set<string>();
+
+  for (const option of selectedOptions) {
+    const id = sanitizeOptionText(option.id) ?? option.id;
+    const title = extractPollOptionLabel(option);
+    if (!title) {
+      continue;
+    }
+
+    const dedupeKey = `${id}|${title}`;
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+    normalized.push({ id, title });
+  }
+
+  return normalized;
+};
+
+const buildPollVoteMessageContent = (
+  selectedOptions: PollChoiceSelectedOptionPayload[]
+): string | null => {
+  const summaries = buildSelectedOptionSummaries(selectedOptions);
+  if (summaries.length === 0) {
+    return null;
+  }
+
+  const uniqueTitles: string[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const { title } of summaries) {
+    const normalized = sanitizeOptionText(title);
+    if (!normalized) {
+      continue;
+    }
+
+    if (seenTitles.has(normalized)) {
+      continue;
+    }
+
+    seenTitles.add(normalized);
+    uniqueTitles.push(normalized);
+  }
+
+  if (uniqueTitles.length === 0) {
+    return null;
+  }
+
+  if (uniqueTitles.length === 1) {
+    return uniqueTitles.at(0) ?? null;
+  }
+
+  return uniqueTitles.join(', ');
+};
+
+const asJsonRecord = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+};
+
+const shouldUpdatePollMessageContent = (content: unknown): boolean => {
+  if (typeof content !== 'string') {
+    return true;
+  }
+
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  return POLL_PLACEHOLDER_MESSAGES.has(trimmed);
+};
+
+const normalizeTimestamp = (value: string | null | undefined): string | null => {
+  const trimmed = sanitizeOptionText(value);
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = Date.parse(trimmed);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString();
+  }
+
+  return trimmed;
+};
+
+const updatePollVoteMessage = async (params: {
+  tenantId: string | null | undefined;
+  chatId?: string | null | undefined;
+  messageId?: string | null | undefined;
+  messageIds?: Array<string | null | undefined> | null;
+  pollId: string;
+  voterJid: string;
+  selectedOptions: PollChoiceSelectedOptionPayload[];
+  timestamp?: string | null;
+  question?: string | null;
+  aggregates?: {
+    totalVoters?: number | null;
+    totalVotes?: number | null;
+    optionTotals?: Record<string, number> | null;
+  } | null;
+  options?: PollChoiceSelectedOptionPayload[] | null;
+  vote?: {
+    optionIds?: string[] | null;
+    selectedOptions?: PollChoiceSelectedOptionPayload[] | null;
+    encryptedVote?: Record<string, unknown> | null;
+    messageId?: string | null;
+    timestamp?: string | null;
+  } | null;
+}): Promise<void> => {
+  const tenantId = readString(params.tenantId);
+  if (!tenantId) {
+    logger.debug('rewrite.poll_vote.skip_missing_context', {
+      pollId: params.pollId,
+      voterJid: params.voterJid,
+    });
+    return;
+  }
+
+  const chatId = readString(params.chatId);
+  const candidateSet = new Set<string>();
+
+  if (Array.isArray(params.messageIds)) {
+    params.messageIds.forEach((candidate) => {
+      const normalized = readString(candidate);
+      if (normalized) {
+        candidateSet.add(normalized);
+      }
+    });
+  }
+
+  const primaryMessageId = readString(params.messageId);
+  if (primaryMessageId) {
+    candidateSet.add(primaryMessageId);
+  }
+
+  const candidateIdentifiers = Array.from(candidateSet.values());
+  if (candidateIdentifiers.length === 0) {
+    candidateIdentifiers.push(params.pollId);
+  }
+
+  logger.info('rewrite.poll_vote.start', {
+    tenantId,
+    chatId: chatId ?? null,
+    pollId: params.pollId,
+    voterJid: params.voterJid,
+    identifiers: candidateIdentifiers,
+  });
+
+  let existingMessage:
+    | Awaited<ReturnType<typeof storageFindMessageByExternalId>>
+    | Awaited<ReturnType<typeof findPollVoteMessageCandidate>>
+    | null = null;
+
+  for (const identifier of candidateIdentifiers) {
+    try {
+      existingMessage = await storageFindMessageByExternalId(tenantId, identifier);
+    } catch (error) {
+      logger.warn('rewrite.poll_vote.lookup_external_id_failed', {
+        tenantId,
+        identifier,
+        pollId: params.pollId,
+        error,
+      });
+      continue;
+    }
+    if (existingMessage) {
+      break;
+    }
+  }
+
+  if (!existingMessage) {
+    try {
+      existingMessage = await findPollVoteMessageCandidate({
+        tenantId,
+        chatId,
+        identifiers: candidateIdentifiers,
+        pollId: params.pollId,
+      });
+    } catch (error) {
+      logger.warn('rewrite.poll_vote.lookup_candidate_failed', {
+        tenantId,
+        chatId: chatId ?? null,
+        pollId: params.pollId,
+        identifiers: candidateIdentifiers,
+        error,
+      });
+      return;
+    }
+  }
+
+  if (!existingMessage) {
+    logger.debug('rewrite.poll_vote.not_found', {
+      tenantId,
+      chatId: chatId ?? null,
+      pollId: params.pollId,
+      voterJid: params.voterJid,
+      identifiersTried: candidateIdentifiers,
+    });
+    return;
+  }
+
+  logger.info('rewrite.poll_vote.matched', {
+    tenantId,
+    chatId: chatId ?? null,
+    pollId: params.pollId,
+    storageMessageId: existingMessage.id,
+    externalId: readString(existingMessage.externalId),
+    identifiersTried: candidateIdentifiers,
+  });
+
+  const contentCandidate = buildPollVoteMessageContent(params.selectedOptions);
+  if (!contentCandidate) {
+    logger.debug('rewrite.poll_vote.skip_empty_content', {
+      tenantId,
+      storageMessageId: existingMessage.id,
+      pollId: params.pollId,
+    });
+    return;
+  }
+
+  const shouldUpdateContent = shouldUpdatePollMessageContent(existingMessage.content);
+  const existingCaption = typeof existingMessage.caption === 'string' ? existingMessage.caption.trim() : '';
+  const shouldUpdateCaption =
+    shouldUpdateContent &&
+    (existingCaption.length === 0 || POLL_PLACEHOLDER_MESSAGES.has(existingCaption));
+
+  const metadataRecord = asJsonRecord(existingMessage.metadata);
+  const selectedSummaries = buildSelectedOptionSummaries(params.selectedOptions);
+  const voteTimestampIso = normalizeTimestamp(params.timestamp) ?? new Date().toISOString();
+  const rewriteAppliedAt = new Date().toISOString();
+  const pollVoteMetadata = {
+    pollId: params.pollId,
+    voterJid: params.voterJid,
+    selectedOptions: selectedSummaries,
+    updatedAt: voteTimestampIso,
+    rewriteAppliedAt,
+    aggregates: params.aggregates ?? undefined,
+    options: params.options ?? undefined,
+    vote: params.vote ?? undefined,
+  };
+
+  const existingPollVote = metadataRecord.pollVote as Record<string, unknown> | undefined;
+  const metadataSnapshotBefore = sanitizeJsonPayload(metadataRecord);
+
+  metadataRecord.pollVote = pollVoteMetadata;
+  const existingPollMetadata = asRecord(metadataRecord.poll);
+  const existingPollQuestionValue =
+    typeof existingPollMetadata?.question === 'string' && existingPollMetadata.question.trim().length > 0
+      ? existingPollMetadata.question
+      : null;
+  const providedPollQuestion = readString(params.question);
+  const pollMetadataQuestion = existingPollQuestionValue ?? providedPollQuestion ?? undefined;
+  metadataRecord.poll = {
+    ...(existingPollMetadata ?? {}),
+    id: existingPollMetadata?.id ?? params.pollId,
+    pollId: params.pollId,
+    ...(pollMetadataQuestion !== undefined ? { question: pollMetadataQuestion } : {}),
+    selectedOptionIds: selectedSummaries.map((entry) => entry.id),
+    selectedOptions: selectedSummaries,
+    aggregates: params.aggregates ?? existingPollMetadata?.aggregates ?? undefined,
+    updatedAt: pollVoteMetadata.updatedAt,
+    rewriteAppliedAt,
+  };
+
+  const existingPollChoiceMetadata = asRecord(metadataRecord.pollChoice);
+  const existingPollChoiceQuestionValue =
+    typeof existingPollChoiceMetadata?.question === 'string' &&
+    existingPollChoiceMetadata.question.trim().length > 0
+      ? existingPollChoiceMetadata.question
+      : null;
+  const pollChoiceQuestion = existingPollChoiceQuestionValue ?? pollMetadataQuestion ?? undefined;
+
+  metadataRecord.pollChoice = {
+    ...(existingPollChoiceMetadata ?? {}),
+    pollId: params.pollId,
+    voterJid: params.voterJid,
+    ...(pollChoiceQuestion !== undefined ? { question: pollChoiceQuestion } : {}),
+    options: params.options ?? undefined,
+    vote: params.vote ?? {
+      optionIds: params.selectedOptions.map((entry) => entry.id),
+      selectedOptions: params.selectedOptions,
+      timestamp: normalizeTimestamp(params.timestamp),
+    },
+  };
+
+  const passthroughMetadata = asRecord(metadataRecord.passthrough);
+  if (passthroughMetadata) {
+    if (passthroughMetadata.placeholder === true || passthroughMetadata.placeholder === 'true') {
+      passthroughMetadata.placeholder = false;
+    }
+    metadataRecord.passthrough = passthroughMetadata;
+  }
+
+  if (metadataRecord.placeholder === true || metadataRecord.placeholder === 'true') {
+    metadataRecord.placeholder = false;
+  }
+
+  const rewriteMetadataRecord = asRecord(metadataRecord.rewrite);
+  metadataRecord.rewrite = {
+    ...(rewriteMetadataRecord ?? {}),
+    pollVote: {
+      ...(asRecord(rewriteMetadataRecord?.pollVote) ?? {}),
+      appliedAt: rewriteAppliedAt,
+      pollId: params.pollId,
+      storageMessageId: existingMessage.id,
+    },
+  };
+
+  const metadataSnapshotAfter = sanitizeJsonPayload(metadataRecord);
+  const metadataForUpdate =
+    metadataSnapshotAfter && typeof metadataSnapshotAfter === 'object' && !Array.isArray(metadataSnapshotAfter)
+      ? (metadataSnapshotAfter as Record<string, unknown>)
+      : null;
+  const metadataChanged =
+    JSON.stringify(metadataSnapshotBefore) !== JSON.stringify(metadataSnapshotAfter);
+
+  if (!shouldUpdateContent && !metadataChanged && !shouldUpdateCaption) {
+    logger.info('rewrite.poll_vote.noop', {
+      tenantId,
+      storageMessageId: existingMessage.id,
+      pollId: params.pollId,
+      selectedOptions: selectedSummaries,
+    });
+    return;
+  }
+
+  const shouldUpdateType = typeof existingMessage.type === 'string' && existingMessage.type.toUpperCase() !== 'TEXT';
+
+  try {
+    const updatedMessage = await storageUpdateMessage(tenantId, existingMessage.id, {
+      ...(shouldUpdateContent ? { content: contentCandidate, text: contentCandidate } : {}),
+      ...(shouldUpdateCaption ? { caption: contentCandidate } : {}),
+      ...(shouldUpdateType ? { type: 'TEXT' as const } : {}),
+      ...(metadataChanged ? { metadata: metadataForUpdate } : {}),
+    });
+
+    if (
+      updatedMessage &&
+      typeof updatedMessage === 'object' &&
+      'tenantId' in updatedMessage &&
+      'ticketId' in updatedMessage
+    ) {
+      logger.info('rewrite.poll_vote.updated', {
+        tenantId,
+        chatId: chatId ?? null,
+        messageId: readString(updatedMessage.externalId) ?? existingMessage.id,
+        storageMessageId: existingMessage.id,
+        pollId: params.pollId,
+        selectedOptions: selectedSummaries,
+        captionTouched: shouldUpdateCaption,
+        typeAdjusted: shouldUpdateType,
+        updatedAt: (updatedMessage as { updatedAt?: unknown }).updatedAt ?? null,
+      });
+      const updatedRecord = updatedMessage as { tenantId: string; ticketId: string | null };
+      if (updatedRecord.ticketId) {
+        await emitMessageUpdatedEvents(tenantId, updatedRecord.ticketId, updatedMessage, null);
+        logger.info('rewrite.poll_vote.emit', {
+          tenantId,
+          ticketId: updatedRecord.ticketId,
+          messageId: readString(updatedMessage.externalId) ?? existingMessage.id,
+          storageMessageId: existingMessage.id,
+          pollId: params.pollId,
+          voteOptionCount: selectedSummaries.length,
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn('rewrite.poll_vote.persist_failed', {
+      tenantId,
+      storageMessageId: existingMessage.id,
+      chatId: chatId ?? null,
+      pollId: params.pollId,
+      error,
+    });
+  }
+};
+
+type UpdatePollVoteMessageHandler = typeof updatePollVoteMessage;
 
 let updatePollVoteMessageHandler: UpdatePollVoteMessageHandler = pollVoteMessageUpdater;
 
