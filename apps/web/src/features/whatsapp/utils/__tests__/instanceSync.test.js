@@ -6,7 +6,7 @@ import {
   reconcileInstancesState,
   resolveFriendlyError,
   selectPreferredInstance,
-} from '../instanceSync.js';
+} from '../instanceSync';
 
 const makeInstance = (overrides = {}) => ({
   id: overrides.id ?? 'inst-1',

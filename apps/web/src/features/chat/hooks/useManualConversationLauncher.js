@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPost } from '@/lib/api.js';
-import { looksLikeWhatsAppJid } from '@/features/whatsapp/utils/instanceIdentifiers.js';
+import { looksLikeWhatsAppJid } from '@/features/whatsapp/lib/instances';
 
 const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
 

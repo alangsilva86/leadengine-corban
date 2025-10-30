@@ -1,8 +1,7 @@
 import { extractQrPayload } from '../utils/qr.js';
-import {
-  extractInstanceFromPayload,
-  looksLikeWhatsAppJid,
-} from '../utils/instanceIdentifiers.js';
+
+export const looksLikeWhatsAppJid = (value: unknown): value is string =>
+  typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
 export const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
 
@@ -18,6 +17,37 @@ const pickStringValue = (...values: unknown[]): string | null => {
       }
     }
   }
+  return null;
+};
+
+export const extractInstanceFromPayload = (
+  payload: unknown,
+): Record<string, unknown> | null => {
+  if (!isPlainRecord(payload)) {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  if (isPlainRecord(record.instance)) {
+    return record.instance as Record<string, unknown>;
+  }
+
+  if (record.data !== undefined) {
+    const nested = extractInstanceFromPayload(record.data);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  if (
+    'id' in record ||
+    'name' in record ||
+    'status' in record ||
+    'connected' in record
+  ) {
+    return record;
+  }
+
   return null;
 };
 
