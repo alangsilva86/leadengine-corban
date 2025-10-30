@@ -1,6 +1,15 @@
 import { logger } from '../../../config/logger';
 import { sanitizeJsonPayload } from '../utils/baileys-event-logger';
 import {
+  asJsonRecord,
+  buildPollVoteMessageContent,
+  buildSelectedOptionSummaries,
+  normalizeTimestamp,
+  sanitizeOptionText,
+  shouldUpdatePollMessageContent,
+  POLL_PLACEHOLDER_MESSAGES,
+} from '../utils/poll-helpers';
+import {
   findMessageByExternalId as storageFindMessageByExternalId,
   findPollVoteMessageCandidate,
   updateMessage as storageUpdateMessage,
@@ -89,8 +98,6 @@ export type PollVoteUpdateResult =
       error: unknown;
     };
 
-const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
-
 const toTrimmedString = (value: unknown): string | null => {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -102,122 +109,6 @@ const toTrimmedString = (value: unknown): string | null => {
   }
 
   return null;
-};
-
-const sanitizeOptionText = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const extractPollOptionLabel = (option: PollChoiceSelectedOptionPayload): string | null => {
-  const label =
-    sanitizeOptionText(option.title) ??
-    sanitizeOptionText((option as { optionName?: unknown }).optionName) ??
-    sanitizeOptionText((option as { name?: unknown }).name) ??
-    sanitizeOptionText((option as { text?: unknown }).text) ??
-    sanitizeOptionText((option as { description?: unknown }).description) ??
-    sanitizeOptionText(option.id);
-
-  return label;
-};
-
-const buildSelectedOptionSummaries = (
-  selectedOptions: PollChoiceSelectedOptionPayload[]
-): Array<{ id: string; title: string }> => {
-  const normalized: Array<{ id: string; title: string }> = [];
-  const seen = new Set<string>();
-
-  for (const option of selectedOptions) {
-    const id = sanitizeOptionText(option.id) ?? option.id;
-    const title = extractPollOptionLabel(option);
-    if (!title) {
-      continue;
-    }
-
-    const dedupeKey = `${id}|${title}`;
-    if (seen.has(dedupeKey)) {
-      continue;
-    }
-
-    seen.add(dedupeKey);
-    normalized.push({ id, title });
-  }
-
-  return normalized;
-};
-
-const buildPollVoteMessageContent = (
-  selectedOptions: PollChoiceSelectedOptionPayload[]
-): string | null => {
-  const summaries = buildSelectedOptionSummaries(selectedOptions);
-  if (summaries.length === 0) {
-    return null;
-  }
-
-  const uniqueTitles: string[] = [];
-  const seenTitles = new Set<string>();
-
-  for (const { title } of summaries) {
-    const normalized = sanitizeOptionText(title);
-    if (!normalized) {
-      continue;
-    }
-
-    if (seenTitles.has(normalized)) {
-      continue;
-    }
-
-    seenTitles.add(normalized);
-    uniqueTitles.push(normalized);
-  }
-
-  if (uniqueTitles.length === 0) {
-    return null;
-  }
-
-  if (uniqueTitles.length === 1) {
-    return uniqueTitles.at(0) ?? null;
-  }
-
-  return uniqueTitles.join(', ');
-};
-
-const asJsonRecord = (value: unknown): Record<string, unknown> => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return { ...(value as Record<string, unknown>) };
-  }
-  return {};
-};
-
-const shouldUpdatePollMessageContent = (content: unknown): boolean => {
-  if (typeof content !== 'string') {
-    return true;
-  }
-
-  const trimmed = content.trim();
-  if (!trimmed) {
-    return true;
-  }
-
-  return POLL_PLACEHOLDER_MESSAGES.has(trimmed);
-};
-
-const normalizeTimestamp = (value: string | null | undefined): string | null => {
-  const trimmed = sanitizeOptionText(value);
-  if (!trimmed) {
-    return null;
-  }
-
-  const parsed = Date.parse(trimmed);
-  if (!Number.isNaN(parsed)) {
-    return new Date(parsed).toISOString();
-  }
-
-  return trimmed;
 };
 
 const collectCandidateIdentifiers = (params: PollVoteUpdateParams): string[] => {
@@ -237,11 +128,9 @@ const collectCandidateIdentifiers = (params: PollVoteUpdateParams): string[] => 
     identifiers.add(primaryMessageId);
   }
 
-  if (identifiers.size === 0) {
-    const pollId = toTrimmedString(params.pollId);
-    if (pollId) {
-      identifiers.add(pollId);
-    }
+  const pollId = toTrimmedString(params.pollId);
+  if (pollId) {
+    identifiers.add(pollId);
   }
 
   return Array.from(identifiers.values());

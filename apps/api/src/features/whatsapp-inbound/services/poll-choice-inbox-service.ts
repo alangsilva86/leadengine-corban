@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../../../config/logger';
 import { ingestInboundWhatsAppMessage } from './inbound-lead-service';
 import { sanitizePhone } from './identifiers';
+import { normalizeChatId } from '../utils/poll-helpers';
 import type {
   PollChoiceEventPayload,
   PollChoiceSelectedOptionPayload,
@@ -28,28 +29,6 @@ export type PollChoiceInboxNotificationResult =
         | PollChoiceInboxNotificationStatus.IngestError;
       persisted: false;
     };
-
-const normalizeChatId = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (trimmed.includes('@')) {
-    return trimmed;
-  }
-
-  const digits = trimmed.replace(/[^0-9]/g, '');
-  if (!digits) {
-    return trimmed;
-  }
-
-  return `${digits}@s.whatsapp.net`;
-};
 
 const extractPhoneFromChatId = (chatId: string | null): string | undefined => {
   if (!chatId) {

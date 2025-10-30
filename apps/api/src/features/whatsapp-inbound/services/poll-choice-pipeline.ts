@@ -10,6 +10,7 @@ import {
   type PollChoiceState,
   type PollChoiceVoteEntry,
 } from '../schemas/poll-choice';
+import { buildSelectedOptionSummaries, normalizeChatId } from '../utils/poll-helpers';
 import { recordPollChoiceVote } from './poll-choice-service';
 
 const toTrimmedString = (value: unknown): string | null => {
@@ -24,70 +25,6 @@ const toTrimmedString = (value: unknown): string | null => {
   }
 
   return null;
-};
-
-const normalizeChatId = (value: unknown): string | null => {
-  const text = toTrimmedString(value);
-  if (!text) {
-    return null;
-  }
-
-  if (text.includes('@')) {
-    return text;
-  }
-
-  const digits = text.replace(/[^0-9]/g, '');
-  if (!digits) {
-    return text;
-  }
-
-  return `${digits}@s.whatsapp.net`;
-};
-
-const sanitizeOptionText = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const extractPollOptionLabel = (option: PollChoiceSelectedOptionPayload): string | null => {
-  const label =
-    sanitizeOptionText(option.title) ??
-    sanitizeOptionText((option as { optionName?: unknown }).optionName) ??
-    sanitizeOptionText((option as { name?: unknown }).name) ??
-    sanitizeOptionText((option as { text?: unknown }).text) ??
-    sanitizeOptionText((option as { description?: unknown }).description) ??
-    sanitizeOptionText(option.id);
-
-  return label;
-};
-
-const buildSelectedOptionSummaries = (
-  selectedOptions: PollChoiceSelectedOptionPayload[]
-): Array<{ id: string; title: string }> => {
-  const normalized: Array<{ id: string; title: string }> = [];
-  const seen = new Set<string>();
-
-  for (const option of selectedOptions) {
-    const id = sanitizeOptionText(option.id) ?? option.id;
-    const title = extractPollOptionLabel(option);
-    if (!title) {
-      continue;
-    }
-
-    const dedupeKey = `${id}|${title}`;
-    if (seen.has(dedupeKey)) {
-      continue;
-    }
-
-    seen.add(dedupeKey);
-    normalized.push({ id, title });
-  }
-
-  return normalized;
 };
 
 const normalizeSelectionId = (value: unknown): string | null => {
