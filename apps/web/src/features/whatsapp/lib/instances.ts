@@ -5,10 +5,10 @@ export const looksLikeWhatsAppJid = (value: unknown): value is string =>
 
 export const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
 
-const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+export const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
-const pickStringValue = (...values: unknown[]): string | null => {
+export const pickStringValue = (...values: unknown[]): string | null => {
   for (const value of values) {
     if (typeof value === 'string') {
       const trimmed = value.trim();

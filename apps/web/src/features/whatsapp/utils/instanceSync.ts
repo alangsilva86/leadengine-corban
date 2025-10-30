@@ -1,7 +1,9 @@
 import {
   ensureArrayOfObjects,
+  isPlainRecord,
   normalizeInstanceRecord,
   normalizeInstancesCollection,
+  pickStringValue,
   shouldDisplayInstance,
   selectPreferredInstance,
   type NormalizeOptions,
@@ -14,25 +16,10 @@ type Nullable<T> = T | null;
 
 type UnknownRecord = Record<string, unknown>;
 
-const isPlainRecord = (value: unknown): value is UnknownRecord =>
-  Boolean(value && typeof value === 'object' && !Array.isArray(value));
-
 const ensureObject = (value: unknown): UnknownRecord =>
   isPlainRecord(value) ? value : {};
 
 const ensureArray = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
-
-const pickStringValue = (...values: unknown[]): string | null => {
-  for (const value of values) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-  return null;
-};
 
 export interface AgreementMeta {
   id: Nullable<string>;

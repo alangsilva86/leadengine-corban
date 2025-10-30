@@ -46,7 +46,6 @@ import {
   respondWhatsAppBrokerFailure,
   respondLegacyEndpointGone,
   collectInstancesForTenant,
-  NormalizedInstance,
   buildInstanceStatusPayload,
   fetchStatusWithBrokerQr,
   normalizeInstanceStatusResponse,
@@ -55,8 +54,6 @@ import {
   disconnectStoredInstance,
   deleteStoredInstance,
   resolveInstanceOperationContext,
-  StoredInstance,
-  InstanceOperationContext,
   serializeStoredInstance,
   normalizeStatusCountsData,
   normalizeRateUsageData,
@@ -67,7 +64,12 @@ import {
   clearWhatsAppDisconnectRetry,
   removeCachedSnapshot,
   clearInstanceArchive,
-} from '../modules/whatsapp/instances/router-coordinator';
+} from '../modules/whatsapp/instances/service';
+import type {
+  InstanceOperationContext,
+  NormalizedInstance,
+  StoredInstance,
+} from '../modules/whatsapp/instances/service';
 
 
 const router: Router = Router();
