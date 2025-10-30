@@ -5,7 +5,7 @@ import {
   normalizeStatusCountsData,
   normalizeRateUsageData,
   collectNumericFromSources,
-} from '../modules/whatsapp/instances/testing-coordinator';
+} from '../modules/whatsapp/instances/service';
 
 describe('WhatsApp integrations metrics normalization', () => {
   it('flattens nested broker metrics into top-level counters', () => {
