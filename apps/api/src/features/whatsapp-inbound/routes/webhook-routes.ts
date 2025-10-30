@@ -264,6 +264,8 @@ const sanitizeOptionText = (value: unknown): string | null => {
 const extractPollOptionLabel = (option: PollChoiceSelectedOptionPayload): string | null => {
   const label =
     sanitizeOptionText(option.title) ??
+    sanitizeOptionText((option as { optionName?: unknown }).optionName) ??
+    sanitizeOptionText((option as { name?: unknown }).name) ??
     sanitizeOptionText((option as { text?: unknown }).text) ??
     sanitizeOptionText((option as { description?: unknown }).description) ??
     sanitizeOptionText(option.id);
