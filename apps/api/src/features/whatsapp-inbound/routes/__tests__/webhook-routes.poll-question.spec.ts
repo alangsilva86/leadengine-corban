@@ -2,11 +2,10 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as webhookRoutes from '../webhook-routes';
+import { whatsappWebhookRouter } from '../webhook-routes';
+import { __testing as webhookControllerTesting } from '../webhook-controller';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
 import type { PollChoiceSelectedOptionPayload } from '../../schemas/poll-choice';
-
-const { whatsappWebhookRouter } = webhookRoutes;
 
 const hoistedMocks = vi.hoisted(() => {
   const prisma = {
@@ -134,7 +133,7 @@ describe('buildPollVoteMessageContent', () => {
       { id: 'opt-yes', title: ' Sim 👍 ' },
     ];
 
-    const result = webhookRoutes.__testing.buildPollVoteMessageContent(selected);
+    const result = webhookControllerTesting.buildPollVoteMessageContent(selected);
 
     expect(result).toBe('Sim 👍');
   });
@@ -144,7 +143,7 @@ describe('buildPollVoteMessageContent', () => {
       { id: '   ', title: '   ' },
     ];
 
-    const result = webhookRoutes.__testing.buildPollVoteMessageContent(selected);
+    const result = webhookControllerTesting.buildPollVoteMessageContent(selected);
 
     expect(result).toBeNull();
   });
@@ -181,7 +180,7 @@ describe('WhatsApp webhook poll question propagation', () => {
   });
 
   afterEach(() => {
-    webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+    webhookControllerTesting.resetUpdatePollVoteMessageHandler();
     vi.clearAllMocks();
   });
 
@@ -374,11 +373,11 @@ describe('WhatsApp webhook poll question propagation', () => {
       },
     } as never);
 
-    const originalUpdate = webhookRoutes.__testing.updatePollVoteMessage;
+    const originalUpdate = webhookControllerTesting.updatePollVoteMessage;
     const updatePollVoteMessageSpy = vi.fn(async (params) => {
       await originalUpdate(params);
     });
-    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+    webhookControllerTesting.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
       event: 'POLL_CHOICE',
