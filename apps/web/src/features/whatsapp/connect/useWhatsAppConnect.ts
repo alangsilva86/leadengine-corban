@@ -777,7 +777,7 @@ const useWhatsAppConnect = ({
 
   const submitCreateInstance = useCallback(
     async ({ name, id }: { name: string; id?: string }) => {
-      const parsed = createInstanceSchema.safeParse({ name, id: id ?? null });
+      const parsed = createInstanceSchema.safeParse({ name, id });
       if (!parsed.success) {
         const message = parsed.error.errors[0]?.message ?? 'Informe um nome válido para a nova instância.';
         setErrorMessage(message);
