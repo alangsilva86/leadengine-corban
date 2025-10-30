@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as webhookRoutes from '../webhook-routes';
+import { PollVoteUpdateState } from '../../services/poll-vote-updater';
 
 const { whatsappWebhookRouter } = webhookRoutes;
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
@@ -1375,7 +1376,17 @@ describe('WhatsApp webhook poll choice events', () => {
       selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
     });
 
-    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue(undefined);
+    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue({
+      status: 'updated',
+      state: PollVoteUpdateState.Completed,
+      tenantId: 'tenant-321',
+      storageMessageId: 'storage-message',
+      messageId: 'storage-message',
+      candidates: [],
+      metadataChanged: true,
+      contentUpdated: true,
+      captionUpdated: false,
+    });
     webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
@@ -1539,7 +1550,17 @@ describe('WhatsApp webhook poll choice events', () => {
       selectedOptions: [{ id: 'opt-b', title: 'Option B' }],
     });
 
-    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue(undefined);
+    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue({
+      status: 'updated',
+      state: PollVoteUpdateState.Completed,
+      tenantId: 'tenant-123',
+      storageMessageId: 'storage-message',
+      messageId: 'storage-message',
+      candidates: [],
+      metadataChanged: true,
+      contentUpdated: true,
+      captionUpdated: false,
+    });
     webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
@@ -1599,7 +1620,17 @@ describe('WhatsApp webhook poll choice events', () => {
       selectedOptions: [],
     });
 
-    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue(undefined);
+    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue({
+      status: 'updated',
+      state: PollVoteUpdateState.Completed,
+      tenantId: 'tenant-456',
+      storageMessageId: 'storage-message',
+      messageId: 'storage-message',
+      candidates: [],
+      metadataChanged: true,
+      contentUpdated: true,
+      captionUpdated: false,
+    });
     webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
