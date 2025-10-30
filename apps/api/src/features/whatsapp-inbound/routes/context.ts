@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../../../config/logger';
 import { isWebhookSignatureRequired } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
+import { readString as sharedReadString } from '../utils/webhook-parsers';
 
 export type WhatsAppWebhookContext = {
   requestId: string;
@@ -16,17 +17,7 @@ export type WebhookResponseLocals = Record<string, unknown> & {
   whatsappWebhook?: WhatsAppWebhookContext;
 };
 
-export const readString = (...candidates: unknown[]): string | null => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') {
-      const trimmed = candidate.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-  return null;
-};
+export const readString = (...candidates: unknown[]): string | null => sharedReadString(...candidates);
 
 export const resolveClientAddress = (req: Request): string => {
   return (

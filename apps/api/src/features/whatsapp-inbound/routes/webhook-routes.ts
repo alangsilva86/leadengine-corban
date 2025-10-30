@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
-import type { ZodIssue } from 'zod';
 
 import { asyncHandler } from '../../../middleware/error-handler';
 import {
@@ -11,6 +9,7 @@ import {
   verifyWhatsAppWebhookRequest,
   webhookRateLimiter,
 } from './webhook-controller';
+import {
   getDefaultInstanceId,
   getDefaultTenantId,
   getWebhookApiKey,
@@ -46,7 +45,6 @@ import {
   schedulePollInboxFallback,
   validatePollChoicePayload,
   type PersistPollChoiceVoteResult,
-  type SchedulePollInboxFallbackResult,
 } from '../services/poll-choice-pipeline';
 import { recordPollChoiceVote, recordEncryptedPollVote } from '../services/poll-choice-service';
 import { syncPollChoiceState } from '../services/poll-choice-sync-service';
@@ -70,49 +68,34 @@ import {
   POLL_PLACEHOLDER_MESSAGES,
 } from '../utils/poll-helpers';
 import {
+  DEFAULT_RAW_PREVIEW_MAX_LENGTH,
+  asArray,
+  asRecord,
+  normalizeApiKey,
+  readNumber,
+  toRawPreview,
+  unwrapWebhookEvent,
+} from '../utils/webhook-parsers';
+import { buildIdempotencyKey, registerIdempotency } from '../utils/webhook-idempotency';
+import {
   ensureWebhookContext,
   logWebhookEvent,
   readString,
   resolveClientAddress,
   trackWebhookRejection,
 } from './context';
+import {
+  pollChoiceEventBus,
+  type PollChoiceEventBusPayloads,
+  type PollChoiceEventName,
+} from '../services/poll-choice-event-bus';
+import { resolveWebhookContext } from '../services/resolve-webhook-context';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
 
-const MAX_RAW_PREVIEW_LENGTH = 2_000;
+const MAX_RAW_PREVIEW_LENGTH = DEFAULT_RAW_PREVIEW_MAX_LENGTH;
 const DEFAULT_VERIFY_RESPONSE = 'LeadEngine WhatsApp webhook';
-/**
- * Simple in-process TTL cache for idempotency of inbound messages.
- * Key: tenantId|instanceId|messageId|index
- */
-const IDEMPOTENCY_TTL_MS = 60_000;
-const recentIdempotencyKeys = new Map<string, number>();
-const sweepIdempotency = () => {
-  const now = Date.now();
-  for (const [k, expiresAt] of recentIdempotencyKeys.entries()) {
-    if (expiresAt <= now) recentIdempotencyKeys.delete(k);
-  }
-};
-const registerIdempotency = (key: string): boolean => {
-  sweepIdempotency();
-  if (recentIdempotencyKeys.has(key)) return false;
-  recentIdempotencyKeys.set(key, Date.now() + IDEMPOTENCY_TTL_MS);
-  return true;
-};
-const buildIdempotencyKey = (
-  tenantId: string | null | undefined,
-  instanceId: string | null | undefined,
-  messageId: string | null | undefined,
-  index: number | null | undefined
-) => {
-  const raw = `${tenantId ?? 'unknown'}|${instanceId ?? 'unknown'}|${messageId ?? 'unknown'}|${index ?? 0}`;
-  try {
-    return createHash('sha256').update(raw).digest('hex');
-  } catch {
-    return raw;
-  }
-};
 
 // Ack monotonicity helpers
 const ACK_RANK: Record<string, number> = { SENT: 1, DELIVERED: 2, READ: 3 };
@@ -121,356 +104,8 @@ const ackRank = (status: string | null | undefined): number => {
   const key = status.toString().toUpperCase();
   return ACK_RANK[key] ?? 0;
 };
-const asArray = (value: unknown): unknown[] => {
-  if (!value) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value;
-  }
-  if (typeof value === 'object' && value !== null) {
-    const record = value as Record<string, unknown>;
-    if (Array.isArray(record.events)) {
-      return record.events;
-    }
-    return [record];
-  }
-  return [];
-};
-
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
-};
-
-const unwrapWebhookEvent = (
-  entry: unknown
-): { event: RawBaileysUpsertEvent; envelope: Record<string, unknown> } | null => {
-  const envelope = asRecord(entry);
-  if (!envelope) {
-    return null;
-  }
-
-  const bodyRecord = asRecord(envelope.body);
-  if (!bodyRecord) {
-    return { event: envelope as RawBaileysUpsertEvent, envelope };
-  }
-
-  const merged: Record<string, unknown> = { ...bodyRecord };
-
-  for (const [key, value] of Object.entries(envelope)) {
-    if (key === 'body') {
-      continue;
-    }
-    if (!(key in merged)) {
-      merged[key] = value;
-    }
-  }
-
-  return { event: merged as RawBaileysUpsertEvent, envelope };
-};
-
-const readNumber = (...candidates: unknown[]): number | null => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      return candidate;
-    }
-    if (typeof candidate === 'string') {
-      const trimmed = candidate.trim();
-      if (!trimmed) {
-        continue;
-      }
-      const parsed = Number(trimmed);
-      if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-  }
-  return null;
-};
-
-const normalizeApiKey = (value: string | null): string | null => {
-  if (!value) {
-    return null;
-  }
-
-  const bearerMatch = /^bearer\s+(.+)$/i.exec(value);
-  const normalized = (bearerMatch?.[1] ?? value).trim();
-
-  return normalized.length > 0 ? normalized : null;
-};
 
 const POLL_VOTE_RETRY_DELAY_MS = 500;
-
-type PollChoiceEventOutcome = 'accepted' | 'ignored' | 'failed';
-
-type PollChoiceEventBusPayloads = {
-  pollChoiceInvalid: {
-    requestId: string;
-    reason: 'missing_payload' | 'schema_error';
-    issues?: ZodIssue[];
-    preview: string | null;
-    tenantId: string | null;
-    instanceId: string | null;
-  };
-  pollChoiceDuplicateEvent: {
-    requestId: string;
-    pollId: string;
-    tenantId: string | null;
-    instanceId: string | null;
-  };
-  pollChoiceDuplicateVote: {
-    requestId: string;
-    pollId: string;
-    tenantId: string | null;
-    instanceId: string | null;
-  };
-  pollChoiceRewriteMissingTenant: {
-    requestId: string;
-    pollId: string;
-    voterJid: string;
-    candidates: string[];
-    delayMs: number;
-  };
-  pollChoiceRewriteRetryScheduled: {
-    requestId: string;
-    pollId: string;
-    voterJid: string;
-    delayMs: number;
-  };
-  pollChoiceTenantLookupFailed: {
-    requestId: string;
-    pollId: string;
-    error: unknown;
-  };
-  pollChoiceMetadataSyncFailed: {
-    requestId: string;
-    pollId: string;
-    error: unknown;
-  };
-  pollChoiceInboxMissingTenant: {
-    requestId: string;
-    pollId: string;
-    voterJid: string;
-  };
-  pollChoiceInboxDecision: {
-    requestId: string;
-    decision: SchedulePollInboxFallbackResult;
-  };
-  pollChoiceInboxFailed: {
-    requestId: string;
-    pollId: string;
-    tenantId: string;
-    reason: string;
-    error?: unknown;
-  };
-  pollChoiceError: {
-    requestId: string;
-    pollId: string;
-    tenantId: string | null;
-    instanceId: string | null;
-    error: unknown;
-  };
-  pollChoiceCompleted: {
-    requestId: string;
-    pollId: string | null;
-    tenantId: string | null;
-    instanceId: string | null;
-    outcome: PollChoiceEventOutcome;
-    reason: string;
-    extra?: Record<string, unknown>;
-  };
-};
-
-type PollChoiceEventName = keyof PollChoiceEventBusPayloads;
-
-type PollChoiceEventBus = {
-  emit: <E extends PollChoiceEventName>(event: E, payload: PollChoiceEventBusPayloads[E]) => void;
-  on: <E extends PollChoiceEventName>(
-    event: E,
-    handler: (payload: PollChoiceEventBusPayloads[E]) => void
-  ) => () => void;
-};
-
-const createPollChoiceEventBus = (): PollChoiceEventBus => {
-  const registry = new Map<PollChoiceEventName, Set<(payload: PollChoiceEventBusPayloads[PollChoiceEventName]) => void>>();
-
-  return {
-    emit(event, payload) {
-      const handlers = registry.get(event);
-      if (!handlers) {
-        return;
-      }
-
-      for (const handler of handlers) {
-        try {
-          handler(payload as never);
-        } catch (error) {
-          logger.error('pollChoiceEventHandlerFailed', { event, error });
-        }
-      }
-    },
-    on(event, handler) {
-      const existing = registry.get(event) ?? new Set();
-      existing.add(handler as never);
-      registry.set(event, existing as never);
-
-      return () => {
-        const handlers = registry.get(event);
-        if (!handlers) {
-          return;
-        }
-        handlers.delete(handler as never);
-        if (handlers.size === 0) {
-          registry.delete(event);
-        }
-      };
-    },
-  };
-};
-
-const pollChoiceEventBus = createPollChoiceEventBus();
-
-pollChoiceEventBus.on('pollChoiceInvalid', ({ reason, requestId, issues, preview }) => {
-  const message =
-    reason === 'missing_payload'
-      ? 'Received poll choice event without payload'
-      : 'Received invalid poll choice payload';
-
-  logger.warn(message, {
-    requestId,
-    ...(reason === 'schema_error' ? { issues } : {}),
-    rawPreview: preview,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceDuplicateEvent', ({ pollId, requestId }) => {
-  logger.debug('Duplicate poll choice event ignored', { requestId, pollId });
-});
-
-pollChoiceEventBus.on('pollChoiceDuplicateVote', ({ pollId, requestId }) => {
-  logger.info('Ignoring poll choice vote because it is already up-to-date', {
-    requestId,
-    pollId,
-  });
-});
-
-pollChoiceEventBus.on(
-  'pollChoiceRewriteMissingTenant',
-  ({ requestId, pollId, voterJid, candidates, delayMs }) => {
-    logger.info('rewrite.poll_vote.retry_missing_tenant', {
-      requestId,
-      pollId,
-      voterJid,
-      messageId: candidates.at(0) ?? null,
-      delayMs,
-    });
-  }
-);
-
-pollChoiceEventBus.on('pollChoiceRewriteRetryScheduled', ({ requestId, pollId, voterJid, delayMs }) => {
-  logger.info('rewrite.poll_vote.retry_scheduled', {
-    requestId,
-    pollId,
-    voterJid,
-    delayMs,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceTenantLookupFailed', ({ requestId, pollId, error }) => {
-  logger.warn('Failed to load poll metadata while resolving tenant', {
-    requestId,
-    pollId,
-    error,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceMetadataSyncFailed', ({ requestId, pollId, error }) => {
-  logger.error('Failed to sync poll choice state with message metadata', {
-    requestId,
-    pollId,
-    error,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceInboxMissingTenant', ({ requestId, pollId, voterJid }) => {
-  logger.warn('Skipping poll choice inbox notification due to missing tenant context', {
-    requestId,
-    pollId,
-    voterJid,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceInboxDecision', ({ decision, requestId }) => {
-  if (decision.status === 'skip') {
-    logger.info('Skipping poll choice inbox notification because poll message already exists', {
-      requestId,
-      pollId: decision.pollId,
-      tenantId: decision.tenantId ?? null,
-      chatId: decision.chatId ?? null,
-      messageId: decision.existingMessageId,
-    });
-    return;
-  }
-
-  if (decision.status === 'requireInbox') {
-    if (decision.lookupError) {
-      logger.error('Failed to check existing poll message before inbox notification', {
-        requestId,
-        pollId: decision.pollId,
-        tenantId: decision.tenantId,
-        chatId: decision.chatId ?? null,
-        error: decision.lookupError,
-      });
-    }
-
-    if (decision.existingMessageId) {
-      logger.info(
-        'Triggering poll choice inbox notification fallback due to outdated poll message metadata',
-        {
-          requestId,
-          pollId: decision.pollId,
-          tenantId: decision.tenantId,
-          chatId: decision.chatId ?? null,
-          messageId: decision.existingMessageId,
-        }
-      );
-    }
-  }
-});
-
-pollChoiceEventBus.on('pollChoiceInboxFailed', ({ requestId, pollId, tenantId, reason, error }) => {
-  const logMethod = reason === 'poll_choice_inbox_error' ? 'error' : 'warn';
-  logger[logMethod]('Poll choice inbox notification failed', {
-    requestId,
-    pollId,
-    tenantId,
-    reason,
-    error,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceError', ({ requestId, pollId, tenantId, instanceId, error }) => {
-  logger.error('Failed to process poll choice event', {
-    requestId,
-    pollId,
-    tenantId,
-    instanceId,
-    error,
-  });
-});
-
-pollChoiceEventBus.on('pollChoiceCompleted', ({ tenantId, instanceId, outcome, reason }) => {
-  whatsappWebhookEventsCounter.inc({
-    origin: 'webhook',
-    tenantId: tenantId ?? 'unknown',
-    instanceId: instanceId ?? 'unknown',
-    result: outcome,
-    reason,
-  });
-});
 
 type UpdatePollVoteMessageHandler = typeof pollVoteMessageUpdater;
 const updatePollVoteMessage = async (params: {
@@ -789,22 +424,6 @@ const defaultPollVoteRetryScheduler: SchedulePollVoteRetryHandler = (callback, d
 };
 
 let schedulePollVoteRetry: SchedulePollVoteRetryHandler = defaultPollVoteRetryScheduler;
-
-const toRawPreview = (value: unknown): string => {
-  try {
-    const json = JSON.stringify(value);
-    if (!json) {
-      return '';
-    }
-    return json.length > MAX_RAW_PREVIEW_LENGTH ? json.slice(0, MAX_RAW_PREVIEW_LENGTH) : json;
-  } catch (error) {
-    const fallback = String(value);
-    logger.debug('Failed to serialize raw Baileys payload; using fallback string', { error });
-    return fallback.length > MAX_RAW_PREVIEW_LENGTH
-      ? fallback.slice(0, MAX_RAW_PREVIEW_LENGTH)
-      : fallback;
-  }
-};
 
 const sanitizeMetadataValue = (value: unknown): unknown => {
   if (value === null) {
@@ -2255,75 +1874,16 @@ export const handleWhatsAppWebhook = async (req: Request, res: Response) => {
     const eventType = readString(eventRecord.event, (eventRecord as { type?: unknown }).type);
 
     const defaultInstanceId = getDefaultInstanceId();
-    const rawInstanceId =
-      readString(
-        (eventRecord as { instanceId?: unknown }).instanceId,
-        envelopeRecord.instanceId
-      ) ?? defaultInstanceId ?? undefined;
-    let instanceOverride = rawInstanceId;
-    let brokerOverride: string | undefined;
-    let tenantOverride = readString(
-      (eventRecord as { tenantId?: unknown }).tenantId,
-      envelopeRecord.tenantId
-    ) ?? undefined;
+    const resolvedContext = await resolveWebhookContext({
+      eventRecord,
+      envelopeRecord,
+      defaultInstanceId,
+    });
 
-    const resolvedInstance = await (async () => {
-      if (!rawInstanceId) {
-        return null;
-      }
-
-      const directMatch = await prisma.whatsAppInstance.findFirst({
-        where: {
-          OR: [{ id: rawInstanceId }, { brokerId: rawInstanceId }],
-        },
-        select: {
-          id: true,
-          brokerId: true,
-          tenantId: true,
-        },
-      });
-
-      if (directMatch) {
-        return directMatch;
-      }
-
-      if (!defaultInstanceId || defaultInstanceId === rawInstanceId) {
-        return null;
-      }
-
-      return prisma.whatsAppInstance.findUnique({
-        where: { id: defaultInstanceId },
-        select: {
-          id: true,
-          brokerId: true,
-          tenantId: true,
-        },
-      });
-    })();
-
-    if (resolvedInstance) {
-      instanceOverride = resolvedInstance.id;
-
-      const storedBrokerId =
-        typeof resolvedInstance.brokerId === 'string' && resolvedInstance.brokerId.trim().length > 0
-          ? resolvedInstance.brokerId.trim()
-          : undefined;
-
-      // Se o rawInstanceId veio do broker e difere do armazenado, persiste para manter o mapeamento
-      if (rawInstanceId && storedBrokerId !== rawInstanceId) {
-        await prisma.whatsAppInstance.update({
-          where: { id: resolvedInstance.id },
-          data: { brokerId: rawInstanceId },
-        });
-      }
-
-      brokerOverride = rawInstanceId ?? storedBrokerId ?? undefined;
-
-      // Herdar tenant da instância quando o envelope não trouxe
-      if (!tenantOverride && resolvedInstance.tenantId) {
-        tenantOverride = resolvedInstance.tenantId;
-      }
-    }
+    const rawInstanceId = resolvedContext.rawInstanceId ?? undefined;
+    const instanceOverride = resolvedContext.instanceId ?? undefined;
+    const brokerOverride = resolvedContext.brokerId;
+    const tenantOverride = resolvedContext.tenantId ?? undefined;
 
     const specialResult = await dispatchSpecialEvent(
       eventType,
