@@ -429,7 +429,10 @@ const BaileysLogs = () => {
 
               <Separator className="my-3" />
 
-              <ScrollArea className="max-h-[320px] rounded-md border border-border/60 bg-muted/40 p-3">
+              <ScrollArea
+                className="rounded-md border border-border/60 bg-muted/40 p-3"
+                viewportProps={{ className: 'max-h-[320px] overflow-auto' }}
+              >
                 <pre className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
                   {stringifyJson(entry.payload)}
                 </pre>
