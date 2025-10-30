@@ -1,1678 +1,52 @@
 import type { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
-import type { Prisma } from '@prisma/client';
 
 import { logger } from '../../../config/logger';
 import {
   getDefaultInstanceId,
-  getDefaultTenantId,
   getWebhookApiKey,
   getWebhookSignatureSecret,
   getWebhookVerifyToken,
 } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
-import {
-  applyBrokerAck,
-  findMessageByExternalId as storageFindMessageByExternalId,
-  findPollVoteMessageCandidate,
-} from '@ticketz/storage';
-import {
-  normalizeUpsertEvent,
-  type NormalizedRawUpsertMessage,
-  type RawBaileysUpsertEvent,
-} from '../services/baileys-raw-normalizer';
-import { enqueueInboundWebhookJob } from '../services/inbound-queue';
-import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
-import { prisma } from '../../../lib/prisma';
-import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
-import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
-import { normalizeBaileysMessageStatus } from '../services/baileys-status-normalizer';
-import {
-  BrokerInboundEventSchema,
-  type BrokerInboundContact,
-  type BrokerInboundEvent,
-} from '../schemas/broker-contracts';
-import { PollChoiceEventSchema, type PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
-import {
-  persistPollChoiceVote,
-  rewritePollVoteMessage,
-  schedulePollInboxFallback,
-  validatePollChoicePayload,
-  type PersistPollChoiceVoteResult,
-} from '../services/poll-choice-pipeline';
-import { recordPollChoiceVote, recordEncryptedPollVote } from '../services/poll-choice-service';
-import { syncPollChoiceState } from '../services/poll-choice-sync-service';
-import {
-  PollChoiceInboxNotificationStatus,
-  triggerPollChoiceInboxNotification,
-} from '../services/poll-choice-inbox-service';
-import { updatePollVoteMessage as pollVoteMessageUpdater, __testing as pollVoteUpdaterTesting } from '../services/poll-vote-updater';
-import {
-  getPollMetadata,
-  upsertPollMetadata,
-  type PollMetadataOption,
-} from '../services/poll-metadata-service';
-import {
-  asJsonRecord,
-  buildPollVoteMessageContent,
-  buildSelectedOptionSummaries,
-  normalizeChatId,
-  normalizeTimestamp,
-  shouldUpdatePollMessageContent,
-  POLL_PLACEHOLDER_MESSAGES,
-} from '../utils/poll-helpers';
-import {
-  DEFAULT_RAW_PREVIEW_MAX_LENGTH,
-  asArray,
-  asRecord,
-  normalizeApiKey,
-  readString,
-  readNumber,
-  toRawPreview,
-  unwrapWebhookEvent,
-} from '../utils/webhook-parsers';
+import { normalizeUpsertEvent, type RawBaileysUpsertEvent } from '../services/baileys-raw-normalizer';
+import { pollChoiceEventBus, type PollChoiceEventBusPayloads, type PollChoiceEventName } from '../services/poll-choice-event-bus';
+import { resolveWebhookContext } from '../services/resolve-webhook-context';
+import { asArray, normalizeApiKey, readString, unwrapWebhookEvent } from '../utils/webhook-parsers';
 import { buildIdempotencyKey, registerIdempotency } from '../utils/webhook-idempotency';
-import {
-  pollChoiceEventBus,
-  type PollChoiceEventBusPayloads,
-  type PollChoiceEventName,
-  type PollChoiceEventOutcome,
-} from '../services/poll-choice-event-bus';
 import {
   ensureWebhookContext,
   logWebhookEvent,
-<<<<<<< HEAD
   resolveClientAddress,
-=======
->>>>>>> main
   trackWebhookRejection,
   type WhatsAppWebhookContext,
 } from './context';
-import { resolveWebhookContext } from '../services/resolve-webhook-context';
+import { normalizeContractEvent } from './webhook/normalize-contract-event';
+import { processMessagesUpdate } from './webhook/process-messages-update';
+import { processNormalizedMessage } from './webhook/process-normalized-message';
+import { processPollChoiceEvent } from './webhook/process-poll-choice-event';
+import {
+  pollVoteTesting,
+  resetPollVoteRetryTestingScheduler,
+  resetUpdatePollVoteMessageTestingHandler,
+  setPollVoteRetryTestingScheduler,
+  setUpdatePollVoteMessageTestingHandler,
+} from './webhook/poll-vote-message-rewriter';
+import { toRawPreview } from './webhook/helpers';
 
-const MAX_RAW_PREVIEW_LENGTH = DEFAULT_RAW_PREVIEW_MAX_LENGTH;
 const DEFAULT_VERIFY_RESPONSE = 'LeadEngine WhatsApp webhook';
 
-// Ack monotonicity helpers
-const ACK_RANK: Record<string, number> = { SENT: 1, DELIVERED: 2, READ: 3 };
-const ackRank = (status: string | null | undefined): number => {
-  if (!status) return 0;
-  const key = status.toString().toUpperCase();
-  return ACK_RANK[key] ?? 0;
-};
-type WhatsAppWebhookControllerConfig = {
+export type WhatsAppWebhookControllerConfig = {
   ensureWebhookContext: typeof ensureWebhookContext;
   logWebhookEvent: typeof logWebhookEvent;
   trackWebhookRejection: typeof trackWebhookRejection;
 };
 
-type WhatsAppWebhookController = {
+export type WhatsAppWebhookController = {
   handleWhatsAppWebhook: (req: Request, res: Response) => Promise<void>;
-  verifyWhatsAppWebhookRequest: (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => Promise<void>;
+  verifyWhatsAppWebhookRequest: (req: Request, res: Response, next: NextFunction) => Promise<void>;
   webhookRateLimiter: ReturnType<typeof rateLimit>;
   handleVerification: (req: Request, res: Response) => void;
-};
-
-const POLL_VOTE_RETRY_DELAY_MS = 500;
-
-type UpdatePollVoteMessageHandler = typeof pollVoteMessageUpdater;
-const updatePollVoteMessage = async (params: {
-  tenantId: string | null | undefined;
-  chatId?: string | null | undefined;
-  messageId?: string | null | undefined;
-  messageIds?: Array<string | null | undefined> | null;
-  pollId: string;
-  voterJid: string;
-  selectedOptions: PollChoiceSelectedOptionPayload[];
-  timestamp?: string | null;
-  question?: string | null;
-  aggregates?: {
-    totalVoters?: number | null;
-    totalVotes?: number | null;
-    optionTotals?: Record<string, number> | null;
-  } | null;
-  options?: PollChoiceSelectedOptionPayload[] | null;
-  vote?: {
-    optionIds?: string[] | null;
-    selectedOptions?: PollChoiceSelectedOptionPayload[] | null;
-    encryptedVote?: Record<string, unknown> | null;
-    messageId?: string | null;
-    timestamp?: string | null;
-  } | null;
-}): Promise<void> => {
-  const tenantId = readString(params.tenantId);
-  if (!tenantId) {
-    logger.debug('rewrite.poll_vote.skip_missing_context', {
-      pollId: params.pollId,
-      voterJid: params.voterJid,
-    });
-    return;
-  }
-
-  const chatId = readString(params.chatId);
-  const candidateSet = new Set<string>();
-
-  if (Array.isArray(params.messageIds)) {
-    params.messageIds.forEach((candidate) => {
-      const normalized = readString(candidate);
-      if (normalized) {
-        candidateSet.add(normalized);
-      }
-    });
-  }
-
-  const primaryMessageId = readString(params.messageId);
-  if (primaryMessageId) {
-    candidateSet.add(primaryMessageId);
-  }
-
-  const candidateIdentifiers = Array.from(candidateSet.values());
-  if (candidateIdentifiers.length === 0) {
-    candidateIdentifiers.push(params.pollId);
-  }
-
-  logger.info('rewrite.poll_vote.start', {
-    tenantId,
-    chatId: chatId ?? null,
-    pollId: params.pollId,
-    voterJid: params.voterJid,
-    identifiers: candidateIdentifiers,
-  });
-
-  let existingMessage:
-    | Awaited<ReturnType<typeof storageFindMessageByExternalId>>
-    | Awaited<ReturnType<typeof findPollVoteMessageCandidate>>
-    | null = null;
-
-  for (const identifier of candidateIdentifiers) {
-    try {
-      existingMessage = await storageFindMessageByExternalId(tenantId, identifier);
-    } catch (error) {
-      logger.warn('rewrite.poll_vote.lookup_external_id_failed', {
-        tenantId,
-        identifier,
-        pollId: params.pollId,
-        error,
-      });
-      continue;
-    }
-    if (existingMessage) {
-      break;
-    }
-  }
-
-  if (!existingMessage) {
-    try {
-      existingMessage = await findPollVoteMessageCandidate({
-        tenantId,
-        chatId,
-        identifiers: candidateIdentifiers,
-        pollId: params.pollId,
-      });
-    } catch (error) {
-      logger.warn('rewrite.poll_vote.lookup_candidate_failed', {
-        tenantId,
-        chatId: chatId ?? null,
-        pollId: params.pollId,
-        identifiers: candidateIdentifiers,
-        error,
-      });
-      return;
-    }
-  }
-
-  if (!existingMessage) {
-    logger.debug('rewrite.poll_vote.not_found', {
-      tenantId,
-      chatId: chatId ?? null,
-      pollId: params.pollId,
-      voterJid: params.voterJid,
-      identifiersTried: candidateIdentifiers,
-    });
-    return;
-  }
-
-  logger.info('rewrite.poll_vote.matched', {
-    tenantId,
-    chatId: chatId ?? null,
-    pollId: params.pollId,
-    storageMessageId: existingMessage.id,
-    externalId: readString(existingMessage.externalId),
-    identifiersTried: candidateIdentifiers,
-  });
-
-  const contentCandidate = buildPollVoteMessageContent(params.selectedOptions);
-  if (!contentCandidate) {
-    logger.debug('rewrite.poll_vote.skip_empty_content', {
-      tenantId,
-      storageMessageId: existingMessage.id,
-      pollId: params.pollId,
-    });
-    return;
-  }
-
-  const shouldUpdateContent = shouldUpdatePollMessageContent(existingMessage.content);
-  const existingCaption = typeof existingMessage.caption === 'string' ? existingMessage.caption.trim() : '';
-  const shouldUpdateCaption =
-    shouldUpdateContent &&
-    (existingCaption.length === 0 || POLL_PLACEHOLDER_MESSAGES.has(existingCaption));
-
-  const metadataRecord = asJsonRecord(existingMessage.metadata);
-  const selectedSummaries = buildSelectedOptionSummaries(params.selectedOptions);
-  const voteTimestampIso = normalizeTimestamp(params.timestamp) ?? new Date().toISOString();
-  const rewriteAppliedAt = new Date().toISOString();
-  const pollVoteMetadata = {
-    pollId: params.pollId,
-    voterJid: params.voterJid,
-    selectedOptions: selectedSummaries,
-    updatedAt: voteTimestampIso,
-    rewriteAppliedAt,
-    aggregates: params.aggregates ?? undefined,
-    options: params.options ?? undefined,
-    vote: params.vote ?? undefined,
-  };
-
-  const existingPollVote = metadataRecord.pollVote as Record<string, unknown> | undefined;
-  const metadataSnapshotBefore = sanitizeJsonPayload(metadataRecord);
-
-  metadataRecord.pollVote = pollVoteMetadata;
-  const existingPollMetadata = asRecord(metadataRecord.poll);
-  const existingPollQuestionValue =
-    typeof existingPollMetadata?.question === 'string' && existingPollMetadata.question.trim().length > 0
-      ? existingPollMetadata.question
-      : null;
-  const providedPollQuestion = readString(params.question);
-  const pollMetadataQuestion = existingPollQuestionValue ?? providedPollQuestion ?? undefined;
-  metadataRecord.poll = {
-    ...(existingPollMetadata ?? {}),
-    id: existingPollMetadata?.id ?? params.pollId,
-    pollId: params.pollId,
-    ...(pollMetadataQuestion !== undefined ? { question: pollMetadataQuestion } : {}),
-    selectedOptionIds: selectedSummaries.map((entry) => entry.id),
-    selectedOptions: selectedSummaries,
-    aggregates: params.aggregates ?? existingPollMetadata?.aggregates ?? undefined,
-    updatedAt: pollVoteMetadata.updatedAt,
-    rewriteAppliedAt,
-  };
-
-  const existingPollChoiceMetadata = asRecord(metadataRecord.pollChoice);
-  const existingPollChoiceQuestionValue =
-    typeof existingPollChoiceMetadata?.question === 'string' &&
-    existingPollChoiceMetadata.question.trim().length > 0
-      ? existingPollChoiceMetadata.question
-      : null;
-  const pollChoiceQuestion = existingPollChoiceQuestionValue ?? pollMetadataQuestion ?? undefined;
-
-  metadataRecord.pollChoice = {
-    ...(existingPollChoiceMetadata ?? {}),
-    pollId: params.pollId,
-    voterJid: params.voterJid,
-    ...(pollChoiceQuestion !== undefined ? { question: pollChoiceQuestion } : {}),
-    options: params.options ?? undefined,
-    vote: params.vote ?? {
-      optionIds: params.selectedOptions.map((entry) => entry.id),
-      selectedOptions: params.selectedOptions,
-      timestamp: normalizeTimestamp(params.timestamp),
-    },
-  };
-
-  const passthroughMetadata = asRecord(metadataRecord.passthrough);
-  if (passthroughMetadata) {
-    if (passthroughMetadata.placeholder === true || passthroughMetadata.placeholder === 'true') {
-      passthroughMetadata.placeholder = false;
-    }
-    metadataRecord.passthrough = passthroughMetadata;
-  }
-
-  if (metadataRecord.placeholder === true || metadataRecord.placeholder === 'true') {
-    metadataRecord.placeholder = false;
-  }
-
-  const rewriteMetadataRecord = asRecord(metadataRecord.rewrite);
-  metadataRecord.rewrite = {
-    ...(rewriteMetadataRecord ?? {}),
-    pollVote: {
-      ...(asRecord(rewriteMetadataRecord?.pollVote) ?? {}),
-      appliedAt: rewriteAppliedAt,
-      pollId: params.pollId,
-      storageMessageId: existingMessage.id,
-    },
-  };
-
-  const metadataSnapshotAfter = sanitizeJsonPayload(metadataRecord);
-  const metadataForUpdate =
-    metadataSnapshotAfter && typeof metadataSnapshotAfter === 'object' && !Array.isArray(metadataSnapshotAfter)
-      ? (metadataSnapshotAfter as Record<string, unknown>)
-      : null;
-  const metadataChanged =
-    JSON.stringify(metadataSnapshotBefore) !== JSON.stringify(metadataSnapshotAfter);
-
-  if (!shouldUpdateContent && !metadataChanged && !shouldUpdateCaption) {
-    logger.info('rewrite.poll_vote.noop', {
-      tenantId,
-      storageMessageId: existingMessage.id,
-      pollId: params.pollId,
-      selectedOptions: selectedSummaries,
-    });
-    return;
-  }
-
-  const shouldUpdateType = typeof existingMessage.type === 'string' && existingMessage.type.toUpperCase() !== 'TEXT';
-
-  try {
-    const updatedMessage = await storageUpdateMessage(tenantId, existingMessage.id, {
-      ...(shouldUpdateContent ? { content: contentCandidate, text: contentCandidate } : {}),
-      ...(shouldUpdateCaption ? { caption: contentCandidate } : {}),
-      ...(shouldUpdateType ? { type: 'TEXT' as const } : {}),
-      ...(metadataChanged ? { metadata: metadataForUpdate } : {}),
-    });
-
-    if (
-      updatedMessage &&
-      typeof updatedMessage === 'object' &&
-      'tenantId' in updatedMessage &&
-      'ticketId' in updatedMessage
-    ) {
-      logger.info('rewrite.poll_vote.updated', {
-        tenantId,
-        chatId: chatId ?? null,
-        messageId: readString(updatedMessage.externalId) ?? existingMessage.id,
-        storageMessageId: existingMessage.id,
-        pollId: params.pollId,
-        selectedOptions: selectedSummaries,
-        captionTouched: shouldUpdateCaption,
-        typeAdjusted: shouldUpdateType,
-        updatedAt: (updatedMessage as { updatedAt?: unknown }).updatedAt ?? null,
-      });
-      const updatedRecord = updatedMessage as { tenantId: string; ticketId: string | null };
-      if (updatedRecord.ticketId) {
-        await emitMessageUpdatedEvents(tenantId, updatedRecord.ticketId, updatedMessage, null);
-        logger.info('rewrite.poll_vote.emit', {
-          tenantId,
-          ticketId: updatedRecord.ticketId,
-          messageId: readString(updatedMessage.externalId) ?? existingMessage.id,
-          storageMessageId: existingMessage.id,
-          pollId: params.pollId,
-          voteOptionCount: selectedSummaries.length,
-        });
-      }
-    }
-  } catch (error) {
-    logger.warn('rewrite.poll_vote.persist_failed', {
-      tenantId,
-      storageMessageId: existingMessage.id,
-      chatId: chatId ?? null,
-      pollId: params.pollId,
-      error,
-    });
-  }
-};
-
-type UpdatePollVoteMessageHandler = typeof updatePollVoteMessage;
-
-let updatePollVoteMessageHandler: UpdatePollVoteMessageHandler = pollVoteMessageUpdater;
-
-type SchedulePollVoteRetryHandler = (
-  callback: () => void | Promise<void>,
-  delayMs: number
-) => void;
-
-const defaultPollVoteRetryScheduler: SchedulePollVoteRetryHandler = (callback, delayMs) => {
-  const timer = setTimeout(() => {
-    try {
-      void callback();
-    } catch (error) {
-      logger.error('rewrite.poll_vote.retry_callback_failed', { error });
-    }
-  }, delayMs);
-
-  if (typeof timer === 'object' && typeof (timer as NodeJS.Timeout).unref === 'function') {
-    timer.unref();
-  }
-};
-
-let schedulePollVoteRetry: SchedulePollVoteRetryHandler = defaultPollVoteRetryScheduler;
-
-const toRawPreview = (value: unknown): string => {
-  try {
-    const json = JSON.stringify(value);
-    if (!json) {
-      return '';
-    }
-    return json.length > MAX_RAW_PREVIEW_LENGTH ? json.slice(0, MAX_RAW_PREVIEW_LENGTH) : json;
-  } catch (error) {
-    const fallback = String(value);
-    logger.debug('Failed to serialize raw Baileys payload; using fallback string', { error });
-    return fallback.length > MAX_RAW_PREVIEW_LENGTH
-      ? fallback.slice(0, MAX_RAW_PREVIEW_LENGTH)
-      : fallback;
-  }
-};
-
-const sanitizeMetadataValue = (value: unknown): unknown => {
-  if (value === null) {
-    return null;
-  }
-
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) {
-    return (value as Buffer).toString('base64');
-  }
-
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => sanitizeMetadataValue(entry));
-  }
-
-  if (typeof value === 'object') {
-    const record: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      if (nested === undefined) {
-        continue;
-      }
-      record[key] = sanitizeMetadataValue(nested);
-    }
-    return record;
-  }
-
-  return value;
-};
-
-const parseTimestampToDate = (value: unknown): Date | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return new Date(value > 1_000_000_000_000 ? value : value * 1000);
-  }
-
-  if (typeof value === 'bigint') {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) {
-      return new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000);
-    }
-    return null;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const numeric = Number(trimmed);
-    if (Number.isFinite(numeric)) {
-      return new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000);
-    }
-    const parsed = Date.parse(trimmed);
-    return Number.isNaN(parsed) ? null : new Date(parsed);
-  }
-
-  return null;
-};
-
-interface NormalizeContractEventOptions {
-  requestId: string;
-  instanceOverride?: string | null;
-  tenantOverride?: string | null;
-  brokerOverride?: string | null;
-}
-
-const normalizeContractEvent = (
-  eventRecord: Record<string, unknown>,
-  options: NormalizeContractEventOptions
-): NormalizedRawUpsertMessage | null => {
-  const hasType = readString((eventRecord as { type?: unknown }).type);
-  const fallbackEvent = readString((eventRecord as { event?: unknown }).event);
-  const recordWithType =
-    !hasType && fallbackEvent
-      ? ({ ...eventRecord, type: fallbackEvent } as Record<string, unknown>)
-      : eventRecord;
-
-  const payloadRecord = asRecord((recordWithType as { payload?: unknown }).payload);
-  const envelopeInstanceId =
-    readString(options.instanceOverride, (eventRecord as { instanceId?: unknown }).instanceId) ?? null;
-
-  if (payloadRecord) {
-    if (!readString((payloadRecord as { instanceId?: unknown }).instanceId) && envelopeInstanceId) {
-      payloadRecord.instanceId = envelopeInstanceId;
-    }
-    (recordWithType as Record<string, unknown>).payload = payloadRecord;
-  } else if (envelopeInstanceId) {
-    (recordWithType as Record<string, unknown>).payload = {
-      instanceId: envelopeInstanceId,
-    };
-  }
-
-  const parsed = BrokerInboundEventSchema.safeParse(recordWithType);
-  if (!parsed.success) {
-    logger.warn('Received invalid broker WhatsApp contract event', {
-      requestId: options.requestId,
-      issues: parsed.error.issues,
-      preview: toRawPreview(eventRecord),
-    });
-    return null;
-  }
-
-  const event = parsed.data as BrokerInboundEvent;
-  const contactRecord = asRecord(event.payload.contact) ?? {};
-  const messageRecord = asRecord(event.payload.message) ?? {};
-  const metadataInput = asRecord(event.payload.metadata) ?? {};
-
-  const sanitizedMetadata = sanitizeMetadataValue({
-    ...metadataInput,
-  }) as Record<string, unknown>;
-
-  if (!asRecord(sanitizedMetadata.contact) && Object.keys(contactRecord).length > 0) {
-    sanitizedMetadata.contact = contactRecord;
-  }
-
-  const metadataContactRecord = asRecord(sanitizedMetadata.contact);
-  const metadataBrokerInput = asRecord(metadataInput.broker);
-  const messageUpsertType =
-    readString(
-      (metadataBrokerInput as { messageType?: unknown })?.messageType,
-      (asRecord(sanitizedMetadata.broker) as { messageType?: unknown } | null)?.messageType
-    ) ?? null;
-  const resolvedInstanceId =
-    readString(
-      options.instanceOverride,
-      event.payload.instanceId,
-      event.instanceId
-    ) ?? event.payload.instanceId;
-
-  const messageId =
-    readString(
-      (messageRecord as { id?: unknown }).id,
-      (messageRecord as { key?: { id?: unknown } }).key?.id,
-      (sanitizedMetadata as { messageId?: unknown }).messageId,
-      event.id
-    ) ?? event.id;
-
-  const messageType =
-    readString(
-      (sanitizedMetadata as { messageType?: unknown }).messageType,
-      (messageRecord as { type?: unknown }).type
-    ) ?? 'contract';
-
-  const isGroup = Boolean(
-    (metadataContactRecord as { isGroup?: unknown })?.isGroup ??
-      (sanitizedMetadata as { isGroup?: unknown }).isGroup ??
-      false
-  );
-
-  const rawDirection =
-    readString(event.payload.direction, event.type) ??
-    (event.type === 'MESSAGE_OUTBOUND' ? 'OUTBOUND' : 'INBOUND');
-  const direction = rawDirection.toLowerCase().includes('outbound') ? 'outbound' : 'inbound';
-
-  const tenantCandidate = options.tenantOverride ?? event.tenantId ?? null;
-  const sessionCandidate = event.sessionId ?? null;
-  const brokerCandidate = options.brokerOverride ?? event.instanceId ?? null;
-
-  const normalized: NormalizedRawUpsertMessage = {
-    data: {
-      direction,
-      instanceId: resolvedInstanceId,
-      timestamp: event.payload.timestamp,
-      message: messageRecord,
-      metadata: sanitizedMetadata,
-      from: contactRecord as BrokerInboundContact,
-    },
-    messageIndex: 0,
-    ...(tenantCandidate ? { tenantId: tenantCandidate } : {}),
-    ...(sessionCandidate ? { sessionId: sessionCandidate } : {}),
-    ...(brokerCandidate !== undefined ? { brokerId: brokerCandidate } : {}),
-    messageId,
-    messageType,
-    messageUpsertType,
-    isGroup,
-  };
-
-  return normalized;
-};
-
-interface ProcessNormalizedMessageOptions {
-  normalized: NormalizedRawUpsertMessage;
-  eventRecord: Record<string, unknown>;
-  envelopeRecord: Record<string, unknown>;
-  rawPreview: string;
-  requestId: string;
-  tenantOverride?: string | null;
-  instanceOverride?: string | null;
-}
-
-const processNormalizedMessage = async (
-  options: ProcessNormalizedMessageOptions
-): Promise<boolean> => {
-  const { normalized, eventRecord, envelopeRecord, rawPreview, requestId } = options;
-
-  const tenantId =
-    options.tenantOverride ??
-    normalized.tenantId ??
-    readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ??
-    getDefaultTenantId();
-
-  const instanceId =
-    readString(
-      options.instanceOverride,
-      normalized.data.instanceId,
-      (eventRecord as { instanceId?: unknown }).instanceId,
-      envelopeRecord.instanceId
-    ) ?? getDefaultInstanceId();
-
-  const metadataContactRecord = asRecord(normalized.data.metadata?.contact);
-  const messageRecord = (normalized.data.message ?? {}) as Record<string, unknown>;
-  const messageKeyRecord = asRecord(messageRecord.key);
-  const fromRecord = asRecord(normalized.data.from);
-
-  const chatIdCandidate =
-    normalizeChatId(
-      readString(metadataContactRecord?.remoteJid) ??
-        readString(metadataContactRecord?.jid) ??
-        readString(messageKeyRecord?.remoteJid) ??
-        readString(fromRecord?.phone) ??
-        readString(messageKeyRecord?.id)
-    ) ?? normalizeChatId(readString(fromRecord?.phone));
-
-  const chatId = chatIdCandidate ?? `${tenantId}@baileys`;
-
-  try {
-    const data = normalized.data;
-    const metadataBase =
-      data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
-        ? { ...(data.metadata as Record<string, unknown>) }
-        : ({} as Record<string, unknown>);
-    const metadataContact = asRecord(metadataBase.contact);
-    const messageKey = messageKeyRecord ?? {};
-    const contactRecord = asRecord(data.from) ?? {};
-
-    const remoteJid =
-      normalizeChatId(
-        readString(messageKey.remoteJid) ??
-          readString(metadataContact?.jid) ??
-          readString(metadataContact?.remoteJid) ??
-          readString(
-            (eventRecord as {
-              payload?: { messages?: Array<{ key?: { remoteJid?: string } }> };
-            })?.payload?.messages?.[normalized.messageIndex ?? 0]?.key?.remoteJid
-          )
-      ) ?? chatId;
-
-    const direction =
-      (data.direction ?? 'inbound').toString().toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';
-    const externalId = readString(messageRecord.id, messageKey.id, normalized.messageId);
-    const timestamp = readString(data.timestamp) ?? null;
-
-    const pollCreationRecord = asRecord(messageRecord.pollCreationMessage);
-    if (pollCreationRecord) {
-      const metadataOptions = Array.isArray(pollCreationRecord.options)
-        ? (pollCreationRecord.options as Array<Record<string, unknown>>)
-            .map((entry, index) => {
-              const optionId =
-                readString(
-                  entry.id,
-                  (entry as { optionName?: unknown }).optionName,
-                  (entry as { title?: unknown }).title
-                ) ?? `option_${index}`;
-              const title =
-                readString(
-                  (entry as { title?: unknown }).title,
-                  (entry as { optionName?: unknown }).optionName,
-                  (entry as { name?: unknown }).name,
-                  (entry as { description?: unknown }).description
-                ) ?? null;
-              const normalizedOption: PollMetadataOption = {
-                id: optionId,
-                title,
-                index: readNumber((entry as { index?: unknown }).index) ?? index,
-              };
-              const optionName = readString((entry as { optionName?: unknown }).optionName);
-              if (optionName && optionName !== title) {
-                normalizedOption.optionName = optionName;
-              }
-              const description = readString((entry as { description?: unknown }).description);
-              if (description && description !== title) {
-                normalizedOption.description = description;
-              }
-              return normalizedOption;
-            })
-            .filter(Boolean) as PollMetadataOption[]
-        : [];
-
-      const pollContext = asRecord(messageRecord.pollContextInfo);
-      const creationKey = {
-        remoteJid:
-          readString(messageKey.remoteJid, metadataContact?.remoteJid, metadataContact?.jid) ??
-          remoteJid ??
-          null,
-        participant:
-          readString(messageKey.participant, metadataContact?.participant) ??
-          null,
-        fromMe: messageKey.fromMe === true,
-      };
-
-      try {
-        await upsertPollMetadata({
-          pollId: normalized.messageId,
-          question:
-            readString(messageRecord.text, pollCreationRecord.name, pollCreationRecord.title) ?? null,
-          selectableOptionsCount: readNumber(pollCreationRecord.selectableOptionsCount),
-          allowMultipleAnswers: pollCreationRecord.allowMultipleAnswers === true,
-          options: metadataOptions,
-          creationMessageId: normalized.messageId,
-          creationMessageKey: creationKey,
-          messageSecret: readString(pollContext?.messageSecret),
-          messageSecretVersion: readNumber(pollContext?.messageSecretVersion),
-          tenantId: tenantId ?? null,
-          instanceId: instanceId ?? null,
-        });
-      } catch (metadataError) {
-        logger.warn('Failed to persist poll metadata from webhook message', {
-          requestId,
-          pollId: normalized.messageId,
-          tenantId,
-          instanceId,
-          error: metadataError,
-        });
-      }
-    }
-
-    const brokerMetadata =
-      metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
-        ? { ...(metadataBase.broker as Record<string, unknown>) }
-        : ({} as Record<string, unknown>);
-    const pollUpdateRecord = asRecord(messageRecord.pollUpdateMessage);
-    if (pollUpdateRecord) {
-      const pollUpdateVote = asRecord(pollUpdateRecord.vote);
-      const pollCreationKeyRecord = asRecord(pollUpdateRecord.pollCreationMessageKey);
-      const pollIdFromUpdate =
-        readString(
-          pollUpdateRecord.pollCreationMessageId,
-          pollCreationKeyRecord?.id
-        ) ?? null;
-
-      try {
-        await recordEncryptedPollVote({
-          pollId: pollIdFromUpdate ?? normalized.messageId,
-          voterJid: remoteJid,
-          messageId: externalId,
-          encryptedVote: pollUpdateVote
-            ? {
-                encPayload: readString(pollUpdateVote.encPayload),
-                encIv: readString(pollUpdateVote.encIv),
-                ciphertext: readString(pollUpdateVote.ciphertext),
-              }
-            : null,
-          timestamp,
-        });
-      } catch (encryptedVoteError) {
-        logger.warn('Failed to persist encrypted poll vote details', {
-          requestId,
-          pollId: pollIdFromUpdate ?? normalized.messageId,
-          voterJid: remoteJid,
-          error: encryptedVoteError,
-        });
-      }
-    }
-
-    const existingBrokerMessageType = brokerMetadata.messageType;
-    const messageUpsertType = normalized.messageUpsertType;
-    if (messageUpsertType !== null) {
-      brokerMetadata.messageType = messageUpsertType;
-    } else if (brokerMetadata.messageType === undefined) {
-      brokerMetadata.messageType = null;
-    }
-
-    if (normalized.messageType) {
-      brokerMetadata.messageContentType =
-        brokerMetadata.messageContentType ??
-        (typeof existingBrokerMessageType === 'string' ? existingBrokerMessageType : undefined) ??
-        normalized.messageType;
-    }
-
-    brokerMetadata.instanceId = brokerMetadata.instanceId ?? instanceId ?? null;
-    brokerMetadata.sessionId = brokerMetadata.sessionId ?? normalized.sessionId ?? null;
-    brokerMetadata.brokerId = brokerMetadata.brokerId ?? normalized.brokerId ?? null;
-    brokerMetadata.origin = brokerMetadata.origin ?? 'webhook';
-
-    const metadata: Record<string, unknown> = {
-      ...metadataBase,
-      source: metadataBase.source ?? 'baileys:webhook',
-      direction,
-      remoteJid: metadataBase.remoteJid ?? remoteJid,
-      chatId: metadataBase.chatId ?? chatId,
-      tenantId: metadataBase.tenantId ?? tenantId,
-      instanceId: metadataBase.instanceId ?? instanceId ?? null,
-      sessionId: metadataBase.sessionId ?? normalized.sessionId ?? null,
-      normalizedIndex: normalized.messageIndex,
-      raw: metadataBase.raw ?? rawPreview,
-      broker: brokerMetadata,
-    };
-
-    emitWhatsAppDebugPhase({
-      phase: 'webhook:normalized',
-      correlationId: normalized.messageId ?? externalId ?? requestId ?? null,
-      tenantId: tenantId ?? null,
-      instanceId: instanceId ?? null,
-      chatId,
-      tags: ['webhook'],
-      context: {
-        requestId,
-        normalizedIndex: normalized.messageIndex,
-        direction,
-        source: 'webhook',
-      },
-      payload: {
-        contact: contactRecord,
-        message: messageRecord,
-        metadata,
-      },
-    });
-
-    const metadataSource = readString(metadata.source);
-    const debugSource =
-      metadataSource && metadataSource.toLowerCase().includes('baileys')
-        ? metadataSource
-        : 'baileys:webhook';
-
-    if (debugSource) {
-      await logBaileysDebugEvent(debugSource, {
-        tenantId: tenantId ?? null,
-        instanceId: instanceId ?? null,
-        chatId,
-        messageId: normalized.messageId ?? externalId ?? null,
-        direction,
-        timestamp,
-        metadata,
-        contact: contactRecord,
-        message: messageRecord,
-        rawPayload: toRawPreview(eventRecord),
-        rawEnvelope: toRawPreview(envelopeRecord),
-        normalizedIndex: normalized.messageIndex,
-      });
-    }
-
-    enqueueInboundWebhookJob({
-      requestId,
-      tenantId,
-      instanceId,
-      chatId,
-      normalizedIndex: normalized.messageIndex ?? null,
-      envelope: {
-        origin: 'webhook',
-        instanceId: instanceId ?? 'unknown-instance',
-        chatId,
-        tenantId,
-        message: {
-          kind: 'message',
-          id: normalized.messageId ?? null,
-          externalId,
-          brokerMessageId: normalized.messageId,
-          timestamp,
-          direction,
-          contact: contactRecord,
-          payload: messageRecord,
-          metadata,
-        },
-        raw: {
-          event: eventRecord,
-          normalizedIndex: normalized.messageIndex,
-        },
-      },
-    });
-
-    return true;
-  } catch (error) {
-    logger.error('Failed to persist inbound WhatsApp message', {
-      requestId,
-      tenantId,
-      chatId,
-      error,
-    });
-    whatsappWebhookEventsCounter.inc({
-      origin: 'webhook',
-      tenantId: tenantId ?? 'unknown',
-      instanceId: instanceId ?? 'unknown',
-      result: 'failed',
-      reason: 'persist_error',
-    });
-    return false;
-  }
-};
-
-type MessageLookupResult = {
-  tenantId: string;
-  messageId: string;
-  ticketId: string;
-  metadata: Record<string, unknown>;
-  instanceId: string | null;
-  externalId: string | null;
-};
-
-const findMessageForStatusUpdate = async ({
-  tenantId,
-  messageId,
-  ticketId,
-}: {
-  tenantId?: string | null;
-  messageId: string;
-  ticketId?: string | null;
-}): Promise<MessageLookupResult | null> => {
-  const trimmedId = messageId.trim();
-  if (!trimmedId) {
-    return null;
-  }
-
-  if (tenantId) {
-    const message = await storageFindMessageByExternalId(tenantId, trimmedId);
-    if (message) {
-      const metadataRecord =
-        message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
-          ? { ...(message.metadata as Record<string, unknown>) }
-          : ({} as Record<string, unknown>);
-
-      return {
-        tenantId: message.tenantId,
-        messageId: message.id,
-        ticketId: message.ticketId,
-        metadata: metadataRecord,
-        instanceId: message.instanceId ?? null,
-        externalId: message.externalId ?? null,
-      };
-    }
-  }
-
-  const where: Prisma.MessageWhereInput = {
-    OR: [
-      { externalId: trimmedId },
-      { metadata: { path: ['broker', 'messageId'], equals: trimmedId } },
-    ],
-  };
-
-  if (tenantId) {
-    where.tenantId = tenantId;
-  }
-
-  if (ticketId) {
-    where.ticketId = ticketId;
-  }
-
-  const fallback = await prisma.message.findFirst({
-    where,
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      tenantId: true,
-      ticketId: true,
-      metadata: true,
-      instanceId: true,
-      externalId: true,
-    },
-  });
-
-  if (!fallback) {
-    return null;
-  }
-
-  const metadataRecord =
-    fallback.metadata && typeof fallback.metadata === 'object' && !Array.isArray(fallback.metadata)
-      ? { ...(fallback.metadata as Record<string, unknown>) }
-      : ({} as Record<string, unknown>);
-
-  return {
-    tenantId: fallback.tenantId,
-    messageId: fallback.id,
-    ticketId: fallback.ticketId,
-    metadata: metadataRecord,
-    instanceId: fallback.instanceId ?? null,
-    externalId: fallback.externalId ?? null,
-  };
-};
-
-const processMessagesUpdate = async (
-  eventRecord: RawBaileysUpsertEvent,
-  envelopeRecord: Record<string, unknown>,
-  context: {
-    requestId: string;
-    instanceId?: string | null;
-    tenantOverride?: string | null;
-  }
-): Promise<{ persisted: number; failures: number }> => {
-  const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
-  const rawRecord = asRecord(payloadRecord?.raw);
-  const updates = Array.isArray(rawRecord?.updates) ? rawRecord.updates : [];
-
-  if (!updates.length) {
-    return { persisted: 0, failures: 0 };
-  }
-
-  const tenantCandidate =
-    context.tenantOverride ??
-    readString(
-      (eventRecord as { tenantId?: unknown }).tenantId,
-      payloadRecord?.tenantId,
-      rawRecord?.tenantId,
-      envelopeRecord.tenantId
-    );
-
-  const ticketCandidate = readString(
-    payloadRecord?.ticketId,
-    rawRecord?.ticketId,
-    (payloadRecord?.ticket as { id?: unknown })?.id
-  );
-
-  let persisted = 0;
-  let failures = 0;
-
-  for (const entry of updates) {
-    const updateRecord = asRecord(entry);
-    if (!updateRecord) {
-      continue;
-    }
-
-    const keyRecord = asRecord(updateRecord.key);
-    const updateDetails = asRecord(updateRecord.update);
-    const messageId = readString(
-      updateDetails?.id,
-      updateRecord.id,
-      keyRecord?.id,
-      (updateDetails as { key?: { id?: unknown } })?.key?.id
-    );
-
-    if (!messageId) {
-      continue;
-    }
-
-    const fromMe = Boolean(keyRecord?.fromMe ?? updateRecord.fromMe);
-    if (!fromMe) {
-      continue;
-    }
-
-    // Idempotência para ACK por tenant|instance|messageId
-    const ackIdemKey = buildIdempotencyKey(
-      tenantCandidate ?? 'unknown',
-      context.instanceId ?? null,
-      messageId,
-      0
-    );
-    if (!registerIdempotency(ackIdemKey)) {
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: tenantCandidate ?? 'unknown',
-        instanceId: context.instanceId ?? 'unknown',
-        result: 'ignored',
-        reason: 'ack_duplicate',
-      });
-      continue;
-    }
-
-    const statusValue =
-      updateDetails?.status ?? updateRecord.status ?? (updateDetails as { ack?: unknown })?.ack;
-    const normalizedStatus = normalizeBaileysMessageStatus(statusValue);
-    const numericStatus =
-      typeof statusValue === 'number'
-        ? statusValue
-        : typeof statusValue === 'string'
-        ? Number(statusValue)
-        : undefined;
-
-    const timestampCandidate =
-      updateDetails?.messageTimestamp ?? updateDetails?.timestamp ?? updateRecord.timestamp;
-    const ackTimestamp = parseTimestampToDate(timestampCandidate) ?? new Date();
-    const participant = readString(updateDetails?.participant, updateRecord.participant);
-    const remoteJid =
-      normalizeChatId(
-        keyRecord?.remoteJid ?? updateRecord.remoteJid ?? participant ?? updateDetails?.jid
-      ) ?? null;
-
-    let lookup: MessageLookupResult | null = null;
-
-    try {
-      lookup = await findMessageForStatusUpdate({
-        tenantId: tenantCandidate,
-        messageId,
-        ticketId: readString(updateRecord.ticketId, ticketCandidate),
-      });
-
-      if (!lookup) {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: tenantCandidate ?? 'unknown',
-          instanceId: context.instanceId ?? 'unknown',
-          result: 'ignored',
-          reason: 'ack_message_not_found',
-        });
-        logger.debug('WhatsApp status update ignored; message not found', {
-          requestId: context.requestId,
-          messageId,
-          tenantId: tenantCandidate ?? 'unknown',
-      });
-      continue;
-    }
-
-    // Nunca regredir status e ignore ACKs muito atrasados
-    try {
-      const prevBroker = (lookup.metadata?.broker && typeof lookup.metadata.broker === 'object')
-        ? (lookup.metadata.broker as Record<string, unknown>)
-        : undefined;
-
-      const prevStatusRaw =
-        prevBroker && typeof prevBroker.lastAck === 'object'
-          ? (prevBroker.lastAck as Record<string, unknown>).status
-          : undefined;
-
-      const prevStatus = normalizeBaileysMessageStatus(prevStatusRaw);
-      const prevRank = ackRank(prevStatus);
-      const newRank = ackRank(normalizedStatus);
-
-      if (prevRank > 0 && newRank > 0 && newRank < prevRank) {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: lookup.tenantId ?? 'unknown',
-          instanceId: context.instanceId ?? lookup.instanceId ?? 'unknown',
-          result: 'ignored',
-          reason: 'ack_regression',
-        });
-        logger.debug('ACK regression ignored', {
-          requestId: context.requestId,
-          messageId,
-          prevStatus,
-          nextStatus: normalizedStatus,
-        });
-        continue;
-      }
-
-      const prevReceivedAtIso =
-        prevBroker && typeof prevBroker.lastAck === 'object'
-          ? (prevBroker.lastAck as Record<string, unknown>).receivedAt
-          : undefined;
-
-      if (typeof prevReceivedAtIso === 'string') {
-        const prevTs = Date.parse(prevReceivedAtIso);
-        const newTs = ackTimestamp.getTime();
-        if (Number.isFinite(prevTs) && prevTs - newTs > 10 * 60 * 1000) {
-          whatsappWebhookEventsCounter.inc({
-            origin: 'webhook',
-            tenantId: lookup.tenantId ?? 'unknown',
-            instanceId: context.instanceId ?? lookup.instanceId ?? 'unknown',
-            result: 'ignored',
-            reason: 'ack_late',
-          });
-          logger.debug('ACK late arrival ignored', {
-            requestId: context.requestId,
-            messageId,
-            prevReceivedAtIso,
-            newAckAt: ackTimestamp.toISOString(),
-          });
-          continue;
-        }
-      }
-    } catch {
-      // Segurança: não travar fluxo caso a checagem falhe
-    }
-
-    const metadataRecord = lookup.metadata ?? {};
-    const existingBroker =
-      metadataRecord.broker && typeof metadataRecord.broker === 'object' && !Array.isArray(metadataRecord.broker)
-        ? { ...(metadataRecord.broker as Record<string, unknown>) }
-        : ({} as Record<string, unknown>);
-
-    const brokerMetadata: Record<string, unknown> = {
-      ...existingBroker,
-      provider: 'whatsapp',
-      status: normalizedStatus,
-      messageId: existingBroker.messageId ?? lookup.externalId ?? messageId,
-    };
-
-    if (context.instanceId ?? lookup.instanceId ?? existingBroker.instanceId) {
-      brokerMetadata.instanceId = context.instanceId ?? lookup.instanceId ?? existingBroker.instanceId;
-    }
-
-    if (remoteJid) {
-      brokerMetadata.remoteJid = remoteJid;
-    }
-
-    const lastAck: Record<string, unknown> = {
-      status: normalizedStatus,
-      receivedAt: ackTimestamp.toISOString(),
-      raw: sanitizeMetadataValue(updateRecord),
-    };
-
-    if (participant) {
-      lastAck.participant = participant;
-    }
-
-    if (Number.isFinite(numericStatus)) {
-      lastAck.numericStatus = Number(numericStatus);
-    }
-
-    brokerMetadata.lastAck = lastAck;
-
-    const metadataUpdate: Record<string, unknown> = {
-      broker: brokerMetadata,
-    };
-
-    const ackInput: Parameters<typeof applyBrokerAck>[2] = {
-      status: normalizedStatus,
-      metadata: metadataUpdate,
-    };
-
-    if (normalizedStatus === 'DELIVERED' || normalizedStatus === 'READ') {
-      ackInput.deliveredAt = ackTimestamp;
-    }
-
-    if (normalizedStatus === 'READ') {
-      ackInput.readAt = ackTimestamp;
-    }
-
-      const ackInstanceId = context.instanceId ?? lookup.instanceId;
-      const metricsInstanceId = ackInstanceId ?? 'unknown';
-      if (ackInstanceId !== undefined && ackInstanceId !== null) {
-        ackInput.instanceId = ackInstanceId;
-      }
-
-      const updated = await applyBrokerAck(lookup.tenantId, lookup.messageId, ackInput);
-
-      if (updated) {
-        persisted += 1;
-        await emitMessageUpdatedEvents(lookup.tenantId, updated.ticketId, updated, null);
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: lookup.tenantId ?? 'unknown',
-          instanceId: metricsInstanceId,
-          result: 'accepted',
-          reason: 'ack_applied',
-        });
-      } else {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: lookup.tenantId ?? 'unknown',
-          instanceId: metricsInstanceId,
-          result: 'ignored',
-          reason: 'ack_noop',
-        });
-      }
-    } catch (error) {
-      failures += 1;
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: lookup?.tenantId ?? tenantCandidate ?? 'unknown',
-        instanceId: context.instanceId ?? lookup?.instanceId ?? 'unknown',
-        result: 'failed',
-        reason: 'ack_error',
-      });
-      logger.error('Failed to apply WhatsApp status update', {
-        requestId: context.requestId,
-        messageId,
-        tenantId: lookup?.tenantId ?? tenantCandidate ?? 'unknown',
-        error,
-      });
-    }
-  }
-
-  return { persisted, failures };
-};
-
-const processPollChoiceEvent = async (
-  eventRecord: RawBaileysUpsertEvent,
-  envelopeRecord: Record<string, unknown>,
-  context: {
-    requestId: string;
-    instanceId?: string | null;
-    tenantOverride?: string | null;
-  }
-): Promise<{ persisted: number; ignored: number; failures: number }> => {
-  const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
-  const validation = validatePollChoicePayload(payloadRecord);
-  const baseTenantId = context.tenantOverride ?? null;
-  const baseInstanceId = context.instanceId ?? null;
-
-  if (validation.status !== 'valid') {
-    pollChoiceEventBus.emit('pollChoiceInvalid', {
-      requestId: context.requestId,
-      reason: validation.reason,
-      issues: validation.issues,
-      preview: toRawPreview(eventRecord),
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-    });
-    pollChoiceEventBus.emit('pollChoiceCompleted', {
-      requestId: context.requestId,
-      pollId: null,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      outcome: 'ignored',
-      reason: 'poll_choice_invalid',
-    });
-    return { persisted: 0, ignored: 1, failures: 0 };
-  }
-
-  const pollPayload = validation.payload;
-
-  const pollIdemKey = buildIdempotencyKey(
-    baseTenantId,
-    baseInstanceId,
-    `${pollPayload.pollId}|${pollPayload.voterJid}`,
-    0
-  );
-  if (!registerIdempotency(pollIdemKey)) {
-    pollChoiceEventBus.emit('pollChoiceDuplicateEvent', {
-      requestId: context.requestId,
-      pollId: pollPayload.pollId,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-    });
-    pollChoiceEventBus.emit('pollChoiceCompleted', {
-      requestId: context.requestId,
-      pollId: pollPayload.pollId,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      outcome: 'ignored',
-      reason: 'poll_choice_duplicate_event',
-    });
-    return { persisted: 0, ignored: 1, failures: 0 };
-  }
-
-  try {
-    const persistence = await persistPollChoiceVote(pollPayload, {
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-    });
-
-    if (persistence.status === 'duplicate') {
-      pollChoiceEventBus.emit('pollChoiceDuplicateVote', {
-        requestId: context.requestId,
-        pollId: pollPayload.pollId,
-        tenantId: baseTenantId,
-        instanceId: baseInstanceId,
-      });
-      pollChoiceEventBus.emit('pollChoiceCompleted', {
-        requestId: context.requestId,
-        pollId: pollPayload.pollId,
-        tenantId: baseTenantId,
-        instanceId: baseInstanceId,
-        outcome: 'ignored',
-        reason: 'poll_choice_duplicate',
-      });
-      return { persisted: 0, ignored: 1, failures: 0 };
-    }
-
-    const messageIdentifiers = (
-      persistence.candidateMessageIds.length > 0
-        ? persistence.candidateMessageIds
-        : [pollPayload.pollId]
-    );
-
-    let rewriteResult = await rewritePollVoteMessage(
-      {
-        poll: persistence.poll,
-        state: persistence.state,
-        voterState: persistence.voterState,
-        candidateMessageIds: messageIdentifiers,
-        tenantContext: baseTenantId,
-      },
-      { updatePollVoteMessage: updatePollVoteMessageHandler }
-    );
-
-    if (rewriteResult.status === 'missingTenant') {
-      let resolvedTenant: string | null = null;
-
-      try {
-        const metadata = readString(pollPayload.pollId)
-          ? await getPollMetadata(pollPayload.pollId)
-          : null;
-        resolvedTenant = metadata?.tenantId ?? null;
-      } catch (error) {
-        pollChoiceEventBus.emit('pollChoiceTenantLookupFailed', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          error,
-        });
-      }
-
-      if (resolvedTenant) {
-        rewriteResult = await rewritePollVoteMessage(
-          {
-            poll: persistence.poll,
-            state: persistence.state,
-            voterState: persistence.voterState,
-            candidateMessageIds: messageIdentifiers,
-            tenantContext: resolvedTenant,
-          },
-          { updatePollVoteMessage: updatePollVoteMessageHandler }
-        );
-      } else {
-        pollChoiceEventBus.emit('pollChoiceRewriteMissingTenant', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          voterJid: pollPayload.voterJid,
-          candidates: messageIdentifiers,
-          delayMs: POLL_VOTE_RETRY_DELAY_MS,
-        });
-
-        schedulePollVoteRetry(async () => {
-          try {
-            const metadata = readString(pollPayload.pollId)
-              ? await getPollMetadata(pollPayload.pollId)
-              : null;
-            const retryTenantId = metadata?.tenantId ?? null;
-
-            if (!retryTenantId) {
-              logger.warn('Skipping poll vote message retry due to missing tenant metadata', {
-                pollId: pollPayload.pollId,
-                voterJid: pollPayload.voterJid,
-                messageId: messageIdentifiers.at(0) ?? pollPayload.pollId ?? null,
-              });
-              return;
-            }
-
-            await rewritePollVoteMessage(
-              {
-                poll: persistence.poll,
-                state: persistence.state,
-                voterState: persistence.voterState,
-                candidateMessageIds: messageIdentifiers,
-                tenantContext: retryTenantId,
-              },
-              { updatePollVoteMessage: updatePollVoteMessageHandler }
-            );
-          } catch (error) {
-            logger.error('Failed to retry poll vote message update after missing tenant', {
-              pollId: pollPayload.pollId,
-              voterJid: pollPayload.voterJid,
-              messageId: messageIdentifiers.at(0) ?? pollPayload.pollId ?? null,
-              error,
-            });
-          }
-        }, POLL_VOTE_RETRY_DELAY_MS);
-
-        pollChoiceEventBus.emit('pollChoiceRewriteRetryScheduled', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          voterJid: pollPayload.voterJid,
-          delayMs: POLL_VOTE_RETRY_DELAY_MS,
-        });
-      }
-    }
-
-    emitWhatsAppDebugPhase({
-      phase: 'webhook:poll_choice',
-      correlationId: pollPayload.pollId,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      chatId: normalizeChatId(pollPayload.voterJid),
-      tags: ['webhook', 'poll'],
-      context: {
-        requestId: context.requestId,
-        source: 'webhook',
-        pollId: pollPayload.pollId,
-      },
-      payload: {
-        poll: persistence.poll,
-        state: persistence.state,
-      },
-    });
-
-    await logBaileysDebugEvent('whatsapp:poll_choice', {
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      poll: persistence.poll,
-      state: persistence.state,
-      rawEvent: eventRecord,
-      rawEnvelope: envelopeRecord,
-    });
-
-    let pollMetadataSynced = false;
-
-    try {
-      pollMetadataSynced = await syncPollChoiceState(pollPayload.pollId, {
-        state: persistence.state,
-      });
-    } catch (error) {
-      pollChoiceEventBus.emit('pollChoiceMetadataSyncFailed', {
-        requestId: context.requestId,
-        pollId: pollPayload.pollId,
-        error,
-      });
-    }
-
-    if (!pollMetadataSynced) {
-      const decision = await schedulePollInboxFallback({
-        tenantId: baseTenantId,
-        poll: persistence.poll,
-        identifiers: messageIdentifiers,
-        selectedOptions: persistence.poll.selectedOptions,
-      });
-
-      pollChoiceEventBus.emit('pollChoiceInboxDecision', {
-        requestId: context.requestId,
-        decision,
-      });
-
-      if (decision.status === 'missingTenant') {
-        pollChoiceEventBus.emit('pollChoiceInboxMissingTenant', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          voterJid: pollPayload.voterJid,
-        });
-        pollChoiceEventBus.emit('pollChoiceCompleted', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          tenantId: baseTenantId,
-          instanceId: baseInstanceId,
-          outcome: 'failed',
-          reason: 'poll_choice_inbox_missing_tenant',
-        });
-        return { persisted: 0, ignored: 0, failures: 1 };
-      }
-
-      if (decision.status === 'skip') {
-        pollChoiceEventBus.emit('pollChoiceCompleted', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          tenantId: baseTenantId,
-          instanceId: baseInstanceId,
-          outcome: 'accepted',
-          reason: 'poll_choice',
-        });
-        return { persisted: 1, ignored: 0, failures: 0 };
-      }
-
-      try {
-        const inboxResult = await triggerPollChoiceInboxNotification({
-          poll: persistence.poll,
-          state: persistence.state,
-          selectedOptions: persistence.poll.selectedOptions,
-          tenantId: decision.tenantId,
-          instanceId: baseInstanceId,
-          requestId: context.requestId,
-        });
-
-        if (inboxResult.status !== PollChoiceInboxNotificationStatus.Ok) {
-          const inboxReason: Record<
-            Exclude<PollChoiceInboxNotificationStatus, PollChoiceInboxNotificationStatus.Ok>,
-            string
-          > = {
-            [PollChoiceInboxNotificationStatus.MissingTenant]: 'poll_choice_inbox_missing_tenant',
-            [PollChoiceInboxNotificationStatus.InvalidChatId]: 'poll_choice_inbox_invalid_chat_id',
-            [PollChoiceInboxNotificationStatus.IngestRejected]: 'poll_choice_inbox_ingest_rejected',
-            [PollChoiceInboxNotificationStatus.IngestError]: 'poll_choice_inbox_ingest_error',
-          };
-          const reason = inboxReason[inboxResult.status];
-          pollChoiceEventBus.emit('pollChoiceInboxFailed', {
-            requestId: context.requestId,
-            pollId: pollPayload.pollId,
-            tenantId: decision.tenantId,
-            reason,
-          });
-          pollChoiceEventBus.emit('pollChoiceCompleted', {
-            requestId: context.requestId,
-            pollId: pollPayload.pollId,
-            tenantId: decision.tenantId,
-            instanceId: baseInstanceId,
-            outcome: 'failed',
-            reason,
-          });
-          return { persisted: 0, ignored: 0, failures: 1 };
-        }
-      } catch (error) {
-        pollChoiceEventBus.emit('pollChoiceInboxFailed', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          tenantId: decision.tenantId,
-          reason: 'poll_choice_inbox_error',
-          error,
-        });
-        pollChoiceEventBus.emit('pollChoiceCompleted', {
-          requestId: context.requestId,
-          pollId: pollPayload.pollId,
-          tenantId: decision.tenantId,
-          instanceId: baseInstanceId,
-          outcome: 'failed',
-          reason: 'poll_choice_inbox_error',
-        });
-        return { persisted: 0, ignored: 0, failures: 1 };
-      }
-    }
-
-    pollChoiceEventBus.emit('pollChoiceCompleted', {
-      requestId: context.requestId,
-      pollId: pollPayload.pollId,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      outcome: 'accepted',
-      reason: 'poll_choice',
-    });
-    return { persisted: 1, ignored: 0, failures: 0 };
-  } catch (error) {
-    pollChoiceEventBus.emit('pollChoiceError', {
-      requestId: context.requestId,
-      pollId: pollPayload.pollId,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      error,
-    });
-    pollChoiceEventBus.emit('pollChoiceCompleted', {
-      requestId: context.requestId,
-      pollId: pollPayload.pollId,
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-      outcome: 'failed',
-      reason: 'poll_choice_error',
-    });
-    return { persisted: 0, ignored: 0, failures: 1 };
-  }
 };
 
 const WEBHOOK_RATE_LIMIT_WINDOW_MS = 10_000;
@@ -1824,135 +198,134 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
     let pollFailures = 0;
 
     for (const entry of events) {
-    const unwrapped = unwrapWebhookEvent(entry);
-    if (!unwrapped) {
-      continue;
-    }
-
-    const eventRecord = unwrapped.event;
-    const envelopeRecord = unwrapped.envelope;
-    const rawPreview = toRawPreview(entry);
-    const eventType = readString(eventRecord.event, (eventRecord as { type?: unknown }).type);
-
-    const defaultInstanceId = getDefaultInstanceId();
-    const resolvedContext = await resolveWebhookContext({
-      eventRecord,
-      envelopeRecord,
-      defaultInstanceId,
-    });
-
-    const rawInstanceId = resolvedContext.rawInstanceId ?? undefined;
-    const instanceOverride = resolvedContext.instanceId ?? undefined;
-    const brokerOverride = resolvedContext.brokerId;
-    const tenantOverride = resolvedContext.tenantId ?? undefined;
-
-    if (eventType === 'WHATSAPP_MESSAGES_UPDATE') {
-      const ackOutcome = await processMessagesUpdate(eventRecord, envelopeRecord, {
-        requestId,
-        instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
-        tenantOverride: tenantOverride ?? null,
-      });
-
-      ackPersisted += ackOutcome.persisted;
-      ackFailures += ackOutcome.failures;
-      continue;
-    }
-
-    if (eventType === 'POLL_CHOICE') {
-      const pollOutcome = await processPollChoiceEvent(eventRecord, envelopeRecord, {
-        requestId,
-        instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
-        tenantOverride: tenantOverride ?? null,
-      });
-
-      pollPersisted += pollOutcome.persisted;
-      pollIgnored += pollOutcome.ignored;
-      pollFailures += pollOutcome.failures;
-      continue;
-    }
-
-    const normalizedMessages: NormalizedRawUpsertMessage[] = [];
-
-    if (eventType === 'MESSAGE_INBOUND' || eventType === 'MESSAGE_OUTBOUND') {
-      const normalizedContract = normalizeContractEvent(eventRecord, {
-        requestId,
-        instanceOverride: instanceOverride ?? null,
-        tenantOverride: tenantOverride ?? null,
-        brokerOverride: brokerOverride ?? null,
-      });
-
-      if (!normalizedContract) {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: tenantOverride ?? 'unknown',
-          instanceId: instanceOverride ?? 'unknown',
-          result: 'ignored',
-          reason: 'invalid_contract',
-        });
+      const unwrapped = unwrapWebhookEvent(entry);
+      if (!unwrapped) {
         continue;
       }
 
-      normalizedMessages.push(normalizedContract);
-    } else {
-      if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: tenantOverride ?? 'unknown',
-          instanceId: instanceOverride ?? 'unknown',
-          result: 'ignored',
-          reason: 'unsupported_event',
-        });
-        continue;
-      }
+      const eventRecord = unwrapped.event;
+      const envelopeRecord = unwrapped.envelope;
+      const rawPreview = toRawPreview(entry);
+      const eventType = readString(eventRecord.event, (eventRecord as { type?: unknown }).type);
 
-      const normalization = normalizeUpsertEvent(eventRecord, {
-        instanceId: instanceOverride ?? null,
-        tenantId: tenantOverride ?? null,
-        brokerId: brokerOverride ?? null,
-      });
-
-      if (normalization.normalized.length === 0) {
-        continue;
-      }
-
-      normalizedMessages.push(...normalization.normalized);
-    }
-
-    for (const normalized of normalizedMessages) {
-      // Idempotência por tenant|instance|messageId|index para evitar reprocesso
-      const normalizedIdemKey = buildIdempotencyKey(
-        tenantOverride ?? normalized.tenantId ?? 'unknown',
-        instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
-        normalized.messageId ?? null,
-        normalized.messageIndex ?? 0
-      );
-      if (!registerIdempotency(normalizedIdemKey)) {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: tenantOverride ?? normalized.tenantId ?? 'unknown',
-          instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? 'unknown',
-          result: 'ignored',
-          reason: 'message_duplicate',
-        });
-        continue;
-      }
-
-      const processed = await processNormalizedMessage({
-        normalized,
+      const defaultInstanceId = getDefaultInstanceId();
+      const resolvedContext = await resolveWebhookContext({
         eventRecord,
         envelopeRecord,
-        rawPreview,
-        requestId,
-        tenantOverride: tenantOverride ?? null,
-        instanceOverride: instanceOverride ?? null,
+        defaultInstanceId,
       });
 
-      if (processed) {
-        enqueued += 1;
-      } else {
-        prepFailures += 1;
+      const rawInstanceId = resolvedContext.rawInstanceId ?? undefined;
+      const instanceOverride = resolvedContext.instanceId ?? undefined;
+      const brokerOverride = resolvedContext.brokerId;
+      const tenantOverride = resolvedContext.tenantId ?? undefined;
+
+      if (eventType === 'WHATSAPP_MESSAGES_UPDATE') {
+        const ackOutcome = await processMessagesUpdate(eventRecord, envelopeRecord, {
+          requestId,
+          instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
+          tenantOverride: tenantOverride ?? null,
+        });
+
+        ackPersisted += ackOutcome.persisted;
+        ackFailures += ackOutcome.failures;
+        continue;
       }
-    }
+
+      if (eventType === 'POLL_CHOICE') {
+        const pollOutcome = await processPollChoiceEvent(eventRecord, envelopeRecord, {
+          requestId,
+          instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
+          tenantOverride: tenantOverride ?? null,
+        });
+
+        pollPersisted += pollOutcome.persisted;
+        pollIgnored += pollOutcome.ignored;
+        pollFailures += pollOutcome.failures;
+        continue;
+      }
+
+      const normalizedMessages: Array<ReturnType<typeof normalizeContractEvent>> = [];
+
+      if (eventType === 'MESSAGE_INBOUND' || eventType === 'MESSAGE_OUTBOUND') {
+        const normalizedContract = normalizeContractEvent(eventRecord, {
+          requestId,
+          instanceOverride: instanceOverride ?? null,
+          tenantOverride: tenantOverride ?? null,
+          brokerOverride: brokerOverride ?? null,
+        });
+
+        if (!normalizedContract) {
+          whatsappWebhookEventsCounter.inc({
+            origin: 'webhook',
+            tenantId: tenantOverride ?? 'unknown',
+            instanceId: instanceOverride ?? 'unknown',
+            result: 'ignored',
+            reason: 'invalid_contract',
+          });
+          continue;
+        }
+
+        normalizedMessages.push(normalizedContract);
+      } else {
+        if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
+          whatsappWebhookEventsCounter.inc({
+            origin: 'webhook',
+            tenantId: tenantOverride ?? 'unknown',
+            instanceId: instanceOverride ?? 'unknown',
+            result: 'ignored',
+            reason: 'unsupported_event',
+          });
+          continue;
+        }
+
+        const normalization = normalizeUpsertEvent(eventRecord, {
+          instanceId: instanceOverride ?? null,
+          tenantId: tenantOverride ?? null,
+          brokerId: brokerOverride ?? null,
+        });
+
+        if (normalization.normalized.length === 0) {
+          continue;
+        }
+
+        normalizedMessages.push(...normalization.normalized);
+      }
+
+      for (const normalized of normalizedMessages) {
+        const normalizedIdemKey = buildIdempotencyKey(
+          tenantOverride ?? normalized.tenantId ?? 'unknown',
+          instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
+          normalized?.messageId ?? null,
+          normalized?.messageIndex ?? 0
+        );
+        if (!registerIdempotency(normalizedIdemKey)) {
+          whatsappWebhookEventsCounter.inc({
+            origin: 'webhook',
+            tenantId: tenantOverride ?? normalized.tenantId ?? 'unknown',
+            instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? 'unknown',
+            result: 'ignored',
+            reason: 'message_duplicate',
+          });
+          continue;
+        }
+
+        const processed = await processNormalizedMessage({
+          normalized,
+          eventRecord,
+          envelopeRecord,
+          rawPreview,
+          requestId,
+          tenantOverride: tenantOverride ?? null,
+          instanceOverride: instanceOverride ?? null,
+        });
+
+        if (processed) {
+          enqueued += 1;
+        } else {
+          prepFailures += 1;
+        }
+      }
     }
 
     if (prepFailures > 0) {
@@ -1999,40 +372,24 @@ const handleVerification = (req: Request, res: Response) => {
   res.status(200).send(DEFAULT_VERIFY_RESPONSE);
 };
 
-const setUpdatePollVoteMessageTestingHandler = (handler: UpdatePollVoteMessageHandler) => {
-  updatePollVoteMessageHandler = handler;
-};
-
-const resetUpdatePollVoteMessageTestingHandler = () => {
-  updatePollVoteMessageHandler = pollVoteMessageUpdater;
-};
-
-const setPollVoteRetryTestingScheduler = (handler: SchedulePollVoteRetryHandler) => {
-  schedulePollVoteRetry = handler;
-};
-
-const resetPollVoteRetryTestingScheduler = () => {
-  schedulePollVoteRetry = defaultPollVoteRetryScheduler;
-};
-
 const subscribeToPollChoiceEvent = <E extends PollChoiceEventName>(
   event: E,
   handler: (payload: PollChoiceEventBusPayloads[E]) => void
 ) => pollChoiceEventBus.on(event, handler);
 
 const testing = {
-  pollVoteUpdaterTesting,
-  buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
-  updatePollVoteMessage: pollVoteMessageUpdater,
+  pollVoteUpdaterTesting: pollVoteTesting.pollVoteUpdaterTesting,
+  buildPollVoteMessageContent: pollVoteTesting.buildPollVoteMessageContent,
+  updatePollVoteMessage: pollVoteTesting.updatePollVoteMessage,
   setUpdatePollVoteMessageHandler: setUpdatePollVoteMessageTestingHandler,
   resetUpdatePollVoteMessageHandler: resetUpdatePollVoteMessageTestingHandler,
   setPollVoteRetryScheduler: setPollVoteRetryTestingScheduler,
   resetPollVoteRetryScheduler: resetPollVoteRetryTestingScheduler,
   subscribeToPollChoiceEvent,
   pollChoice: {
-    pollVoteUpdaterTesting,
-    buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
-    updatePollVoteMessage: pollVoteMessageUpdater,
+    pollVoteUpdaterTesting: pollVoteTesting.pollVoteUpdaterTesting,
+    buildPollVoteMessageContent: pollVoteTesting.buildPollVoteMessageContent,
+    updatePollVoteMessage: pollVoteTesting.updatePollVoteMessage,
     setUpdatePollVoteMessageHandler: setUpdatePollVoteMessageTestingHandler,
     resetUpdatePollVoteMessageHandler: resetUpdatePollVoteMessageTestingHandler,
     setPollVoteRetryScheduler: setPollVoteRetryTestingScheduler,
@@ -2041,9 +398,9 @@ const testing = {
   },
 };
 
-const createWhatsAppWebhookController = (
+export const createWhatsAppWebhookController = (
   overrides: Partial<WhatsAppWebhookControllerConfig> = {}
-): (WhatsAppWebhookController & { __testing: typeof testing }) => {
+): WhatsAppWebhookController & { __testing: typeof testing } => {
   const config: WhatsAppWebhookControllerConfig = {
     ensureWebhookContext: overrides.ensureWebhookContext ?? ensureWebhookContext,
     logWebhookEvent: overrides.logWebhookEvent ?? logWebhookEvent,
@@ -2067,5 +424,4 @@ export const webhookRateLimiter = defaultController.webhookRateLimiter;
 export const handleVerification = defaultController.handleVerification;
 export const __testing = defaultController.__testing;
 
-export { createWhatsAppWebhookController };
-export type { WhatsAppWebhookController, WhatsAppWebhookControllerConfig, WhatsAppWebhookContext };
+export type { WhatsAppWebhookContext };
