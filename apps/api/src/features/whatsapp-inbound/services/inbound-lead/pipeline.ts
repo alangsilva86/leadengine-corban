@@ -2,32 +2,32 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { enqueueInboundMediaJob } from '@ticketz/storage';
 
-import { prisma } from '../../../lib/prisma';
-import { logger } from '../../../config/logger';
-import { addAllocations } from '../../../data/lead-allocation-store';
-import type { BrokerLeadRecord } from '../../../config/lead-engine';
-import { maskDocument, maskPhone } from '../../../lib/pii';
+import { prisma } from '../../../../lib/prisma';
+import { logger } from '../../../../config/logger';
+import { addAllocations } from '../../../../data/lead-allocation-store';
+import type { BrokerLeadRecord } from '../../../../config/lead-engine';
+import { maskDocument, maskPhone } from '../../../../lib/pii';
 import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
   whatsappInboundMetrics,
-} from '../../../lib/metrics';
-import { createPerformanceTracker } from '../../../lib/performance-tracker';
-import { sendToFailedMessageDLQ } from '../../../lib/failed-message-dlq';
-import { sendMessage as sendMessageService } from '../../../services/ticket-service';
-import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
-import { emitToAgreement, emitToTenant, emitToTicket } from '../../../lib/socket-registry';
+} from '../../../../lib/metrics';
+import { createPerformanceTracker } from '../../../../lib/performance-tracker';
+import { sendToFailedMessageDLQ } from '../../../../lib/failed-message-dlq';
+import { sendMessage as sendMessageService } from '../../../../services/ticket-service';
+import { saveWhatsAppMedia } from '../../../../services/whatsapp-media-service';
+import { emitToAgreement, emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
 import {
   normalizeInboundMessage,
   type NormalizedInboundMessage,
   type NormalizedMessageType,
-} from '../utils/normalize';
+} from '../../utils/normalize';
 import {
   DEFAULT_DEDUPE_TTL_MS,
   DEFAULT_TENANT_ID,
-} from './constants';
-import { registerDedupeKey, shouldSkipByDedupe } from './dedupe';
-import { mapErrorForLog } from './logging';
+} from '../constants';
+import { registerDedupeKey, shouldSkipByDedupe } from '../dedupe';
+import { mapErrorForLog } from '../logging';
 import {
   pickPreferredName,
   readString,
@@ -37,7 +37,7 @@ import {
   sanitizeDocument,
   sanitizePhone,
   uniqueStringList,
-} from './identifiers';
+} from '../identifiers';
 import {
   attemptAutoProvisionWhatsAppInstance,
   ensureInboundQueueForInboundMessage,
@@ -48,18 +48,16 @@ import {
   provisionFallbackCampaignForInstance,
   queueCacheByTenant,
   type WhatsAppInstanceRecord,
-} from './provisioning';
-import { downloadViaBaileys, downloadViaBroker } from './mediaDownloader';
+} from '../provisioning';
+import { downloadViaBaileys, downloadViaBroker } from '../mediaDownloader';
 import {
   type InboundMessageDetails,
   type InboundWhatsAppEvent,
-} from './types';
-import { isHttpUrl, MEDIA_MESSAGE_TYPES, toRecord } from './inbound-lead/helpers';
-import {
-  extractMediaDownloadDetails,
-} from './inbound-lead/media-utils';
-import { ensureContact } from './inbound-lead/contact-service';
-import { getCampaignCache } from './inbound-lead/state';
+} from '../types';
+import { isHttpUrl, MEDIA_MESSAGE_TYPES, toRecord } from './helpers';
+import { extractMediaDownloadDetails } from './media-utils';
+import { ensureContact } from './contact-service';
+import { getCampaignCache } from './state';
 import { emitRealtimeUpdatesForInbound } from './realtime-service';
 import { upsertLeadFromInbound } from './lead-service';
 import { ensureTicketForContact } from './ticket-service';
