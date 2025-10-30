@@ -1,6 +1,7 @@
 import type { ZodIssue } from 'zod';
 
 import { logger } from '../../../config/logger';
+import type { SchedulePollInboxFallbackResult } from './poll-choice-pipeline';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import {
   PollChoiceInboxNotificationStatus,
@@ -103,6 +104,11 @@ export type PollChoiceEventBus = {
   ) => () => void;
 };
 
+export const createPollChoiceEventBus = (): PollChoiceEventBus => {
+  const registry = new Map<
+    PollChoiceEventName,
+    Set<(payload: PollChoiceEventBusPayloads[PollChoiceEventName]) => void>
+  >();
 const createPollChoiceEventBus = (): PollChoiceEventBus => {
   const registry = new Map<PollChoiceEventName, Set<(payload: PollChoiceEventBusPayloads[PollChoiceEventName]) => void>>();
 
@@ -251,6 +257,7 @@ pollChoiceEventBus.on('pollChoiceInboxDecision', ({ decision, requestId }) => {
 });
 
 pollChoiceEventBus.on('pollChoiceInboxFailed', ({ requestId, pollId, tenantId, reason, error }) => {
+  logger.error('Failed to notify poll choice inbox', {
   const logMethod = reason === 'poll_choice_inbox_error' ? 'error' : 'warn';
   logger[logMethod]('Poll choice inbox notification failed', {
     requestId,
@@ -262,6 +269,7 @@ pollChoiceEventBus.on('pollChoiceInboxFailed', ({ requestId, pollId, tenantId, r
 });
 
 pollChoiceEventBus.on('pollChoiceError', ({ requestId, pollId, tenantId, instanceId, error }) => {
+  logger.error('Unexpected poll choice handler failure', {
   logger.error('Failed to process poll choice event', {
     requestId,
     pollId,
@@ -272,6 +280,10 @@ pollChoiceEventBus.on('pollChoiceError', ({ requestId, pollId, tenantId, instanc
 });
 
 pollChoiceEventBus.on('pollChoiceCompleted', ({ tenantId, instanceId, outcome, reason }) => {
+  logger.info('pollChoicePipeline.completed', {
+    tenantId,
+    instanceId,
+    outcome,
   whatsappWebhookEventsCounter.inc({
     origin: 'webhook',
     tenantId: tenantId ?? 'unknown',
