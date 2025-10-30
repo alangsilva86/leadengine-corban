@@ -24,6 +24,7 @@ vi.mock('../../../../config/logger', () => ({
   logger: {
     error: vi.fn(),
     warn: vi.fn(),
+    debug: vi.fn(),
   },
 }));
 
@@ -31,7 +32,11 @@ vi.mock('../poll-metadata-service', () => ({
   getPollMetadata: hoistedMocks.getPollMetadataMock,
 }));
 
-import { recordPollChoiceVote, recordEncryptedPollVote } from '../poll-choice-service';
+import {
+  recordPollChoiceVote,
+  recordEncryptedPollVote,
+  __testing as pollChoiceTesting,
+} from '../poll-choice-service';
 
 const buildStatePayload = () => ({
   pollId: 'poll-1',
@@ -218,6 +223,138 @@ describe('recordPollChoiceVote', () => {
     expect(result.state.aggregates.optionTotals).toMatchObject({ 'opt-2': 1 });
     expect(result.state.aggregates.optionTotals['opt-1']).toBeUndefined();
     expect(upsertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('populates missing selections using decrypted vote metadata', async () => {
+    const decryptSpy = vi
+      .spyOn(pollChoiceTesting, 'decryptEncryptedVoteSelections')
+      .mockReturnValue(['opt-2']);
+
+    findUniqueMock.mockResolvedValueOnce({
+      payload: {
+        pollId: 'poll-1',
+        options: [
+          { id: 'opt-1', title: 'Option 1', index: 0 },
+          { id: 'opt-2', title: 'Option 2', index: 1 },
+        ],
+        votes: {
+          'user@s.whatsapp.net': {
+            optionIds: [],
+            selectedOptions: [],
+            messageId: 'wamid-prev',
+            timestamp: '2024-01-01T00:00:00.000Z',
+            encryptedVote: {
+              encPayload: 'payload',
+              encIv: 'iv',
+            },
+          },
+        },
+        aggregates: { totalVoters: 0, totalVotes: 0, optionTotals: {} },
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        context: {
+          creationMessageId: 'wamid-poll',
+          creationMessageKey: { remoteJid: '5511999999999@s.whatsapp.net' },
+          messageSecret: 'secret-value',
+        },
+      },
+    });
+
+    getPollMetadataMock.mockResolvedValueOnce({
+      pollId: 'poll-1',
+      options: [
+        { id: 'opt-1', title: 'Option 1', index: 0 },
+        { id: 'opt-2', title: 'Option 2', index: 1 },
+      ],
+      creationMessageId: 'wamid-poll',
+      creationMessageKey: { remoteJid: '5511999999999@s.whatsapp.net' },
+      messageSecret: 'secret-value',
+    });
+    upsertMock.mockResolvedValueOnce({} as never);
+
+    const result = await recordPollChoiceVote({
+      pollId: 'poll-1',
+      voterJid: 'user@s.whatsapp.net',
+      messageId: 'wamid-latest',
+      options: [
+        { id: 'opt-1', title: 'Option 1' },
+        { id: 'opt-2', title: 'Option 2' },
+      ],
+      aggregates: {
+        totalVoters: 1,
+        totalVotes: 1,
+        optionTotals: { 'opt-2': 1 },
+      },
+      timestamp: '2024-01-02T00:00:00.000Z',
+    });
+
+    expect(decryptSpy).toHaveBeenCalledTimes(1);
+    expect(decryptSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ pollId: 'poll-1', voterJid: 'user@s.whatsapp.net' })
+    );
+    expect(result.selectedOptions).toEqual([{ id: 'opt-2', title: 'Option 2' }]);
+    expect(result.state.votes['user@s.whatsapp.net']).toMatchObject({
+      optionIds: ['opt-2'],
+      selectedOptions: [{ id: 'opt-2', title: 'Option 2' }],
+    });
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+
+    decryptSpy.mockRestore();
+  });
+
+  it('gracefully skips decrypted selections when helper fails', async () => {
+    const decryptSpy = vi
+      .spyOn(pollChoiceTesting, 'decryptEncryptedVoteSelections')
+      .mockImplementation(() => {
+        throw new Error('decrypt failed');
+      });
+
+    findUniqueMock.mockResolvedValueOnce({
+      payload: {
+        pollId: 'poll-1',
+        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
+        votes: {
+          'user@s.whatsapp.net': {
+            optionIds: [],
+            selectedOptions: [],
+            messageId: 'wamid-prev',
+            timestamp: '2024-01-01T00:00:00.000Z',
+            encryptedVote: {
+              encPayload: 'payload',
+              encIv: 'iv',
+            },
+          },
+        },
+        aggregates: { totalVoters: 0, totalVotes: 0, optionTotals: {} },
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        context: {
+          creationMessageId: 'wamid-poll',
+          creationMessageKey: { remoteJid: '5511999999999@s.whatsapp.net' },
+          messageSecret: 'secret-value',
+        },
+      },
+    });
+
+    upsertMock.mockResolvedValueOnce({} as never);
+
+    const result = await recordPollChoiceVote({
+      pollId: 'poll-1',
+      voterJid: 'user@s.whatsapp.net',
+      messageId: 'wamid-new',
+      options: [{ id: 'opt-1', title: 'Option 1' }],
+      aggregates: {
+        totalVoters: 0,
+        totalVotes: 0,
+        optionTotals: {},
+      },
+      timestamp: '2024-01-03T00:00:00.000Z',
+    });
+
+    expect(decryptSpy).toHaveBeenCalledTimes(1);
+    expect(result.selectedOptions).toEqual([]);
+    expect(result.state.votes['user@s.whatsapp.net']).toMatchObject({ optionIds: [] });
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+
+    decryptSpy.mockRestore();
   });
 });
 

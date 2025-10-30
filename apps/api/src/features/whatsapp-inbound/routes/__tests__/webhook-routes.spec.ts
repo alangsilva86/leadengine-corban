@@ -1496,6 +1496,119 @@ describe('WhatsApp webhook poll choice events', () => {
     );
   });
 
+  it('rewrites poll vote message using decrypted selections when webhook omits selection ids', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(true);
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-enc',
+        options: [
+          { id: 'opt-a', title: 'Option A', index: 0 },
+          { id: 'opt-b', title: 'Option B', index: 1 },
+        ],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: ['opt-b'],
+            selectedOptions: [{ id: 'opt-b', title: 'Option B' }],
+            messageId: 'wamid-encrypted',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-b': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-b': 1 } },
+        updatedAt: now,
+      },
+      selectedOptions: [{ id: 'opt-b', title: 'Option B' }],
+    });
+
+    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue(undefined);
+    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+
+    try {
+      const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+        event: 'POLL_CHOICE',
+        tenantId: 'tenant-enc',
+        payload: {
+          pollId: 'poll-enc',
+          voterJid: '5511999999999@s.whatsapp.net',
+          messageId: 'wamid-encrypted',
+          options: [
+            { id: 'opt-a', title: 'Option A' },
+            { id: 'opt-b', title: 'Option B' },
+          ],
+          aggregates: {
+            totalVoters: 1,
+            totalVotes: 1,
+            optionTotals: { 'opt-b': 1 },
+          },
+          timestamp: now,
+        },
+      });
+
+      expect(response.status).toBe(204);
+      expect(updatePollVoteMessageSpy).toHaveBeenCalledTimes(1);
+      expect(updatePollVoteMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selectedOptions: expect.arrayContaining([expect.objectContaining({ id: 'opt-b' })]),
+        })
+      );
+    } finally {
+      webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+    }
+  });
+
+  it('continues processing when decrypted selections cannot be recovered', async () => {
+    const now = new Date().toISOString();
+    syncPollChoiceStateMock.mockResolvedValueOnce(true);
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId: 'poll-enc-failure',
+        options: [{ id: 'opt-a', title: 'Option A', index: 0 }],
+        votes: {
+          '5511999999999@s.whatsapp.net': {
+            optionIds: [],
+            selectedOptions: [],
+            encryptedVote: { encPayload: 'payload', encIv: 'iv' },
+            messageId: 'wamid-encrypted',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 0, totalVotes: 0, optionTotals: {} },
+        brokerAggregates: { totalVoters: 0, totalVotes: 0, optionTotals: {} },
+        updatedAt: now,
+      },
+      selectedOptions: [],
+    });
+
+    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue(undefined);
+    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+
+    try {
+      const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+        event: 'POLL_CHOICE',
+        tenantId: 'tenant-enc',
+        payload: {
+          pollId: 'poll-enc-failure',
+          voterJid: '5511999999999@s.whatsapp.net',
+          messageId: 'wamid-encrypted',
+          options: [{ id: 'opt-a', title: 'Option A' }],
+          aggregates: { totalVoters: 0, totalVotes: 0, optionTotals: {} },
+          timestamp: now,
+        },
+      });
+
+      expect(response.status).toBe(204);
+      expect(updatePollVoteMessageSpy).toHaveBeenCalledTimes(1);
+      expect(updatePollVoteMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ selectedOptions: [] })
+      );
+    } finally {
+      webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+    }
+  });
+
   it('records poll choice inbox failure when tenant context is unavailable', async () => {
     const now = new Date().toISOString();
     syncPollChoiceStateMock.mockResolvedValueOnce(false);
