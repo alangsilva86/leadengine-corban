@@ -329,11 +329,11 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
         direction: 'INBOUND',
         metadata: { eventMetadata: {} },
         createdAt: new Date('2024-05-10T12:00:01.000Z'),
-      });
+    });
 
-      addAllocationsMock.mockResolvedValue({
-        newlyAllocated: [
-          {
+    addAllocationsMock.mockResolvedValue({
+      newlyAllocated: [
+        {
             allocationId: 'alloc-1',
             leadId: 'lead-1',
             campaignId: null,
@@ -343,6 +343,38 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
         ],
         summary: { total: 1, contacted: 0, won: 0, lost: 0 },
       });
+    });
+
+    it('persists normalized webhook payloads without nested message metadata', async () => {
+      const envelope = buildEnvelope();
+      envelope.origin = 'webhook';
+      envelope.message.payload = {
+        id: 'wamid.normalized',
+        type: 'TEXT',
+        text: 'Mensagem normalizada',
+        key: {
+          id: 'wamid.normalized',
+          remoteJid: '5511999999999@s.whatsapp.net',
+        },
+        messageTimestamp: 1715342400,
+      } as unknown as typeof envelope.message.payload;
+      envelope.message.metadata = {
+        source: 'baileys:webhook',
+        direction: 'INBOUND',
+        chatId: envelope.chatId,
+        tenantId: envelope.tenantId,
+        instanceId: envelope.instanceId,
+        sessionId: 'session-9',
+        broker: { messageType: 'text', instanceId: envelope.instanceId },
+      } satisfies Record<string, unknown>;
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
+
+      expect(processed).toBe(true);
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
+      expect(normalizeInboundMessageMock).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'wamid.normalized', type: 'TEXT', text: 'Mensagem normalizada' })
+      );
     });
 
     it('allocates leads indexed by instance when no campaigns exist', async () => {
