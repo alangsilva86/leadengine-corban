@@ -215,9 +215,9 @@ const stopTestServer = (server: Server) =>
 
 describe('syncInstancesFromBroker heuristics', () => {
   it('keeps stored nickname when broker suggests a different name', async () => {
-    const {
-      __testing: { syncInstancesFromBroker },
-    } = await import('./integrations');
+    const { syncInstancesFromBroker } = await import(
+      '../modules/whatsapp/instances/testing-coordinator'
+    );
 
     const existingInstance: PrismaWhatsAppInstance = {
       id: 'custom-slug',

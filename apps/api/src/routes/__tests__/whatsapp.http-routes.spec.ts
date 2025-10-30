@@ -1,8 +1,10 @@
-import express from 'express';
+import express, { type Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WhatsAppTransport } from '../../features/whatsapp-transport';
 import { errorHandler } from '../../middleware/error-handler';
+
+import { resolveRequestTenantId } from '../../modules/whatsapp/instances/testing-coordinator';
 
 const sendAdHocMock = vi.fn();
 const rateKeyForInstanceMock = vi.fn();
@@ -84,7 +86,13 @@ describe('WhatsApp HTTP integration routes', () => {
     expect(response.status).toBe(202);
     expect(sendAdHocMock).toHaveBeenCalledTimes(1);
     const [adHocPayload] = sendAdHocMock.mock.calls[0] ?? [];
-    expect(adHocPayload).toMatchObject({ tenantId: 'tenant-1' });
+    const expectedTenant = resolveRequestTenantId({
+      query: {},
+      headers: {},
+      user: { tenantId: 'tenant-1' },
+    } as Request);
+
+    expect(adHocPayload).toMatchObject({ tenantId: expectedTenant });
     const [, options] = sendAdHocMock.mock.calls[0] ?? [];
     expect(options).toEqual({ transport: transportMock });
   });
