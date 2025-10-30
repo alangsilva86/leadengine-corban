@@ -293,6 +293,10 @@ describe('normalizeUpsertEvent', () => {
     const pollUpdate = message.pollUpdateMessage as Record<string, unknown>;
     expect(pollUpdate.pollCreationMessageId).toBe('poll-1');
     expect(Array.isArray((pollUpdate.vote as Record<string, unknown>).values)).toBe(true);
+
+    const metadata = normalized.data.metadata as Record<string, unknown>;
+    const interactive = (metadata.interactive ?? {}) as Record<string, unknown>;
+    expect(interactive.type).toBe('poll_choice');
   });
 
   it('overrides instance, tenant and broker identifiers when provided', () => {

@@ -113,6 +113,7 @@ describe('recordPollChoiceVote', () => {
       messageSecret: 'abc',
       messageSecretVersion: 1,
     });
+    expect(result.state.options[0]).toMatchObject({ id: 'opt-1', title: 'Sim 👍', index: 0 });
     expect(upsertMock).toHaveBeenCalledTimes(1);
   });
 

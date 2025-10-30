@@ -93,6 +93,7 @@ import {
   type InboundWhatsAppEnvelopeMessage,
   type InboundWhatsAppEvent,
 } from './types';
+import { normalizePollUpdate, resolveMessageType } from './poll-update-normalizer';
 
 /* ===========================================================================================
  * Helpers seguros e utilitários
@@ -1043,60 +1044,6 @@ const mergeEnvelopeMetadata = (
   return base;
 };
 
-/* ===========================================================================================
- * Heurística de ENQUETE (poll_update)
- * ===========================================================================================
- */
-
-// Tipo que representa o voto em uma enquete.
-type PollVote = {
-  pollId: string | null;
-  question: string | null;
-  choiceText: string | null;
-  choiceId: string | null;
-};
-
-// Constrói mensagem legível para voto em enquete.
-const buildPollVoteText = (q: string | null, c: string | null) => {
-  if (q && c) return `Obrigado! Você votou em "${c}" para "${q}".`;
-  if (c) return `Obrigado! Seu voto: "${c}".`;
-  if (q) return `Obrigado! Seu voto foi registrado para a enquete: "${q}".`;
-  return 'Obrigado! Seu voto foi registrado.';
-};
-
-/**
- * Resolve o tipo de mensagem do envelope (usado para identificar poll_update).
- */
-const resolveMessageType = (envelope: InboundWhatsAppEnvelope): string | null => {
-  const { payload, message, metadata } = derivePayloadSegments((envelope as any)?.message?.payload);
-
-  const baseType = readString((message as any).type) ?? readString((metadata as any).messageType);
-
-  const pollUpdateSource =
-    (message as any)?.pollUpdateMessage ?? (payload as any)?.pollUpdateMessage ?? null;
-  const hasPollUpdatePayload =
-    pollUpdateSource && typeof pollUpdateSource === 'object' && !Array.isArray(pollUpdateSource);
-
-  const brokerMetadata = asRecord((metadata as any)?.broker);
-  const interactiveMetadata = asRecord((metadata as any)?.interactive);
-
-  const brokerContentType = readString((brokerMetadata as any)?.messageContentType);
-  const interactiveType = readString((interactiveMetadata as any)?.type);
-
-  const pollHints = [baseType, brokerContentType, interactiveType]
-    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : null))
-    .filter((value): value is string => Boolean(value));
-
-  if (
-    hasPollUpdatePayload ||
-    pollHints.some((hint) => hint === 'poll_update' || hint === 'poll_choice')
-  ) {
-    return 'poll_update';
-  }
-
-  return baseType ?? null;
-};
-
 /**
  * Resolve o chatId para deduplicação de alta camada (usado antes de extrair
  * metadata de payload). Considera diversos campos de contexto.
@@ -1134,134 +1081,6 @@ const resolveMessageId = (envelope: InboundWhatsAppEnvelope): string | null => {
   );
 };
 
-/**
- * Extrai informações de voto de enquete a partir do payload.
- */
-const extractPollVote = (payload: unknown): PollVote => {
-  const { payload: payloadRecord, message, metadata } = derivePayloadSegments(payload);
-  const pick = (v: unknown) => readString(v);
-  const pickOptionLabel = (option: unknown): string | null => {
-    if (typeof option === 'string') {
-      const trimmed = option.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    }
-    if (!option || typeof option !== 'object') return null;
-    const optionRecord = option as Record<string, unknown>;
-    const labelFields = [
-      'title',
-      'text',
-      'name',
-      'optionName',
-      'label',
-      'description',
-      'displayName',
-      'value',
-    ] as const;
-    for (const field of labelFields) {
-      const candidate = pick(optionRecord[field]);
-      if (candidate) return candidate;
-    }
-    return null;
-  };
-  const optionCollections: unknown[] = [
-    (metadata as any)?.poll?.options,
-    (metadata as any)?.pollChoice?.options,
-    (metadata as any)?.interactive?.options,
-    (payloadRecord as any)?.options,
-    (payloadRecord as any)?.poll?.options,
-    (payloadRecord as any)?.pollChoice?.options,
-    (message as any)?.options,
-  ];
-  const findOptionById = (id: string | null): unknown => {
-    if (!id) return null;
-    for (const collection of optionCollections) {
-      if (!collection) continue;
-      if (Array.isArray(collection)) {
-        for (const option of collection) {
-          if (typeof option === 'string' && option.trim() === id) {
-            return option;
-          }
-          if (!option || typeof option !== 'object') continue;
-          const optionRecord = option as Record<string, unknown>;
-          const identifiers = [
-            optionRecord.id,
-            optionRecord.optionId,
-            optionRecord.key,
-            optionRecord.value,
-          ];
-          if (identifiers.some((identifier) => pick(identifier) === id)) {
-            return option;
-          }
-        }
-      }
-    }
-    return null;
-  };
-
-  const selectedOptionFromVote = Array.isArray((metadata as any)?.pollChoice?.vote?.selectedOptions)
-    ? (metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]
-    : null;
-  const selectedOptionFromPoll = Array.isArray((metadata as any)?.poll?.selectedOptions)
-    ? (metadata as any)?.poll?.selectedOptions?.[0]
-    : null;
-
-  const choiceText =
-    pick((message as any).text) ??
-    pickOptionLabel(selectedOptionFromVote) ??
-    pickOptionLabel(selectedOptionFromPoll) ??
-    pick((payloadRecord as any)?.text) ??
-    null;
-
-  const choiceId =
-    pick((selectedOptionFromVote as any)?.id) ??
-    pick((selectedOptionFromPoll as any)?.id) ??
-    pick((metadata as any)?.pollChoice?.vote?.optionIds?.[0]) ??
-    pick((metadata as any)?.poll?.selectedOptionIds?.[0]) ??
-    pick((selectedOptionFromVote as any)?.optionId) ??
-    pick((selectedOptionFromPoll as any)?.optionId) ??
-    pick((selectedOptionFromVote as any)?.key) ??
-    pick((selectedOptionFromPoll as any)?.key) ??
-    pick((selectedOptionFromVote as any)?.value) ??
-    pick((selectedOptionFromPoll as any)?.value) ??
-    pick((payloadRecord as any)?.selectedOptionId) ??
-    null;
-
-  const enrichedChoiceText =
-    choiceText ??
-    pickOptionLabel(findOptionById(choiceId)) ??
-    pickOptionLabel(selectedOptionFromVote) ??
-    pickOptionLabel(selectedOptionFromPoll);
-
-  const question =
-    pick((metadata as any)?.poll?.question) ??
-    pick((metadata as any)?.pollChoice?.question) ??
-    pick((metadata as any)?.poll?.title) ??
-    pick((metadata as any)?.poll?.name) ??
-    pick((metadata as any)?.pollChoice?.title) ??
-    pick((metadata as any)?.pollChoice?.name) ??
-    pick((payloadRecord as any)?.poll?.question) ??
-    pick((payloadRecord as any)?.poll?.title) ??
-    pick((payloadRecord as any)?.poll?.name) ??
-    pick((payloadRecord as any)?.pollChoice?.question) ??
-    pick((payloadRecord as any)?.pollChoice?.label) ??
-    pick((payloadRecord as any)?.pollChoice?.text) ??
-    pick((payloadRecord as any)?.question) ??
-    pick((payloadRecord as any)?.title) ??
-    pick((payloadRecord as any)?.name) ??
-    null;
-
-  const pollId =
-    pick((metadata as any)?.poll?.id) ??
-    pick((metadata as any)?.poll?.pollId) ??
-    pick((metadata as any)?.pollChoice?.pollId) ??
-    pick((payloadRecord as any)?.pollId) ??
-    pick((payloadRecord as any)?.id) ??
-    pick((message as any)?.id) ??
-    null;
-
-  return { pollId, question, choiceText: enrichedChoiceText, choiceId };
-};
-
 /* ===========================================================================================
  * Função principal de ingestão
  * ===========================================================================================
@@ -1287,16 +1106,19 @@ export const ingestInboundWhatsAppMessage = async (
     return false;
   }
 
-  // Determina tipo de mensagem para identificar enquetes.
-  const msgType = resolveMessageType(envelope);
-  const isPollUpdate = msgType === 'poll_update';
-
   // Garante que existe payload de mensagem ou metadata antes de prosseguir.
   const { payload: payloadRecord, message: basePayloadMessage, metadata: basePayloadMetadata } = derivePayloadSegments(
     (envelope as any)?.message?.payload
   );
   let payloadMessage: Record<string, unknown> = { ...basePayloadMessage };
   let payloadMetadata: Record<string, unknown> = { ...basePayloadMetadata };
+
+  // Determina tipo de mensagem para identificar enquetes antes de normalizar o payload.
+  const msgType = resolveMessageType({
+    payload: payloadRecord,
+    message: payloadMessage,
+    metadata: payloadMetadata,
+  });
 
   const envelopeMetadataRecord = toRecord((envelope as any)?.message?.metadata);
   if (Object.keys(envelopeMetadataRecord).length > 0) {
@@ -1328,71 +1150,23 @@ export const ingestInboundWhatsAppMessage = async (
   const instanceId = readString((metaIn as any).instanceId) ?? readString((envelope as any).instanceId);
   const tenantId = readString((metaIn as any).tenantId) ?? readString((envelope as any).tenantId) ?? DEFAULT_TENANT_ID;
 
-  // Tratamento especial de voto em enquete: gera texto legível e persiste mensagem simples.
-  if (isPollUpdate) {
-    const pollSource = { ...payloadRecord, message: payloadMessage, metadata: payloadMetadata };
-    const { pollId, question, choiceText, choiceId } = extractPollVote(pollSource);
+  // Tratamento especial de voto em enquete: gera envelope normalizado ou sinaliza placeholder.
+  const pollNormalization = normalizePollUpdate({
+    envelope,
+    segments: { payload: payloadRecord, message: payloadMessage, metadata: payloadMetadata },
+    baseMetadata: metaIn,
+    chatId,
+    externalId,
+    messageType: msgType,
+  });
 
-    const finalText = choiceText ?? buildPollVoteText(question, choiceText);
-
-    const resolvedOptionId = choiceId ?? choiceText ?? undefined;
-    const selectedOption = choiceText || resolvedOptionId
-      ? {
-          ...(resolvedOptionId ? { id: resolvedOptionId } : {}),
-          ...(choiceText ? { title: choiceText } : {}),
-        }
-      : undefined;
-
-    if (choiceText || question) {
-      // Quando a enquete possui texto legível (ou ao menos contexto), injeta uma mensagem de texto na timeline
-      // e define metadata apropriada para que a pipeline padrão processe normalmente.
-      payloadMessage = {
-        type: 'TEXT',
-        text: finalText,
-        // Define um id para a mensagem, reaproveitando o id do envelope se existir
-        id: (envelope as any)?.message?.id ?? externalId,
-      };
-
-      payloadMetadata = {
-        ...metaIn,
-        placeholder: false,
-        direction: 'INBOUND',
-        chatId: chatId ?? undefined,
-        source: { channel: 'whatsapp', transport: 'baileys', event: 'poll_update' },
-        poll: {
-          id: pollId ?? undefined,
-          question: question ?? undefined,
-          ...(selectedOption ? { selectedOptions: [selectedOption] } : {}),
-          ...(resolvedOptionId ? { selectedOptionIds: [resolvedOptionId] } : {}),
-          updatedAt: new Date().toISOString(),
-        },
-        pollChoice: {
-          pollId: pollId ?? undefined,
-          question: question ?? undefined,
-          vote: {
-            ...(selectedOption ? { selectedOptions: [selectedOption] } : {}),
-            ...(resolvedOptionId ? { optionIds: [resolvedOptionId] } : {}),
-            timestamp: readString((payloadRecord as any).timestamp) ?? new Date().toISOString(),
-          },
-        },
-      };
+  if (pollNormalization.isPollUpdate) {
+    if (pollNormalization.placeholder) {
+      payloadMetadata = pollNormalization.metadata;
     } else {
-      // Se não houver texto legível: marca placeholder em metadata e segue pipeline padrão.
-      payloadMetadata = {
-        ...metaIn,
-        placeholder: true,
-        direction: 'INBOUND',
-        source: { channel: 'whatsapp', transport: 'baileys', event: 'poll_update' },
-        poll: {
-          ...(asRecord((metaIn as any).poll)),
-          id: asRecord((metaIn as any).poll).id ?? pollId ?? undefined,
-          updatedAt: new Date().toISOString(),
-        },
-      };
+      payloadMessage = pollNormalization.message;
+      payloadMetadata = pollNormalization.metadata;
     }
-
-    // Após configurar o payload para enquetes, não retorna aqui. A pipeline padrão
-    // continuará e cuidará de persistir a mensagem e disparar os eventos necessários.
   }
 
   // Pipeline padrão (inclusive para poll_update sem texto).
