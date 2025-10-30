@@ -3,6 +3,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
+import type { ZodIssue } from 'zod';
 
 import { asyncHandler } from '../../../middleware/error-handler';
 import { logger } from '../../../config/logger';
@@ -38,6 +39,14 @@ import {
   type BrokerInboundEvent,
 } from '../schemas/broker-contracts';
 import { PollChoiceEventSchema, type PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
+import {
+  persistPollChoiceVote,
+  rewritePollVoteMessage,
+  schedulePollInboxFallback,
+  validatePollChoicePayload,
+  type PersistPollChoiceVoteResult,
+  type SchedulePollInboxFallbackResult,
+} from '../services/poll-choice-pipeline';
 import { recordPollChoiceVote, recordEncryptedPollVote } from '../services/poll-choice-service';
 import { syncPollChoiceState } from '../services/poll-choice-sync-service';
 import {
@@ -251,6 +260,274 @@ const trackWebhookRejection = (reason: 'invalid_api_key' | 'invalid_signature' |
 
 const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
 const POLL_VOTE_RETRY_DELAY_MS = 500;
+
+type PollChoiceEventOutcome = 'accepted' | 'ignored' | 'failed';
+
+type PollChoiceEventBusPayloads = {
+  pollChoiceInvalid: {
+    requestId: string;
+    reason: 'missing_payload' | 'schema_error';
+    issues?: ZodIssue[];
+    preview: string | null;
+    tenantId: string | null;
+    instanceId: string | null;
+  };
+  pollChoiceDuplicateEvent: {
+    requestId: string;
+    pollId: string;
+    tenantId: string | null;
+    instanceId: string | null;
+  };
+  pollChoiceDuplicateVote: {
+    requestId: string;
+    pollId: string;
+    tenantId: string | null;
+    instanceId: string | null;
+  };
+  pollChoiceRewriteMissingTenant: {
+    requestId: string;
+    pollId: string;
+    voterJid: string;
+    candidates: string[];
+    delayMs: number;
+  };
+  pollChoiceRewriteRetryScheduled: {
+    requestId: string;
+    pollId: string;
+    voterJid: string;
+    delayMs: number;
+  };
+  pollChoiceTenantLookupFailed: {
+    requestId: string;
+    pollId: string;
+    error: unknown;
+  };
+  pollChoiceMetadataSyncFailed: {
+    requestId: string;
+    pollId: string;
+    error: unknown;
+  };
+  pollChoiceInboxMissingTenant: {
+    requestId: string;
+    pollId: string;
+    voterJid: string;
+  };
+  pollChoiceInboxDecision: {
+    requestId: string;
+    decision: SchedulePollInboxFallbackResult;
+  };
+  pollChoiceInboxFailed: {
+    requestId: string;
+    pollId: string;
+    tenantId: string;
+    reason: string;
+    error?: unknown;
+  };
+  pollChoiceError: {
+    requestId: string;
+    pollId: string;
+    tenantId: string | null;
+    instanceId: string | null;
+    error: unknown;
+  };
+  pollChoiceCompleted: {
+    requestId: string;
+    pollId: string | null;
+    tenantId: string | null;
+    instanceId: string | null;
+    outcome: PollChoiceEventOutcome;
+    reason: string;
+    extra?: Record<string, unknown>;
+  };
+};
+
+type PollChoiceEventName = keyof PollChoiceEventBusPayloads;
+
+type PollChoiceEventBus = {
+  emit: <E extends PollChoiceEventName>(event: E, payload: PollChoiceEventBusPayloads[E]) => void;
+  on: <E extends PollChoiceEventName>(
+    event: E,
+    handler: (payload: PollChoiceEventBusPayloads[E]) => void
+  ) => () => void;
+};
+
+const createPollChoiceEventBus = (): PollChoiceEventBus => {
+  const registry = new Map<PollChoiceEventName, Set<(payload: PollChoiceEventBusPayloads[PollChoiceEventName]) => void>>();
+
+  return {
+    emit(event, payload) {
+      const handlers = registry.get(event);
+      if (!handlers) {
+        return;
+      }
+
+      for (const handler of handlers) {
+        try {
+          handler(payload as never);
+        } catch (error) {
+          logger.error('pollChoiceEventHandlerFailed', { event, error });
+        }
+      }
+    },
+    on(event, handler) {
+      const existing = registry.get(event) ?? new Set();
+      existing.add(handler as never);
+      registry.set(event, existing as never);
+
+      return () => {
+        const handlers = registry.get(event);
+        if (!handlers) {
+          return;
+        }
+        handlers.delete(handler as never);
+        if (handlers.size === 0) {
+          registry.delete(event);
+        }
+      };
+    },
+  };
+};
+
+const pollChoiceEventBus = createPollChoiceEventBus();
+
+pollChoiceEventBus.on('pollChoiceInvalid', ({ reason, requestId, issues, preview }) => {
+  const message =
+    reason === 'missing_payload'
+      ? 'Received poll choice event without payload'
+      : 'Received invalid poll choice payload';
+
+  logger.warn(message, {
+    requestId,
+    ...(reason === 'schema_error' ? { issues } : {}),
+    rawPreview: preview,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceDuplicateEvent', ({ pollId, requestId }) => {
+  logger.debug('Duplicate poll choice event ignored', { requestId, pollId });
+});
+
+pollChoiceEventBus.on('pollChoiceDuplicateVote', ({ pollId, requestId }) => {
+  logger.info('Ignoring poll choice vote because it is already up-to-date', {
+    requestId,
+    pollId,
+  });
+});
+
+pollChoiceEventBus.on(
+  'pollChoiceRewriteMissingTenant',
+  ({ requestId, pollId, voterJid, candidates, delayMs }) => {
+    logger.info('rewrite.poll_vote.retry_missing_tenant', {
+      requestId,
+      pollId,
+      voterJid,
+      messageId: candidates.at(0) ?? null,
+      delayMs,
+    });
+  }
+);
+
+pollChoiceEventBus.on('pollChoiceRewriteRetryScheduled', ({ requestId, pollId, voterJid, delayMs }) => {
+  logger.info('rewrite.poll_vote.retry_scheduled', {
+    requestId,
+    pollId,
+    voterJid,
+    delayMs,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceTenantLookupFailed', ({ requestId, pollId, error }) => {
+  logger.warn('Failed to load poll metadata while resolving tenant', {
+    requestId,
+    pollId,
+    error,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceMetadataSyncFailed', ({ requestId, pollId, error }) => {
+  logger.error('Failed to sync poll choice state with message metadata', {
+    requestId,
+    pollId,
+    error,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceInboxMissingTenant', ({ requestId, pollId, voterJid }) => {
+  logger.warn('Skipping poll choice inbox notification due to missing tenant context', {
+    requestId,
+    pollId,
+    voterJid,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceInboxDecision', ({ decision, requestId }) => {
+  if (decision.status === 'skip') {
+    logger.info('Skipping poll choice inbox notification because poll message already exists', {
+      requestId,
+      pollId: decision.pollId,
+      tenantId: decision.tenantId ?? null,
+      chatId: decision.chatId ?? null,
+      messageId: decision.existingMessageId,
+    });
+    return;
+  }
+
+  if (decision.status === 'requireInbox') {
+    if (decision.lookupError) {
+      logger.error('Failed to check existing poll message before inbox notification', {
+        requestId,
+        pollId: decision.pollId,
+        tenantId: decision.tenantId,
+        chatId: decision.chatId ?? null,
+        error: decision.lookupError,
+      });
+    }
+
+    if (decision.existingMessageId) {
+      logger.info(
+        'Triggering poll choice inbox notification fallback due to outdated poll message metadata',
+        {
+          requestId,
+          pollId: decision.pollId,
+          tenantId: decision.tenantId,
+          chatId: decision.chatId ?? null,
+          messageId: decision.existingMessageId,
+        }
+      );
+    }
+  }
+});
+
+pollChoiceEventBus.on('pollChoiceInboxFailed', ({ requestId, pollId, tenantId, reason, error }) => {
+  const logMethod = reason === 'poll_choice_inbox_error' ? 'error' : 'warn';
+  logger[logMethod]('Poll choice inbox notification failed', {
+    requestId,
+    pollId,
+    tenantId,
+    reason,
+    error,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceError', ({ requestId, pollId, tenantId, instanceId, error }) => {
+  logger.error('Failed to process poll choice event', {
+    requestId,
+    pollId,
+    tenantId,
+    instanceId,
+    error,
+  });
+});
+
+pollChoiceEventBus.on('pollChoiceCompleted', ({ tenantId, instanceId, outcome, reason }) => {
+  whatsappWebhookEventsCounter.inc({
+    origin: 'webhook',
+    tenantId: tenantId ?? 'unknown',
+    instanceId: instanceId ?? 'unknown',
+    result: outcome,
+    reason,
+  });
+});
 
 const sanitizeOptionText = (value: unknown): string | null => {
   if (typeof value !== 'string') {
@@ -1819,6 +2096,348 @@ const processPollChoiceEvent = async (
   }
 ): Promise<{ persisted: number; ignored: number; failures: number }> => {
   const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
+  const validation = validatePollChoicePayload(payloadRecord);
+  const baseTenantId = context.tenantOverride ?? null;
+  const baseInstanceId = context.instanceId ?? null;
+
+  if (validation.status !== 'valid') {
+    pollChoiceEventBus.emit('pollChoiceInvalid', {
+      requestId: context.requestId,
+      reason: validation.reason,
+      issues: validation.issues,
+      preview: toRawPreview(eventRecord),
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+    });
+    pollChoiceEventBus.emit('pollChoiceCompleted', {
+      requestId: context.requestId,
+      pollId: null,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      outcome: 'ignored',
+      reason: 'poll_choice_invalid',
+    });
+    return { persisted: 0, ignored: 1, failures: 0 };
+  }
+
+  const pollPayload = validation.payload;
+
+  const pollIdemKey = buildIdempotencyKey(
+    baseTenantId,
+    baseInstanceId,
+    `${pollPayload.pollId}|${pollPayload.voterJid}`,
+    0
+  );
+  if (!registerIdempotency(pollIdemKey)) {
+    pollChoiceEventBus.emit('pollChoiceDuplicateEvent', {
+      requestId: context.requestId,
+      pollId: pollPayload.pollId,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+    });
+    pollChoiceEventBus.emit('pollChoiceCompleted', {
+      requestId: context.requestId,
+      pollId: pollPayload.pollId,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      outcome: 'ignored',
+      reason: 'poll_choice_duplicate_event',
+    });
+    return { persisted: 0, ignored: 1, failures: 0 };
+  }
+
+  try {
+    const persistence = await persistPollChoiceVote(pollPayload, {
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+    });
+
+    if (persistence.status === 'duplicate') {
+      pollChoiceEventBus.emit('pollChoiceDuplicateVote', {
+        requestId: context.requestId,
+        pollId: pollPayload.pollId,
+        tenantId: baseTenantId,
+        instanceId: baseInstanceId,
+      });
+      pollChoiceEventBus.emit('pollChoiceCompleted', {
+        requestId: context.requestId,
+        pollId: pollPayload.pollId,
+        tenantId: baseTenantId,
+        instanceId: baseInstanceId,
+        outcome: 'ignored',
+        reason: 'poll_choice_duplicate',
+      });
+      return { persisted: 0, ignored: 1, failures: 0 };
+    }
+
+    const messageIdentifiers = (
+      persistence.candidateMessageIds.length > 0
+        ? persistence.candidateMessageIds
+        : [pollPayload.pollId]
+    );
+
+    let rewriteResult = await rewritePollVoteMessage(
+      {
+        poll: persistence.poll,
+        state: persistence.state,
+        voterState: persistence.voterState,
+        candidateMessageIds: messageIdentifiers,
+        tenantContext: baseTenantId,
+      },
+      { updatePollVoteMessage: updatePollVoteMessageHandler }
+    );
+
+    if (rewriteResult.status === 'missingTenant') {
+      let resolvedTenant: string | null = null;
+
+      try {
+        const metadata = readString(pollPayload.pollId)
+          ? await getPollMetadata(pollPayload.pollId)
+          : null;
+        resolvedTenant = metadata?.tenantId ?? null;
+      } catch (error) {
+        pollChoiceEventBus.emit('pollChoiceTenantLookupFailed', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          error,
+        });
+      }
+
+      if (resolvedTenant) {
+        rewriteResult = await rewritePollVoteMessage(
+          {
+            poll: persistence.poll,
+            state: persistence.state,
+            voterState: persistence.voterState,
+            candidateMessageIds: messageIdentifiers,
+            tenantContext: resolvedTenant,
+          },
+          { updatePollVoteMessage: updatePollVoteMessageHandler }
+        );
+      } else {
+        pollChoiceEventBus.emit('pollChoiceRewriteMissingTenant', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          voterJid: pollPayload.voterJid,
+          candidates: messageIdentifiers,
+          delayMs: POLL_VOTE_RETRY_DELAY_MS,
+        });
+
+        schedulePollVoteRetry(async () => {
+          try {
+            const metadata = readString(pollPayload.pollId)
+              ? await getPollMetadata(pollPayload.pollId)
+              : null;
+            const retryTenantId = metadata?.tenantId ?? null;
+
+            if (!retryTenantId) {
+              logger.warn('Skipping poll vote message retry due to missing tenant metadata', {
+                pollId: pollPayload.pollId,
+                voterJid: pollPayload.voterJid,
+                messageId: messageIdentifiers.at(0) ?? pollPayload.pollId ?? null,
+              });
+              return;
+            }
+
+            await rewritePollVoteMessage(
+              {
+                poll: persistence.poll,
+                state: persistence.state,
+                voterState: persistence.voterState,
+                candidateMessageIds: messageIdentifiers,
+                tenantContext: retryTenantId,
+              },
+              { updatePollVoteMessage: updatePollVoteMessageHandler }
+            );
+          } catch (error) {
+            logger.error('Failed to retry poll vote message update after missing tenant', {
+              pollId: pollPayload.pollId,
+              voterJid: pollPayload.voterJid,
+              messageId: messageIdentifiers.at(0) ?? pollPayload.pollId ?? null,
+              error,
+            });
+          }
+        }, POLL_VOTE_RETRY_DELAY_MS);
+
+        pollChoiceEventBus.emit('pollChoiceRewriteRetryScheduled', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          voterJid: pollPayload.voterJid,
+          delayMs: POLL_VOTE_RETRY_DELAY_MS,
+        });
+      }
+    }
+
+    emitWhatsAppDebugPhase({
+      phase: 'webhook:poll_choice',
+      correlationId: pollPayload.pollId,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      chatId: normalizeChatId(pollPayload.voterJid),
+      tags: ['webhook', 'poll'],
+      context: {
+        requestId: context.requestId,
+        source: 'webhook',
+        pollId: pollPayload.pollId,
+      },
+      payload: {
+        poll: persistence.poll,
+        state: persistence.state,
+      },
+    });
+
+    await logBaileysDebugEvent('whatsapp:poll_choice', {
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      poll: persistence.poll,
+      state: persistence.state,
+      rawEvent: eventRecord,
+      rawEnvelope: envelopeRecord,
+    });
+
+    let pollMetadataSynced = false;
+
+    try {
+      pollMetadataSynced = await syncPollChoiceState(pollPayload.pollId, {
+        state: persistence.state,
+      });
+    } catch (error) {
+      pollChoiceEventBus.emit('pollChoiceMetadataSyncFailed', {
+        requestId: context.requestId,
+        pollId: pollPayload.pollId,
+        error,
+      });
+    }
+
+    if (!pollMetadataSynced) {
+      const decision = await schedulePollInboxFallback({
+        tenantId: baseTenantId,
+        poll: persistence.poll,
+        identifiers: messageIdentifiers,
+        selectedOptions: persistence.poll.selectedOptions,
+      });
+
+      pollChoiceEventBus.emit('pollChoiceInboxDecision', {
+        requestId: context.requestId,
+        decision,
+      });
+
+      if (decision.status === 'missingTenant') {
+        pollChoiceEventBus.emit('pollChoiceInboxMissingTenant', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          voterJid: pollPayload.voterJid,
+        });
+        pollChoiceEventBus.emit('pollChoiceCompleted', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          tenantId: baseTenantId,
+          instanceId: baseInstanceId,
+          outcome: 'failed',
+          reason: 'poll_choice_inbox_missing_tenant',
+        });
+        return { persisted: 0, ignored: 0, failures: 1 };
+      }
+
+      if (decision.status === 'skip') {
+        pollChoiceEventBus.emit('pollChoiceCompleted', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          tenantId: baseTenantId,
+          instanceId: baseInstanceId,
+          outcome: 'accepted',
+          reason: 'poll_choice',
+        });
+        return { persisted: 1, ignored: 0, failures: 0 };
+      }
+
+      try {
+        const inboxResult = await triggerPollChoiceInboxNotification({
+          poll: persistence.poll,
+          state: persistence.state,
+          selectedOptions: persistence.poll.selectedOptions,
+          tenantId: decision.tenantId,
+          instanceId: baseInstanceId,
+          requestId: context.requestId,
+        });
+
+        if (inboxResult.status !== PollChoiceInboxNotificationStatus.Ok) {
+          const inboxReason: Record<
+            Exclude<PollChoiceInboxNotificationStatus, PollChoiceInboxNotificationStatus.Ok>,
+            string
+          > = {
+            [PollChoiceInboxNotificationStatus.MissingTenant]: 'poll_choice_inbox_missing_tenant',
+            [PollChoiceInboxNotificationStatus.InvalidChatId]: 'poll_choice_inbox_invalid_chat_id',
+            [PollChoiceInboxNotificationStatus.IngestRejected]: 'poll_choice_inbox_ingest_rejected',
+            [PollChoiceInboxNotificationStatus.IngestError]: 'poll_choice_inbox_ingest_error',
+          };
+          const reason = inboxReason[inboxResult.status];
+          pollChoiceEventBus.emit('pollChoiceInboxFailed', {
+            requestId: context.requestId,
+            pollId: pollPayload.pollId,
+            tenantId: decision.tenantId,
+            reason,
+          });
+          pollChoiceEventBus.emit('pollChoiceCompleted', {
+            requestId: context.requestId,
+            pollId: pollPayload.pollId,
+            tenantId: decision.tenantId,
+            instanceId: baseInstanceId,
+            outcome: 'failed',
+            reason,
+          });
+          return { persisted: 0, ignored: 0, failures: 1 };
+        }
+      } catch (error) {
+        pollChoiceEventBus.emit('pollChoiceInboxFailed', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          tenantId: decision.tenantId,
+          reason: 'poll_choice_inbox_error',
+          error,
+        });
+        pollChoiceEventBus.emit('pollChoiceCompleted', {
+          requestId: context.requestId,
+          pollId: pollPayload.pollId,
+          tenantId: decision.tenantId,
+          instanceId: baseInstanceId,
+          outcome: 'failed',
+          reason: 'poll_choice_inbox_error',
+        });
+        return { persisted: 0, ignored: 0, failures: 1 };
+      }
+    }
+
+    pollChoiceEventBus.emit('pollChoiceCompleted', {
+      requestId: context.requestId,
+      pollId: pollPayload.pollId,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      outcome: 'accepted',
+      reason: 'poll_choice',
+    });
+    return { persisted: 1, ignored: 0, failures: 0 };
+  } catch (error) {
+    pollChoiceEventBus.emit('pollChoiceError', {
+      requestId: context.requestId,
+      pollId: pollPayload.pollId,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      error,
+    });
+    pollChoiceEventBus.emit('pollChoiceCompleted', {
+      requestId: context.requestId,
+      pollId: pollPayload.pollId,
+      tenantId: baseTenantId,
+      instanceId: baseInstanceId,
+      outcome: 'failed',
+      reason: 'poll_choice_error',
+    });
+    return { persisted: 0, ignored: 0, failures: 1 };
+  }
+};
+): Promise<{ persisted: number; ignored: number; failures: number }> => {
+  const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
 
   if (!payloadRecord) {
     whatsappWebhookEventsCounter.inc({
@@ -2622,6 +3241,12 @@ export const __testing = {
   },
   resetPollVoteRetryScheduler() {
     schedulePollVoteRetry = defaultPollVoteRetryScheduler;
+  },
+  subscribeToPollChoiceEvent<E extends PollChoiceEventName>(
+    event: E,
+    handler: (payload: PollChoiceEventBusPayloads[E]) => void
+  ) {
+    return pollChoiceEventBus.on(event, handler);
   },
 };
 
