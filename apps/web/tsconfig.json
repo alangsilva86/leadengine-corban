@@ -11,7 +11,9 @@
     "paths": {
       "@/*": ["src/*"],
       "@ticketz/contracts": ["../../packages/contracts/src/index.ts"],
-      "@ticketz/contracts/*": ["../../packages/contracts/src/*"]
+      "@ticketz/contracts/*": ["../../packages/contracts/src/*"],
+      "@ticketz/shared": ["../../packages/shared/src/index.ts"],
+      "@ticketz/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": [

@@ -4,7 +4,7 @@ import {
   POLL_PLACEHOLDER_MESSAGES,
   getFirstInteger,
   getFirstNonEmptyString,
-} from '@ticketz/shared/utils/poll';
+} from '@ticketz/shared';
 
 const buildPollOptionsLookup = (metadataPoll, pollChoiceMetadata, interactivePoll) => {
   const lookup = new Map();

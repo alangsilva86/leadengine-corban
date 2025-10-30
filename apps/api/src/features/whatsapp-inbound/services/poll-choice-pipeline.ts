@@ -11,7 +11,7 @@ import {
   type PollChoiceVoteEntry,
 } from '../schemas/poll-choice';
 import { buildSelectedOptionSummaries, normalizeChatId } from '../utils/poll-helpers';
-import { dedupeNormalizedStrings, normalizeTextValue } from '@ticketz/shared/utils/poll';
+import { dedupeNormalizedStrings, normalizeTextValue } from '@ticketz/shared';
 import { recordPollChoiceVote } from './poll-choice-service';
 
 const normalizeSelectionId = (value: unknown): string | null => {

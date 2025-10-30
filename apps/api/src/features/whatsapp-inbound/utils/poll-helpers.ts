@@ -3,7 +3,7 @@ import {
   dedupeNormalizedStrings,
   isPollPlaceholderText,
   normalizeTextValue,
-} from '@ticketz/shared/utils/poll';
+} from '@ticketz/shared';
 
 import type { PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
 
