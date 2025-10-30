@@ -58,6 +58,94 @@ const TextMessagePayloadSchema = z
   })
   .strict();
 
+const PollOptionObjectSchema = z
+  .object({
+    id: z.string().optional(),
+    pollId: z.string().optional(),
+    optionId: z.string().optional(),
+    key: z.string().optional(),
+    value: z.string().optional(),
+    title: z.string().optional(),
+    text: z.string().optional(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    optionName: z.string().optional(),
+    label: z.string().optional(),
+    displayName: z.string().optional(),
+    index: z.number().int().nonnegative().optional(),
+    position: z.number().int().nonnegative().optional(),
+    votes: z.number().int().nonnegative().optional(),
+    count: z.number().int().nonnegative().optional(),
+  })
+  .partial()
+  .passthrough();
+
+const PollOptionSchema = z.union([z.string(), PollOptionObjectSchema]);
+
+const PollAggregatesSchema = z
+  .object({
+    totalVotes: z.number().int().nonnegative().optional(),
+    totalVoters: z.number().int().nonnegative().optional(),
+    optionTotals: z.record(z.number().int().nonnegative()).optional(),
+  })
+  .partial()
+  .passthrough();
+
+const PollVoteSchema = z
+  .object({
+    timestamp: z.string().optional(),
+    selectedOptions: z.array(PollOptionSchema).optional(),
+    optionIds: z.array(z.string()).optional(),
+  })
+  .partial()
+  .passthrough();
+
+const PollDescriptorSchema = z
+  .object({
+    id: z.string().optional(),
+    pollId: z.string().optional(),
+    question: z.string().optional(),
+    title: z.string().optional(),
+    name: z.string().optional(),
+    updatedAt: z.string().optional(),
+    timestamp: z.string().optional(),
+    totalVotes: z.number().int().nonnegative().optional(),
+    totalVoters: z.number().int().nonnegative().optional(),
+    options: z.array(PollOptionSchema).optional(),
+    selectedOptions: z.array(PollOptionSchema).optional(),
+    aggregates: PollAggregatesSchema.optional(),
+    optionTotals: z.record(z.number().int().nonnegative()).optional(),
+  })
+  .partial()
+  .passthrough();
+
+const PollChoiceMetadataSchema = z
+  .object({
+    id: z.string().optional(),
+    pollId: z.string().optional(),
+    vote: PollVoteSchema.optional(),
+    options: z.array(PollOptionSchema).optional(),
+  })
+  .partial()
+  .passthrough();
+
+const InteractivePollMetadataSchema = z
+  .object({
+    poll: PollDescriptorSchema.optional(),
+  })
+  .partial()
+  .passthrough();
+
+export const PollMetadataSchema = z
+  .object({
+    origin: z.string().optional(),
+    poll: PollDescriptorSchema.optional(),
+    pollChoice: PollChoiceMetadataSchema.optional(),
+    interactive: InteractivePollMetadataSchema.optional(),
+  })
+  .partial()
+  .passthrough();
+
 const LocationDescriptorSchema = z
   .object({
     latitude: z
