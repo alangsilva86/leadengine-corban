@@ -358,7 +358,7 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
     res.status(204).send();
   };
 
-const handleVerification = (req: Request, res: Response) => {
+const handleVerificationRequest = (req: Request, res: Response) => {
   const mode = readString(req.query['hub.mode']);
   const challenge = readString(req.query['hub.challenge']);
   const token = readString(req.query['hub.verify_token']);
@@ -411,7 +411,7 @@ export const createWhatsAppWebhookController = (
     handleWhatsAppWebhook: createHandleWhatsAppWebhook(config),
     verifyWhatsAppWebhookRequest: createVerifyWhatsAppWebhookRequest(config),
     webhookRateLimiter: createWebhookRateLimiter(config),
-    handleVerification,
+    handleVerification: handleVerificationRequest,
     __testing: testing,
   };
 };

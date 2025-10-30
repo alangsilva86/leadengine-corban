@@ -5,7 +5,7 @@ import {
   updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
 
-import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
+import { emitMessageUpdatedEvents } from '../../../../services/ticket-service';
 import { sanitizeJsonPayload } from '../../utils/baileys-event-logger';
 import {
   asJsonRecord,

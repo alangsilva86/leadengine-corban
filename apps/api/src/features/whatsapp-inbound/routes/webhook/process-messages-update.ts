@@ -8,7 +8,7 @@ import {
   findMessageByExternalId as storageFindMessageByExternalId,
 } from '@ticketz/storage';
 
-import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
+import { emitMessageUpdatedEvents } from '../../../../services/ticket-service';
 import { normalizeBaileysMessageStatus } from '../../services/baileys-status-normalizer';
 import type { RawBaileysUpsertEvent } from '../../services/baileys-raw-normalizer';
 import { buildIdempotencyKey, registerIdempotency } from '../../utils/webhook-idempotency';
