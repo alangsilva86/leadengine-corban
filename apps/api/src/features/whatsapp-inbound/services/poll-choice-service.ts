@@ -1,3 +1,5 @@
+import { decryptPollVote } from '@whiskeysockets/baileys';
+
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import {
@@ -159,6 +161,167 @@ const selectionsMatch = (left: string[] | undefined, right: string[] | undefined
 
 const buildStateId = (pollId: string): string => `poll-state:${pollId}`;
 
+const base64UrlEncode = (input: Uint8Array): string =>
+  Buffer.from(input)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/u, '');
+
+const decodeBase64Variant = (value: string | null | undefined): Buffer | null => {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^[0-9a-fA-F]+$/u.test(trimmed) && trimmed.length % 2 === 0) {
+    return Buffer.from(trimmed, 'hex');
+  }
+
+  if (!/^[A-Za-z0-9+/=_-]+$/u.test(trimmed)) {
+    return null;
+  }
+
+  let normalized = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+  if (normalized.length % 4 !== 0) {
+    normalized = normalized.padEnd(normalized.length + (4 - (normalized.length % 4)), '=');
+  }
+
+  try {
+    const buffer = Buffer.from(normalized, 'base64');
+    const reencoded = base64UrlEncode(buffer);
+    const normalizedInput = trimmed.replace(/=+$/u, '');
+    if (reencoded === normalizedInput) {
+      return buffer;
+    }
+  } catch (error) {
+    logger.debug('Failed to decode base64 payload for poll vote helper', {
+      error,
+    });
+  }
+
+  return null;
+};
+
+const buildOptionLookup = (
+  metadataOptions: PollMetadataOption[] | null | undefined,
+  stateOptions: PollChoiceState['options']
+): Map<string, string> => {
+  const map = new Map<string, string>();
+
+  const register = (option: { id?: string | null | undefined } | null | undefined): void => {
+    const optionId = option?.id?.trim();
+    if (!optionId) {
+      return;
+    }
+
+    const decoded = decodeBase64Variant(optionId) ?? Buffer.from(optionId);
+    const key = base64UrlEncode(decoded);
+
+    if (!map.has(key)) {
+      map.set(key, optionId);
+    }
+  };
+
+  for (const option of metadataOptions ?? []) {
+    register(option);
+  }
+
+  for (const option of stateOptions) {
+    register(option);
+  }
+
+  return map;
+};
+
+const decryptEncryptedVoteSelections = (params: {
+  pollId: string;
+  voterJid: string;
+  encryptedVote: PollChoiceVoteEntry['encryptedVote'] | undefined;
+  messageSecret: string | null;
+  creationMessageId: string | null;
+  creationMessageKey:
+    | { remoteJid?: string | null; participant?: string | null; fromMe?: boolean | null }
+    | null;
+  metadataOptions: PollMetadataOption[] | null | undefined;
+  stateOptions: PollChoiceState['options'];
+}): string[] | null => {
+  if (!params.encryptedVote?.encPayload || !params.encryptedVote.encIv) {
+    return null;
+  }
+
+  if (!params.messageSecret || !params.creationMessageId || !params.creationMessageKey) {
+    return null;
+  }
+
+  const payloadBytes = decodeBase64Variant(params.encryptedVote.encPayload);
+  const ivBytes = decodeBase64Variant(params.encryptedVote.encIv);
+  const secretBytes = decodeBase64Variant(params.messageSecret);
+
+  if (!payloadBytes || !ivBytes || !secretBytes) {
+    logger.warn('Invalid encrypted poll vote payload - unable to decode buffers', {
+      pollId: params.pollId,
+      voterJid: params.voterJid,
+    });
+    return null;
+  }
+
+  const creatorJid =
+    params.creationMessageKey.participant?.trim() ??
+    params.creationMessageKey.remoteJid?.trim() ??
+    null;
+
+  if (!creatorJid) {
+    logger.warn('Missing poll creator JID for encrypted vote decryption', {
+      pollId: params.pollId,
+      voterJid: params.voterJid,
+    });
+    return null;
+  }
+
+  try {
+    const voteMessage = decryptPollVote(
+      { encPayload: payloadBytes, encIv: ivBytes },
+      {
+        pollCreatorJid: creatorJid,
+        pollMsgId: params.creationMessageId,
+        pollEncKey: secretBytes,
+        voterJid: params.voterJid,
+      }
+    );
+
+    const selected = Array.isArray(voteMessage?.selectedOptions)
+      ? voteMessage.selectedOptions
+      : [];
+
+    if (!selected.length) {
+      return [];
+    }
+
+    const optionMap = buildOptionLookup(params.metadataOptions, params.stateOptions);
+
+    const normalized = selected
+      .map((entry) => {
+        const key = base64UrlEncode(entry);
+        return optionMap.get(key) ?? key;
+      })
+      .filter((value): value is string => Boolean(value));
+
+    return toArrayUnique(normalized);
+  } catch (error) {
+    logger.warn('Failed to decrypt WhatsApp poll vote using stored metadata', {
+      pollId: params.pollId,
+      voterJid: params.voterJid,
+      error,
+    });
+    return null;
+  }
+};
+
 const normalizeSelectedOptionTitle = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -254,7 +417,6 @@ export const recordPollChoiceVote = async (
     throw new Error('Invalid poll choice payload');
   }
 
-  const selectedOptionIds = resolveSelectedOptionIds(parsed);
   const stateId = buildStateId(pollId);
 
   const [existingRecord, pollMetadata] = await Promise.all([
@@ -265,6 +427,47 @@ export const recordPollChoiceVote = async (
   ]);
 
   const existingState = ensureState(existingRecord?.payload, pollId);
+  const previousVote = existingState.votes[voterJid];
+
+  const resolvedMessageSecret =
+    pollMetadata?.messageSecret ?? existingState.context?.messageSecret ?? null;
+  const resolvedCreationMessageIdForDecrypt =
+    parsed.pollCreationMessageId?.trim() ??
+    pollMetadata?.creationMessageId?.trim() ??
+    existingState.context?.creationMessageId?.trim() ??
+    pollId;
+  const resolvedCreationKey =
+    parsed.pollCreationMessageKey ??
+    pollMetadata?.creationMessageKey ??
+    existingState.context?.creationMessageKey ??
+    null;
+
+  let selectedOptionIds = resolveSelectedOptionIds(parsed);
+
+  if (selectedOptionIds.length === 0 && previousVote?.encryptedVote) {
+    try {
+      const decryptedOptionIds = decryptEncryptedVoteSelections({
+        pollId,
+        voterJid,
+        encryptedVote: previousVote.encryptedVote,
+        messageSecret: resolvedMessageSecret,
+        creationMessageId: resolvedCreationMessageIdForDecrypt,
+        creationMessageKey: resolvedCreationKey,
+        metadataOptions: pollMetadata?.options,
+        stateOptions: existingState.options,
+      });
+      if (Array.isArray(decryptedOptionIds) && decryptedOptionIds.length > 0) {
+        selectedOptionIds = decryptedOptionIds;
+      }
+    } catch (error) {
+      logger.warn('Failed to resolve encrypted poll selections from helper', {
+        pollId,
+        voterJid,
+        error,
+      });
+    }
+  }
+
   const options = mergeOptions(existingState.options, parsed.options, pollMetadata?.options);
   const selectedOptions = deriveSelectedOptions(
     selectedOptionIds,
@@ -272,7 +475,6 @@ export const recordPollChoiceVote = async (
     parsed.options,
     parsed.selectedOptions
   );
-  const previousVote = existingState.votes[voterJid];
 
   const resolvedQuestion =
     pollMetadata?.question ?? existingState.context?.question ?? null;
@@ -290,16 +492,13 @@ export const recordPollChoiceVote = async (
     resolvedAllowMultiple = resolvedSelectableCount > 1;
   }
 
-  const resolvedCreationKey =
-    pollMetadata?.creationMessageKey ?? existingState.context?.creationMessageKey ?? null;
-
   const resolvedContext = {
     question: resolvedQuestion,
     selectableOptionsCount: resolvedSelectableCount,
     allowMultipleAnswers: resolvedAllowMultiple ?? undefined,
     creationMessageId:
       pollMetadata?.creationMessageId ?? existingState.context?.creationMessageId ?? null,
-    creationMessageKey: resolvedCreationKey,
+    creationMessageKey: resolvedCreationKey ?? undefined,
     messageSecret: pollMetadata?.messageSecret ?? existingState.context?.messageSecret ?? null,
     messageSecretVersion:
       pollMetadata?.messageSecretVersion ?? existingState.context?.messageSecretVersion ?? null,
@@ -321,10 +520,21 @@ export const recordPollChoiceVote = async (
   const sameMessage = previousVote?.messageId === (parsed.messageId ?? null);
   const sameTimestamp = previousVote?.timestamp === (parsed.timestamp ?? null);
 
-  if (existingRecord && sameSelection && sameMessage && sameTimestamp && !contextChanged) {
-    const previousSelected = Array.isArray(previousVote?.selectedOptions)
-      ? (previousVote?.selectedOptions as PollChoiceSelectedOptionPayload[])
-      : [];
+  const previousSelectedOptions = Array.isArray(previousVote?.selectedOptions)
+    ? (previousVote.selectedOptions as PollChoiceSelectedOptionPayload[])
+    : [];
+  const shouldPersistSelectionDetails =
+    selectedOptions.length > 0 && previousSelectedOptions.length === 0;
+
+  if (
+    existingRecord &&
+    sameSelection &&
+    sameMessage &&
+    sameTimestamp &&
+    !contextChanged &&
+    !shouldPersistSelectionDetails
+  ) {
+    const previousSelected = previousSelectedOptions;
     return {
       updated: false,
       state: existingState,
@@ -457,4 +667,5 @@ export const __testing = {
   selectionsMatch,
   ensureState,
   buildStateId,
+  decryptEncryptedVoteSelections,
 };
