@@ -9,6 +9,7 @@ import {
   shouldUpdatePollMessageContent,
   POLL_PLACEHOLDER_MESSAGES,
 } from '../utils/poll-helpers';
+import { normalizeTextValue } from '@ticketz/shared/utils/poll';
 import {
   findMessageByExternalId as storageFindMessageByExternalId,
   findPollVoteMessageCandidate,
@@ -98,37 +99,24 @@ export type PollVoteUpdateResult =
       error: unknown;
     };
 
-const toTrimmedString = (value: unknown): string | null => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value.toString();
-  }
-
-  return null;
-};
-
 const collectCandidateIdentifiers = (params: PollVoteUpdateParams): string[] => {
   const identifiers = new Set<string>();
 
   if (Array.isArray(params.messageIds)) {
     for (const entry of params.messageIds) {
-      const normalized = toTrimmedString(entry);
+      const normalized = normalizeTextValue(entry);
       if (normalized) {
         identifiers.add(normalized);
       }
     }
   }
 
-  const primaryMessageId = toTrimmedString(params.messageId);
+  const primaryMessageId = normalizeTextValue(params.messageId);
   if (primaryMessageId) {
     identifiers.add(primaryMessageId);
   }
 
-  const pollId = toTrimmedString(params.pollId);
+  const pollId = normalizeTextValue(params.pollId);
   if (pollId) {
     identifiers.add(pollId);
   }
@@ -182,14 +170,14 @@ const resolveCandidateMessage = async (
     try {
       existingMessage = await deps.findPollVoteMessageCandidate({
         tenantId,
-        chatId: toTrimmedString(params.chatId),
+        chatId: normalizeTextValue(params.chatId),
         pollId: params.pollId,
         identifiers: candidates,
       });
     } catch (error) {
       logger.warn('rewrite.poll_vote.lookup_candidate_failed', {
         tenantId,
-        chatId: toTrimmedString(params.chatId) ?? null,
+        chatId: normalizeTextValue(params.chatId) ?? null,
         pollId: params.pollId,
         identifiers: candidates,
         error,
@@ -206,7 +194,7 @@ const resolveCandidateMessage = async (
   if (!existingMessage) {
     logger.debug('rewrite.poll_vote.not_found', {
       tenantId,
-      chatId: toTrimmedString(params.chatId) ?? null,
+      chatId: normalizeTextValue(params.chatId) ?? null,
       pollId: params.pollId,
       voterJid: params.voterJid,
       identifiersTried: candidates,
@@ -221,10 +209,10 @@ const resolveCandidateMessage = async (
 
   logger.info('rewrite.poll_vote.matched', {
     tenantId,
-    chatId: toTrimmedString(params.chatId) ?? null,
+    chatId: normalizeTextValue(params.chatId) ?? null,
     pollId: params.pollId,
     storageMessageId: (existingMessage as { id?: unknown })?.id ?? null,
-    externalId: toTrimmedString((existingMessage as { externalId?: unknown })?.externalId),
+    externalId: normalizeTextValue((existingMessage as { externalId?: unknown })?.externalId),
     identifiersTried: candidates,
   });
 
@@ -444,8 +432,10 @@ const applyPollVoteUpdate = async (
     ) {
       logger.info('rewrite.poll_vote.updated', {
         tenantId,
-        chatId: toTrimmedString(params.chatId) ?? null,
-        messageId: toTrimmedString((updatedMessage as { externalId?: unknown })?.externalId) ?? storageMessageId,
+        chatId: normalizeTextValue(params.chatId) ?? null,
+        messageId:
+          normalizeTextValue((updatedMessage as { externalId?: unknown })?.externalId) ??
+          storageMessageId,
         storageMessageId,
         pollId: params.pollId,
         selectedOptions: preparation.payload.metadata?.pollVote?.selectedOptions ?? null,
@@ -459,7 +449,9 @@ const applyPollVoteUpdate = async (
         logger.info('rewrite.poll_vote.emit', {
           tenantId,
           ticketId: updatedRecord.ticketId,
-          messageId: toTrimmedString((updatedMessage as { externalId?: unknown })?.externalId) ?? storageMessageId,
+          messageId:
+            normalizeTextValue((updatedMessage as { externalId?: unknown })?.externalId) ??
+            storageMessageId,
           storageMessageId,
           pollId: params.pollId,
           voteOptionCount: Array.isArray(params.selectedOptions) ? params.selectedOptions.length : 0,
@@ -472,7 +464,10 @@ const applyPollVoteUpdate = async (
       state: PollVoteUpdateState.Completed,
       tenantId,
       storageMessageId,
-      messageId: toTrimmedString((preparation.message as { externalId?: unknown })?.externalId) ?? storageMessageId ?? null,
+      messageId:
+        normalizeTextValue((preparation.message as { externalId?: unknown })?.externalId) ??
+        storageMessageId ??
+        null,
       candidates: preparation.candidates,
       metadataChanged: preparation.metadataChanged,
       contentUpdated: preparation.contentUpdated,
@@ -482,7 +477,7 @@ const applyPollVoteUpdate = async (
     logger.warn('rewrite.poll_vote.persist_failed', {
       tenantId,
       storageMessageId,
-      chatId: toTrimmedString(params.chatId) ?? null,
+      chatId: normalizeTextValue(params.chatId) ?? null,
       pollId: params.pollId,
       error,
     });
@@ -502,7 +497,7 @@ export const updatePollVoteMessage = async (
   params: PollVoteUpdateParams,
   deps: PollVoteUpdateDeps = {}
 ): Promise<PollVoteUpdateResult> => {
-  const tenantId = toTrimmedString(params.tenantId);
+  const tenantId = normalizeTextValue(params.tenantId);
   const candidates = collectCandidateIdentifiers(params);
 
   if (!tenantId) {

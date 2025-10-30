@@ -11,6 +11,7 @@ import {
 } from '@ticketz/storage';
 import { getPollMetadata } from './poll-metadata-service';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
+import { normalizeTextValue } from '@ticketz/shared/utils/poll';
 
 const POLL_STATE_PREFIX = 'poll-state:';
 const POLL_STATE_SOURCE = 'whatsapp.poll_state';
@@ -26,14 +27,6 @@ const asRecord = (value: unknown): UnknownRecord | null => {
 
 const asArray = <T = unknown>(value: unknown): T[] => {
   return Array.isArray(value) ? (value as T[]) : [];
-};
-
-const toTrimmedString = (value: unknown): string | null => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  return null;
 };
 
 const compactRecord = (input: UnknownRecord): UnknownRecord => {
@@ -83,10 +76,10 @@ const resolveExistingOptionsById = (existingOptions: unknown[]): Map<string, Unk
     }
 
     const identifiers = [
-      toTrimmedString(record.id),
-      toTrimmedString(record.optionId),
-      toTrimmedString(record.key),
-      toTrimmedString(record.value),
+      normalizeTextValue(record.id),
+      normalizeTextValue(record.optionId),
+      normalizeTextValue(record.key),
+      normalizeTextValue(record.value),
     ].filter((candidate): candidate is string => Boolean(candidate));
 
     for (const id of identifiers) {
@@ -113,13 +106,13 @@ const buildPollOptionMetadata = (
     null;
 
   const existingLabel =
-    toTrimmedString(existingCandidate?.title) ??
-    toTrimmedString(existingCandidate?.name) ??
-    toTrimmedString(existingCandidate?.text) ??
+    normalizeTextValue(existingCandidate?.title) ??
+    normalizeTextValue(existingCandidate?.name) ??
+    normalizeTextValue(existingCandidate?.text) ??
     null;
 
   const label =
-    toTrimmedString(option.title) ??
+    normalizeTextValue(option.title) ??
     existingLabel ??
     `Opção ${typeof option.index === 'number' ? option.index + 1 : index + 1}`;
 
@@ -159,15 +152,15 @@ export const buildPollMetadata = (existing: unknown, state: PollChoiceState): Un
   }
 
   const question =
-    toTrimmedString(existingRecord.question) ??
-    toTrimmedString(existingRecord.title) ??
-    toTrimmedString(existingRecord.name) ??
-    toTrimmedString(state.context?.question) ??
+    normalizeTextValue(existingRecord.question) ??
+    normalizeTextValue(existingRecord.title) ??
+    normalizeTextValue(existingRecord.name) ??
+    normalizeTextValue(state.context?.question) ??
     null;
 
   const base = {
     ...existingRecord,
-    id: toTrimmedString(existingRecord.id) ?? state.pollId,
+    id: normalizeTextValue(existingRecord.id) ?? state.pollId,
     pollId: state.pollId,
     question: question ?? existingRecord.question,
     title: existingRecord.title ?? question ?? existingRecord.question,
@@ -228,11 +221,11 @@ export const syncPollChoiceState = async (
 
   const stateId = `${POLL_STATE_PREFIX}${trimmedPollId}`;
 
-  let tenantId = toTrimmedString(state.context?.tenantId);
+  let tenantId = normalizeTextValue(state.context?.tenantId);
   if (!tenantId) {
     const metadata = await getPollMetadata(trimmedPollId);
-    const metadataTenantId = toTrimmedString(metadata?.tenantId);
-    const metadataCreationMessageId = toTrimmedString(metadata?.creationMessageId);
+    const metadataTenantId = normalizeTextValue(metadata?.tenantId);
+    const metadataCreationMessageId = normalizeTextValue(metadata?.creationMessageId);
     const metadataCreationMessageKey = metadata?.creationMessageKey ?? null;
 
     if (!metadata || !metadataTenantId) {
@@ -297,21 +290,21 @@ export const syncPollChoiceState = async (
   const identifiers = new Set<string>();
   identifiers.add(trimmedPollId);
 
-  const creationMessageId = toTrimmedString(state.context?.creationMessageId);
+  const creationMessageId = normalizeTextValue(state.context?.creationMessageId);
   if (creationMessageId) {
     identifiers.add(creationMessageId);
   }
 
   Object.values(state.votes ?? {}).forEach((vote) => {
-    const messageId = toTrimmedString(vote?.messageId);
+    const messageId = normalizeTextValue(vote?.messageId);
     if (messageId) {
       identifiers.add(messageId);
     }
   });
 
   const chatId =
-    toTrimmedString(state.context?.creationMessageKey?.remoteJid) ??
-    toTrimmedString(state.context?.creationMessageKey?.participant) ??
+    normalizeTextValue(state.context?.creationMessageKey?.remoteJid) ??
+    normalizeTextValue(state.context?.creationMessageKey?.participant) ??
     null;
 
   const identifierList = Array.from(identifiers.values());
@@ -352,8 +345,8 @@ export const syncPollChoiceState = async (
   const normalizedExisting = normalizeJson(existingPoll);
   const normalizedNext = normalizeJson(nextPollMetadata);
 
-  const pollQuestion = toTrimmedString((nextPollMetadata as { question?: unknown })?.question);
-  const existingPollChoiceQuestion = toTrimmedString(existingPollChoice?.question);
+  const pollQuestion = normalizeTextValue((nextPollMetadata as { question?: unknown })?.question);
+  const existingPollChoiceQuestion = normalizeTextValue(existingPollChoice?.question);
 
   const pollMetadataChanged =
     JSON.stringify(normalizedExisting) !== JSON.stringify(normalizedNext);

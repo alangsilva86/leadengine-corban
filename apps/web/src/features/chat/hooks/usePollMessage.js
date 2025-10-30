@@ -1,28 +1,10 @@
 import { useMemo } from 'react';
 import { PollMetadataSchema } from '@ticketz/contracts';
-
-const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
-
-const getFirstNonEmptyString = (...candidates) => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') {
-      const trimmed = candidate.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-  return null;
-};
-
-const getFirstInteger = (...candidates) => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'number' && Number.isInteger(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-};
+import {
+  POLL_PLACEHOLDER_MESSAGES,
+  getFirstInteger,
+  getFirstNonEmptyString,
+} from '@ticketz/shared/utils/poll';
 
 const buildPollOptionsLookup = (metadataPoll, pollChoiceMetadata, interactivePoll) => {
   const lookup = new Map();
