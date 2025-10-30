@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { randomUUID, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import type { ZodIssue } from 'zod';
 
@@ -13,7 +13,6 @@ import {
   getWebhookApiKey,
   getWebhookSignatureSecret,
   getWebhookVerifyToken,
-  isWebhookSignatureRequired,
 } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import {
@@ -58,6 +57,13 @@ import {
   upsertPollMetadata,
   type PollMetadataOption,
 } from '../services/poll-metadata-service';
+import {
+  ensureWebhookContext,
+  logWebhookEvent,
+  readString,
+  resolveClientAddress,
+  trackWebhookRejection,
+} from './context';
 
 const webhookRouter: Router = Router();
 const integrationWebhookRouter: Router = Router();
@@ -154,18 +160,6 @@ const unwrapWebhookEvent = (
   return { event: merged as RawBaileysUpsertEvent, envelope };
 };
 
-const readString = (...candidates: unknown[]): string | null => {
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string') {
-      const trimmed = candidate.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-  return null;
-};
-
 const readNumber = (...candidates: unknown[]): number | null => {
   for (const candidate of candidates) {
     if (typeof candidate === 'number' && Number.isFinite(candidate)) {
@@ -194,68 +188,6 @@ const normalizeApiKey = (value: string | null): string | null => {
   const normalized = (bearerMatch?.[1] ?? value).trim();
 
   return normalized.length > 0 ? normalized : null;
-};
-
-type WhatsAppWebhookContext = {
-  requestId: string;
-  remoteIp: string | null;
-  userAgent: string | null;
-  signatureRequired: boolean;
-};
-
-type WebhookResponseLocals = Record<string, unknown> & {
-  whatsappWebhook?: WhatsAppWebhookContext;
-};
-
-const ensureWebhookContext = (req: Request, res: Response): WhatsAppWebhookContext => {
-  const locals = res.locals as WebhookResponseLocals;
-  if (locals.whatsappWebhook) {
-    return locals.whatsappWebhook;
-  }
-
-  const requestId =
-    readString(req.rid, req.header('x-request-id'), req.header('x-correlation-id')) ?? randomUUID();
-  const remoteIp = readString(
-    req.header('x-real-ip'),
-    req.header('x-forwarded-for'),
-    req.ip,
-    req.socket.remoteAddress ?? null
-  );
-  const userAgent = readString(req.header('user-agent'), req.header('x-user-agent'));
-
-  const context: WhatsAppWebhookContext = {
-    requestId,
-    remoteIp,
-    userAgent,
-    signatureRequired: isWebhookSignatureRequired(),
-  };
-
-  locals.whatsappWebhook = context;
-  return context;
-};
-
-const logWebhookEvent = (
-  level: 'info' | 'warn' | 'error' | 'debug',
-  message: string,
-  context: WhatsAppWebhookContext,
-  extra?: Record<string, unknown>
-) => {
-  logger[level](message, {
-    requestId: context.requestId,
-    remoteIp: context.remoteIp ?? 'unknown',
-    userAgent: context.userAgent ?? 'unknown',
-    ...extra,
-  });
-};
-
-const trackWebhookRejection = (reason: 'invalid_api_key' | 'invalid_signature' | 'rate_limited') => {
-  whatsappWebhookEventsCounter.inc({
-    origin: 'webhook',
-    tenantId: 'unknown',
-    instanceId: 'unknown',
-    result: 'rejected',
-    reason,
-  });
 };
 
 const POLL_VOTE_RETRY_DELAY_MS = 500;
@@ -2220,17 +2152,6 @@ const processPollChoiceEvent = async (
 
 const WEBHOOK_RATE_LIMIT_WINDOW_MS = 10_000;
 const WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60;
-
-const resolveClientAddress = (req: Request): string => {
-  return (
-    readString(
-      req.header('x-real-ip'),
-      req.header('x-forwarded-for'),
-      req.ip,
-      req.socket.remoteAddress ?? null
-    ) ?? req.ip ?? 'unknown'
-  );
-};
 
 const webhookRateLimiter = rateLimit({
   windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
