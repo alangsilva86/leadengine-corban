@@ -2,10 +2,10 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as webhookRoutes from '../webhook-routes';
+import { whatsappWebhookRouter } from '../webhook-routes';
+import { __testing as webhookControllerTesting } from '../webhook-controller';
 import { PollVoteUpdateState } from '../../services/poll-vote-updater';
-
-const { whatsappWebhookRouter } = webhookRoutes;
+import type { RawBaileysUpsertEvent } from '../../services/baileys-raw-normalizer';
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
 import { __testing as inboundQueueTesting } from '../../services/inbound-queue';
@@ -992,7 +992,7 @@ describe('WhatsApp webhook poll choice events', () => {
     pollChoiceEvents.length = 0;
     pollChoiceSubscriptions.forEach((unsubscribe) => unsubscribe());
     pollChoiceSubscriptions = [
-      webhookRoutes.__testing.subscribeToPollChoiceEvent('pollChoiceCompleted', (payload) => {
+      webhookControllerTesting.pollChoice.subscribe('pollChoiceCompleted', (payload) => {
         pollChoiceEvents.push({ event: 'pollChoiceCompleted', payload });
       }),
     ];
@@ -1001,6 +1001,35 @@ describe('WhatsApp webhook poll choice events', () => {
   afterEach(() => {
     pollChoiceSubscriptions.forEach((unsubscribe) => unsubscribe());
     pollChoiceSubscriptions = [];
+  });
+
+  describe('event handler map', () => {
+    afterEach(() => {
+      webhookControllerTesting.eventHandlers.resetAll();
+    });
+
+    it('dispatches POLL_CHOICE events to the poll handler', async () => {
+      const pollHandler = vi.fn().mockResolvedValue({ persisted: 1, ignored: 0, failures: 0 });
+
+      webhookControllerTesting.eventHandlers.override('POLL_CHOICE', {
+        kind: 'poll',
+        handler: pollHandler,
+      });
+
+      const eventRecord = { event: 'POLL_CHOICE' } as RawBaileysUpsertEvent;
+      const envelope: Record<string, unknown> = {};
+      const context = { requestId: 'evt-map' };
+
+      const result = await webhookControllerTesting.eventHandlers.dispatch(
+        'POLL_CHOICE',
+        eventRecord,
+        envelope,
+        context
+      );
+
+      expect(pollHandler).toHaveBeenCalledWith(eventRecord, envelope, context);
+      expect(result).toEqual({ kind: 'poll', outcome: { persisted: 1, ignored: 0, failures: 0 } });
+    });
   });
 
   it('captures poll metadata from poll creation messages', async () => {
@@ -1284,7 +1313,7 @@ describe('WhatsApp webhook poll choice events', () => {
       await callback();
     });
 
-    webhookRoutes.__testing.setPollVoteRetryScheduler(schedulerSpy);
+    webhookControllerTesting.pollChoice.setPollVoteRetryScheduler(schedulerSpy);
 
     try {
       const app = buildApp();
@@ -1315,7 +1344,7 @@ describe('WhatsApp webhook poll choice events', () => {
         })
       );
     } finally {
-      webhookRoutes.__testing.resetPollVoteRetryScheduler();
+      webhookControllerTesting.pollChoice.resetPollVoteRetryScheduler();
     }
   });
 
@@ -1387,7 +1416,7 @@ describe('WhatsApp webhook poll choice events', () => {
       contentUpdated: true,
       captionUpdated: false,
     });
-    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+    webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
       const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
@@ -1415,7 +1444,7 @@ describe('WhatsApp webhook poll choice events', () => {
         })
       );
     } finally {
-      webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+      webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     }
     storageFindMessageByExternalIdMock.mockResolvedValueOnce({
       id: 'message-db-id',
@@ -1561,7 +1590,7 @@ describe('WhatsApp webhook poll choice events', () => {
       contentUpdated: true,
       captionUpdated: false,
     });
-    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+    webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
       const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
@@ -1592,7 +1621,7 @@ describe('WhatsApp webhook poll choice events', () => {
         })
       );
     } finally {
-      webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+      webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     }
   });
 
@@ -1631,7 +1660,7 @@ describe('WhatsApp webhook poll choice events', () => {
       contentUpdated: true,
       captionUpdated: false,
     });
-    webhookRoutes.__testing.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
+    webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
       const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
@@ -1653,7 +1682,7 @@ describe('WhatsApp webhook poll choice events', () => {
         expect.objectContaining({ selectedOptions: [] })
       );
     } finally {
-      webhookRoutes.__testing.resetUpdatePollVoteMessageHandler();
+      webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     }
   });
 
