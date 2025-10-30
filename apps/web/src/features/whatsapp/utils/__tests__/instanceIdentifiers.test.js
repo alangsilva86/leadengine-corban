@@ -3,7 +3,7 @@ import {
   extractInstanceFromPayload,
   looksLikeWhatsAppJid,
   resolveInstancePhone,
-} from '../instanceIdentifiers.js';
+} from '../../lib/instances';
 
 describe('WhatsApp instance identifier helpers', () => {
   describe('looksLikeWhatsAppJid', () => {

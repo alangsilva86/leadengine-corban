@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import useInstanceLiveUpdates from '../hooks/useInstanceLiveUpdates.js';
-import { parseRealtimeEvent } from '../utils/instanceSync.js';
+import { parseRealtimeEvent } from '../utils/instanceSync';
 import { useInstancesStore, useInstancesStoreBundle } from '../state/instancesStore';
 
 export const useLiveUpdatesService = () => {
