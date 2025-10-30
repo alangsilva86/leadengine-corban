@@ -233,9 +233,16 @@ export const MessageBubble = ({
           ? option.index
           : index;
       const normalizedIndex = rawIndex >= 0 ? rawIndex : index;
-      const labelCandidate = [option.title, option.text, option.name, option.description].find(
-        (value) => typeof value === 'string' && value.trim().length > 0
-      );
+      const labelCandidate = [
+        option.title,
+        option.text,
+        option.name,
+        option.description,
+        option.optionName,
+        option.label,
+        option.optionLabel,
+        option.displayName,
+      ].find((value) => typeof value === 'string' && value.trim().length > 0);
       const label = labelCandidate ? labelCandidate.trim() : null;
       const entry = buildEntry(label, normalizedIndex);
 
@@ -272,9 +279,12 @@ export const MessageBubble = ({
     const selections = [];
     const seen = new Set();
 
-    const pushSelection = (id, title, indexHint) => {
+    const pushSelection = (id, title, indexHint, labelFallback) => {
       const normalizedId = typeof id === 'string' && id.trim().length > 0 ? id.trim() : null;
-      const normalizedTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
+      const normalizedTitleCandidate = [title, labelFallback].find(
+        (value) => typeof value === 'string' && value.trim().length > 0
+      );
+      const normalizedTitle = normalizedTitleCandidate ? normalizedTitleCandidate.trim() : null;
       const lookupById = normalizedId ? pollOptionsLookup.get(normalizedId) : null;
       const lookupByIndex =
         typeof indexHint === 'number' ? pollOptionsLookup.get(`__index:${indexHint}`) : null;
@@ -307,7 +317,7 @@ export const MessageBubble = ({
         return;
       }
       if (typeof selection === 'string') {
-        pushSelection(selection, selection, index);
+        pushSelection(selection, selection, index, selection);
         return;
       }
       if (typeof selection !== 'object') {
@@ -319,10 +329,24 @@ export const MessageBubble = ({
       const indexCandidate = [selection.index, selection.position].find(
         (value) => typeof value === 'number' && Number.isInteger(value)
       );
-      const titleCandidate = [selection.title, selection.text, selection.name].find(
+      const titleCandidate = [
+        selection.title,
+        selection.text,
+        selection.name,
+        selection.optionName,
+        selection.label,
+        selection.description,
+        selection.displayName,
+      ].find((value) => typeof value === 'string' && value.trim().length > 0);
+      const optionNameCandidate = [selection.optionName, selection.label, selection.displayName].find(
         (value) => typeof value === 'string' && value.trim().length > 0
       );
-      pushSelection(idCandidate ?? null, titleCandidate ?? null, indexCandidate ?? index);
+      pushSelection(
+        idCandidate ?? null,
+        titleCandidate ?? null,
+        indexCandidate ?? index,
+        optionNameCandidate ?? null
+      );
     });
 
     const pollChoiceVote =
@@ -336,7 +360,7 @@ export const MessageBubble = ({
         return;
       }
       if (typeof selection === 'string') {
-        pushSelection(selection, selection, index);
+        pushSelection(selection, selection, index, selection);
         return;
       }
       if (typeof selection !== 'object') {
@@ -348,10 +372,24 @@ export const MessageBubble = ({
       const indexCandidate = [selection.index, selection.position].find(
         (value) => typeof value === 'number' && Number.isInteger(value)
       );
-      const titleCandidate = [selection.title, selection.text, selection.name].find(
+      const titleCandidate = [
+        selection.title,
+        selection.text,
+        selection.name,
+        selection.optionName,
+        selection.label,
+        selection.description,
+        selection.displayName,
+      ].find((value) => typeof value === 'string' && value.trim().length > 0);
+      const optionNameCandidate = [selection.optionName, selection.label, selection.displayName].find(
         (value) => typeof value === 'string' && value.trim().length > 0
       );
-      pushSelection(idCandidate ?? null, titleCandidate ?? null, indexCandidate ?? index);
+      pushSelection(
+        idCandidate ?? null,
+        titleCandidate ?? null,
+        indexCandidate ?? index,
+        optionNameCandidate ?? null
+      );
     });
 
     if (selections.length === 0) {
@@ -365,7 +403,12 @@ export const MessageBubble = ({
           return;
         }
         const lookupEntry = pollOptionsLookup.get(normalizedId) ?? pollOptionsLookup.get(`__index:${index}`);
-        pushSelection(normalizedId, lookupEntry?.label ?? normalizedId, lookupEntry?.index ?? index);
+        pushSelection(
+          normalizedId,
+          lookupEntry?.label ?? normalizedId,
+          lookupEntry?.index ?? index,
+          lookupEntry?.label ?? normalizedId
+        );
       });
     }
 
