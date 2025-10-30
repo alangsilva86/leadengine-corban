@@ -357,7 +357,7 @@ const TemplateMessagePayloadSchema = z
   })
   .strict();
 
-const PollDescriptorSchema = z
+const PollDefinitionSchema = z
   .object({
     question: trimmedString,
     options: z.array(trimmedString).min(2),
@@ -368,7 +368,7 @@ const PollDescriptorSchema = z
 const PollMessagePayloadSchema = z
   .object({
     type: z.literal('poll'),
-    poll: PollDescriptorSchema,
+    poll: PollDefinitionSchema,
   })
   .strict();
 
@@ -396,7 +396,7 @@ export type MessagePayloadInput = z.infer<typeof RawMessagePayloadSchema>;
 type LocationPayload = z.infer<typeof LocationDescriptorSchema>;
 type ContactPayload = z.infer<typeof ContactDescriptorSchema>;
 type TemplatePayload = z.infer<typeof TemplateDescriptorSchema>;
-type PollPayload = z.infer<typeof PollDescriptorSchema>;
+type PollPayload = z.infer<typeof PollDefinitionSchema>;
 
 const PhoneSchema = z
   .string()
