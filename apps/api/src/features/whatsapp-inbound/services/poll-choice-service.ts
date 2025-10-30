@@ -74,21 +74,29 @@ const computeAggregates = (votes: Record<string, PollChoiceVoteEntry>): PollChoi
 
 type OptionLabelSource = {
   title?: string | null | undefined;
+  optionName?: string | null | undefined;
+  name?: string | null | undefined;
   text?: string | null | undefined;
   description?: string | null | undefined;
 };
 
+const normalizeLabelCandidate = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const normalizeOptionTitle = (option: OptionLabelSource): string | null => {
-  if (typeof option.title === 'string' && option.title.trim().length > 0) {
-    return option.title.trim();
-  }
-  if (typeof option.text === 'string' && option.text.trim().length > 0) {
-    return option.text.trim();
-  }
-  if (typeof option.description === 'string' && option.description.trim().length > 0) {
-    return option.description.trim();
-  }
-  return null;
+  return (
+    normalizeLabelCandidate(option.title) ??
+    normalizeLabelCandidate(option.optionName) ??
+    normalizeLabelCandidate(option.name) ??
+    normalizeLabelCandidate(option.text) ??
+    normalizeLabelCandidate(option.description)
+  );
 };
 
 const mergeOptions = (
@@ -323,12 +331,29 @@ const decryptEncryptedVoteSelections = (params: {
 };
 
 const normalizeSelectedOptionTitle = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
+  if (typeof value === 'string') {
+    return normalizeLabelCandidate(value);
   }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (value && typeof value === 'object') {
+    const record = value as {
+      title?: unknown;
+      optionName?: unknown;
+      name?: unknown;
+      text?: unknown;
+      description?: unknown;
+    };
+
+    return (
+      normalizeLabelCandidate(record.title) ??
+      normalizeLabelCandidate(record.optionName) ??
+      normalizeLabelCandidate(record.name) ??
+      normalizeLabelCandidate(record.text) ??
+      normalizeLabelCandidate(record.description)
+    );
+  }
+
+  return null;
 };
 
 const deriveSelectedOptions = (
@@ -350,10 +375,12 @@ const deriveSelectedOptions = (
         continue;
       }
 
+      const normalizedTitle = normalizeSelectedOptionTitle(entry);
+
       payloadMap.set(trimmedId, {
         ...entry,
         id: trimmedId,
-        title: normalizeSelectedOptionTitle(entry.title),
+        title: normalizedTitle,
       });
     }
   }
@@ -374,7 +401,7 @@ const deriveSelectedOptions = (
 
     const mergedOption = mergedMap.get(id);
     if (mergedOption) {
-      const title = normalizeSelectedOptionTitle(mergedOption.title ?? null);
+      const title = normalizeSelectedOptionTitle(mergedOption);
       return { id, title };
     }
 

@@ -246,6 +246,88 @@ describe('WhatsApp webhook poll question propagation', () => {
     expect(updatePayload?.caption).toBe('Sim 👍');
   });
 
+  it('uses optionName fallback when selected option title is missing', async () => {
+    const now = new Date().toISOString();
+    const pollId = 'poll-option-name-fallback';
+    const voterJid = '5511888888888@s.whatsapp.net';
+
+    const optionNameOnly = { id: 'opt-yes', optionName: 'Sim 👍' } as PollChoiceSelectedOptionPayload & {
+      optionName: string;
+    };
+    const resolvedOption = { id: 'opt-yes', title: 'Sim 👍', optionName: 'Sim 👍' } as PollChoiceSelectedOptionPayload & {
+      optionName: string;
+    };
+
+    recordPollChoiceVoteMock.mockResolvedValueOnce({
+      updated: true,
+      state: {
+        pollId,
+        options: [{ id: 'opt-yes', title: 'Sim 👍', index: 0 }],
+        votes: {
+          [voterJid]: {
+            optionIds: ['opt-yes'],
+            selectedOptions: [resolvedOption],
+            messageId: 'wamid-option-name',
+            timestamp: now,
+          },
+        },
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-yes': 1 } },
+        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-yes': 1 } },
+        updatedAt: now,
+        context: { tenantId: 'tenant-456' },
+      },
+      selectedOptions: [resolvedOption],
+    });
+
+    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
+      id: 'message-db-id',
+      externalId: 'wamid-option-name',
+      content: '[Mensagem recebida via WhatsApp]',
+      caption: '',
+      type: 'POLL',
+      metadata: {},
+    } as never);
+
+    storageUpdateMessageMock.mockResolvedValueOnce({ tenantId: 'tenant-456', ticketId: null });
+
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+      event: 'POLL_CHOICE',
+      tenantId: 'tenant-456',
+      payload: {
+        pollId,
+        voterJid,
+        messageId: 'wamid-option-name',
+        selectedOptionIds: ['opt-yes'],
+        selectedOptions: [optionNameOnly],
+        options: [{ id: 'opt-yes', title: null, selected: true }],
+        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-yes': 1 } },
+        timestamp: now,
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(storageUpdateMessageMock).toHaveBeenCalledTimes(1);
+
+    const updatePayload = storageUpdateMessageMock.mock.calls[0]?.[2];
+    expect(updatePayload?.content).toBe('Sim 👍');
+    expect(updatePayload?.text).toBe('Sim 👍');
+    expect(updatePayload?.caption).toBe('Sim 👍');
+
+    expect(recordPollChoiceVoteMock).toHaveBeenCalledTimes(1);
+    const servicePayload = recordPollChoiceVoteMock.mock.calls[0]?.[0];
+    const serviceSelectedOption =
+      (servicePayload?.selectedOptions as Array<Record<string, unknown>> | undefined)?.[0];
+    expect(serviceSelectedOption?.title).toBeUndefined();
+    expect(serviceSelectedOption?.optionName).toBe('Sim 👍');
+
+    const metadata = (updatePayload?.metadata ?? {}) as Record<string, unknown>;
+    const pollChoiceMetadata = metadata.pollChoice as Record<string, unknown> | undefined;
+    const pollChoiceVote = pollChoiceMetadata?.vote as Record<string, unknown> | undefined;
+    const selectedOptions = (pollChoiceVote?.selectedOptions as Array<Record<string, unknown>> | undefined) ?? [];
+
+    expect(selectedOptions[0]?.title).toBe('Sim 👍');
+  });
+
   it('propagates poll question into rewrite metadata and handler parameters', async () => {
     const now = new Date().toISOString();
     const pollQuestion = 'Qual é a melhor opção?';
