@@ -473,7 +473,7 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
         return normalizeModule.normalizeInboundMessage(message as Parameters<typeof normalizeModule.normalizeInboundMessage>[0]);
       });
 
-      const expectedAcknowledgement = 'Obrigado! Você votou em "Azul" para "Qual sua cor favorita?".';
+      const expectedChoiceText = 'Azul';
 
       let timelinePayload: { content?: string; metadata?: Record<string, unknown> } | null = null;
       sendMessageMock.mockImplementationOnce(async (...args: unknown[]) => {
@@ -493,13 +493,19 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
 
       expect(processed).toBe(true);
       expect(normalizeInboundMessageMock).toHaveBeenCalledTimes(1);
-      expect(normalizeInput?.['text']).toBe(expectedAcknowledgement);
-      expect(timelinePayload?.content).toBe(expectedAcknowledgement);
+      expect(normalizeInput?.['text']).toBe(expectedChoiceText);
+      expect(timelinePayload?.content).toBe(expectedChoiceText);
       expect(timelinePayload?.content).not.toContain('[Mensagem recebida via WhatsApp]');
 
       const eventMetadata = (timelinePayload?.metadata?.eventMetadata ?? {}) as Record<string, unknown>;
       const source = (eventMetadata.source ?? {}) as Record<string, unknown>;
       expect(source.event).toBe('poll_update');
+
+      const pollMetadata = (timelinePayload?.metadata?.poll ?? {}) as Record<string, unknown>;
+      const pollSelectedOptions = Array.isArray(pollMetadata.selectedOptions)
+        ? (pollMetadata.selectedOptions as Record<string, unknown>[])
+        : [];
+      expect(pollSelectedOptions[0]?.title).toBe('Azul');
     });
 
     it('allocates leads indexed by instance when no campaigns exist', async () => {
