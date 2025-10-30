@@ -1,5 +1,5 @@
-import { logger } from '../../../config/logger';
-import { cacheManager, createCache, type SimpleCache } from '../../../lib/simple-cache';
+import { logger } from '../../../../config/logger';
+import { cacheManager, createCache, type SimpleCache } from '../../../../lib/simple-cache';
 import { resetDedupeState } from '../dedupe';
 import { queueCacheByTenant } from '../provisioning';
 

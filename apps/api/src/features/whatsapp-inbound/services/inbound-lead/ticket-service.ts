@@ -1,14 +1,14 @@
 import { ConflictError, NotFoundError } from '@ticketz/core';
 
-import { logger } from '../../../config/logger';
-import { createTicket as createTicketService } from '../../../services/ticket-service';
-import { mapErrorForLog } from './logging';
+import { logger } from '../../../../config/logger';
+import { createTicket as createTicketService } from '../../../../services/ticket-service';
+import { mapErrorForLog } from '../logging';
 import {
   getDefaultQueueId,
   isForeignKeyError,
   provisionDefaultQueueForTenant,
   queueCacheByTenant,
-} from './provisioning';
+} from '../provisioning';
 
 const isMissingQueueError = (error: unknown): boolean => {
   if (!error) return false;

@@ -1,12 +1,12 @@
-import type { sendMessage as SendMessageFn } from '../../../services/ticket-service';
+import type { sendMessage as SendMessageFn } from '../../../../services/ticket-service';
 
 import { Prisma } from '@prisma/client';
 
-import { prisma } from '../../../lib/prisma';
-import { logger } from '../../../config/logger';
-import { leadLastContactGauge } from '../../../lib/metrics';
-import { emitToTenant, emitToTicket } from '../../../lib/socket-registry';
-import { mapErrorForLog } from './logging';
+import { prisma } from '../../../../lib/prisma';
+import { logger } from '../../../../config/logger';
+import { leadLastContactGauge } from '../../../../lib/metrics';
+import { emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
+import { mapErrorForLog } from '../logging';
 
 type PersistedMessage = Awaited<ReturnType<SendMessageFn>>;
 
