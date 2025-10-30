@@ -32,7 +32,7 @@ vi.mock('../../../../lib/socket-registry', () => ({
   emitToAgreement: vi.fn(),
 }));
 
-vi.mock('../mediaDownloader', () => ({
+vi.mock('../media-downloader', () => ({
   downloadViaBaileys: (...args: unknown[]) => downloadViaBaileysMock(...args),
   downloadViaBroker: (...args: unknown[]) => downloadViaBrokerMock(...args),
 }));

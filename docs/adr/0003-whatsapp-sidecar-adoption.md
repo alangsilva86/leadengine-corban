@@ -30,5 +30,5 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
   cada chamada individual, pois o modo ativo já está centralizado e versionado.
 - Operações deixam de executar rollback entre `http` e `sidecar`; o foco passa a ser
   garantir que as credenciais HTTP estejam corretas antes de promover novas versões.
-- O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`) tornou-se o caminho principal e exclusivo de ingestão.
+- O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-controller.ts`) tornou-se o caminho principal e exclusivo de ingestão.
 - `/healthz` divulga o modo ativo (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.

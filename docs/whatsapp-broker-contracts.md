@@ -12,7 +12,7 @@
 
 ## Inbound Contract
 
-O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/whatsapp/webhook`, é normalizado e persiste imediatamente (`apps/api/src/features/whatsapp-inbound/routes/webhook-routes.ts`), emitindo `messages.new` em tempo real.
+O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/whatsapp/webhook`, é normalizado e persiste imediatamente (`apps/api/src/features/whatsapp-inbound/routes/webhook-controller.ts`), emitindo `messages.new` em tempo real.
 
 - Event envelope validated via `BrokerInboundEventSchema` (ingest) e `BrokerWebhookInboundSchema` (webhook).
 - Authentication headers: prefer `X-API-Key` with the broker secret; when absent the webhook accepts `Authorization: Bearer <token>` or the legacy `X-Authorization` header carrying the raw token value.

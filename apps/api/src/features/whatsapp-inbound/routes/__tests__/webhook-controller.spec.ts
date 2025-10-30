@@ -2,13 +2,23 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { whatsappWebhookRouter } from '../webhook-routes';
-import { __testing as webhookControllerTesting } from '../webhook-controller';
+import {
+  __testing as webhookControllerTesting,
+  handleVerification,
+  handleWhatsAppWebhook,
+  verifyWhatsAppWebhookRequest,
+  webhookRateLimiter,
+} from '../webhook-controller';
 import { PollVoteUpdateState } from '../../services/poll-vote-updater';
 import type { RawBaileysUpsertEvent } from '../../services/baileys-raw-normalizer';
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
 import { __testing as inboundQueueTesting } from '../../services/inbound-queue';
+import { asyncHandler } from '../../../../middleware/error-handler';
+import {
+  createPollChoiceEventEnvelope,
+  createPollChoiceVoteState,
+} from './helpers/poll-fixtures';
 
 const hoistedMocks = vi.hoisted(() => {
   const processedIntegrationEventCreateMock = vi.fn();
@@ -152,9 +162,35 @@ const buildApp = () => {
       },
     })
   );
-  app.use('/api/webhooks', whatsappWebhookRouter);
+  const router = express.Router();
+  router.post(
+    '/whatsapp',
+    webhookRateLimiter,
+    asyncHandler(verifyWhatsAppWebhookRequest),
+    asyncHandler(handleWhatsAppWebhook)
+  );
+  router.get('/whatsapp', handleVerification);
+  app.use('/api/webhooks', router);
   return app;
 };
+
+describe('buildPollVoteMessageContent', () => {
+  it('returns normalized text for a single selected option', () => {
+    const selected = [{ id: 'opt-yes', title: ' Sim 👍 ' }];
+
+    const result = webhookControllerTesting.buildPollVoteMessageContent(selected);
+
+    expect(result).toBe('Sim 👍');
+  });
+
+  it('returns null when no normalized titles are available', () => {
+    const selected = [{ id: '   ', title: '   ' }];
+
+    const result = webhookControllerTesting.buildPollVoteMessageContent(selected);
+
+    expect(result).toBeNull();
+  });
+});
 
 afterEach(async () => {
   await inboundQueueTesting.waitForIdle();
@@ -1107,7 +1143,7 @@ describe('WhatsApp webhook poll choice events', () => {
     });
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
-      state: {
+      state: createPollChoiceVoteState({
         pollId: 'poll-1',
         options: [
           { id: 'opt-1', title: 'Option 1', index: 0 },
@@ -1132,7 +1168,7 @@ describe('WhatsApp webhook poll choice events', () => {
           optionTotals: { 'opt-1': 1 },
         },
         updatedAt: now,
-      },
+      }),
       selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
     });
 
@@ -1144,27 +1180,29 @@ describe('WhatsApp webhook poll choice events', () => {
       metadata: {},
     } as never);
 
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
-      event: 'POLL_CHOICE',
-      tenantId: 'tenant-123',
-      payload: {
-        pollId: 'poll-1',
-        voterJid: '5511999999999@s.whatsapp.net',
-        messageId: 'wamid-poll-1',
-        selectedOptionIds: ['opt-1'],
-        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-        options: [
-          { id: 'opt-1', title: 'Option 1', selected: true },
-          { id: 'opt-2', title: 'Option 2', selected: false },
-        ],
-        aggregates: {
-          totalVoters: 1,
-          totalVotes: 1,
-          optionTotals: { 'opt-1': 1, 'opt-2': 0 },
-        },
-        timestamp: now,
-      },
-    });
+    const response = await request(app)
+      .post('/api/webhooks/whatsapp')
+      .send(
+        createPollChoiceEventEnvelope({
+          payload: {
+            pollId: 'poll-1',
+            voterJid: '5511999999999@s.whatsapp.net',
+            messageId: 'wamid-poll-1',
+            selectedOptionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+            options: [
+              { id: 'opt-1', title: 'Option 1', selected: true },
+              { id: 'opt-2', title: 'Option 2', selected: false },
+            ],
+            aggregates: {
+              totalVoters: 1,
+              totalVotes: 1,
+              optionTotals: { 'opt-1': 1, 'opt-2': 0 },
+            },
+            timestamp: now,
+          },
+        })
+      );
 
     expect(response.status).toBe(204);
     expect(recordPollChoiceVoteMock).toHaveBeenCalledTimes(1);
@@ -1701,7 +1739,7 @@ describe('WhatsApp webhook poll choice events', () => {
     prismaMock.message.findFirst.mockResolvedValueOnce(null);
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
-      state: {
+      state: createPollChoiceVoteState({
         pollId: 'poll-missing-tenant',
         options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
         votes: {
@@ -1715,15 +1753,11 @@ describe('WhatsApp webhook poll choice events', () => {
         aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
         brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
         updatedAt: now,
-      },
+      }),
       selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
     });
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api/webhooks', whatsappWebhookRouter);
-
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
       event: 'POLL_CHOICE',
       payload: {
         pollId: 'poll-missing-tenant',
@@ -1759,7 +1793,7 @@ describe('WhatsApp webhook poll choice events', () => {
     });
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
-      state: {
+      state: createPollChoiceVoteState({
         pollId: 'poll-ingest-rejected',
         options: [{ id: 'opt-2', title: 'Option 2', index: 0 }],
         votes: {
@@ -1773,15 +1807,11 @@ describe('WhatsApp webhook poll choice events', () => {
         aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-2': 1 } },
         brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-2': 1 } },
         updatedAt: now,
-      },
+      }),
       selectedOptions: [{ id: 'opt-2', title: 'Option 2' }],
     });
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api/webhooks', whatsappWebhookRouter);
-
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
       event: 'POLL_CHOICE',
       tenantId: 'tenant-abc',
       payload: {
@@ -1812,7 +1842,7 @@ describe('WhatsApp webhook poll choice events', () => {
     const now = new Date().toISOString();
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: false,
-      state: {
+      state: createPollChoiceVoteState({
         pollId: 'poll-duplicate',
         options: [{ id: 'opt-1', title: 'Option', index: 0 }],
         votes: {
@@ -1834,15 +1864,11 @@ describe('WhatsApp webhook poll choice events', () => {
           optionTotals: { 'opt-1': 1 },
         },
         updatedAt: now,
-      },
+      }),
       selectedOptions: [{ id: 'opt-1', title: 'Option' }],
     });
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api/webhooks', whatsappWebhookRouter);
-
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
       event: 'POLL_CHOICE',
       payload: {
         pollId: 'poll-duplicate',

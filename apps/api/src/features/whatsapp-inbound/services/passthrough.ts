@@ -31,7 +31,7 @@ import {
   type InboundWhatsAppEvent,
 } from './types';
 import { resolveTicketAgreementId } from './ticket-utils';
-import { downloadViaBaileys, downloadViaBroker } from './mediaDownloader';
+import { downloadViaBaileys, downloadViaBroker } from './media-downloader';
 import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
 
 type PassthroughMetadata = Record<string, unknown>;

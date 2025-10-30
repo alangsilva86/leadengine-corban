@@ -2,6 +2,8 @@ import type { ZodIssue } from 'zod';
 
 import { logger } from '../../../config/logger';
 import type { SchedulePollInboxFallbackResult } from './poll-choice-pipeline';
+<<<<<<< HEAD
+=======
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import {
   PollChoiceInboxNotificationStatus,
@@ -13,6 +15,7 @@ import type {
 } from '../schemas/poll-choice';
 import type { PollChoiceState } from '../schemas/poll-choice';
 import type { PersistPollChoiceVoteResult, SchedulePollInboxFallbackResult } from './poll-choice-pipeline';
+>>>>>>> main
 
 export type PollChoiceEventOutcome = 'accepted' | 'ignored' | 'failed';
 
@@ -109,8 +112,11 @@ export const createPollChoiceEventBus = (): PollChoiceEventBus => {
     PollChoiceEventName,
     Set<(payload: PollChoiceEventBusPayloads[PollChoiceEventName]) => void>
   >();
+<<<<<<< HEAD
+=======
 const createPollChoiceEventBus = (): PollChoiceEventBus => {
   const registry = new Map<PollChoiceEventName, Set<(payload: PollChoiceEventBusPayloads[PollChoiceEventName]) => void>>();
+>>>>>>> main
 
   return {
     emit(event, payload) {
@@ -258,8 +264,11 @@ pollChoiceEventBus.on('pollChoiceInboxDecision', ({ decision, requestId }) => {
 
 pollChoiceEventBus.on('pollChoiceInboxFailed', ({ requestId, pollId, tenantId, reason, error }) => {
   logger.error('Failed to notify poll choice inbox', {
+<<<<<<< HEAD
+=======
   const logMethod = reason === 'poll_choice_inbox_error' ? 'error' : 'warn';
   logger[logMethod]('Poll choice inbox notification failed', {
+>>>>>>> main
     requestId,
     pollId,
     tenantId,
@@ -270,7 +279,10 @@ pollChoiceEventBus.on('pollChoiceInboxFailed', ({ requestId, pollId, tenantId, r
 
 pollChoiceEventBus.on('pollChoiceError', ({ requestId, pollId, tenantId, instanceId, error }) => {
   logger.error('Unexpected poll choice handler failure', {
+<<<<<<< HEAD
+=======
   logger.error('Failed to process poll choice event', {
+>>>>>>> main
     requestId,
     pollId,
     tenantId,
@@ -284,15 +296,20 @@ pollChoiceEventBus.on('pollChoiceCompleted', ({ tenantId, instanceId, outcome, r
     tenantId,
     instanceId,
     outcome,
+<<<<<<< HEAD
+=======
   whatsappWebhookEventsCounter.inc({
     origin: 'webhook',
     tenantId: tenantId ?? 'unknown',
     instanceId: instanceId ?? 'unknown',
     result: outcome,
+>>>>>>> main
     reason,
   });
 });
 
+<<<<<<< HEAD
+=======
 export type PollChoicePipelineContext = {
   poll: PollChoiceEventPayload & { selectedOptions: PollChoiceSelectedOptionPayload[] };
   state: PollChoiceState;
@@ -305,3 +322,4 @@ export const emitPollChoiceCompleted = (
   pollChoiceEventBus.emit('pollChoiceCompleted', payload);
 };
 
+>>>>>>> main

@@ -1,7 +1,7 @@
 # WhatsApp Inbound Pipeline
 
 ```
-Cliente → POST /api/webhooks/whatsapp → [routes/webhook-routes]
+Cliente → POST /api/webhooks/whatsapp → [routes/webhook-controller]
         → ingestInboundWhatsAppMessage (services/inbound-lead-service)
         → addAllocations → Socket/Event (futuro) → Inbox (apps/web)
 ```

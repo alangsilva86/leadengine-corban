@@ -3,16 +3,31 @@ import { Router, type Request, type Response } from 'express';
 import { asyncHandler } from '../middleware/error-handler';
 import { logger } from '../config/logger';
 import {
-  whatsappIntegrationWebhookRouter,
-  whatsappWebhookRouter,
-} from '../features/whatsapp-inbound/routes/webhook-routes';
+  handleVerification,
+  handleWhatsAppWebhook,
+  verifyWhatsAppWebhookRequest,
+  webhookRateLimiter,
+} from '../features/whatsapp-inbound/routes/webhook-controller';
 
 const router: Router = Router();
 const integrationWebhooksRouter: Router = Router();
 
-// Delegates WhatsApp traffic to the feature router (signature validation + normalization)
-router.use('/', whatsappWebhookRouter);
-integrationWebhooksRouter.use('/', whatsappIntegrationWebhookRouter);
+// Delegates WhatsApp traffic to the feature controller (signature validation + normalization)
+router.post(
+  '/whatsapp',
+  webhookRateLimiter,
+  asyncHandler(verifyWhatsAppWebhookRequest),
+  asyncHandler(handleWhatsAppWebhook)
+);
+
+integrationWebhooksRouter.post(
+  '/whatsapp/webhook',
+  webhookRateLimiter,
+  asyncHandler(verifyWhatsAppWebhookRequest),
+  asyncHandler(handleWhatsAppWebhook)
+);
+
+router.get('/whatsapp', handleVerification);
 
 // POST /api/webhooks/email - Webhook de email
 router.post(

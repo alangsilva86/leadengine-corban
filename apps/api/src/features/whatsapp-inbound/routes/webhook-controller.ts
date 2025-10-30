@@ -81,6 +81,10 @@ import {
 import {
   ensureWebhookContext,
   logWebhookEvent,
+<<<<<<< HEAD
+  resolveClientAddress,
+=======
+>>>>>>> main
   trackWebhookRejection,
   type WhatsAppWebhookContext,
 } from './context';
@@ -1674,17 +1678,6 @@ const processPollChoiceEvent = async (
 const WEBHOOK_RATE_LIMIT_WINDOW_MS = 10_000;
 const WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60;
 
-const resolveClientAddress = (req: Request): string => {
-  return (
-    readString(
-      req.header('x-real-ip'),
-      req.header('x-forwarded-for'),
-      req.ip,
-      req.socket.remoteAddress ?? null
-    ) ?? req.ip ?? 'unknown'
-  );
-};
-
 const createWebhookRateLimiter = (config: WhatsAppWebhookControllerConfig) =>
   rateLimit({
     windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
@@ -2006,27 +1999,45 @@ const handleVerification = (req: Request, res: Response) => {
   res.status(200).send(DEFAULT_VERIFY_RESPONSE);
 };
 
+const setUpdatePollVoteMessageTestingHandler = (handler: UpdatePollVoteMessageHandler) => {
+  updatePollVoteMessageHandler = handler;
+};
+
+const resetUpdatePollVoteMessageTestingHandler = () => {
+  updatePollVoteMessageHandler = pollVoteMessageUpdater;
+};
+
+const setPollVoteRetryTestingScheduler = (handler: SchedulePollVoteRetryHandler) => {
+  schedulePollVoteRetry = handler;
+};
+
+const resetPollVoteRetryTestingScheduler = () => {
+  schedulePollVoteRetry = defaultPollVoteRetryScheduler;
+};
+
+const subscribeToPollChoiceEvent = <E extends PollChoiceEventName>(
+  event: E,
+  handler: (payload: PollChoiceEventBusPayloads[E]) => void
+) => pollChoiceEventBus.on(event, handler);
+
 const testing = {
   pollVoteUpdaterTesting,
   buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
   updatePollVoteMessage: pollVoteMessageUpdater,
-  setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
-    updatePollVoteMessageHandler = handler;
-  },
-  resetUpdatePollVoteMessageHandler() {
-    updatePollVoteMessageHandler = pollVoteMessageUpdater;
-  },
-  setPollVoteRetryScheduler(handler: SchedulePollVoteRetryHandler) {
-    schedulePollVoteRetry = handler;
-  },
-  resetPollVoteRetryScheduler() {
-    schedulePollVoteRetry = defaultPollVoteRetryScheduler;
-  },
-  subscribeToPollChoiceEvent<E extends PollChoiceEventName>(
-    event: E,
-    handler: (payload: PollChoiceEventBusPayloads[E]) => void
-  ) {
-    return pollChoiceEventBus.on(event, handler);
+  setUpdatePollVoteMessageHandler: setUpdatePollVoteMessageTestingHandler,
+  resetUpdatePollVoteMessageHandler: resetUpdatePollVoteMessageTestingHandler,
+  setPollVoteRetryScheduler: setPollVoteRetryTestingScheduler,
+  resetPollVoteRetryScheduler: resetPollVoteRetryTestingScheduler,
+  subscribeToPollChoiceEvent,
+  pollChoice: {
+    pollVoteUpdaterTesting,
+    buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
+    updatePollVoteMessage: pollVoteMessageUpdater,
+    setUpdatePollVoteMessageHandler: setUpdatePollVoteMessageTestingHandler,
+    resetUpdatePollVoteMessageHandler: resetUpdatePollVoteMessageTestingHandler,
+    setPollVoteRetryScheduler: setPollVoteRetryTestingScheduler,
+    resetPollVoteRetryScheduler: resetPollVoteRetryTestingScheduler,
+    subscribe: subscribeToPollChoiceEvent,
   },
 };
 

@@ -49,7 +49,7 @@ import {
   queueCacheByTenant,
   type WhatsAppInstanceRecord,
 } from '../provisioning';
-import { downloadViaBaileys, downloadViaBroker } from '../mediaDownloader';
+import { downloadViaBaileys, downloadViaBroker } from '../media-downloader';
 import {
   type InboundMessageDetails,
   type InboundWhatsAppEvent,
