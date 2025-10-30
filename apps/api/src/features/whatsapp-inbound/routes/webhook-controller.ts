@@ -2677,3 +2677,9 @@ export const __testing = defaultController.__testing;
 export { createWhatsAppWebhookController };
 export type { WhatsAppWebhookController, WhatsAppWebhookControllerConfig, WhatsAppWebhookContext };
 
+export {
+  handleVerification,
+  handleWhatsAppWebhook,
+  verifyWhatsAppWebhookRequest,
+  __testing,
+} from './webhook-routes';
