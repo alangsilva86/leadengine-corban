@@ -1140,6 +1140,63 @@ const resolveMessageId = (envelope: InboundWhatsAppEnvelope): string | null => {
 const extractPollVote = (payload: unknown): PollVote => {
   const { payload: payloadRecord, message, metadata } = derivePayloadSegments(payload);
   const pick = (v: unknown) => readString(v);
+  const pickOptionLabel = (option: unknown): string | null => {
+    if (typeof option === 'string') {
+      const trimmed = option.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    if (!option || typeof option !== 'object') return null;
+    const optionRecord = option as Record<string, unknown>;
+    const labelFields = [
+      'title',
+      'text',
+      'name',
+      'optionName',
+      'label',
+      'description',
+      'displayName',
+      'value',
+    ] as const;
+    for (const field of labelFields) {
+      const candidate = pick(optionRecord[field]);
+      if (candidate) return candidate;
+    }
+    return null;
+  };
+  const optionCollections: unknown[] = [
+    (metadata as any)?.poll?.options,
+    (metadata as any)?.pollChoice?.options,
+    (metadata as any)?.interactive?.options,
+    (payloadRecord as any)?.options,
+    (payloadRecord as any)?.poll?.options,
+    (payloadRecord as any)?.pollChoice?.options,
+    (message as any)?.options,
+  ];
+  const findOptionById = (id: string | null): unknown => {
+    if (!id) return null;
+    for (const collection of optionCollections) {
+      if (!collection) continue;
+      if (Array.isArray(collection)) {
+        for (const option of collection) {
+          if (typeof option === 'string' && option.trim() === id) {
+            return option;
+          }
+          if (!option || typeof option !== 'object') continue;
+          const optionRecord = option as Record<string, unknown>;
+          const identifiers = [
+            optionRecord.id,
+            optionRecord.optionId,
+            optionRecord.key,
+            optionRecord.value,
+          ];
+          if (identifiers.some((identifier) => pick(identifier) === id)) {
+            return option;
+          }
+        }
+      }
+    }
+    return null;
+  };
 
   const selectedOptionFromVote = Array.isArray((metadata as any)?.pollChoice?.vote?.selectedOptions)
     ? (metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]
@@ -1150,10 +1207,8 @@ const extractPollVote = (payload: unknown): PollVote => {
 
   const choiceText =
     pick((message as any).text) ??
-    pick((selectedOptionFromVote as any)?.title) ??
-    pick((selectedOptionFromVote as any)?.text) ??
-    pick((selectedOptionFromPoll as any)?.title) ??
-    pick((selectedOptionFromPoll as any)?.text) ??
+    pickOptionLabel(selectedOptionFromVote) ??
+    pickOptionLabel(selectedOptionFromPoll) ??
     pick((payloadRecord as any)?.text) ??
     null;
 
@@ -1162,13 +1217,37 @@ const extractPollVote = (payload: unknown): PollVote => {
     pick((selectedOptionFromPoll as any)?.id) ??
     pick((metadata as any)?.pollChoice?.vote?.optionIds?.[0]) ??
     pick((metadata as any)?.poll?.selectedOptionIds?.[0]) ??
+    pick((selectedOptionFromVote as any)?.optionId) ??
+    pick((selectedOptionFromPoll as any)?.optionId) ??
+    pick((selectedOptionFromVote as any)?.key) ??
+    pick((selectedOptionFromPoll as any)?.key) ??
+    pick((selectedOptionFromVote as any)?.value) ??
+    pick((selectedOptionFromPoll as any)?.value) ??
     pick((payloadRecord as any)?.selectedOptionId) ??
     null;
+
+  const enrichedChoiceText =
+    choiceText ??
+    pickOptionLabel(findOptionById(choiceId)) ??
+    pickOptionLabel(selectedOptionFromVote) ??
+    pickOptionLabel(selectedOptionFromPoll);
 
   const question =
     pick((metadata as any)?.poll?.question) ??
     pick((metadata as any)?.pollChoice?.question) ??
+    pick((metadata as any)?.poll?.title) ??
+    pick((metadata as any)?.poll?.name) ??
+    pick((metadata as any)?.pollChoice?.title) ??
+    pick((metadata as any)?.pollChoice?.name) ??
+    pick((payloadRecord as any)?.poll?.question) ??
+    pick((payloadRecord as any)?.poll?.title) ??
+    pick((payloadRecord as any)?.poll?.name) ??
+    pick((payloadRecord as any)?.pollChoice?.question) ??
+    pick((payloadRecord as any)?.pollChoice?.label) ??
+    pick((payloadRecord as any)?.pollChoice?.text) ??
     pick((payloadRecord as any)?.question) ??
+    pick((payloadRecord as any)?.title) ??
+    pick((payloadRecord as any)?.name) ??
     null;
 
   const pollId =
@@ -1180,7 +1259,7 @@ const extractPollVote = (payload: unknown): PollVote => {
     pick((message as any)?.id) ??
     null;
 
-  return { pollId, question, choiceText, choiceId };
+  return { pollId, question, choiceText: enrichedChoiceText, choiceId };
 };
 
 /* ===========================================================================================
