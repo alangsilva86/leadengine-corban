@@ -108,6 +108,40 @@ const toRecord = (value: unknown): Record<string, unknown> =>
 // Alias semântico para toRecord (melhora legibilidade).
 const asRecord = toRecord;
 
+const derivePayloadSegments = (
+  payload: unknown
+): {
+  payload: Record<string, unknown>;
+  message: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+} => {
+  const payloadRecord = toRecord(payload);
+  const nestedMessage = toRecord((payloadRecord as any).message);
+  const nestedMetadata = toRecord((payloadRecord as any).metadata);
+
+  const hasNestedMessage = Object.keys(nestedMessage).length > 0;
+  const messageRecord = hasNestedMessage ? nestedMessage : payloadRecord;
+
+  const metadataCandidates = [
+    nestedMetadata,
+    toRecord((messageRecord as any).metadata),
+  ];
+
+  let metadataRecord: Record<string, unknown> = {};
+  for (const candidate of metadataCandidates) {
+    if (candidate && Object.keys(candidate).length > 0) {
+      metadataRecord = candidate;
+      break;
+    }
+  }
+
+  return {
+    payload: payloadRecord,
+    message: messageRecord,
+    metadata: metadataRecord,
+  };
+};
+
 // Verifica se uma string aparenta ser uma URL HTTP/HTTPS.
 const isHttpUrl = (value: string | null | undefined): boolean =>
   typeof value === 'string' && /^https?:\/\//i.test(value.trim());
@@ -898,13 +932,28 @@ const resolveEnvelopeChatId = (
   const provided = readString(envelope.chatId);
   if (provided) return provided;
 
-  const payloadRecord = toRecord(envelope.message.payload);
-  if (payloadRecord.chatId) {
-    const candidate = readString((payloadRecord as any).chatId);
-    if (candidate) return candidate;
-  }
+  const { payload: payloadRecord, message: payloadMessage, metadata: payloadMetadata } = derivePayloadSegments(
+    envelope.message.payload
+  );
 
-  const keyRecord = toRecord((payloadRecord as any).key);
+  const metadataChatId =
+    readString((payloadMetadata as any).chatId) ?? readString((payloadRecord as any).chatId);
+  if (metadataChatId) return metadataChatId;
+
+  const metadataRemoteJid =
+    readString((payloadMetadata as any).remoteJid) ?? readString((payloadRecord as any).remoteJid);
+  if (metadataRemoteJid) return metadataRemoteJid;
+
+  const contactRecord = toRecord(
+    (payloadMetadata as any).contact ?? (payloadRecord as any).contact ?? (payloadMessage as any).contact
+  );
+  const contactChatId =
+    readString((contactRecord as any).chatId) ??
+    readString((contactRecord as any).remoteJid) ??
+    readString((contactRecord as any).jid);
+  if (contactChatId) return contactChatId;
+
+  const keyRecord = toRecord((payloadMessage as any).key);
   return readString((keyRecord as any).remoteJid) ?? readString((keyRecord as any).jid) ?? null;
 };
 
@@ -915,13 +964,14 @@ const resolveEnvelopeChatId = (
 const resolveEnvelopeMessageId = (
   envelope: InboundWhatsAppEnvelopeMessage
 ): string | null => {
-  const payloadRecord = toRecord(envelope.message.payload);
-  const keyRecord = toRecord((payloadRecord as any).key);
+  const { payload: payloadRecord, message: payloadMessage } = derivePayloadSegments(envelope.message.payload);
+  const keyRecord = toRecord((payloadMessage as any).key);
 
   return (
     readString(envelope.message.externalId) ??
     readString(envelope.message.brokerMessageId) ??
     readString(envelope.message.id) ??
+    readString((payloadMessage as any).id) ??
     readString((payloadRecord as any).id) ??
     readString((keyRecord as any).id)
   );
@@ -934,36 +984,56 @@ const resolveEnvelopeMessageId = (
  */
 const mergeEnvelopeMetadata = (
   envelope: InboundWhatsAppEnvelopeMessage,
-  chatId: string | null
+  chatId: string | null,
+  overrides?: {
+    payload?: Record<string, unknown>;
+    message?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }
 ): Record<string, unknown> => {
   const base = toRecord(envelope.message.metadata);
-  const payloadRecord = toRecord(envelope.message.payload);
+  const payloadRecord = overrides?.payload ? toRecord(overrides.payload) : toRecord(envelope.message.payload);
+  const { message: derivedMessage, metadata: derivedMetadata } = derivePayloadSegments(
+    overrides?.payload ?? envelope.message.payload
+  );
+  const payloadMessage = overrides?.message ? toRecord(overrides.message) : derivedMessage;
+  const payloadMetadata = overrides?.metadata ? toRecord(overrides.metadata) : derivedMetadata;
 
   if (!(base as any).chatId && chatId) (base as any).chatId = chatId;
 
   if (!(base as any).tenantId) {
-    const payloadTenantId = readString((payloadRecord as any).tenantId);
+    const payloadTenantId =
+      readString((payloadMetadata as any).tenantId) ?? readString((payloadRecord as any).tenantId);
     if (payloadTenantId) (base as any).tenantId = payloadTenantId;
     else if (envelope.tenantId) (base as any).tenantId = envelope.tenantId;
   }
 
   if (!(base as any).tenant) {
-    const payloadTenant = toRecord((payloadRecord as any).tenant);
+    const payloadTenant = toRecord(
+      (payloadMetadata as any).tenant ?? (payloadRecord as any).tenant ?? (payloadMessage as any).tenant
+    );
     if (Object.keys(payloadTenant).length > 0) (base as any).tenant = payloadTenant;
   }
 
   if (!(base as any).context) {
-    const payloadContext = toRecord((payloadRecord as any).context);
+    const payloadContext = toRecord(
+      (payloadMetadata as any).context ?? (payloadRecord as any).context ?? (payloadMessage as any).context
+    );
     if (Object.keys(payloadContext).length > 0) (base as any).context = payloadContext;
   }
 
   if (!(base as any).integration) {
-    const payloadIntegration = toRecord((payloadRecord as any).integration);
+    const payloadIntegration = toRecord(
+      (payloadMetadata as any).integration ?? (payloadRecord as any).integration ?? (payloadMessage as any).integration
+    );
     if (Object.keys(payloadIntegration).length > 0) (base as any).integration = payloadIntegration;
   }
 
   if (!(base as any).sessionId) {
-    const payloadSessionId = readString((payloadRecord as any).sessionId);
+    const payloadSessionId =
+      readString((payloadMetadata as any).sessionId) ??
+      readString((payloadRecord as any).sessionId) ??
+      readString((payloadMessage as any).sessionId);
     if (payloadSessionId) (base as any).sessionId = payloadSessionId;
   }
 
@@ -997,10 +1067,8 @@ const buildPollVoteText = (q: string | null, c: string | null) => {
  * Resolve o tipo de mensagem do envelope (usado para identificar poll_update).
  */
 const resolveMessageType = (envelope: InboundWhatsAppEnvelope): string | null => {
-  const p = asRecord((envelope as any)?.message?.payload);
-  const meta = asRecord((p as any).metadata);
-  const msg = asRecord((p as any).message);
-  return readString((msg as any).type) ?? readString((meta as any).messageType);
+  const { message, metadata } = derivePayloadSegments((envelope as any)?.message?.payload);
+  return readString((message as any).type) ?? readString((metadata as any).messageType);
 };
 
 /**
@@ -1008,14 +1076,19 @@ const resolveMessageType = (envelope: InboundWhatsAppEnvelope): string | null =>
  * metadata de payload). Considera diversos campos de contexto.
  */
 const resolveChatId = (envelope: InboundWhatsAppEnvelope): string | null => {
-  const p = asRecord((envelope as any)?.message?.payload);
-  const meta = asRecord((p as any).metadata);
-  const key = asRecord(asRecord((p as any).message).key);
+  const { payload: payloadRecord, message, metadata } = derivePayloadSegments((envelope as any)?.message?.payload);
+  const key = asRecord((message as any).key);
+  const contactRecord = toRecord(
+    (metadata as any).contact ?? (payloadRecord as any).contact ?? (message as any).contact
+  );
 
   return (
-    readString((meta as any).chatId) ??
-    readString((meta as any).remoteJid) ??
-    readString(asRecord((p as any).contact).remoteJid as string) ??
+    readString((metadata as any).chatId) ??
+    readString((payloadRecord as any).chatId) ??
+    readString((metadata as any).remoteJid) ??
+    readString((payloadRecord as any).remoteJid) ??
+    readString((contactRecord as any).remoteJid) ??
+    readString((contactRecord as any).jid) ??
     readString((key as any).remoteJid) ??
     readString((envelope as any).chatId) ??
     null
@@ -1026,11 +1099,10 @@ const resolveChatId = (envelope: InboundWhatsAppEnvelope): string | null => {
  * Resolve o messageId para deduplicação (antes de extrair metadata de payload).
  */
 const resolveMessageId = (envelope: InboundWhatsAppEnvelope): string | null => {
-  const p = asRecord((envelope as any)?.message?.payload);
-  const msg = asRecord((p as any).message);
+  const { payload: payloadRecord, message } = derivePayloadSegments((envelope as any)?.message?.payload);
   return (
-    readString((msg as any).id) ??
-    readString((p as any).id) ??
+    readString((message as any).id) ??
+    readString((payloadRecord as any).id) ??
     readString((envelope as any)?.message?.id) ??
     null
   );
@@ -1040,33 +1112,31 @@ const resolveMessageId = (envelope: InboundWhatsAppEnvelope): string | null => {
  * Extrai informações de voto de enquete a partir do payload.
  */
 const extractPollVote = (payload: unknown): PollVote => {
-  const p = asRecord(payload);
-  const meta = asRecord((p as any).metadata);
-  const message = asRecord((p as any).message);
+  const { payload: payloadRecord, message, metadata } = derivePayloadSegments(payload);
   const pick = (v: unknown) => readString(v);
 
   const choiceText =
     pick((message as any).text) ??
-    pick((meta as any)?.pollChoice?.vote?.selectedOptions?.[0]?.title) ??
-    pick((meta as any)?.pollChoice?.vote?.selectedOptions?.[0]?.text) ??
-    pick((meta as any)?.poll?.selectedOptions?.[0]?.title) ??
-    pick((meta as any)?.poll?.selectedOptions?.[0]?.text) ??
-    pick((meta as any)?.pollChoice?.vote?.optionIds?.[0]) ??
-    pick((meta as any)?.poll?.selectedOptionIds?.[0]) ??
+    pick((metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]?.title) ??
+    pick((metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]?.text) ??
+    pick((metadata as any)?.poll?.selectedOptions?.[0]?.title) ??
+    pick((metadata as any)?.poll?.selectedOptions?.[0]?.text) ??
+    pick((metadata as any)?.pollChoice?.vote?.optionIds?.[0]) ??
+    pick((metadata as any)?.poll?.selectedOptionIds?.[0]) ??
     null;
 
   const question =
-    pick((meta as any)?.poll?.question) ??
-    pick((meta as any)?.pollChoice?.question) ??
-    pick((p as any)?.question) ??
+    pick((metadata as any)?.poll?.question) ??
+    pick((metadata as any)?.pollChoice?.question) ??
+    pick((payloadRecord as any)?.question) ??
     null;
 
   const pollId =
-    pick((meta as any)?.poll?.id) ??
-    pick((meta as any)?.poll?.pollId) ??
-    pick((meta as any)?.pollChoice?.pollId) ??
-    pick((p as any)?.pollId) ??
-    pick((p as any)?.id) ??
+    pick((metadata as any)?.poll?.id) ??
+    pick((metadata as any)?.poll?.pollId) ??
+    pick((metadata as any)?.pollChoice?.pollId) ??
+    pick((payloadRecord as any)?.pollId) ??
+    pick((payloadRecord as any)?.id) ??
     pick((message as any)?.id) ??
     null;
 
@@ -1103,8 +1173,21 @@ export const ingestInboundWhatsAppMessage = async (
   const isPollUpdate = msgType === 'poll_update';
 
   // Garante que existe payload de mensagem ou metadata antes de prosseguir.
-  const payload = asRecord((envelope as any)?.message?.payload);
-  if (!Object.keys(asRecord((payload as any).message)).length && !Object.keys(asRecord((payload as any).metadata)).length) {
+  const { payload: payloadRecord, message: basePayloadMessage, metadata: basePayloadMetadata } = derivePayloadSegments(
+    (envelope as any)?.message?.payload
+  );
+  let payloadMessage: Record<string, unknown> = { ...basePayloadMessage };
+  let payloadMetadata: Record<string, unknown> = { ...basePayloadMetadata };
+
+  const envelopeMetadataRecord = toRecord((envelope as any)?.message?.metadata);
+  if (Object.keys(envelopeMetadataRecord).length > 0) {
+    payloadMetadata = { ...envelopeMetadataRecord, ...payloadMetadata };
+  }
+
+  const hasMessageContent = Object.keys(payloadMessage).length > 0;
+  const hasMetadataContent = Object.keys(payloadMetadata).length > 0;
+
+  if (!hasMessageContent && !hasMetadataContent) {
     logger.debug('whatsappInbound.ingest.skipNonMessage', {
       origin: (envelope as any).origin,
       instanceId: (envelope as any).instanceId,
@@ -1120,7 +1203,7 @@ export const ingestInboundWhatsAppMessage = async (
   }
 
   // Extrai campos base do envelope (chatId, externalId, instanceId, tenantId).
-  const metaIn = asRecord((payload as any).metadata);
+  const metaIn = { ...payloadMetadata };
   const chatId = resolveChatId(envelope);
   const externalId = resolveMessageId(envelope) ?? randomUUID();
   const instanceId = readString((metaIn as any).instanceId) ?? readString((envelope as any).instanceId);
@@ -1128,7 +1211,8 @@ export const ingestInboundWhatsAppMessage = async (
 
   // Tratamento especial de voto em enquete: gera texto legível e persiste mensagem simples.
   if (isPollUpdate) {
-    const { pollId, question, choiceText } = extractPollVote(payload);
+    const pollSource = { ...payloadRecord, message: payloadMessage, metadata: payloadMetadata };
+    const { pollId, question, choiceText } = extractPollVote(pollSource);
 
     if (choiceText || question) {
       // Quando a enquete possui texto legível, injeta uma mensagem de texto na timeline
@@ -1136,7 +1220,7 @@ export const ingestInboundWhatsAppMessage = async (
       const finalText = buildPollVoteText(question, choiceText);
 
       // Construímos nova mensagem tipo TEXT e substituímos o payload.message
-      (payload as any).message = {
+      payloadMessage = {
         type: 'TEXT',
         text: finalText,
         // Define um id para a mensagem, reaproveitando o id do envelope se existir
@@ -1144,7 +1228,7 @@ export const ingestInboundWhatsAppMessage = async (
       };
 
       // Define metadata consistente com a pipeline, preservando informações essenciais
-      (payload as any).metadata = {
+      payloadMetadata = {
         ...metaIn,
         placeholder: false,
         direction: 'INBOUND',
@@ -1162,13 +1246,13 @@ export const ingestInboundWhatsAppMessage = async (
           vote: {
             selectedOptions: choiceText ? [{ id: choiceText, title: choiceText }] : undefined,
             optionIds: choiceText ? [choiceText] : undefined,
-            timestamp: readString((payload as any).timestamp) ?? new Date().toISOString(),
+            timestamp: readString((payloadRecord as any).timestamp) ?? new Date().toISOString(),
           },
         },
       };
     } else {
       // Se não houver texto legível: marca placeholder em metadata e segue pipeline padrão.
-      (payload as any).metadata = {
+      payloadMetadata = {
         ...metaIn,
         placeholder: true,
         direction: 'INBOUND',
@@ -1189,12 +1273,14 @@ export const ingestInboundWhatsAppMessage = async (
   const now = Date.now();
 
   // Constrói metadata consolidada para a mensagem.
+  const normalizedPayload = { ...payloadRecord, message: payloadMessage, metadata: payloadMetadata };
   const metadata = mergeEnvelopeMetadata(
     {
       ...(envelope as any),
       message: (envelope as InboundWhatsAppEnvelopeMessage).message,
     } as InboundWhatsAppEnvelopeMessage,
-    chatId
+    chatId,
+    { payload: normalizedPayload, message: payloadMessage, metadata: payloadMetadata }
   );
 
   // Chave de deduplicação para o fluxo ingest (envolve tenant, instance, chat e mensagem).
@@ -1210,7 +1296,7 @@ export const ingestInboundWhatsAppMessage = async (
     chatId,
     tags: ['ingest'],
     context: { origin: (envelope as any).origin, dedupeKey, dedupeTtlMs: DEFAULT_DEDUPE_TTL_MS },
-    payload: { message: payload, metadata },
+    payload: { message: payloadMessage, metadata, rawPayload: normalizedPayload },
   });
 
   if (await shouldSkipByDedupe(dedupeKey, now, DEFAULT_DEDUPE_TTL_MS)) {
@@ -1241,7 +1327,7 @@ export const ingestInboundWhatsAppMessage = async (
     externalId: (envelope as any).message.externalId ?? messageId,
     timestamp: (envelope as any).message.timestamp ?? null,
     contact: (envelope as any).message.contact ?? {},
-    message: payload,
+    message: payloadMessage as InboundMessageDetails,
     metadata,
     tenantId,
     sessionId: readString((metadata as any).sessionId),
