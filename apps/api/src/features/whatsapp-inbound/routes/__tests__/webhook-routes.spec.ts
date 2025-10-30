@@ -952,6 +952,9 @@ describe('WhatsApp webhook instance resolution', () => {
 });
 
 describe('WhatsApp webhook poll choice events', () => {
+  const pollChoiceEvents: Array<{ event: string; payload: unknown }> = [];
+  let pollChoiceSubscriptions: Array<() => void> = [];
+
   beforeEach(() => {
     process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'false';
     delete process.env.WHATSAPP_WEBHOOK_HMAC_SECRET;
@@ -985,6 +988,18 @@ describe('WhatsApp webhook poll choice events', () => {
     syncPollChoiceStateMock.mockResolvedValue(true);
     triggerPollChoiceInboxNotificationMock.mockReset();
     triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
+    pollChoiceEvents.length = 0;
+    pollChoiceSubscriptions.forEach((unsubscribe) => unsubscribe());
+    pollChoiceSubscriptions = [
+      webhookRoutes.__testing.subscribeToPollChoiceEvent('pollChoiceCompleted', (payload) => {
+        pollChoiceEvents.push({ event: 'pollChoiceCompleted', payload });
+      }),
+    ];
+  });
+
+  afterEach(() => {
+    pollChoiceSubscriptions.forEach((unsubscribe) => unsubscribe());
+    pollChoiceSubscriptions = [];
   });
 
   it('captures poll metadata from poll creation messages', async () => {
@@ -1155,6 +1170,8 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice"[^}]*result="accepted"[^}]*\} 1/
     );
+    const completion = pollChoiceEvents.find((entry) => entry.event === 'pollChoiceCompleted');
+    expect(completion?.payload).toMatchObject({ outcome: 'accepted', reason: 'poll_choice' });
   });
 
   it('falls back to poll metadata tenant when vote context is missing', async () => {
@@ -1656,6 +1673,11 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_missing_tenant"[^}]*result="failed"[^}]*\} 1/
     );
+    const failure = pollChoiceEvents.find((entry) => entry.event === 'pollChoiceCompleted');
+    expect(failure?.payload).toMatchObject({
+      outcome: 'failed',
+      reason: 'poll_choice_inbox_missing_tenant',
+    });
   });
 
   it('records poll choice inbox failure when synthetic message ingestion is rejected', async () => {
@@ -1710,6 +1732,11 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_ingest_rejected"[^}]*result="failed"[^}]*\} 1/
     );
+    const failure = pollChoiceEvents.find((entry) => entry.event === 'pollChoiceCompleted');
+    expect(failure?.payload).toMatchObject({
+      outcome: 'failed',
+      reason: 'poll_choice_inbox_ingest_rejected',
+    });
   });
 
   it('records duplicate poll choice events as ignored', async () => {
@@ -1767,6 +1794,8 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_duplicate"[^}]*result="ignored"[^}]*\} 1/
     );
+    const duplicate = pollChoiceEvents.find((entry) => entry.event === 'pollChoiceCompleted');
+    expect(duplicate?.payload).toMatchObject({ outcome: 'ignored', reason: 'poll_choice_duplicate' });
   });
 });
 
