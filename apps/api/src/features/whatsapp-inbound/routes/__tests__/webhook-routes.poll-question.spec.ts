@@ -134,6 +134,7 @@ describe('buildPollVoteMessageContent', () => {
       { id: 'opt-yes', title: ' Sim 👍 ' },
     ];
 
+    const result = webhookControllerTesting.buildPollVoteMessageContent(selected);
     const result = buildPollVoteMessageContent(selected);
 
     expect(result).toBe('Sim 👍');
@@ -144,6 +145,7 @@ describe('buildPollVoteMessageContent', () => {
       { id: '   ', title: '   ' },
     ];
 
+    const result = webhookControllerTesting.buildPollVoteMessageContent(selected);
     const result = buildPollVoteMessageContent(selected);
 
     expect(result).toBeNull();
@@ -181,6 +183,7 @@ describe('WhatsApp webhook poll question propagation', () => {
   });
 
   afterEach(() => {
+    webhookControllerTesting.resetUpdatePollVoteMessageHandler();
     webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     vi.clearAllMocks();
   });
@@ -374,6 +377,11 @@ describe('WhatsApp webhook poll question propagation', () => {
       },
     } as never);
 
+    const originalUpdate = webhookControllerTesting.updatePollVoteMessage;
+    const updatePollVoteMessageSpy = vi.fn(async (params) => {
+      await originalUpdate(params);
+    });
+    webhookControllerTesting.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
     const originalUpdate = webhookControllerTesting.pollChoice.updatePollVoteMessage;
     const updatePollVoteMessageSpy = vi.fn(async (params) => {
       await originalUpdate(params);

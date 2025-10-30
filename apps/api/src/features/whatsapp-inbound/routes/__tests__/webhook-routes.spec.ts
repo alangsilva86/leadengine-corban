@@ -992,6 +992,7 @@ describe('WhatsApp webhook poll choice events', () => {
     pollChoiceEvents.length = 0;
     pollChoiceSubscriptions.forEach((unsubscribe) => unsubscribe());
     pollChoiceSubscriptions = [
+      webhookControllerTesting.subscribeToPollChoiceEvent('pollChoiceCompleted', (payload) => {
       webhookControllerTesting.pollChoice.subscribe('pollChoiceCompleted', (payload) => {
         pollChoiceEvents.push({ event: 'pollChoiceCompleted', payload });
       }),
@@ -1313,6 +1314,7 @@ describe('WhatsApp webhook poll choice events', () => {
       await callback();
     });
 
+    webhookControllerTesting.setPollVoteRetryScheduler(schedulerSpy);
     webhookControllerTesting.pollChoice.setPollVoteRetryScheduler(schedulerSpy);
 
     try {
@@ -1344,6 +1346,7 @@ describe('WhatsApp webhook poll choice events', () => {
         })
       );
     } finally {
+      webhookControllerTesting.resetPollVoteRetryScheduler();
       webhookControllerTesting.pollChoice.resetPollVoteRetryScheduler();
     }
   });
@@ -1416,6 +1419,7 @@ describe('WhatsApp webhook poll choice events', () => {
       contentUpdated: true,
       captionUpdated: false,
     });
+    webhookControllerTesting.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
     webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
@@ -1444,6 +1448,7 @@ describe('WhatsApp webhook poll choice events', () => {
         })
       );
     } finally {
+      webhookControllerTesting.resetUpdatePollVoteMessageHandler();
       webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     }
     storageFindMessageByExternalIdMock.mockResolvedValueOnce({
@@ -1590,6 +1595,7 @@ describe('WhatsApp webhook poll choice events', () => {
       contentUpdated: true,
       captionUpdated: false,
     });
+    webhookControllerTesting.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
     webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
@@ -1621,6 +1627,7 @@ describe('WhatsApp webhook poll choice events', () => {
         })
       );
     } finally {
+      webhookControllerTesting.resetUpdatePollVoteMessageHandler();
       webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     }
   });
@@ -1660,6 +1667,7 @@ describe('WhatsApp webhook poll choice events', () => {
       contentUpdated: true,
       captionUpdated: false,
     });
+    webhookControllerTesting.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
     webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
@@ -1682,6 +1690,7 @@ describe('WhatsApp webhook poll choice events', () => {
         expect.objectContaining({ selectedOptions: [] })
       );
     } finally {
+      webhookControllerTesting.resetUpdatePollVoteMessageHandler();
       webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
     }
   });

@@ -1,4 +1,3 @@
-import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
@@ -6,8 +5,12 @@ import type { Prisma } from '@prisma/client';
 import type { ZodIssue } from 'zod';
 
 import { asyncHandler } from '../../../middleware/error-handler';
-import { logger } from '../../../config/logger';
 import {
+  handleWhatsAppWebhook,
+  handleVerification,
+  verifyWhatsAppWebhookRequest,
+  webhookRateLimiter,
+} from './webhook-controller';
   getDefaultInstanceId,
   getDefaultTenantId,
   getWebhookApiKey,
@@ -2610,8 +2613,8 @@ integrationWebhookRouter.post(
   asyncHandler(verifyWhatsAppWebhookRequest),
   asyncHandler(handleWhatsAppWebhook)
 );
-webhookRouter.get('/whatsapp', handleVerification);
 
+webhookRouter.get('/whatsapp', handleVerification);
 export const __testing = {
   pollChoice: {
     pollVoteUpdaterTesting,
