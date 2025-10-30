@@ -67,7 +67,7 @@ import {
   clearWhatsAppDisconnectRetry,
   removeCachedSnapshot,
   clearInstanceArchive,
-} from '../modules/whatsapp/instances/service';
+} from '../modules/whatsapp/instances/router-coordinator';
 
 
 const router: Router = Router();

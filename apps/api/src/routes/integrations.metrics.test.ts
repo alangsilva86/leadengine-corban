@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { __testing } from './integrations';
-
-const {
+import {
   serializeStoredInstance,
   normalizeStatusCountsData,
   normalizeRateUsageData,
   collectNumericFromSources,
-} = __testing;
+} from '../modules/whatsapp/instances/testing-coordinator';
 
 describe('WhatsApp integrations metrics normalization', () => {
   it('flattens nested broker metrics into top-level counters', () => {
