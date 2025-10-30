@@ -18,6 +18,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@ticketz/contracts': path.resolve(__dirname, '../../packages/contracts/src'),
+      '@ticketz/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+      '@ticketz/shared/': path.resolve(__dirname, '../../packages/shared/src/'),
     },
   },
   optimizeDeps: {

@@ -11,7 +11,7 @@ import {
 } from '@ticketz/storage';
 import { getPollMetadata } from './poll-metadata-service';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
-import { normalizeTextValue } from '@ticketz/shared/utils/poll';
+import { normalizeTextValue } from '@ticketz/shared';
 
 const POLL_STATE_PREFIX = 'poll-state:';
 const POLL_STATE_SOURCE = 'whatsapp.poll_state';

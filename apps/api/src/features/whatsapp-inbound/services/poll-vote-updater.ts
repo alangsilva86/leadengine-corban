@@ -9,7 +9,7 @@ import {
   shouldUpdatePollMessageContent,
   POLL_PLACEHOLDER_MESSAGES,
 } from '../utils/poll-helpers';
-import { normalizeTextValue } from '@ticketz/shared/utils/poll';
+import { normalizeTextValue } from '@ticketz/shared';
 import {
   findMessageByExternalId as storageFindMessageByExternalId,
   findPollVoteMessageCandidate,
