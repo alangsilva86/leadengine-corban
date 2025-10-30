@@ -20,7 +20,6 @@ import {
   applyBrokerAck,
   findMessageByExternalId as storageFindMessageByExternalId,
   findPollVoteMessageCandidate,
-  updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
 import {
   normalizeUpsertEvent,
@@ -28,7 +27,7 @@ import {
   type RawBaileysUpsertEvent,
 } from '../services/baileys-raw-normalizer';
 import { enqueueInboundWebhookJob } from '../services/inbound-queue';
-import { logBaileysDebugEvent, sanitizeJsonPayload } from '../utils/baileys-event-logger';
+import { logBaileysDebugEvent } from '../utils/baileys-event-logger';
 import { prisma } from '../../../lib/prisma';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
 import { emitMessageUpdatedEvents } from '../../../services/ticket-service';
@@ -53,6 +52,7 @@ import {
   PollChoiceInboxNotificationStatus,
   triggerPollChoiceInboxNotification,
 } from '../services/poll-choice-inbox-service';
+import { updatePollVoteMessage as pollVoteMessageUpdater, __testing as pollVoteUpdaterTesting } from '../services/poll-vote-updater';
 import {
   getPollMetadata,
   upsertPollMetadata,
@@ -258,7 +258,6 @@ const trackWebhookRejection = (reason: 'invalid_api_key' | 'invalid_signature' |
   });
 };
 
-const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
 const POLL_VOTE_RETRY_DELAY_MS = 500;
 
 type PollChoiceEventOutcome = 'accepted' | 'ignored' | 'failed';
@@ -529,6 +528,7 @@ pollChoiceEventBus.on('pollChoiceCompleted', ({ tenantId, instanceId, outcome, r
   });
 });
 
+type UpdatePollVoteMessageHandler = typeof pollVoteMessageUpdater;
 const sanitizeOptionText = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -939,7 +939,7 @@ const updatePollVoteMessage = async (params: {
 
 type UpdatePollVoteMessageHandler = typeof updatePollVoteMessage;
 
-let updatePollVoteMessageHandler: UpdatePollVoteMessageHandler = updatePollVoteMessage;
+let updatePollVoteMessageHandler: UpdatePollVoteMessageHandler = pollVoteMessageUpdater;
 
 type SchedulePollVoteRetryHandler = (
   callback: () => void | Promise<void>,
@@ -2624,13 +2624,14 @@ integrationWebhookRouter.post(
 webhookRouter.get('/whatsapp', handleVerification);
 
 export const __testing = {
-  buildPollVoteMessageContent,
-  updatePollVoteMessage,
+  pollVoteUpdaterTesting,
+  buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
+  updatePollVoteMessage: pollVoteMessageUpdater,
   setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
     updatePollVoteMessageHandler = handler;
   },
   resetUpdatePollVoteMessageHandler() {
-    updatePollVoteMessageHandler = updatePollVoteMessage;
+    updatePollVoteMessageHandler = pollVoteMessageUpdater;
   },
   setPollVoteRetryScheduler(handler: SchedulePollVoteRetryHandler) {
     schedulePollVoteRetry = handler;

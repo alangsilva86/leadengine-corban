@@ -1,6 +1,7 @@
 import type { ZodIssue } from 'zod';
 
 import { findPollVoteMessageCandidate } from '@ticketz/storage';
+import type { PollVoteUpdateResult } from './poll-vote-updater';
 
 import {
   PollChoiceEventSchema,
@@ -324,7 +325,7 @@ export type RewritePollVoteMessageDeps = {
       messageId?: string | null;
       timestamp?: string | null;
     } | null;
-  }) => Promise<void>;
+  }) => Promise<PollVoteUpdateResult>;
 };
 
 export type RewritePollVoteMessageResult =
@@ -366,7 +367,7 @@ export const rewritePollVoteMessage = async (
         timestamp: params.poll.timestamp ?? null,
       };
 
-  await deps.updatePollVoteMessage({
+  const updateOutcome = await deps.updatePollVoteMessage({
     tenantId,
     chatId: normalizeChatId(params.poll.voterJid),
     messageId: params.candidateMessageIds.at(0) ?? null,
@@ -381,7 +382,11 @@ export const rewritePollVoteMessage = async (
     vote,
   });
 
-  return { status: 'updated', tenantId };
+  if (updateOutcome.status === 'missingTenant') {
+    return { status: 'missingTenant', candidates: updateOutcome.candidates };
+  }
+
+  return { status: 'updated', tenantId: updateOutcome.tenantId };
 };
 
 export type SchedulePollInboxFallbackDeps = {

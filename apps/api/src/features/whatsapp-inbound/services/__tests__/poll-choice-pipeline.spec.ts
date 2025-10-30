@@ -6,6 +6,7 @@ import {
   schedulePollInboxFallback,
   validatePollChoicePayload,
 } from '../poll-choice-pipeline';
+import { PollVoteUpdateState } from '../poll-vote-updater';
 import type {
   PersistPollChoiceVoteDeps,
   RewritePollVoteMessageDeps,
@@ -122,7 +123,17 @@ describe('poll-choice-pipeline', () => {
 
     it('invokes update handler when tenant context is available', async () => {
       const deps: RewritePollVoteMessageDeps = {
-        updatePollVoteMessage: vi.fn().mockResolvedValue(undefined),
+        updatePollVoteMessage: vi.fn().mockResolvedValue({
+          status: 'updated',
+          state: PollVoteUpdateState.Completed,
+          tenantId: 'tenant-override',
+          storageMessageId: 'storage-message',
+          messageId: 'storage-message',
+          candidates: [],
+          metadataChanged: true,
+          contentUpdated: true,
+          captionUpdated: false,
+        }),
       };
 
       const result = await rewritePollVoteMessage(
