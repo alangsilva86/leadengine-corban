@@ -1,8 +1,14 @@
-import type { NextFunction, Request, Response } from 'express';
+import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import type { Prisma } from '@prisma/client';
 
-import { logger } from '../../../config/logger';
+import { asyncHandler } from '../../../middleware/error-handler';
+import {
+  handleWhatsAppWebhook,
+  handleVerification,
+  verifyWhatsAppWebhookRequest,
+  webhookRateLimiter,
+} from './webhook-controller';
 import {
   getDefaultInstanceId,
   getDefaultTenantId,
@@ -66,29 +72,27 @@ import {
   asArray,
   asRecord,
   normalizeApiKey,
-  readString,
   readNumber,
   toRawPreview,
   unwrapWebhookEvent,
 } from '../utils/webhook-parsers';
 import { buildIdempotencyKey, registerIdempotency } from '../utils/webhook-idempotency';
 import {
+  ensureWebhookContext,
+  logWebhookEvent,
+  readString,
+  resolveClientAddress,
+  trackWebhookRejection,
+} from './context';
+import {
   pollChoiceEventBus,
   type PollChoiceEventBusPayloads,
   type PollChoiceEventName,
-  type PollChoiceEventOutcome,
 } from '../services/poll-choice-event-bus';
-import {
-  ensureWebhookContext,
-  logWebhookEvent,
-<<<<<<< HEAD
-  resolveClientAddress,
-=======
->>>>>>> main
-  trackWebhookRejection,
-  type WhatsAppWebhookContext,
-} from './context';
 import { resolveWebhookContext } from '../services/resolve-webhook-context';
+
+const webhookRouter: Router = Router();
+const integrationWebhookRouter: Router = Router();
 
 const MAX_RAW_PREVIEW_LENGTH = DEFAULT_RAW_PREVIEW_MAX_LENGTH;
 const DEFAULT_VERIFY_RESPONSE = 'LeadEngine WhatsApp webhook';
@@ -99,22 +103,6 @@ const ackRank = (status: string | null | undefined): number => {
   if (!status) return 0;
   const key = status.toString().toUpperCase();
   return ACK_RANK[key] ?? 0;
-};
-type WhatsAppWebhookControllerConfig = {
-  ensureWebhookContext: typeof ensureWebhookContext;
-  logWebhookEvent: typeof logWebhookEvent;
-  trackWebhookRejection: typeof trackWebhookRejection;
-};
-
-type WhatsAppWebhookController = {
-  handleWhatsAppWebhook: (req: Request, res: Response) => Promise<void>;
-  verifyWhatsAppWebhookRequest: (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => Promise<void>;
-  webhookRateLimiter: ReturnType<typeof rateLimit>;
-  handleVerification: (req: Request, res: Response) => void;
 };
 
 const POLL_VOTE_RETRY_DELAY_MS = 500;
@@ -437,22 +425,6 @@ const defaultPollVoteRetryScheduler: SchedulePollVoteRetryHandler = (callback, d
 
 let schedulePollVoteRetry: SchedulePollVoteRetryHandler = defaultPollVoteRetryScheduler;
 
-const toRawPreview = (value: unknown): string => {
-  try {
-    const json = JSON.stringify(value);
-    if (!json) {
-      return '';
-    }
-    return json.length > MAX_RAW_PREVIEW_LENGTH ? json.slice(0, MAX_RAW_PREVIEW_LENGTH) : json;
-  } catch (error) {
-    const fallback = String(value);
-    logger.debug('Failed to serialize raw Baileys payload; using fallback string', { error });
-    return fallback.length > MAX_RAW_PREVIEW_LENGTH
-      ? fallback.slice(0, MAX_RAW_PREVIEW_LENGTH)
-      : fallback;
-  }
-};
-
 const sanitizeMetadataValue = (value: unknown): unknown => {
   if (value === null) {
     return null;
@@ -642,7 +614,7 @@ const normalizeContractEvent = (
   return normalized;
 };
 
-interface ProcessNormalizedMessageOptions {
+export interface ProcessNormalizedMessageOptions {
   normalized: NormalizedRawUpsertMessage;
   eventRecord: Record<string, unknown>;
   envelopeRecord: Record<string, unknown>;
@@ -652,7 +624,7 @@ interface ProcessNormalizedMessageOptions {
   instanceOverride?: string | null;
 }
 
-const processNormalizedMessage = async (
+export const processNormalizedMessage = async (
   options: ProcessNormalizedMessageOptions
 ): Promise<boolean> => {
   const { normalized, eventRecord, envelopeRecord, rawPreview, requestId } = options;
@@ -1040,7 +1012,9 @@ const findMessageForStatusUpdate = async ({
   };
 };
 
-const processMessagesUpdate = async (
+export type MessagesUpdateHandlerOutcome = { persisted: number; failures: number };
+
+export const processMessagesUpdate = async (
   eventRecord: RawBaileysUpsertEvent,
   envelopeRecord: Record<string, unknown>,
   context: {
@@ -1048,7 +1022,7 @@ const processMessagesUpdate = async (
     instanceId?: string | null;
     tenantOverride?: string | null;
   }
-): Promise<{ persisted: number; failures: number }> => {
+): Promise<MessagesUpdateHandlerOutcome> => {
   const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
   const rawRecord = asRecord(payloadRecord?.raw);
   const updates = Array.isArray(rawRecord?.updates) ? rawRecord.updates : [];
@@ -1324,7 +1298,9 @@ const processMessagesUpdate = async (
   return { persisted, failures };
 };
 
-const processPollChoiceEvent = async (
+export type PollChoiceHandlerOutcome = { persisted: number; ignored: number; failures: number };
+
+export const processPollChoiceEvent = async (
   eventRecord: RawBaileysUpsertEvent,
   envelopeRecord: Record<string, unknown>,
   context: {
@@ -1332,7 +1308,7 @@ const processPollChoiceEvent = async (
     instanceId?: string | null;
     tenantOverride?: string | null;
   }
-): Promise<{ persisted: number; ignored: number; failures: number }> => {
+): Promise<PollChoiceHandlerOutcome> => {
   const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
   const validation = validatePollChoicePayload(payloadRecord);
   const baseTenantId = context.tenantOverride ?? null;
@@ -1675,155 +1651,218 @@ const processPollChoiceEvent = async (
   }
 };
 
+type SpecialEventType = 'WHATSAPP_MESSAGES_UPDATE' | 'POLL_CHOICE';
+
+type EventHandlerContext = {
+  requestId: string;
+  instanceId?: string | null;
+  tenantOverride?: string | null;
+};
+
+type SpecialEventHandlerEntry =
+  | { kind: 'status'; handler: typeof processMessagesUpdate }
+  | { kind: 'poll'; handler: typeof processPollChoiceEvent };
+
+const defaultEventHandlers = Object.freeze({
+  WHATSAPP_MESSAGES_UPDATE: { kind: 'status', handler: processMessagesUpdate },
+  POLL_CHOICE: { kind: 'poll', handler: processPollChoiceEvent },
+}) satisfies Record<SpecialEventType, SpecialEventHandlerEntry>;
+
+const eventHandlerOverrides = new Map<SpecialEventType, SpecialEventHandlerEntry>();
+
+const normalizeSpecialEventType = (value: unknown): SpecialEventType | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'WHATSAPP_MESSAGES_UPDATE' || normalized === 'POLL_CHOICE') {
+    return normalized;
+  }
+
+  return null;
+};
+
+const getEventHandlerForType = (value: unknown): SpecialEventHandlerEntry | null => {
+  const normalized = normalizeSpecialEventType(value);
+  if (!normalized) {
+    return null;
+  }
+
+  return eventHandlerOverrides.get(normalized) ?? defaultEventHandlers[normalized] ?? null;
+};
+
+type DispatchResult =
+  | { kind: 'status'; outcome: MessagesUpdateHandlerOutcome }
+  | { kind: 'poll'; outcome: PollChoiceHandlerOutcome }
+  | null;
+
+const dispatchSpecialEvent = async (
+  eventType: unknown,
+  eventRecord: RawBaileysUpsertEvent,
+  envelopeRecord: Record<string, unknown>,
+  context: EventHandlerContext
+): Promise<DispatchResult> => {
+  const entry = getEventHandlerForType(eventType);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.kind === 'status') {
+    const outcome = await entry.handler(eventRecord, envelopeRecord, context);
+    return { kind: 'status', outcome };
+  }
+
+  const outcome = await entry.handler(eventRecord, envelopeRecord, context);
+  return { kind: 'poll', outcome };
+};
+
 const WEBHOOK_RATE_LIMIT_WINDOW_MS = 10_000;
 const WEBHOOK_RATE_LIMIT_MAX_REQUESTS = 60;
 
-const createWebhookRateLimiter = (config: WhatsAppWebhookControllerConfig) =>
-  rateLimit({
-    windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
-    max: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
-    standardHeaders: false,
-    legacyHeaders: false,
-    keyGenerator: (req: Request) => {
-      const base = resolveClientAddress(req);
-      const tenantHint = readString(req.header('x-tenant-id')) ?? 'no-tenant';
-      const refreshHint = readString(req.header('x-refresh')) ?? 'no';
-      return `${base}|${tenantHint}|${refreshHint}`;
-    },
-    handler: (req: Request, res: Response) => {
-      const context = config.ensureWebhookContext(req, res);
-      config.logWebhookEvent('warn', '🛑 WhatsApp webhook rate limit exceeded', context, {
-        limit: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
-        windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
-      });
-      config.trackWebhookRejection('rate_limited');
-      res.status(429).end();
-    },
+const webhookRateLimiter = rateLimit({
+  windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+  max: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+  standardHeaders: false,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const base = resolveClientAddress(req);
+    const tenantHint = readString(req.header('x-tenant-id')) ?? 'no-tenant';
+    const refreshHint = readString(req.header('x-refresh')) ?? 'no';
+    return `${base}|${tenantHint}|${refreshHint}`;
+  },
+  handler: (req: Request, res: Response) => {
+    const context = ensureWebhookContext(req, res);
+    logWebhookEvent('warn', '🛑 WhatsApp webhook rate limit exceeded', context, {
+      limit: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+      windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+    });
+    trackWebhookRejection('rate_limited');
+    res.status(429).end();
+  },
+});
+
+export const verifyWhatsAppWebhookRequest = async (req: Request, res: Response, next: NextFunction) => {
+  const context = ensureWebhookContext(req, res);
+  const expectedApiKey = getWebhookApiKey();
+
+  if (expectedApiKey) {
+    const providedApiKey = normalizeApiKey(
+      readString(
+        req.header('x-webhook-token'),
+        req.header('x-api-key'),
+        req.header('authorization'),
+        req.header('x-authorization')
+      )
+    );
+
+    if (!providedApiKey) {
+      logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: authorization header missing', context);
+      trackWebhookRejection('invalid_api_key');
+      res.status(401).end();
+      return;
+    }
+
+    if (providedApiKey !== expectedApiKey) {
+      logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: invalid authorization token', context);
+      trackWebhookRejection('invalid_api_key');
+      res.status(401).end();
+      return;
+    }
+  }
+
+  if (context.signatureRequired) {
+    const secret = getWebhookSignatureSecret();
+    const signature = readString(
+      req.header('x-webhook-signature'),
+      req.header('x-webhook-signature-sha256'),
+      req.header('x-signature'),
+      req.header('x-signature-sha256')
+    );
+
+    if (!signature || !secret) {
+      logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature missing', context);
+      trackWebhookRejection('invalid_signature');
+      res.status(401).end();
+      return;
+    }
+
+    try {
+      const crypto = await import('node:crypto');
+      const expectedBuffer = crypto.createHmac('sha256', secret).update(req.rawBody ?? '').digest();
+      const providedBuffer = Buffer.from(signature, 'hex');
+
+      const matches =
+        providedBuffer.length === expectedBuffer.length &&
+        crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+
+      if (!matches) {
+        logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature mismatch', context);
+        trackWebhookRejection('invalid_signature');
+        res.status(401).end();
+        return;
+      }
+    } catch (error) {
+      logWebhookEvent('warn', 'Failed to verify WhatsApp webhook signature', context, { error });
+      trackWebhookRejection('invalid_signature');
+      res.status(401).end();
+      return;
+    }
+  }
+
+  return next();
+};
+
+export const handleWhatsAppWebhook = async (req: Request, res: Response) => {
+  const context = ensureWebhookContext(req, res);
+  const { requestId, signatureRequired } = context;
+  const startedAt = Date.now();
+
+  logWebhookEvent('info', '🕵️ Etapa1-UPSERT liberada: credenciais verificadas', context, {
+    signatureEnforced: signatureRequired,
   });
 
-const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerConfig) =>
-  async (req: Request, res: Response, next: NextFunction) => {
-    const context = config.ensureWebhookContext(req, res);
-    const expectedApiKey = getWebhookApiKey();
-
-    if (expectedApiKey) {
-      const providedApiKey = normalizeApiKey(
-        readString(
-          req.header('x-webhook-token'),
-          req.header('x-api-key'),
-          req.header('authorization'),
-          req.header('x-authorization')
-        )
-      );
-
-      if (!providedApiKey) {
-        config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: authorization header missing', context);
-        config.trackWebhookRejection('invalid_api_key');
-        res.status(401).end();
-        return;
-      }
-
-      if (providedApiKey !== expectedApiKey) {
-        config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: invalid authorization token', context);
-        config.trackWebhookRejection('invalid_api_key');
-        res.status(401).end();
-        return;
-      }
-    }
-
-    if (context.signatureRequired) {
-      const secret = getWebhookSignatureSecret();
-      const signature = readString(
-        req.header('x-webhook-signature'),
-        req.header('x-webhook-signature-sha256'),
-        req.header('x-signature'),
-        req.header('x-signature-sha256')
-      );
-
-      if (!signature || !secret) {
-        config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature missing', context);
-        config.trackWebhookRejection('invalid_signature');
-        res.status(401).end();
-        return;
-      }
-
-      try {
-        const crypto = await import('node:crypto');
-        const expectedBuffer = crypto.createHmac('sha256', secret).update(req.rawBody ?? '').digest();
-        const providedBuffer = Buffer.from(signature, 'hex');
-
-        const matches =
-          providedBuffer.length === expectedBuffer.length &&
-          crypto.timingSafeEqual(providedBuffer, expectedBuffer);
-
-        if (!matches) {
-          config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature mismatch', context);
-          config.trackWebhookRejection('invalid_signature');
-          res.status(401).end();
-          return;
-        }
-      } catch (error) {
-        config.logWebhookEvent('warn', 'Failed to verify WhatsApp webhook signature', context, { error });
-        config.trackWebhookRejection('invalid_signature');
-        res.status(401).end();
-        return;
-      }
-    }
-
-    return next();
-  };
-
-const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
-  async (req: Request, res: Response) => {
-    const context = config.ensureWebhookContext(req, res);
-    const { requestId, signatureRequired } = context;
-    const startedAt = Date.now();
-
-    config.logWebhookEvent('info', '🕵️ Etapa1-UPSERT liberada: credenciais verificadas', context, {
-      signatureEnforced: signatureRequired,
+  const rawBodyParseError = (req as Request & { rawBodyParseError?: SyntaxError | null }).rawBodyParseError;
+  if (rawBodyParseError) {
+    logWebhookEvent('warn', 'WhatsApp webhook received invalid JSON payload', context, {
+      error: rawBodyParseError.message,
     });
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: 'unknown',
+      instanceId: 'unknown',
+      result: 'rejected',
+      reason: 'invalid_json',
+    });
+    res.status(400).json({
+      ok: false,
+      error: { code: 'INVALID_WEBHOOK_JSON', message: 'Invalid JSON payload' },
+    });
+    return;
+  }
 
-    const rawBodyParseError = (req as Request & { rawBodyParseError?: SyntaxError | null }).rawBodyParseError;
-    if (rawBodyParseError) {
-      config.logWebhookEvent('warn', 'WhatsApp webhook received invalid JSON payload', context, {
-        error: rawBodyParseError.message,
-      });
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: 'unknown',
-        instanceId: 'unknown',
-        result: 'rejected',
-        reason: 'invalid_json',
-      });
-      res.status(400).json({
-        ok: false,
-        error: { code: 'INVALID_WEBHOOK_JSON', message: 'Invalid JSON payload' },
-      });
-      return;
-    }
+  const events = asArray(req.body);
+  if (events.length === 0) {
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: 'unknown',
+      instanceId: 'unknown',
+      result: 'accepted',
+      reason: 'empty',
+    });
+    res.status(200).json({ ok: true, received: 0, persisted: 0 });
+    return;
+  }
 
-    const events = asArray(req.body);
-    if (events.length === 0) {
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: 'unknown',
-        instanceId: 'unknown',
-        result: 'accepted',
-        reason: 'empty',
-      });
-      res.status(200).json({ ok: true, received: 0, persisted: 0 });
-      return;
-    }
+  let enqueued = 0;
+  let ackPersisted = 0;
+  let ackFailures = 0;
+  let prepFailures = 0;
+  let pollPersisted = 0;
+  let pollIgnored = 0;
+  let pollFailures = 0;
 
-    let enqueued = 0;
-    let ackPersisted = 0;
-    let ackFailures = 0;
-    let prepFailures = 0;
-    let pollPersisted = 0;
-    let pollIgnored = 0;
-    let pollFailures = 0;
-
-    for (const entry of events) {
+  for (const entry of events) {
     const unwrapped = unwrapWebhookEvent(entry);
     if (!unwrapped) {
       continue;
@@ -1846,28 +1885,26 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
     const brokerOverride = resolvedContext.brokerId;
     const tenantOverride = resolvedContext.tenantId ?? undefined;
 
-    if (eventType === 'WHATSAPP_MESSAGES_UPDATE') {
-      const ackOutcome = await processMessagesUpdate(eventRecord, envelopeRecord, {
+    const specialResult = await dispatchSpecialEvent(
+      eventType,
+      eventRecord,
+      envelopeRecord,
+      {
         requestId,
         instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
         tenantOverride: tenantOverride ?? null,
-      });
+      }
+    );
 
-      ackPersisted += ackOutcome.persisted;
-      ackFailures += ackOutcome.failures;
-      continue;
-    }
-
-    if (eventType === 'POLL_CHOICE') {
-      const pollOutcome = await processPollChoiceEvent(eventRecord, envelopeRecord, {
-        requestId,
-        instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
-        tenantOverride: tenantOverride ?? null,
-      });
-
-      pollPersisted += pollOutcome.persisted;
-      pollIgnored += pollOutcome.ignored;
-      pollFailures += pollOutcome.failures;
+    if (specialResult) {
+      if (specialResult.kind === 'status') {
+        ackPersisted += specialResult.outcome.persisted;
+        ackFailures += specialResult.outcome.failures;
+      } else {
+        pollPersisted += specialResult.outcome.persisted;
+        pollIgnored += specialResult.outcome.ignored;
+        pollFailures += specialResult.outcome.failures;
+      }
       continue;
     }
 
@@ -1953,39 +1990,39 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
         prepFailures += 1;
       }
     }
-    }
+  }
 
-    if (prepFailures > 0) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Webhook encontrou falhas ao preparar ingestão', {
-        requestId,
-        prepFailures,
-      });
-    }
-
-    if (ackFailures > 0) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Atualização de status WhatsApp falhou em algumas mensagens', {
-        requestId,
-        ackFailures,
-        ackPersisted,
-      });
-    }
-
-    logger.debug('🎯 LeadEngine • WhatsApp :: ✅ Eventos enfileirados a partir do webhook', {
+  if (prepFailures > 0) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Webhook encontrou falhas ao preparar ingestão', {
       requestId,
-      received: events.length,
-      enqueued,
-      ackPersisted,
-      ackFailures,
-      pollPersisted,
-      pollIgnored,
-      pollFailures,
-      durationMs: Date.now() - startedAt,
+      prepFailures,
     });
+  }
 
-    res.status(204).send();
-  };
+  if (ackFailures > 0) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Atualização de status WhatsApp falhou em algumas mensagens', {
+      requestId,
+      ackFailures,
+      ackPersisted,
+    });
+  }
 
-const handleVerification = (req: Request, res: Response) => {
+  logger.debug('🎯 LeadEngine • WhatsApp :: ✅ Eventos enfileirados a partir do webhook', {
+    requestId,
+    received: events.length,
+    enqueued,
+    ackPersisted,
+    ackFailures,
+    pollPersisted,
+    pollIgnored,
+    pollFailures,
+    durationMs: Date.now() - startedAt,
+  });
+
+  res.status(204).send();
+};
+
+export const handleVerification = asyncHandler(async (req: Request, res: Response) => {
   const mode = readString(req.query['hub.mode']);
   const challenge = readString(req.query['hub.challenge']);
   const token = readString(req.query['hub.verify_token']);
@@ -1997,75 +2034,62 @@ const handleVerification = (req: Request, res: Response) => {
   }
 
   res.status(200).send(DEFAULT_VERIFY_RESPONSE);
-};
+});
 
-const setUpdatePollVoteMessageTestingHandler = (handler: UpdatePollVoteMessageHandler) => {
-  updatePollVoteMessageHandler = handler;
-};
+webhookRouter.post(
+  '/whatsapp',
+  webhookRateLimiter,
+  asyncHandler(verifyWhatsAppWebhookRequest),
+  asyncHandler(handleWhatsAppWebhook)
+);
+integrationWebhookRouter.post(
+  '/whatsapp/webhook',
+  webhookRateLimiter,
+  asyncHandler(verifyWhatsAppWebhookRequest),
+  asyncHandler(handleWhatsAppWebhook)
+);
 
-const resetUpdatePollVoteMessageTestingHandler = () => {
-  updatePollVoteMessageHandler = pollVoteMessageUpdater;
-};
-
-const setPollVoteRetryTestingScheduler = (handler: SchedulePollVoteRetryHandler) => {
-  schedulePollVoteRetry = handler;
-};
-
-const resetPollVoteRetryTestingScheduler = () => {
-  schedulePollVoteRetry = defaultPollVoteRetryScheduler;
-};
-
-const subscribeToPollChoiceEvent = <E extends PollChoiceEventName>(
-  event: E,
-  handler: (payload: PollChoiceEventBusPayloads[E]) => void
-) => pollChoiceEventBus.on(event, handler);
-
-const testing = {
-  pollVoteUpdaterTesting,
-  buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
-  updatePollVoteMessage: pollVoteMessageUpdater,
-  setUpdatePollVoteMessageHandler: setUpdatePollVoteMessageTestingHandler,
-  resetUpdatePollVoteMessageHandler: resetUpdatePollVoteMessageTestingHandler,
-  setPollVoteRetryScheduler: setPollVoteRetryTestingScheduler,
-  resetPollVoteRetryScheduler: resetPollVoteRetryTestingScheduler,
-  subscribeToPollChoiceEvent,
+webhookRouter.get('/whatsapp', handleVerification);
+export const __testing = {
   pollChoice: {
     pollVoteUpdaterTesting,
     buildPollVoteMessageContent: pollVoteUpdaterTesting.buildPollVoteMessageContent,
     updatePollVoteMessage: pollVoteMessageUpdater,
-    setUpdatePollVoteMessageHandler: setUpdatePollVoteMessageTestingHandler,
-    resetUpdatePollVoteMessageHandler: resetUpdatePollVoteMessageTestingHandler,
-    setPollVoteRetryScheduler: setPollVoteRetryTestingScheduler,
-    resetPollVoteRetryScheduler: resetPollVoteRetryTestingScheduler,
-    subscribe: subscribeToPollChoiceEvent,
+    setUpdatePollVoteMessageHandler(handler: UpdatePollVoteMessageHandler) {
+      updatePollVoteMessageHandler = handler;
+    },
+    resetUpdatePollVoteMessageHandler() {
+      updatePollVoteMessageHandler = pollVoteMessageUpdater;
+    },
+    setPollVoteRetryScheduler(handler: SchedulePollVoteRetryHandler) {
+      schedulePollVoteRetry = handler;
+    },
+    resetPollVoteRetryScheduler() {
+      schedulePollVoteRetry = defaultPollVoteRetryScheduler;
+    },
+    subscribe<E extends PollChoiceEventName>(
+      event: E,
+      handler: (payload: PollChoiceEventBusPayloads[E]) => void
+    ) {
+      return pollChoiceEventBus.on(event, handler);
+    },
+  },
+  eventHandlers: {
+    dispatch: dispatchSpecialEvent,
+    get(value: unknown) {
+      return getEventHandlerForType(value);
+    },
+    override(event: SpecialEventType, entry: SpecialEventHandlerEntry) {
+      eventHandlerOverrides.set(event, entry);
+    },
+    reset(event: SpecialEventType) {
+      eventHandlerOverrides.delete(event);
+    },
+    resetAll() {
+      eventHandlerOverrides.clear();
+    },
+    defaults: defaultEventHandlers,
   },
 };
 
-const createWhatsAppWebhookController = (
-  overrides: Partial<WhatsAppWebhookControllerConfig> = {}
-): (WhatsAppWebhookController & { __testing: typeof testing }) => {
-  const config: WhatsAppWebhookControllerConfig = {
-    ensureWebhookContext: overrides.ensureWebhookContext ?? ensureWebhookContext,
-    logWebhookEvent: overrides.logWebhookEvent ?? logWebhookEvent,
-    trackWebhookRejection: overrides.trackWebhookRejection ?? trackWebhookRejection,
-  };
-
-  return {
-    handleWhatsAppWebhook: createHandleWhatsAppWebhook(config),
-    verifyWhatsAppWebhookRequest: createVerifyWhatsAppWebhookRequest(config),
-    webhookRateLimiter: createWebhookRateLimiter(config),
-    handleVerification,
-    __testing: testing,
-  };
-};
-
-const defaultController = createWhatsAppWebhookController();
-
-export const handleWhatsAppWebhook = defaultController.handleWhatsAppWebhook;
-export const verifyWhatsAppWebhookRequest = defaultController.verifyWhatsAppWebhookRequest;
-export const webhookRateLimiter = defaultController.webhookRateLimiter;
-export const handleVerification = defaultController.handleVerification;
-export const __testing = defaultController.__testing;
-
-export { createWhatsAppWebhookController };
-export type { WhatsAppWebhookController, WhatsAppWebhookControllerConfig, WhatsAppWebhookContext };
+export { integrationWebhookRouter as whatsappIntegrationWebhookRouter, webhookRouter as whatsappWebhookRouter };
