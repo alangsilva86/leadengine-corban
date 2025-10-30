@@ -2,7 +2,9 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@ticketz/contracts": ["../../packages/contracts/src/index.ts"],
+      "@ticketz/contracts/*": ["../../packages/contracts/src/*"]
     }
   }
 }

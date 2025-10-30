@@ -15,7 +15,10 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@ticketz/contracts': path.resolve(__dirname, '../../packages/contracts/src'),
+    },
   },
   optimizeDeps: {
     include: ['@tanstack/react-query', '@tanstack/query-core', 'recharts'],

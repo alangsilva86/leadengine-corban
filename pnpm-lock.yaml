@@ -271,6 +271,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.64.0
         version: 5.90.5(react@19.2.0)
+      '@ticketz/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
