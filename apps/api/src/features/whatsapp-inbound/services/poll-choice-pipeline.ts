@@ -11,33 +11,16 @@ import {
   type PollChoiceVoteEntry,
 } from '../schemas/poll-choice';
 import { buildSelectedOptionSummaries, normalizeChatId } from '../utils/poll-helpers';
+import { dedupeNormalizedStrings, normalizeTextValue } from '@ticketz/shared/utils/poll';
 import { recordPollChoiceVote } from './poll-choice-service';
 
-const toTrimmedString = (value: unknown): string | null => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const normalized = value.toString().trim();
-    return normalized.length > 0 ? normalized : null;
-  }
-
-  return null;
-};
-
 const normalizeSelectionId = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
+  const normalized = normalizeTextValue(value);
+  if (!normalized) {
     return null;
   }
 
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return trimmed.toLowerCase();
+  return normalized.toLowerCase();
 };
 
 const extractSelectionIdSet = (value: unknown): Set<string> | null => {
@@ -158,19 +141,6 @@ const pollMessageMetadataMatchesSelections = (
   return false;
 };
 
-const dedupeStrings = (values: Array<string | null | undefined>): string[] => {
-  const unique = new Set<string>();
-
-  values.forEach((value) => {
-    const normalized = toTrimmedString(value);
-    if (normalized) {
-      unique.add(normalized);
-    }
-  });
-
-  return Array.from(unique.values());
-};
-
 export type PollChoiceValidationResult =
   | { status: 'invalid'; reason: 'missing_payload' | 'schema_error'; issues?: ZodIssue[] }
   | { status: 'valid'; payload: PollChoiceEventPayload };
@@ -220,7 +190,7 @@ export const persistPollChoiceVote = async (
     selectedOptions,
   };
 
-  const candidateMessageIds = dedupeStrings([
+  const candidateMessageIds = dedupeNormalizedStrings([
     payload.messageId,
     payload.pollCreationMessageId,
     (payload.pollCreationMessageKey as { id?: string | null } | null | undefined)?.id,
@@ -280,8 +250,8 @@ export const rewritePollVoteMessage = async (
   deps: RewritePollVoteMessageDeps
 ): Promise<RewritePollVoteMessageResult> => {
   const tenantId =
-    toTrimmedString(params.tenantContext) ??
-    toTrimmedString(params.state.context?.tenantId) ??
+    normalizeTextValue(params.tenantContext) ??
+    normalizeTextValue(params.state.context?.tenantId) ??
     null;
 
   if (!tenantId) {
@@ -359,7 +329,7 @@ export const schedulePollInboxFallback = async (
   deps: SchedulePollInboxFallbackDeps = {}
 ): Promise<SchedulePollInboxFallbackResult> => {
   const chatId = normalizeChatId(params.poll.voterJid);
-  const tenantId = toTrimmedString(params.tenantId);
+  const tenantId = normalizeTextValue(params.tenantId);
   if (!tenantId) {
     return { status: 'missingTenant', pollId: params.poll.pollId, tenantId: null, chatId };
   }

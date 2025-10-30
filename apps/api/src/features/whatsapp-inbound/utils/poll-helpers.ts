@@ -1,14 +1,18 @@
-import type { PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
+import {
+  POLL_PLACEHOLDER_MESSAGES,
+  dedupeNormalizedStrings,
+  isPollPlaceholderText,
+  normalizeTextValue,
+} from '@ticketz/shared/utils/poll';
 
-const POLL_PLACEHOLDER_MESSAGES = new Set(['[Mensagem recebida via WhatsApp]', '[Mensagem]']);
+import type { PollChoiceSelectedOptionPayload } from '../schemas/poll-choice';
 
 export const sanitizeOptionText = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return normalizeTextValue(value);
 };
 
 export const extractPollOptionLabel = (option: PollChoiceSelectedOptionPayload): string | null => {
@@ -55,22 +59,7 @@ export const buildPollVoteMessageContent = (
     return null;
   }
 
-  const uniqueTitles: string[] = [];
-  const seenTitles = new Set<string>();
-
-  for (const { title } of summaries) {
-    const normalized = sanitizeOptionText(title);
-    if (!normalized) {
-      continue;
-    }
-
-    if (seenTitles.has(normalized)) {
-      continue;
-    }
-
-    seenTitles.add(normalized);
-    uniqueTitles.push(normalized);
-  }
+  const uniqueTitles = dedupeNormalizedStrings(summaries.map(({ title }) => title));
 
   if (uniqueTitles.length === 0) {
     return null;
@@ -88,16 +77,16 @@ export const shouldUpdatePollMessageContent = (content: unknown): boolean => {
     return true;
   }
 
-  const trimmed = content.trim();
-  if (!trimmed) {
+  const normalized = normalizeTextValue(content);
+  if (!normalized) {
     return true;
   }
 
-  return POLL_PLACEHOLDER_MESSAGES.has(trimmed);
+  return isPollPlaceholderText(normalized);
 };
 
 export const normalizeTimestamp = (value: string | null | undefined): string | null => {
-  const trimmed = sanitizeOptionText(value);
+  const trimmed = normalizeTextValue(value);
   if (!trimmed) {
     return null;
   }
@@ -119,9 +108,7 @@ export const asJsonRecord = (value: unknown): Record<string, unknown> => {
 };
 
 export const normalizeChatId = (value: unknown): string | null => {
-  const text = sanitizeOptionText(
-    typeof value === 'number' && Number.isFinite(value) ? value.toString() : value
-  );
+  const text = normalizeTextValue(value);
   if (!text) {
     return null;
   }
