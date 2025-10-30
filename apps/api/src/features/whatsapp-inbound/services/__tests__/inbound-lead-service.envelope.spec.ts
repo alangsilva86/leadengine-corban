@@ -1,6 +1,8 @@
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { normalizeUpsertEvent } from '../baileys-raw-normalizer';
+
 const findOrCreateOpenTicketByChatMock = vi.fn();
 const upsertMessageByExternalIdMock = vi.fn();
 const normalizeInboundMessageMock = vi.fn();
@@ -375,6 +377,129 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(normalizeInboundMessageMock).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'wamid.normalized', type: 'TEXT', text: 'Mensagem normalizada' })
       );
+    });
+
+    it('translates normalized poll choice votes into poll_update acknowledgements', async () => {
+      const pollEvent = {
+        event: 'WHATSAPP_MESSAGES_UPSERT',
+        iid: 'instance-1',
+        payload: {
+          instanceId: 'instance-1',
+          tenantId: 'tenant-1',
+          sessionId: 'session-1',
+          owner: 'server',
+          source: 'unit-test',
+          timestamp: 1_700_000_000,
+          messages: [
+            {
+              key: {
+                id: 'wamid.poll',
+                remoteJid: '5511999999999@s.whatsapp.net',
+                fromMe: false,
+              },
+              pushName: 'Cliente Poll',
+              messageTimestamp: 1_700_000_400,
+              message: {
+                pollUpdateMessage: {
+                  pollCreationMessageId: 'poll-1',
+                  vote: {
+                    values: [1],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      } satisfies Parameters<typeof normalizeUpsertEvent>[0];
+
+      const normalization = normalizeUpsertEvent(pollEvent);
+      expect(normalization.normalized).toHaveLength(1);
+      const [normalized] = normalization.normalized;
+      expect(normalized.messageType).toBe('poll_choice');
+
+      const envelope = buildEnvelope();
+      envelope.origin = 'webhook';
+      envelope.instanceId = normalized.data.instanceId ?? envelope.instanceId;
+      envelope.tenantId = normalized.tenantId ?? envelope.tenantId;
+      envelope.chatId = '5511999999999@s.whatsapp.net';
+      envelope.message.id = normalized.messageId ?? 'wamid.poll';
+      envelope.message.externalId = envelope.message.id ?? undefined;
+      envelope.message.contact = {
+        ...(normalized.data.from as Record<string, unknown>),
+      } as typeof envelope.message.contact;
+      envelope.message.payload = {
+        ...(normalized.data.message as Record<string, unknown>),
+      } as typeof envelope.message.payload;
+
+      const metadataBase = {
+        ...(normalized.data.metadata as Record<string, unknown>),
+      } as Record<string, unknown>;
+
+      const brokerMeta = metadataBase.broker && typeof metadataBase.broker === 'object' && !Array.isArray(metadataBase.broker)
+        ? { ...(metadataBase.broker as Record<string, unknown>) }
+        : ({} as Record<string, unknown>);
+
+      brokerMeta.messageContentType = 'poll_choice';
+      brokerMeta.messageType = 'poll_choice';
+      brokerMeta.instanceId = envelope.instanceId;
+
+      metadataBase.broker = brokerMeta;
+      metadataBase.messageType = 'poll_choice';
+      metadataBase.interactive = { type: 'poll_choice' };
+      metadataBase.poll = {
+        id: 'poll-1',
+        question: 'Qual sua cor favorita?',
+        selectedOptions: [{ id: 'option-azul', title: 'Azul' }],
+      } satisfies Record<string, unknown>;
+      metadataBase.pollChoice = {
+        pollId: 'poll-1',
+        question: 'Qual sua cor favorita?',
+        vote: {
+          selectedOptions: [{ id: 'option-azul', title: 'Azul' }],
+          optionIds: ['option-azul'],
+          timestamp: new Date('2024-05-10T12:00:05.000Z').toISOString(),
+        },
+      } satisfies Record<string, unknown>;
+
+      envelope.message.metadata = metadataBase;
+
+      const normalizeModule = await vi.importActual<typeof import('../../utils/normalize')>(
+        '../../utils/normalize'
+      );
+
+      let normalizeInput: Record<string, unknown> | null = null;
+      normalizeInboundMessageMock.mockImplementationOnce((message: unknown) => {
+        normalizeInput = (message ?? {}) as Record<string, unknown>;
+        return normalizeModule.normalizeInboundMessage(message as Parameters<typeof normalizeModule.normalizeInboundMessage>[0]);
+      });
+
+      const expectedAcknowledgement = 'Obrigado! Você votou em "Azul" para "Qual sua cor favorita?".';
+
+      let timelinePayload: { content?: string; metadata?: Record<string, unknown> } | null = null;
+      sendMessageMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const [, , payload] = args as [unknown, unknown, { content: string; metadata?: Record<string, unknown> }];
+        timelinePayload = payload;
+        return {
+          id: 'timeline-poll',
+          tenantId: envelope.tenantId,
+          content: payload.content,
+          direction: 'INBOUND',
+          metadata: { eventMetadata: payload.metadata?.eventMetadata ?? {} },
+          createdAt: new Date('2024-05-10T12:00:06.000Z'),
+        };
+      });
+
+      const processed = await ingestInboundWhatsAppMessage(envelope);
+
+      expect(processed).toBe(true);
+      expect(normalizeInboundMessageMock).toHaveBeenCalledTimes(1);
+      expect(normalizeInput?.['text']).toBe(expectedAcknowledgement);
+      expect(timelinePayload?.content).toBe(expectedAcknowledgement);
+      expect(timelinePayload?.content).not.toContain('[Mensagem recebida via WhatsApp]');
+
+      const eventMetadata = (timelinePayload?.metadata?.eventMetadata ?? {}) as Record<string, unknown>;
+      const source = (eventMetadata.source ?? {}) as Record<string, unknown>;
+      expect(source.event).toBe('poll_update');
     });
 
     it('allocates leads indexed by instance when no campaigns exist', async () => {
