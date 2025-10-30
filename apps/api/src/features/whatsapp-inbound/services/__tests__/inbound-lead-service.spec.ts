@@ -154,7 +154,7 @@ vi.mock('../../../../services/ticket-service', () => ({
   sendMessage: sendMessageMock,
 }));
 
-vi.mock('../mediaDownloader', () => ({
+vi.mock('../media-downloader', () => ({
   downloadViaBaileys: (...args: unknown[]) => downloadViaBaileysMock(...args),
   downloadViaBroker: (...args: unknown[]) => downloadViaBrokerMock(...args),
 }));

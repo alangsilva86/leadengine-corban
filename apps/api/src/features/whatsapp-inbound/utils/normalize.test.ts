@@ -50,7 +50,7 @@ describe('normalizeInboundMessage', () => {
 
   it('extracts text from extendedTextMessage when conversation is missing', () => {
     const message = {
-      id: 'wamid-ext',
+      id: null,
       extendedTextMessage: {
         text: 'Extended payload message',
       },
@@ -64,6 +64,7 @@ describe('normalizeInboundMessage', () => {
 
     expect(normalized.text).toBe('Extended payload message');
     expect(normalized.type).toBe('TEXT');
+    expect(normalized.id).toMatch(/^wamid-/);
     expect(normalized.caption).toBeNull();
     expect(normalized.receivedAt).toBe(fixedNow);
   });
