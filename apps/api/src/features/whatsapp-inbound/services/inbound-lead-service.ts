@@ -1053,6 +1053,7 @@ type PollVote = {
   pollId: string | null;
   question: string | null;
   choiceText: string | null;
+  choiceId: string | null;
 };
 
 // Constrói mensagem legível para voto em enquete.
@@ -1140,14 +1141,28 @@ const extractPollVote = (payload: unknown): PollVote => {
   const { payload: payloadRecord, message, metadata } = derivePayloadSegments(payload);
   const pick = (v: unknown) => readString(v);
 
+  const selectedOptionFromVote = Array.isArray((metadata as any)?.pollChoice?.vote?.selectedOptions)
+    ? (metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]
+    : null;
+  const selectedOptionFromPoll = Array.isArray((metadata as any)?.poll?.selectedOptions)
+    ? (metadata as any)?.poll?.selectedOptions?.[0]
+    : null;
+
   const choiceText =
     pick((message as any).text) ??
-    pick((metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]?.title) ??
-    pick((metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]?.text) ??
-    pick((metadata as any)?.poll?.selectedOptions?.[0]?.title) ??
-    pick((metadata as any)?.poll?.selectedOptions?.[0]?.text) ??
+    pick((selectedOptionFromVote as any)?.title) ??
+    pick((selectedOptionFromVote as any)?.text) ??
+    pick((selectedOptionFromPoll as any)?.title) ??
+    pick((selectedOptionFromPoll as any)?.text) ??
+    pick((payloadRecord as any)?.text) ??
+    null;
+
+  const choiceId =
+    pick((selectedOptionFromVote as any)?.id) ??
+    pick((selectedOptionFromPoll as any)?.id) ??
     pick((metadata as any)?.pollChoice?.vote?.optionIds?.[0]) ??
     pick((metadata as any)?.poll?.selectedOptionIds?.[0]) ??
+    pick((payloadRecord as any)?.selectedOptionId) ??
     null;
 
   const question =
@@ -1165,7 +1180,7 @@ const extractPollVote = (payload: unknown): PollVote => {
     pick((message as any)?.id) ??
     null;
 
-  return { pollId, question, choiceText };
+  return { pollId, question, choiceText, choiceId };
 };
 
 /* ===========================================================================================
@@ -1237,14 +1252,21 @@ export const ingestInboundWhatsAppMessage = async (
   // Tratamento especial de voto em enquete: gera texto legível e persiste mensagem simples.
   if (isPollUpdate) {
     const pollSource = { ...payloadRecord, message: payloadMessage, metadata: payloadMetadata };
-    const { pollId, question, choiceText } = extractPollVote(pollSource);
+    const { pollId, question, choiceText, choiceId } = extractPollVote(pollSource);
+
+    const finalText = choiceText ?? buildPollVoteText(question, choiceText);
+
+    const resolvedOptionId = choiceId ?? choiceText ?? undefined;
+    const selectedOption = choiceText || resolvedOptionId
+      ? {
+          ...(resolvedOptionId ? { id: resolvedOptionId } : {}),
+          ...(choiceText ? { title: choiceText } : {}),
+        }
+      : undefined;
 
     if (choiceText || question) {
-      // Quando a enquete possui texto legível, injeta uma mensagem de texto na timeline
-      // e define o metadata apropriado para que a pipeline padrão processe normalmente.
-      const finalText = buildPollVoteText(question, choiceText);
-
-      // Construímos nova mensagem tipo TEXT e substituímos o payload.message
+      // Quando a enquete possui texto legível (ou ao menos contexto), injeta uma mensagem de texto na timeline
+      // e define metadata apropriada para que a pipeline padrão processe normalmente.
       payloadMessage = {
         type: 'TEXT',
         text: finalText,
@@ -1252,7 +1274,6 @@ export const ingestInboundWhatsAppMessage = async (
         id: (envelope as any)?.message?.id ?? externalId,
       };
 
-      // Define metadata consistente com a pipeline, preservando informações essenciais
       payloadMetadata = {
         ...metaIn,
         placeholder: false,
@@ -1262,15 +1283,16 @@ export const ingestInboundWhatsAppMessage = async (
         poll: {
           id: pollId ?? undefined,
           question: question ?? undefined,
-          selectedOptions: choiceText ? [{ id: choiceText, title: choiceText }] : undefined,
+          ...(selectedOption ? { selectedOptions: [selectedOption] } : {}),
+          ...(resolvedOptionId ? { selectedOptionIds: [resolvedOptionId] } : {}),
           updatedAt: new Date().toISOString(),
         },
         pollChoice: {
           pollId: pollId ?? undefined,
           question: question ?? undefined,
           vote: {
-            selectedOptions: choiceText ? [{ id: choiceText, title: choiceText }] : undefined,
-            optionIds: choiceText ? [choiceText] : undefined,
+            ...(selectedOption ? { selectedOptions: [selectedOption] } : {}),
+            ...(resolvedOptionId ? { optionIds: [resolvedOptionId] } : {}),
             timestamp: readString((payloadRecord as any).timestamp) ?? new Date().toISOString(),
           },
         },
