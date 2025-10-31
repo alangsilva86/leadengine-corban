@@ -1,43 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { MessageSquare, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
 import { cn } from '@/lib/utils.js';
 import ContextDrawer from './ContextDrawer.jsx';
 import SplitLayout from './SplitLayout.jsx';
-import { useMediaQuery } from '@/hooks/use-media-query.js';
-import emitInboxTelemetry from '../../utils/telemetry.js';
+import useInboxLayoutState from './hooks/useInboxLayoutState.js';
+import { createScrollMemory, LIST_SCROLL_STORAGE_KEY } from './preferences.ts';
 
-const CONTEXT_PREFERENCE_KEY = 'inbox_context_open';
-const LIST_SCROLL_STORAGE_KEY = 'inbox:queue-list';
-const listScrollMemory = new Map();
-
-const readPreference = (key, fallback) => {
-  if (typeof window === 'undefined') {
-    return fallback;
-  }
-  try {
-    const stored = window.localStorage.getItem(key);
-    if (stored === null) {
-      return fallback;
-    }
-    return stored === 'true';
-  } catch (error) {
-    console.warn('Failed to read preference', { key, error });
-    return fallback;
-  }
-};
-
-const writePreference = (key, value) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.localStorage.setItem(key, value ? 'true' : 'false');
-  } catch (error) {
-    console.warn('Failed to persist preference', { key, error });
-  }
-};
+const listScrollMemory = createScrollMemory(LIST_SCROLL_STORAGE_KEY);
 
 const ListPanelHeader = ({ showCloseButton = false }) => (
   <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-3 text-sm font-semibold text-[color:var(--color-inbox-foreground)]">
@@ -84,7 +55,7 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
     if (!element) return undefined;
 
     const restore = () => {
-      const saved = listScrollMemory.get(LIST_SCROLL_STORAGE_KEY);
+      const saved = listScrollMemory.read();
       if (typeof saved === 'number') {
         requestAnimationFrame(() => {
           element.scrollTop = saved;
@@ -95,13 +66,13 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
     restore();
 
     const handleScroll = () => {
-      listScrollMemory.set(LIST_SCROLL_STORAGE_KEY, element.scrollTop);
+      listScrollMemory.write(element.scrollTop);
     };
 
     element.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
-      listScrollMemory.set(LIST_SCROLL_STORAGE_KEY, element.scrollTop);
+      listScrollMemory.write(element.scrollTop);
       element.removeEventListener('scroll', handleScroll);
     };
   }, []);
@@ -158,6 +129,25 @@ const DesktopToolbar = ({
   </div>
 );
 
+const DetailSurface = ({ children, context, contextOpen, onContextOpenChange }) => {
+  const detailGap = contextOpen ? 'lg:gap-6' : 'lg:gap-0';
+
+  return (
+    <div className={cn('flex h-full min-h-0 w-full flex-col items-stretch lg:flex-row', detailGap)}>
+      <div className="flex h-full min-h-0 min-w-0 flex-1">
+        <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
+            {children}
+          </div>
+        </section>
+      </div>
+      <ContextDrawer open={contextOpen} onOpenChange={onContextOpenChange} desktopContentClassName="px-4 py-5">
+        {context}
+      </ContextDrawer>
+    </div>
+  );
+};
+
 const InboxAppShell = ({
   sidebar,
   children,
@@ -167,116 +157,39 @@ const InboxAppShell = ({
   currentUser,
   toolbar,
 }) => {
-  const [contextOpen, setContextOpen] = useState(() => readPreference(CONTEXT_PREFERENCE_KEY, defaultContextOpen));
-  const [desktopListVisible, setDesktopListVisible] = useState(true);
-  const [mobileListOpen, setMobileListOpen] = useState(false);
-
-  useEffect(() => {
-    writePreference(CONTEXT_PREFERENCE_KEY, contextOpen);
-  }, [contextOpen]);
-
-  useEffect(() => {
-    emitInboxTelemetry('chat.context.toggle', { open: contextOpen });
-  }, [contextOpen]);
-
-  const isTablet = useMediaQuery('(min-width: 1024px)');
-  const isDesktop = useMediaQuery('(min-width: 1280px)');
-  const shouldRenderSplitLayout = isTablet;
-
-  useEffect(() => {
-    if (shouldRenderSplitLayout) {
-      setMobileListOpen(false);
-    }
-  }, [shouldRenderSplitLayout]);
-
-  const canPersistPreferences = Boolean(currentUser?.id);
   const isContextAvailable = Boolean(context);
-
-  const handleToggleListVisibility = useCallback(() => {
-    if (isDesktop) {
-      setDesktopListVisible((previous) => {
-        const next = !previous;
-        if (next) {
-          setContextOpen(false);
-        }
-        return next;
-      });
-    } else if (!isTablet) {
-      setMobileListOpen((previous) => !previous);
-    }
-  }, [isDesktop, isTablet]);
-
-  const handleToggleContext = useCallback(() => {
-    if (!isContextAvailable) {
-      return;
-    }
-
-    setContextOpen((previous) => {
-      const next = !previous;
-      if (next && isDesktop) {
-        setDesktopListVisible(false);
-      }
-      return next;
-    });
-  }, [isContextAvailable, isDesktop]);
-
-  useEffect(() => {
-    if (!isContextAvailable && contextOpen) {
-      setContextOpen(false);
-    }
-  }, [isContextAvailable, contextOpen]);
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if ((event.key === 'l' || event.key === 'L') && event.altKey && !event.ctrlKey && !event.metaKey) {
-        event.preventDefault();
-        handleToggleListVisibility();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleToggleListVisibility]);
-
-  const headerListButtonLabel = desktopListVisible ? 'Ocultar lista' : 'Mostrar lista';
-  const contextDrawerOpen = Boolean(context) && contextOpen;
-  const renderDetailSurface = () => {
-    const detailGap = contextDrawerOpen ? 'lg:gap-6' : 'lg:gap-0';
-
-    return (
-      <div className={cn('flex h-full min-h-0 w-full flex-col items-stretch lg:flex-row', detailGap)}>
-        <div className="flex h-full min-h-0 min-w-0 flex-1">
-          <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]">
-            <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden [overflow-clip-margin:24px]">
-              {children}
-            </div>
-          </section>
-        </div>
-        <ContextDrawer
-          open={contextDrawerOpen}
-          onOpenChange={setContextOpen}
-          desktopContentClassName="px-4 py-5"
-        >
-          {context}
-        </ContextDrawer>
-      </div>
-    );
-  };
+  const {
+    canPersistPreferences,
+    contextDrawerOpen,
+    setContextOpen,
+    desktopListVisible,
+    mobileListOpen,
+    setMobileListOpen,
+    headerListButtonLabel,
+    handleToggleListVisibility,
+    handleToggleContext,
+    shouldRenderSplitLayout,
+    isDesktop,
+  } = useInboxLayoutState({
+    defaultContextOpen,
+    contextAvailable: isContextAvailable,
+    currentUser,
+  });
 
   const listContent = useMemo(
-    () => (
-      <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} />
-    ),
-    [sidebar, canPersistPreferences]
+    () => <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} />,
+    [sidebar, canPersistPreferences],
   );
 
   const mobileListContent = useMemo(
-    () => (
-      <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} showCloseButton />
-    ),
-    [sidebar, canPersistPreferences]
+    () => <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} showCloseButton />,
+    [sidebar, canPersistPreferences],
+  );
+
+  const detailSurface = (
+    <DetailSurface context={context} contextOpen={contextDrawerOpen} onContextOpenChange={setContextOpen}>
+      {children}
+    </DetailSurface>
   );
 
   return (
@@ -326,9 +239,9 @@ const InboxAppShell = ({
               <SplitLayout
                 className="h-full min-h-0 w-full gap-4 sm:gap-6"
                 list={listContent}
-                detail={renderDetailSurface()}
+                detail={detailSurface}
                 listClassName={cn(
-                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0'
+                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0',
                 )}
                 detailClassName="flex min-h-0 min-w-0 flex-col"
                 listWidth={360}
@@ -339,7 +252,7 @@ const InboxAppShell = ({
                 resizable={false}
               />
             ) : (
-              <div className="flex h-full w-full">{renderDetailSurface()}</div>
+              <div className="flex h-full w-full">{detailSurface}</div>
             )}
           </div>
         </div>
@@ -349,7 +262,7 @@ const InboxAppShell = ({
           side="left"
           className={cn(
             'w-[min(420px,90vw)] border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-0 text-foreground shadow-[var(--shadow-lg)]',
-            'border-r'
+            'border-r',
           )}
         >
           <SheetHeader className="sr-only">
