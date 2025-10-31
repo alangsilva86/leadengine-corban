@@ -10,6 +10,8 @@ import {
   shouldDisplayInstance,
   looksLikeWhatsAppJid,
 } from '../lib/instances';
+import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
+import { getInstanceMetrics } from '../lib/metrics';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
 import { pairingPhoneSchema, createInstanceSchema, createCampaignSchema } from './schemas';
 import {
@@ -84,6 +86,24 @@ interface ErrorState {
   code: string | null;
   title: string | null;
   message: string;
+}
+
+export interface WhatsAppInstanceViewModel {
+  key: string;
+  id: string | null;
+  displayName: string;
+  phoneLabel: string;
+  formattedPhone: string;
+  addressLabel: string | null;
+  statusInfo: ReturnType<typeof getStatusInfo>;
+  metrics: ReturnType<typeof getInstanceMetrics>;
+  statusValues: ReturnType<typeof getInstanceMetrics>['status'];
+  rateUsage: ReturnType<typeof getInstanceMetrics>['rateUsage'];
+  ratePercentage: number;
+  lastUpdatedLabel: string;
+  user: string | null;
+  instance: any;
+  isCurrent: boolean;
 }
 
 interface CampaignActionState {
@@ -715,12 +735,56 @@ const useWhatsAppConnect = ({
   const visibleInstanceCount = visibleInstances.length;
   const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
   const renderInstances = state.showAllInstances ? instances : visibleInstances;
+  const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
+    return renderInstances.map((entry, index) => {
+      const statusInfo = getStatusInfo(entry);
+      const metrics = getInstanceMetrics(entry);
+      const phoneLabel = resolveInstancePhone(entry) ?? '';
+      const formattedPhone = formatPhoneNumber(phoneLabel);
+      const addressCandidate =
+        (typeof entry?.address === 'string' && entry.address) ||
+        (typeof entry?.jid === 'string' && entry.jid) ||
+        (typeof entry?.session === 'string' && entry.session) ||
+        null;
+      const lastUpdated = entry?.updatedAt ?? entry?.lastSeen ?? entry?.connectedAt ?? null;
+      const user = typeof entry?.user === 'string' ? entry.user : null;
+      const rateUsage = metrics.rateUsage;
+      const ratePercentage = Math.max(0, Math.min(100, rateUsage?.percentage ?? 0));
+      const key =
+        (typeof entry?.id === 'string' && entry.id) ||
+        (typeof entry?.name === 'string' && entry.name) ||
+        `instance-${index}`;
+
+      return {
+        key,
+        id: typeof entry?.id === 'string' ? entry.id : null,
+        displayName:
+          (typeof entry?.name === 'string' && entry.name) ||
+          (typeof entry?.id === 'string' ? entry.id : 'Instância'),
+        phoneLabel,
+        formattedPhone,
+        addressLabel:
+          addressCandidate && addressCandidate !== phoneLabel ? addressCandidate : null,
+        statusInfo,
+        metrics,
+        statusValues: metrics.status,
+        rateUsage,
+        ratePercentage,
+        lastUpdatedLabel: formatTimestampLabel(lastUpdated),
+        user,
+        instance: entry,
+        isCurrent:
+          Boolean(instance?.id && entry?.id && instance.id === entry.id) ||
+          instance === entry,
+      };
+    });
+  }, [instance?.id, renderInstances]);
+  const hasRenderableInstances = instanceViewModels.length > 0;
   const instancesCountLabel = instancesReady
     ? state.showAllInstances
       ? `${totalInstanceCount} instância(s)`
       : `${visibleInstanceCount} ativa(s)`
     : 'Sincronizando…';
-  const hasRenderableInstances = renderInstances.length > 0;
   const showFilterNotice = instancesReady && hasHiddenInstances && !state.showAllInstances;
 
   const timelineItems = useMemo(() => {
@@ -1138,7 +1202,7 @@ const useWhatsAppConnect = ({
     instancesReady,
     hasHiddenInstances,
     hasRenderableInstances,
-    renderInstances,
+    instanceViewModels,
     showFilterNotice,
     instancesCountLabel,
     loadingInstances,

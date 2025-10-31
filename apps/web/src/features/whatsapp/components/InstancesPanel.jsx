@@ -3,19 +3,10 @@ import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
-import { AlertCircle, Link2, Loader2, QrCode, RefreshCcw, Trash2, MoreVertical, Check } from 'lucide-react';
-import { formatMetricValue, formatPhoneNumber } from '../lib/formatting';
-import { getInstanceMetrics } from '../lib/metrics';
-import { getStatusInfo, resolveInstancePhone } from '../lib/instances';
+import { AlertCircle, Link2, RefreshCcw } from 'lucide-react';
+import { formatPhoneNumber } from '../lib/formatting';
 import CampaignHistoryDialog from './CampaignHistoryDialog.jsx';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu.jsx';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import InstanceSummaryCard from './InstanceSummaryCard.jsx';
 
 const InstancesPanel = ({
   surfaceStyles,
@@ -32,7 +23,7 @@ const InstancesPanel = ({
   instancesReady,
   hasHiddenInstances,
   hasRenderableInstances,
-  renderInstances,
+  instanceViewModels,
   showFilterNotice,
   showAllInstances,
   instancesCountLabel,
@@ -173,175 +164,20 @@ const InstancesPanel = ({
             </div>
           ) : hasRenderableInstances ? (
             <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-              {renderInstances.map((item, index) => {
-                const isCurrent = selectedInstance?.id === item.id;
-                const statusInfo = getStatusInfo(item);
-                const metrics = getInstanceMetrics(item);
-                const statusValues = metrics.status || {};
-                const rateUsage = metrics.rateUsage || { used: 0, limit: 0, remaining: 0, percentage: 0 };
-                const ratePercentage = Math.max(0, Math.min(100, rateUsage.percentage ?? 0));
-                const phoneLabel = resolveInstancePhone(item);
-                const addressLabel = item.address || item.jid || item.session || '';
-                const lastUpdated = item.updatedAt || item.lastSeen || item.connectedAt;
-                const lastUpdatedLabel = lastUpdated ? new Date(lastUpdated).toLocaleString('pt-BR') : '—';
-
-                return (
-                  <div
-                    key={item.id || item.name || index}
-                    className={cn(
-                      'flex h-full w-full flex-col rounded-2xl border p-4 transition-colors',
-                      isCurrent ? surfaceStyles.glassTileActive : surfaceStyles.glassTileIdle
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">{item.name || item.id}</p>
-                        <p className="text-xs text-muted-foreground">{formatPhoneNumber(phoneLabel) || '—'}</p>
-                        {addressLabel && addressLabel !== phoneLabel ? (
-                          <p className="text-xs text-muted-foreground">{addressLabel}</p>
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Ações da instância"
-                              disabled={deletingInstanceId === item.id}
-                            >
-                              {deletingInstanceId === item.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <MoreVertical className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => onViewQr?.(item)}
-                              disabled={isBusy || !isAuthenticated}
-                            >
-                              <QrCode className="mr-2 h-4 w-4" />
-                              Ver QR Code
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                onRequestDelete?.(item);
-                              }}
-                              disabled={deletingInstanceId === item.id}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remover instância
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      <div className="grid grid-cols-1 gap-2 text-center sm:grid-cols-3">
-                        <div className={cn('rounded-lg p-3', surfaceStyles.glassTile)}>
-                          <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Enviadas</p>
-                          <p className="mt-1 text-base font-semibold text-foreground">
-                            {formatMetricValue(metrics.sent)}
-                          </p>
-                        </div>
-                        <div className={cn('rounded-lg p-3', surfaceStyles.glassTile)}>
-                          <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Na fila</p>
-                          <p className="mt-1 text-base font-semibold text-foreground">
-                            {formatMetricValue(metrics.queued)}
-                          </p>
-                        </div>
-                        <div className={cn('rounded-lg p-3', surfaceStyles.glassTile)}>
-                          <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Falhas</p>
-                          <p className="mt-1 text-base font-semibold text-foreground">
-                            {formatMetricValue(metrics.failed)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="rounded-lg p-3 text-center cursor-help" style={{ gridColumn: 'span 3' }}>
-                            <p className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Códigos de Status</p>
-                            <div className="mt-2 flex items-center justify-around gap-2">
-                              {statusCodeMeta.map((meta) => (
-                                <div key={meta.code} className="text-center">
-                                  <p className="text-xs text-muted-foreground">{meta.label}</p>
-                                  <p className="text-sm font-semibold text-foreground">
-                                    {formatMetricValue(statusValues[meta.code])}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          <div className="space-y-1 text-xs">
-                            {statusCodeMeta.map((meta) => (
-                              <div key={meta.code}>
-                                <strong>Código {meta.label}:</strong> {meta.description}
-                              </div>
-                            ))}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-
-                      <div
-                        className={cn('rounded-lg p-3 text-left', surfaceStyles.glassTile)}
-                        title="Uso do limite de envio reportado pelo broker."
-                      >
-                        <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-                          <span>Utilização do limite</span>
-                          <span>{ratePercentage}%</span>
-                        </div>
-                        <div
-                          className={cn('mt-2 h-2 w-full overflow-hidden rounded-full', surfaceStyles.progressTrack)}
-                        >
-                          <div
-                            className={cn('h-full rounded-full transition-all', surfaceStyles.progressIndicator)}
-                            style={{ width: `${ratePercentage}%` }}
-                          />
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                          <span>Usadas: {formatMetricValue(rateUsage.used)}</span>
-                          <span>Disponível: {formatMetricValue(rateUsage.remaining)}</span>
-                          <span>Limite: {formatMetricValue(rateUsage.limit)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>Atualizado: {lastUpdatedLabel}</span>
-                      {item.user ? <span>Operador: {item.user}</span> : null}
-                    </div>
-
-                    <div className="mt-4">
-                      <Button
-                        size="sm"
-                        variant={isCurrent ? 'default' : 'outline'}
-                        onClick={() => onSelectInstance?.(item)}
-                        disabled={isBusy}
-                        className="w-full"
-                      >
-                        {isCurrent ? (
-                          <>
-                            <Check className="mr-2 h-4 w-4" />
-                            Instância selecionada
-                          </>
-                        ) : (
-                          'Selecionar instância'
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+              {instanceViewModels.map((viewModel) => (
+                <InstanceSummaryCard
+                  key={viewModel.key}
+                  surfaceStyles={surfaceStyles}
+                  viewModel={viewModel}
+                  statusCodeMeta={statusCodeMeta}
+                  isBusy={isBusy}
+                  isAuthenticated={isAuthenticated}
+                  deletingInstanceId={deletingInstanceId}
+                  onSelectInstance={onSelectInstance}
+                  onViewQr={onViewQr}
+                  onRequestDelete={onRequestDelete}
+                />
+              ))}
             </div>
           ) : hasHiddenInstances ? (
             <div

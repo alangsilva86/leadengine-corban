@@ -56,7 +56,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     instancesReady,
     hasHiddenInstances,
     hasRenderableInstances,
-    renderInstances,
+    instanceViewModels,
     showFilterNotice,
     instancesCountLabel,
     loadingInstances,
@@ -193,7 +193,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           instancesReady={instancesReady}
           hasHiddenInstances={hasHiddenInstances}
           hasRenderableInstances={hasRenderableInstances}
-          renderInstances={renderInstances}
+          instanceViewModels={instanceViewModels}
           showFilterNotice={showFilterNotice}
           showAllInstances={showAllInstances}
           instancesCountLabel={instancesCountLabel}
