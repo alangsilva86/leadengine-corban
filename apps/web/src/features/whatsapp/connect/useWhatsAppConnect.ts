@@ -13,21 +13,10 @@ import {
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
 import { getInstanceMetrics } from '../lib/metrics';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
-import { createInstanceSchema } from './schemas';
 import useWhatsappSessionState, { STATUS_COPY } from './hooks/useWhatsappSessionState';
 import useWhatsappCampaignActions from './hooks/useWhatsappCampaignActions';
 import useWhatsappPairing from './hooks/useWhatsappPairing';
-import { pairingPhoneSchema, createInstanceSchema, createCampaignSchema } from './schemas';
-import {
-  fetchCampaigns,
-  createCampaign as createCampaignRequest,
-  deleteCampaign as deleteCampaignRequest,
-  updateCampaignStatus as updateCampaignStatusRequest,
-  reassignCampaign as reassignCampaignRequest,
-  fetchCampaignImpact,
-} from './services/campaignService';
-import { executeCampaignAction } from './services/campaignActions';
-import { requestPairingCode as requestPairingCodeService } from './services/pairingService';
+import { createInstanceSchema } from './schemas';
 
 type Nullable<T> = T | null;
 
@@ -59,6 +48,10 @@ export interface ErrorState {
 }
 
 export interface CampaignActionState {
+  id: string | null;
+  type: string | null;
+}
+
 export interface WhatsAppInstanceViewModel {
   key: string;
   id: string | null;
@@ -75,11 +68,6 @@ export interface WhatsAppInstanceViewModel {
   user: string | null;
   instance: any;
   isCurrent: boolean;
-}
-
-interface CampaignActionState {
-  id: string | null;
-  type: string | null;
 }
 
 export interface WhatsAppConnectState {
@@ -238,18 +226,6 @@ const useWhatsAppConnect = ({
 }: UseWhatsAppConnectParams) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const [state, dispatch] = useReducer(reducer, initialState(status, activeCampaign));
-  const setCampaignError = useCallback(
-    (value: string | null) => {
-      dispatch({ type: 'set-campaign-error', value });
-    },
-    [dispatch]
-  );
-  const setCampaignAction = useCallback(
-    (value: CampaignActionState | null) => {
-      dispatch({ type: 'set-campaign-action', value });
-    },
-    [dispatch]
-  );
   const {
     instances,
     instancesReady,
@@ -603,253 +579,6 @@ const useWhatsAppConnect = ({
     },
     [createInstanceAction, setCreateInstanceOpen, setErrorMessage]
   );
-
-    [createInstanceAction, setErrorMessage]
-  );
-
-  const createCampaign = useCallback(
-    async ({ name, instanceId, status: requestedStatus = 'active' }: { name: string; instanceId: string; status?: string }) => {
-      if (!selectedAgreement?.id) {
-        throw new Error('Vincule um convênio antes de criar campanhas.');
-      }
-
-      const parsed = createCampaignSchema.safeParse({ name, instanceId, status: requestedStatus });
-      if (!parsed.success) {
-        const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da campanha.';
-        setCampaignError(message);
-        throw new Error(message);
-      }
-
-      const targetInstance =
-        instances.find((entry) => entry && entry.id === parsed.data.instanceId) ?? null;
-      const brokerId =
-        targetInstance && targetInstance.metadata && typeof targetInstance.metadata === 'object'
-          ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
-          : null;
-
-      return executeCampaignAction({
-        actionType: 'create',
-        setCampaignAction,
-        setCampaignError,
-        service: () =>
-          createCampaignRequest({
-            agreementId: selectedAgreement.id,
-            agreementName: selectedAgreement.name,
-            instanceId: parsed.data.instanceId,
-            ...(brokerId ? { brokerId } : {}),
-            name: parsed.data.name || `${selectedAgreement.name} • ${parsed.data.instanceId}`,
-            status: parsed.data.status,
-          }),
-        onSuccess: async (payload) => {
-          await loadCampaignsRef.current?.({
-            preferredAgreementId: selectedAgreement.id,
-            preferredCampaignId: payload?.id ?? null,
-            preferredInstanceId: payload?.instanceId ?? instance?.id ?? null,
-          });
-        },
-        successToastMessage: 'Campanha criada com sucesso.',
-        errorToastTitle: 'Falha ao criar campanha',
-        defaultErrorMessage: 'Não foi possível criar a campanha',
-        logError,
-        logLabel: 'Falha ao criar campanha WhatsApp',
-        onUnauthorized: (error) => handleAuthFallback({ error }),
-      });
-    },
-    [
-      selectedAgreement?.id,
-      selectedAgreement?.name,
-      instances,
-      instance?.id,
-      setCampaignAction,
-      setCampaignError,
-      handleAuthFallback,
-      logError,
-    ]
-  );
-
-  const updateCampaignStatus = useCallback(
-    async (target: any, nextStatus: string) => {
-      if (!target?.id) {
-        return;
-      }
-
-      await executeCampaignAction({
-        actionType: nextStatus,
-        actionId: target.id,
-        setCampaignAction,
-        setCampaignError,
-        service: () => updateCampaignStatusRequest(target.id, nextStatus),
-        onSuccess: async () => {
-          await loadCampaignsRef.current?.({
-            preferredAgreementId: selectedAgreement?.id ?? null,
-            preferredCampaignId: target?.id ?? null,
-            preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
-          });
-        },
-        successToastMessage:
-          nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.',
-        errorToastTitle: 'Falha ao atualizar campanha',
-        defaultErrorMessage: 'Não foi possível atualizar a campanha',
-        logError,
-        logLabel: 'Falha ao atualizar status da campanha',
-        onUnauthorized: (error) => handleAuthFallback({ error }),
-      });
-    },
-    [
-      selectedAgreement?.id,
-      instance?.id,
-      setCampaignAction,
-      setCampaignError,
-      handleAuthFallback,
-      logError,
-    ]
-  );
-
-  const deleteCampaign = useCallback(
-    async (target: any) => {
-      if (!target?.id) {
-        return;
-      }
-
-      const currentCampaignId = state.campaign?.id ?? null;
-
-      await executeCampaignAction({
-        actionType: 'delete',
-        actionId: target.id,
-        setCampaignAction,
-        setCampaignError,
-        service: () => deleteCampaignRequest(target.id),
-        onSuccess: async () => {
-          await loadCampaignsRef.current?.({
-            preferredAgreementId: selectedAgreement?.id ?? null,
-            preferredCampaignId: currentCampaignId === target.id ? null : currentCampaignId,
-            preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
-          });
-        },
-        successToastMessage: 'Campanha removida com sucesso.',
-        errorToastTitle: 'Falha ao remover campanha',
-        defaultErrorMessage: 'Não foi possível remover a campanha',
-        logError,
-        logLabel: 'Falha ao remover campanha WhatsApp',
-        onUnauthorized: (error) => handleAuthFallback({ error }),
-      });
-    },
-    [
-      state.campaign?.id,
-      selectedAgreement?.id,
-      instance?.id,
-      setCampaignAction,
-      setCampaignError,
-      handleAuthFallback,
-      logError,
-    ]
-  );
-
-  const reassignCampaign = useCallback(
-    async (target: any, requestedInstanceId: string | null) => {
-      if (!target?.id) {
-        return;
-      }
-
-      if (requestedInstanceId === target.instanceId) {
-        const error = new Error('Selecione uma opção diferente para concluir ou escolha desvincular a campanha.');
-        setCampaignError(error.message);
-        throw error;
-      }
-
-      await executeCampaignAction({
-        actionType: 'reassign',
-        actionId: target.id,
-        setCampaignAction,
-        setCampaignError,
-        service: () => reassignCampaignRequest(target.id, requestedInstanceId ?? null),
-        onSuccess: async () => {
-          await loadCampaignsRef.current?.({
-            preferredAgreementId: selectedAgreement?.id ?? null,
-            preferredCampaignId: target?.id ?? null,
-            preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
-          });
-        },
-        successToastMessage: requestedInstanceId
-          ? 'Campanha reatribuída com sucesso.'
-          : 'Campanha desvinculada da instância.',
-        errorToastTitle: 'Falha ao reatribuir campanha',
-        defaultErrorMessage: 'Não foi possível reatribuir a campanha',
-        logError,
-        logLabel: 'Falha ao reatribuir campanha WhatsApp',
-        onUnauthorized: (error) => handleAuthFallback({ error }),
-      });
-    },
-    [
-      selectedAgreement?.id,
-      instance?.id,
-      setCampaignAction,
-      setCampaignError,
-      handleAuthFallback,
-      logError,
-    ]
-  );
-
-  const handlePairingPhoneChange = useCallback(
-    (event: any) => {
-      const value = typeof event?.target?.value === 'string' ? event.target.value : '';
-      dispatch({ type: 'set-pairing-phone-input', value });
-      if (state.pairingPhoneError) {
-        dispatch({ type: 'set-pairing-phone-error', value: null });
-      }
-    },
-    [state.pairingPhoneError]
-  );
-
-  const handleRequestPairingCode = useCallback(async () => {
-    if (!instance?.id) {
-      dispatch({
-        type: 'set-pairing-phone-error',
-        value: 'Selecione uma instância para solicitar o pareamento por código.',
-      });
-      return;
-    }
-
-    const validation = pairingPhoneSchema.safeParse({ phone: state.pairingPhoneInput });
-    if (!validation.success) {
-      const message = validation.error.errors[0]?.message ?? 'Informe o telefone que receberá o código.';
-      dispatch({ type: 'set-pairing-phone-error', value: message });
-      return;
-    }
-
-    dispatch({ type: 'set-pairing-phone-error', value: null });
-    dispatch({ type: 'set-requesting-pairing', value: true });
-    try {
-      const result = await requestPairingCodeService(connectInstance, instance.id, validation.data.phone);
-      await loadInstances({
-        connectResult: result || undefined,
-        preferredInstanceId: instance.id,
-        forceRefresh: true,
-      });
-      toast.success(
-        'Solicitamos o código de pareamento. Abra o WhatsApp oficial e informe o código recebido para concluir a conexão.'
-      );
-    } catch (err: any) {
-      const friendly = resolveFriendlyError(
-        err,
-        'Não foi possível solicitar o pareamento por código. Verifique o telefone informado e tente novamente.'
-      );
-      dispatch({ type: 'set-pairing-phone-error', value: friendly.message });
-      setErrorMessage(friendly.message, {
-        code: friendly.code ?? null,
-        title: friendly.title ?? 'Falha ao solicitar pareamento por código',
-      });
-    } finally {
-      dispatch({ type: 'set-requesting-pairing', value: false });
-    }
-  }, [
-    instance?.id,
-    state.pairingPhoneInput,
-    connectInstance,
-    loadInstances,
-    resolveFriendlyError,
-    setErrorMessage,
-  ]);
 
   const handleInstanceSelect = useCallback(
     async (inst: any, { skipAutoQr = false } = {}) => {

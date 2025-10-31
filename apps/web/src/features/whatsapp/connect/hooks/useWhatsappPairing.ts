@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 
 import { pairingPhoneSchema } from '../schemas';
 import { requestPairingCode as requestPairingCodeService } from '../services/pairingService';
-import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes';
+import { resolveWhatsAppErrorCopy } from '../../utils/whatsapp-error-codes.js';
 import type { WhatsAppConnectState } from '../useWhatsAppConnect';
 
 interface UseWhatsappPairingParams {
