@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 
 import useUpdateContactField, {
   type UpdateContactFieldVariables,
-} from '../api/useUpdateContactField.js';
+} from '../api/useUpdateContactField';
 import useUpdateDealFields, {
   type UpdateDealFieldsVariables,
 } from '../api/useUpdateDealFields.js';

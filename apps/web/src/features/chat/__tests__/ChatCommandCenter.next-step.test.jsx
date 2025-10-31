@@ -84,7 +84,7 @@ vi.mock('../hooks/useManualConversationLauncher.js', () => ({
   }),
 }));
 
-vi.mock('../api/useUpdateContactField.js', () => ({
+vi.mock('../api/useUpdateContactField', () => ({
   __esModule: true,
   default: () => ({
     mutateAsync: vi.fn(async () => ({})),
