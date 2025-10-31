@@ -20,6 +20,7 @@ import {
   reassignCampaign as reassignCampaignRequest,
   fetchCampaignImpact,
 } from './services/campaignService';
+import { executeCampaignAction } from './services/campaignActions';
 import { requestPairingCode as requestPairingCodeService } from './services/pairingService';
 
 type Nullable<T> = T | null;
@@ -466,6 +467,18 @@ const useWhatsAppConnect = ({
 }: UseWhatsAppConnectParams) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const [state, dispatch] = useReducer(reducer, initialState(status, activeCampaign));
+  const setCampaignError = useCallback(
+    (value: string | null) => {
+      dispatch({ type: 'set-campaign-error', value });
+    },
+    [dispatch]
+  );
+  const setCampaignAction = useCallback(
+    (value: CampaignActionState | null) => {
+      dispatch({ type: 'set-campaign-action', value });
+    },
+    [dispatch]
+  );
   const {
     instances,
     instancesReady,
@@ -806,7 +819,7 @@ const useWhatsAppConnect = ({
       const parsed = createCampaignSchema.safeParse({ name, instanceId, status: requestedStatus });
       if (!parsed.success) {
         const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da campanha.';
-        dispatch({ type: 'set-campaign-error', value: message });
+        setCampaignError(message);
         throw new Error(message);
       }
 
@@ -817,48 +830,41 @@ const useWhatsAppConnect = ({
           ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
           : null;
 
-      dispatch({ type: 'set-campaign-error', value: null });
-      dispatch({ type: 'set-campaign-action', value: { id: null, type: 'create' } });
-
-      try {
-        const payload = await createCampaignRequest({
-          agreementId: selectedAgreement.id,
-          agreementName: selectedAgreement.name,
-          instanceId: parsed.data.instanceId,
-          ...(brokerId ? { brokerId } : {}),
-          name: parsed.data.name || `${selectedAgreement.name} • ${parsed.data.instanceId}`,
-          status: parsed.data.status,
-        });
-
-        await loadCampaignsRef.current?.({
-          preferredAgreementId: selectedAgreement.id,
-          preferredCampaignId: payload?.id ?? null,
-          preferredInstanceId: payload?.instanceId ?? instance?.id ?? null,
-        });
-        toast.success('Campanha criada com sucesso.');
-        return payload;
-      } catch (err: any) {
-        if (err?.payload?.status === 401 || err?.status === 401) {
-          handleAuthFallback({ error: err });
-          throw err;
-        }
-
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível criar a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        logError('Falha ao criar campanha WhatsApp', err);
-        toast.error('Falha ao criar campanha', { description: message });
-        throw err instanceof Error ? err : new Error(message);
-      } finally {
-        dispatch({ type: 'set-campaign-action', value: null });
-      }
+      return executeCampaignAction({
+        actionType: 'create',
+        setCampaignAction,
+        setCampaignError,
+        service: () =>
+          createCampaignRequest({
+            agreementId: selectedAgreement.id,
+            agreementName: selectedAgreement.name,
+            instanceId: parsed.data.instanceId,
+            ...(brokerId ? { brokerId } : {}),
+            name: parsed.data.name || `${selectedAgreement.name} • ${parsed.data.instanceId}`,
+            status: parsed.data.status,
+          }),
+        onSuccess: async (payload) => {
+          await loadCampaignsRef.current?.({
+            preferredAgreementId: selectedAgreement.id,
+            preferredCampaignId: payload?.id ?? null,
+            preferredInstanceId: payload?.instanceId ?? instance?.id ?? null,
+          });
+        },
+        successToastMessage: 'Campanha criada com sucesso.',
+        errorToastTitle: 'Falha ao criar campanha',
+        defaultErrorMessage: 'Não foi possível criar a campanha',
+        logError,
+        logLabel: 'Falha ao criar campanha WhatsApp',
+        onUnauthorized: (error) => handleAuthFallback({ error }),
+      });
     },
     [
       selectedAgreement?.id,
       selectedAgreement?.name,
       instances,
       instance?.id,
+      setCampaignAction,
+      setCampaignError,
       handleAuthFallback,
       logError,
     ]
@@ -870,38 +876,36 @@ const useWhatsAppConnect = ({
         return;
       }
 
-      dispatch({ type: 'set-campaign-error', value: null });
-      dispatch({ type: 'set-campaign-action', value: { id: target.id, type: nextStatus } });
-
-      try {
-        await updateCampaignStatusRequest(target.id, nextStatus);
-
-        await loadCampaignsRef.current?.({
-          preferredAgreementId: selectedAgreement?.id ?? null,
-          preferredCampaignId: target?.id ?? null,
-          preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
-        });
-        toast.success(
-          nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.'
-        );
-      } catch (err: any) {
-        if (err?.payload?.status === 401 || err?.status === 401) {
-          handleAuthFallback({ error: err });
-          throw err;
-        }
-
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível atualizar a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        toast.error('Falha ao atualizar campanha', { description: message });
-        logError('Falha ao atualizar status da campanha', err);
-        throw err instanceof Error ? err : new Error(message);
-      } finally {
-        dispatch({ type: 'set-campaign-action', value: null });
-      }
+      await executeCampaignAction({
+        actionType: nextStatus,
+        actionId: target.id,
+        setCampaignAction,
+        setCampaignError,
+        service: () => updateCampaignStatusRequest(target.id, nextStatus),
+        onSuccess: async () => {
+          await loadCampaignsRef.current?.({
+            preferredAgreementId: selectedAgreement?.id ?? null,
+            preferredCampaignId: target?.id ?? null,
+            preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
+          });
+        },
+        successToastMessage:
+          nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.',
+        errorToastTitle: 'Falha ao atualizar campanha',
+        defaultErrorMessage: 'Não foi possível atualizar a campanha',
+        logError,
+        logLabel: 'Falha ao atualizar status da campanha',
+        onUnauthorized: (error) => handleAuthFallback({ error }),
+      });
     },
-    [selectedAgreement?.id, instance?.id, handleAuthFallback, logError]
+    [
+      selectedAgreement?.id,
+      instance?.id,
+      setCampaignAction,
+      setCampaignError,
+      handleAuthFallback,
+      logError,
+    ]
   );
 
   const deleteCampaign = useCallback(
@@ -910,36 +914,38 @@ const useWhatsAppConnect = ({
         return;
       }
 
-      dispatch({ type: 'set-campaign-error', value: null });
-      dispatch({ type: 'set-campaign-action', value: { id: target.id, type: 'delete' } });
       const currentCampaignId = state.campaign?.id ?? null;
 
-      try {
-        await deleteCampaignRequest(target.id);
-        await loadCampaignsRef.current?.({
-          preferredAgreementId: selectedAgreement?.id ?? null,
-          preferredCampaignId: currentCampaignId === target.id ? null : currentCampaignId,
-          preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
-        });
-        toast.success('Campanha removida com sucesso.');
-      } catch (err: any) {
-        if (err?.payload?.status === 401 || err?.status === 401) {
-          handleAuthFallback({ error: err });
-          throw err;
-        }
-
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível remover a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        toast.error('Falha ao remover campanha', { description: message });
-        logError('Falha ao remover campanha WhatsApp', err);
-        throw err instanceof Error ? err : new Error(message);
-      } finally {
-        dispatch({ type: 'set-campaign-action', value: null });
-      }
+      await executeCampaignAction({
+        actionType: 'delete',
+        actionId: target.id,
+        setCampaignAction,
+        setCampaignError,
+        service: () => deleteCampaignRequest(target.id),
+        onSuccess: async () => {
+          await loadCampaignsRef.current?.({
+            preferredAgreementId: selectedAgreement?.id ?? null,
+            preferredCampaignId: currentCampaignId === target.id ? null : currentCampaignId,
+            preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
+          });
+        },
+        successToastMessage: 'Campanha removida com sucesso.',
+        errorToastTitle: 'Falha ao remover campanha',
+        defaultErrorMessage: 'Não foi possível remover a campanha',
+        logError,
+        logLabel: 'Falha ao remover campanha WhatsApp',
+        onUnauthorized: (error) => handleAuthFallback({ error }),
+      });
     },
-    [state.campaign?.id, selectedAgreement?.id, instance?.id, handleAuthFallback, logError]
+    [
+      state.campaign?.id,
+      selectedAgreement?.id,
+      instance?.id,
+      setCampaignAction,
+      setCampaignError,
+      handleAuthFallback,
+      logError,
+    ]
   );
 
   const reassignCampaign = useCallback(
@@ -948,46 +954,43 @@ const useWhatsAppConnect = ({
         return;
       }
 
-      dispatch({ type: 'set-campaign-error', value: null });
-      dispatch({ type: 'set-campaign-action', value: { id: target.id, type: 'reassign' } });
-
-      try {
-        if (requestedInstanceId === target.instanceId) {
-          const error = new Error('Selecione uma opção diferente para concluir ou escolha desvincular a campanha.');
-          dispatch({ type: 'set-campaign-error', value: error.message });
-          throw error;
-        }
-
-        await reassignCampaignRequest(target.id, requestedInstanceId ?? null);
-
-        await loadCampaignsRef.current?.({
-          preferredAgreementId: selectedAgreement?.id ?? null,
-          preferredCampaignId: target?.id ?? null,
-          preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
-        });
-        toast.success(
-          requestedInstanceId
-            ? 'Campanha reatribuída com sucesso.'
-            : 'Campanha desvinculada da instância.'
-        );
-      } catch (err: any) {
-        if (err?.payload?.status === 401 || err?.status === 401) {
-          handleAuthFallback({ error: err });
-          throw err;
-        }
-
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível reatribuir a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        toast.error('Falha ao reatribuir campanha', { description: message });
-        logError('Falha ao reatribuir campanha WhatsApp', err);
-        throw err instanceof Error ? err : new Error(message);
-      } finally {
-        dispatch({ type: 'set-campaign-action', value: null });
+      if (requestedInstanceId === target.instanceId) {
+        const error = new Error('Selecione uma opção diferente para concluir ou escolha desvincular a campanha.');
+        setCampaignError(error.message);
+        throw error;
       }
+
+      await executeCampaignAction({
+        actionType: 'reassign',
+        actionId: target.id,
+        setCampaignAction,
+        setCampaignError,
+        service: () => reassignCampaignRequest(target.id, requestedInstanceId ?? null),
+        onSuccess: async () => {
+          await loadCampaignsRef.current?.({
+            preferredAgreementId: selectedAgreement?.id ?? null,
+            preferredCampaignId: target?.id ?? null,
+            preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
+          });
+        },
+        successToastMessage: requestedInstanceId
+          ? 'Campanha reatribuída com sucesso.'
+          : 'Campanha desvinculada da instância.',
+        errorToastTitle: 'Falha ao reatribuir campanha',
+        defaultErrorMessage: 'Não foi possível reatribuir a campanha',
+        logError,
+        logLabel: 'Falha ao reatribuir campanha WhatsApp',
+        onUnauthorized: (error) => handleAuthFallback({ error }),
+      });
     },
-    [selectedAgreement?.id, instance?.id, handleAuthFallback, logError]
+    [
+      selectedAgreement?.id,
+      instance?.id,
+      setCampaignAction,
+      setCampaignError,
+      handleAuthFallback,
+      logError,
+    ]
   );
 
   const handlePairingPhoneChange = useCallback(
