@@ -14,6 +14,7 @@ import { isWhatsAppDebugEnabled } from '../debug/featureFlags.js';
 import { getRuntimeEnv } from '../../lib/runtime-env.js';
 import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
 import type { ChatCommandCenterContainerProps } from '../chat/containers/ChatCommandCenterContainer';
+import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstances.jsx';
 
 type OnboardingPage =
   | 'dashboard'
@@ -34,6 +35,12 @@ type CurrentUserLike = {
   id?: string | null;
   tenantId?: string | null;
   tenant?: { id?: string | null } | null;
+  [key: string]: unknown;
+};
+
+type OnboardingAgreement = {
+  id?: string | number | null;
+  tenantId?: string | number | null;
   [key: string]: unknown;
 };
 
@@ -75,7 +82,7 @@ const journeyStages: JourneyStage[] = [
 
 export function useOnboardingJourney() {
   const [currentPage, setCurrentPage] = useState<OnboardingPage>('dashboard');
-  const [selectedAgreement, setSelectedAgreement] = useState<Record<string, unknown> | null>(null);
+  const [selectedAgreement, setSelectedAgreement] = useState<OnboardingAgreement | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<string>('disconnected');
   const [activeCampaign, setActiveCampaign] = useState<Record<string, unknown> | null>(null);
   const [me, setMe] = useState<CurrentUserLike | null>(null);
@@ -282,26 +289,49 @@ export function useOnboardingJourney() {
             activeCampaign,
           },
           selectedAgreement,
-          onSelect: (agreement: Record<string, unknown>) => {
+          onSelect: (agreement: OnboardingAgreement) => {
             setSelectedAgreement(agreement);
             setActiveCampaign(null);
             setCurrentPage('whatsapp');
           },
         });
-      case 'whatsapp':
-        return createElement(WhatsAppConnect, {
-          selectedAgreement,
-          status: whatsappStatus,
-          activeCampaign,
-          onboarding: {
-            stages: onboardingStages,
-            activeStep,
-          },
-          onStatusChange: setWhatsappStatus,
-          onCampaignReady: setActiveCampaign,
-          onContinue: () => setCurrentPage('inbox'),
-          onBack: () => setCurrentPage('agreements'),
-        });
+      case 'whatsapp': {
+        const providerProps = {
+          key:
+            selectedAgreement?.id !== undefined && selectedAgreement?.id !== null
+              ? String(selectedAgreement.id)
+              : 'default-whatsapp-provider',
+          tenantId:
+            selectedAgreement?.tenantId !== undefined && selectedAgreement?.tenantId !== null
+              ? String(selectedAgreement.tenantId)
+              : null,
+          agreementId:
+            selectedAgreement?.id !== undefined && selectedAgreement?.id !== null
+              ? String(selectedAgreement.id)
+              : null,
+          autoRefresh: true,
+          initialFetch: true,
+          pauseWhenHidden: false,
+        };
+
+        return createElement(
+          WhatsAppInstancesProvider,
+          providerProps,
+          createElement(WhatsAppConnect, {
+            selectedAgreement,
+            status: whatsappStatus,
+            activeCampaign,
+            onboarding: {
+              stages: onboardingStages,
+              activeStep,
+            },
+            onStatusChange: setWhatsappStatus,
+            onCampaignReady: setActiveCampaign,
+            onContinue: () => setCurrentPage('inbox'),
+            onBack: () => setCurrentPage('agreements'),
+          }),
+        );
+      }
       case 'inbox':
         if (loadingCurrentUser) {
           return createElement(
