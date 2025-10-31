@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
 
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
@@ -14,6 +13,10 @@ import {
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
 import { getInstanceMetrics } from '../lib/metrics';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
+import { createInstanceSchema } from './schemas';
+import useWhatsappSessionState, { STATUS_COPY } from './hooks/useWhatsappSessionState';
+import useWhatsappCampaignActions from './hooks/useWhatsappCampaignActions';
+import useWhatsappPairing from './hooks/useWhatsappPairing';
 import { pairingPhoneSchema, createInstanceSchema, createCampaignSchema } from './schemas';
 import {
   fetchCampaigns,
@@ -28,14 +31,6 @@ import { requestPairingCode as requestPairingCodeService } from './services/pair
 
 type Nullable<T> = T | null;
 
-const STATUS_TONES = {
-  disconnected: 'warning',
-  connecting: 'info',
-  connected: 'success',
-  qr_required: 'warning',
-  fallback: 'neutral',
-} as const;
-
 const SURFACE_COLOR_UTILS = {
   instancesPanel: 'border border-border/60 bg-surface-overlay-strong',
   qrInstructionsPanel: 'border border-border/60 bg-surface-overlay-quiet',
@@ -49,31 +44,6 @@ const SURFACE_COLOR_UTILS = {
   progressIndicator: 'bg-primary',
 };
 
-const statusCopy = {
-  disconnected: {
-    badge: 'Pendente',
-    description:
-      'Leia o QR Code no WhatsApp Web para conectar seu número e começar a receber leads.',
-    tone: STATUS_TONES.disconnected,
-  },
-  connecting: {
-    badge: 'Conectando',
-    description:
-      'Estamos sincronizando com o seu número. Mantenha o WhatsApp aberto até concluir.',
-    tone: STATUS_TONES.connecting,
-  },
-  connected: {
-    badge: 'Ativo',
-    description: 'Pronto! Todos os leads qualificados serão entregues diretamente no seu WhatsApp.',
-    tone: STATUS_TONES.connected,
-  },
-  qr_required: {
-    badge: 'QR necessário',
-    description: 'Gere um novo QR Code e escaneie para reativar a sessão.',
-    tone: STATUS_TONES.qr_required,
-  },
-} as const;
-
 const statusCodeMeta = [
   { code: '1', label: '1', description: 'Total de mensagens reportadas com o código 1 pelo broker.' },
   { code: '2', label: '2', description: 'Total de mensagens reportadas com o código 2 pelo broker.' },
@@ -82,14 +52,13 @@ const statusCodeMeta = [
   { code: '5', label: '5', description: 'Total de mensagens reportadas com o código 5 pelo broker.' },
 ];
 
-const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
-
-interface ErrorState {
+export interface ErrorState {
   code: string | null;
   title: string | null;
   message: string;
 }
 
+export interface CampaignActionState {
 export interface WhatsAppInstanceViewModel {
   key: string;
   id: string | null;
@@ -113,7 +82,7 @@ interface CampaignActionState {
   type: string | null;
 }
 
-interface WhatsAppConnectState {
+export interface WhatsAppConnectState {
   showAllInstances: boolean;
   qrPanelOpen: boolean;
   isQrDialogOpen: boolean;
@@ -135,7 +104,7 @@ interface WhatsAppConnectState {
   persistentWarning: string | null;
 }
 
-type WhatsAppConnectAction =
+export type WhatsAppConnectAction =
   | { type: 'set-show-all-instances'; value: boolean }
   | { type: 'set-qr-panel-open'; value: boolean }
   | { type: 'set-qr-dialog-open'; value: boolean }
@@ -291,8 +260,6 @@ const useWhatsAppConnect = ({
     loadingInstances,
     loadingQr,
     isAuthenticated: hookIsAuthenticated,
-    sessionActive,
-    authDeferred,
     deletingInstanceId,
     liveEvents,
     loadInstances,
@@ -334,20 +301,6 @@ const useWhatsAppConnect = ({
     persistShowAllPreference(state.showAllInstances);
   }, [state.showAllInstances]);
 
-  useEffect(() => {
-    dispatch({ type: 'set-qr-panel-open', value: localStatus !== 'connected' });
-  }, [localStatus]);
-
-  useEffect(() => {
-    dispatch({ type: 'set-campaign', value: activeCampaign ?? null });
-  }, [activeCampaign]);
-
-  useEffect(() => {
-    if (!selectedAgreement) {
-      dispatch({ type: 'set-campaign', value: null });
-    }
-  }, [selectedAgreement?.id]);
-
   const setErrorMessage = useCallback(
     (message: string | null, meta: Partial<ErrorState> = {}) => {
       if (message) {
@@ -367,97 +320,135 @@ const useWhatsAppConnect = ({
     []
   );
 
-  const resolveFriendlyError = useCallback((error: any, fallbackMessage: string) => {
-    const codeCandidate = error?.payload?.error?.code ?? error?.code ?? null;
-    const rawMessage =
-      error?.payload?.error?.message ?? (error instanceof Error ? error.message : fallbackMessage);
-    const copy = resolveWhatsAppErrorCopy(codeCandidate, rawMessage ?? fallbackMessage);
-    return {
-      code: copy.code,
-      title: copy.title,
-      message: copy.description ?? rawMessage ?? fallbackMessage,
-    };
+  const setShowAllInstances = useCallback((value: boolean) => {
+    dispatch({ type: 'set-show-all-instances', value });
   }, []);
 
-  const loadCampaignsRef = useRef<
-    (options?: {
-      preferredAgreementId?: string | null;
-      preferredCampaignId?: string | null;
-      preferredInstanceId?: string | null;
-    }) => Promise<void>
-  >(() => Promise.resolve());
+  const setQrPanelOpen = useCallback((value: boolean) => {
+    dispatch({ type: 'set-qr-panel-open', value });
+  }, []);
 
-  const loadCampaigns = useCallback(
-    async ({
-      preferredAgreementId,
-      preferredCampaignId,
-      preferredInstanceId,
-    }: {
-      preferredAgreementId?: string | null;
-      preferredCampaignId?: string | null;
-      preferredInstanceId?: string | null;
-    } = {}) => {
-      const agreementId = preferredAgreementId ?? selectedAgreement?.id ?? null;
+  const setQrDialogOpen = useCallback((value: boolean) => {
+    dispatch({ type: 'set-qr-dialog-open', value });
+  }, []);
 
-      if (!agreementId) {
-        dispatch({ type: 'set-campaigns', value: [] });
-        dispatch({ type: 'set-campaign-error', value: null });
-        return;
-      }
+  const setInstancePendingDelete = useCallback((value: any) => {
+    dispatch({ type: 'set-instance-pending-delete', value });
+  }, []);
 
-      dispatch({ type: 'set-campaigns-loading', value: true });
-      dispatch({ type: 'set-campaign-error', value: null });
-      try {
-        const items = await fetchCampaigns({ agreementId, instanceId: preferredInstanceId ?? undefined });
-        dispatch({ type: 'set-campaigns', value: items });
+  const setCreateInstanceOpen = useCallback((value: boolean) => {
+    dispatch({ type: 'set-create-instance-open', value });
+  }, []);
 
-        if (preferredCampaignId) {
-          const found = items.find((c) => c && c.id === preferredCampaignId) || null;
-          dispatch({ type: 'set-campaign', value: found });
-        }
-      } catch (err: any) {
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Falha ao carregar campanhas');
-        dispatch({ type: 'set-campaign-error', value: message });
-      } finally {
-        dispatch({ type: 'set-campaigns-loading', value: false });
-      }
-    },
-    [selectedAgreement?.id]
-  );
+  const setPairingPhoneInput = useCallback((value: string) => {
+    dispatch({ type: 'set-pairing-phone-input', value });
+  }, []);
 
-  useEffect(() => {
-    loadCampaignsRef.current = loadCampaigns;
-  }, [loadCampaigns]);
+  const setPairingPhoneError = useCallback((value: string | null) => {
+    dispatch({ type: 'set-pairing-phone-error', value });
+  }, []);
 
-  useEffect(() => {
-    void loadCampaigns({
-      preferredAgreementId: selectedAgreement?.id ?? null,
-      preferredCampaignId: state.campaign?.id ?? null,
-      preferredInstanceId: instance?.id ?? null,
-    });
-  }, [selectedAgreement?.id, instance?.id]);
+  const setRequestingPairing = useCallback((value: boolean) => {
+    dispatch({ type: 'set-requesting-pairing', value });
+  }, []);
 
-  const reloadCampaigns = useCallback(() => {
-    return loadCampaigns({
-      preferredAgreementId: selectedAgreement?.id ?? null,
-      preferredCampaignId: state.campaign?.id ?? null,
-      preferredInstanceId: instance?.id ?? null,
-    });
-  }, [loadCampaigns, selectedAgreement?.id, state.campaign?.id, instance?.id]);
+  const setExpandedInstanceId = useCallback((value: string | null) => {
+    dispatch({ type: 'set-expanded-instance-id', value });
+  }, []);
 
-  useEffect(() => {
-    dispatch({ type: 'set-pairing-phone-input', value: '' });
-    dispatch({ type: 'set-pairing-phone-error', value: null });
-  }, [instance?.id, selectedAgreement?.id]);
+  const campaignState = useWhatsappCampaignActions({
+    state,
+    dispatch,
+    selectedAgreement,
+    activeCampaign,
+    instance,
+    instances,
+    handleAuthFallback,
+    logError,
+    onCampaignReady,
+  });
 
-  useEffect(() => {
-    if (!state.campaign || !onCampaignReady) {
-      return;
-    }
-    onCampaignReady(state.campaign);
-  }, [state.campaign, onCampaignReady]);
+  const sessionState = useWhatsappSessionState({
+    state,
+    localStatus,
+    qrData,
+    secondsLeft,
+    setSecondsLeft,
+    setInstanceStatus,
+    onStatusChange,
+    setGeneratingQrState,
+    loadingInstances,
+    loadingQr,
+    requestingPairingCode: state.requestingPairingCode,
+    instance,
+    selectInstance,
+    generateQr,
+    markConnected,
+    onContinue,
+    setQrPanelOpen,
+    setQrDialogOpen,
+  });
+
+  const pairingState = useWhatsappPairing({
+    state,
+    setPairingPhoneInput,
+    setPairingPhoneError,
+    setRequestingPairing,
+    instanceId: instance?.id,
+    selectedAgreementId: selectedAgreement?.id,
+    connectInstance,
+    loadInstances,
+    setErrorMessage,
+  });
+
+  const {
+    campaign,
+    campaigns,
+    campaignsLoading,
+    campaignError,
+    campaignAction,
+    createCampaign,
+    updateCampaignStatus,
+    deleteCampaign,
+    reassignCampaign,
+    reloadCampaigns,
+    fetchCampaignImpact,
+    setCreateCampaignOpen,
+    isCreateCampaignOpen,
+    setPendingReassign,
+    pendingReassign,
+    setReassignIntent,
+    reassignIntent,
+    persistentWarning,
+    clearCampaign,
+  } = campaignState;
+
+  const {
+    statusCopy: statusCopyData,
+    statusTone,
+    countdownMessage,
+    qrImageSrc,
+    isGeneratingQrImage,
+    qrStatusMessage,
+    confirmLabel,
+    confirmDisabled,
+    isBusy,
+    canContinue,
+    qrPanelOpen,
+    isQrDialogOpen,
+    handleConfirm,
+    handleViewQr,
+    handleGenerateQr,
+    handleMarkConnected,
+  } = sessionState;
+
+  const {
+    pairingPhoneInput,
+    pairingPhoneError,
+    requestingPairingCode,
+    handlePairingPhoneChange,
+    handleRequestPairingCode,
+  } = pairingState;
 
   const { stepLabel, nextStage } = useOnboardingStepLabel({
     stages: onboarding?.stages,
@@ -465,57 +456,14 @@ const useWhatsAppConnect = ({
     fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
   });
 
-  const expiresAt = useMemo(() => {
-    if (!qrData?.expiresAt) return null;
-    return new Date(qrData.expiresAt).getTime();
-  }, [qrData]);
-
-  useEffect(() => {
-    if (!expiresAt || localStatus === 'connected') {
-      setSecondsLeft(null);
-      return undefined;
-    }
-
-    const tick = () => {
-      const diff = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
-      setSecondsLeft(diff);
-      if (diff === 0) {
-        if (localStatus !== 'connected' && localStatus !== 'connecting') {
-          setInstanceStatus('qr_required');
-          onStatusChange?.('disconnected');
-        }
-      }
-    };
-
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [expiresAt, localStatus, onStatusChange, setSecondsLeft, setInstanceStatus]);
-
-  const copy = statusCopy[localStatus as keyof typeof statusCopy] ?? statusCopy.disconnected;
-
-  const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
-
-  useEffect(() => {
-    setGeneratingQrState(isGeneratingQrImage);
-  }, [isGeneratingQrImage, setGeneratingQrState]);
+  const copy = statusCopyData ?? STATUS_COPY.disconnected;
 
   const hasAgreement = Boolean(selectedAgreement?.id);
   const agreementName = selectedAgreement?.name ?? null;
   const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
-  const hasCampaign = Boolean(state.campaign);
-  const canSynchronize = sessionActive && !authDeferred;
+  const hasCampaign = Boolean(campaign);
   const isAuthenticated = hookIsAuthenticated;
-  const canContinue = localStatus === 'connected' && Boolean(instance);
-  const statusTone = copy.tone || STATUS_TONES.fallback;
-  const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
-  const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || state.requestingPairingCode;
-  const confirmLabel = 'Ir para a inbox de leads';
-  const confirmDisabled = !canContinue || isBusy;
-  const qrStatusMessage =
-    localStatus === 'connected'
-      ? 'Conexão ativa — QR oculto.'
-      : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
+  
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
   const onboardingDescription = hasAgreement
@@ -631,8 +579,8 @@ const useWhatsAppConnect = ({
 
   const handleCreateInstance = useCallback(() => {
     setErrorMessage(null);
-    dispatch({ type: 'set-create-instance-open', value: true });
-  }, [setErrorMessage]);
+    setCreateInstanceOpen(true);
+  }, [setCreateInstanceOpen, setErrorMessage]);
 
   const submitCreateInstance = useCallback(
     async ({ name, id }: { name: string; id?: string }) => {
@@ -645,7 +593,7 @@ const useWhatsAppConnect = ({
 
       try {
         await createInstanceAction({ name: parsed.data.name, id: parsed.data.id ?? '' });
-        dispatch({ type: 'set-create-instance-open', value: false });
+        setCreateInstanceOpen(false);
       } catch (err: any) {
         const message =
           err instanceof Error ? err.message : 'Não foi possível criar uma nova instância';
@@ -653,6 +601,9 @@ const useWhatsAppConnect = ({
         throw err instanceof Error ? err : new Error(message);
       }
     },
+    [createInstanceAction, setCreateInstanceOpen, setErrorMessage]
+  );
+
     [createInstanceAction, setErrorMessage]
   );
 
@@ -904,36 +855,14 @@ const useWhatsAppConnect = ({
     async (inst: any, { skipAutoQr = false } = {}) => {
       if (!inst) return;
 
-      if (state.campaign && state.campaign.instanceId !== inst.id) {
-        dispatch({ type: 'set-campaign', value: null });
+      if (campaign && campaign.instanceId !== inst.id) {
+        clearCampaign();
       }
 
       await selectInstance(inst, { skipAutoQr });
     },
-    [selectInstance, state.campaign]
+    [campaign, clearCampaign, selectInstance]
   );
-
-  const handleViewQr = useCallback(
-    async (inst: any) => {
-      if (!inst) return;
-      await selectInstance(inst, { skipAutoQr: true });
-      await generateQr(inst.id);
-      dispatch({ type: 'set-qr-dialog-open', value: true });
-    },
-    [selectInstance, generateQr]
-  );
-
-  const handleGenerateQr = useCallback(async () => {
-    if (!instance?.id) return;
-    await generateQr(instance.id);
-  }, [generateQr, instance?.id]);
-
-  const handleMarkConnected = useCallback(async () => {
-    const success = await markConnected();
-    if (success) {
-      dispatch({ type: 'set-qr-dialog-open', value: false });
-    }
-  }, [markConnected]);
 
   const handleDeleteInstance = useCallback(
     async (target: any) => {
@@ -942,17 +871,10 @@ const useWhatsAppConnect = ({
       }
 
       await deleteInstanceAction(target);
-      dispatch({ type: 'set-instance-pending-delete', value: null });
+      setInstancePendingDelete(null);
     },
-    [deleteInstanceAction]
+    [deleteInstanceAction, setInstancePendingDelete]
   );
-
-  const handleConfirm = useCallback(() => {
-    if (!canContinue) {
-      return;
-    }
-    onContinue?.();
-  }, [canContinue, onContinue]);
 
   const removalTargetLabel =
     state.instancePendingDelete?.name ||
@@ -966,6 +888,13 @@ const useWhatsAppConnect = ({
     (state.instancePendingDelete?.id ? looksLikeWhatsAppJid(state.instancePendingDelete.id) : false);
   const removalDialogTitle = removalTargetIsSession ? 'Desconectar sessão' : 'Remover instância';
   const removalDialogAction = removalTargetIsSession ? 'Desconectar sessão' : 'Remover instância';
+  const deletionDialog = {
+    open: Boolean(state.instancePendingDelete),
+    target: state.instancePendingDelete,
+    title: removalDialogTitle,
+    actionLabel: removalDialogAction,
+    targetLabel: removalTargetLabel,
+  };
 
   return {
     state,
@@ -1003,18 +932,18 @@ const useWhatsAppConnect = ({
     updateCampaignStatus,
     deleteCampaign,
     reassignCampaign,
-    campaigns: state.campaigns,
-    campaignsLoading: state.campaignsLoading,
-    campaignError: state.campaignError,
-    campaignAction: state.campaignAction,
-    campaign: state.campaign,
-    persistentWarning: state.persistentWarning,
-    setShowAllInstances: (value: boolean) => dispatch({ type: 'set-show-all-instances', value }),
-    setQrPanelOpen: (value: boolean) => dispatch({ type: 'set-qr-panel-open', value }),
-    setQrDialogOpen: (value: boolean) => dispatch({ type: 'set-qr-dialog-open', value }),
-    pairingPhoneInput: state.pairingPhoneInput,
-    pairingPhoneError: state.pairingPhoneError,
-    requestingPairingCode: state.requestingPairingCode,
+    campaigns,
+    campaignsLoading,
+    campaignError,
+    campaignAction,
+    campaign,
+    persistentWarning,
+    setShowAllInstances,
+    setQrPanelOpen,
+    setQrDialogOpen,
+    pairingPhoneInput,
+    pairingPhoneError,
+    requestingPairingCode,
     handlePairingPhoneChange,
     handleRequestPairingCode,
     timelineItems,
@@ -1024,18 +953,12 @@ const useWhatsAppConnect = ({
     handleGenerateQr,
     handleMarkConnected,
     handleDeleteInstance,
-    deletionDialog: {
-      open: Boolean(state.instancePendingDelete),
-      target: state.instancePendingDelete,
-      title: removalDialogTitle,
-      actionLabel: removalDialogAction,
-      targetLabel: removalTargetLabel,
-    },
-    setInstancePendingDelete: (value: any) => dispatch({ type: 'set-instance-pending-delete', value }),
+    deletionDialog,
+    setInstancePendingDelete,
     isBusy,
     canContinue,
-    qrPanelOpen: state.qrPanelOpen,
-    isQrDialogOpen: state.isQrDialogOpen,
+    qrPanelOpen,
+    isQrDialogOpen,
     hasCampaign,
     statusCodeMeta,
     defaultInstanceName,
@@ -1045,16 +968,16 @@ const useWhatsAppConnect = ({
     reloadCampaigns,
     showAllInstances: state.showAllInstances,
     handleRetry: () => loadInstances({ forceRefresh: true }),
-    setCreateInstanceOpen: (value: boolean) => dispatch({ type: 'set-create-instance-open', value }),
-    setCreateCampaignOpen: (value: boolean) => dispatch({ type: 'set-create-campaign-open', value }),
+    setCreateInstanceOpen,
+    setCreateCampaignOpen,
     isCreateInstanceOpen: state.isCreateInstanceOpen,
-    isCreateCampaignOpen: state.isCreateCampaignOpen,
-    setExpandedInstanceId: (value: string | null) => dispatch({ type: 'set-expanded-instance-id', value }),
+    isCreateCampaignOpen,
+    setExpandedInstanceId,
     expandedInstanceId: state.expandedInstanceId,
-    setPendingReassign: (value: any) => dispatch({ type: 'set-pending-reassign', value }),
-    pendingReassign: state.pendingReassign,
-    setReassignIntent: (value: 'reassign' | 'disconnect') => dispatch({ type: 'set-reassign-intent', value }),
-    reassignIntent: state.reassignIntent,
+    setPendingReassign,
+    pendingReassign,
+    setReassignIntent,
+    reassignIntent,
     fetchCampaignImpact,
     agreementName,
     nextStage,
