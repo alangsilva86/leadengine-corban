@@ -111,6 +111,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     setCreateCampaignOpen,
     isCreateInstanceOpen,
     isCreateCampaignOpen,
+    renderInstances,
     setPendingReassign,
     pendingReassign,
     setReassignIntent,
