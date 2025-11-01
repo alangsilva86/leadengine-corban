@@ -668,6 +668,7 @@ const useWhatsAppConnect = ({
     campaign,
     persistentWarning,
     setShowAllInstances,
+    renderInstances,
     setQrPanelOpen,
     setQrDialogOpen,
     pairingPhoneInput,
