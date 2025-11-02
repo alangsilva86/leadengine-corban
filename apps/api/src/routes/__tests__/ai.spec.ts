@@ -3,7 +3,6 @@ import express from 'express';
 import request from 'supertest';
 import { describe, beforeEach, it, expect, vi } from 'vitest';
 
-import { aiRouter } from '../ai';
 import type { AuthenticatedUser } from '../../middleware/auth';
 
 type ConfigRecord = {
@@ -126,7 +125,16 @@ vi.mock('../../services/ai/tool-registry', () => ({
   })),
 }));
 
-const buildTestApp = () => {
+const buildTestApp = async (options?: { aiEnabled?: boolean }) => {
+  if (options?.aiEnabled) {
+    process.env.OPENAI_API_KEY = 'test-key';
+  } else {
+    delete process.env.OPENAI_API_KEY;
+  }
+
+  vi.resetModules();
+  const { aiRouter } = await import('../ai');
+
   const app = express();
   app.use(express.json());
 
@@ -153,10 +161,11 @@ describe('AI routes', () => {
   beforeEach(() => {
     resetStores();
     vi.clearAllMocks();
+    delete process.env.OPENAI_API_KEY;
   });
 
   it('returns default config when tenant has no record', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
 
     const response = await request(app).get('/ai/config');
 
@@ -170,7 +179,7 @@ describe('AI routes', () => {
   });
 
   it('persists config updates', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
 
     const saveResponse = await request(app).put('/ai/config').send({
       model: 'gpt-4o',
@@ -197,7 +206,7 @@ describe('AI routes', () => {
   });
 
   it('streams stub reply when OpenAI is disabled', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
 
     const response = await request(app)
       .post('/ai/reply')
@@ -212,8 +221,76 @@ describe('AI routes', () => {
     expect(response.text).toContain('event: done');
   });
 
+  it('streams OpenAI response when enabled', async () => {
+    const originalFetch = global.fetch;
+    const encoder = new TextEncoder();
+    const events = [
+      {
+        type: 'response.output_text.delta',
+        delta: { type: 'output_text.delta', text: 'Olá' },
+      },
+      {
+        type: 'response.output_text.delta',
+        delta: { type: 'output_text.delta', text: ' mundo' },
+      },
+      {
+        type: 'response.completed',
+        response: {
+          model: 'gpt-4o-mini',
+          usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: 'Olá mundo' }],
+            },
+          ],
+        },
+      },
+    ];
+
+    const fetchMock = vi.fn(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const event of events) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          }
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    });
+
+    (global as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const app = await buildTestApp({ aiEnabled: true });
+
+      const response = await request(app)
+        .post('/ai/reply')
+        .send({
+          conversationId: 'conv-1',
+          messages: [{ role: 'user', content: 'Olá, IA!' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/event-stream');
+      expect(response.text).toContain('data: {"delta":"Olá"}');
+      expect(response.text).toContain('data: {"delta":" mundo"}');
+      expect(response.text).toContain('event: done');
+      expect(response.text).toContain('"status":"success"');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      (global as unknown as { fetch: typeof fetch }).fetch = originalFetch;
+    }
+  });
+
   it('returns and updates assistant mode', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
 
     const initialMode = await request(app).get('/ai/mode');
     expect(initialMode.body.data.mode).toBe('COPILOTO');
@@ -227,7 +304,7 @@ describe('AI routes', () => {
   });
 
   it('returns structured suggestion stub when OpenAI is disabled', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
 
     const response = await request(app)
       .post('/ai/suggest')
@@ -247,7 +324,7 @@ describe('AI routes', () => {
   });
 
   it('upserts AI memory entries', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
 
     const response = await request(app)

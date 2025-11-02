@@ -100,6 +100,9 @@ export const streamReply = async ({
     tools: mergedTools.length > 0 ? mergedTools : undefined,
   };
 
+  requestBody.stream = true;
+  requestBody.stream_options = { include_usage: true };
+
   if (!isAiEnabled) {
     const fallbackChunks = [
       'Ainda estou configurando a IA neste workspace, ',
@@ -176,6 +179,67 @@ export const streamReply = async ({
     error?: string;
   }> = [];
 
+  const extractTextFrom = (source: unknown): string | null => {
+    if (source === null || source === undefined) {
+      return null;
+    }
+
+    const segments: string[] = [];
+    const visit = (value: unknown): void => {
+      if (value === null || value === undefined) {
+        return;
+      }
+      if (typeof value === 'string') {
+        if (value.length > 0) {
+          segments.push(value);
+        }
+        return;
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        segments.push(String(value));
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          visit(entry);
+        }
+        return;
+      }
+      if (typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        if (record.text !== undefined) {
+          visit(record.text);
+        }
+        if (record.content !== undefined) {
+          visit(record.content);
+        }
+        if (record.value !== undefined) {
+          visit(record.value);
+        }
+        if (record.values !== undefined) {
+          visit(record.values);
+        }
+        if (record.output_text !== undefined) {
+          visit(record.output_text);
+        }
+        if (record.delta !== undefined) {
+          visit(record.delta);
+        }
+        if (record.arguments !== undefined) {
+          visit(record.arguments);
+        }
+      }
+    };
+
+    visit(source);
+
+    if (segments.length === 0) {
+      return null;
+    }
+
+    return segments.join('');
+  };
+
   const handleToolDelta = (payload: any) => {
     const callId = payload?.id ?? payload?.tool_call_id ?? payload?.call_id;
     if (!callId) {
@@ -191,8 +255,9 @@ export const streamReply = async ({
     if (payload?.name) {
       builder.name = payload.name;
     }
-    if (payload?.arguments) {
-      builder.argsChunks.push(payload.arguments as string);
+    const argsChunk = extractTextFrom(payload?.arguments);
+    if (argsChunk) {
+      builder.argsChunks.push(argsChunk);
     }
     toolBuilders.set(callId, builder);
   };
@@ -274,15 +339,22 @@ export const streamReply = async ({
       case 'response.error':
         throw new Error(payload?.error?.message ?? 'Erro na resposta da IA');
       case 'response.output_text.delta': {
-        const delta = payload?.delta ?? '';
-        if (typeof delta === 'string' && delta.length > 0) {
+        const delta =
+          extractTextFrom(payload?.delta) ??
+          extractTextFrom(payload?.output_text) ??
+          extractTextFrom(payload?.text);
+        if (delta) {
           aggregatedText += delta;
           sendEvent('delta', { delta });
         }
         break;
       }
       case 'response.output_text.done': {
-        const text = payload?.text;
+        const text =
+          extractTextFrom(payload?.text) ??
+          extractTextFrom(payload?.output_text) ??
+          extractTextFrom(payload?.response?.output) ??
+          extractTextFrom(payload?.response?.output_text);
         if (typeof text === 'string' && text.length > aggregatedText.length) {
           aggregatedText = text;
         }
@@ -299,6 +371,14 @@ export const streamReply = async ({
         completed = true;
         modelUsed = payload?.response?.model ?? modelUsed;
         usage = (payload?.response?.usage as Record<string, unknown>) ?? usage;
+        {
+          const finalText =
+            extractTextFrom(payload?.response?.output) ??
+            extractTextFrom(payload?.response?.output_text);
+          if (finalText && finalText.length > aggregatedText.length) {
+            aggregatedText = finalText;
+          }
+        }
         break;
       default:
         break;

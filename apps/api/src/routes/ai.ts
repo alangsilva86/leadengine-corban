@@ -423,6 +423,9 @@ router.post(
         tools: mergedTools.length > 0 ? mergedTools : undefined,
       };
 
+      requestBody.stream = true;
+      requestBody.stream_options = { include_usage: true };
+
       if (!isAiEnabled) {
         const fallbackChunks = [
           'Ainda estou configurando a IA neste workspace, ',
