@@ -114,9 +114,8 @@ export const Composer = forwardRef(function Composer(
     sendError,
     onRequestSuggestion,
     aiLoading,
-    aiSuggestions,
-    onApplySuggestion,
-    onDiscardSuggestion,
+    aiConfidence,
+    aiError,
   },
   ref
 ) {
@@ -286,6 +285,12 @@ export const Composer = forwardRef(function Composer(
     []
   );
 
+  const normalizedConfidence =
+    typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)
+      ? Math.max(0, Math.min(100, Math.round(aiConfidence)))
+      : null;
+  const shouldShowAssumeBanner = normalizedConfidence !== null && normalizedConfidence < 60;
+
   return (
     <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/90 p-3 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.6)] backdrop-blur-sm">
       {attachments.length > 0 ? (
@@ -437,26 +442,19 @@ export const Composer = forwardRef(function Composer(
         </div>
       ) : null}
 
-      {aiSuggestions.length > 0 ? (
-        <div className="mt-3 space-y-2 rounded-2xl bg-surface-overlay-quiet p-3 text-sm text-foreground ring-1 ring-surface-overlay-glass-border">
-          <div className="flex items-center justify-between text-xs uppercase tracking-wide text-foreground-muted">
-            <span>Sugestões da IA</span>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-foreground-muted hover:text-foreground" onClick={onDiscardSuggestion}>
-              Limpar
-            </Button>
-          </div>
-          <div className="space-y-2">
-            {aiSuggestions.map((suggestion, index) => (
-              <button
-                key={`${index}-${suggestion.slice(0, 20)}`}
-                type="button"
-                className="w-full rounded-xl bg-surface-overlay-quiet px-3 py-2 text-left text-xs text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong"
-                onClick={() => onApplySuggestion?.(suggestion)}
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
+      {shouldShowAssumeBanner ? (
+        <div className="mt-3 rounded-2xl border border-warning-soft-border bg-warning-soft px-3 py-2 text-xs text-warning-strong">
+          {normalizedConfidence !== null ? (
+            <span>Confiança baixa da IA ({normalizedConfidence}%). Recomenda-se assumir o atendimento.</span>
+          ) : (
+            <span>Confiança baixa da IA. Recomenda-se assumir o atendimento.</span>
+          )}
+        </div>
+      ) : null}
+
+      {aiError ? (
+        <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">
+          {aiError?.message ?? 'Não foi possível obter ajuda da IA.'}
         </div>
       ) : null}
 

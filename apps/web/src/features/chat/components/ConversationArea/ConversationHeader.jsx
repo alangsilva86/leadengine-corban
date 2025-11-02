@@ -925,6 +925,9 @@ const ConversationHeader = ({
   onTakeOver,
   onGiveBackToAi,
   onAiModeChange,
+  onCreateNote,
+  timeline = [],
+  aiAssistant,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -1203,6 +1206,7 @@ const ConversationHeader = ({
         onEditContact,
         onCall: handleCall,
         onSendSMS: handleSendSms,
+        onCreateNote,
       },
       capabilities: {
         canGenerateProposal: Boolean(ticket),
@@ -1220,13 +1224,17 @@ const ConversationHeader = ({
       },
       openDialog,
       analytics: ({ id }) => emitInboxTelemetry('chat.command.execute', { ticketId: ticket?.id ?? null, actionId: id }),
+      timeline,
+      ai: aiAssistant,
     }),
     [
+      aiAssistant,
       handleCall,
       handleSendSms,
       isRegisteringResult,
       onAttachFile,
       onAssign,
+      onCreateNote,
       onEditContact,
       onGenerateProposal,
       onRegisterCallResult,
@@ -1234,6 +1242,7 @@ const ConversationHeader = ({
       onScheduleFollowUp,
       openDialog,
       rawPhone,
+      timeline,
       ticket,
     ]
   );
