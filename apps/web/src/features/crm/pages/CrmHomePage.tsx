@@ -35,7 +35,6 @@ type SavedViewsHandlers = {
 };
 
 const CrmHomePage = () => {
-  const [searchValue, setSearchValue] = useState('');
   const [filters, setFilters] = useState<CrmFilterState>(() => normalizeCrmFilters(EMPTY_FILTERS));
   const {
     views,
@@ -125,11 +124,10 @@ const CrmHomePage = () => {
     deleteSavedView: handleDeleteSavedView,
     selectSavedView: handleSelectSavedView,
   };
+
   return (
     <CrmViewProvider filters={filters}>
       <CrmHomeContent
-        searchValue={searchValue}
-        onSearchChange={setSearchValue}
         filters={filters}
         onFiltersChange={handleFiltersChange}
         onClearFilters={resetFilters}
@@ -147,8 +145,6 @@ const CrmHomePage = () => {
 export default CrmHomePage;
 
 type CrmHomeContentProps = {
-  searchValue: string;
-  onSearchChange: (value: string) => void;
   filters: CrmFilterState;
   onFiltersChange: (next: CrmFilterState) => void;
   onClearFilters: () => void;
@@ -166,8 +162,6 @@ type CrmHomeContentProps = {
 };
 
 const CrmHomeContent = ({
-  searchValue,
-  onSearchChange,
   filters,
   onFiltersChange,
   onClearFilters,
@@ -203,8 +197,6 @@ const CrmHomeContent = ({
       />
 
       <CrmToolbar
-        searchValue={searchValue}
-        onSearchChange={onSearchChange}
         filters={filters}
         onFiltersChange={onFiltersChange}
         onClearFilters={onClearFilters}

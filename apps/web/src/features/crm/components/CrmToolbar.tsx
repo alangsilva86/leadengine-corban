@@ -39,8 +39,6 @@ type BulkAction = {
 };
 
 type CrmToolbarProps = {
-  searchValue: string;
-  onSearchChange: (value: string) => void;
   filters: CrmFilterState;
   onFiltersChange: (next: CrmFilterState) => void;
   onClearFilters?: () => void;
@@ -143,8 +141,6 @@ const formatTotalLabel = (totalCount?: number) => {
 };
 
 const CrmToolbar = ({
-  searchValue,
-  onSearchChange,
   filters,
   onFiltersChange,
   onClearFilters,
@@ -280,18 +276,28 @@ const CrmToolbar = ({
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              value={searchValue}
-              onChange={(event) => onSearchChange(event.target.value)}
+              value={filters.search ?? ''}
+              onChange={(event) =>
+                onFiltersChange({
+                  ...filters,
+                  search: event.target.value,
+                })
+              }
               placeholder="Buscar por nome, empresa ou telefone"
               className="h-10 w-full rounded-lg border border-border bg-background pl-9 text-sm shadow-none"
             />
-            {searchValue ? (
+            {filters.search ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
-                onClick={() => onSearchChange('')}
+                onClick={() =>
+                  onFiltersChange({
+                    ...filters,
+                    search: '',
+                  })
+                }
                 aria-label="Limpar busca"
               >
                 <X className="h-4 w-4" />

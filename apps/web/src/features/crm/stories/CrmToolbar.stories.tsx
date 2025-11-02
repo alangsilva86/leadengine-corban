@@ -3,6 +3,7 @@ import CrmToolbar from '../components/CrmToolbar.tsx';
 import type { CrmFilterState, CrmSavedView } from '../state/types.ts';
 
 const sampleFilters: CrmFilterState = {
+  search: 'Empresa XPTO',
   stages: ['qualification'],
   owners: ['owner:me'],
   origins: ['web'],
@@ -36,7 +37,6 @@ const meta: Meta<typeof CrmToolbar> = {
   title: 'CRM/Toolbar',
   component: CrmToolbar,
   args: {
-    searchValue: 'Empresa XPTO',
     filters: sampleFilters,
     filterOptions: {
       stages: [
@@ -56,7 +56,6 @@ const meta: Meta<typeof CrmToolbar> = {
         { id: 'email', label: 'E-mail' },
       ],
     },
-    onSearchChange: () => {},
     onFiltersChange: () => {},
     onClearFilters: () => {},
     selectedCount: 2,
