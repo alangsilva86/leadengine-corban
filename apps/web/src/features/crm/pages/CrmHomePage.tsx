@@ -11,6 +11,7 @@ import { normalizeCrmFilters } from '../utils/filter-serialization';
 import type { CrmFilterState, CrmSavedView } from '../state/types';
 import type { CrmMetricPrimitive } from '../state/metrics';
 import { CrmViewProvider, useCrmViewContext } from '../state/view-context';
+import type { CrmViewType } from '../state/view-context';
 import emitCrmTelemetry from '../utils/telemetry';
 
 const EMPTY_FILTERS: CrmFilterState = {
@@ -106,7 +107,7 @@ const CrmHomeContent = () => {
 
   const handleSelectSavedView = useCallback(
     async (viewId: string | null) => {
-      const target = viewId ? views.find((view) => view.id === viewId) ?? null : null;
+      const target = viewId ? views.find((entry: CrmSavedView) => entry.id === viewId) ?? null : null;
       await selectSavedView(viewId);
       setFilters(normalizeCrmFilters(target?.filters ?? EMPTY_FILTERS));
     },
@@ -216,13 +217,13 @@ const CrmHomeLayout = ({
           onClearFilters={onClearFilters}
           filterOptions={filterOptions}
           selectedCount={state.selection.selectedIds.size}
-          onClearSelection={state.selection.selectedIds.size ? clearSelection : undefined}
+          {...(state.selection.selectedIds.size ? { onClearSelection: clearSelection } : {})}
           savedViews={savedViews}
         />
 
       <div className="space-y-4">
         <CrmViewSwitcher
-          onViewChange={(view) => {
+          onViewChange={(view: CrmViewType) => {
             emitCrmTelemetry('crm.view.change', { view });
           }}
         />

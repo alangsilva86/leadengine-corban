@@ -314,7 +314,7 @@ const AiSettingsTab = () => {
               className="font-mono text-xs"
             />
             <div className="flex items-center gap-3">
-              <Switch checked={isSchemaValid} disabled readOnly />
+              <Switch checked={isSchemaValid} disabled />
               <span className="text-xs text-muted-foreground">
                 {isSchemaValid ? 'Schema válido' : 'Schema com erros de formatação JSON'}
               </span>
@@ -423,13 +423,15 @@ const AiSettingsTab = () => {
             <Label id="ai-default-mode-label" htmlFor="ai-default-mode">
               Modo padrão por conversa
             </Label>
-            <Select
-              value={config?.defaultMode ?? DEFAULT_MODE}
-              disabled={disabled}
-              onValueChange={(value: AiAssistantMode) =>
-                setConfig((prev) => (prev ? { ...prev, defaultMode: value } : prev))
-              }
-            >
+              <Select
+                value={config?.defaultMode ?? DEFAULT_MODE}
+                disabled={disabled}
+                onValueChange={(value) =>
+                  setConfig((prev) =>
+                    prev ? { ...prev, defaultMode: value as AiAssistantMode } : prev
+                  )
+                }
+              >
               <SelectTrigger id="ai-default-mode" aria-labelledby="ai-default-mode-label">
                 <SelectValue placeholder="Selecione o modo" />
               </SelectTrigger>

@@ -221,35 +221,52 @@ export const processStandardInboundEvent = async (
   let instance: WhatsAppInstanceRecord | null = preloadedInstance ?? null;
   let resolvedInstanceId = instanceIdentifier;
 
-  if (!instance && resolvedInstanceId) {
-    instance = await attemptAutoProvisionWhatsAppInstance({
-      brokerId: resolvedBrokerId,
-      tenantId: tenantIdForBrokerLookup,
-      instanceId: resolvedInstanceId,
-      tenantIdentifiers: tenantIdentifiersForAutoProvision,
-    });
-  }
+  const selectInstanceFields = { id: true, tenantId: true, brokerId: true } satisfies Prisma.WhatsAppInstanceSelect;
 
-  if (!instance) {
-    instance = await attemptAutoProvisionWhatsAppInstance({
-      brokerId: resolvedBrokerId,
-      tenantId: tenantIdForBrokerLookup,
-      tenantIdentifiers: tenantIdentifiersForAutoProvision,
-    });
+  const autoProvisionInstance = async (candidateId: string | null | undefined) => {
+    if (!candidateId) {
+      return null;
+    }
+
+    try {
+      const result = await attemptAutoProvisionWhatsAppInstance({
+        instanceId: candidateId,
+        metadata: metadataRecord,
+        requestId: requestId ?? null,
+      });
+      return result?.instance ?? null;
+    } catch (error) {
+      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao autoprov instância durante ingestão', {
+        error: mapErrorForLog(error),
+        requestId,
+        candidateId,
+        brokerId: resolvedBrokerId ?? null,
+        tenantId: tenantIdForBrokerLookup ?? null,
+      });
+      return null;
+    }
+  };
+
+  if (!instance && resolvedInstanceId) {
+    instance =
+      (await prisma.whatsAppInstance.findUnique({
+        where: { id: resolvedInstanceId },
+        select: selectInstanceFields,
+      })) ?? (await autoProvisionInstance(resolvedInstanceId));
   }
 
   if (!instance && resolvedBrokerId) {
-    const brokerLookupWhere: Prisma.WhatsAppInstanceWhereInput = { brokerId: resolvedBrokerId };
-    instance = await prisma.whatsAppInstance.findFirst({
-      where: brokerLookupWhere,
-      select: { id: true, tenantId: true, brokerId: true },
-    });
+    instance =
+      (await prisma.whatsAppInstance.findFirst({
+        where: { brokerId: resolvedBrokerId },
+        select: selectInstanceFields,
+      })) ?? (await autoProvisionInstance(resolvedBrokerId));
   }
 
   if (!instance && tenantIdForBrokerLookup) {
     instance = await prisma.whatsAppInstance.findFirst({
       where: { tenantId: tenantIdForBrokerLookup },
-      select: { id: true, tenantId: true, brokerId: true },
+      select: selectInstanceFields,
     });
   }
 
