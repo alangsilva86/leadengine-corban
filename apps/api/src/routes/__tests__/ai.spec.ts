@@ -31,7 +31,13 @@ type ConfigRecord = {
 const configStore = new Map<string, ConfigRecord>();
 const suggestionStore: Array<{ tenantId: string; conversationId: string; payload: unknown }> = [];
 const memoryStore = new Map<string, any>();
-const runStore: Array<{ tenantId: string; conversationId: string; runType: string }> = [];
+const runStore: Array<{
+  tenantId: string;
+  conversationId: string;
+  runType: string;
+  requestPayload?: unknown;
+  metadata?: unknown;
+}> = [];
 
 const buildConfigKey = (tenantId: string, queueId: string | null) =>
   `${tenantId}:${queueId ?? '__global__'}`;
@@ -92,6 +98,8 @@ vi.mock('@ticketz/storage', () => {
         tenantId: input.tenantId,
         conversationId: input.conversationId,
         runType: input.runType,
+        requestPayload: input.requestPayload,
+        metadata: input.metadata ?? null,
       });
       return {
         id: `run-${randomUUID()}`,
@@ -244,6 +252,72 @@ describe('AI routes', () => {
       confidence: 0,
     });
     expect(response.body.data.aiEnabled).toBe(false);
+  });
+
+  it('aceita payload com ticket e timeline convertendo para mensagens recentes', async () => {
+    const app = buildTestApp();
+
+    const response = await request(app)
+      .post('/ai/suggest')
+      .send({
+        ticket: {
+          id: 'ticket-123',
+          status: 'open',
+          stage: 'negotiation',
+          value: 1500,
+          contact: {
+            id: 'contact-123',
+            name: 'Maria Souza',
+            phone: '+5511999999999',
+          },
+          metadata: { origin: 'whatsapp' },
+        },
+        timeline: [
+          {
+            id: 'entry-1',
+            type: 'message',
+            timestamp: '2024-01-01T12:00:00.000Z',
+            payload: {
+              id: 'msg-1',
+              direction: 'inbound',
+              content: 'Oi, tudo bem?',
+            },
+          },
+          {
+            id: 'entry-2',
+            type: 'message',
+            timestamp: '2024-01-01T12:05:00.000Z',
+            payload: {
+              id: 'msg-2',
+              direction: 'outbound',
+              content: 'Olá! Posso ajudar com a proposta?',
+            },
+          },
+        ],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.suggestion).toMatchObject({
+      next_step: expect.any(String),
+      confidence: 0,
+    });
+    expect(response.body.data.aiEnabled).toBe(false);
+
+    expect(suggestionStore).toHaveLength(1);
+    expect(suggestionStore[0]).toMatchObject({
+      tenantId: 'tenant-1',
+      conversationId: 'ticket-123',
+    });
+
+    expect(runStore).toHaveLength(1);
+    const requestPayload = runStore[0]?.requestPayload as { prompt?: string; contextMessages?: any[] };
+    expect(requestPayload?.contextMessages).toEqual([
+      { role: 'user', content: 'Oi, tudo bem?' },
+      { role: 'assistant', content: 'Olá! Posso ajudar com a proposta?' },
+    ]);
+    expect(requestPayload?.prompt).toContain('Perfil do lead');
+    expect(requestPayload?.prompt).toContain('ticket-123');
   });
 
   it('upserts AI memory entries', async () => {
