@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import CrmToolbar from '../components/CrmToolbar.tsx';
 import CrmMetricsBelt from '../components/CrmMetricsBelt.tsx';
@@ -35,7 +35,6 @@ type SavedViewsHandlers = {
 };
 
 const CrmHomePage = () => {
-  const [filters, setFilters] = useState<CrmFilterState>(() => normalizeCrmFilters(EMPTY_FILTERS));
   const initialFilters = useMemo(() => normalizeCrmFilters(EMPTY_FILTERS), []);
 
   return (
@@ -48,15 +47,7 @@ const CrmHomePage = () => {
 export default CrmHomePage;
 
 const CrmHomeContent = () => {
-  const [searchValue, setSearchValue] = useState('');
-  const {
-    state,
-    setFilters,
-    closeLeadDrawer,
-    openLeadDrawer,
-    clearSelection,
-  } = useCrmViewContext();
-  const { activeLeadId, isDrawerOpen } = state;
+  const { state, setFilters } = useCrmViewContext();
   const { filters } = state;
 
   const {
@@ -153,28 +144,7 @@ const CrmHomeContent = () => {
   };
 
   return (
-    <CrmViewProvider filters={filters}>
-      <CrmHomeContent
-        filters={filters}
-        onFiltersChange={handleFiltersChange}
-        onClearFilters={resetFilters}
-        savedViews={savedViewsHandlers}
-        filterOptions={filterOptions}
-        metrics={metricsResult.summary}
-        metricsSource={metricsResult.source}
-        metricsLoading={metricsLoading || metricsFetching}
-        onMetricsRefresh={() => void refetchMetrics()}
-      />
-    </CrmViewProvider>
-  );
-};
-
-export default CrmHomePage;
-
-type CrmHomeContentProps = {
     <CrmHomeLayout
-      searchValue={searchValue}
-      onSearchChange={setSearchValue}
       filters={filters}
       onFiltersChange={handleFiltersChange}
       onClearFilters={resetFilters}
@@ -189,8 +159,6 @@ type CrmHomeContentProps = {
 };
 
 type CrmHomeLayoutProps = {
-  searchValue: string;
-  onSearchChange: (value: string) => void;
   filters: CrmFilterState;
   onFiltersChange: (next: CrmFilterState) => void;
   onClearFilters: () => void;
@@ -207,10 +175,7 @@ type CrmHomeLayoutProps = {
   onMetricsRefresh: () => void;
 };
 
-const CrmHomeContent = ({
 const CrmHomeLayout = ({
-  searchValue,
-  onSearchChange,
   filters,
   onFiltersChange,
   onClearFilters,
