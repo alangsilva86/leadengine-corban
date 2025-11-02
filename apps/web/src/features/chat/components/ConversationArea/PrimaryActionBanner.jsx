@@ -1,10 +1,11 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { CollapsibleTrigger } from '@/components/ui/collapsible.jsx';
-import { BatteryCharging, ChevronDown } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import { BatteryCharging, ChevronDown, MessageCircleMore } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
-import AiControlPanel from './AiControlPanel.jsx';
+import AiModeMenu from './AiModeMenu.jsx';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -76,15 +77,30 @@ const TypingIndicator = ({ agents = [] }) => {
   if (!agents.length) return null;
   const label = agents[0]?.userName ?? 'Agente';
   return (
-    <div className="inline-flex min-h-[28px] items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-[12px] text-foreground-muted">
-      <div className="flex -space-x-2">
-        {agents.slice(0, 3).map((agent) => (
-          <Avatar key={agent.userId} className="h-6 w-6 border border-surface-overlay-glass-border">
-            <AvatarFallback>{buildInitials(agent.userName, 'AG')}</AvatarFallback>
-          </Avatar>
-        ))}
+    <div className="inline-flex items-center">
+      <div className="hidden xl:inline-flex min-h-[28px] items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-[12px] text-foreground-muted">
+        <div className="flex -space-x-2">
+          {agents.slice(0, 3).map((agent) => (
+            <Avatar key={agent.userId} className="h-6 w-6 border border-surface-overlay-glass-border">
+              <AvatarFallback>{buildInitials(agent.userName, 'AG')}</AvatarFallback>
+            </Avatar>
+          ))}
+        </div>
+        <span>{label} digitando…</span>
       </div>
-      <span>{label} digitando…</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            aria-label={`${label} digitando…`}
+            className="inline-flex h-9 w-9 cursor-default items-center justify-center rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground shadow-none outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)] xl:hidden"
+          >
+            <MessageCircleMore className="h-4 w-4" aria-hidden />
+            <span className="sr-only">{label} digitando…</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent sideOffset={8}>{label} digitando…</TooltipContent>
+      </Tooltip>
     </div>
   );
 };
@@ -180,7 +196,7 @@ const PrimaryActionBanner = ({
   jro,
   commandContext,
   isExpanded,
-  AiControlPanelComponent = AiControlPanel,
+  AiModeMenuComponent = AiModeMenu,
   aiControlProps,
 }) => (
   <div data-testid="conversation-header-summary" className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
@@ -228,7 +244,7 @@ const PrimaryActionBanner = ({
         </div>
       </div>
     </div>
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="flex flex-nowrap items-center justify-end gap-2">
       <div className="shrink-0">
         <TypingIndicator agents={typingAgents} />
       </div>
@@ -238,7 +254,7 @@ const PrimaryActionBanner = ({
         onExecute={onPrimaryAction}
         disabled={!primaryAction}
       />
-      <AiControlPanelComponent {...(aiControlProps ?? {})} />
+      <AiModeMenuComponent {...(aiControlProps ?? {})} />
       <CommandBar
         context={commandContext}
         className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
