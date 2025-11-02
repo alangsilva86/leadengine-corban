@@ -1,11 +1,6 @@
 import { useCallback, useMemo } from 'react';
 
 import { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode } from '../aiModes.js';
-const AI_MODE_OPTIONS = [
-  { value: 'assist', label: 'IA assistida' },
-  { value: 'auto', label: 'IA autônoma' },
-  { value: 'manual', label: 'Agente no comando' },
-];
 
 const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
 
@@ -29,8 +24,6 @@ const normalizeAiModeValue = (value) => {
 
   return normalized;
 };
-
-const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
 const useAiControlPanel = ({
   ticket,

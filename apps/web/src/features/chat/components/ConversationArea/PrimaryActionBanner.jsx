@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { BatteryCharging, ChevronDown, MessageCircleMore } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
-import AiModeMenu from './AiModeMenu.jsx';
+import { AiModeControlMenu } from './AiModeMenu.jsx';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -196,7 +196,7 @@ const PrimaryActionBanner = ({
   jro,
   commandContext,
   isExpanded,
-  AiModeMenuComponent = AiModeMenu,
+  AiModeMenuComponent = AiModeControlMenu,
   aiControlProps,
 }) => (
   <div data-testid="conversation-header-summary" className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">

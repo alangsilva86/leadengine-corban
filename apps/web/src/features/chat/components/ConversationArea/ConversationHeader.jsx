@@ -9,7 +9,7 @@ import OutcomeDialog from './OutcomeDialog.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
 import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
-import AiModeMenu from './AiModeMenu.jsx';
+import { AiModeControlMenu } from './AiModeMenu.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
 
@@ -533,7 +533,7 @@ const ConversationHeader = ({
 
   const {
     PrimaryActionBanner: PrimaryActionBannerComponent = PrimaryActionBanner,
-    AiModeMenu: AiModeMenuComponent = AiModeMenu,
+    AiModeMenu: AiModeMenuComponent = AiModeControlMenu,
     ContactDetailsPanel: ContactDetailsPanelComponent = ContactDetailsPanel,
   } = components ?? {};
 

@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 import { cn } from '@/lib/utils.js';
 import ConversationHeader from './ConversationHeader.jsx';
-import AiModeMenu from './AiModeMenu.jsx';
+import AiModeMenu, { AiModeControlMenu } from './AiModeMenu.jsx';
 import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner from './PrimaryActionBanner.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
@@ -99,7 +99,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
             {...headerProps}
             components={{
               PrimaryActionBanner,
-              AiModeMenu,
+              AiModeMenu: AiModeControlMenu,
               ContactDetailsPanel,
               ...headerComponents,
             }}

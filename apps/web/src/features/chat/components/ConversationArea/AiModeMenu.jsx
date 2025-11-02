@@ -1,6 +1,20 @@
-import { Check } from 'lucide-react';
+import { Bot, Brain, Check, UserCheck } from 'lucide-react';
+
+import { Button } from '@/components/ui/button.jsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode } from './aiModes.js';
+import useAiControlPanel from './hooks/useAiControlPanel.js';
 
 const AiModeMenu = ({ mode, onSelect, disabled = false, onRequestClose }) => {
   const normalizedMode = isValidAiMode(mode) ? mode : DEFAULT_AI_MODE;
@@ -19,7 +33,7 @@ const AiModeMenu = ({ mode, onSelect, disabled = false, onRequestClose }) => {
               'flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
               isActive
                 ? 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)] text-foreground shadow-[0_2px_8px_-6px_rgba(15,23,42,0.45)]'
-                : 'text-foreground hover:bg-surface-overlay-strong'
+                : 'text-foreground hover:bg-surface-overlay-strong',
             )}
             onClick={() => {
               if (disabled) return;
@@ -33,7 +47,7 @@ const AiModeMenu = ({ mode, onSelect, disabled = false, onRequestClose }) => {
                 'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-surface-overlay-glass-border text-xs',
                 isActive
                   ? 'border-[color:var(--accent-inbox-primary)] bg-[color:var(--accent-inbox-primary)] text-white'
-                  : 'text-foreground-muted'
+                  : 'text-foreground-muted',
               )}
               aria-hidden
             >
@@ -49,23 +63,10 @@ const AiModeMenu = ({ mode, onSelect, disabled = false, onRequestClose }) => {
         );
       })}
     </div>
-import { Bot, Brain, UserCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button.jsx';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu.jsx';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import { cn } from '@/lib/utils.js';
-import useAiControlPanel from './hooks/useAiControlPanel.js';
+  );
+};
 
-const AiModeMenu = ({
+const AiModeControlMenu = ({
   ticket,
   aiMode,
   aiConfidence,
@@ -188,4 +189,5 @@ const AiModeMenu = ({
   );
 };
 
+export { AiModeControlMenu };
 export default AiModeMenu;
