@@ -86,4 +86,36 @@ describe('instancesApiService', () => {
     expect(response?.qr?.qrCode).toBe('qr-data');
     expect(bundle.store.getState().currentInstance?.id).toBe('inst-1');
   });
+
+  it('deletes real instances using DELETE and forwards wipe flag', async () => {
+    const { service } = createService();
+    apiGet.mockResolvedValue({ instances: [] });
+    apiDelete.mockResolvedValueOnce({});
+
+    await service.deleteInstance({ instanceId: 'inst-1', hard: true });
+
+    expect(apiDelete).toHaveBeenCalledWith(`${BASE_PATH}/inst-1?wipe=1`);
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it('disconnects JID instances using POST and forwards wipe payload', async () => {
+    const { service } = createService();
+    apiGet.mockResolvedValue({ instances: [] });
+    apiPost.mockResolvedValue({});
+
+    await service.deleteInstance({ instanceId: '123@s.whatsapp.net' });
+    await service.deleteInstance({ instanceId: '456@s.whatsapp.net', hard: true });
+
+    expect(apiPost).toHaveBeenNthCalledWith(
+      1,
+      `${BASE_PATH}/123%40s.whatsapp.net/disconnect`,
+      undefined,
+    );
+    expect(apiPost).toHaveBeenNthCalledWith(
+      2,
+      `${BASE_PATH}/456%40s.whatsapp.net/disconnect`,
+      { wipe: true },
+    );
+    expect(apiDelete).not.toHaveBeenCalled();
+  });
 });
