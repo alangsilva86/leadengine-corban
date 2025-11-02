@@ -6,7 +6,21 @@ import Composer from './Composer.jsx';
 
 const ComposerSection = forwardRef(
   (
-    { notice, disabled, composerApiRef, onSend, onTemplate, onCreateNote, onTyping, isSending, sendError, onRequestSuggestion, aiSuggestions, aiLoading, onApplySuggestion, onDiscardSuggestion },
+    {
+      notice,
+      disabled,
+      composerApiRef,
+      onSend,
+      onTemplate,
+      onCreateNote,
+      onTyping,
+      isSending,
+      sendError,
+      onRequestSuggestion,
+      aiConfidence,
+      aiLoading,
+      aiError,
+    },
     elementRef,
   ) => (
     <footer
@@ -30,9 +44,8 @@ const ComposerSection = forwardRef(
         sendError={sendError}
         onRequestSuggestion={onRequestSuggestion}
         aiLoading={aiLoading}
-        aiSuggestions={aiSuggestions}
-        onApplySuggestion={onApplySuggestion}
-        onDiscardSuggestion={onDiscardSuggestion}
+        aiConfidence={aiConfidence}
+        aiError={aiError}
       />
     </footer>
   ),
@@ -64,8 +77,6 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
     onTyping,
     onRequestSuggestion,
     aiState,
-    onApplySuggestion,
-    onDiscardSuggestion,
     isSending = false,
     sendError,
   } = composer ?? {};
@@ -118,10 +129,9 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
           isSending={isSending}
           sendError={sendError}
           onRequestSuggestion={onRequestSuggestion}
-          aiSuggestions={aiState?.suggestions ?? []}
+          aiConfidence={aiState?.confidence ?? null}
           aiLoading={aiState?.isLoading ?? false}
-          onApplySuggestion={onApplySuggestion}
-          onDiscardSuggestion={onDiscardSuggestion}
+          aiError={aiState?.error ?? null}
         />
       </div>
       {showNewMessagesHint ? (

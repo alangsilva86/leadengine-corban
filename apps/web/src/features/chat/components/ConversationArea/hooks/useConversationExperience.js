@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import useAiSuggestions from '../../../hooks/useAiSuggestions.js';
+import { formatAiSuggestionNote, normalizeConfidence } from '../../../utils/aiSuggestions.js';
 import useChatAutoscroll from '../../../hooks/useChatAutoscroll.js';
 import { useTicketMessages } from './useTicketMessages.js';
 import { useWhatsAppPresence } from './useWhatsAppPresence.js';
@@ -62,13 +63,21 @@ export const useConversationExperience = ({
   });
 
   const handleRequestSuggestion = useCallback(async () => {
-    if (!ticket) return;
+    if (!ticket) return null;
     try {
-      await ai.requestSuggestions({ ticket, timeline: conversation?.timeline ?? [] });
+      const result = await ai.requestSuggestions({ ticket, timeline: conversation?.timeline ?? [] });
+      if (result) {
+        const note = formatAiSuggestionNote(result);
+        if (note) {
+          onCreateNote?.(note);
+        }
+      }
+      return result ?? null;
     } catch (error) {
       console.warn('AI suggestion request failed', error);
+      return null;
     }
-  }, [ai, conversation?.timeline, ticket]);
+  }, [ai, conversation?.timeline, onCreateNote, ticket]);
 
   const handleComposerSend = useCallback(
     (payload) => {
@@ -93,18 +102,6 @@ export const useConversationExperience = ({
     [onCreateNote],
   );
 
-  const handleApplySuggestion = useCallback(
-    (suggestion) => {
-      onSendMessage?.({ content: suggestion });
-      ai.reset();
-    },
-    [ai, onSendMessage],
-  );
-
-  const handleDiscardSuggestion = useCallback(() => {
-    ai.reset();
-  }, [ai]);
-
   const handleScrollToBottom = useCallback(() => {
     scrollToBottom({ behavior: 'smooth', force: true });
   }, [scrollToBottom]);
@@ -117,12 +114,30 @@ export const useConversationExperience = ({
     composerApiRef.current?.focusInput?.();
   }, []);
 
-  const aiState = useMemo(
-    () => ({
-      suggestions: ai.suggestions,
+  const aiState = useMemo(() => {
+    const suggestion = ai.data ?? null;
+    const confidenceValue =
+      typeof suggestion?.confidence === 'number'
+        ? suggestion.confidence
+        : normalizeConfidence(suggestion?.confidence ?? suggestion?.raw?.confidence ?? null);
+
+    return {
+      suggestion,
+      confidence: confidenceValue ?? null,
       isLoading: ai.isLoading,
+      error: ai.error ?? null,
+    };
+  }, [ai.data, ai.error, ai.isLoading]);
+
+  const aiAssistant = useMemo(
+    () => ({
+      requestSuggestions: ai.requestSuggestions,
+      isLoading: ai.isLoading,
+      data: ai.data ?? null,
+      error: ai.error ?? null,
+      reset: ai.reset,
     }),
-    [ai.isLoading, ai.suggestions],
+    [ai.data, ai.error, ai.isLoading, ai.requestSuggestions, ai.reset],
   );
 
   const headerProps = useMemo(
@@ -149,8 +164,12 @@ export const useConversationExperience = ({
       slaClock,
       typingAgents,
       composerHeight,
+      onCreateNote,
+      timeline: conversation?.timeline ?? [],
+      aiAssistant,
     }),
     [
+      aiAssistant,
       composerHeight,
       conversation,
       currentUser,
@@ -159,6 +178,7 @@ export const useConversationExperience = ({
       isRegisteringResult,
       nextStepValue,
       onAssign,
+      onCreateNote,
       onContactFieldSave,
       onCreateNextStep,
       onDealFieldSave,
@@ -199,8 +219,6 @@ export const useConversationExperience = ({
       onTyping: broadcastTyping,
       onRequestSuggestion: handleRequestSuggestion,
       aiState,
-      onApplySuggestion: handleApplySuggestion,
-      onDiscardSuggestion: handleDiscardSuggestion,
       isSending,
       sendError,
     },
