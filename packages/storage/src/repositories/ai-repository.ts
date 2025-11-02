@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { getPrismaClient } from '../prisma-client';
 
-const prisma: PrismaClient = getPrismaClient();
+const prisma = (): PrismaClient => getPrismaClient();
 
 export type AiAssistantMode = 'IA_AUTO' | 'COPILOTO' | 'HUMANO';
 
@@ -26,7 +26,7 @@ export type UpsertAiConfigInput = {
 
 export const getAiConfig = async (tenantId: string, queueId?: string | null) => {
   const scopeKey = queueId ?? '__global__';
-  return prisma.aiConfig.findFirst({
+  return prisma().aiConfig.findFirst({
     where: {
       tenantId,
       scopeKey,
@@ -109,7 +109,7 @@ export const upsertAiConfig = async (input: UpsertAiConfigInput) => {
     fallbackPolicy: finalFallbackPolicy,
   };
 
-  return prisma.aiConfig.upsert({
+  return prisma().aiConfig.upsert({
     where: {
       tenantId_scopeKey: {
         tenantId,
@@ -138,7 +138,7 @@ export const recordAiSuggestion = async (params: {
     confidence: confidence ?? null,
   };
 
-  return prisma.aiSuggestion.create({
+  return prisma().aiSuggestion.create({
     data,
   });
 };
@@ -156,7 +156,7 @@ export const upsertAiMemory = async (params: {
   const normalizedMetadata =
     metadata === undefined ? undefined : metadata === null ? Prisma.JsonNull : metadata;
 
-  return prisma.aiMemory.upsert({
+  return prisma().aiMemory.upsert({
     where: {
       tenantId_contactId_topic: {
         tenantId,
@@ -229,7 +229,7 @@ export const recordAiRun = async (params: {
     status: status ?? 'success',
   };
 
-  return prisma.aiRun.create({
+  return prisma().aiRun.create({
     data,
   });
 };
