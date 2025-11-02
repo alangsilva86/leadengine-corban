@@ -7,6 +7,7 @@ import {
   getWebhookApiKey,
   refreshWhatsAppEnv,
 } from '../apps/api/src/config/whatsapp';
+import { buildWebhookAuthHeaders } from './whatsapp-webhook-auth';
 
 const args = process.argv.slice(2);
 
@@ -70,15 +71,16 @@ const resolvePayload = (record) => {
 
 const postEvent = async (payload) => {
   const body = typeof payload === 'object' && !Array.isArray(payload) ? payload : { events: payload };
-  const headers = { 'content-type': 'application/json' };
-  if (options.apiKey) {
-    headers['x-api-key'] = options.apiKey;
-  }
+  const rawBody = JSON.stringify(body);
+  const headers = {
+    'content-type': 'application/json',
+    ...buildWebhookAuthHeaders(rawBody, { apiKey: options.apiKey }),
+  } as Record<string, string>;
 
   const response = await fetch(options.url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body: rawBody,
   });
 
   if (!response.ok) {

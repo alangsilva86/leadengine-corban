@@ -22,6 +22,7 @@
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 import { getWebhookApiKey, refreshWhatsAppEnv } from '../apps/api/src/config/whatsapp';
+import { buildWebhookAuthHeaders } from './whatsapp-webhook-auth';
 
 refreshWhatsAppEnv();
 
@@ -167,14 +168,17 @@ const sendInboundWebhook = async ({ messageId, requestId }) => {
     ],
   };
 
+  const body = JSON.stringify(payload);
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-request-id': requestId,
+    ...buildWebhookAuthHeaders(body, { apiKey: WEBHOOK_KEY }),
+  } as Record<string, string>;
+
   const response = await fetch(`${API_URL}/api/integrations/whatsapp/webhook`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-request-id': requestId,
-      ...(WEBHOOK_KEY ? { 'x-api-key': WEBHOOK_KEY } : {}),
-    },
-    body: JSON.stringify(payload),
+    headers,
+    body,
   });
 
   if (response.status !== 202) {
