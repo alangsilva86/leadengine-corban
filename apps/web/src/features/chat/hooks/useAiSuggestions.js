@@ -81,7 +81,7 @@ export const useAiSuggestions = () => {
         timeline: sanitizeTimeline(timeline),
       };
 
-      const response = await apiPost('/ai/suggest', payload, { rateLimitKey: 'ai-suggest' });
+      const response = await apiPost('/api/ai/suggest', payload, { rateLimitKey: 'ai-suggest' });
       return extractAiSuggestion(response ?? {});
     },
   });
