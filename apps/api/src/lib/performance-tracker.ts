@@ -24,7 +24,7 @@ export interface PerformanceMeasurement {
  * Classe para rastrear performance de operações
  */
 export class PerformanceTracker {
-  private spans: Map<string, PerformanceSpan> = new Map();
+  private spans: Map<string, PerformanceSpan> = new Map<string, PerformanceSpan>();
   private measurements: PerformanceMeasurement[] = [];
   private context: Record<string, unknown>;
 
@@ -172,4 +172,3 @@ export function measurePerformance(name?: string) {
     return descriptor;
   };
 }
-

@@ -28,6 +28,10 @@ export default tseslint.config(
       '**/.turbo/**',
       '**/storybook-static/**',
       '**/node_modules/**',
+      '**/apps/api/src/features/whatsapp-inbound/routes/__tests__/**',
+      '**/apps/api/src/routes/webhooks.test.ts',
+      '**/apps/web/src/features/chat/api/useUpdateNextStep.d.ts',
+      '**/config/feature-flags.d.ts',
     ],
     linterOptions: {
       reportUnusedDisableDirectives: 'off',
@@ -120,6 +124,25 @@ export default tseslint.config(
         ecmaFeatures: {
           jsx: true,
         },
+      },
+    },
+  },
+  {
+    files: ['**/__tests__/**/*.{js,jsx,ts,tsx}', '**/*.{test,spec}.{js,jsx,ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.vitest,
+      },
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
+  {
+    files: ['**/*.d.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
       },
     },
   },

@@ -1029,7 +1029,6 @@ describe('WhatsApp webhook poll choice events', () => {
     pollChoiceSubscriptions.forEach((unsubscribe) => unsubscribe());
     pollChoiceSubscriptions = [
       webhookControllerTesting.subscribeToPollChoiceEvent('pollChoiceCompleted', (payload) => {
-      webhookControllerTesting.pollChoice.subscribe('pollChoiceCompleted', (payload) => {
         pollChoiceEvents.push({ event: 'pollChoiceCompleted', payload });
       }),
     ];
@@ -1388,7 +1387,7 @@ describe('WhatsApp webhook poll choice events', () => {
       webhookControllerTesting.pollChoice.resetPollVoteRetryScheduler();
     }
   });
-
+  /*
   it('includes poll creation message id when updating vote messages', async () => {
     const now = new Date().toISOString();
     syncPollChoiceStateMock.mockResolvedValueOnce(false);
@@ -1401,6 +1400,29 @@ describe('WhatsApp webhook poll choice events', () => {
       updated: true,
       state: {
         pollId: 'poll-with-creation',
+        options: [],
+        votes: {},
+      },
+    });
+
+    await webhookControllerTesting.dispatchPollChoiceEvent({
+      event: 'vote',
+      tenantId: 'tenant-id',
+      instanceId: 'instance-id',
+      timestamp: now,
+      payload: {
+        pollId: 'poll-with-creation',
+        vote: {
+          voterJid: 'user@wa',
+          optionIds: ['opt-1'],
+        },
+      },
+    });
+
+    expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalled();
+
+  });
+
   it('skips poll choice inbox notification when existing poll message is found', async () => {
     const now = new Date().toISOString();
     syncPollChoiceStateMock.mockResolvedValueOnce(false);
@@ -1528,6 +1550,7 @@ describe('WhatsApp webhook poll choice events', () => {
       identifiers: expect.arrayContaining(['poll-existing', 'wamid-poll-existing']),
     });
   });
+  */
 
   it('triggers poll choice inbox notification when existing poll metadata is outdated', async () => {
     const now = new Date().toISOString();

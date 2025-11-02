@@ -1,8 +1,6 @@
 import type { UseMutationResult } from '@tanstack/react-query';
 
-export interface UpdateNextStepMetadata {
-  [key: string]: unknown;
-}
+export type UpdateNextStepMetadata = Record<string, unknown>;
 
 export interface UpdateNextStepVariables {
   targetTicketId?: string;

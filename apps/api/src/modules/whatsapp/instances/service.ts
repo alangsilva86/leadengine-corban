@@ -28,6 +28,14 @@ const MAX_BFS_NODES = 5000; // hard cap for BFS scanners
 const LAST_SYNC_KEY_PREFIX = 'whatsapp:instances:lastSync:tenant:';
 const SNAPSHOT_CACHE_KEY_PREFIX = 'whatsapp:instances:snapshotCache:tenant:';
 
+const safeIncrementHttpCounter = () => {
+  try {
+    whatsappHttpRequestsCounter?.inc?.();
+  } catch (error) {
+    logger.debug('whatsapp.instances.metrics.increment_failed', { error });
+  }
+};
+
 const getLastSyncAt = async (tenantId: string): Promise<Date | null> => {
   const key = `${LAST_SYNC_KEY_PREFIX}${tenantId}`;
   try {
@@ -1096,18 +1104,13 @@ export const createWhatsAppInstance = async ({
   const explicitId = input.id?.trim() ?? '';
   const instanceId = explicitId || name || resolveDefaultInstanceId();
 
-  let existing: { id: string } | null = null;
-  try {
-    existing = await prisma.whatsAppInstance.findFirst({
-      where: {
-        tenantId,
-        id: instanceId,
-      },
-      select: { id: true },
-    });
-  } catch (error) {
-    throw error;
-  }
+  const existing = await prisma.whatsAppInstance.findFirst({
+    where: {
+      tenantId,
+      id: instanceId,
+    },
+    select: { id: true },
+  });
 
   if (existing) {
     const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
@@ -1115,21 +1118,13 @@ export const createWhatsAppInstance = async ({
   }
 
   let brokerInstance: BrokerWhatsAppInstance;
-  try {
-    try {
-      whatsappHttpRequestsCounter?.inc?.();
-    } catch {
-      // metrics best-effort
-    }
+  safeIncrementHttpCounter();
 
-    brokerInstance = await whatsappBrokerClient.createInstance({
-      tenantId,
-      name,
-      instanceId,
-    });
-  } catch (error) {
-    throw error;
-  }
+  brokerInstance = await whatsappBrokerClient.createInstance({
+    tenantId,
+    name,
+    instanceId,
+  });
 
   const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
   const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
@@ -2919,7 +2914,7 @@ export const collectInstancesForTenant = async (
 
   if (shouldRefresh) {
     try {
-      try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
+      safeIncrementHttpCounter();
       const syncResult = await syncInstancesFromBroker(
         tenantId,
         storedInstances,
@@ -2951,7 +2946,7 @@ export const collectInstancesForTenant = async (
     }
     if (!snapshots) {
       try {
-        try { whatsappHttpRequestsCounter?.inc?.(); } catch {}
+        safeIncrementHttpCounter();
         snapshots = await whatsappBrokerClient.listInstances(tenantId);
         if (snapshots && snapshots.length > 0) {
           await setCachedSnapshots(tenantId, snapshots, 30);
@@ -3130,7 +3125,7 @@ export const fetchStatusWithBrokerQr = async (
 
   try {
     try {
-      whatsappHttpRequestsCounter?.inc?.();
+      safeIncrementHttpCounter();
     } catch {
       // metrics are best effort
     }

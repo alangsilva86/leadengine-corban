@@ -146,10 +146,6 @@ const CrmHomePage = () => {
 
 export default CrmHomePage;
 
-type SavedViewsHandlers = typeof ((): any => {
-  /* placeholder */
-});
-
 type CrmHomeContentProps = {
   searchValue: string;
   onSearchChange: (value: string) => void;
