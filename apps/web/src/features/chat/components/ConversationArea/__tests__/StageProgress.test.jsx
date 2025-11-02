@@ -22,6 +22,12 @@ describe('StageProgress', () => {
     expect(screen.getByLabelText('Etapa atual: Nova Etapa Misteriosa')).toBeInTheDocument();
   });
 
+  it('does not render when the stage is unknown', () => {
+    const { container } = render(<StageProgress currentStage={null} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('matches the snapshot for a mid-funnel stage', () => {
     const { asFragment } = render(<StageProgress currentStage="Proposta" />);
 

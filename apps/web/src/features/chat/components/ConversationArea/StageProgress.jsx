@@ -32,6 +32,10 @@ const buildSteps = (stageKey) => {
   const normalized = normalizeStage(stageKey);
   const knownIndex = STAGE_SEQUENCE.indexOf(normalized);
 
+  if (normalized === 'DESCONHECIDO') {
+    return [];
+  }
+
   if (knownIndex === -1) {
     const presentation = STAGE_PRESENTATION[normalized] ?? STAGE_PRESENTATION.DESCONHECIDO;
     const label = formatStageLabel(normalized);
