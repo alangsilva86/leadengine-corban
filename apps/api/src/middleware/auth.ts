@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../config/logger';
 import { isMvpAuthBypassEnabled } from '../config/feature-flags';
 import { isDatabaseEnabled, prisma } from '../lib/prisma';
+import { ensureTenantRecord } from '../services/tenant-service';
 
 type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
 
@@ -155,28 +156,32 @@ const ensureDemoUserRecord = async (): Promise<void> => {
 
   if (!ensureDemoUserPromise) {
     const resolvedRole = normalizeRole(AUTH_MVP_ROLE);
-    ensureDemoUserPromise = prisma.user
-      .upsert({
-        where: { id: AUTH_MVP_USER_ID },
-        update: {
-          tenantId: AUTH_MVP_TENANT_ID,
-          email: AUTH_MVP_USER_EMAIL,
-          name: AUTH_MVP_USER_NAME,
-          role: resolvedRole,
-          isActive: true,
-          passwordHash: AUTH_MVP_PASSWORD_HASH,
-        },
-        create: {
-          id: AUTH_MVP_USER_ID,
-          tenantId: AUTH_MVP_TENANT_ID,
-          email: AUTH_MVP_USER_EMAIL,
-          name: AUTH_MVP_USER_NAME,
-          role: resolvedRole,
-          isActive: true,
-          passwordHash: AUTH_MVP_PASSWORD_HASH,
-          settings: {},
-        },
-      })
+    ensureDemoUserPromise = ensureTenantRecord(AUTH_MVP_TENANT_ID, {
+      source: 'auth.ensureDemoUserRecord',
+    })
+      .then(() =>
+        prisma.user.upsert({
+          where: { id: AUTH_MVP_USER_ID },
+          update: {
+            tenantId: AUTH_MVP_TENANT_ID,
+            email: AUTH_MVP_USER_EMAIL,
+            name: AUTH_MVP_USER_NAME,
+            role: resolvedRole,
+            isActive: true,
+            passwordHash: AUTH_MVP_PASSWORD_HASH,
+          },
+          create: {
+            id: AUTH_MVP_USER_ID,
+            tenantId: AUTH_MVP_TENANT_ID,
+            email: AUTH_MVP_USER_EMAIL,
+            name: AUTH_MVP_USER_NAME,
+            role: resolvedRole,
+            isActive: true,
+            passwordHash: AUTH_MVP_PASSWORD_HASH,
+            settings: {},
+          },
+        })
+      )
       .then(() => undefined)
       .catch((error) => {
         ensureDemoUserPromise = null;
