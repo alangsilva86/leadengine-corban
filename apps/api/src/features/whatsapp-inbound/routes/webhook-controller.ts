@@ -9,7 +9,11 @@ import {
   getWebhookVerifyToken,
 } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
-import { normalizeUpsertEvent, type RawBaileysUpsertEvent } from '../services/baileys-raw-normalizer';
+import {
+  normalizeUpsertEvent,
+  type NormalizedRawUpsertMessage,
+  type RawBaileysUpsertEvent,
+} from '../services/baileys-raw-normalizer';
 import { pollChoiceEventBus, type PollChoiceEventBusPayloads, type PollChoiceEventName } from '../services/poll-choice-event-bus';
 import { resolveWebhookContext } from '../services/resolve-webhook-context';
 import { asArray, normalizeApiKey, readString, unwrapWebhookEvent } from '../utils/webhook-parsers';
@@ -245,7 +249,7 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
         continue;
       }
 
-      const normalizedMessages: Array<ReturnType<typeof normalizeContractEvent>> = [];
+      const normalizedMessages: NormalizedRawUpsertMessage[] = [];
 
       if (eventType === 'MESSAGE_INBOUND' || eventType === 'MESSAGE_OUTBOUND') {
         const normalizedContract = normalizeContractEvent(eventRecord, {
@@ -266,7 +270,9 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
           continue;
         }
 
-        normalizedMessages.push(normalizedContract);
+        if (normalizedContract) {
+          normalizedMessages.push(normalizedContract);
+        }
       } else {
         if (eventType && eventType !== 'WHATSAPP_MESSAGES_UPSERT') {
           whatsappWebhookEventsCounter.inc({
@@ -289,7 +295,12 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
           continue;
         }
 
-        normalizedMessages.push(...normalization.normalized);
+        normalizedMessages.push(
+          ...normalization.normalized.filter(
+            (message): message is typeof normalization.normalized[number] =>
+              message !== null
+          )
+        );
       }
 
       for (const normalized of normalizedMessages) {

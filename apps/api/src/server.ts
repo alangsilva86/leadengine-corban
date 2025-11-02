@@ -65,7 +65,7 @@ const webhookRawBodyMiddleware: RequestHandler = (req, _res, next) => {
 
   const buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : undefined;
   const safeBuffer = buffer ?? Buffer.alloc(0);
-  rawReq.rawBody = buffer;
+  rawReq.rawBody = safeBuffer;
   rawReq.rawBodyParseError = null;
 
   if (safeBuffer.length === 0) {

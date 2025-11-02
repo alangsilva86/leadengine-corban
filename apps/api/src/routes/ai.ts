@@ -257,9 +257,8 @@ router.put(
     const payload = req.body as UpsertAiConfigInput;
     const existing = await getAiConfig(tenantId, queueId);
 
-    const configData = buildConfigUpsertPayload(tenantId, queueId, existing, {
+    const overrideConfig: Partial<UpsertAiConfigInput> = {
       model: payload.model,
-      temperature: payload.temperature,
       maxOutputTokens: payload.maxOutputTokens ?? null,
       systemPromptReply: payload.systemPromptReply ?? null,
       systemPromptSuggest: payload.systemPromptSuggest ?? null,
@@ -271,7 +270,13 @@ router.put(
       defaultMode: payload.defaultMode ?? existing?.defaultMode ?? DEFAULT_MODE,
       confidenceThreshold: payload.confidenceThreshold ?? null,
       fallbackPolicy: payload.fallbackPolicy ?? null,
-    });
+    };
+
+    if (payload.temperature !== undefined) {
+      overrideConfig.temperature = payload.temperature;
+    }
+
+    const configData = buildConfigUpsertPayload(tenantId, queueId, existing, overrideConfig);
 
     const config = await upsertAiConfig(configData);
 
@@ -484,7 +489,7 @@ router.post(
         executeTool,
         recordAiRun,
         responsesApiUrl: RESPONSES_API_URL,
-        apiKey: envAiConfig.apiKey,
+        apiKey: envAiConfig.apiKey ?? null,
         signal,
         logger,
         toolTimeoutMs: envAiConfig.toolTimeoutMs,
