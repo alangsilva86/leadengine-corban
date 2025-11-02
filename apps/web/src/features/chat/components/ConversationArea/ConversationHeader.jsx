@@ -84,7 +84,7 @@ const INDICATOR_TONES = {
 
 const AI_MODE_OPTIONS = [
   { value: 'assist', label: 'IA assistida' },
-  { value: 'autonomous', label: 'IA autônoma' },
+  { value: 'auto', label: 'IA autônoma' },
   { value: 'manual', label: 'Agente no comando' },
 ];
 
@@ -922,6 +922,7 @@ const ConversationHeader = ({
   composerHeight,
   aiMode = DEFAULT_AI_MODE,
   aiConfidence = null,
+  aiModeChangeDisabled = false,
   onTakeOver,
   onGiveBackToAi,
   onAiModeChange,
@@ -1079,7 +1080,7 @@ const ConversationHeader = ({
   const aiConfidenceLabel = aiConfidencePercent !== null ? `${aiConfidencePercent}% confiança` : 'Confiança indisponível';
   const aiConfidenceToneClass = AI_CONFIDENCE_TONES[aiConfidenceTone] ?? AI_CONFIDENCE_TONES.unknown;
 
-  const aiModeSelectDisabled = !ticket || !onAiModeChange;
+  const aiModeSelectDisabled = !ticket || !onAiModeChange || aiModeChangeDisabled;
 
   const handleAiModeSelect = useCallback(
     (value) => {
@@ -1100,17 +1101,20 @@ const ConversationHeader = ({
     onGiveBackToAi?.();
   }, [onGiveBackToAi]);
 
-  const takeoverDisabled = !ticket || !onTakeOver || normalizedAiMode === 'manual';
+  const takeoverDisabled =
+    !ticket || !onTakeOver || aiModeChangeDisabled || normalizedAiMode === 'manual';
   const giveBackDisabled =
     !ticket ||
     !onGiveBackToAi ||
-    normalizedAiMode === 'autonomous' ||
+    aiModeChangeDisabled ||
+    normalizedAiMode === 'auto' ||
     normalizedConfidence === null ||
     normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD;
 
   const takeoverTooltipMessage = (() => {
     if (!ticket) return 'Nenhum ticket selecionado';
     if (!onTakeOver) return 'Ação indisponível';
+    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
     if (normalizedAiMode === 'manual') return 'Agente já está no comando';
     return 'Assumir atendimento manualmente';
   })();
@@ -1118,7 +1122,8 @@ const ConversationHeader = ({
   const giveBackTooltipMessage = (() => {
     if (!ticket) return 'Nenhum ticket selecionado';
     if (!onGiveBackToAi) return 'Ação indisponível';
-    if (normalizedAiMode === 'autonomous') return 'IA já está no comando';
+    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
+    if (normalizedAiMode === 'auto') return 'IA já está no comando';
     if (normalizedConfidence === null) return 'Confiança da IA indisponível';
     if (normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD) return 'Confiança insuficiente para devolver à IA';
     return 'Devolver atendimento para a IA';
