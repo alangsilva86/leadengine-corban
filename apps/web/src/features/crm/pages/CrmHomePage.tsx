@@ -35,8 +35,29 @@ type SavedViewsHandlers = {
 };
 
 const CrmHomePage = () => {
+  const initialFilters = useMemo(() => normalizeCrmFilters(EMPTY_FILTERS), []);
+
+  return (
+    <CrmViewProvider filters={initialFilters}>
+      <CrmHomeContent />
+    </CrmViewProvider>
+  );
+};
+
+export default CrmHomePage;
+
+const CrmHomeContent = () => {
   const [searchValue, setSearchValue] = useState('');
-  const [filters, setFilters] = useState<CrmFilterState>(() => normalizeCrmFilters(EMPTY_FILTERS));
+  const {
+    state,
+    setFilters,
+    closeLeadDrawer,
+    openLeadDrawer,
+    clearSelection,
+  } = useCrmViewContext();
+  const { activeLeadId, isDrawerOpen } = state;
+  const { filters } = state;
+
   const {
     views,
     activeViewId,
@@ -48,9 +69,10 @@ const CrmHomePage = () => {
     selectSavedView,
   } = useCrmSavedViews();
 
-  const { metrics: metricsResult, isLoading: metricsLoading, isFetching: metricsFetching, refetch: refetchMetrics } = useCrmMetrics({
-    filters,
-  });
+  const { metrics: metricsResult, isLoading: metricsLoading, isFetching: metricsFetching, refetch: refetchMetrics } =
+    useCrmMetrics({
+      filters,
+    });
 
   const filterOptions = useMemo(
     () => ({
@@ -81,11 +103,14 @@ const CrmHomePage = () => {
 
   const resetFilters = useCallback(() => {
     setFilters(normalizeCrmFilters(EMPTY_FILTERS));
-  }, []);
+  }, [setFilters]);
 
-  const handleFiltersChange = useCallback((nextFilters: CrmFilterState) => {
-    setFilters(normalizeCrmFilters(nextFilters));
-  }, []);
+  const handleFiltersChange = useCallback(
+    (nextFilters: CrmFilterState) => {
+      setFilters(normalizeCrmFilters(nextFilters));
+    },
+    [setFilters]
+  );
 
   const handleSelectSavedView = useCallback(
     async (viewId: string | null) => {
@@ -93,7 +118,7 @@ const CrmHomePage = () => {
       await selectSavedView(viewId);
       setFilters(normalizeCrmFilters(target?.filters ?? EMPTY_FILTERS));
     },
-    [selectSavedView, views]
+    [selectSavedView, setFilters, views]
   );
 
   const handleDeleteSavedView = useCallback(
@@ -112,7 +137,7 @@ const CrmHomePage = () => {
       await updateSavedView(view, viewFilters);
       setFilters(normalizeCrmFilters(viewFilters));
     },
-    [updateSavedView]
+    [setFilters, updateSavedView]
   );
 
   const savedViewsHandlers: SavedViewsHandlers = {
@@ -125,28 +150,25 @@ const CrmHomePage = () => {
     deleteSavedView: handleDeleteSavedView,
     selectSavedView: handleSelectSavedView,
   };
+
   return (
-    <CrmViewProvider filters={filters}>
-      <CrmHomeContent
-        searchValue={searchValue}
-        onSearchChange={setSearchValue}
-        filters={filters}
-        onFiltersChange={handleFiltersChange}
-        onClearFilters={resetFilters}
-        savedViews={savedViewsHandlers}
-        filterOptions={filterOptions}
-        metrics={metricsResult.summary}
-        metricsSource={metricsResult.source}
-        metricsLoading={metricsLoading || metricsFetching}
-        onMetricsRefresh={() => void refetchMetrics()}
-      />
-    </CrmViewProvider>
+    <CrmHomeLayout
+      searchValue={searchValue}
+      onSearchChange={setSearchValue}
+      filters={filters}
+      onFiltersChange={handleFiltersChange}
+      onClearFilters={resetFilters}
+      savedViews={savedViewsHandlers}
+      filterOptions={filterOptions}
+      metrics={metricsResult.summary}
+      metricsSource={metricsResult.source}
+      metricsLoading={metricsLoading || metricsFetching}
+      onMetricsRefresh={() => void refetchMetrics()}
+    />
   );
 };
 
-export default CrmHomePage;
-
-type CrmHomeContentProps = {
+type CrmHomeLayoutProps = {
   searchValue: string;
   onSearchChange: (value: string) => void;
   filters: CrmFilterState;
@@ -165,7 +187,7 @@ type CrmHomeContentProps = {
   onMetricsRefresh: () => void;
 };
 
-const CrmHomeContent = ({
+const CrmHomeLayout = ({
   searchValue,
   onSearchChange,
   filters,
@@ -177,7 +199,7 @@ const CrmHomeContent = ({
   metricsSource,
   metricsLoading,
   onMetricsRefresh,
-}: CrmHomeContentProps) => {
+}: CrmHomeLayoutProps) => {
   const { state, closeLeadDrawer, openLeadDrawer, clearSelection } = useCrmViewContext();
   const { activeLeadId, isDrawerOpen } = state;
 
