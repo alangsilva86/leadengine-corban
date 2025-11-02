@@ -9,7 +9,7 @@ import OutcomeDialog from './OutcomeDialog.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
 import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
-import AiControlPanel from './AiControlPanel.jsx';
+import AiModeMenu from './AiModeMenu.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { DEFAULT_AI_MODE } from './hooks/useAiControlPanel.js';
 
@@ -43,23 +43,6 @@ const INDICATOR_TONES = {
   neutral: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
   success: 'border-success-soft-border bg-success-soft text-success-strong',
 };
-
-const AI_MODE_OPTIONS = [
-  { value: 'assist', label: 'IA assistida' },
-  { value: 'auto', label: 'IA autônoma' },
-  { value: 'manual', label: 'Agente no comando' },
-];
-
-const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
-
-const AI_CONFIDENCE_TONES = {
-  high: 'border-success-soft-border bg-success-soft text-success-strong',
-  medium: 'border-warning-soft-border bg-warning-soft text-warning-strong',
-  low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
-  unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-};
-
-const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
 const PRIMARY_ACTION_PRESETS = {
   initialContact: {
@@ -368,86 +351,6 @@ const ConversationHeader = ({
     onSendSMS?.(rawPhone);
   }, [onSendSMS, phoneAction, rawPhone]);
 
-  const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
-
-  const normalizedConfidence = useMemo(() => {
-    if (typeof aiConfidence !== 'number' || Number.isNaN(aiConfidence)) {
-      return null;
-    }
-
-    if (aiConfidence > 1) {
-      const ratio = aiConfidence / 100;
-      return Math.max(0, Math.min(1, ratio));
-    }
-
-    if (aiConfidence < 0) {
-      return 0;
-    }
-
-    return Math.max(0, Math.min(1, aiConfidence));
-  }, [aiConfidence]);
-
-  const aiConfidencePercent = normalizedConfidence !== null ? Math.round(normalizedConfidence * 100) : null;
-
-  const aiConfidenceTone = normalizedConfidence === null
-    ? 'unknown'
-    : normalizedConfidence >= 0.75
-      ? 'high'
-      : normalizedConfidence >= AI_HANDOFF_CONFIDENCE_THRESHOLD
-        ? 'medium'
-        : 'low';
-
-  const aiConfidenceLabel = aiConfidencePercent !== null ? `${aiConfidencePercent}% confiança` : 'Confiança indisponível';
-  const aiConfidenceToneClass = AI_CONFIDENCE_TONES[aiConfidenceTone] ?? AI_CONFIDENCE_TONES.unknown;
-
-  const aiModeSelectDisabled = !ticket || !onAiModeChange || aiModeChangeDisabled;
-
-  const handleAiModeSelect = useCallback(
-    (value) => {
-      if (!onAiModeChange || !isValidAiMode(value)) {
-        return;
-      }
-
-      onAiModeChange(value);
-    },
-    [onAiModeChange],
-  );
-
-  const handleTakeOverClick = useCallback(() => {
-    onTakeOver?.();
-  }, [onTakeOver]);
-
-  const handleGiveBackClick = useCallback(() => {
-    onGiveBackToAi?.();
-  }, [onGiveBackToAi]);
-
-  const takeoverDisabled =
-    !ticket || !onTakeOver || aiModeChangeDisabled || normalizedAiMode === 'manual';
-  const giveBackDisabled =
-    !ticket ||
-    !onGiveBackToAi ||
-    aiModeChangeDisabled ||
-    normalizedAiMode === 'auto' ||
-    normalizedConfidence === null ||
-    normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD;
-
-  const takeoverTooltipMessage = (() => {
-    if (!ticket) return 'Nenhum ticket selecionado';
-    if (!onTakeOver) return 'Ação indisponível';
-    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
-    if (normalizedAiMode === 'manual') return 'Agente já está no comando';
-    return 'Assumir atendimento manualmente';
-  })();
-
-  const giveBackTooltipMessage = (() => {
-    if (!ticket) return 'Nenhum ticket selecionado';
-    if (!onGiveBackToAi) return 'Ação indisponível';
-    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
-    if (normalizedAiMode === 'auto') return 'IA já está no comando';
-    if (normalizedConfidence === null) return 'Confiança da IA indisponível';
-    if (normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD) return 'Confiança insuficiente para devolver à IA';
-    return 'Devolver atendimento para a IA';
-  })();
   const openDialog = useCallback((dialog, { returnFocus } = {}) => {
     dialogReturnFocusRef.current = returnFocus ?? null;
     if (dialog === 'register-result') {
@@ -619,7 +522,11 @@ const ConversationHeader = ({
     onEditContact,
   ]);
 
-  const { PrimaryActionBanner: PrimaryActionBannerComponent = PrimaryActionBanner, AiControlPanel: AiControlPanelComponent = AiControlPanel, ContactDetailsPanel: ContactDetailsPanelComponent = ContactDetailsPanel } = components ?? {};
+  const {
+    PrimaryActionBanner: PrimaryActionBannerComponent = PrimaryActionBanner,
+    AiModeMenu: AiModeMenuComponent = AiModeMenu,
+    ContactDetailsPanel: ContactDetailsPanelComponent = ContactDetailsPanel,
+  } = components ?? {};
 
   const summaryContent = (
     <PrimaryActionBannerComponent
@@ -635,14 +542,16 @@ const ConversationHeader = ({
       jro={jro}
       commandContext={commandContext}
       isExpanded={isExpanded}
-      AiControlPanelComponent={AiControlPanelComponent}
+      AiModeMenuComponent={AiModeMenuComponent}
       aiControlProps={{
         ticket,
-        aiMode: normalizedAiMode,
+        aiMode,
         aiConfidence,
+        aiModeChangeDisabled,
         onAiModeChange,
         onTakeOver,
         onGiveBackToAi,
+        className: 'shrink-0',
       }}
     />
   );

@@ -238,6 +238,74 @@ describe('ConversationHeader component', () => {
     vi.unstubAllGlobals();
   });
 
+  it('exibe o modo de IA ativo no botão compacto', () => {
+    const ticket = {
+      id: 'ticket-ai-mode',
+      status: 'OPEN',
+      pipelineStep: 'Novo',
+      contact: { id: 'contact-ai-mode', name: 'Cliente Inteligente' },
+    };
+
+    render(
+      <ConversationHeader
+        ticket={ticket}
+        aiMode="manual"
+        aiConfidence={0.82}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: /Modo IA: Agente no comando/i });
+
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveTextContent('Agente no comando');
+  });
+
+  it('propaga callbacks do menu de IA', async () => {
+    const ticket = {
+      id: 'ticket-ai-actions',
+      status: 'OPEN',
+      pipelineStep: 'Novo',
+      contact: { id: 'contact-ai-actions', name: 'Cliente Automação' },
+    };
+
+    const onAiModeChange = vi.fn();
+    const onTakeOver = vi.fn();
+    const onGiveBackToAi = vi.fn();
+
+    render(
+      <ConversationHeader
+        ticket={ticket}
+        aiConfidence={0.85}
+        onAiModeChange={onAiModeChange}
+        onTakeOver={onTakeOver}
+        onGiveBackToAi={onGiveBackToAi}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const trigger = screen.getByTestId('ai-mode-menu-trigger');
+
+    await user.click(trigger);
+
+    const manualOption = await screen.findByRole('menuitemradio', { name: 'Agente no comando' });
+    await user.click(manualOption);
+
+    expect(onAiModeChange).toHaveBeenCalledWith('manual');
+    expect(onAiModeChange).toHaveBeenCalledTimes(1);
+
+    await user.click(trigger);
+    const takeOverItem = await screen.findByRole('menuitem', { name: 'Assumir' });
+    await user.click(takeOverItem);
+
+    expect(onTakeOver).toHaveBeenCalledTimes(1);
+
+    await user.click(trigger);
+    const giveBackItem = await screen.findByRole('menuitem', { name: 'Devolver à IA' });
+    await user.click(giveBackItem);
+
+    expect(onGiveBackToAi).toHaveBeenCalledTimes(1);
+  });
+
   it('renders liquidation panel only for liquidation stages', async () => {
     const ticket = {
       id: 'ticket-liquid',
