@@ -36,6 +36,108 @@ const STATUS_PRESENTATION = {
   CLOSED: { label: 'Fechado', tone: 'neutral', icon: Archive },
 };
 
+const INDICATOR_TONES = {
+  info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+  danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+  neutral: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  success: 'border-success-soft-border bg-success-soft text-success-strong',
+};
+
+const AI_MODE_OPTIONS = [
+  { value: 'assist', label: 'IA assistida' },
+  { value: 'auto', label: 'IA autônoma' },
+  { value: 'manual', label: 'Agente no comando' },
+];
+
+const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
+
+const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
+
+const AI_CONFIDENCE_TONES = {
+  high: 'border-success-soft-border bg-success-soft text-success-strong',
+  medium: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+  low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+  unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+};
+
+const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
+
+const PRIMARY_ACTION_PRESETS = {
+  initialContact: {
+    whatsapp: { id: 'send-initial-wa', label: 'Enviar 1ª mensagem (WhatsApp)' },
+    validateContact: { id: 'validate-contact', label: 'Validar contato' },
+    fallback: { id: 'call-now', label: 'Ligar agora' },
+  },
+  keepEngagement: {
+    whatsapp: { id: 'send-wa', label: 'Enviar mensagem (WhatsApp)' },
+    validateContact: { id: 'validate-contact', label: 'Validar contato' },
+    fallback: { id: 'call-now', label: 'Ligar agora' },
+  },
+  qualify: {
+    default: { id: 'qualify', label: 'Registrar próximo passo' },
+  },
+  proposal: {
+    default: { id: 'generate-proposal', label: 'Gerar proposta' },
+  },
+  documentation: {
+    default: { id: 'send-steps', label: 'Enviar passo a passo' },
+  },
+  followUp: {
+    whatsapp: { id: 'send-followup', label: 'Enviar follow-up' },
+    fallback: { id: 'call-followup', label: 'Ligar (follow-up)' },
+  },
+  closeDeal: {
+    default: { id: 'close-register', label: 'Registrar resultado' },
+  },
+};
+
+const PRIMARY_ACTION_MAP = {
+  NOVO: PRIMARY_ACTION_PRESETS.initialContact,
+  CONECTADO: PRIMARY_ACTION_PRESETS.keepEngagement,
+  QUALIFICACAO: PRIMARY_ACTION_PRESETS.qualify,
+  PROPOSTA: PRIMARY_ACTION_PRESETS.proposal,
+  DOCUMENTACAO: PRIMARY_ACTION_PRESETS.documentation,
+  DOCUMENTOS_AVERBACAO: PRIMARY_ACTION_PRESETS.documentation,
+  AGUARDANDO: PRIMARY_ACTION_PRESETS.followUp,
+  AGUARDANDO_CLIENTE: PRIMARY_ACTION_PRESETS.followUp,
+  LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
+  APROVADO_LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
+  RECICLAR: PRIMARY_ACTION_PRESETS.followUp,
+};
+
+const JRO_TONE_CLASSES = {
+  neutral: {
+    text: 'text-[color:var(--accent-inbox-primary)]',
+    bar: 'bg-[color:var(--accent-inbox-primary)]',
+    chip: 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)]/80',
+  },
+  yellow: {
+    text: 'text-amber-300',
+    bar: 'bg-amber-400',
+    chip: 'bg-amber-300/10',
+  },
+  orange: {
+    text: 'text-orange-300',
+    bar: 'bg-orange-400',
+    chip: 'bg-orange-300/10',
+  },
+  overdue: {
+    text: 'text-red-400',
+    bar: 'bg-red-500',
+    chip: 'bg-red-400/10',
+    pulse: 'animate-pulse',
+  },
+};
+
+const PRIMARY_BUTTON_TONE = {
+  neutral: 'bg-[color:var(--accent-inbox-primary)] text-white hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]',
+  yellow: 'bg-amber-500 text-white hover:bg-amber-500/90',
+  orange: 'bg-orange-500 text-white hover:bg-orange-500/90',
+  overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
+};
+
+const DEAL_STAGE_KEYS = new Set(['LIQUIDACAO', 'APROVADO_LIQUIDACAO']);
 const CHANNEL_PRESENTATION = {
   WHATSAPP: {
     id: 'whatsapp',
@@ -144,6 +246,7 @@ const ConversationHeader = ({
   composerHeight,
   aiMode = DEFAULT_AI_MODE,
   aiConfidence = null,
+  aiModeChangeDisabled = false,
   onTakeOver,
   onGiveBackToAi,
   onAiModeChange,
@@ -267,6 +370,86 @@ const ConversationHeader = ({
     onSendSMS?.(rawPhone);
   }, [onSendSMS, phoneAction, rawPhone]);
 
+  const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
+
+  const normalizedConfidence = useMemo(() => {
+    if (typeof aiConfidence !== 'number' || Number.isNaN(aiConfidence)) {
+      return null;
+    }
+
+    if (aiConfidence > 1) {
+      const ratio = aiConfidence / 100;
+      return Math.max(0, Math.min(1, ratio));
+    }
+
+    if (aiConfidence < 0) {
+      return 0;
+    }
+
+    return Math.max(0, Math.min(1, aiConfidence));
+  }, [aiConfidence]);
+
+  const aiConfidencePercent = normalizedConfidence !== null ? Math.round(normalizedConfidence * 100) : null;
+
+  const aiConfidenceTone = normalizedConfidence === null
+    ? 'unknown'
+    : normalizedConfidence >= 0.75
+      ? 'high'
+      : normalizedConfidence >= AI_HANDOFF_CONFIDENCE_THRESHOLD
+        ? 'medium'
+        : 'low';
+
+  const aiConfidenceLabel = aiConfidencePercent !== null ? `${aiConfidencePercent}% confiança` : 'Confiança indisponível';
+  const aiConfidenceToneClass = AI_CONFIDENCE_TONES[aiConfidenceTone] ?? AI_CONFIDENCE_TONES.unknown;
+
+  const aiModeSelectDisabled = !ticket || !onAiModeChange || aiModeChangeDisabled;
+
+  const handleAiModeSelect = useCallback(
+    (value) => {
+      if (!onAiModeChange || !isValidAiMode(value)) {
+        return;
+      }
+
+      onAiModeChange(value);
+    },
+    [onAiModeChange],
+  );
+
+  const handleTakeOverClick = useCallback(() => {
+    onTakeOver?.();
+  }, [onTakeOver]);
+
+  const handleGiveBackClick = useCallback(() => {
+    onGiveBackToAi?.();
+  }, [onGiveBackToAi]);
+
+  const takeoverDisabled =
+    !ticket || !onTakeOver || aiModeChangeDisabled || normalizedAiMode === 'manual';
+  const giveBackDisabled =
+    !ticket ||
+    !onGiveBackToAi ||
+    aiModeChangeDisabled ||
+    normalizedAiMode === 'auto' ||
+    normalizedConfidence === null ||
+    normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD;
+
+  const takeoverTooltipMessage = (() => {
+    if (!ticket) return 'Nenhum ticket selecionado';
+    if (!onTakeOver) return 'Ação indisponível';
+    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
+    if (normalizedAiMode === 'manual') return 'Agente já está no comando';
+    return 'Assumir atendimento manualmente';
+  })();
+
+  const giveBackTooltipMessage = (() => {
+    if (!ticket) return 'Nenhum ticket selecionado';
+    if (!onGiveBackToAi) return 'Ação indisponível';
+    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
+    if (normalizedAiMode === 'auto') return 'IA já está no comando';
+    if (normalizedConfidence === null) return 'Confiança da IA indisponível';
+    if (normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD) return 'Confiança insuficiente para devolver à IA';
+    return 'Devolver atendimento para a IA';
+  })();
   const normalizedAiMode = aiMode;
 
   const openDialog = useCallback((dialog, { returnFocus } = {}) => {

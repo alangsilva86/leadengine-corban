@@ -6,6 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import ChatCommandCenter from '../containers/ChatCommandCenterContainer.js';
 
+const apiMock = vi.hoisted(() => ({
+  apiGet: vi.fn(async () => ({ mode: 'assist' })),
+  apiPost: vi.fn(async () => ({})),
+}));
+
+vi.mock('@/lib/api.js', () => ({
+  __esModule: true,
+  apiGet: apiMock.apiGet,
+  apiPost: apiMock.apiPost,
+}));
+
 vi.mock('@/lib/auth.js', () => {
   const getTenantId = vi.fn(() => 'test-tenant');
   const onTenantIdChange = vi.fn(() => () => {});
@@ -120,6 +131,8 @@ vi.mock('../hooks/useChatController.js', () => ({
 
 describe('ChatCommandCenter next step editor', () => {
   beforeEach(() => {
+    apiMock.apiGet.mockImplementation(async () => ({ mode: 'assist' }));
+    apiMock.apiPost.mockImplementation(async () => ({}));
     nextStepMutationMock = {
       mutateAsync: vi.fn(),
       isPending: false,
