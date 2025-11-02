@@ -6,15 +6,22 @@ const MAX_ATTEMPTS = Math.max(1, Number(process.env.PRISMA_MIGRATE_MAX_ATTEMPTS 
 const RETRY_DELAY_MS = Math.max(1000, Number(process.env.PRISMA_MIGRATE_RETRY_DELAY_MS ?? 5000));
 
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
+const DATABASE_DIRECT_URL = process.env.DATABASE_DIRECT_URL?.trim();
 
 if (!DATABASE_URL) {
   console.error('❌ DATABASE_URL is required to run migrations.');
   process.exit(1);
 }
 
+if (!DATABASE_DIRECT_URL) {
+  console.error('❌ DATABASE_DIRECT_URL is required to run migrations.');
+  process.exit(1);
+}
+
 const env = {
   ...process.env,
   DATABASE_URL,
+  DATABASE_DIRECT_URL,
   PRISMA_MIGRATE_ENGINE_MAX_DATABASE_CONNECTIONS:
     process.env.PRISMA_MIGRATE_ENGINE_MAX_DATABASE_CONNECTIONS ??
     process.env.PRISMA_MIGRATE_MAX_DATABASE_CONNECTIONS ??
@@ -29,7 +36,7 @@ const args = [
   'prisma',
   'migrate',
   'deploy',
-  '--schema=packages/storage/prisma/schema.prisma',
+  '--schema=./prisma/schema.prisma',
 ];
 
 const shouldRetry = (stderr, stdout) => {
