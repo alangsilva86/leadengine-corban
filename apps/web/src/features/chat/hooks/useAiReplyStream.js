@@ -1,51 +1,64 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildDefaultApiHeaders, buildUrl } from '@/lib/api.js';
+import { buildAiMessagesPayload } from '../utils/aiTimeline.js';
 
-const parseMessageRole = (value) => {
-  if (!value) return 'user';
-  const normalized = String(value).trim().toLowerCase();
-  if (['assistant', 'agent', 'outbound', 'auto'].includes(normalized)) {
-    return 'assistant';
-  }
-  if (['system'].includes(normalized)) {
-    return 'system';
-  }
-  return 'user';
-};
-
-const initialState = {
+const createInitialState = () => ({
   status: 'idle',
   message: '',
   toolCalls: [],
   model: null,
   usage: null,
   error: null,
-};
-
-const buildMessagesPayload = (items = []) =>
-  items
-    .map((entry) => {
-      if (!entry) return null;
-      const payload = entry.payload ?? entry;
-      if (!payload) return null;
-      const content =
-        payload.content ?? payload.text ?? payload.body ?? payload.message ?? payload.messageText;
-      if (!content || typeof content !== 'string') {
-        return null;
-      }
-      const role = parseMessageRole(payload.role ?? payload.direction ?? payload.authorRole);
-      return {
-        role,
-        content,
-      };
-    })
-    .filter(Boolean);
+});
 
 export const useAiReplyStream = () => {
-  const [state, setState] = useState(initialState);
+  const [state, setRenderedState] = useState(createInitialState);
+  const committedStateRef = useRef(state);
   const abortRef = useRef(null);
   const textRef = useRef('');
   const toolCallMapRef = useRef(new Map());
+  const frameRef = useRef(null);
+
+  useEffect(() => {
+    committedStateRef.current = state;
+  }, [state]);
+
+  const flushState = useCallback(() => {
+    frameRef.current = null;
+    setRenderedState(committedStateRef.current);
+  }, [setRenderedState]);
+
+  const scheduleFlush = useCallback(() => {
+    if (frameRef.current !== null) {
+      return;
+    }
+    const raf =
+      typeof globalThis.requestAnimationFrame === 'function'
+        ? globalThis.requestAnimationFrame.bind(globalThis)
+        : (callback) => setTimeout(callback, 16);
+    frameRef.current = raf(flushState);
+  }, [flushState]);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) {
+      const cancel =
+        typeof globalThis.cancelAnimationFrame === 'function'
+          ? globalThis.cancelAnimationFrame.bind(globalThis)
+          : clearTimeout;
+      cancel(frameRef.current);
+      frameRef.current = null;
+    }
+  }, []);
+
+  const updateState = useCallback(
+    (updater) => {
+      const nextState =
+        typeof updater === 'function' ? updater(committedStateRef.current) : updater;
+      committedStateRef.current = nextState;
+      scheduleFlush();
+    },
+    [scheduleFlush],
+  );
 
   const reset = useCallback(() => {
     if (abortRef.current) {
@@ -54,8 +67,8 @@ export const useAiReplyStream = () => {
     abortRef.current = null;
     textRef.current = '';
     toolCallMapRef.current = new Map();
-    setState(initialState);
-  }, []);
+    updateState(() => createInitialState());
+  }, [updateState]);
 
   const cancel = useCallback(() => {
     if (abortRef.current) {
@@ -69,7 +82,7 @@ export const useAiReplyStream = () => {
         throw new Error('conversationId é obrigatório para gerar resposta da IA.');
       }
 
-      const messages = buildMessagesPayload(timeline);
+      const messages = buildAiMessagesPayload(timeline);
       if (messages.length === 0) {
         throw new Error('Não existem mensagens suficientes para gerar uma resposta da IA.');
       }
@@ -83,14 +96,10 @@ export const useAiReplyStream = () => {
       textRef.current = '';
       toolCallMapRef.current = new Map();
 
-      setState({
+      updateState(() => ({
+        ...createInitialState(),
         status: 'streaming',
-        message: '',
-        toolCalls: [],
-        model: null,
-        usage: null,
-        error: null,
-      });
+      }));
 
       try {
         const response = await fetch(buildUrl('/api/ai/reply'), {
@@ -120,7 +129,7 @@ export const useAiReplyStream = () => {
 
         const emitToolCalls = () => {
           const values = Array.from(toolCallMapRef.current.values());
-          setState((prev) => ({
+          updateState((prev) => ({
             ...prev,
             toolCalls: values,
           }));
@@ -179,7 +188,7 @@ export const useAiReplyStream = () => {
         const appendText = (delta) => {
           if (!delta) return;
           textRef.current = `${textRef.current}${delta}`;
-          setState((prev) => ({
+          updateState((prev) => ({
             ...prev,
             message: textRef.current,
           }));
@@ -205,7 +214,7 @@ export const useAiReplyStream = () => {
               break;
             case 'response.completed':
               finished = true;
-              setState((prev) => ({
+              updateState((prev) => ({
                 ...prev,
                 status: 'completed',
                 model: payload?.response?.model ?? prev.model,
@@ -255,32 +264,32 @@ export const useAiReplyStream = () => {
         }
 
         if (!finished) {
-          setState((prev) => ({
+          updateState((prev) => ({
             ...prev,
             status: 'completed',
           }));
         }
       } catch (error) {
         if (controller.signal.aborted) {
-          setState((prev) => ({
+          updateState((prev) => ({
             ...prev,
             status: 'cancelled',
           }));
         } else {
-          setState({
+          updateState(() => ({
             status: 'error',
             message: textRef.current,
             toolCalls: Array.from(toolCallMapRef.current.values()),
             model: null,
             usage: null,
             error: error instanceof Error ? error.message : 'Falha ao gerar resposta da IA.',
-          });
+          }));
         }
       } finally {
         abortRef.current = null;
       }
     },
-    []
+    [updateState]
   );
 
   return {
