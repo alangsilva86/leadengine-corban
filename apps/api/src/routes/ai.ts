@@ -17,6 +17,7 @@ import { suggestWithAi } from '../services/ai/openai-client';
 import { aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
 import { logger } from '../config/logger';
 import { getRegisteredTools, executeTool } from '../services/ai/tool-registry';
+import { ReplyStreamer } from './reply-streamer';
 
 const router: Router = Router();
 const RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
@@ -331,6 +332,12 @@ router.post(
     const signal = abortController.signal;
     let aborted = false;
 
+    const streamTimeoutId = setTimeout(() => {
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+    }, envAiConfig.streamTimeoutMs);
+
     req.on('close', () => {
       if (!abortController.signal.aborted) {
         aborted = true;
@@ -466,154 +473,28 @@ router.post(
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let completed = false;
-      let aggregatedText = '';
-      let modelUsed = requestBody.model as string;
-      let usage: Record<string, unknown> | null = null;
 
-      type ToolAccumulator = {
-        id: string;
-        name: string | null;
-        argsChunks: string[];
-      };
+      const streamer = new ReplyStreamer({
+        tenantId,
+        conversationId,
+        configId: config.id,
+        model: requestBody.model as string,
+        requestPayload: requestBody,
+        sendEvent,
+        executeTool,
+        recordAiRun,
+        responsesApiUrl: RESPONSES_API_URL,
+        apiKey: envAiConfig.apiKey,
+        signal,
+        logger,
+        toolTimeoutMs: envAiConfig.toolTimeoutMs,
+        toolMaxRetries: envAiConfig.toolMaxRetries,
+        toolMaxConcurrency: envAiConfig.toolMaxConcurrency,
+        toolRetryDelayMs: envAiConfig.toolRetryDelayMs,
+      });
 
-      const toolBuilders = new Map<string, ToolAccumulator>();
-      const toolResults: Array<{
-        id: string;
-        name: string;
-        arguments: Record<string, unknown>;
-        status: 'success' | 'error';
-        result?: unknown;
-        error?: string;
-      }> = [];
-
-      const handleToolDelta = (payload: any) => {
-        const callId = payload?.id ?? payload?.tool_call_id ?? payload?.call_id;
-        if (!callId) {
-          return;
-        }
-        const builder =
-          toolBuilders.get(callId) ??
-          ({
-            id: callId,
-            name: payload?.name ?? null,
-            argsChunks: [],
-          } as ToolAccumulator);
-        if (payload?.name) {
-          builder.name = payload.name;
-        }
-        if (payload?.arguments) {
-          builder.argsChunks.push(payload.arguments as string);
-        }
-        toolBuilders.set(callId, builder);
-      };
-
-      const maybeExecuteTool = async (payload: any) => {
-        const callId = payload?.id ?? payload?.tool_call_id ?? payload?.call_id;
-        if (!callId) {
-          return;
-        }
-        const builder = toolBuilders.get(callId);
-        if (!builder || !builder.name) {
-          return;
-        }
-        const argsText = builder.argsChunks.join('');
-        let parsedArgs: Record<string, unknown> = {};
-        try {
-          parsedArgs = argsText ? JSON.parse(argsText) : {};
-        } catch (error) {
-          logger.warn('crm.ai.reply.tool.arguments_parse_failed', {
-            callId,
-            name: builder.name,
-            error,
-          });
-        }
-
-        sendEvent('tool_call', {
-          id: callId,
-          name: builder.name,
-          status: 'executing',
-          arguments: parsedArgs,
-        });
-
-        const execution = await executeTool(builder.name, parsedArgs, {
-          tenantId,
-          conversationId,
-        });
-
-        const toolRecord: {
-          id: string;
-          name: string;
-          arguments: Record<string, unknown>;
-          status: 'success' | 'error';
-          result?: unknown;
-          error?: string;
-        } = {
-          id: callId,
-          name: builder.name,
-          arguments: parsedArgs,
-          status: execution.ok ? 'success' : 'error',
-          result: execution.result,
-        };
-        if (!execution.ok) {
-          toolRecord.error = execution.error ?? 'unknown_error';
-        }
-        toolResults.push(toolRecord);
-        await recordAiRun({
-          tenantId,
-          conversationId,
-          configId: config.id,
-          runType: 'tool_call',
-          requestPayload: {
-            name: builder.name,
-            arguments: parsedArgs as Prisma.JsonValue,
-          } as Prisma.JsonValue,
-          responsePayload: execution.ok
-            ? ((execution.result ?? null) as Prisma.JsonValue)
-            : ({ error: execution.error ?? 'unknown_error' } as Prisma.JsonValue),
-          status: execution.ok ? 'success' : 'error',
-        });
-
-        sendEvent('tool_call', {
-          ...toolRecord,
-        });
-      };
-
-      const processEvent = async (payload: any) => {
-        const type = payload?.type;
-        switch (type) {
-          case 'response.error':
-            throw new Error(payload?.error?.message ?? 'Erro na resposta da IA');
-          case 'response.output_text.delta': {
-            const delta = payload?.delta ?? '';
-            if (typeof delta === 'string' && delta.length > 0) {
-              aggregatedText += delta;
-              sendEvent('delta', { delta });
-            }
-            break;
-          }
-          case 'response.output_text.done': {
-            const text = payload?.text;
-            if (typeof text === 'string' && text.length > aggregatedText.length) {
-              aggregatedText = text;
-            }
-            break;
-          }
-          case 'response.tool_call.delta':
-            handleToolDelta(payload?.delta ?? payload);
-            break;
-          case 'response.tool_call.completed':
-          case 'response.tool_call.done':
-            await maybeExecuteTool(payload);
-            break;
-          case 'response.completed':
-            completed = true;
-            modelUsed = payload?.response?.model ?? modelUsed;
-            usage = (payload?.response?.usage as Record<string, unknown>) ?? usage;
-            break;
-          default:
-            break;
-        }
+      const processEvent = (payload: any) => {
+        streamer.handleEvent(payload);
       };
 
       let streamClosed = false;
@@ -645,7 +526,7 @@ router.post(
               }
               try {
                 const parsed = JSON.parse(dataPayload);
-                await processEvent(parsed);
+                processEvent(parsed);
               } catch (error) {
                 logger.warn('crm.ai.reply.stream.parse_error', {
                   dataPayload,
@@ -658,6 +539,8 @@ router.post(
         }
       }
 
+      const summary = await streamer.finalize();
+
       if (aborted) {
         await recordAiRun({
           tenantId,
@@ -666,8 +549,8 @@ router.post(
           runType: 'reply',
           requestPayload: requestBody as Prisma.JsonValue,
           responsePayload: {
-            message: aggregatedText,
-            toolCalls: toolResults,
+            message: summary.message,
+            toolCalls: summary.toolCalls,
           } as Prisma.JsonValue,
           latencyMs: Date.now() - startedAt,
           status: 'aborted',
@@ -675,35 +558,31 @@ router.post(
         return;
       }
 
-      const safeToolResults = toolResults.map((tool) => ({
-        ...tool,
-        result: tool.result ?? null,
-      }));
       sendEvent('done', {
-        message: aggregatedText,
-        model: modelUsed,
-        usage,
-        toolCalls: safeToolResults,
-        status: completed ? 'success' : 'partial',
+        message: summary.message,
+        model: summary.model,
+        usage: summary.usage,
+        toolCalls: summary.toolCalls,
+        status: summary.completed ? 'success' : 'partial',
       });
 
-      const usagePayload = usage ?? undefined;
+      const usagePayload = summary.usage ?? undefined;
       const promptTokens =
-        usage && typeof usage === 'object' && usage !== null
-          ? (usage as { prompt_tokens?: number }).prompt_tokens ?? null
+        usagePayload && typeof usagePayload === 'object'
+          ? (usagePayload as { prompt_tokens?: number }).prompt_tokens ?? null
           : null;
       const completionTokens =
-        usage && typeof usage === 'object' && usage !== null
-          ? (usage as { completion_tokens?: number }).completion_tokens ?? null
+        usagePayload && typeof usagePayload === 'object'
+          ? (usagePayload as { completion_tokens?: number }).completion_tokens ?? null
           : null;
       const totalTokens =
-        usage && typeof usage === 'object' && usage !== null
-          ? (usage as { total_tokens?: number }).total_tokens ?? null
+        usagePayload && typeof usagePayload === 'object'
+          ? (usagePayload as { total_tokens?: number }).total_tokens ?? null
           : null;
 
       const runResponsePayload = {
-        message: aggregatedText,
-        toolCalls: safeToolResults,
+        message: summary.message,
+        toolCalls: summary.toolCalls,
         usage: usagePayload ?? null,
       };
 
@@ -718,7 +597,7 @@ router.post(
         promptTokens,
         completionTokens,
         totalTokens,
-        status: completed ? 'success' : 'partial',
+        status: summary.completed ? 'success' : 'partial',
       });
 
       res.end();
@@ -736,6 +615,8 @@ router.post(
         });
         res.end();
       }
+    }).finally(() => {
+      clearTimeout(streamTimeoutId);
     });
   }
 );
