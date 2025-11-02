@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { normalizeCrmFilters } from '../utils/filter-serialization.ts';
-import { readSavedViews, removeSavedView, upsertSavedView, writeSavedViews } from '../state/saved-view-storage.ts';
-import type { CrmFilterState, CrmSavedView, CrmSavedViewsState, CrmSavedViewScope } from '../state/types.ts';
+import { normalizeCrmFilters } from '../utils/filter-serialization';
+import { readSavedViews, removeSavedView, upsertSavedView, writeSavedViews } from '../state/saved-view-storage';
+import type { CrmFilterState, CrmSavedView, CrmSavedViewsState, CrmSavedViewScope } from '../state/types';
 
 const SAVED_VIEWS_QUERY_KEY = ['crm', 'savedViews'] as const;
 

@@ -2,7 +2,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
-import type { LeadTask } from '../../state/leads.ts';
+import type { LeadTask } from '../../state/leads';
 
 type LeadTaskListProps = {
   tasks: LeadTask[];

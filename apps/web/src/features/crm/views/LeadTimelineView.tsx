@@ -4,9 +4,9 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
 import ContactTimeline from '@/features/contacts/components/ContactTimeline.jsx';
-import useCrmTimeline from '../hooks/useCrmTimeline.ts';
-import { useCrmViewState } from '../state/view-context.tsx';
-import type { LeadTimelineEvent } from '../state/leads.ts';
+import useCrmTimeline from '../hooks/useCrmTimeline';
+import { useCrmViewState } from '../state/view-context';
+import type { LeadTimelineEvent } from '../state/leads';
 
 const EVENT_TYPES: Array<{ id: string; label: string }> = [
   { id: 'note', label: 'Notas' },

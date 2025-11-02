@@ -1,9 +1,9 @@
 import { PropsWithChildren, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { normalizeCrmFilters } from '../utils/filter-serialization.ts';
-import { CrmViewProvider } from '../state/view-context.tsx';
-import type { CrmFilterState } from '../state/types.ts';
-import type { CrmMetricPrimitive } from '../state/metrics.ts';
+import { normalizeCrmFilters } from '../utils/filter-serialization';
+import { CrmViewProvider } from '../state/view-context';
+import type { CrmFilterState } from '../state/types';
+import type { CrmMetricPrimitive } from '../state/metrics';
 
 const queryClient = new QueryClient();
 

@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import { serializeCrmFilters } from '../utils/filter-serialization.ts';
-import type { CrmFilterState } from '../state/types.ts';
-import type { CrmMetricPrimitive, CrmMetricsSnapshot } from '../state/metrics.ts';
-import { inferTrend } from '../utils/metrics-format.ts';
+import { serializeCrmFilters } from '../utils/filter-serialization';
+import type { CrmFilterState } from '../state/types';
+import type { CrmMetricPrimitive, CrmMetricsSnapshot } from '../state/metrics';
+import { inferTrend } from '../utils/metrics-format';
 
 type UseCrmMetricsOptions = {
   filters: CrmFilterState;

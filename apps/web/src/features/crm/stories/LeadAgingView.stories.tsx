@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import LeadAgingView from '../views/LeadAgingView.tsx';
-import CrmStoryProviders from './CrmStoryProviders.tsx';
+import LeadAgingView from '../views/LeadAgingView';
+import CrmStoryProviders from './CrmStoryProviders';
 
 const meta: Meta<typeof LeadAgingView> = {
   title: 'CRM/Views/Aging',

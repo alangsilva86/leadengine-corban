@@ -10,16 +10,16 @@ import {
 } from '@/components/ui/drawer.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import useLeadDetails from '../hooks/useLeadDetails.ts';
-import useLeadTimeline from '../hooks/useLeadTimeline.ts';
-import useLeadTasks from '../hooks/useLeadTasks.ts';
-import LeadHeader from './lead-drawer/LeadHeader.tsx';
-import LeadActionList from './lead-drawer/LeadActionList.tsx';
-import LeadTimeline from './lead-drawer/LeadTimeline.tsx';
-import LeadTaskList from './lead-drawer/LeadTaskList.tsx';
-import { useCrmViewContext } from '../state/view-context.tsx';
-import useCrmPermissions from '../state/permissions.ts';
-import emitCrmTelemetry from '../utils/telemetry.ts';
+import useLeadDetails from '../hooks/useLeadDetails';
+import useLeadTimeline from '../hooks/useLeadTimeline';
+import useLeadTasks from '../hooks/useLeadTasks';
+import LeadHeader from './lead-drawer/LeadHeader';
+import LeadActionList from './lead-drawer/LeadActionList';
+import LeadTimeline from './lead-drawer/LeadTimeline';
+import LeadTaskList from './lead-drawer/LeadTaskList';
+import { useCrmViewContext } from '../state/view-context';
+import useCrmPermissions from '../state/permissions';
+import emitCrmTelemetry from '../utils/telemetry';
 
 type LeadDrawerProps = {
   open: boolean;

@@ -4,7 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type PropsWithChildren } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { serializeCrmFilters } from '../../utils/filter-serialization.ts';
+import { serializeCrmFilters } from '../../utils/filter-serialization';
 
 const apiGetMock = vi.fn();
 

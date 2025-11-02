@@ -2,8 +2,8 @@ import { forwardRef, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { Inbox } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
-import LeadTableRow from './LeadTableRow.tsx';
-import type { LeadSummary } from '../../state/leads.ts';
+import LeadTableRow from './LeadTableRow';
+import type { LeadSummary } from '../../state/leads';
 
 const LeadTable = forwardRef<HTMLDivElement, {
   leads: LeadSummary[];

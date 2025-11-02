@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { startOfDay, endOfDay } from 'date-fns';
 import { apiGet } from '@/lib/api.js';
-import { serializeCrmFilters } from '../utils/filter-serialization.ts';
-import type { CrmFilterState } from '../state/types.ts';
-import type { LeadTask } from '../state/leads.ts';
+import { serializeCrmFilters } from '../utils/filter-serialization';
+import type { CrmFilterState } from '../state/types';
+import type { LeadTask } from '../state/leads';
 
 type DateRange = { from: Date; to: Date };
 

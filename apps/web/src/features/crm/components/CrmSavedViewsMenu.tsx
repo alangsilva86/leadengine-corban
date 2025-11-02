@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.jsx';
-import type { CrmFilterState, CrmSavedView, CrmSavedViewScope } from '../state/types.ts';
+import type { CrmFilterState, CrmSavedView, CrmSavedViewScope } from '../state/types';
 
 const SCOPE_OPTIONS: { value: CrmSavedViewScope; label: string }[] = [
   { value: 'personal', label: 'Pessoal' },

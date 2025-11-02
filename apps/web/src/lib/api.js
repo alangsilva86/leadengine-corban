@@ -107,6 +107,11 @@ const baseHeaders = () => {
   return headers;
 };
 
+export const buildDefaultApiHeaders = (extraHeaders = {}) => ({
+  ...baseHeaders(),
+  ...extraHeaders,
+});
+
 const isAbsoluteUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value);
 
 export const buildUrl = (path) => {

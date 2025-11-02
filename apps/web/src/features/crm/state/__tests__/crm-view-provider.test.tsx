@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { ReactNode } from 'react';
-import { CrmViewProvider, useCrmViewState } from '../view-context.tsx';
-import { normalizeCrmFilters } from '../../utils/filter-serialization.ts';
-import type { CrmFilterState } from '../types.ts';
+import { CrmViewProvider, useCrmViewState } from '../view-context';
+import { normalizeCrmFilters } from '../../utils/filter-serialization';
+import type { CrmFilterState } from '../types';
 
 const FiltersConsumer = () => {
   const { filters } = useCrmViewState();

@@ -17,13 +17,14 @@ const ComposerSection = forwardRef(
       onTemplate,
       onCreateNote,
       onTyping,
-    isSending,
-    sendError,
-    aiConfidence,
-    aiError,
-    aiMode,
-    aiModeChangeDisabled,
-    onAiModeChange,
+      isSending,
+      sendError,
+      aiConfidence,
+      aiError,
+      aiMode,
+      aiModeChangeDisabled,
+      onAiModeChange,
+      aiStreaming,
     },
     elementRef,
   ) => (
@@ -51,6 +52,7 @@ const ComposerSection = forwardRef(
         aiMode={aiMode}
         aiModeChangeDisabled={aiModeChangeDisabled}
         onAiModeChange={onAiModeChange}
+        aiStreaming={aiStreaming}
       />
     </footer>
   ),
@@ -86,6 +88,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
     aiMode,
     aiModeChangeDisabled,
     onAiModeChange,
+    aiStreaming,
   } = composer ?? {};
 
   const headerProps = header?.props ?? {};

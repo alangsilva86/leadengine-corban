@@ -11,9 +11,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
 import { cn } from '@/lib/utils.js';
-import CrmSavedViewsMenu from './CrmSavedViewsMenu.tsx';
-import type { CrmFilterState, CrmSavedView } from '../state/types.ts';
-import { normalizeCrmFilters } from '../utils/filter-serialization.ts';
+import CrmSavedViewsMenu from './CrmSavedViewsMenu';
+import type { CrmFilterState, CrmSavedView } from '../state/types';
+import { normalizeCrmFilters } from '../utils/filter-serialization';
 
 type CrmToolbarFilterOptions = {
   stages: Array<{ id: string; label: string }>;

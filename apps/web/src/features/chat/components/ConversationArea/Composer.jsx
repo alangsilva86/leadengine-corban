@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Brain, Paperclip, Smile, Send, Loader2, X } from 'lucide-react';
+import { Brain, Paperclip, Smile, Send, Loader2, X, Wand2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
@@ -121,6 +121,7 @@ export const Composer = forwardRef(function Composer(
     aiMode,
     aiModeChangeDisabled,
     onAiModeChange,
+    aiStreaming = null,
   },
   ref
 ) {
@@ -138,12 +139,20 @@ export const Composer = forwardRef(function Composer(
     isPending: isUploading,
   } = useUploadWhatsAppMedia();
 
+  const aiStatus = aiStreaming?.status ?? 'idle';
+  const isAiGenerating = aiStatus === 'streaming';
+  const aiErrorMessage = aiStatus === 'error' ? aiStreaming?.error ?? null : null;
+  const aiToolCalls = Array.isArray(aiStreaming?.toolCalls) ? aiStreaming.toolCalls : [];
+
   const placeholder = useMemo(() => {
     if (disabled) {
       return 'Envio desabilitado no momento';
     }
+    if (isAiGenerating) {
+      return 'Copiloto IA gerando resposta...';
+    }
     return 'Escreva uma resposta...';
-  }, [disabled]);
+  }, [disabled, isAiGenerating]);
 
   const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
   const aiModeOption = getAiModeOption(normalizedAiMode);
@@ -193,11 +202,18 @@ export const Composer = forwardRef(function Composer(
     setTemplatePickerOpen(false);
     setEmojiPickerOpen(false);
     setUploadError(null);
+    aiStreaming?.reset?.();
   };
 
   const handleSend = async () => {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0) || disabled || isSending || isUploading) {
+    if (
+      (!trimmed && attachments.length === 0) ||
+      disabled ||
+      isSending ||
+      isUploading ||
+      isAiGenerating
+    ) {
       return;
     }
 
@@ -287,18 +303,6 @@ export const Composer = forwardRef(function Composer(
     setAttachments((current) => current.filter((item) => item.id !== id));
   };
 
-  const handleSelectEmoji = useCallback(
-    (emoji) => {
-      if (!emoji || disabled) {
-        return;
-      }
-      setValue((current) => `${current ?? ''}${emoji}`);
-      setEmojiPickerOpen(false);
-      textareaRef.current?.focus();
-    },
-    [disabled]
-  );
-
   useImperativeHandle(
     ref,
     () => ({
@@ -308,8 +312,45 @@ export const Composer = forwardRef(function Composer(
       openAttachmentDialog: () => {
         fileInputRef.current?.click();
       },
+      setDraftValue: (nextValue, options = {}) => {
+        if (typeof nextValue !== 'string') {
+          return;
+        }
+        const { replace = false, append = false } = options;
+        setValue((current) => {
+          if (append) {
+            return `${current ?? ''}${nextValue}`;
+          }
+          if (replace) {
+            return nextValue;
+          }
+          return nextValue;
+        });
+      },
     }),
     []
+  );
+
+  const inputDisabled = disabled || isSending || isUploading || isAiGenerating;
+  const aiCanGenerate = typeof aiStreaming?.onGenerate === 'function';
+  const aiCanCancel = typeof aiStreaming?.onCancel === 'function';
+  const aiButtonDisabled =
+    (!isAiGenerating && !aiCanGenerate) ||
+    (isAiGenerating && !aiCanCancel) ||
+    isSending ||
+    isUploading ||
+    (disabled && !isAiGenerating);
+
+  const handleSelectEmoji = useCallback(
+    (emoji) => {
+      if (!emoji || inputDisabled) {
+        return;
+      }
+      setValue((current) => `${current ?? ''}${emoji}`);
+      setEmojiPickerOpen(false);
+      textareaRef.current?.focus();
+    },
+    [inputDisabled]
   );
 
   const normalizedConfidence =
@@ -349,6 +390,9 @@ export const Composer = forwardRef(function Composer(
             <QuickReplyMenu
               replies={quickReplies}
               onSelect={(text) => {
+                if (inputDisabled) {
+                  return;
+                }
                 setValue((current) => `${current ? `${current}\n` : ''}${text}`);
               }}
               onCreate={(reply) => {
@@ -367,6 +411,7 @@ export const Composer = forwardRef(function Composer(
               size="icon"
               className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
               onClick={handleAttachmentClick}
+              disabled={inputDisabled}
             >
               <Paperclip className="h-4 w-4" />
               <span className="sr-only">Anexar arquivo</span>
@@ -384,7 +429,7 @@ export const Composer = forwardRef(function Composer(
                   variant="ghost"
                   size="icon"
                   className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
-                  disabled={disabled || isSending || isUploading}
+                  disabled={inputDisabled}
                 >
                   <Smile className="h-4 w-4" />
                   <span className="sr-only">Abrir emojis</span>
@@ -408,6 +453,39 @@ export const Composer = forwardRef(function Composer(
               </PopoverContent>
             </Popover>
             <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground',
+                      isAiGenerating && 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)] text-[color:var(--accent-inbox-primary)] ring-[color:var(--accent-inbox-primary)]/60'
+                    )}
+                    disabled={aiButtonDisabled}
+                    onClick={() => {
+                      if (isAiGenerating) {
+                        aiStreaming?.onCancel?.();
+                      } else {
+                        aiStreaming?.onGenerate?.();
+                      }
+                    }}
+                    aria-pressed={isAiGenerating}
+                  >
+                    {isAiGenerating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Wand2 className="h-4 w-4" />
+                    )}
+                    <span className="sr-only">
+                      {isAiGenerating ? 'Cancelar geração da IA' : 'Gerar resposta com IA'}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {isAiGenerating ? 'Cancelar geração da IA' : 'Gerar resposta com IA'}
+                </TooltipContent>
+              </Tooltip>
               <Popover
                 open={aiModeMenuOpen}
                 onOpenChange={(open) => {
@@ -493,7 +571,8 @@ export const Composer = forwardRef(function Composer(
                 setTemplatePickerOpen(false);
               }
             }}
-            disabled={disabled || isSending || isUploading}
+            disabled={inputDisabled}
+            readOnly={isAiGenerating}
             placeholder={placeholder}
             className="min-h-[56px] max-h-40 flex-1 resize-none rounded-xl border border-transparent bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-0"
           />
@@ -501,14 +580,58 @@ export const Composer = forwardRef(function Composer(
             variant="default"
             size="icon"
             className="h-11 w-11 rounded-xl bg-[color:var(--accent-inbox-primary)] text-white shadow-[0_16px_28px_-20px_rgba(14,165,233,0.7)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]"
-            disabled={disabled || isSending || isUploading}
+            disabled={inputDisabled}
             onClick={handleSend}
           >
-            {isSending || isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {isSending || isUploading || isAiGenerating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
             <span className="sr-only">Enviar mensagem</span>
           </Button>
         </div>
       </div>
+
+      {isAiGenerating ? (
+        <div className="mt-2 flex items-center gap-2 text-xs text-foreground-muted">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>Copiloto IA gerando resposta…</span>
+          {aiCanCancel ? (
+            <button
+              type="button"
+              className="font-medium text-[color:var(--accent-inbox-primary)] transition hover:text-[color:color-mix(in_srgb,var(--accent-inbox-primary)_84%,transparent)]"
+              onClick={() => aiStreaming?.onCancel?.()}
+            >
+              Cancelar
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {aiErrorMessage ? (
+        <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">
+          {aiErrorMessage}
+        </div>
+      ) : null}
+
+      {aiToolCalls.length > 0 ? (
+        <div className="mt-2 space-y-1">
+          {aiToolCalls.map((tool) => (
+            <div
+              key={tool.id}
+              className="flex items-center justify-between rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet px-2 py-1 text-xs text-foreground"
+            >
+              <span className="font-medium">{tool.name ?? tool.id}</span>
+              <span
+                className={tool.status === 'success' ? 'text-success-strong' : 'text-status-error-foreground'}
+              >
+                {tool.status === 'success' ? 'ok' : 'erro'}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {sendError ? (
         <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">

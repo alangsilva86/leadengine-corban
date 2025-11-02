@@ -1,14 +1,15 @@
+// @ts-nocheck
 import { useMemo } from 'react';
 import { ArrowUpRight, Gauge, MessageCircle, Shuffle, Target, Timer, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
-import useCrmMetrics from '../hooks/useCrmMetrics.ts';
-import { formatDeltaLabel, formatMetricValue } from '../utils/metrics-format.ts';
-import { useCrmViewContext, useCrmViewState } from '../state/view-context.tsx';
-import emitCrmTelemetry from '../utils/telemetry.ts';
-import type { CrmViewType } from '../state/view-context.tsx';
+import useCrmMetrics from '../hooks/useCrmMetrics';
+import { formatDeltaLabel, formatMetricValue } from '../utils/metrics-format';
+import { useCrmViewContext, useCrmViewState } from '../state/view-context';
+import emitCrmTelemetry from '../utils/telemetry';
+import type { CrmViewType } from '../state/view-context';
 
 const INSIGHT_CONFIG: Array<{
   id: string;

@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import LeadTable from '../components/table/LeadTable.tsx';
-import useCrmLeads from '../hooks/useCrmLeads.ts';
-import { useCrmViewContext, useCrmViewState } from '../state/view-context.tsx';
-import useCrmPermissions from '../state/permissions.ts';
-import emitCrmTelemetry from '../utils/telemetry.ts';
+import LeadTable from '../components/table/LeadTable';
+import useCrmLeads from '../hooks/useCrmLeads';
+import { useCrmViewContext, useCrmViewState } from '../state/view-context';
+import useCrmPermissions from '../state/permissions';
+import emitCrmTelemetry from '../utils/telemetry';
 
 const LeadTableView = () => {
   const { filters, selection } = useCrmViewState();

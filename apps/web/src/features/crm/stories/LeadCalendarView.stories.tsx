@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import LeadCalendarView from '../views/LeadCalendarView.tsx';
-import CrmStoryProviders from './CrmStoryProviders.tsx';
+import LeadCalendarView from '../views/LeadCalendarView';
+import CrmStoryProviders from './CrmStoryProviders';
 
 const meta: Meta<typeof LeadCalendarView> = {
   title: 'CRM/Views/Calendar',

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import CrmToolbar from '../components/CrmToolbar.tsx';
-import type { CrmFilterState, CrmSavedView } from '../state/types.ts';
+import CrmToolbar from '../components/CrmToolbar';
+import type { CrmFilterState, CrmSavedView } from '../state/types';
 
 const sampleFilters: CrmFilterState = {
   search: 'Empresa XPTO',

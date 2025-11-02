@@ -1,12 +1,12 @@
 import { Suspense, lazy } from 'react';
-import { useCrmViewState } from '../state/view-context.tsx';
+import { useCrmViewState } from '../state/view-context';
 
-const LeadKanbanView = lazy(() => import('../views/LeadKanbanView.tsx'));
-const LeadTableView = lazy(() => import('../views/LeadTableView.tsx'));
-const LeadCalendarView = lazy(() => import('../views/LeadCalendarView.tsx'));
-const LeadTimelineView = lazy(() => import('../views/LeadTimelineView.tsx'));
-const LeadAgingView = lazy(() => import('../views/LeadAgingView.tsx'));
-const LeadInsightsView = lazy(() => import('../views/LeadInsightsView.tsx'));
+const LeadKanbanView = lazy(() => import('../views/LeadKanbanView'));
+const LeadTableView = lazy(() => import('../views/LeadTableView'));
+const LeadCalendarView = lazy(() => import('../views/LeadCalendarView'));
+const LeadTimelineView = lazy(() => import('../views/LeadTimelineView'));
+const LeadAgingView = lazy(() => import('../views/LeadAgingView'));
+const LeadInsightsView = lazy(() => import('../views/LeadInsightsView'));
 
 const viewComponents = {
   kanban: LeadKanbanView,

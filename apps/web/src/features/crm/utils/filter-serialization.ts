@@ -1,4 +1,4 @@
-import type { CrmFilterState } from '../state/types.ts';
+import type { CrmFilterState } from '../state/types';
 
 const sortStrings = (value: string[] | undefined) => {
   if (!Array.isArray(value)) {

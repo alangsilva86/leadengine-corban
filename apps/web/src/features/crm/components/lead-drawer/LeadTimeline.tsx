@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils.js';
-import type { LeadTimelineEvent } from '../../state/leads.ts';
+import type { LeadTimelineEvent } from '../../state/leads';
 
 type LeadTimelineProps = {
   events: LeadTimelineEvent[];

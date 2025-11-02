@@ -3,9 +3,9 @@ import { Draggable } from '@hello-pangea/dnd';
 import { Activity, Clock3, MessageSquare, User } from 'lucide-react';
 import { Card } from '@/components/ui/card.jsx';
 import { cn } from '@/lib/utils.js';
-import type { LeadSummary } from '../../state/leads.ts';
-import { useCrmViewContext } from '../../state/view-context.tsx';
-import emitCrmTelemetry from '../../utils/telemetry.ts';
+import type { LeadSummary } from '../../state/leads';
+import { useCrmViewContext } from '../../state/view-context';
+import emitCrmTelemetry from '../../utils/telemetry';
 
 type LeadCardProps = {
   lead: LeadSummary;

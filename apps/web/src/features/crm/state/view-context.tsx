@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
 import type { ReactNode } from 'react';
-import type { CrmFilterState } from './types.ts';
-import { normalizeCrmFilters } from '../utils/filter-serialization.ts';
+import type { CrmFilterState } from './types';
+import { normalizeCrmFilters } from '../utils/filter-serialization';
 
 export type CrmViewType = 'kanban' | 'list' | 'calendar' | 'timeline' | 'aging' | 'insights';
 

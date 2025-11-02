@@ -1,10 +1,10 @@
 import { Fragment, useMemo } from 'react';
 import { DragDropContext, type DropResult } from '@hello-pangea/dnd';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import StageColumn from './StageColumn.tsx';
-import type { LeadSummary } from '../../state/leads.ts';
-import { useCrmViewContext } from '../../state/view-context.tsx';
-import emitCrmTelemetry from '../../utils/telemetry.ts';
+import StageColumn from './StageColumn';
+import type { LeadSummary } from '../../state/leads';
+import { useCrmViewContext } from '../../state/view-context';
+import emitCrmTelemetry from '../../utils/telemetry';
 
  type KanbanBoardProps = {
   stages: Array<{ id: string; title: string }>;

@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import { serializeCrmFilters } from '../utils/filter-serialization.ts';
-import type { CrmFilterState } from '../state/types.ts';
-import type { LeadTimelineEvent } from '../state/leads.ts';
+import { serializeCrmFilters } from '../utils/filter-serialization';
+import type { CrmFilterState } from '../state/types';
+import type { LeadTimelineEvent } from '../state/leads';
 
 type TimelineResponse = {
   items: LeadTimelineEvent[];

@@ -3,8 +3,8 @@ import type { ComponentType } from 'react';
 import { MonitorSmartphone, CalendarRange, KanbanSquare, List, Activity, Hourglass } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.jsx';
 import { cn } from '@/lib/utils.js';
-import type { CrmViewType } from '../state/view-context.tsx';
-import { useCrmViewContext } from '../state/view-context.tsx';
+import type { CrmViewType } from '../state/view-context';
+import { useCrmViewContext } from '../state/view-context';
 
 type CrmViewSwitcherProps = {
   onViewChange?: (view: CrmViewType) => void;

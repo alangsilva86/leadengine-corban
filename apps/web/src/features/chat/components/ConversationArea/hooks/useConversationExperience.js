@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import useAiSuggestions from '../../../hooks/useAiSuggestions.js';
 import { normalizeConfidence } from '../../../utils/aiSuggestions.js';
 import useChatAutoscroll from '../../../hooks/useChatAutoscroll.js';
+import useAiReplyStream from '../../../hooks/useAiReplyStream.js';
+import emitInboxTelemetry from '../../../utils/telemetry.js';
 import { useTicketMessages } from './useTicketMessages.js';
 import { useWhatsAppPresence } from './useWhatsAppPresence.js';
 import { useSLAClock } from './useSLAClock.js';
@@ -50,6 +52,7 @@ export const useConversationExperience = ({
   const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
   const composerRef = useRef(null);
   const composerApiRef = useRef(null);
+  const aiReplyStream = useAiReplyStream();
 
   const { timelineItems, hasMore, isLoadingMore, handleLoadMore, lastEntryKey } = useTicketMessages(messagesQuery);
   const { composerHeight, composerOffset } = useComposerMetrics(composerRef, ticketId);
@@ -72,8 +75,9 @@ export const useConversationExperience = ({
   const handleComposerSend = useCallback(
     (payload) => {
       onSendMessage?.(payload);
+      aiReplyStream.reset();
     },
-    [onSendMessage],
+    [aiReplyStream, onSendMessage],
   );
 
   const handleComposerTemplate = useCallback(
@@ -126,9 +130,94 @@ export const useConversationExperience = ({
       data: ai.data ?? null,
       error: ai.error ?? null,
       reset: ai.reset,
+      replyStream: aiReplyStream,
     }),
-    [ai.data, ai.error, ai.isLoading, ai.requestSuggestions, ai.reset],
+    [ai.data, ai.error, ai.isLoading, ai.requestSuggestions, ai.reset, aiReplyStream],
   );
+
+  const aiContextTimeline = useMemo(() => {
+    const MAX_ITEMS = 50;
+    if (!Array.isArray(timelineItems) || timelineItems.length === 0) {
+      return [];
+    }
+
+    const slice = timelineItems.slice(-MAX_ITEMS);
+    return slice
+      .map((entry) => entry?.payload ?? entry)
+      .filter(Boolean)
+      .map((payload) => {
+        const content =
+          payload.content ??
+          payload.text ??
+          payload.body ??
+          payload.message ??
+          payload.messageText ??
+          '';
+        return {
+          content,
+          role: payload.role ?? payload.direction ?? payload.authorRole ?? null,
+        };
+      });
+  }, [timelineItems]);
+
+  const aiMetadata = useMemo(
+    () => ({
+      ticketId: ticket?.id ?? null,
+      contactId: ticket?.contact?.id ?? null,
+      leadId: ticket?.lead?.id ?? null,
+    }),
+    [ticket],
+  );
+
+  const handleGenerateAiReply = useCallback(() => {
+    if (!ticket?.id) {
+      return;
+    }
+    void aiReplyStream.start({
+      conversationId: ticket.id,
+      timeline: aiContextTimeline,
+      metadata: aiMetadata,
+    });
+    emitInboxTelemetry('chat.ai.reply.start', {
+      ticketId: ticket.id,
+    });
+  }, [aiContextTimeline, aiMetadata, aiReplyStream, ticket]);
+
+  const handleCancelAiReply = useCallback(() => {
+    aiReplyStream.cancel();
+    emitInboxTelemetry('chat.ai.reply.cancel', {
+      ticketId: ticket?.id ?? null,
+    });
+    aiReplyStream.reset();
+  }, [aiReplyStream, ticket?.id]);
+
+  useEffect(() => {
+    if (
+      !composerApiRef.current?.setDraftValue ||
+      (aiReplyStream.status !== 'streaming' && aiReplyStream.status !== 'completed')
+    ) {
+      return;
+    }
+    composerApiRef.current.setDraftValue(aiReplyStream.message ?? '', { replace: true });
+  }, [aiReplyStream.message, aiReplyStream.status]);
+
+  const augmentedTypingAgents = useMemo(() => {
+    if (aiReplyStream.status === 'streaming') {
+      const alreadyIncludesAi = typingAgents.some((agent) => agent?.id === 'ai-assistant');
+      if (alreadyIncludesAi) {
+        return typingAgents;
+      }
+      return [
+        ...typingAgents,
+        {
+          id: 'ai-assistant',
+          userName: 'Copiloto IA',
+          type: 'ai',
+        },
+      ];
+    }
+    return typingAgents;
+  }, [aiReplyStream.status, typingAgents]);
 
   const headerProps = useMemo(
     () => ({
@@ -152,7 +241,7 @@ export const useConversationExperience = ({
       onFocusComposer: handleFocusComposer,
       currentUser,
       slaClock,
-      typingAgents,
+      typingAgents: augmentedTypingAgents,
       aiMode,
       aiConfidence,
       aiModeChangeDisabled,
@@ -188,7 +277,7 @@ export const useConversationExperience = ({
       onSendTemplate,
       slaClock,
       ticket,
-      typingAgents,
+      augmentedTypingAgents,
       aiMode,
       aiConfidence,
       aiModeChangeDisabled,
@@ -204,7 +293,7 @@ export const useConversationExperience = ({
       hasMore,
       isLoadingMore,
       onLoadMore: handleLoadMore,
-      typingAgents,
+      typingAgents: augmentedTypingAgents,
       scrollRef,
       showNewMessagesHint: !isNearBottom,
       onScrollToBottom: handleScrollToBottom,
@@ -225,6 +314,14 @@ export const useConversationExperience = ({
       aiMode,
       aiModeChangeDisabled,
       onAiModeChange,
+      aiStreaming: {
+        status: aiReplyStream.status,
+        error: aiReplyStream.error,
+        toolCalls: aiReplyStream.toolCalls,
+        onGenerate: handleGenerateAiReply,
+        onCancel: handleCancelAiReply,
+        reset: aiReplyStream.reset,
+      },
     },
     header: {
       props: headerProps,

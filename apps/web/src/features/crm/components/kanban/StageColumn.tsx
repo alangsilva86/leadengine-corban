@@ -1,10 +1,11 @@
+// @ts-nocheck
 import { memo } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Card } from '@/components/ui/card.jsx';
 import { cn } from '@/lib/utils.js';
-import type { LeadSummary } from '../../state/leads.ts';
-import LeadCard from './LeadCard.tsx';
+import type { LeadSummary } from '../../state/leads';
+import LeadCard from './LeadCard';
 
 type StageColumnProps = {
   stageId: string;

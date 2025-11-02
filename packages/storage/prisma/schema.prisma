@@ -42,6 +42,10 @@ model Tenant {
   brokerLeads         BrokerLead[]
   leadAllocations     LeadAllocation[]
   queues              Queue[]
+  aiConfigs           AiConfig[]
+  aiSuggestions       AiSuggestion[]
+  aiRuns              AiRun[]
+  aiMemories          AiMemory[]
 
   @@map("tenants")
 }
@@ -63,6 +67,12 @@ enum ContactTaskStatus {
   PENDING
   COMPLETED
   CANCELLED
+}
+
+enum AiAssistantMode {
+  IA_AUTO
+  COPILOTO
+  HUMANO
 }
 
 model User {
@@ -113,6 +123,7 @@ model Queue {
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tickets    Ticket[]
   userQueues UserQueue[]
+  aiConfigs AiConfig[]
 
   @@unique([tenantId, name])
   @@map("queues")
@@ -176,6 +187,7 @@ model Contact {
   contactInteractions ContactInteraction[]
   contactTasks        ContactTask[]
   tasks               Task[]
+  aiMemories          AiMemory[]
 
   @@unique([tenantId, primaryPhone])
   @@unique([tenantId, primaryEmail])
@@ -207,6 +219,95 @@ model ContactPhone {
   @@unique([tenantId, phoneNumber])
   @@index([tenantId, contactId])
   @@map("contact_phones")
+}
+
+model AiConfig {
+  id                      String   @id @default(cuid())
+  tenantId                String
+  queueId                 String?
+  scopeKey                String   @default("__global__")
+  model                   String
+  temperature             Float    @default(0.3)
+  maxOutputTokens         Int?
+  systemPromptReply       String?
+  systemPromptSuggest     String?
+  structuredOutputSchema  Json?
+  tools                   Json?
+  vectorStoreEnabled      Boolean  @default(false)
+  vectorStoreIds          String[] @default([])
+  streamingEnabled        Boolean  @default(true)
+  defaultMode             AiAssistantMode @default(COPILOTO)
+  confidenceThreshold     Float?   @default(0.0)
+  fallbackPolicy          String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  queue  Queue? @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  suggestions AiSuggestion[]
+  runs        AiRun[]
+
+  @@unique([tenantId, scopeKey])
+  @@map("ai_configs")
+}
+
+model AiSuggestion {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  configId       String?
+  payload        Json
+  confidence     Float?
+  createdAt      DateTime @default(now())
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  config AiConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, conversationId])
+  @@map("ai_suggestions")
+}
+
+model AiRun {
+  id              String   @id @default(cuid())
+  tenantId        String
+  conversationId  String
+  configId        String?
+  runType         String
+  adapter         String?
+  requestPayload  Json
+  responsePayload Json?
+  latencyMs       Int?
+  promptTokens    Int?
+  completionTokens Int?
+  totalTokens     Int?
+  costUsd         Decimal? @db.Decimal(10, 6)
+  status          String   @default("success")
+  createdAt       DateTime @default(now())
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  config AiConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, conversationId, runType])
+  @@map("ai_runs")
+}
+
+model AiMemory {
+  id         String          @id @default(cuid())
+  tenantId   String
+  contactId  String
+  topic      String
+  content    String
+  metadata   Json?
+  expiresAt  DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, contactId, topic])
+  @@index([tenantId, contactId])
+  @@map("ai_memories")
 }
 
 model ContactEmail {

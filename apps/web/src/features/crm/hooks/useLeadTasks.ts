@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import type { LeadTask } from '../state/leads.ts';
+import type { LeadTask } from '../state/leads';
 
 const fallbackTasks: LeadTask[] = [
   {

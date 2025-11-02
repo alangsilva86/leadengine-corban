@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import StageColumn from '../components/kanban/StageColumn.tsx';
-import type { LeadSummary } from '../state/leads.ts';
+import StageColumn from '../components/kanban/StageColumn';
+import type { LeadSummary } from '../state/leads';
 
 const sampleLeads: LeadSummary[] = [
   {

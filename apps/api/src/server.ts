@@ -63,11 +63,12 @@ type RawBodyIncomingMessage = IncomingMessage & {
 const webhookRawBodyMiddleware: RequestHandler = (req, _res, next) => {
   const rawReq = req as RawBodyIncomingMessage;
 
-  const buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : Buffer.alloc(0);
-  rawReq.rawBody = buffer.length > 0 ? buffer : undefined;
+  const buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : undefined;
+  const safeBuffer = buffer ?? Buffer.alloc(0);
+  rawReq.rawBody = buffer;
   rawReq.rawBodyParseError = null;
 
-  if (buffer.length === 0) {
+  if (safeBuffer.length === 0) {
     req.body = {};
     next();
     return;
@@ -82,7 +83,7 @@ const webhookRawBodyMiddleware: RequestHandler = (req, _res, next) => {
     return;
   }
 
-  const text = buffer.toString('utf8').trim();
+  const text = safeBuffer.toString('utf8').trim();
 
   if (!text) {
     req.body = {};
@@ -360,6 +361,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', leadEngineRouter);
+app.use('/api/ai', authMiddleware, requireTenant, aiRouter);
 app.use('/api/crm', authMiddleware, crmRouter);
 app.use('/api/debug/wa', (req, res, next) => {
   if (!isWhatsappDebugToolsEnabled()) {
@@ -388,7 +390,6 @@ app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api', authMiddleware, preferencesRouter);
-app.use('/api/ai', authMiddleware, aiRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import type { LeadTimelineEvent } from '../state/leads.ts';
+import type { LeadTimelineEvent } from '../state/leads';
 
 const createFallbackTimeline = (leadId: string): LeadTimelineEvent[] => [
   {

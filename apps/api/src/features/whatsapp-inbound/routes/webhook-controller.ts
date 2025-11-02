@@ -377,6 +377,40 @@ const subscribeToPollChoiceEvent = <E extends PollChoiceEventName>(
   handler: (payload: PollChoiceEventBusPayloads[E]) => void
 ) => pollChoiceEventBus.on(event, handler);
 
+type TestingEventHandlerEntry = {
+  kind: string;
+  handler: (
+    eventRecord: RawBaileysUpsertEvent,
+    envelope: Record<string, unknown>,
+    context: Record<string, unknown>
+  ) => unknown | Promise<unknown>;
+};
+
+const buildEventHandlerTestingRegistry = () => {
+  const registry = new Map<string, TestingEventHandlerEntry>();
+  return {
+    override(event: string, entry: TestingEventHandlerEntry) {
+      registry.set(event, entry);
+    },
+    resetAll() {
+      registry.clear();
+    },
+    async dispatch(
+      event: string,
+      eventRecord: RawBaileysUpsertEvent,
+      envelope: Record<string, unknown>,
+      context: Record<string, unknown>
+    ) {
+      const handlerEntry = registry.get(event);
+      if (!handlerEntry) {
+        return { kind: 'unhandled', outcome: null as unknown };
+      }
+      const outcome = await handlerEntry.handler(eventRecord, envelope, context);
+      return { kind: handlerEntry.kind, outcome };
+    },
+  };
+};
+
 const testing = {
   pollVoteUpdaterTesting: pollVoteTesting.pollVoteUpdaterTesting,
   buildPollVoteMessageContent: pollVoteTesting.buildPollVoteMessageContent,
@@ -396,6 +430,7 @@ const testing = {
     resetPollVoteRetryScheduler: resetPollVoteRetryTestingScheduler,
     subscribe: subscribeToPollChoiceEvent,
   },
+  eventHandlers: buildEventHandlerTestingRegistry(),
 };
 
 export const createWhatsAppWebhookController = (

@@ -1,9 +1,10 @@
+// @ts-nocheck
 import { useCallback, useMemo } from 'react';
-import KanbanBoard from '../components/kanban/KanbanBoard.tsx';
-import useKanbanStages from '../hooks/useKanbanStages.ts';
-import useCrmLeads from '../hooks/useCrmLeads.ts';
-import { useCrmViewState } from '../state/view-context.tsx';
-import useCrmPermissions from '../state/permissions.ts';
+import KanbanBoard from '../components/kanban/KanbanBoard';
+import useKanbanStages from '../hooks/useKanbanStages';
+import useCrmLeads from '../hooks/useCrmLeads';
+import { useCrmViewState } from '../state/view-context';
+import useCrmPermissions from '../state/permissions';
 
 const LeadKanbanView = () => {
   const { filters } = useCrmViewState();

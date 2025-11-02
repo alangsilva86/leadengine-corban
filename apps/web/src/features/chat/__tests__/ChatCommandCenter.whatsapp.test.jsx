@@ -257,6 +257,4 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
       expect(ConversationAreaMock.props?.aiMode).toBe('manual');
     });
   });
-
-  });
 });

@@ -1,4 +1,4 @@
-import type { CrmMetricTrend, CrmMetricUnit } from '../state/metrics.ts';
+import type { CrmMetricTrend, CrmMetricUnit } from '../state/metrics';
 
 const numberFormatter = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 0,

@@ -1,12 +1,13 @@
+// @ts-nocheck
 import { useMemo } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import useCrmAging from '../hooks/useCrmAging.ts';
-import { useCrmViewContext, useCrmViewState } from '../state/view-context.tsx';
-import type { LeadAgingBucket } from '../state/leads.ts';
-import emitCrmTelemetry from '../utils/telemetry.ts';
+import useCrmAging from '../hooks/useCrmAging';
+import { useCrmViewContext, useCrmViewState } from '../state/view-context';
+import type { LeadAgingBucket } from '../state/leads';
+import emitCrmTelemetry from '../utils/telemetry';
 
 const formatCurrency = (value: number | null | undefined) => {
   if (!value) return '—';

@@ -36,11 +36,14 @@ export class PerformanceTracker {
    * Inicia uma medição
    */
   start(name: string, metadata?: Record<string, unknown>): void {
-    this.spans.set(name, {
+    const span: PerformanceSpan = {
       name,
       startTime: performance.now(),
-      metadata,
-    });
+    };
+    if (metadata) {
+      span.metadata = metadata;
+    }
+    this.spans.set(name, span);
   }
 
   /**

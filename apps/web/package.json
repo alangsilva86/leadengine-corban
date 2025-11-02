@@ -16,8 +16,8 @@
     "storybook:deploy": "chromatic --project-token=$CHROMATIC_PROJECT_TOKEN"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^16.6.0",
     "@hookform/resolvers": "^5.0.1",
-    "@hello-pangea/dnd": "^18.0.1",
     "@radix-ui/react-accordion": "^1.2.10",
     "@radix-ui/react-alert-dialog": "^1.1.13",
     "@radix-ui/react-aspect-ratio": "^1.1.6",
@@ -45,8 +45,8 @@
     "@radix-ui/react-toggle-group": "^1.1.9",
     "@radix-ui/react-tooltip": "^1.2.6",
     "@tailwindcss/vite": "^4.1.7",
-    "@ticketz/contracts": "workspace:*",
     "@tanstack/react-query": "^5.64.0",
+    "@ticketz/contracts": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -72,8 +72,8 @@
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.7",
     "vaul": "^1.1.2",
-    "zustand": "^4.5.4",
-    "zod": "^3.24.4"
+    "zod": "^3.24.4",
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
@@ -87,10 +87,10 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.5.2",
-    "@vitest/coverage-v8": "^1.6.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
+    "@vitest/coverage-v8": "^1.6.0",
     "analyze-css": "^2.4.15",
     "chromatic": "^13.3.0",
     "eslint": "^9.25.0",

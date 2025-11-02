@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.j
 import { Button } from '@/components/ui/button.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import type { LucideIcon } from 'lucide-react';
-import { formatDeltaLabel, formatMetricValue } from '../utils/metrics-format.ts';
-import type { CrmMetricPrimitive } from '../state/metrics.ts';
+import { formatDeltaLabel, formatMetricValue } from '../utils/metrics-format';
+import type { CrmMetricPrimitive } from '../state/metrics';
 
 type MetricConfig = {
   id: string;

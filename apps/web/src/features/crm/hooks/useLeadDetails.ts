@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import type { LeadDetail } from '../state/leads.ts';
+import type { LeadDetail } from '../state/leads';
 
 const FALLBACK_DETAIL: LeadDetail = {
   id: 'lead-demo-1',

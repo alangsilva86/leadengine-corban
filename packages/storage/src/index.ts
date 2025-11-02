@@ -83,3 +83,13 @@ export {
   type InboundMediaJobStatus,
   type EnqueueInboundMediaJobInput,
 } from './repositories/inbound-media-job-repository';
+
+export {
+  getAiConfig,
+  upsertAiConfig,
+  recordAiSuggestion,
+  recordAiRun,
+  upsertAiMemory,
+  type UpsertAiConfigInput,
+  type AiAssistantMode,
+} from './repositories/ai-repository';

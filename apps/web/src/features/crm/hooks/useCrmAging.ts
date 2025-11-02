@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import { serializeCrmFilters } from '../utils/filter-serialization.ts';
-import type { CrmFilterState } from '../state/types.ts';
-import type { LeadAgingBucket, LeadAgingSummary } from '../state/leads.ts';
+import { serializeCrmFilters } from '../utils/filter-serialization';
+import type { CrmFilterState } from '../state/types';
+import type { LeadAgingBucket, LeadAgingSummary } from '../state/leads';
 
 const BUCKET_LABELS = [
   { id: '0-1', label: '0-1 dia' },

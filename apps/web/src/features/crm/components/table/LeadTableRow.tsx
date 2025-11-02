@@ -5,7 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
-import type { LeadSummary } from '../../state/leads.ts';
+import type { LeadSummary } from '../../state/leads';
 
 const formatActivity = (value: string | null) => {
   if (!value) {

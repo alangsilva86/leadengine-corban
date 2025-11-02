@@ -1,8 +1,8 @@
 import { Building2, Mail, Phone, User, Workflow, CalendarClock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import LeadHealthBadge from './LeadHealthBadge.tsx';
-import type { LeadDetail } from '../../state/leads.ts';
+import LeadHealthBadge from './LeadHealthBadge';
+import type { LeadDetail } from '../../state/leads';
 
 type LeadHeaderProps = {
   lead: LeadDetail;

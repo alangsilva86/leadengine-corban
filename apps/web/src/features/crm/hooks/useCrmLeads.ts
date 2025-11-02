@@ -1,8 +1,8 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
-import { serializeCrmFilters } from '../utils/filter-serialization.ts';
-import type { CrmFilterState } from '../state/types.ts';
-import type { LeadSummary } from '../state/leads.ts';
+import { serializeCrmFilters } from '../utils/filter-serialization';
+import type { CrmFilterState } from '../state/types';
+import type { LeadSummary } from '../state/leads';
 
 type PaginatedResponse = {
   items: LeadSummary[];

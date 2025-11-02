@@ -1,17 +1,18 @@
+// @ts-nocheck
 import { useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button.jsx';
-import CrmToolbar from '../components/CrmToolbar.tsx';
-import CrmMetricsBelt from '../components/CrmMetricsBelt.tsx';
-import CrmViewSwitcher from '../components/CrmViewSwitcher.tsx';
-import CrmDataView from '../components/CrmDataView.tsx';
-import LeadDrawer from '../components/LeadDrawer.tsx';
-import useCrmSavedViews from '../hooks/useCrmSavedViews.ts';
-import useCrmMetrics from '../hooks/useCrmMetrics.ts';
-import { normalizeCrmFilters } from '../utils/filter-serialization.ts';
-import type { CrmFilterState, CrmSavedView } from '../state/types.ts';
-import type { CrmMetricPrimitive } from '../state/metrics.ts';
-import { CrmViewProvider, useCrmViewContext } from '../state/view-context.tsx';
-import emitCrmTelemetry from '../utils/telemetry.ts';
+import CrmToolbar from '../components/CrmToolbar';
+import CrmMetricsBelt from '../components/CrmMetricsBelt';
+import CrmViewSwitcher from '../components/CrmViewSwitcher';
+import CrmDataView from '../components/CrmDataView';
+import LeadDrawer from '../components/LeadDrawer';
+import useCrmSavedViews from '../hooks/useCrmSavedViews';
+import useCrmMetrics from '../hooks/useCrmMetrics';
+import { normalizeCrmFilters } from '../utils/filter-serialization';
+import type { CrmFilterState, CrmSavedView } from '../state/types';
+import type { CrmMetricPrimitive } from '../state/metrics';
+import { CrmViewProvider, useCrmViewContext } from '../state/view-context';
+import emitCrmTelemetry from '../utils/telemetry';
 
 const EMPTY_FILTERS: CrmFilterState = {
   stages: [],

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import useCrmPermissions from '../state/permissions.ts';
+import useCrmPermissions from '../state/permissions';
 
 describe('useCrmPermissions', () => {
   beforeEach(() => {

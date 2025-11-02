@@ -3,7 +3,7 @@ import { Routes, Route, Outlet, useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout.jsx';
 import { PageFallback } from '@/App.jsx';
 
-const CrmHomePage = lazy(() => import('./pages/CrmHomePage.tsx'));
+const CrmHomePage = lazy(() => import('./pages/CrmHomePage'));
 const LeadDetailsPage = lazy(() => import('./pages/LeadDetailsPage.jsx'));
 
 const dispatchNavigateEvent = (page) => {

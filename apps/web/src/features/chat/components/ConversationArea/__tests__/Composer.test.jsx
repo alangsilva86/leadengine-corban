@@ -3,8 +3,19 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { Composer } from '../Composer.jsx';
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+let activeQueryClient = null;
 
 const renderComposer = (overrideProps = {}) => {
   const props = {
@@ -20,16 +31,32 @@ const renderComposer = (overrideProps = {}) => {
     aiMode: 'manual',
     aiModeChangeDisabled: false,
     onAiModeChange: vi.fn(),
+    aiStreaming: {
+      status: 'idle',
+      onGenerate: vi.fn(),
+      onCancel: vi.fn(),
+      reset: vi.fn(),
+      toolCalls: [],
+      error: null,
+    },
     ...overrideProps,
   };
 
-  const result = render(<Composer {...props} />);
+  const queryClient = new QueryClient();
+  activeQueryClient = queryClient;
+  const Wrapper = ({ children }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+
+  const result = render(<Composer {...props} />, { wrapper: Wrapper });
   return { ...result, props };
 };
 
 describe('Composer - AI mode control', () => {
   afterEach(() => {
     cleanup();
+    activeQueryClient?.clear();
+    activeQueryClient = null;
   });
 
   it('exibe estado manual como inativo', () => {
@@ -62,5 +89,43 @@ describe('Composer - AI mode control', () => {
     await user.click(option);
 
     expect(onAiModeChange).toHaveBeenCalledWith('auto');
+  });
+
+  it('aciona geração de IA quando disponível', async () => {
+    const onGenerate = vi.fn();
+    const aiStreaming = {
+      status: 'idle',
+      onGenerate,
+      onCancel: vi.fn(),
+      reset: vi.fn(),
+      toolCalls: [],
+      error: null,
+    };
+    renderComposer({ aiStreaming });
+    const user = userEvent.setup();
+
+    const button = screen.getByRole('button', { name: /gerar resposta com ia/i });
+    await user.click(button);
+
+    expect(onGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('permite cancelar a geração quando em andamento', async () => {
+    const onCancel = vi.fn();
+    const aiStreaming = {
+      status: 'streaming',
+      onGenerate: vi.fn(),
+      onCancel,
+      reset: vi.fn(),
+      toolCalls: [],
+      error: null,
+    };
+    renderComposer({ aiStreaming });
+    const user = userEvent.setup();
+
+    const button = screen.getByRole('button', { name: /cancelar geração da ia/i });
+    await user.click(button);
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

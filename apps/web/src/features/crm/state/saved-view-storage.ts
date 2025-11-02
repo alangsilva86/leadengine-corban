@@ -1,4 +1,4 @@
-import type { CrmSavedView, CrmSavedViewsState } from './types.ts';
+import type { CrmSavedView, CrmSavedViewsState } from './types';
 
 const STORAGE_KEY = 'leadengine:crm:savedViews';
 

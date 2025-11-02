@@ -6,11 +6,11 @@ import { Card } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import useCrmTasks from '../hooks/useCrmTasks.ts';
-import { useCrmViewContext, useCrmViewState } from '../state/view-context.tsx';
-import useCrmPermissions from '../state/permissions.ts';
-import emitCrmTelemetry from '../utils/telemetry.ts';
-import type { LeadTask } from '../state/leads.ts';
+import useCrmTasks from '../hooks/useCrmTasks';
+import { useCrmViewContext, useCrmViewState } from '../state/view-context';
+import useCrmPermissions from '../state/permissions';
+import emitCrmTelemetry from '../utils/telemetry';
+import type { LeadTask } from '../state/leads';
 
 const getDefaultRange = () => {
   const today = new Date();

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import CrmMetricsBelt from '../components/CrmMetricsBelt.tsx';
+import CrmMetricsBelt from '../components/CrmMetricsBelt';
 
 const meta: Meta<typeof CrmMetricsBelt> = {
   title: 'CRM/Metrics Belt',

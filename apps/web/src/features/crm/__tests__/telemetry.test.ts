@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import emitCrmTelemetry from '../utils/telemetry.ts';
+import emitCrmTelemetry from '../utils/telemetry';
 
 describe('emitCrmTelemetry', () => {
   beforeEach(() => {
