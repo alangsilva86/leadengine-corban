@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Label } from '@/components/ui/label.jsx';
@@ -368,10 +367,18 @@ const AiSettingsTab = () => {
             <Textarea
               rows={4}
               disabled={disabled}
-              value={config?.vectorStoreIds.join('\n') ?? ''}
+              value={config?.vectorStoreIds?.join('\n') ?? ''}
               onChange={(event) =>
                 setConfig((prev) =>
-                  prev ? { ...prev, vectorStoreIds: event.target.value.split('\n').map((id) => id.trim()).filter(Boolean) } : prev
+                  prev
+                    ? {
+                        ...prev,
+                        vectorStoreIds: event.target.value
+                          .split('\n')
+                          .map((id) => id.trim())
+                          .filter(Boolean),
+                      }
+                    : prev
                 )
               }
               className="font-mono text-xs"

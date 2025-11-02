@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import CrmToolbar from '../components/CrmToolbar';
@@ -211,16 +210,15 @@ const CrmHomeLayout = ({
         }}
       />
 
-      <CrmToolbar
-        filters={filters}
-        onFiltersChange={onFiltersChange}
-        onClearFilters={onClearFilters}
-        filterOptions={filterOptions}
-        totalCount={undefined}
-        selectedCount={state.selection.selectedIds.size}
-        onClearSelection={state.selection.selectedIds.size ? clearSelection : undefined}
-        savedViews={savedViews}
-      />
+        <CrmToolbar
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          onClearFilters={onClearFilters}
+          filterOptions={filterOptions}
+          selectedCount={state.selection.selectedIds.size}
+          onClearSelection={state.selection.selectedIds.size ? clearSelection : undefined}
+          savedViews={savedViews}
+        />
 
       <div className="space-y-4">
         <CrmViewSwitcher
@@ -233,7 +231,7 @@ const CrmHomeLayout = ({
           <p>
             Esta área exibirá dados reais em breve. Enquanto isso, use o botão abaixo para visualizar o comportamento do drawer do lead.
           </p>
-          <Button type="button" size="sm" className="mt-3" onClick={() => openLeadDrawer('lead-demo-1')}>
+          <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => openLeadDrawer('lead-demo-1')}>
             Abrir drawer de exemplo
           </Button>
         </div>

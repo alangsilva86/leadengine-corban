@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { memo } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
 import { Badge } from '@/components/ui/badge.jsx';

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
 import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
-import useQrImageSource from '../hooks/useQrImageSource.js';
 import {
   getStatusInfo,
   resolveInstancePhone,

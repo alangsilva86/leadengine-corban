@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useCallback, useMemo } from 'react';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import useKanbanStages from '../hooks/useKanbanStages';
@@ -72,7 +71,7 @@ const LeadKanbanView = () => {
       leadsByStage={leadsByStage}
       metricsByStage={metricsByStage}
       isLoading={isLoading && !leads.length}
-      onMoveLead={permissions.canMoveLead ? handleMoveLead : undefined}
+      {...(permissions.canMoveLead ? { onMoveLead: handleMoveLead } : {})}
     />
   );
 };

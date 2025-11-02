@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { useMemo } from 'react';
+import type { ComponentType } from 'react';
 import { ArrowUpRight, Gauge, MessageCircle, Shuffle, Target, Timer, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -15,7 +15,7 @@ const INSIGHT_CONFIG: Array<{
   id: string;
   label: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   targetView: CrmViewType;
   metricId: string;
 }> = [

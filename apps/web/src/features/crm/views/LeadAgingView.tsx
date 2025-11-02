@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useMemo } from 'react';
 import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';

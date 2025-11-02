@@ -133,7 +133,7 @@ const JroIndicator = ({ jro }) => {
 
   return (
     <section role="group" aria-label={ariaLabel} title={readableStatus} className="rounded-lg bg-surface-overlay-glass/15 px-3 py-2 backdrop-blur-sm">
-      <div className="h-[2px] w-full rounded bg-white/10" aria-hidden="true">
+      <div className="h-[2px] w-full rounded bg-surface-overlay-glass-border/60" aria-hidden="true">
         <div
           className={cn(
             'h-full rounded transition-[width] duration-500 ease-out motion-reduce:transition-none',

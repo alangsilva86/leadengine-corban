@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
+import useQrImageSource from '../../hooks/useQrImageSource.js';
 import type { WhatsAppConnectState } from '../useWhatsAppConnect';
 
 const STATUS_TONES = {
@@ -33,307 +34,6 @@ const STATUS_COPY = {
     tone: STATUS_TONES.qr_required,
   },
 } as const;
-
-const mergeQr = (primary: any, secondary: any) => {
-  if (!primary) return secondary;
-  if (!secondary) return primary;
-  return {
-    qr: primary.qr ?? secondary.qr ?? null,
-    qrCode: primary.qrCode ?? secondary.qrCode ?? primary.qr ?? secondary.qr ?? null,
-    qrExpiresAt: primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
-    expiresAt:
-      primary.expiresAt ?? secondary.expiresAt ?? primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
-    available:
-      typeof secondary.available === 'boolean'
-        ? secondary.available
-        : typeof primary.available === 'boolean'
-          ? primary.available
-          : undefined,
-    reason: secondary.reason ?? primary.reason ?? null,
-  };
-};
-
-const extractQrPayload = (payload: any) => {
-  if (!payload) return null;
-
-  const parseCandidate = (candidate: any): any => {
-    if (!candidate) return null;
-
-    if (typeof candidate === 'string') {
-      return { qr: candidate, qrCode: candidate, qrExpiresAt: null, expiresAt: null };
-    }
-
-    if (typeof candidate !== 'object') {
-      return null;
-    }
-
-    const source = candidate;
-
-    const directQr =
-      typeof source.qr === 'string'
-        ? source.qr
-        : typeof source.qrCode === 'string'
-        ? source.qrCode
-        : typeof source.qr_code === 'string'
-        ? source.qr_code
-        : typeof source.code === 'string'
-        ? source.code
-        : typeof source.image === 'string'
-        ? source.image
-        : typeof source.value === 'string'
-        ? source.value
-        : null;
-
-    const qrCodeCandidate =
-      typeof source.qrCode === 'string'
-        ? source.qrCode
-        : typeof source.qr_code === 'string'
-        ? source.qr_code
-        : null;
-
-    const qrExpiresCandidate =
-      typeof source.qrExpiresAt === 'string'
-        ? source.qrExpiresAt
-        : typeof source.qr_expires_at === 'string'
-        ? source.qr_expires_at
-        : null;
-
-    const expiresCandidate =
-      typeof source.expiresAt === 'string'
-        ? source.expiresAt
-        : typeof source.expiration === 'string'
-        ? source.expiration
-        : typeof source.expires === 'string'
-        ? source.expires
-        : null;
-
-    const availableCandidate =
-      typeof source.available === 'boolean'
-        ? source.available
-        : typeof source.qrAvailable === 'boolean'
-          ? source.qrAvailable
-          : undefined;
-
-    const reasonCandidate =
-      typeof source.reason === 'string'
-        ? source.reason
-        : typeof source.qrReason === 'string'
-          ? source.qrReason
-          : null;
-
-    let normalized = null;
-
-    if (directQr || qrCodeCandidate || qrExpiresCandidate || expiresCandidate) {
-      normalized = {
-        qr: directQr ?? qrCodeCandidate ?? null,
-        qrCode: qrCodeCandidate ?? directQr ?? null,
-        qrExpiresAt: qrExpiresCandidate ?? null,
-        expiresAt: expiresCandidate ?? qrExpiresCandidate ?? null,
-        available: availableCandidate,
-        reason: reasonCandidate,
-      };
-    }
-
-    const nestedCandidates = [
-      source.qr,
-      source.qrData,
-      source.qrPayload,
-      source.qr_info,
-      source.data,
-      source.payload,
-      source.result,
-      source.response,
-    ];
-
-    for (const nestedSource of nestedCandidates) {
-      const nested = parseCandidate(nestedSource);
-      if (nested) {
-        normalized = mergeQr(normalized, nested);
-        break;
-      }
-    }
-
-    if (normalized && typeof normalized.available !== 'boolean' && availableCandidate !== undefined) {
-      normalized.available = availableCandidate;
-    }
-    if (normalized && !normalized.reason && reasonCandidate) {
-      normalized.reason = reasonCandidate;
-    }
-
-    return normalized;
-  };
-
-  const normalized = parseCandidate(payload);
-
-  if (!normalized) {
-    return null;
-  }
-
-  const finalPayload: any = { ...normalized };
-  if (!finalPayload.qr && finalPayload.qrCode) {
-    finalPayload.qr = finalPayload.qrCode;
-  }
-  if (!finalPayload.qrCode && finalPayload.qr) {
-    finalPayload.qrCode = finalPayload.qr;
-  }
-  if (!finalPayload.expiresAt && finalPayload.qrExpiresAt) {
-    finalPayload.expiresAt = finalPayload.qrExpiresAt;
-  }
-  if (!finalPayload.qrExpiresAt && finalPayload.expiresAt) {
-    finalPayload.qrExpiresAt = finalPayload.expiresAt;
-  }
-  if (typeof finalPayload.available !== 'boolean') {
-    finalPayload.available =
-      typeof payload?.available === 'boolean'
-        ? payload.available
-        : typeof payload?.qrAvailable === 'boolean'
-          ? payload.qrAvailable
-          : undefined;
-  }
-  if (!finalPayload.reason && typeof payload?.reason === 'string') {
-    finalPayload.reason = payload.reason;
-  }
-  if (!finalPayload.reason && typeof payload?.qrReason === 'string') {
-    finalPayload.reason = payload.qrReason;
-  }
-
-  return finalPayload;
-};
-
-const getQrImageSrc = (qrPayload: any) => {
-  if (!qrPayload) {
-    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
-  }
-
-  const payload = extractQrPayload(qrPayload);
-  if (!payload) {
-    return {
-      code: null,
-      immediate: null,
-      needsGeneration: false,
-      isBaileys: false,
-      available: typeof qrPayload?.available === 'boolean' ? qrPayload.available : undefined,
-      reason: qrPayload?.reason ?? qrPayload?.qrReason ?? null,
-    };
-  }
-
-  const available =
-    typeof payload.available === 'boolean'
-      ? payload.available
-      : typeof qrPayload?.available === 'boolean'
-        ? qrPayload.available
-        : undefined;
-
-  const reason = payload.reason ?? qrPayload?.reason ?? qrPayload?.qrReason ?? null;
-
-  if (available === false) {
-    return {
-      code: null,
-      immediate: null,
-      needsGeneration: false,
-      isBaileys: false,
-      available,
-      reason,
-    };
-  }
-
-  const { qr } = payload;
-  if (!qr || typeof qr !== 'string') {
-    return {
-      code: null,
-      immediate: null,
-      needsGeneration: false,
-      isBaileys: false,
-      available,
-      reason,
-    };
-  }
-
-  const normalized = qr.trim();
-  if (normalized.startsWith('data:image')) {
-    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false, available: true, reason: null };
-  }
-
-  if (/^https?:\/\//i.test(normalized)) {
-    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false, available: true, reason: null };
-  }
-
-  if (/^[A-Za-z0-9+/=]+$/.test(normalized) && normalized.length > 100) {
-    return {
-      code: normalized,
-      immediate: `data:image/png;base64,${normalized}`,
-      needsGeneration: false,
-      isBaileys: false,
-      available: true,
-      reason: null,
-    };
-  }
-
-  const isBaileys = /BAILEYS/i.test(normalized);
-
-  return {
-    code: normalized,
-    immediate: null,
-    needsGeneration: true,
-    isBaileys,
-    available: true,
-    reason: null,
-  };
-};
-
-const useQrImageSource = (qrPayload: any) => {
-  const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);
-  const { code, immediate, needsGeneration } = qrMeta;
-  const [src, setSrc] = useState<string | null>(immediate ?? null);
-  const [isGenerating, setIsGenerating] = useState<boolean>(Boolean(needsGeneration && !immediate));
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (immediate) {
-      setSrc(immediate);
-      setIsGenerating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!code || !needsGeneration) {
-      setSrc(null);
-      setIsGenerating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSrc(null);
-    setIsGenerating(true);
-    import('qrcode')
-      .then(({ toDataURL }) => toDataURL(code, { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 }))
-      .then((url) => {
-        if (!cancelled) {
-          setSrc(url);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error('Falha ao gerar QR Code', error);
-          setSrc(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsGenerating(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [code, immediate, needsGeneration]);
-
-  return { src, isGenerating };
-};
 
 interface UseWhatsappSessionStateParams {
   state: WhatsAppConnectState;
@@ -409,18 +109,22 @@ const useWhatsappSessionState = ({
 
   const statusCopy = STATUS_COPY[localStatus as keyof typeof STATUS_COPY] ?? STATUS_COPY.disconnected;
 
-  const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
+  const {
+    src: qrImageSrc,
+    isGenerating: isGeneratingQrImage,
+    meta: qrMeta,
+  } = useQrImageSource(qrData);
 
   const qrUnavailableMessage = useMemo(() => {
-    if (!qrData || qrData.available !== false) {
+    if (!qrMeta || qrMeta.available !== false) {
       return null;
     }
-    const reason = typeof qrData.reason === 'string' ? qrData.reason.toUpperCase() : null;
+    const reason = typeof qrMeta.reason === 'string' ? qrMeta.reason.toUpperCase() : null;
     if (reason === 'EXPIRED') {
       return 'O QR Code anterior expirou. Gere um novo para continuar.';
     }
     return 'O conector está gerando o QR Code. Aguarde alguns segundos e tente novamente.';
-  }, [qrData]);
+  }, [qrMeta]);
 
   useEffect(() => {
     setGeneratingQrState(isGeneratingQrImage);
