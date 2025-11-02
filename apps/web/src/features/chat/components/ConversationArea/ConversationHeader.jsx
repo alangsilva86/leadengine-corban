@@ -50,8 +50,6 @@ const AI_MODE_OPTIONS = [
   { value: 'manual', label: 'Agente no comando' },
 ];
 
-const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
-
 const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
 
 const AI_CONFIDENCE_TONES = {
@@ -450,8 +448,6 @@ const ConversationHeader = ({
     if (normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD) return 'Confiança insuficiente para devolver à IA';
     return 'Devolver atendimento para a IA';
   })();
-  const normalizedAiMode = aiMode;
-
   const openDialog = useCallback((dialog, { returnFocus } = {}) => {
     dialogReturnFocusRef.current = returnFocus ?? null;
     if (dialog === 'register-result') {
