@@ -17,6 +17,7 @@ type WhatsAppWebhookConfig = {
   apiKey: string | null;
   signatureSecret: string | null;
   enforceSignature: boolean;
+  trustedIps: string[];
 };
 
 type WhatsAppDefaultsConfig = {
@@ -143,6 +144,14 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
         normalizeString(process.env.WHATSAPP_WEBHOOK_API_KEY) ??
         normalizeString(process.env.WHATSAPP_BROKER_API_KEY),
       enforceSignature: normalizeBoolean(process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE, false),
+      trustedIps: (
+        process.env.WHATSAPP_WEBHOOK_TRUSTED_IPS ??
+        process.env.WHATSAPP_BROKER_TRUSTED_IPS ??
+        ''
+      )
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
     },
     defaults: {
       instanceId: normalizeString(process.env.WHATSAPP_DEFAULT_INSTANCE_ID),

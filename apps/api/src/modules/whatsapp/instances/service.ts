@@ -2341,11 +2341,25 @@ export const serializeStoredInstance = (
   };
 };
 
-export const normalizeQr = (
-  value: unknown
-): { qr: string | null; qrCode: string | null; expiresAt: string | null; qrExpiresAt: string | null } => {
+type NormalizedQr = {
+  qr: string | null;
+  qrCode: string | null;
+  expiresAt: string | null;
+  qrExpiresAt: string | null;
+  available: boolean;
+  reason: 'UNAVAILABLE' | 'EXPIRED' | null;
+};
+
+export const normalizeQr = (value: unknown): NormalizedQr => {
   if (!value || typeof value !== 'object') {
-    return { qr: null, qrCode: null, expiresAt: null, qrExpiresAt: null };
+    return {
+      qr: null,
+      qrCode: null,
+      expiresAt: null,
+      qrExpiresAt: null,
+      available: false,
+      reason: 'UNAVAILABLE',
+    };
   }
 
   const source = value as Record<string, unknown>;
@@ -2376,12 +2390,20 @@ export const normalizeQr = (
   const qrExpiresAt =
     pickString(source.qrExpiresAt, source.qr_expires_at, qrSource.expiresAt, qrSource.expires_at) ?? null;
 
+  const expiresAt =
+    pickString(source.expiresAt, source.expires_at, qrSource.expiresAt, qrSource.expires_at) ?? qrExpiresAt;
+
+  const available = Boolean((qrCandidate ?? qrCodeCandidate)?.trim());
+  const reason: NormalizedQr['reason'] =
+    available ? null : qrExpiresAt || expiresAt ? 'EXPIRED' : 'UNAVAILABLE';
+
   return {
     qr: qrCandidate,
     qrCode: qrCodeCandidate ?? qrCandidate,
-    expiresAt:
-      pickString(source.expiresAt, source.expires_at, qrSource.expiresAt, qrSource.expires_at) ?? qrExpiresAt,
+    expiresAt,
     qrExpiresAt,
+    available,
+    reason,
   };
 };
 
@@ -2414,6 +2436,8 @@ export const normalizeInstanceStatusResponse = (
   qrCode: string | null;
   expiresAt: string | null;
   qrExpiresAt: string | null;
+  qrAvailable: boolean;
+  qrReason: NormalizedQr['reason'];
 } => {
   if (!status) {
     return {
@@ -2423,6 +2447,8 @@ export const normalizeInstanceStatusResponse = (
       qrCode: null,
       expiresAt: null,
       qrExpiresAt: null,
+      qrAvailable: false,
+      qrReason: 'UNAVAILABLE',
     };
   }
 
@@ -2433,6 +2459,8 @@ export const normalizeInstanceStatusResponse = (
     qrCode: status.qrCode,
     expiresAt: status.expiresAt,
     qrExpiresAt: status.qrExpiresAt,
+    qrAvailable: Boolean((status.qr ?? status.qrCode)?.trim?.()),
+    qrReason: null,
   };
 };
 
@@ -3095,6 +3123,8 @@ export const buildInstanceStatusPayload = (
     qrCode: qr.qrCode,
     qrExpiresAt: qr.qrExpiresAt,
     expiresAt: qr.expiresAt,
+    qrAvailable: qr.available,
+    qrReason: qr.reason,
   };
 
   return {

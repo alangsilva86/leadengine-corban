@@ -408,6 +408,8 @@ router.get(
           refresh,
           fetchSnapshots,
           durationMs,
+          qrAvailable: payload.qr.available,
+          qrReason: payload.qr.reason,
         },
       });
     } catch (error: unknown) {
@@ -504,35 +506,38 @@ router.get(
       return;
     }
 
-    const qrUnavailable = () => {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'QR_NOT_AVAILABLE',
-          message: 'QR Code não disponível no momento. Tente novamente em instantes.',
-        },
-      });
-    };
-
     try {
       const { context, qr } = await fetchStatusWithBrokerQr(tenantId, stored, {
         refresh,
         fetchSnapshots,
       });
 
-      if (!qr.qr && !qr.qrCode) {
+      const payload = buildInstanceStatusPayload(context, qr);
+      const durationMs = Date.now() - startedAt;
+
+      if (!qr.available) {
         logger.warn('whatsapp.instances.qr.empty', {
           tenantId,
           instanceId,
           refresh,
           fetchSnapshots,
+          reason: qr.reason ?? 'UNAVAILABLE',
         });
-        qrUnavailable();
+        res.status(200).json({
+          success: true,
+          data: payload,
+          meta: {
+            tenantId,
+            instanceId,
+            refresh,
+            fetchSnapshots,
+            durationMs,
+            qrAvailable: qr.available,
+            qrReason: qr.reason,
+          },
+        });
         return;
       }
-
-      const payload = buildInstanceStatusPayload(context, qr);
-      const durationMs = Date.now() - startedAt;
 
       logger.info('whatsapp.instances.qr.success', {
         tenantId,
@@ -552,6 +557,8 @@ router.get(
           refresh,
           fetchSnapshots,
           durationMs,
+          qrAvailable: payload.qr.available,
+          qrReason: payload.qr.reason,
         },
       });
     } catch (error: unknown) {
@@ -564,23 +571,36 @@ router.get(
         const brokerError = error as WhatsAppBrokerError;
         const status = readBrokerErrorStatus(brokerError);
         if (status === 404 || status === 410) {
-          logger.warn('whatsapp.instances.qr.brokerNotReady', {
-            tenantId,
-            instanceId,
-            refresh,
-            fetchSnapshots,
-            status,
-          });
-          qrUnavailable();
-          return;
-        }
-
-        logger.error('whatsapp.instances.qr.brokerFailed', {
+        logger.warn('whatsapp.instances.qr.brokerNotReady', {
           tenantId,
           instanceId,
           refresh,
           fetchSnapshots,
           status,
+        });
+        const fallbackPayload = context ? buildInstanceStatusPayload(context) : null;
+        res.status(200).json({
+          success: true,
+          data: fallbackPayload,
+          meta: {
+            tenantId,
+            instanceId,
+            refresh,
+            fetchSnapshots,
+            durationMs: Date.now() - startedAt,
+            qrAvailable: false,
+            qrReason: 'UNAVAILABLE',
+          },
+        });
+        return;
+      }
+
+      logger.error('whatsapp.instances.qr.brokerFailed', {
+        tenantId,
+        instanceId,
+        refresh,
+        fetchSnapshots,
+        status,
           code: brokerError.code,
           requestId: brokerError.requestId,
           error: describeErrorForLog(brokerError),
@@ -709,6 +729,7 @@ router.get(
       res.setHeader('content-type', 'image/png');
       res.status(200).send(buffer);
     } catch (error: unknown) {
+      const context = (error as { __context__?: InstanceOperationContext }).__context__ ?? null;
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         if (handleWhatsAppIntegrationError(res, error)) {
           return;
@@ -811,34 +832,40 @@ router.get(
       return;
     }
 
-    const qrUnavailable = () => {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'QR_NOT_AVAILABLE',
-          message: 'QR Code não disponível no momento. Tente novamente em instantes.',
-        },
-      });
-    };
-
     try {
       const { context, qr } = await fetchStatusWithBrokerQr(tenantId, stored, {
         refresh,
         fetchSnapshots,
       });
 
-      if (!qr.qr && !qr.qrCode) {
+      const payload = buildInstanceStatusPayload(context, qr);
+      const durationMs = Date.now() - startedAt;
+
+      if (!qr.available) {
         logger.warn('whatsapp.instances.qrDefault.empty', {
           tenantId,
           refresh,
           fetchSnapshots,
+          reason: qr.reason ?? 'UNAVAILABLE',
         });
-        qrUnavailable();
+        res.status(200).json({
+          success: true,
+          data: {
+            ...payload,
+            instanceId: payload.instance.id,
+          },
+          meta: {
+            tenantId,
+            instanceId: payload.instance.id,
+            refresh,
+            fetchSnapshots,
+            durationMs,
+            qrAvailable: qr.available,
+            qrReason: qr.reason,
+          },
+        });
         return;
       }
-
-      const payload = buildInstanceStatusPayload(context, qr);
-      const durationMs = Date.now() - startedAt;
 
       logger.info('whatsapp.instances.qrDefault.success', {
         tenantId,
@@ -860,9 +887,12 @@ router.get(
           refresh,
           fetchSnapshots,
           durationMs,
+          qrAvailable: payload.qr.available,
+          qrReason: payload.qr.reason,
         },
       });
     } catch (error: unknown) {
+      const context = (error as { __context__?: InstanceOperationContext }).__context__ ?? null;
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         if (handleWhatsAppIntegrationError(res, error)) {
           return;
@@ -871,15 +901,28 @@ router.get(
         const brokerError = error as WhatsAppBrokerError;
         const status = readBrokerErrorStatus(brokerError);
         if (status === 404 || status === 410) {
-          logger.warn('whatsapp.instances.qrDefault.brokerNotReady', {
+        logger.warn('whatsapp.instances.qrDefault.brokerNotReady', {
+          tenantId,
+          refresh,
+          fetchSnapshots,
+          status,
+        });
+        const fallbackPayload = context ? buildInstanceStatusPayload(context) : null;
+        res.status(200).json({
+          success: true,
+          data: fallbackPayload,
+          meta: {
             tenantId,
+            instanceId: context?.instance.id ?? instanceId,
             refresh,
             fetchSnapshots,
-            status,
-          });
-          qrUnavailable();
-          return;
-        }
+            durationMs: Date.now() - startedAt,
+            qrAvailable: false,
+            qrReason: 'UNAVAILABLE',
+          },
+        });
+        return;
+      }
 
         logger.error('whatsapp.instances.qrDefault.brokerFailed', {
           tenantId,

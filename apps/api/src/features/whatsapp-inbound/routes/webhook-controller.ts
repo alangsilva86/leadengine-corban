@@ -20,6 +20,7 @@ import { asArray, normalizeApiKey, readString, unwrapWebhookEvent } from '../uti
 import { buildIdempotencyKey, registerIdempotency } from '../utils/webhook-idempotency';
 import {
   ensureWebhookContext,
+  isTrustedWebhookIp,
   logWebhookEvent,
   resolveClientAddress,
   trackWebhookRejection,
@@ -83,8 +84,13 @@ const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerCon
   async (req: Request, res: Response, next: NextFunction) => {
     const context = config.ensureWebhookContext(req, res);
     const expectedApiKey = getWebhookApiKey();
+    const trustedIpBypass = isTrustedWebhookIp(context.remoteIp);
 
-    if (expectedApiKey) {
+    if (trustedIpBypass) {
+      config.logWebhookEvent('debug', '✅ WhatsApp webhook authenticated via trusted IP', context, {
+        remoteIp: context.remoteIp,
+      });
+    } else if (expectedApiKey) {
       const providedApiKey = normalizeApiKey(
         readString(
           req.header('x-webhook-token'),

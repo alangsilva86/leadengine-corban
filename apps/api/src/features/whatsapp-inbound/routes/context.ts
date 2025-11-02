@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
 import { logger } from '../../../config/logger';
-import { isWebhookSignatureRequired } from '../../../config/whatsapp';
+import { getWebhookTrustedIps, isWebhookSignatureRequired } from '../../../config/whatsapp';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import { readString as sharedReadString } from '../utils/webhook-parsers';
 
@@ -20,14 +20,16 @@ export type WebhookResponseLocals = Record<string, unknown> & {
 export const readString = (...candidates: unknown[]): string | null => sharedReadString(...candidates);
 
 export const resolveClientAddress = (req: Request): string => {
-  return (
+  const raw =
     readString(
       req.header('x-real-ip'),
       req.header('x-forwarded-for'),
       req.ip,
       req.socket.remoteAddress ?? null
-    ) ?? req.ip ?? 'unknown'
-  );
+    ) ?? req.ip ?? 'unknown';
+
+  const first = raw.split(',')[0]?.trim() ?? raw;
+  return first || 'unknown';
 };
 
 export const ensureWebhookContext = (req: Request, res: Response): WhatsAppWebhookContext => {
@@ -77,4 +79,25 @@ export const trackWebhookRejection = (reason: WebhookRejectionReason) => {
     result: 'rejected',
     reason,
   });
+};
+
+const normalizeIp = (value: string): string => {
+  let ip = value.trim();
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  const lastColon = ip.lastIndexOf(':');
+  const hasPort = lastColon > 0 && ip.indexOf(':') === lastColon;
+  if (hasPort && ip.includes('.')) {
+    ip = ip.substring(0, lastColon);
+  }
+  return ip;
+};
+
+export const isTrustedWebhookIp = (ip: string | null): boolean => {
+  if (!ip || ip === 'unknown') {
+    return false;
+  }
+  const normalized = normalizeIp(ip);
+  return getWebhookTrustedIps().some((candidate) => normalizeIp(candidate) === normalized);
 };

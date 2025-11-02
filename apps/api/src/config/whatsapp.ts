@@ -24,6 +24,8 @@ export const getWebhookSignatureSecret = (): string | null => getWhatsAppConfig(
 
 export const isWebhookSignatureRequired = (): boolean => getWhatsAppConfig().webhook.enforceSignature;
 
+export const getWebhookTrustedIps = (): string[] => getWhatsAppConfig().webhook.trustedIps;
+
 export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().runtime.mode;
 
 export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
