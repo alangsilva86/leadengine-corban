@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { getPrismaClient } from '../prisma-client';
 
 const prisma: PrismaClient = getPrismaClient();
@@ -56,6 +56,59 @@ export const upsertAiConfig = async (input: UpsertAiConfigInput) => {
 
   const scopeKey = providedScope ?? queueId ?? '__global__';
 
+  const finalTemperature = temperature ?? undefined;
+  const finalMaxOutputTokens = maxOutputTokens ?? null;
+  const finalSystemPromptReply = systemPromptReply ?? null;
+  const finalSystemPromptSuggest = systemPromptSuggest ?? null;
+  const finalStructuredOutputSchema =
+    structuredOutputSchema ?? null;
+  const finalTools = tools ?? null;
+  const finalVectorStoreEnabled = vectorStoreEnabled ?? false;
+  const finalVectorStoreIds = vectorStoreIds ?? [];
+  const finalStreamingEnabled = streamingEnabled ?? true;
+  const finalDefaultMode = defaultMode ?? 'COPILOTO';
+  const finalConfidenceThreshold = confidenceThreshold ?? null;
+  const finalFallbackPolicy = fallbackPolicy ?? null;
+
+  const updateData: Prisma.AiConfigUncheckedUpdateInput = {
+    queueId,
+    scopeKey,
+    model,
+    ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
+    maxOutputTokens: finalMaxOutputTokens,
+    systemPromptReply: finalSystemPromptReply,
+    systemPromptSuggest: finalSystemPromptSuggest,
+    structuredOutputSchema:
+      finalStructuredOutputSchema === null ? Prisma.JsonNull : finalStructuredOutputSchema,
+    tools: finalTools === null ? Prisma.JsonNull : finalTools,
+    vectorStoreEnabled: finalVectorStoreEnabled,
+    vectorStoreIds: finalVectorStoreIds,
+    streamingEnabled: finalStreamingEnabled,
+    defaultMode: finalDefaultMode,
+    confidenceThreshold: finalConfidenceThreshold,
+    fallbackPolicy: finalFallbackPolicy,
+  };
+
+  const createData: Prisma.AiConfigUncheckedCreateInput = {
+    tenantId,
+    queueId,
+    scopeKey,
+    model,
+    ...(finalTemperature !== undefined ? { temperature: finalTemperature } : {}),
+    maxOutputTokens: finalMaxOutputTokens,
+    systemPromptReply: finalSystemPromptReply,
+    systemPromptSuggest: finalSystemPromptSuggest,
+    structuredOutputSchema:
+      finalStructuredOutputSchema === null ? Prisma.JsonNull : finalStructuredOutputSchema,
+    tools: finalTools === null ? Prisma.JsonNull : finalTools,
+    vectorStoreEnabled: finalVectorStoreEnabled,
+    vectorStoreIds: finalVectorStoreIds,
+    streamingEnabled: finalStreamingEnabled,
+    defaultMode: finalDefaultMode,
+    confidenceThreshold: finalConfidenceThreshold,
+    fallbackPolicy: finalFallbackPolicy,
+  };
+
   return prisma.aiConfig.upsert({
     where: {
       tenantId_scopeKey: {
@@ -63,41 +116,8 @@ export const upsertAiConfig = async (input: UpsertAiConfigInput) => {
         scopeKey,
       },
     },
-    update: {
-      queueId,
-      scopeKey,
-      model,
-      temperature: temperature ?? undefined,
-      maxOutputTokens,
-      systemPromptReply,
-      systemPromptSuggest,
-      structuredOutputSchema,
-      tools,
-      vectorStoreEnabled,
-      vectorStoreIds,
-      streamingEnabled,
-      defaultMode: defaultMode ?? undefined,
-      confidenceThreshold,
-      fallbackPolicy,
-    },
-    create: {
-      tenantId,
-      queueId,
-      scopeKey,
-      model,
-      temperature: temperature ?? undefined,
-      maxOutputTokens,
-      systemPromptReply,
-      systemPromptSuggest,
-      structuredOutputSchema,
-      tools,
-      vectorStoreEnabled,
-      vectorStoreIds,
-      streamingEnabled,
-      defaultMode: defaultMode ?? undefined,
-      confidenceThreshold,
-      fallbackPolicy,
-    },
+    update: updateData,
+    create: createData,
   });
 };
 
@@ -110,14 +130,16 @@ export const recordAiSuggestion = async (params: {
 }) => {
   const { tenantId, conversationId, configId, payload, confidence } = params;
 
+  const data: Prisma.AiSuggestionUncheckedCreateInput = {
+    tenantId,
+    conversationId,
+    configId: configId ?? null,
+    payload: payload === null ? Prisma.JsonNull : payload,
+    confidence: confidence ?? null,
+  };
+
   return prisma.aiSuggestion.create({
-    data: {
-      tenantId,
-      conversationId,
-      configId: configId ?? undefined,
-      payload,
-      confidence,
-    },
+    data,
   });
 };
 
@@ -131,6 +153,9 @@ export const upsertAiMemory = async (params: {
 }) => {
   const { tenantId, contactId, topic, content, metadata, expiresAt } = params;
 
+  const normalizedMetadata =
+    metadata === undefined ? undefined : metadata === null ? Prisma.JsonNull : metadata;
+
   return prisma.aiMemory.upsert({
     where: {
       tenantId_contactId_topic: {
@@ -141,16 +166,16 @@ export const upsertAiMemory = async (params: {
     },
     update: {
       content,
-      metadata: metadata ?? undefined,
-      expiresAt,
+      ...(normalizedMetadata !== undefined ? { metadata: normalizedMetadata } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
     },
     create: {
       tenantId,
       contactId,
       topic,
       content,
-      metadata: metadata ?? undefined,
-      expiresAt,
+      ...(normalizedMetadata !== undefined ? { metadata: normalizedMetadata } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
     },
   });
 };
@@ -186,21 +211,25 @@ export const recordAiRun = async (params: {
     status,
   } = params;
 
+  const data: Prisma.AiRunUncheckedCreateInput = {
+    tenantId,
+    conversationId,
+    configId: configId ?? null,
+    runType,
+    adapter: adapter ?? null,
+    requestPayload: requestPayload === null ? Prisma.JsonNull : requestPayload,
+    ...(responsePayload !== undefined
+      ? { responsePayload: responsePayload === null ? Prisma.JsonNull : responsePayload }
+      : {}),
+    latencyMs: latencyMs ?? null,
+    promptTokens: promptTokens ?? null,
+    completionTokens: completionTokens ?? null,
+    totalTokens: totalTokens ?? null,
+    costUsd: costUsd ?? null,
+    status: status ?? 'success',
+  };
+
   return prisma.aiRun.create({
-    data: {
-      tenantId,
-      conversationId,
-      configId: configId ?? undefined,
-      runType,
-      adapter: adapter ?? undefined,
-      requestPayload,
-      responsePayload,
-      latencyMs,
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      costUsd,
-      status,
-    },
+    data,
   });
 };
