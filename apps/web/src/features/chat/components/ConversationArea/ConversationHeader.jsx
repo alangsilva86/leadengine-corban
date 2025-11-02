@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 import { cn, formatPhoneNumber, buildInitials } from '@/lib/utils.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { toast } from 'sonner';
@@ -80,6 +81,25 @@ const INDICATOR_TONES = {
   neutral: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
   success: 'border-success-soft-border bg-success-soft text-success-strong',
 };
+
+const AI_MODE_OPTIONS = [
+  { value: 'assist', label: 'IA assistida' },
+  { value: 'autonomous', label: 'IA autônoma' },
+  { value: 'manual', label: 'Agente no comando' },
+] as const;
+
+const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
+
+const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
+
+const AI_CONFIDENCE_TONES = {
+  high: 'border-success-soft-border bg-success-soft text-success-strong',
+  medium: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+  low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+  unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+};
+
+const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
 const PRIMARY_ACTION_PRESETS = {
   initialContact: {
@@ -900,6 +920,11 @@ const ConversationHeader = ({
   onNextStepSave,
   onFocusComposer,
   composerHeight,
+  aiMode = DEFAULT_AI_MODE,
+  aiConfidence = null,
+  onTakeOver,
+  onGiveBackToAi,
+  onAiModeChange,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
@@ -1018,6 +1043,83 @@ const ConversationHeader = ({
     phoneAction('sms');
     onSendSMS?.(rawPhone);
   }, [onSendSMS, phoneAction, rawPhone]);
+
+  const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
+
+  const normalizedConfidence = useMemo(() => {
+    if (typeof aiConfidence !== 'number' || Number.isNaN(aiConfidence)) {
+      return null;
+    }
+
+    if (aiConfidence > 1) {
+      const ratio = aiConfidence / 100;
+      return Math.max(0, Math.min(1, ratio));
+    }
+
+    if (aiConfidence < 0) {
+      return 0;
+    }
+
+    return Math.max(0, Math.min(1, aiConfidence));
+  }, [aiConfidence]);
+
+  const aiConfidencePercent = normalizedConfidence !== null ? Math.round(normalizedConfidence * 100) : null;
+
+  const aiConfidenceTone = normalizedConfidence === null
+    ? 'unknown'
+    : normalizedConfidence >= 0.75
+      ? 'high'
+      : normalizedConfidence >= AI_HANDOFF_CONFIDENCE_THRESHOLD
+        ? 'medium'
+        : 'low';
+
+  const aiConfidenceLabel = aiConfidencePercent !== null ? `${aiConfidencePercent}% confiança` : 'Confiança indisponível';
+  const aiConfidenceToneClass = AI_CONFIDENCE_TONES[aiConfidenceTone] ?? AI_CONFIDENCE_TONES.unknown;
+
+  const aiModeSelectDisabled = !ticket || !onAiModeChange;
+
+  const handleAiModeSelect = useCallback(
+    (value) => {
+      if (!onAiModeChange || !isValidAiMode(value)) {
+        return;
+      }
+
+      onAiModeChange(value);
+    },
+    [onAiModeChange],
+  );
+
+  const handleTakeOverClick = useCallback(() => {
+    onTakeOver?.();
+  }, [onTakeOver]);
+
+  const handleGiveBackClick = useCallback(() => {
+    onGiveBackToAi?.();
+  }, [onGiveBackToAi]);
+
+  const takeoverDisabled = !ticket || !onTakeOver || normalizedAiMode === 'manual';
+  const giveBackDisabled =
+    !ticket ||
+    !onGiveBackToAi ||
+    normalizedAiMode === 'autonomous' ||
+    normalizedConfidence === null ||
+    normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD;
+
+  const takeoverTooltipMessage = (() => {
+    if (!ticket) return 'Nenhum ticket selecionado';
+    if (!onTakeOver) return 'Ação indisponível';
+    if (normalizedAiMode === 'manual') return 'Agente já está no comando';
+    return 'Assumir atendimento manualmente';
+  })();
+
+  const giveBackTooltipMessage = (() => {
+    if (!ticket) return 'Nenhum ticket selecionado';
+    if (!onGiveBackToAi) return 'Ação indisponível';
+    if (normalizedAiMode === 'autonomous') return 'IA já está no comando';
+    if (normalizedConfidence === null) return 'Confiança da IA indisponível';
+    if (normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD) return 'Confiança insuficiente para devolver à IA';
+    return 'Devolver atendimento para a IA';
+  })();
 
   const openDialog = useCallback((dialog, { returnFocus } = {}) => {
     dialogReturnFocusRef.current = returnFocus ?? null;
@@ -1239,6 +1341,73 @@ const ConversationHeader = ({
           onExecute={handlePrimaryAction}
           disabled={!primaryAction}
         />
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={normalizedAiMode} onValueChange={handleAiModeSelect} disabled={aiModeSelectDisabled}>
+            <SelectTrigger
+              disabled={aiModeSelectDisabled}
+              className={cn(
+                'h-9 w-[180px] shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-left text-xs font-medium text-foreground hover:bg-surface-overlay-strong focus:outline-none focus:ring-2 focus:ring-[color:var(--accent-inbox-primary)] focus:ring-offset-1 focus:ring-offset-[color:var(--surface-shell)]',
+                aiModeSelectDisabled && 'opacity-60',
+              )}
+            >
+              <SelectValue placeholder="Modo IA" />
+            </SelectTrigger>
+            <SelectContent className="border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground">
+              {AI_MODE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-sm">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={cn(
+                  'inline-flex h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors',
+                  aiConfidenceToneClass,
+                )}
+              >
+                {aiConfidenceLabel}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Confiança estimada da IA para assumir este ticket.</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-xs font-medium text-foreground hover:bg-surface-overlay-strong"
+                  onClick={handleTakeOverClick}
+                  disabled={takeoverDisabled}
+                >
+                  Assumir
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{takeoverTooltipMessage}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-9 rounded-full bg-[color:var(--accent-inbox-primary)] text-xs font-medium text-white hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)] disabled:bg-[color:var(--accent-inbox-primary)]/60"
+                  onClick={handleGiveBackClick}
+                  disabled={giveBackDisabled}
+                >
+                  Devolver à IA
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{giveBackTooltipMessage}</TooltipContent>
+          </Tooltip>
+        </div>
         <CommandBar
           context={commandContext}
           className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { ChatCommandCenter } from '../ChatCommandCenter.jsx';
@@ -14,6 +14,58 @@ import emitInboxTelemetry from '../utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';
 import { apiPost } from '@/lib/api.js';
+
+const AI_MODE_VALUES = ['assist', 'autonomous', 'manual'] as const;
+
+type AiMode = (typeof AI_MODE_VALUES)[number];
+
+const DEFAULT_AI_MODE: AiMode = 'assist';
+
+const isAiMode = (value: unknown): value is AiMode =>
+  typeof value === 'string' && (AI_MODE_VALUES as readonly string[]).includes(value);
+
+const resolveTicketAiMode = (ticket: unknown): AiMode | null => {
+  if (!ticket || typeof ticket !== 'object') {
+    return null;
+  }
+
+  const candidates = [
+    (ticket as any)?.automation?.mode,
+    (ticket as any)?.metadata?.aiMode,
+    (ticket as any)?.metadata?.automationMode,
+    (ticket as any)?.aiMode,
+  ];
+
+  for (const candidate of candidates) {
+    if (isAiMode(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const resolveTicketAiConfidence = (ticket: unknown): number | null => {
+  if (!ticket || typeof ticket !== 'object') {
+    return null;
+  }
+
+  const candidates = [
+    (ticket as any)?.automation?.confidence,
+    (ticket as any)?.metadata?.aiConfidence,
+    (ticket as any)?.metadata?.automationConfidence,
+    (ticket as any)?.aiConfidence,
+    (ticket as any)?.confidence,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
 
 type AttachmentLike = {
   id?: string | null;
@@ -79,6 +131,92 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const selectedTicket = controller.selectedTicket ?? null;
   const selectedContact = selectedTicket?.contact ?? null;
   const selectedLead = selectedTicket?.lead ?? null;
+  const selectedTicketIdValue = selectedTicket?.id ?? controller.selectedTicketId ?? null;
+  const selectedTicketKey = selectedTicketIdValue == null ? null : String(selectedTicketIdValue);
+
+  const [aiModesByTicket, setAiModesByTicket] = useState<Record<string, AiMode>>({});
+
+  const ticketAiMode = useMemo(() => resolveTicketAiMode(selectedTicket), [selectedTicket]);
+  const aiConfidence = useMemo(() => resolveTicketAiConfidence(selectedTicket), [selectedTicket]);
+
+  const aiMode = useMemo(() => {
+    if (!selectedTicketKey) {
+      return ticketAiMode ?? DEFAULT_AI_MODE;
+    }
+
+    return aiModesByTicket[selectedTicketKey] ?? ticketAiMode ?? DEFAULT_AI_MODE;
+  }, [aiModesByTicket, selectedTicketKey, ticketAiMode]);
+
+  const persistAiMode = useCallback(
+    async (ticketId: string, mode: AiMode) => {
+      try {
+        await apiPost(`/api/tickets/${ticketId}/ai-mode`, { mode });
+      } catch (error) {
+        console.debug('Falha ao persistir modo de IA', { ticketId, mode, error });
+      }
+    },
+    [],
+  );
+
+  const setAiModeForTicket = useCallback(
+    (mode: AiMode) => {
+      if (!selectedTicketKey || selectedTicketIdValue == null) {
+        return;
+      }
+
+      setAiModesByTicket((previous) => {
+        const current = previous[selectedTicketKey];
+        if (current === mode) {
+          return previous;
+        }
+        return { ...previous, [selectedTicketKey]: mode };
+      });
+
+      void persistAiMode(String(selectedTicketIdValue), mode);
+    },
+    [persistAiMode, selectedTicketIdValue, selectedTicketKey],
+  );
+
+  const handleAiModeChange = useCallback(
+    (mode: AiMode) => {
+      if (!isAiMode(mode)) {
+        return;
+      }
+
+      setAiModeForTicket(mode);
+      if (selectedTicketIdValue != null) {
+        emitInboxTelemetry('chat.ai.mode.select', {
+          ticketId: selectedTicketIdValue,
+          mode,
+        });
+      }
+    },
+    [selectedTicketIdValue, setAiModeForTicket],
+  );
+
+  const handleAiTakeOver = useCallback(() => {
+    if (selectedTicketIdValue == null) {
+      return;
+    }
+
+    setAiModeForTicket('manual');
+    emitInboxTelemetry('chat.ai.mode.take_over', {
+      ticketId: selectedTicketIdValue,
+      mode: 'manual',
+    });
+  }, [selectedTicketIdValue, setAiModeForTicket]);
+
+  const handleAiGiveBack = useCallback(() => {
+    if (selectedTicketIdValue == null) {
+      return;
+    }
+
+    setAiModeForTicket('autonomous');
+    emitInboxTelemetry('chat.ai.mode.give_back', {
+      ticketId: selectedTicketIdValue,
+      mode: 'autonomous',
+    });
+  }, [selectedTicketIdValue, setAiModeForTicket]);
 
   const manualConversation = useManualConversationFlow({ controller });
   const availability = useWhatsAppAvailability({ selectedTicketId: controller.selectedTicketId });
@@ -531,6 +669,11 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onDealFieldSave: fieldUpdaters.onDealFieldSave,
     nextStepValue: fieldUpdaters.nextStepValue,
     onNextStepSave: fieldUpdaters.onNextStepSave,
+    aiMode,
+    aiConfidence,
+    onTakeOver: selectedTicket ? handleAiTakeOver : undefined,
+    onGiveBackToAi: selectedTicket ? handleAiGiveBack : undefined,
+    onAiModeChange: selectedTicket ? handleAiModeChange : undefined,
   };
 
   return (
