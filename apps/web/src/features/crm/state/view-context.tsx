@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useMemo, useReducer } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react';
 import type { ReactNode } from 'react';
 import type { CrmFilterState } from './types.ts';
+import { normalizeCrmFilters } from '../utils/filter-serialization.ts';
 
 export type CrmViewType = 'kanban' | 'list' | 'calendar' | 'timeline' | 'aging' | 'insights';
 
@@ -130,7 +131,17 @@ type CrmViewContextValue = {
 const Context = createContext<CrmViewContextValue | undefined>(undefined);
 
 export const CrmViewProvider = ({ filters, children }: { filters: CrmFilterState; children: ReactNode }) => {
-  const [state, dispatch] = useReducer(reducer, filters, INITIAL_STATE);
+  const normalizedFilters = useMemo(() => normalizeCrmFilters(filters), [filters]);
+  const [state, dispatch] = useReducer(reducer, normalizedFilters, INITIAL_STATE);
+
+  const serializedPropFilters = useMemo(() => JSON.stringify(normalizedFilters), [normalizedFilters]);
+  const serializedStateFilters = useMemo(() => JSON.stringify(state.filters), [state.filters]);
+
+  useEffect(() => {
+    if (serializedPropFilters !== serializedStateFilters) {
+      dispatch({ type: 'SET_FILTERS', filters: normalizedFilters });
+    }
+  }, [serializedPropFilters, serializedStateFilters, normalizedFilters]);
 
   const setFilters = useCallback((nextFilters: CrmFilterState) => {
     dispatch({ type: 'SET_FILTERS', filters: nextFilters });
