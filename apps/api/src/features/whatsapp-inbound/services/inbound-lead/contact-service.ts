@@ -184,23 +184,23 @@ export const ensureContact = async (
     name,
     readString(existing?.fullName),
     'Contato WhatsApp',
-  ]);
+  ]) ?? 'Contato WhatsApp';
 
   const normalizedPhone = phone?.trim() ?? existing?.primaryPhone ?? null;
 
   const contactData: Prisma.ContactUpdateInput = {
     fullName: derivedName,
     displayName: derivedName,
-    primaryPhone: normalizedPhone,
-    document: document ?? existing?.document ?? null,
-    avatar: avatar ?? existing?.avatar ?? null,
+    ...(normalizedPhone ? { primaryPhone: normalizedPhone } : {}),
+    ...(document ? { document } : {}),
+    ...(avatar ? { avatar } : {}),
     customFields: customFields as Prisma.InputJsonValue,
     lastInteractionAt: interactionDate,
     lastActivityAt: interactionDate,
   };
 
   const persisted = await prisma.$transaction(async (tx) => {
-    const target =
+    const target: PrismaContactWithRelations =
       existing !== null
         ? await tx.contact.update({
             where: { id: existing.id },
@@ -212,9 +212,9 @@ export const ensureContact = async (
               tenantId,
               fullName: derivedName,
               displayName: derivedName,
-              primaryPhone: normalizedPhone,
-              document: document ?? null,
-              avatar: avatar ?? null,
+              ...(normalizedPhone ? { primaryPhone: normalizedPhone } : {}),
+              ...(document ? { document } : {}),
+              ...(avatar ? { avatar } : {}),
               customFields: customFields as Prisma.InputJsonValue,
               lastInteractionAt: interactionDate,
               lastActivityAt: interactionDate,

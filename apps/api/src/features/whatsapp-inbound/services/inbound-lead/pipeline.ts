@@ -61,10 +61,11 @@ import { getCampaignCache } from './state';
 import { emitRealtimeUpdatesForInbound } from './realtime-service';
 import { upsertLeadFromInbound } from './lead-service';
 import { ensureTicketForContact } from './ticket-service';
+import type { MessageType } from '../../../../types/tickets';
 
 const campaignCache = getCampaignCache();
 
-const resolveTimelineMessageType = (message: NormalizedInboundMessage): string => {
+const resolveTimelineMessageType = (message: NormalizedInboundMessage): MessageType => {
   switch ((message as any).type) {
     case 'IMAGE':
     case 'VIDEO':
@@ -73,7 +74,7 @@ const resolveTimelineMessageType = (message: NormalizedInboundMessage): string =
     case 'LOCATION':
     case 'CONTACT':
     case 'TEMPLATE':
-      return (message as any).type;
+      return (message as any).type as MessageType;
     case 'TEXT':
     default:
       return 'TEXT';
@@ -221,8 +222,6 @@ export const processStandardInboundEvent = async (
   let instance: WhatsAppInstanceRecord | null = preloadedInstance ?? null;
   let resolvedInstanceId = instanceIdentifier;
 
-  const selectInstanceFields = { id: true, tenantId: true, brokerId: true } satisfies Prisma.WhatsAppInstanceSelect;
-
   const buildProvisionMetadata = (candidateId: string | null | undefined) => {
     const cloned = JSON.parse(JSON.stringify(metadataRecord ?? {})) as Record<string, unknown>;
 
@@ -308,7 +307,6 @@ export const processStandardInboundEvent = async (
     instance =
       (await prisma.whatsAppInstance.findUnique({
         where: { id: resolvedInstanceId },
-        select: selectInstanceFields,
       })) ?? (await autoProvisionInstance(resolvedInstanceId));
   }
 
@@ -316,14 +314,12 @@ export const processStandardInboundEvent = async (
     instance =
       (await prisma.whatsAppInstance.findFirst({
         where: { brokerId: resolvedBrokerId },
-        select: selectInstanceFields,
       })) ?? (await autoProvisionInstance(resolvedBrokerId));
   }
 
   if (!instance && tenantIdForBrokerLookup) {
     instance = await prisma.whatsAppInstance.findFirst({
       where: { tenantId: tenantIdForBrokerLookup },
-      select: selectInstanceFields,
     });
   }
 
