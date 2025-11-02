@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { getPrismaClient } from '../prisma-client';
 
@@ -90,6 +91,7 @@ export const upsertAiConfig = async (input: UpsertAiConfigInput) => {
   };
 
   const createData: Prisma.AiConfigUncheckedCreateInput = {
+    id: randomUUID(),
     tenantId,
     queueId,
     scopeKey,
@@ -131,6 +133,7 @@ export const recordAiSuggestion = async (params: {
   const { tenantId, conversationId, configId, payload, confidence } = params;
 
   const data: Prisma.AiSuggestionUncheckedCreateInput = {
+    id: randomUUID(),
     tenantId,
     conversationId,
     configId: configId ?? null,
@@ -170,6 +173,7 @@ export const upsertAiMemory = async (params: {
       ...(expiresAt !== undefined ? { expiresAt } : {}),
     },
     create: {
+      id: randomUUID(),
       tenantId,
       contactId,
       topic,
@@ -212,6 +216,7 @@ export const recordAiRun = async (params: {
   } = params;
 
   const data: Prisma.AiRunUncheckedCreateInput = {
+    id: randomUUID(),
     tenantId,
     conversationId,
     configId: configId ?? null,
