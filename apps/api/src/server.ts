@@ -29,6 +29,7 @@ import { ticketMessagesRouter } from './routes/messages.ticket';
 import { contactMessagesRouter } from './routes/messages.contact';
 import { whatsappMessagesRouter } from './routes/integrations/whatsapp.messages';
 import { whatsappUploadsRouter } from './routes/whatsapp.uploads';
+import { aiRouter } from './routes/ai';
 import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
@@ -387,6 +388,7 @@ app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api', authMiddleware, preferencesRouter);
+app.use('/api/ai', authMiddleware, aiRouter);
 
 // Socket.IO para tempo real
 io.use((socket, next) => {
