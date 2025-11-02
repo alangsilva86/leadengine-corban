@@ -44,11 +44,12 @@ export const useConversationExperience = ({
   const disabled = Boolean(composerDisabled);
   const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
 
-  const ai = useAiSuggestions();
+  const ticketId = ticket?.id ?? null;
+  const tenantId = ticket?.tenantId ?? null;
+  const ai = useAiSuggestions({ ticketId, tenantId });
   const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
   const composerRef = useRef(null);
   const composerApiRef = useRef(null);
-  const ticketId = ticket?.id ?? null;
 
   const { timelineItems, hasMore, isLoadingMore, handleLoadMore, lastEntryKey } = useTicketMessages(messagesQuery);
   const { composerHeight, composerOffset } = useComposerMetrics(composerRef, ticketId);
@@ -57,7 +58,7 @@ export const useConversationExperience = ({
 
   useEffect(() => {
     ai.reset();
-  }, [ai, ticketId]);
+  }, [ai.reset, tenantId, ticketId]);
 
   useConversationScroll({
     scrollRef,

@@ -4,12 +4,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import ConversationHeader, {
-  PrimaryActionButton,
-  formatStageLabel,
-  normalizeStage,
-  resolvePrimaryAction,
-} from '../ConversationHeader.jsx';
+import ConversationHeader, { PrimaryActionButton } from '../ConversationHeader.jsx';
+import { formatStageLabel, normalizeStage, resolvePrimaryAction } from '../utils/stage.js';
 
 vi.mock('sonner', () => ({
   toast: {
