@@ -1191,7 +1191,7 @@ export const createWhatsAppInstance = async ({
 
   const sideEffects: AsyncSideEffect[] = [
     async () => {
-      await clearInstanceArchive(tenantId, stored.id);
+      await clearInstanceArchive(tenantId, stored.id, brokerId);
     },
     async () => {
       await removeCachedSnapshot(tenantId, instanceId, brokerId);
@@ -1353,8 +1353,6 @@ export const archiveInstanceSnapshot = async (
   input: InstanceArchiveInput
 ): Promise<void> => {
   const { tenantId, stored, context, actorId, deletedAt } = input;
-  const key = buildInstanceArchiveKey(tenantId, stored.id);
-
   const serialized = serializeStoredInstance(context.stored, context.brokerStatus);
 
   const history =
@@ -1376,15 +1374,36 @@ export const archiveInstanceSnapshot = async (
     instancesBeforeDeletion: toJsonArray(context.instances),
   };
 
-  try {
-    await client.integrationState.upsert({
-      where: { key },
-      update: { value: archivePayload },
-      create: { key, value: archivePayload },
+  const normalizedBrokerId =
+    typeof stored.brokerId === 'string' ? stored.brokerId.trim() : '';
+
+  const targets: Array<{ key: string; value: Prisma.JsonObject }> = [
+    { key: buildInstanceArchiveKey(tenantId, stored.id), value: archivePayload },
+  ];
+
+  if (normalizedBrokerId && normalizedBrokerId !== stored.id) {
+    targets.push({
+      key: buildInstanceArchiveKey(tenantId, normalizedBrokerId),
+      value: {
+        deletedAt,
+        aliasOf: stored.id,
+        instanceId: stored.id,
+        brokerId: normalizedBrokerId,
+      } satisfies Prisma.JsonObject,
     });
-  } catch (error) {
-    if (!logWhatsAppStorageError('archiveInstanceSnapshot', error, { tenantId, key, instanceId: stored.id })) {
-      throw error;
+  }
+
+  for (const target of targets) {
+    try {
+      await client.integrationState.upsert({
+        where: { key: target.key },
+        update: { value: target.value },
+        create: { key: target.key, value: target.value },
+      });
+    } catch (error) {
+      if (!logWhatsAppStorageError('archiveInstanceSnapshot', error, { tenantId, key: target.key, instanceId: stored.id })) {
+        throw error;
+      }
     }
   }
 };
@@ -1460,23 +1479,35 @@ export const readInstanceArchives = async (
   return archives;
 };
 
-export const clearInstanceArchive = async (tenantId: string, instanceId: string): Promise<void> => {
-  const normalized = typeof instanceId === 'string' ? instanceId.trim() : '';
-  if (!normalized) {
+export const clearInstanceArchive = async (
+  tenantId: string,
+  ...instanceIds: Array<string | null | undefined>
+): Promise<void> => {
+  const normalizedIds = Array.from(
+    new Set(
+      instanceIds
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value) => value.length > 0)
+    )
+  );
+
+  if (normalizedIds.length === 0) {
     return;
   }
 
-  const key = buildInstanceArchiveKey(tenantId, normalized);
+  for (const instanceId of normalizedIds) {
+    const key = buildInstanceArchiveKey(tenantId, instanceId);
 
-  try {
-    await prisma.integrationState.delete({ where: { key } });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-      return;
-    }
+    try {
+      await prisma.integrationState.delete({ where: { key } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        continue;
+      }
 
-    if (!logWhatsAppStorageError('clearInstanceArchive', error, { tenantId, instanceId: normalized })) {
-      throw error;
+      if (!logWhatsAppStorageError('clearInstanceArchive', error, { tenantId, instanceId })) {
+        throw error;
+      }
     }
   }
 };
