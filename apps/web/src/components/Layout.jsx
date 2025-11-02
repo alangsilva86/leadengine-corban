@@ -4,6 +4,7 @@ import {
   Home,
   Users,
   Briefcase,
+  Layers,
   QrCode,
   MessageSquare,
   BarChart3,
@@ -52,6 +53,7 @@ const NAVIGATION_ITEMS = (() => {
   const items = [
     { id: 'dashboard', label: 'Visão Geral', icon: Home },
     { id: 'contacts', label: 'Contatos', icon: Users },
+    { id: 'crm', label: 'CRM', icon: Layers },
     { id: 'agreements', label: 'Convênios', icon: Briefcase },
     { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
     { id: 'inbox', label: 'Inbox', icon: MessageSquare },

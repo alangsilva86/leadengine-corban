@@ -18,6 +18,7 @@ import { authRouter } from './routes/auth';
 import { integrationWebhooksRouter, webhooksRouter } from './routes/webhooks';
 import { integrationsRouter } from './routes/integrations';
 import { leadEngineRouter } from './routes/lead-engine';
+import { crmRouter } from './routes/crm';
 import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
 import { getWhatsAppMode } from './config/whatsapp';
@@ -358,6 +359,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', leadEngineRouter);
+app.use('/api/crm', authMiddleware, crmRouter);
 app.use('/api/debug/wa', (req, res, next) => {
   if (!isWhatsappDebugToolsEnabled()) {
     res.status(404).json({

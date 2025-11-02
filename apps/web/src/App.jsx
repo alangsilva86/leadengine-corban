@@ -5,6 +5,7 @@ import './App.css';
 import useOnboardingJourney from './features/onboarding/useOnboardingJourney.js';
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
+const CrmModule = lazy(() => import('./features/crm/CrmModule.jsx'));
 
 export const PageFallback = () => (
   <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">
@@ -33,6 +34,12 @@ const OnboardingRoute = () => {
         return;
       }
 
+      if (nextPage === 'crm') {
+        dispatchGlobalNavigation(nextPage);
+        navigate('/crm');
+        return;
+      }
+
       handleNavigate(nextPage);
     },
     [handleNavigate, navigate]
@@ -56,6 +63,12 @@ const ContactsBoundary = () => (
   </Suspense>
 );
 
+const CrmBoundary = () => (
+  <Suspense fallback={<PageFallback />}>
+    <CrmModule />
+  </Suspense>
+);
+
 const router = createBrowserRouter([
   {
     path: '/',
@@ -64,6 +77,10 @@ const router = createBrowserRouter([
   {
     path: '/contacts/*',
     element: <ContactsBoundary />,
+  },
+  {
+    path: '/crm/*',
+    element: <CrmBoundary />,
   },
   {
     path: '*',
