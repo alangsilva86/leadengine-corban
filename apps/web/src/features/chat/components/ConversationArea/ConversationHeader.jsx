@@ -543,6 +543,7 @@ const ConversationHeader = ({
       title={title}
       shortId={shortId}
       statusInfo={statusInfo}
+      stageKey={stageKey}
       stageInfo={stageInfo}
       originInfo={originInfo}
       typingAgents={typingAgents}
