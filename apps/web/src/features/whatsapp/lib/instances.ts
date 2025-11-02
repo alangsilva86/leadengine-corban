@@ -3,7 +3,7 @@ import { extractQrPayload } from '../utils/qr.js';
 export const looksLikeWhatsAppJid = (value: unknown): value is string =>
   typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
-export const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting']);
+export const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting', 'disconnected', 'qr_required', 'error']);
 
 export const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
