@@ -63,7 +63,10 @@ describe('ReplyStreamer', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
-    streamer.handleEvent({ type: 'response.output_text.delta', delta: 'Olá' });
+    streamer.handleEvent({
+      type: 'response.output_text.delta',
+      delta: { type: 'output_text.delta', text: 'Olá' },
+    });
     streamer.handleEvent({
       type: 'response.tool_call.delta',
       delta: { id: 'call_1', name: 'lookup', arguments: '{"value":1}' },
@@ -73,7 +76,27 @@ describe('ReplyStreamer', () => {
       id: 'call_1',
       response: { id: 'resp_123' },
     });
-    streamer.handleEvent({ type: 'response.output_text.delta', delta: ' mundo' });
+    streamer.handleEvent({
+      type: 'response.output_text.delta',
+      delta: { type: 'output_text.delta', text: ' mundo' },
+    });
+    streamer.handleEvent({
+      type: 'response.output_text.done',
+      output_text: { type: 'output_text', text: 'Olá mundo' },
+    });
+    streamer.handleEvent({
+      type: 'response.completed',
+      response: {
+        model: 'gpt-4o-mini',
+        usage: { prompt_tokens: 5, completion_tokens: 5 },
+        output: [
+          {
+            type: 'message',
+            content: [{ type: 'output_text', text: 'Olá mundo' }],
+          },
+        ],
+      },
+    });
 
     const deltaEvents = events.filter((entry) => entry.event === 'delta');
     expect(deltaEvents.map((entry) => entry.data.delta)).toEqual(['Olá', ' mundo']);
