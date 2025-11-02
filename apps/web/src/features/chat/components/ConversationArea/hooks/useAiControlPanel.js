@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 
 const AI_MODE_OPTIONS = [
   { value: 'assist', label: 'IA assistida' },
-  { value: 'autonomous', label: 'IA autônoma' },
+  { value: 'auto', label: 'IA autônoma' },
   { value: 'manual', label: 'Agente no comando' },
 ];
 
@@ -16,6 +16,20 @@ const AI_CONFIDENCE_TONES = {
   unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
 };
 
+const normalizeAiModeValue = (value) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === 'autonomous') {
+    return 'auto';
+  }
+
+  return normalized;
+};
+
 const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
 const useAiControlPanel = ({
@@ -25,8 +39,12 @@ const useAiControlPanel = ({
   onAiModeChange,
   onTakeOver,
   onGiveBackToAi,
+  aiModeChangeDisabled = false,
 }) => {
-  const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
+  const normalizedAiModeCandidate = normalizeAiModeValue(aiMode);
+  const normalizedAiMode = isValidAiMode(normalizedAiModeCandidate)
+    ? normalizedAiModeCandidate
+    : DEFAULT_AI_MODE;
 
   const normalizedConfidence = useMemo(() => {
     if (typeof aiConfidence !== 'number' || Number.isNaN(aiConfidence)) {
@@ -62,17 +80,19 @@ const useAiControlPanel = ({
   const aiConfidenceLabel =
     aiConfidencePercent !== null ? `${aiConfidencePercent}% confiança` : 'Confiança indisponível';
 
-  const aiModeSelectDisabled = !ticket || !onAiModeChange;
+  const aiModeSelectDisabled = !ticket || !onAiModeChange || aiModeChangeDisabled;
 
   const handleAiModeSelect = useCallback(
     (value) => {
-      if (!onAiModeChange || !isValidAiMode(value)) {
+      const normalizedValue = normalizeAiModeValue(value);
+
+      if (!onAiModeChange || aiModeChangeDisabled || !isValidAiMode(normalizedValue)) {
         return;
       }
 
-      onAiModeChange(value);
+      onAiModeChange(normalizedValue);
     },
-    [onAiModeChange],
+    [aiModeChangeDisabled, onAiModeChange],
   );
 
   const handleTakeOverClick = useCallback(() => {
@@ -84,37 +104,40 @@ const useAiControlPanel = ({
   }, [onGiveBackToAi]);
 
   const takeoverDisabled = useMemo(
-    () => !ticket || !onTakeOver || normalizedAiMode === 'manual',
-    [normalizedAiMode, onTakeOver, ticket],
+    () => !ticket || !onTakeOver || aiModeChangeDisabled || normalizedAiMode === 'manual',
+    [aiModeChangeDisabled, normalizedAiMode, onTakeOver, ticket],
   );
 
   const giveBackDisabled = useMemo(
     () =>
       !ticket ||
       !onGiveBackToAi ||
-      normalizedAiMode === 'autonomous' ||
+      aiModeChangeDisabled ||
+      normalizedAiMode === 'auto' ||
       normalizedConfidence === null ||
       normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD,
-    [normalizedAiMode, normalizedConfidence, onGiveBackToAi, ticket],
+    [aiModeChangeDisabled, normalizedAiMode, normalizedConfidence, onGiveBackToAi, ticket],
   );
 
   const takeoverTooltipMessage = useMemo(() => {
     if (!ticket) return 'Nenhum ticket selecionado';
     if (!onTakeOver) return 'Ação indisponível';
+    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
     if (normalizedAiMode === 'manual') return 'Agente já está no comando';
     return 'Assumir atendimento manualmente';
-  }, [normalizedAiMode, onTakeOver, ticket]);
+  }, [aiModeChangeDisabled, normalizedAiMode, onTakeOver, ticket]);
 
   const giveBackTooltipMessage = useMemo(() => {
     if (!ticket) return 'Nenhum ticket selecionado';
     if (!onGiveBackToAi) return 'Ação indisponível';
-    if (normalizedAiMode === 'autonomous') return 'IA já está no comando';
+    if (aiModeChangeDisabled) return 'Aguardando estado da IA';
+    if (normalizedAiMode === 'auto') return 'IA já está no comando';
     if (normalizedConfidence === null) return 'Confiança da IA indisponível';
     if (normalizedConfidence < AI_HANDOFF_CONFIDENCE_THRESHOLD) {
       return 'Confiança insuficiente para devolver à IA';
     }
     return 'Devolver atendimento para a IA';
-  }, [normalizedAiMode, normalizedConfidence, onGiveBackToAi, ticket]);
+  }, [aiModeChangeDisabled, normalizedAiMode, normalizedConfidence, onGiveBackToAi, ticket]);
 
   return {
     aiModeOptions: AI_MODE_OPTIONS,
