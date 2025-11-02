@@ -2121,10 +2121,15 @@ describe('WhatsApp integration routes with configured broker', () => {
       expect(prisma.whatsAppInstance.delete).toHaveBeenCalledWith({
         where: { id: 'instance-delete' },
       });
-      expect(prisma.integrationState.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { key: expect.stringContaining('instance-delete') },
-        })
+      expect(prisma.integrationState.upsert).toHaveBeenCalledTimes(2);
+      const upsertKeys = prisma.integrationState.upsert.mock.calls.map(
+        (call) => call[0]?.where?.key
+      );
+      expect(upsertKeys).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('instance-delete'),
+          expect.stringContaining('broker-delete'),
+        ])
       );
       expect(invalidateCampaignCacheSpy).toHaveBeenCalledWith('tenant-123', 'instance-delete');
       expect(emitToTenantMock).toHaveBeenCalledWith(
