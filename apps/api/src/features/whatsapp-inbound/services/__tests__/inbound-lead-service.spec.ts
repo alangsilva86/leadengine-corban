@@ -794,6 +794,43 @@ describe('ensureInboundQueueForInboundMessage', () => {
     );
     expect(queueCacheByTenant.has('tenant-missing')).toBe(false);
   });
+
+  it('retries queue provisioning using ensured tenant id when it differs from the requested id', async () => {
+    findFirstMock.mockResolvedValueOnce(null);
+    const fkError = createPrismaKnownRequestError('P2003', 'Missing tenant');
+    queueUpsertMock
+      .mockRejectedValueOnce(fkError)
+      .mockResolvedValueOnce({ id: 'queue-actual', tenantId: 'tenant-actual' });
+    ensureTenantRecordMock.mockResolvedValueOnce({ id: 'tenant-actual', slug: 'tenant-slug' });
+
+    const result = await ensureInboundQueueForInboundMessage({
+      tenantId: 'tenant-slug',
+      requestId: 'req-tenant',
+      instanceId: 'instance-tenant',
+    });
+
+    expect(result.queueId).toBe('queue-actual');
+    expect(result.wasProvisioned).toBe(true);
+    expect(queueUpsertMock).toHaveBeenCalledTimes(2);
+
+    const secondCallArgs = queueUpsertMock.mock.calls[1]?.[0];
+    expect(secondCallArgs?.create?.tenantId).toBe('tenant-actual');
+    expect(secondCallArgs?.where?.tenantId_name?.tenantId).toBe('tenant-actual');
+
+    expect(queueCacheByTenant.get('tenant-slug')).toMatchObject({ id: 'queue-actual' });
+    expect(queueCacheByTenant.get('tenant-actual')).toMatchObject({ id: 'queue-actual' });
+
+    expect(emitToTenantMock).toHaveBeenLastCalledWith(
+      'tenant-actual',
+      'whatsapp.queue.autoProvisioned',
+      expect.objectContaining({
+        tenantId: 'tenant-actual',
+        requestedTenantId: 'tenant-slug',
+        queueId: 'queue-actual',
+        instanceId: 'instance-tenant',
+      })
+    );
+  });
 });
 
 describe('ensureTicketForContact', () => {
