@@ -34,6 +34,11 @@ export const useConversationExperience = ({
   sendError = null,
   composerDisabled = false,
   composerDisabledReason = null,
+  aiMode,
+  aiConfidence,
+  onTakeOver,
+  onGiveBackToAi,
+  onAiModeChange,
 }) => {
   const disabled = Boolean(composerDisabled);
   const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
@@ -163,6 +168,11 @@ export const useConversationExperience = ({
       currentUser,
       slaClock,
       typingAgents,
+      aiMode,
+      aiConfidence,
+      onTakeOver,
+      onGiveBackToAi,
+      onAiModeChange,
       composerHeight,
       onCreateNote,
       timeline: conversation?.timeline ?? [],
@@ -193,6 +203,11 @@ export const useConversationExperience = ({
       slaClock,
       ticket,
       typingAgents,
+      aiMode,
+      aiConfidence,
+      onTakeOver,
+      onGiveBackToAi,
+      onAiModeChange,
     ],
   );
 
