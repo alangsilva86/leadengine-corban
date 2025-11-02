@@ -637,12 +637,192 @@ const memoryUpsertValidators = [
   body('expiresAt').optional({ nullable: true }).isISO8601(),
 ];
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0;
+
+const parseMessageRole = (value: unknown): 'user' | 'assistant' | 'system' => {
+  if (!value) {
+    return 'user';
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (['assistant', 'agent', 'outbound', 'auto'].includes(normalized)) {
+    return 'assistant';
+  }
+
+  if (normalized === 'system') {
+    return 'system';
+  }
+
+  return 'user';
+};
+
+const getEntryPayload = (entry: unknown): Record<string, unknown> | null => {
+  if (!isRecord(entry)) {
+    return null;
+  }
+
+  if (isRecord(entry.payload)) {
+    return entry.payload;
+  }
+
+  return entry;
+};
+
+const getEntryContent = (payload: Record<string, unknown>): string | null => {
+  const candidates = [
+    payload.content,
+    payload.text,
+    payload.body,
+    payload.message,
+    payload.messageText,
+  ];
+
+  for (const candidate of candidates) {
+    if (isNonEmptyString(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const buildMessagesFromTimeline = (
+  timeline: unknown
+): Array<{ role: 'user' | 'assistant' | 'system'; content: string }> => {
+  if (!Array.isArray(timeline)) {
+    return [];
+  }
+
+  return timeline
+    .map((entry) => {
+      const payload = getEntryPayload(entry);
+      if (!payload) {
+        return null;
+      }
+
+      const content = getEntryContent(payload);
+      if (!content) {
+        return null;
+      }
+
+      const roleSource =
+        (payload.role as string | undefined) ??
+        (payload.direction as string | undefined) ??
+        (payload.authorRole as string | undefined);
+
+      return {
+        role: parseMessageRole(roleSource),
+        content,
+      };
+    })
+    .filter(
+      (message): message is { role: 'user' | 'assistant' | 'system'; content: string } =>
+        Boolean(message)
+    );
+};
+
+const sanitizeLastMessages = (
+  messages: unknown
+): Array<{ role: 'user' | 'assistant' | 'system'; content: string }> => {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  return messages
+    .map((message) => {
+      if (!isRecord(message)) {
+        return null;
+      }
+
+      const content = isNonEmptyString(message.content)
+        ? message.content
+        : null;
+      if (!content) {
+        return null;
+      }
+
+      return {
+        role: parseMessageRole(message.role),
+        content,
+      };
+    })
+    .filter(
+      (message): message is { role: 'user' | 'assistant' | 'system'; content: string } =>
+        Boolean(message)
+    );
+};
+
+const buildLeadProfileFromTicket = (ticket: unknown): Record<string, unknown> | null => {
+  if (!isRecord(ticket)) {
+    return null;
+  }
+
+  const profile: Record<string, unknown> = {};
+
+  if (isNonEmptyString(ticket.id)) {
+    profile.ticketId = ticket.id.trim();
+  }
+  if (isNonEmptyString(ticket.status)) {
+    profile.status = ticket.status;
+  }
+  if (isNonEmptyString(ticket.stage)) {
+    profile.stage = ticket.stage;
+  }
+  if (ticket.value !== undefined && ticket.value !== null) {
+    profile.value = ticket.value;
+  }
+
+  const contact = ticket.contact;
+  if (isRecord(contact)) {
+    const contactProfile: Record<string, unknown> = {};
+
+    if (isNonEmptyString(contact.id)) {
+      contactProfile.id = contact.id.trim();
+    }
+    if (isNonEmptyString(contact.name)) {
+      contactProfile.name = contact.name;
+    }
+    if (isNonEmptyString(contact.phone)) {
+      contactProfile.phone = contact.phone;
+    }
+
+    if (Object.keys(contactProfile).length > 0) {
+      profile.contact = contactProfile;
+    }
+  }
+
+  if (isRecord(ticket.metadata) && Object.keys(ticket.metadata).length > 0) {
+    profile.metadata = ticket.metadata;
+  }
+
+  return Object.keys(profile).length > 0 ? profile : null;
+};
+
 const suggestValidators = [
-  body('conversationId').isString().notEmpty(),
+  body('conversationId').optional({ checkFalsy: true }).isString().trim(),
   body('goal').optional({ nullable: true }).isString(),
   body('lastMessages').optional().isArray(),
   body('leadProfile').optional({ nullable: true }).isObject(),
   body('queueId').optional({ nullable: true }).isString(),
+  body('ticket').optional({ nullable: true }).isObject(),
+  body('timeline').optional({ nullable: true }).isArray(),
+  body()
+    .custom((value) => {
+      const conversationId = value?.conversationId;
+      const ticketId = value?.ticket?.id;
+
+      if (!isNonEmptyString(conversationId) && !isNonEmptyString(ticketId)) {
+        throw new Error('Informe conversationId ou ticket.id para solicitar sugestão.');
+      }
+
+      return true;
+    })
+    .withMessage('Informe conversationId ou ticket.id para solicitar sugestão.'),
 ];
 
 router.post(
@@ -652,12 +832,48 @@ router.post(
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user?.tenantId!;
-    const { conversationId, goal, lastMessages = [], leadProfile } = req.body as {
-      conversationId: string;
-      goal?: string;
-      lastMessages?: Array<{ role?: string; content?: string }>;
-      leadProfile?: Record<string, unknown>;
+    const { conversationId: bodyConversationId, goal: rawGoal } = req.body as {
+      conversationId?: unknown;
+      goal?: unknown;
     };
+
+    const requestBody = req.body as {
+      lastMessages?: unknown;
+      leadProfile?: unknown;
+      ticket?: unknown;
+      timeline?: unknown;
+    };
+
+    const ticketProfile = buildLeadProfileFromTicket(requestBody.ticket);
+
+    const goal = isNonEmptyString(rawGoal) ? rawGoal : undefined;
+
+    const lastMessages = sanitizeLastMessages(requestBody.lastMessages);
+    const timelineMessages = buildMessagesFromTimeline(requestBody.timeline);
+    const messagesForPrompt = lastMessages.length > 0 ? lastMessages : timelineMessages;
+
+    const leadProfile = isRecord(requestBody.leadProfile)
+      ? requestBody.leadProfile
+      : ticketProfile ?? undefined;
+
+    const ticketIdFromProfile =
+      ticketProfile && isNonEmptyString(ticketProfile.ticketId)
+        ? ticketProfile.ticketId
+        : undefined;
+    const ticketIdFromRequest =
+      isRecord(requestBody.ticket) && isNonEmptyString(requestBody.ticket.id)
+        ? requestBody.ticket.id.trim()
+        : undefined;
+
+    const resolvedTicketId = ticketIdFromProfile ?? ticketIdFromRequest;
+
+    const conversationId = isNonEmptyString(bodyConversationId)
+      ? bodyConversationId.trim()
+      : resolvedTicketId ?? null;
+
+    if (!conversationId) {
+      throw new Error('conversationId não pôde ser determinado.');
+    }
 
     const queueId = readQueueParam(req);
     const config =
@@ -675,8 +891,8 @@ router.post(
       contextPieces.push(`Perfil do lead: ${JSON.stringify(leadProfile)}`);
     }
 
-    const historyText = lastMessages
-      .map((message) => `${message.role ?? 'user'}: ${message.content ?? ''}`)
+    const historyText = messagesForPrompt
+      .map((message) => `${message.role}: ${message.content}`)
       .join('\n');
 
     const promptParts = [
@@ -692,19 +908,14 @@ router.post(
       conversationId,
       configId: config.id,
       prompt,
-      contextMessages: lastMessages
-        .filter((message): message is { role: 'user' | 'assistant' | 'system'; content: string } =>
-          Boolean(message.content)
-        )
-        .map((message) => ({
-          role: (message.role as 'user' | 'assistant' | 'system') ?? 'user',
-          content: message.content ?? '',
-        })),
+      contextMessages: messagesForPrompt,
       structuredSchema: config.structuredOutputSchema ?? defaultSuggestionSchema,
       metadata: {
         tenantId,
         conversationId,
-        goal,
+        ...(goal ? { goal } : {}),
+        ...(leadProfile ? { leadProfile } : {}),
+        ...(resolvedTicketId ? { ticketId: resolvedTicketId } : {}),
       },
     });
 
