@@ -223,15 +223,72 @@ export const processStandardInboundEvent = async (
 
   const selectInstanceFields = { id: true, tenantId: true, brokerId: true } satisfies Prisma.WhatsAppInstanceSelect;
 
+  const buildProvisionMetadata = (candidateId: string | null | undefined) => {
+    const cloned = JSON.parse(JSON.stringify(metadataRecord ?? {})) as Record<string, unknown>;
+
+    const ensureTenantHints = (target: Record<string, unknown>) => {
+      if (!tenantIdForBrokerLookup) {
+        return;
+      }
+
+      if (readString(target.tenantId) !== tenantIdForBrokerLookup) {
+        target.tenantId = tenantIdForBrokerLookup;
+      }
+
+      const tenantRecord =
+        (target.tenant && typeof target.tenant === 'object' && !Array.isArray(target.tenant)
+          ? (target.tenant as Record<string, unknown>)
+          : {}) ?? {};
+
+      if (readString(tenantRecord.id) !== tenantIdForBrokerLookup) {
+        tenantRecord.id = tenantIdForBrokerLookup;
+      }
+      if (readString(tenantRecord.tenantId) !== tenantIdForBrokerLookup) {
+        tenantRecord.tenantId = tenantIdForBrokerLookup;
+      }
+      target.tenant = tenantRecord;
+    };
+
+    ensureTenantHints(cloned);
+
+    if (!cloned.sessionId && eventSessionId) {
+      cloned.sessionId = eventSessionId;
+    }
+
+    const brokerRecord =
+      cloned.broker && typeof cloned.broker === 'object' && !Array.isArray(cloned.broker)
+        ? (cloned.broker as Record<string, unknown>)
+        : {};
+
+    if (resolvedBrokerId) {
+      if (readString(brokerRecord.id) !== resolvedBrokerId) {
+        brokerRecord.id = resolvedBrokerId;
+      }
+      if (!brokerRecord.instanceId) {
+        brokerRecord.instanceId = candidateId ?? resolvedBrokerId;
+      }
+    }
+
+    if (candidateId && readString(cloned.instanceId) !== candidateId) {
+      cloned.instanceId = candidateId;
+    }
+
+    cloned.broker = brokerRecord;
+
+    return cloned;
+  };
+
   const autoProvisionInstance = async (candidateId: string | null | undefined) => {
     if (!candidateId) {
       return null;
     }
 
+    const provisionMetadata = buildProvisionMetadata(candidateId);
+
     try {
       const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: candidateId,
-        metadata: metadataRecord,
+        metadata: provisionMetadata,
         requestId: requestId ?? null,
       });
       return result?.instance ?? null;
