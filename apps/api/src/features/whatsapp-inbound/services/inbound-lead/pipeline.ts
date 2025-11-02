@@ -268,6 +268,8 @@ export const processStandardInboundEvent = async (
       }
     }
 
+    ensureTenantHints(brokerRecord);
+
     if (candidateId && readString(cloned.instanceId) !== candidateId) {
       cloned.instanceId = candidateId;
     }
