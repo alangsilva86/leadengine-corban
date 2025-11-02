@@ -61,8 +61,17 @@ const CreateInstanceDialog = ({
       });
       onOpenChange?.(false);
     } catch (err) {
+      const suggestedId =
+        err && typeof err === 'object' && err?.suggestedId
+          ? String(err.suggestedId)
+          : err && typeof err === 'object' && err?.payload?.error?.details?.suggestedId
+            ? String(err.payload.error.details.suggestedId)
+            : null;
+      if (suggestedId) {
+        setIdentifier(suggestedId);
+      }
       const message = err instanceof Error ? err.message : 'Não foi possível criar a instância.';
-      setError(message);
+      setError(suggestedId ? `${message} Usamos a sugestão “${suggestedId}”.` : message);
     } finally {
       setSubmitting(false);
     }

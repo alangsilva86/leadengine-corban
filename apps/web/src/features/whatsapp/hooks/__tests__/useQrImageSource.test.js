@@ -97,6 +97,17 @@ describe('useQrImageSource', () => {
     consoleSpy.mockRestore();
   });
 
+  it('não tenta gerar quando o broker ainda não disponibilizou o QR', () => {
+    const payload = { available: false, reason: 'UNAVAILABLE' };
+
+    const { result } = renderHook(() => useQrImageSource(payload));
+
+    expect(result.current.src).toBeNull();
+    expect(result.current.isGenerating).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(mockToDataURL).not.toHaveBeenCalled();
+  });
+
   it('cancela a atualização quando desmontado antes da geração concluir', async () => {
     let resolvePromise;
     mockToDataURL.mockImplementationOnce(

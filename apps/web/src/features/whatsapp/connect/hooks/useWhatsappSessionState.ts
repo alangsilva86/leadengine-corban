@@ -43,6 +43,13 @@ const mergeQr = (primary: any, secondary: any) => {
     qrExpiresAt: primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
     expiresAt:
       primary.expiresAt ?? secondary.expiresAt ?? primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
+    available:
+      typeof secondary.available === 'boolean'
+        ? secondary.available
+        : typeof primary.available === 'boolean'
+          ? primary.available
+          : undefined,
+    reason: secondary.reason ?? primary.reason ?? null,
   };
 };
 
@@ -100,6 +107,20 @@ const extractQrPayload = (payload: any) => {
         ? source.expires
         : null;
 
+    const availableCandidate =
+      typeof source.available === 'boolean'
+        ? source.available
+        : typeof source.qrAvailable === 'boolean'
+          ? source.qrAvailable
+          : undefined;
+
+    const reasonCandidate =
+      typeof source.reason === 'string'
+        ? source.reason
+        : typeof source.qrReason === 'string'
+          ? source.qrReason
+          : null;
+
     let normalized = null;
 
     if (directQr || qrCodeCandidate || qrExpiresCandidate || expiresCandidate) {
@@ -108,6 +129,8 @@ const extractQrPayload = (payload: any) => {
         qrCode: qrCodeCandidate ?? directQr ?? null,
         qrExpiresAt: qrExpiresCandidate ?? null,
         expiresAt: expiresCandidate ?? qrExpiresCandidate ?? null,
+        available: availableCandidate,
+        reason: reasonCandidate,
       };
     }
 
@@ -128,6 +151,13 @@ const extractQrPayload = (payload: any) => {
         normalized = mergeQr(normalized, nested);
         break;
       }
+    }
+
+    if (normalized && typeof normalized.available !== 'boolean' && availableCandidate !== undefined) {
+      normalized.available = availableCandidate;
+    }
+    if (normalized && !normalized.reason && reasonCandidate) {
+      normalized.reason = reasonCandidate;
     }
 
     return normalized;
@@ -152,6 +182,20 @@ const extractQrPayload = (payload: any) => {
   if (!finalPayload.qrExpiresAt && finalPayload.expiresAt) {
     finalPayload.qrExpiresAt = finalPayload.expiresAt;
   }
+  if (typeof finalPayload.available !== 'boolean') {
+    finalPayload.available =
+      typeof payload?.available === 'boolean'
+        ? payload.available
+        : typeof payload?.qrAvailable === 'boolean'
+          ? payload.qrAvailable
+          : undefined;
+  }
+  if (!finalPayload.reason && typeof payload?.reason === 'string') {
+    finalPayload.reason = payload.reason;
+  }
+  if (!finalPayload.reason && typeof payload?.qrReason === 'string') {
+    finalPayload.reason = payload.qrReason;
+  }
 
   return finalPayload;
 };
@@ -163,21 +207,55 @@ const getQrImageSrc = (qrPayload: any) => {
 
   const payload = extractQrPayload(qrPayload);
   if (!payload) {
-    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+    return {
+      code: null,
+      immediate: null,
+      needsGeneration: false,
+      isBaileys: false,
+      available: typeof qrPayload?.available === 'boolean' ? qrPayload.available : undefined,
+      reason: qrPayload?.reason ?? qrPayload?.qrReason ?? null,
+    };
+  }
+
+  const available =
+    typeof payload.available === 'boolean'
+      ? payload.available
+      : typeof qrPayload?.available === 'boolean'
+        ? qrPayload.available
+        : undefined;
+
+  const reason = payload.reason ?? qrPayload?.reason ?? qrPayload?.qrReason ?? null;
+
+  if (available === false) {
+    return {
+      code: null,
+      immediate: null,
+      needsGeneration: false,
+      isBaileys: false,
+      available,
+      reason,
+    };
   }
 
   const { qr } = payload;
   if (!qr || typeof qr !== 'string') {
-    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+    return {
+      code: null,
+      immediate: null,
+      needsGeneration: false,
+      isBaileys: false,
+      available,
+      reason,
+    };
   }
 
   const normalized = qr.trim();
   if (normalized.startsWith('data:image')) {
-    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false };
+    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false, available: true, reason: null };
   }
 
   if (/^https?:\/\//i.test(normalized)) {
-    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false };
+    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false, available: true, reason: null };
   }
 
   if (/^[A-Za-z0-9+/=]+$/.test(normalized) && normalized.length > 100) {
@@ -186,6 +264,8 @@ const getQrImageSrc = (qrPayload: any) => {
       immediate: `data:image/png;base64,${normalized}`,
       needsGeneration: false,
       isBaileys: false,
+      available: true,
+      reason: null,
     };
   }
 
@@ -196,6 +276,8 @@ const getQrImageSrc = (qrPayload: any) => {
     immediate: null,
     needsGeneration: true,
     isBaileys,
+    available: true,
+    reason: null,
   };
 };
 
@@ -329,6 +411,17 @@ const useWhatsappSessionState = ({
 
   const { src: qrImageSrc, isGenerating: isGeneratingQrImage } = useQrImageSource(qrData);
 
+  const qrUnavailableMessage = useMemo(() => {
+    if (!qrData || qrData.available !== false) {
+      return null;
+    }
+    const reason = typeof qrData.reason === 'string' ? qrData.reason.toUpperCase() : null;
+    if (reason === 'EXPIRED') {
+      return 'O QR Code anterior expirou. Gere um novo para continuar.';
+    }
+    return 'O conector está gerando o QR Code. Aguarde alguns segundos e tente novamente.';
+  }, [qrData]);
+
   useEffect(() => {
     setGeneratingQrState(isGeneratingQrImage);
   }, [isGeneratingQrImage, setGeneratingQrState]);
@@ -343,7 +436,9 @@ const useWhatsappSessionState = ({
   const qrStatusMessage =
     localStatus === 'connected'
       ? 'Conexão ativa — QR oculto.'
-      : countdownMessage || (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
+      : qrUnavailableMessage ||
+        countdownMessage ||
+        (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
 
   const handleViewQr = useCallback(
     async (inst: any) => {

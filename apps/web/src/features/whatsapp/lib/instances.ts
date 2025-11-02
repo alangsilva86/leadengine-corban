@@ -309,6 +309,31 @@ export interface ParsedInstancesPayload {
 }
 
 export const parseInstancesPayload = (payload: unknown): ParsedInstancesPayload => {
+  const rootPayload =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  const meta =
+    rootPayload && metaIsRecord(rootPayload.meta)
+      ? (rootPayload.meta as Record<string, unknown>)
+      : {};
+  const metaQrAvailable =
+    typeof meta.qrAvailable === 'boolean'
+      ? meta.qrAvailable
+      : typeof meta.qr_available === 'boolean'
+        ? meta.qr_available
+        : undefined;
+  const metaQrReason =
+    typeof meta.qrReason === 'string'
+      ? meta.qrReason
+      : typeof meta.qr_reason === 'string'
+        ? meta.qr_reason
+        : null;
+  const metaInstanceId =
+    typeof meta.instanceId === 'string' && meta.instanceId.trim().length > 0
+      ? meta.instanceId.trim()
+      : null;
+
   const data = unwrapWhatsAppResponse(payload);
   const rootIsObject = data && typeof data === 'object' && !Array.isArray(data);
 
@@ -363,17 +388,28 @@ export const parseInstancesPayload = (payload: unknown): ParsedInstancesPayload 
           ? instance.connected
           : null;
 
-  const rawInstanceId = (data as Record<string, unknown>)?.instanceId;
+  const rawInstanceId = (data as Record<string, unknown>)?.instanceId ?? metaInstanceId;
   const instanceId =
     typeof rawInstanceId === 'string' && rawInstanceId.trim().length > 0
       ? rawInstanceId.trim()
       : instance?.id ?? null;
 
-  const qr = extractQrPayload(
+  let qr = extractQrPayload(
     (rootIsObject && (data as Record<string, unknown>).qr !== undefined
       ? (data as Record<string, unknown>).qr
       : null) ?? statusPayload ?? data,
   );
+
+  if (!qr && (metaQrAvailable !== undefined || metaQrReason)) {
+    qr = { available: metaQrAvailable ?? false, reason: metaQrReason ?? null };
+  } else if (qr && typeof qr === 'object') {
+    if (metaQrAvailable !== undefined && typeof qr.available !== 'boolean') {
+      qr.available = metaQrAvailable;
+    }
+    if (metaQrReason && !qr.reason) {
+      qr.reason = metaQrReason;
+    }
+  }
 
   return {
     raw: payload,
@@ -387,6 +423,10 @@ export const parseInstancesPayload = (payload: unknown): ParsedInstancesPayload 
     qr,
   };
 };
+
+function metaIsRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
 
 export const resolveInstanceStatus = (instance: unknown): string | null => {
   if (!instance || typeof instance !== 'object') {

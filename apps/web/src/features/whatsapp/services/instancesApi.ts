@@ -54,8 +54,15 @@ const readErrorMessage = (error: unknown): string => {
   if (typeof error === 'object' && error) {
     const payloadMessage =
       (error as { payload?: { error?: { message?: string } } }).payload?.error?.message;
+    const suggestedId =
+      (error as { payload?: { error?: { details?: { suggestedId?: string } } } }).payload?.error?.details?.suggestedId;
     if (typeof payloadMessage === 'string' && payloadMessage.trim()) {
-      return payloadMessage;
+      return suggestedId
+        ? `${payloadMessage.trim()} Sugestão automática: ${suggestedId}`
+        : payloadMessage;
+    }
+    if (suggestedId) {
+      return `Já existe uma instância com esse identificador. Sugestão automática: ${suggestedId}`;
     }
   }
   return 'Falha inesperada ao comunicar com o servidor.';
@@ -253,6 +260,12 @@ export const createInstancesApiService = ({
         message: readErrorMessage(err),
         code: readStatusCode(err)?.toString() ?? null,
       });
+      const suggestedId =
+        (err as { payload?: { error?: { details?: { suggestedId?: string } } } }).payload?.error?.details
+          ?.suggestedId;
+      if (suggestedId && typeof err === 'object' && err) {
+        Object.assign(err as Record<string, unknown>, { suggestedId });
+      }
       throw err;
     }
   };

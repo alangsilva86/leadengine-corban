@@ -20,8 +20,29 @@ const isLikelyBaileysString = (value) => {
 };
 
 export const getQrImageSrc = (qrPayload) => {
-  if (!qrPayload) {
-    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+  const availableFlag =
+    typeof qrPayload?.available === 'boolean'
+      ? qrPayload.available
+      : typeof qrPayload?.qrAvailable === 'boolean'
+        ? qrPayload.qrAvailable
+        : undefined;
+
+  const reason =
+    typeof qrPayload?.reason === 'string'
+      ? qrPayload.reason
+      : typeof qrPayload?.qrReason === 'string'
+        ? qrPayload.qrReason
+        : null;
+
+  if (!qrPayload || availableFlag === false) {
+    return {
+      code: null,
+      immediate: null,
+      needsGeneration: false,
+      isBaileys: false,
+      available: availableFlag ?? false,
+      reason,
+    };
   }
 
   const codeCandidate =
@@ -31,13 +52,27 @@ export const getQrImageSrc = (qrPayload) => {
     null;
 
   if (!codeCandidate) {
-    return { code: null, immediate: null, needsGeneration: false, isBaileys: false };
+    return {
+      code: null,
+      immediate: null,
+      needsGeneration: false,
+      isBaileys: false,
+      available: availableFlag,
+      reason,
+    };
   }
 
   const normalized = `${codeCandidate}`.trim();
 
   if (isDataUrl(normalized) || isHttpUrl(normalized)) {
-    return { code: normalized, immediate: normalized, needsGeneration: false, isBaileys: false };
+    return {
+      code: normalized,
+      immediate: normalized,
+      needsGeneration: false,
+      isBaileys: false,
+      available: true,
+      reason: null,
+    };
   }
 
   if (isLikelyBase64(normalized)) {
@@ -46,6 +81,8 @@ export const getQrImageSrc = (qrPayload) => {
       immediate: `data:image/png;base64,${normalized}`,
       needsGeneration: false,
       isBaileys: false,
+      available: true,
+      reason: null,
     };
   }
 
@@ -56,27 +93,37 @@ export const getQrImageSrc = (qrPayload) => {
     immediate: null,
     needsGeneration: true,
     isBaileys,
+    available: true,
+    reason: null,
   };
+};
+
+const mergeQr = (primary, secondary) => {
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+  const merged = {
+    qr: primary.qr ?? secondary.qr ?? null,
+    qrCode: primary.qrCode ?? secondary.qrCode ?? primary.qr ?? secondary.qr ?? null,
+    qrExpiresAt: primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
+    expiresAt:
+      primary.expiresAt ??
+      secondary.expiresAt ??
+      primary.qrExpiresAt ??
+      secondary.qrExpiresAt ??
+      null,
+    available:
+      typeof secondary.available === 'boolean'
+        ? secondary.available
+        : typeof primary.available === 'boolean'
+          ? primary.available
+          : undefined,
+    reason: secondary.reason ?? primary.reason ?? null,
+  };
+  return merged;
 };
 
 export const extractQrPayload = (payload) => {
   if (!payload) return null;
-
-  const mergeQr = (primary, secondary) => {
-    if (!primary) return secondary;
-    if (!secondary) return primary;
-    return {
-      qr: primary.qr ?? secondary.qr ?? null,
-      qrCode: primary.qrCode ?? secondary.qrCode ?? primary.qr ?? secondary.qr ?? null,
-      qrExpiresAt: primary.qrExpiresAt ?? secondary.qrExpiresAt ?? null,
-      expiresAt:
-        primary.expiresAt ??
-        secondary.expiresAt ??
-        primary.qrExpiresAt ??
-        secondary.qrExpiresAt ??
-        null,
-    };
-  };
 
   const parseCandidate = (candidate) => {
     if (!candidate) return null;
@@ -129,6 +176,20 @@ export const extractQrPayload = (payload) => {
         ? source.expires
         : null;
 
+    const availableCandidate =
+      typeof source.available === 'boolean'
+        ? source.available
+        : typeof source.qrAvailable === 'boolean'
+          ? source.qrAvailable
+          : undefined;
+
+    const reasonCandidate =
+      typeof source.reason === 'string'
+        ? source.reason
+        : typeof source.qrReason === 'string'
+          ? source.qrReason
+          : null;
+
     let normalized = null;
 
     if (directQr || qrCodeCandidate || qrExpiresCandidate || expiresCandidate) {
@@ -137,6 +198,8 @@ export const extractQrPayload = (payload) => {
         qrCode: qrCodeCandidate ?? directQr ?? null,
         qrExpiresAt: qrExpiresCandidate ?? null,
         expiresAt: expiresCandidate ?? qrExpiresCandidate ?? null,
+        available: availableCandidate,
+        reason: reasonCandidate,
       };
     }
 
@@ -157,6 +220,13 @@ export const extractQrPayload = (payload) => {
         normalized = mergeQr(normalized, nested);
         break;
       }
+    }
+
+    if (normalized && typeof normalized.available !== 'boolean' && availableCandidate !== undefined) {
+      normalized.available = availableCandidate;
+    }
+    if (normalized && !normalized.reason && reasonCandidate) {
+      normalized.reason = reasonCandidate;
     }
 
     return normalized;
@@ -180,6 +250,20 @@ export const extractQrPayload = (payload) => {
   }
   if (!finalPayload.qrExpiresAt && finalPayload.expiresAt) {
     finalPayload.qrExpiresAt = finalPayload.expiresAt;
+  }
+  if (typeof finalPayload.available !== 'boolean') {
+    finalPayload.available =
+      typeof payload?.available === 'boolean'
+        ? payload.available
+        : typeof payload?.qrAvailable === 'boolean'
+          ? payload.qrAvailable
+          : undefined;
+  }
+  if (!finalPayload.reason && typeof payload?.reason === 'string') {
+    finalPayload.reason = payload.reason;
+  }
+  if (!finalPayload.reason && typeof payload?.qrReason === 'string') {
+    finalPayload.reason = payload.qrReason;
   }
 
   return finalPayload;
