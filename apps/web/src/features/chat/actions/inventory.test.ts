@@ -1,4 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
 import { DEFAULT_QUICK_ACTIONS } from './inventory';
 import type { CommandActionRuntimeContext } from './inventory';
 
@@ -54,5 +63,35 @@ describe('chat command inventory', () => {
     action.run(context);
 
     expect(openDialog).toHaveBeenCalledWith('register-result', { returnFocus: button });
+  });
+
+  it('pede ajuda à IA e registra nota quando possível', async () => {
+    const action = getAction('ask-ai-help');
+    if (!action) {
+      throw new Error('Expected action "ask-ai-help" to exist.');
+    }
+
+    const onCreateNote = vi.fn();
+    const requestSuggestions = vi.fn().mockResolvedValue({
+      nextStep: 'Envie a minuta atualizada',
+      tips: ['Confirme prazos com o cliente'],
+      objections: [],
+      confidence: 45,
+    });
+
+    const context = {
+      ticket: { id: 'ticket-123' },
+      handlers: { onCreateNote },
+      ai: { requestSuggestions },
+      timeline: [],
+    } as unknown as CommandActionRuntimeContext;
+
+    await action.run(context);
+
+    expect(requestSuggestions).toHaveBeenCalledWith({
+      ticket: context.ticket,
+      timeline: [],
+    });
+    expect(onCreateNote).toHaveBeenCalledWith(expect.stringContaining('Próximo passo'));
   });
 });

@@ -7,13 +7,17 @@ import {
   Paperclip,
   Pencil,
   Phone,
+  Sparkles,
   UserPlus,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { formatAiSuggestionNote } from '../utils/aiSuggestions.js';
 
 export type CommandActionId =
   | 'generate-proposal'
   | 'assign-owner'
   | 'register-result'
+  | 'ask-ai-help'
   | 'phone-call'
   | 'send-sms'
   | 'quick-followup'
@@ -21,6 +25,22 @@ export type CommandActionId =
   | 'edit-contact';
 
 export type CommandActionDialogId = 'register-result' | 'call-result';
+
+type AiSuggestionResult = {
+  nextStep: string | null;
+  tips: string[];
+  objections: string[];
+  confidence: number | null;
+  raw?: unknown;
+};
+
+type AiAssistantContext = {
+  requestSuggestions: (payload: { ticket: unknown; timeline: unknown[] }) => Promise<AiSuggestionResult | null>;
+  isLoading?: boolean;
+  data?: AiSuggestionResult | null;
+  error?: unknown;
+  reset?: () => void;
+};
 
 export type ChatActionCapabilities = {
   canGenerateProposal?: boolean;
@@ -43,6 +63,7 @@ export type CommandActionHandlers = {
   onEditContact?: (contactId: string | number | undefined | null) => void;
   onCall?: (phoneNumber: string) => void;
   onSendSMS?: (phoneNumber: string) => void;
+  onCreateNote?: (body: string) => void;
 };
 
 export type CommandActionRuntimeContext = {
@@ -50,6 +71,8 @@ export type CommandActionRuntimeContext = {
   handlers: CommandActionHandlers;
   capabilities?: ChatActionCapabilities;
   phoneNumber?: string | null;
+  timeline?: unknown[];
+  ai?: AiAssistantContext;
   loadingStates?: {
     registerResult?: boolean;
   };
@@ -145,6 +168,55 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
     getState: ({ loadingStates }) => ({
       loading: Boolean(loadingStates?.registerResult),
     }),
+  },
+  {
+    id: 'ask-ai-help',
+    label: 'Pedir ajuda',
+    icon: Sparkles,
+    shortcut: 'h',
+    shortcutDisplay: '/h',
+    run: async (context) => {
+      const { ticket, ai, handlers, timeline } = context;
+
+      if (!ticket) {
+        toast.error('Selecione um atendimento para pedir ajuda da IA.');
+        return;
+      }
+
+      if (!ai?.requestSuggestions) {
+        toast.error('Assistente de IA indisponível no momento.');
+        return;
+      }
+
+      if (!handlers?.onCreateNote) {
+        toast.error('Não foi possível registrar a nota sugerida pela IA.');
+        return;
+      }
+
+      try {
+        const timelineEntries = Array.isArray(timeline) ? timeline : [];
+        const result = await ai.requestSuggestions({ ticket, timeline: timelineEntries });
+        if (!result) {
+          toast.warning('A IA não retornou recomendações desta vez.');
+          return;
+        }
+
+        const note = formatAiSuggestionNote(result);
+        if (note) {
+          handlers.onCreateNote(note);
+        } else {
+          toast.warning('A IA retornou um resultado sem detalhes utilizáveis.');
+        }
+      } catch (error) {
+        console.error('AI help action failed', error);
+        toast.error('Falha ao pedir ajuda da IA', {
+          description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+        });
+      }
+    },
+    canExecute: ({ ticket, ai, handlers }) =>
+      Boolean(ticket && ai?.requestSuggestions && handlers?.onCreateNote),
+    getState: ({ ai }) => ({ loading: Boolean(ai?.isLoading) }),
   },
   {
     id: 'phone-call',
