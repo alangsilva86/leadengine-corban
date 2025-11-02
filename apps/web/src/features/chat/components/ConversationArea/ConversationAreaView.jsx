@@ -1,6 +1,9 @@
 import { forwardRef } from 'react';
 import { cn } from '@/lib/utils.js';
 import ConversationHeader from './ConversationHeader.jsx';
+import AiControlPanel from './AiControlPanel.jsx';
+import ContactDetailsPanel from './ContactDetailsPanel.jsx';
+import PrimaryActionBanner from './PrimaryActionBanner.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
 
@@ -82,6 +85,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
   } = composer ?? {};
 
   const headerProps = header?.props ?? {};
+  const headerComponents = header?.components ?? {};
 
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -89,6 +93,12 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
         <div className="relative z-10">
           <ConversationHeader
             {...headerProps}
+            components={{
+              PrimaryActionBanner,
+              AiControlPanel,
+              ContactDetailsPanel,
+              ...headerComponents,
+            }}
             renderSummary={(summary) => (
               <header
                 className={cn(
