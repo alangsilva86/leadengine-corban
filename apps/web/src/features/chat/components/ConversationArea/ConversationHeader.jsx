@@ -11,7 +11,7 @@ import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
 import AiModeMenu from './AiModeMenu.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
-import { DEFAULT_AI_MODE } from './hooks/useAiControlPanel.js';
+import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -42,6 +42,15 @@ const INDICATOR_TONES = {
   danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
   neutral: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
   success: 'border-success-soft-border bg-success-soft text-success-strong',
+};
+
+const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
+
+const AI_CONFIDENCE_TONES = {
+  high: 'border-success-soft-border bg-success-soft text-success-strong',
+  medium: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+  low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+  unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
 };
 
 const PRIMARY_ACTION_PRESETS = {

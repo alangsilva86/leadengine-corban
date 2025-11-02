@@ -1,12 +1,12 @@
 import { useCallback, useMemo } from 'react';
 
+import { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode } from '../aiModes.js';
 const AI_MODE_OPTIONS = [
   { value: 'assist', label: 'IA assistida' },
   { value: 'auto', label: 'IA autônoma' },
   { value: 'manual', label: 'Agente no comando' },
 ];
 
-const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
 const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
 
 const AI_CONFIDENCE_TONES = {
