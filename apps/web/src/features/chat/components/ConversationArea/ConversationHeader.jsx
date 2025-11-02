@@ -86,7 +86,7 @@ const AI_MODE_OPTIONS = [
   { value: 'assist', label: 'IA assistida' },
   { value: 'autonomous', label: 'IA autônoma' },
   { value: 'manual', label: 'Agente no comando' },
-] as const;
+];
 
 const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
 
