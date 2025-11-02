@@ -35,6 +35,7 @@ type SavedViewsHandlers = {
 };
 
 const CrmHomePage = () => {
+  const [filters, setFilters] = useState<CrmFilterState>(() => normalizeCrmFilters(EMPTY_FILTERS));
   const initialFilters = useMemo(() => normalizeCrmFilters(EMPTY_FILTERS), []);
 
   return (
@@ -152,6 +153,25 @@ const CrmHomeContent = () => {
   };
 
   return (
+    <CrmViewProvider filters={filters}>
+      <CrmHomeContent
+        filters={filters}
+        onFiltersChange={handleFiltersChange}
+        onClearFilters={resetFilters}
+        savedViews={savedViewsHandlers}
+        filterOptions={filterOptions}
+        metrics={metricsResult.summary}
+        metricsSource={metricsResult.source}
+        metricsLoading={metricsLoading || metricsFetching}
+        onMetricsRefresh={() => void refetchMetrics()}
+      />
+    </CrmViewProvider>
+  );
+};
+
+export default CrmHomePage;
+
+type CrmHomeContentProps = {
     <CrmHomeLayout
       searchValue={searchValue}
       onSearchChange={setSearchValue}
@@ -187,6 +207,7 @@ type CrmHomeLayoutProps = {
   onMetricsRefresh: () => void;
 };
 
+const CrmHomeContent = ({
 const CrmHomeLayout = ({
   searchValue,
   onSearchChange,
@@ -225,8 +246,6 @@ const CrmHomeLayout = ({
       />
 
       <CrmToolbar
-        searchValue={searchValue}
-        onSearchChange={onSearchChange}
         filters={filters}
         onFiltersChange={onFiltersChange}
         onClearFilters={onClearFilters}
