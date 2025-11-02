@@ -187,6 +187,7 @@ vi.mock('../../../../services/tenant-service', () => ({
 vi.mock('../../../../lib/metrics', () => ({
   inboundMessagesProcessedCounter: { inc: vi.fn() },
   leadLastContactGauge: { set: leadLastContactGaugeSetMock },
+  whatsappInboundMetrics: { observeLatency: vi.fn() },
 }));
 
 type InboundModule = typeof import('../inbound-lead-service');
@@ -1254,6 +1255,126 @@ describe('processStandardInboundEvent', () => {
         queueId: 'queue-fallback',
       })
     );
+  });
+
+  it('enriches broker metadata with tenant hints before auto provisioning when webhook metadata lacks tenant fields', async () => {
+    const now = new Date('2024-03-30T12:30:00.000Z');
+
+    const event: InboundEvent = {
+      id: 'event-auto-metadata',
+      instanceId: null,
+      tenantId: 'tenant-autop',
+      direction: 'INBOUND',
+      contact: { phone: '+5511999999999', name: 'Cliente Webhook' },
+      message: { id: 'message-autop', text: 'Olá, LeadEngine!' },
+      timestamp: now.toISOString(),
+      metadata: {
+        requestId: 'req-auto-metadata',
+        brokerId: 'broker-auto',
+        broker: { id: 'broker-auto' },
+      },
+      chatId: '5511999999999@s.whatsapp.net',
+      externalId: 'ext-auto',
+      sessionId: 'session-auto',
+    } as unknown as InboundEvent;
+
+    const provisioningModule = await import('../provisioning');
+    const contactModule = await import('../inbound-lead/contact-service');
+    const ticketModule = await import('../inbound-lead/ticket-service');
+    const leadModule = await import('../inbound-lead/lead-service');
+    const realtimeModule = await import('../inbound-lead/realtime-service');
+
+    const capturedMetadata: Record<string, unknown>[] = [];
+
+    const attemptSpy = vi.spyOn(provisioningModule, 'attemptAutoProvisionWhatsAppInstance');
+    const ensureQueueSpy = vi.spyOn(provisioningModule, 'ensureInboundQueueForInboundMessage');
+    const ensureContactSpy = vi.spyOn(contactModule, 'ensureContact');
+    const ensureTicketSpy = vi.spyOn(ticketModule, 'ensureTicketForContact');
+    const upsertLeadSpy = vi.spyOn(leadModule, 'upsertLeadFromInbound');
+    const emitRealtimeSpy = vi.spyOn(realtimeModule, 'emitRealtimeUpdatesForInbound');
+
+    const instanceRecord = {
+      id: 'wa-autop',
+      tenantId: 'tenant-autop',
+      name: 'WhatsApp Autoprovisionado',
+      brokerId: 'broker-auto',
+      status: 'connected',
+      connected: true,
+      phoneNumber: null,
+      lastSeenAt: null,
+      metadata: {},
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    attemptSpy.mockImplementation(async ({ metadata }) => {
+      capturedMetadata.push(metadata);
+      return { instance: instanceRecord, wasCreated: true, brokerId: 'broker-auto' };
+    });
+
+    ensureQueueSpy.mockResolvedValue({ queueId: 'queue-auto', wasProvisioned: false });
+    ensureContactSpy.mockResolvedValue({
+      id: 'contact-autop',
+      tenantId: 'tenant-autop',
+      displayName: 'Cliente Webhook',
+      fullName: 'Cliente Webhook',
+      primaryPhone: '+5511999999999',
+      phones: [],
+      tags: [],
+    } as const);
+    ensureTicketSpy.mockResolvedValue('ticket-autop');
+    upsertLeadSpy.mockResolvedValue({ lead: { id: 'lead-autop' }, leadActivity: { id: 'activity-autop' } });
+    emitRealtimeSpy.mockResolvedValue();
+
+    whatsappInstanceFindUniqueMock.mockResolvedValue(null);
+    whatsappInstanceFindFirstMock.mockResolvedValue(null);
+    campaignFindManyMock.mockResolvedValueOnce([
+      {
+        id: 'campaign-autop',
+        tenantId: 'tenant-autop',
+        whatsappInstanceId: 'wa-autop',
+        status: 'active',
+        name: 'Campanha Principal',
+        agreementId: null,
+      },
+    ]);
+
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-autop',
+      direction: 'INBOUND',
+      createdAt: now,
+      metadata: { eventMetadata: { requestId: 'req-auto-metadata' } },
+      content: 'Olá, LeadEngine!',
+    });
+
+    try {
+      const result = await testing.processStandardInboundEvent(event, now.getTime(), {
+        preloadedInstance: null,
+      });
+
+      expect(result).toBe(true);
+      expect(attemptSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ instanceId: 'broker-auto', requestId: 'req-auto-metadata' })
+      );
+      expect(capturedMetadata).toHaveLength(1);
+      expect(capturedMetadata[0]).toMatchObject({
+        tenantId: 'tenant-autop',
+        tenant: expect.objectContaining({ id: 'tenant-autop', tenantId: 'tenant-autop' }),
+        broker: expect.objectContaining({
+          id: 'broker-auto',
+          instanceId: 'broker-auto',
+          tenantId: 'tenant-autop',
+          tenant: expect.objectContaining({ id: 'tenant-autop', tenantId: 'tenant-autop' }),
+        }),
+      });
+    } finally {
+      attemptSpy.mockRestore();
+      ensureQueueSpy.mockRestore();
+      ensureContactSpy.mockRestore();
+      ensureTicketSpy.mockRestore();
+      upsertLeadSpy.mockRestore();
+      emitRealtimeSpy.mockRestore();
+    }
   });
 
   it.each([
