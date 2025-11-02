@@ -1,12 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
-const AI_MODE_OPTIONS = [
-  { value: 'assist', label: 'IA assistida' },
-  { value: 'autonomous', label: 'IA autônoma' },
-  { value: 'manual', label: 'Agente no comando' },
-];
+import { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode } from '../aiModes.js';
 
-const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
 const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
 
 const AI_CONFIDENCE_TONES = {
@@ -15,8 +10,6 @@ const AI_CONFIDENCE_TONES = {
   low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
   unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
 };
-
-const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
 const useAiControlPanel = ({
   ticket,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import useAiSuggestions from '../../../hooks/useAiSuggestions.js';
-import { formatAiSuggestionNote, normalizeConfidence } from '../../../utils/aiSuggestions.js';
+import { normalizeConfidence } from '../../../utils/aiSuggestions.js';
 import useChatAutoscroll from '../../../hooks/useChatAutoscroll.js';
 import { useTicketMessages } from './useTicketMessages.js';
 import { useWhatsAppPresence } from './useWhatsAppPresence.js';
@@ -68,23 +68,6 @@ export const useConversationExperience = ({
     scrollToBottom,
     onLoadMore: handleLoadMore,
   });
-
-  const handleRequestSuggestion = useCallback(async () => {
-    if (!ticket) return null;
-    try {
-      const result = await ai.requestSuggestions({ ticket, timeline: conversation?.timeline ?? [] });
-      if (result) {
-        const note = formatAiSuggestionNote(result);
-        if (note) {
-          onCreateNote?.(note);
-        }
-      }
-      return result ?? null;
-    } catch (error) {
-      console.warn('AI suggestion request failed', error);
-      return null;
-    }
-  }, [ai, conversation?.timeline, onCreateNote, ticket]);
 
   const handleComposerSend = useCallback(
     (payload) => {
@@ -236,10 +219,12 @@ export const useConversationExperience = ({
       onTemplate: handleComposerTemplate,
       onCreateNote: handleComposerCreateNote,
       onTyping: broadcastTyping,
-      onRequestSuggestion: handleRequestSuggestion,
       aiState,
       isSending,
       sendError,
+      aiMode,
+      aiModeChangeDisabled,
+      onAiModeChange,
     },
     header: {
       props: headerProps,

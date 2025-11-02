@@ -171,7 +171,7 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
   },
   {
     id: 'ask-ai-help',
-    label: 'Pedir ajuda',
+    label: 'Sugestões com IA',
     icon: Sparkles,
     shortcut: 'h',
     shortcutDisplay: '/h',

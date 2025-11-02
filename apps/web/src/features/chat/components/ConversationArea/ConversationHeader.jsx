@@ -11,7 +11,7 @@ import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
 import AiControlPanel from './AiControlPanel.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
-import { DEFAULT_AI_MODE } from './hooks/useAiControlPanel.js';
+import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -44,12 +44,6 @@ const INDICATOR_TONES = {
   success: 'border-success-soft-border bg-success-soft text-success-strong',
 };
 
-const AI_MODE_OPTIONS = [
-  { value: 'assist', label: 'IA assistida' },
-  { value: 'auto', label: 'IA autônoma' },
-  { value: 'manual', label: 'Agente no comando' },
-];
-
 const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
 
 const AI_CONFIDENCE_TONES = {
@@ -58,8 +52,6 @@ const AI_CONFIDENCE_TONES = {
   low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
   unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
 };
-
-const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
 const PRIMARY_ACTION_PRESETS = {
   initialContact: {

@@ -17,12 +17,13 @@ const ComposerSection = forwardRef(
       onTemplate,
       onCreateNote,
       onTyping,
-      isSending,
-      sendError,
-      onRequestSuggestion,
-      aiConfidence,
-      aiLoading,
-      aiError,
+    isSending,
+    sendError,
+    aiConfidence,
+    aiError,
+    aiMode,
+    aiModeChangeDisabled,
+    onAiModeChange,
     },
     elementRef,
   ) => (
@@ -45,10 +46,11 @@ const ComposerSection = forwardRef(
         onTyping={onTyping}
         isSending={isSending}
         sendError={sendError}
-        onRequestSuggestion={onRequestSuggestion}
-        aiLoading={aiLoading}
         aiConfidence={aiConfidence}
         aiError={aiError}
+        aiMode={aiMode}
+        aiModeChangeDisabled={aiModeChangeDisabled}
+        onAiModeChange={onAiModeChange}
       />
     </footer>
   ),
@@ -78,10 +80,12 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
     onTemplate,
     onCreateNote,
     onTyping,
-    onRequestSuggestion,
     aiState,
     isSending = false,
     sendError,
+    aiMode,
+    aiModeChangeDisabled,
+    onAiModeChange,
   } = composer ?? {};
 
   const headerProps = header?.props ?? {};
@@ -138,10 +142,11 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
           onTyping={onTyping}
           isSending={isSending}
           sendError={sendError}
-          onRequestSuggestion={onRequestSuggestion}
           aiConfidence={aiState?.confidence ?? null}
-          aiLoading={aiState?.isLoading ?? false}
           aiError={aiState?.error ?? null}
+          aiMode={aiMode}
+          aiModeChangeDisabled={aiModeChangeDisabled}
+          onAiModeChange={onAiModeChange}
         />
       </div>
       {showNewMessagesHint ? (
