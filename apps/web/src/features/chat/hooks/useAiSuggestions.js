@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { apiPost } from '@/lib/api.js';
 import { extractAiSuggestion } from '../utils/aiSuggestions.js';
@@ -68,9 +69,20 @@ const sanitizeTimeline = (timeline) => {
   });
 };
 
-export const useAiSuggestions = () => {
+export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
+  const mutationKey = useMemo(() => {
+    const scope = ['chat', 'ai-suggestions'];
+    if (tenantId) {
+      scope.push(tenantId);
+    }
+    if (ticketId) {
+      scope.push(ticketId);
+    }
+    return scope;
+  }, [tenantId, ticketId]);
+
   const mutation = useMutation({
-    mutationKey: ['chat', 'ai-suggestions'],
+    mutationKey,
     mutationFn: async ({ ticket, timeline }) => {
       if (!ticket?.id) {
         throw new Error('Ticket inválido para solicitar ajuda da IA.');
