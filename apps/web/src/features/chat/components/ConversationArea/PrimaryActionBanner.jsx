@@ -6,6 +6,7 @@ import { BatteryCharging, ChevronDown, MessageCircleMore } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
 import { AiModeControlMenu } from './AiModeMenu.jsx';
+import StageProgress from './StageProgress.jsx';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -188,6 +189,7 @@ const PrimaryActionBanner = ({
   title,
   shortId,
   statusInfo,
+  stageKey,
   stageInfo,
   originInfo,
   typingAgents,
@@ -239,7 +241,8 @@ const PrimaryActionBanner = ({
             />
           ) : null}
         </div>
-        <div className="mt-2">
+        {stageKey ? <StageProgress currentStage={stageKey} className="mt-3" /> : null}
+        <div className="mt-3">
           <JroIndicator jro={jro} />
         </div>
       </div>
