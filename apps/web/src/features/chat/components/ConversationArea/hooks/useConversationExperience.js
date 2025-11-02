@@ -4,6 +4,7 @@ import { normalizeConfidence } from '../../../utils/aiSuggestions.js';
 import useChatAutoscroll from '../../../hooks/useChatAutoscroll.js';
 import useAiReplyStream from '../../../hooks/useAiReplyStream.js';
 import emitInboxTelemetry from '../../../utils/telemetry.js';
+import { buildAiContextTimeline } from '../../../utils/aiTimeline.js';
 import { useTicketMessages } from './useTicketMessages.js';
 import { useWhatsAppPresence } from './useWhatsAppPresence.js';
 import { useSLAClock } from './useSLAClock.js';
@@ -135,30 +136,10 @@ export const useConversationExperience = ({
     [ai.data, ai.error, ai.isLoading, ai.requestSuggestions, ai.reset, aiReplyStream],
   );
 
-  const aiContextTimeline = useMemo(() => {
-    const MAX_ITEMS = 50;
-    if (!Array.isArray(timelineItems) || timelineItems.length === 0) {
-      return [];
-    }
-
-    const slice = timelineItems.slice(-MAX_ITEMS);
-    return slice
-      .map((entry) => entry?.payload ?? entry)
-      .filter(Boolean)
-      .map((payload) => {
-        const content =
-          payload.content ??
-          payload.text ??
-          payload.body ??
-          payload.message ??
-          payload.messageText ??
-          '';
-        return {
-          content,
-          role: payload.role ?? payload.direction ?? payload.authorRole ?? null,
-        };
-      });
-  }, [timelineItems]);
+  const aiContextTimeline = useMemo(
+    () => buildAiContextTimeline(timelineItems),
+    [timelineItems],
+  );
 
   const aiMetadata = useMemo(
     () => ({

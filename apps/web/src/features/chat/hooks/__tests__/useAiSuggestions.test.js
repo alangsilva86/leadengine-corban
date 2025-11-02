@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { sanitizeAiTimeline } from '../../utils/aiTimeline.js';
+
 const apiPostMock = vi.fn();
 
 vi.mock('@/lib/api.js', () => ({
@@ -27,38 +29,12 @@ describe('useAiSuggestions', () => {
     createElement(QueryClientProvider, { client }, children);
 
   beforeEach(async () => {
-const originalFetch = globalThis.fetch;
-
-const createWrapper = () => {
-  const client = new QueryClient();
-  return ({ children }) => createElement(QueryClientProvider, { client }, children);
-};
-
-describe('useAiSuggestions', () => {
-  let fetchMock;
-  let useAiSuggestions;
-
-  beforeEach(async () => {
-    fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({
-        suggestion: {
-          next_step: 'Ligue para o lead',
-          tips: ['Tenha empatia'],
-        },
-      }),
-      headers: {
-        get: vi.fn().mockReturnValue(null),
-      },
-    });
-
-    globalThis.fetch = fetchMock;
-
     ({ useAiSuggestions } = await import('../useAiSuggestions.js'));
   });
 
   afterEach(() => {
     apiPostMock.mockReset();
+    vi.resetModules();
   });
 
   it('cria escopo por ticket evitando vazamento de dados entre conversas', async () => {
@@ -125,48 +101,40 @@ describe('useAiSuggestions', () => {
 
     queryClient.clear();
   });
-});
 
-    if (originalFetch) {
-      globalThis.fetch = originalFetch;
-    } else {
-      delete globalThis.fetch;
-    }
-
-    vi.resetModules();
-  });
-
-  it('envia a requisição para /api/ai/suggest com os headers esperados', async () => {
-    const { result } = renderHook(() => useAiSuggestions(), { wrapper: createWrapper() });
-
-    let response;
-    await act(async () => {
-      response = await result.current.requestSuggestions({
-        ticket: {
-          id: 'ticket-123',
-          contact: { id: 'contact-001', name: 'Maria' },
+  it('sanitiza a linha do tempo mantendo o payload enviado anteriormente', async () => {
+    const wrapper = createWrapper(createQueryClient());
+    const timeline = [
+      ...Array.from({ length: 55 }, (_, index) => ({
+        id: `entry-${index + 1}`,
+        type: 'message',
+        timestamp: `2024-01-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`,
+        payload: {
+          id: `payload-${index + 1}`,
+          content: `Mensagem ${index + 1}`,
+          direction: index % 2 === 0 ? 'inbound' : 'outbound',
+          author: 'Cliente',
+          timestamp: `2024-01-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`,
+          metadata: { direction: 'inbound', channel: 'whatsapp' },
         },
-        timeline: [],
+      })),
+    ];
+
+    apiPostMock.mockResolvedValue({ suggestion: { next_step: 'Checar follow-up' } });
+
+    const { result } = renderHook(() => useAiSuggestions({ ticketId: 'ticket-1' }), { wrapper });
+
+    await act(async () => {
+      await result.current.requestSuggestions({
+        ticket: { id: 'ticket-1' },
+        timeline,
       });
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
+    expect(apiPostMock).toHaveBeenCalledTimes(1);
+    const [url, payload] = apiPostMock.mock.calls[0];
     expect(url).toBe('/api/ai/suggest');
-    expect(init.method).toBe('POST');
-    expect(init.headers).toMatchObject({
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'x-tenant-id': 'demo-tenant',
-    });
-
-    const parsedBody = JSON.parse(init.body);
-    expect(parsedBody.ticket.id).toBe('ticket-123');
-
-    expect(response.nextStep).toBe('Ligue para o lead');
-
-    await waitFor(() => {
-      expect(result.current.data?.nextStep).toBe('Ligue para o lead');
-    });
+    expect(payload.timeline).toEqual(sanitizeAiTimeline(timeline));
+    expect(payload.ticket.id).toBe('ticket-1');
   });
 });

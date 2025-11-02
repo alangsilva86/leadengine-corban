@@ -2,8 +2,7 @@ import { useMemo } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { apiPost } from '@/lib/api.js';
 import { extractAiSuggestion } from '../utils/aiSuggestions.js';
-
-const MAX_TIMELINE_ITEMS = 50;
+import { sanitizeAiTimeline } from '../utils/aiTimeline.js';
 
 const sanitizeTicket = (ticket) => {
   if (!ticket || typeof ticket !== 'object') {
@@ -29,46 +28,6 @@ const sanitizeTicket = (ticket) => {
   };
 };
 
-const sanitizeTimeline = (timeline) => {
-  if (!Array.isArray(timeline)) {
-    return [];
-  }
-
-  const slice = timeline.slice(-MAX_TIMELINE_ITEMS);
-
-  return slice.map((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return entry ?? null;
-    }
-
-    const payload = entry.payload && typeof entry.payload === 'object' ? entry.payload : null;
-    const content = payload?.content ?? payload?.text ?? payload?.body ?? null;
-
-    return {
-      id: entry.id ?? null,
-      type: entry.type ?? payload?.type ?? payload?.messageType ?? null,
-      timestamp: entry.timestamp ?? payload?.timestamp ?? payload?.createdAt ?? null,
-      payload: payload
-        ? {
-            id: payload.id ?? null,
-            direction: payload.direction ?? payload.metadata?.direction ?? null,
-            author:
-              payload.author ??
-              payload.userName ??
-              payload.agentName ??
-              payload.contact?.name ??
-              payload.metadata?.contactName ??
-              null,
-            role: payload.role ?? payload.direction ?? null,
-            content,
-            channel: payload.channel ?? payload.metadata?.channel ?? null,
-            attachments: Array.isArray(payload.attachments) ? payload.attachments : undefined,
-          }
-        : entry.payload ?? entry,
-    };
-  });
-};
-
 export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
   const mutationKey = useMemo(() => {
     const scope = ['chat', 'ai-suggestions'];
@@ -90,7 +49,7 @@ export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
 
       const payload = {
         ticket: sanitizeTicket(ticket),
-        timeline: sanitizeTimeline(timeline),
+        timeline: sanitizeAiTimeline(timeline),
       };
 
       const response = await apiPost('/api/ai/suggest', payload, { rateLimitKey: 'ai-suggest' });
