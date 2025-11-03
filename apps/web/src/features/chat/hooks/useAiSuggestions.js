@@ -4,6 +4,8 @@ import { apiPost } from '@/lib/api.js';
 import { extractAiSuggestion } from '../utils/aiSuggestions.js';
 import { sanitizeAiTimeline } from '../utils/aiTimeline.js';
 
+const DEFAULT_AI_MODE = 'IA_AUTO';
+
 const sanitizeTicket = (ticket) => {
   if (!ticket || typeof ticket !== 'object') {
     return null;
@@ -42,7 +44,7 @@ export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
 
   const mutation = useMutation({
     mutationKey,
-    mutationFn: async ({ ticket, timeline }) => {
+    mutationFn: async ({ ticket, timeline, mode }) => {
       if (!ticket?.id) {
         throw new Error('Ticket inválido para solicitar ajuda da IA.');
       }
@@ -50,6 +52,7 @@ export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
       const payload = {
         ticket: sanitizeTicket(ticket),
         timeline: sanitizeAiTimeline(timeline),
+        mode: typeof mode === 'string' && mode.trim() ? mode : DEFAULT_AI_MODE,
       };
 
       const response = await apiPost('/api/ai/suggest', payload, { rateLimitKey: 'ai-suggest' });

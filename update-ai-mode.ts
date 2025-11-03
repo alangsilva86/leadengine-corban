@@ -2,13 +2,45 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+/**
+ * Normaliza modos legados/inválidos para 'IA_AUTO'
+ */
+function normalizeMode(mode: string | null | undefined): 'IA_AUTO' {
+  const val = String(mode ?? '').trim().toUpperCase();
+
+  // Lista de aliases/legados que devem virar IA_AUTO
+  const LEGACY_AUTO = new Set([
+    'COPILOTO',
+    'COPILOT',
+    'AUTO',
+    'AI_AUTO',
+    'IA-AUTO',
+    'IA.AUTO',
+    'AUTO_REPLY',
+    'AUTO-REPLY',
+    'ASSIST',
+    'ASSISTENTE',
+    'DEFAULT',
+    '',
+    'NULL',
+    'UNSET',
+  ]);
+
+  if (val === 'IA_AUTO') return 'IA_AUTO';
+  if (LEGACY_AUTO.has(val)) return 'IA_AUTO';
+
+  // Qualquer valor desconhecido vira IA_AUTO por padrão
+  return 'IA_AUTO';
+}
+
 async function updateAiMode() {
   try {
     console.log('🔍 Buscando tenant demo-tenant...');
-    
+
     // Buscar tenant
     const tenant = await prisma.tenant.findUnique({
       where: { slug: 'demo-tenant' },
+      select: { id: true, slug: true },
     });
 
     if (!tenant) {
@@ -18,11 +50,20 @@ async function updateAiMode() {
 
     console.log('✅ Tenant encontrado:', tenant.id);
 
-    // Verificar se já existe AiConfig para este tenant
+    // Verificar se já existe AiConfig para este tenant (escopo global)
     const existingConfig = await prisma.aiConfig.findFirst({
       where: {
         tenantId: tenant.id,
         queueId: null, // Configuração global do tenant
+      },
+      select: {
+        id: true,
+        defaultMode: true,
+        enabled: true,
+        model: true,
+        temperature: true,
+        maxTokens: true,
+        streamingEnabled: true,
       },
     });
 
@@ -30,21 +71,38 @@ async function updateAiMode() {
       console.log('📝 AiConfig existente encontrado:', existingConfig.id);
       console.log('   Modo atual:', existingConfig.defaultMode);
 
-      if (existingConfig.defaultMode === 'IA_AUTO') {
-        console.log('✅ Modo já está configurado como IA_AUTO!');
-      } else {
-        // Atualizar configuração existente
+      const normalized = normalizeMode(existingConfig.defaultMode ?? null);
+
+      // Atualização idempotente: somente altera se necessário
+      if (
+        existingConfig.defaultMode !== normalized ||
+        existingConfig.enabled !== true
+      ) {
         const updated = await prisma.aiConfig.update({
           where: { id: existingConfig.id },
           data: {
-            defaultMode: 'IA_AUTO',
-            enabled: true,
+            defaultMode: normalized, // garante IA_AUTO
+            enabled: true,           // habilita IA
           },
         });
 
         console.log('✅ AiConfig atualizado com sucesso!');
         console.log('   Novo modo:', updated.defaultMode);
         console.log('   Enabled:', updated.enabled);
+      } else {
+        console.log('✅ Nenhuma mudança necessária. Modo já normalizado e habilitado.');
+      }
+
+      // Migração defensiva (opcional): normaliza modos legados em outros escopos do mesmo tenant
+      const migrated = await prisma.aiConfig.updateMany({
+        where: {
+          tenantId: tenant.id,
+          defaultMode: { in: ['COPILOTO', 'AUTO', 'AI_AUTO', 'IA-AUTO', 'IA.AUTO', 'AUTO_REPLY', 'AUTO-REPLY', 'ASSIST', 'ASSISTENTE', 'DEFAULT', 'NULL', ''] },
+        },
+        data: { defaultMode: 'IA_AUTO' },
+      });
+      if (migrated.count > 0) {
+        console.log(`🔧 Modos legados normalizados em ${migrated.count} registro(s) adicionais do tenant.`);
       }
     } else {
       console.log('📝 Criando novo AiConfig...');
@@ -61,6 +119,7 @@ async function updateAiMode() {
           maxTokens: 1000,
           streamingEnabled: true,
         },
+        select: { id: true, defaultMode: true, enabled: true },
       });
 
       console.log('✅ AiConfig criado com sucesso!');
@@ -75,6 +134,7 @@ async function updateAiMode() {
         tenantId: tenant.id,
         queueId: null,
       },
+      select: { defaultMode: true, enabled: true, model: true },
     });
 
     console.log('\n🎉 CONFIGURAÇÃO FINAL:');

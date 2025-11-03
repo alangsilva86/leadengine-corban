@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildDefaultApiHeaders, buildUrl } from '@/lib/api.js';
 import { buildAiMessagesPayload } from '../utils/aiTimeline.js';
 
+const DEFAULT_AI_MODE = 'IA_AUTO';
+
 const createInitialState = () => ({
   status: 'idle',
   message: '',
@@ -67,17 +69,19 @@ export const useAiReplyStream = () => {
     abortRef.current = null;
     textRef.current = '';
     toolCallMapRef.current = new Map();
+    /* no-op here: watchdog is managed per start */
     updateState(() => createInitialState());
   }, [updateState]);
 
   const cancel = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
+      /* stream abort triggers watchdog stop in finally */
     }
   }, []);
 
   const start = useCallback(
-    async ({ conversationId, timeline, metadata = {} }) => {
+    async ({ conversationId, timeline, metadata = {}, mode = DEFAULT_AI_MODE }) => {
       if (!conversationId) {
         throw new Error('conversationId é obrigatório para gerar resposta da IA.');
       }
@@ -113,6 +117,7 @@ export const useAiReplyStream = () => {
             conversationId,
             messages,
             metadata,
+            mode,
           }),
           signal: controller.signal,
         });
@@ -127,6 +132,28 @@ export const useAiReplyStream = () => {
         let buffer = '';
         let finished = false;
 
+        let watchdogTimer = null;
+        const lastActivityRef = { current: Date.now() };
+        const resetWatchdog = () => {
+          lastActivityRef.current = Date.now();
+        };
+        const startWatchdog = () => {
+          if (watchdogTimer) return;
+          watchdogTimer = setInterval(() => {
+            const now = Date.now();
+            if (now - lastActivityRef.current > 30000) {
+              controller.abort();
+            }
+          }, 5000);
+        };
+        const stopWatchdog = () => {
+          if (watchdogTimer) {
+            clearInterval(watchdogTimer);
+            watchdogTimer = null;
+          }
+        };
+        startWatchdog();
+
         const emitToolCalls = () => {
           const values = Array.from(toolCallMapRef.current.values());
           updateState((prev) => ({
@@ -136,6 +163,7 @@ export const useAiReplyStream = () => {
         };
 
         const handleToolEvent = (event) => {
+          resetWatchdog();
           const callId = event?.id ?? event?.tool_call_id ?? event?.call_id;
           if (!callId) return;
           const current = toolCallMapRef.current.get(callId) ?? {
@@ -163,6 +191,7 @@ export const useAiReplyStream = () => {
         };
 
         const handleToolCompleted = (event) => {
+          resetWatchdog();
           const callId = event?.id ?? event?.tool_call_id ?? event?.call_id;
           if (!callId) return;
           const current = toolCallMapRef.current.get(callId) ?? {
@@ -187,6 +216,7 @@ export const useAiReplyStream = () => {
 
         const appendText = (delta) => {
           if (!delta) return;
+          resetWatchdog();
           textRef.current = `${textRef.current}${delta}`;
           updateState((prev) => ({
             ...prev,
@@ -220,6 +250,7 @@ export const useAiReplyStream = () => {
                 model: payload?.response?.model ?? prev.model,
                 usage: payload?.response?.usage ?? prev.usage,
               }));
+              stopWatchdog();
               break;
             case 'response.error':
               throw new Error(payload?.error?.message ?? 'Erro ao gerar resposta da IA.');
@@ -235,6 +266,7 @@ export const useAiReplyStream = () => {
             done = true;
           } else {
             buffer += decoder.decode(value, { stream: true });
+            resetWatchdog();
             let boundary = buffer.indexOf('\n\n');
             while (boundary !== -1) {
               const raw = buffer.slice(0, boundary);
@@ -248,6 +280,12 @@ export const useAiReplyStream = () => {
                 const dataPayload = line.slice(5).trim();
                 if (!dataPayload) continue;
                 if (dataPayload === '[DONE]') {
+                  finished = true;
+                  updateState((prev) => ({
+                    ...prev,
+                    status: 'completed',
+                  }));
+                  stopWatchdog();
                   done = true;
                   break;
                 }
@@ -268,8 +306,10 @@ export const useAiReplyStream = () => {
             ...prev,
             status: 'completed',
           }));
+          stopWatchdog();
         }
       } catch (error) {
+        stopWatchdog();
         if (controller.signal.aborted) {
           updateState((prev) => ({
             ...prev,
@@ -286,6 +326,7 @@ export const useAiReplyStream = () => {
           }));
         }
       } finally {
+        stopWatchdog();
         abortRef.current = null;
       }
     },

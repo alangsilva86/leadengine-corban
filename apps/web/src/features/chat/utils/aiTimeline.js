@@ -1,5 +1,23 @@
 const MAX_AI_TIMELINE_ITEMS = 50;
 
+export const DEFAULT_AI_MODE = 'IA_AUTO';
+
+export const normalizeAiMode = (value, fallback = DEFAULT_AI_MODE) => {
+  if (!value) return fallback;
+  const v = String(value).trim().toUpperCase();
+  if (v === 'IA_AUTO' || v === 'IA MANUAL' || v === 'IA_ASSIST' || v === 'IA-MANUAL') {
+    // normalize variants that already include IA_
+  }
+  // map common aliases
+  if (['AUTO', 'ASSIST', 'MANUAL'].includes(v)) {
+    return `IA_${v}`;
+  }
+  if (['IA_AUTO', 'IA_ASSIST', 'IA_MANUAL'].includes(v)) {
+    return v;
+  }
+  return fallback;
+};
+
 const limitTimelineEntries = (timeline, limit = MAX_AI_TIMELINE_ITEMS) => {
   if (!Array.isArray(timeline) || limit <= 0) {
     return [];
@@ -29,6 +47,9 @@ export const getTimelineEntryContent = (payload) => {
     payload.body ??
     payload.message ??
     payload.messageText ??
+    payload?.message?.text ??
+    payload?.data?.text ??
+    payload?.metadata?.text ??
     null
   );
 };
@@ -36,7 +57,11 @@ export const getTimelineEntryContent = (payload) => {
 export const parseMessageRole = (value) => {
   if (!value) return 'user';
   const normalized = String(value).trim().toLowerCase();
-  if (['assistant', 'agent', 'outbound', 'auto'].includes(normalized)) {
+  if (
+    ['assistant', 'agent', 'outbound', 'auto'].includes(normalized) ||
+    normalized.startsWith('ia_') ||
+    ['ia-auto', 'ia_manual', 'ia-assist', 'ia manual', 'ia assist', 'ia auto'].includes(normalized)
+  ) {
     return 'assistant';
   }
   if (['system'].includes(normalized)) {
@@ -120,4 +145,4 @@ export const sanitizeAiTimeline = (timeline) => {
   });
 };
 
-export { MAX_AI_TIMELINE_ITEMS };
+export { MAX_AI_TIMELINE_ITEMS, DEFAULT_AI_MODE, normalizeAiMode };
