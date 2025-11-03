@@ -36,10 +36,15 @@ const nextTick = (callback: () => void) => {
 
 const processQueue = async (): Promise<void> => {
   if (processing) {
+    logger.warn('📥 INBOUND QUEUE :: ⏸️ Já processando, aguardando...');
     return;
   }
 
   processing = true;
+  
+  logger.warn('📥 INBOUND QUEUE :: 🚀 INICIANDO processamento da fila', {
+    queueLength: queue.length,
+  });
 
   while (queue.length > 0) {
     const job = queue.shift();
@@ -48,9 +53,24 @@ const processQueue = async (): Promise<void> => {
     }
 
     const { requestId, tenantId, instanceId, chatId, normalizedIndex, envelope } = job;
+    
+    logger.warn('📥 INBOUND QUEUE :: ⚙️ PROCESSANDO job', {
+      requestId,
+      tenantId,
+      instanceId,
+      chatId,
+      remainingInQueue: queue.length,
+    });
 
     try {
       const processed = await ingestInboundWhatsAppMessage(envelope);
+      
+      logger.warn('📥 INBOUND QUEUE :: 📊 Resultado do ingest', {
+        requestId,
+        processed,
+        tenantId,
+        instanceId,
+      });
 
       if (processed) {
         whatsappWebhookEventsCounter.inc({
@@ -108,6 +128,14 @@ const processQueue = async (): Promise<void> => {
 };
 
 export const enqueueInboundWebhookJob = (job: InboundQueueJob): void => {
+  logger.warn('📥 INBOUND QUEUE :: ➡️ ENFILEIRANDO mensagem', {
+    requestId: job.requestId,
+    tenantId: job.tenantId,
+    instanceId: job.instanceId,
+    chatId: job.chatId,
+    queueLength: queue.length + 1,
+  });
+  
   queue.push(job);
   nextTick(processQueue);
 };
