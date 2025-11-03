@@ -39,18 +39,25 @@ export const streamReply = async ({
   const startedAt = Date.now();
   const config = await ensureAiConfig(tenantId, queueId);
 
+  const normalizeContentType = (role: 'user' | 'assistant' | 'system'): 'input_text' | 'output_text' => {
+    if (role === 'assistant') {
+      return 'output_text';
+    }
+    return 'input_text';
+  };
+
   const requestMessages = [
     ...(config.systemPromptReply
       ? [
           {
             role: 'system' as const,
-            content: [{ type: 'text' as const, text: config.systemPromptReply }],
+            content: [{ type: 'input_text' as const, text: config.systemPromptReply }],
           },
         ]
       : []),
     ...messages.map((message) => ({
       role: message.role,
-      content: [{ type: 'text' as const, text: message.content }],
+      content: [{ type: normalizeContentType(message.role), text: message.content }],
     })),
   ];
 

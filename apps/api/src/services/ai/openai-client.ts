@@ -128,17 +128,24 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     };
   }
 
+  const normalizeContentType = (role: 'user' | 'assistant' | 'system'): 'input_text' | 'output_text' => {
+    if (role === 'assistant') {
+      return 'output_text';
+    }
+    return 'input_text';
+  };
+
   const requestBody = {
     model: selectedModel,
     input: [
-      ...(systemPrompt ? [{ role: 'system' as const, content: [{ type: 'text' as const, text: systemPrompt }] }] : []),
+      ...(systemPrompt ? [{ role: 'system' as const, content: [{ type: 'input_text' as const, text: systemPrompt }] }] : []),
       ...contextMessages.map((message) => ({
         role: message.role,
-        content: [{ type: 'text', text: message.content }],
+        content: [{ type: normalizeContentType(message.role), text: message.content }],
       })),
       {
         role: 'user' as const,
-        content: [{ type: 'text', text: prompt }],
+        content: [{ type: 'input_text', text: prompt }],
       },
     ],
     // Nova API Responses (novembro/2025)
