@@ -891,14 +891,18 @@ export const processStandardInboundEvent = async (
         messageContent: persistedMessage.content.substring(0, 50),
       });
       
-      processAiAutoReply({
+      console.log('DEBUG: ANTES DE CHAMAR processAiAutoReply');
+      const aiPromise = processAiAutoReply({
         tenantId,
         ticketId,
         messageId: persistedMessage.id,
         messageContent: persistedMessage.content,
         contactId: contactRecord.id,
         queueId: ticketRecord.queueId ?? null,
-      }).catch((error) => {
+      });
+      console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
+      
+      aiPromise.catch((error) => {
         logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
           error: mapErrorForLog(error),
           requestId,
