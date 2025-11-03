@@ -145,4 +145,4 @@ export const sanitizeAiTimeline = (timeline) => {
   });
 };
 
-export { MAX_AI_TIMELINE_ITEMS, DEFAULT_AI_MODE, normalizeAiMode };
+export { MAX_AI_TIMELINE_ITEMS };
