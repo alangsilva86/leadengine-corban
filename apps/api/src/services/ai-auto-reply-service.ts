@@ -34,6 +34,12 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
   });
 
   try {
+    // Log de debug: verificar valor de isAiEnabled
+    logger.warn('AI AUTO-REPLY :: DEBUG Verificando isAiEnabled', {
+      isAiEnabled,
+      typeOfIsAiEnabled: typeof isAiEnabled,
+    });
+
     // Verificar se a IA está habilitada globalmente
     if (!isAiEnabled) {
       logger.warn('🤖 AI AUTO-REPLY :: ⚠️ PULADO - IA desabilitada globalmente', {
