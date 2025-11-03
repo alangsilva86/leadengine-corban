@@ -54,31 +54,56 @@ const processQueue = async (): Promise<void> => {
       continue;
     }
 
-    const { requestId, tenantId, instanceId, chatId, normalizedIndex, envelope } = job;
+    // Narrow `job` and destructure once to keep TS happy across awaits
+    const currentJob = job;
+    const {
+      requestId,
+      tenantId,
+      instanceId,
+      chatId,
+      normalizedIndex,
+      envelope,
+      route,
+      flags,
+    } = currentJob;
 
-    // Enforce route/flags into envelope metadata before ingestion
+    // Enforce route/flags into envelope metadata before ingestion (no optional-assignment on ?. paths)
     try {
-      const msg = (envelope as any)?.message ?? ((envelope as any).envelope?.message);
-      const metadata = (msg?.metadata ||= {});
-      const metaFlags = (metadata.flags ||= {});
-      if (job.route === 'front') {
-        metaFlags.skipServerAi = true; // hard guard: do not trigger server-side AI
-        (metadata.aiRouteMode ||= 'front');
-      } else if (job.route === 'server') {
-        (metadata.aiRouteMode ||= 'server');
+      const envAny = envelope as any;
+      const msg: any = (envAny && envAny.message) || (envAny && envAny.envelope && envAny.envelope.message) || undefined;
+
+      let metadata: any;
+      if (msg && typeof msg === 'object') {
+        if (!msg.metadata || typeof msg.metadata !== 'object') {
+          msg.metadata = {};
+        }
+        metadata = msg.metadata;
+      } else {
+        metadata = {};
+      }
+
+      if (!metadata.flags || typeof metadata.flags !== 'object') {
+        metadata.flags = {};
+      }
+
+      if (route === 'front') {
+        metadata.flags.skipServerAi = true; // hard guard: do not trigger server-side AI
+        if (metadata.aiRouteMode == null) metadata.aiRouteMode = 'front';
+      } else if (route === 'server') {
+        if (metadata.aiRouteMode == null) metadata.aiRouteMode = 'server';
       }
     } catch (_) {
       // best-effort; do not break ingestion if envelope structure differs
     }
-    
+
     logger.warn('📥 INBOUND QUEUE :: ⚙️ PROCESSANDO job', {
       requestId,
       tenantId,
       instanceId,
       chatId,
       remainingInQueue: queue.length,
-      route: job.route ?? 'server',
-      flags: job.flags ?? null,
+      route: route ?? 'server',
+      flags: flags ?? null,
     });
 
     try {
