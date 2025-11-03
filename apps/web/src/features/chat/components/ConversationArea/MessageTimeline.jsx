@@ -58,6 +58,7 @@ export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAge
         const currentKey = resolveAuthorKey(payload);
         const sameAsPrevious = previousPayload ? resolveAuthorKey(previousPayload) === currentKey : false;
         const sameAsNext = nextPayload ? resolveAuthorKey(nextPayload) === currentKey : false;
+        const shouldShowMetadata = !sameAsPrevious;
         return (
           <MessageBubble
             key={entry.id}
@@ -65,7 +66,7 @@ export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAge
             isContinuation={sameAsPrevious}
             isTail={!sameAsNext}
             isFirst={!previousPayload}
-            showMetadata={!sameAsPrevious}
+            showMetadata={shouldShowMetadata}
           />
         );
       }

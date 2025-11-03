@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { cn } from '@/lib/utils.js';
-import { MessageSquarePlus, Plus } from 'lucide-react';
+import { FileText, MessageSquarePlus, Plus, Wand2, X } from 'lucide-react';
 
 const sanitizeReply = (reply) => {
   if (!reply) return null;
@@ -34,7 +34,17 @@ const sanitizeReply = (reply) => {
   };
 };
 
-const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
+const QuickReplyMenu = ({
+  replies = [],
+  onSelect,
+  onCreate,
+  onTemplate,
+  onGenerateAi,
+  onCancelAi,
+  isAiGenerating = false,
+  onCreateNote,
+  className,
+}) => {
   const [open, setOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ label: '', text: '' });
@@ -108,6 +118,60 @@ const QuickReplyMenu = ({ replies = [], onSelect, onCreate, className }) => {
               </DropdownMenuItem>
             ))
           )}
+          <DropdownMenuSeparator className="my-1 bg-[color:var(--color-inbox-border)]/70" />
+          {typeof onTemplate === 'function' ? (
+            <DropdownMenuItem
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[color:var(--color-inbox-foreground)] focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-[color:var(--color-inbox-foreground)]"
+              onSelect={(event) => {
+                event.preventDefault();
+                onTemplate();
+                setOpen(false);
+              }}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Abrir modelos
+            </DropdownMenuItem>
+          ) : null}
+          {typeof onCreateNote === 'function' ? (
+            <DropdownMenuItem
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[color:var(--color-inbox-foreground)] focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-[color:var(--color-inbox-foreground)]"
+              onSelect={(event) => {
+                event.preventDefault();
+                onCreateNote();
+                setOpen(false);
+              }}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Nova nota
+            </DropdownMenuItem>
+          ) : null}
+          {typeof onGenerateAi === 'function' ? (
+            <DropdownMenuItem
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[color:var(--accent-inbox-primary)] focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-[color:var(--accent-inbox-primary)]"
+              onSelect={(event) => {
+                event.preventDefault();
+                onGenerateAi();
+                setOpen(false);
+              }}
+              disabled={isAiGenerating}
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              Gerar com IA
+            </DropdownMenuItem>
+          ) : null}
+          {isAiGenerating && typeof onCancelAi === 'function' ? (
+            <DropdownMenuItem
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-status-error focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-status-error"
+              onSelect={(event) => {
+                event.preventDefault();
+                onCancelAi();
+                setOpen(false);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancelar IA
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuSeparator className="my-1 bg-[color:var(--color-inbox-border)]/70" />
           <DropdownMenuItem
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium uppercase tracking-wide text-[color:var(--accent-inbox-primary)] focus:bg-[color:var(--surface-overlay-inbox-quiet)] focus:text-[color:var(--accent-inbox-primary)]"

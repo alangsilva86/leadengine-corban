@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Brain, Paperclip, Smile, Send, Loader2, X, Wand2 } from 'lucide-react';
+import { Paperclip, Smile, Send, Loader2, Wand2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
@@ -341,6 +341,20 @@ export const Composer = forwardRef(function Composer(
     isUploading ||
     (disabled && !isAiGenerating);
 
+  const handleGenerateAi = useCallback(() => {
+    if (aiButtonDisabled || !aiCanGenerate) {
+      return;
+    }
+    aiStreaming?.onGenerate?.();
+  }, [aiButtonDisabled, aiCanGenerate, aiStreaming]);
+
+  const handleCancelAi = useCallback(() => {
+    if (!aiCanCancel) {
+      return;
+    }
+    aiStreaming?.onCancel?.();
+  }, [aiCanCancel, aiStreaming]);
+
   const handleSelectEmoji = useCallback(
     (emoji) => {
       if (!emoji || inputDisabled) {
@@ -404,18 +418,27 @@ export const Composer = forwardRef(function Composer(
                   return [...current, reply];
                 });
               }}
-              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet ring-1 ring-surface-overlay-glass-border"
+              onTemplate={() => setTemplatePickerOpen(true)}
+              onGenerateAi={aiCanGenerate ? handleGenerateAi : undefined}
+              onCancelAi={aiCanCancel ? handleCancelAi : undefined}
+              isAiGenerating={isAiGenerating}
+              className="h-10 w-10 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground transition hover:bg-surface-overlay-strong"
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
-              onClick={handleAttachmentClick}
-              disabled={inputDisabled}
-            >
-              <Paperclip className="h-4 w-4" />
-              <span className="sr-only">Anexar arquivo</span>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground"
+                  onClick={handleAttachmentClick}
+                  disabled={inputDisabled}
+                >
+                  <Paperclip className="h-4 w-4" />
+                  <span className="sr-only">Adicionar anexo</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Adicionar anexo</TooltipContent>
+            </Tooltip>
             <input
               ref={fileInputRef}
               type="file"
@@ -428,7 +451,7 @@ export const Composer = forwardRef(function Composer(
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 rounded-xl bg-surface-overlay-quiet text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong hover:text-foreground"
+                  className="h-10 w-10 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground"
                   disabled={inputDisabled}
                 >
                   <Smile className="h-4 w-4" />
@@ -452,7 +475,7 @@ export const Composer = forwardRef(function Composer(
                 </div>
               </PopoverContent>
             </Popover>
-            <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -574,12 +597,12 @@ export const Composer = forwardRef(function Composer(
             disabled={inputDisabled}
             readOnly={isAiGenerating}
             placeholder={placeholder}
-            className="min-h-[56px] max-h-40 flex-1 resize-none rounded-xl border border-transparent bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-0"
+            className="min-h-[48px] max-h-36 flex-1 resize-none rounded-2xl border border-transparent bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-0"
           />
           <Button
             variant="default"
             size="icon"
-            className="h-11 w-11 rounded-xl bg-[color:var(--accent-inbox-primary)] text-white shadow-[0_16px_28px_-20px_rgba(14,165,233,0.7)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]"
+            className="h-12 w-12 rounded-full bg-[color:var(--accent-inbox-primary)] text-white shadow-[0_16px_28px_-20px_rgba(14,165,233,0.7)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]"
             disabled={inputDisabled}
             onClick={handleSend}
           >
@@ -601,7 +624,7 @@ export const Composer = forwardRef(function Composer(
             <button
               type="button"
               className="font-medium text-[color:var(--accent-inbox-primary)] transition hover:text-[color:color-mix(in_srgb,var(--accent-inbox-primary)_84%,transparent)]"
-              onClick={() => aiStreaming?.onCancel?.()}
+              onClick={handleCancelAi}
             >
               Cancelar
             </button>
@@ -642,16 +665,6 @@ export const Composer = forwardRef(function Composer(
       {uploadError ? (
         <div className="mt-2 rounded-md bg-status-error-surface px-3 py-2 text-xs text-status-error-foreground">
           {uploadError.message ?? 'Falha ao enviar anexo.'}
-        </div>
-      ) : null}
-
-      {shouldShowAssumeBanner ? (
-        <div className="mt-3 rounded-2xl border border-warning-soft-border bg-warning-soft px-3 py-2 text-xs text-warning-strong">
-          {normalizedConfidence !== null ? (
-            <span>Confiança baixa da IA ({normalizedConfidence}%). Recomenda-se assumir o atendimento.</span>
-          ) : (
-            <span>Confiança baixa da IA. Recomenda-se assumir o atendimento.</span>
-          )}
         </div>
       ) : null}
 

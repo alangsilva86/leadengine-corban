@@ -1,8 +1,7 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { CollapsibleTrigger } from '@/components/ui/collapsible.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import { BatteryCharging, ChevronDown, MessageCircleMore } from 'lucide-react';
+import { BatteryCharging, MessageCircleMore, PanelRightOpen } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
 import { AiModeControlMenu } from './AiModeMenu.jsx';
@@ -196,7 +195,8 @@ const PrimaryActionBanner = ({
   onPrimaryAction,
   jro,
   commandContext,
-  isExpanded,
+  detailsOpen = false,
+  onRequestDetails,
   AiModeMenuComponent = AiModeControlMenu,
   aiControlProps,
 }) => (
@@ -260,20 +260,19 @@ const PrimaryActionBanner = ({
         context={commandContext}
         className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
       />
-      <CollapsibleTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong"
-          aria-label={isExpanded ? 'Recolher detalhes' : 'Expandir detalhes'}
-        >
-          <ChevronDown
-            className={cn('h-4 w-4 transition-transform duration-200', isExpanded ? 'rotate-180' : 'rotate-0')}
-            aria-hidden
-          />
-        </Button>
-      </CollapsibleTrigger>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className={cn(
+          'h-9 w-9 shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong',
+          detailsOpen && 'bg-surface-overlay-strong text-foreground',
+        )}
+        aria-label={detailsOpen ? 'Ocultar detalhes do contato' : 'Mostrar detalhes do contato'}
+        onClick={onRequestDetails}
+      >
+        <PanelRightOpen className={cn('h-4 w-4 transition-transform', detailsOpen ? 'translate-x-[1px]' : '')} aria-hidden />
+      </Button>
     </div>
   </div>
 );

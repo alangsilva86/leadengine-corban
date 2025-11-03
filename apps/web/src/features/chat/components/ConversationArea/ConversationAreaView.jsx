@@ -1,11 +1,14 @@
-import { forwardRef } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils.js';
 import ConversationHeader from './ConversationHeader.jsx';
-import AiModeMenu, { AiModeControlMenu } from './AiModeMenu.jsx';
+import { AiModeControlMenu } from './AiModeMenu.jsx';
 import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner from './PrimaryActionBanner.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
+import ConversationDetailsDrawer from './ConversationDetailsDrawer.jsx';
+import useTicketStageInfo from './hooks/useTicketStageInfo.js';
+import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 
 const ComposerSection = forwardRef(
   (
@@ -91,28 +94,92 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
     aiStreaming,
   } = composer ?? {};
 
+  const [detailsState, setDetailsState] = useState({ open: false, intent: null });
+  const nextStepEditorRef = useRef(null);
+
   const headerProps = header?.props ?? {};
   const headerComponents = header?.components ?? {};
+  const ticket = headerProps?.ticket ?? null;
+
+  const handleDetailsRequest = useCallback(
+    (intent = {}) => {
+      setDetailsState({ open: true, intent });
+    },
+    [],
+  );
+
+  const handleDetailsOpenChange = useCallback((open) => {
+    setDetailsState((prev) => ({
+      open,
+      intent: open ? prev.intent : null,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!detailsState.open) return;
+    if (detailsState.intent?.focus === 'nextStep') {
+      const target = nextStepEditorRef.current;
+      if (target && typeof target.focus === 'function') {
+        target.focus();
+      }
+    }
+  }, [detailsState.open, detailsState.intent]);
+
+  const drawerTitle = useMemo(() => {
+    const contactName = ticket?.contact?.name ?? ticket?.subject ?? 'Contato';
+    return `Detalhes de ${contactName}`;
+  }, [ticket?.contact?.name, ticket?.subject]);
+
+  const mergedHeaderProps = useMemo(
+    () => ({
+      ...headerProps,
+      nextStepEditorRef,
+    }),
+    [headerProps, nextStepEditorRef],
+  );
+
+  const { stageKey } = useTicketStageInfo(ticket);
+  const rawPhone = ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? null;
+  const onSendSMS = headerProps?.onSendSMS;
+  const onContactFieldSave = headerProps?.onContactFieldSave;
+  const onEditContact = headerProps?.onEditContact;
+  const onDealFieldSave = headerProps?.onDealFieldSave;
+  const nextStepValue = headerProps?.nextStepValue;
+  const onNextStepSave = headerProps?.onNextStepSave;
+
+  const phoneActions = usePhoneActions(rawPhone, {
+    missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
+  });
+
+  const handleCall = useCallback(() => {
+    phoneActions('call');
+  }, [phoneActions]);
+
+  const handleSendSms = useCallback(() => {
+    phoneActions('sms');
+    onSendSMS?.(rawPhone);
+  }, [onSendSMS, phoneActions, rawPhone]);
 
   return (
     <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-visible">
         <div className="relative z-10">
           <ConversationHeader
-            {...headerProps}
+            {...mergedHeaderProps}
             components={{
               PrimaryActionBanner,
               AiModeMenu: AiModeControlMenu,
-              ContactDetailsPanel,
               ...headerComponents,
             }}
+            detailsOpen={detailsState.open}
+            onRequestDetails={handleDetailsRequest}
             renderSummary={(summary) => (
               <header
                 className={cn(
                   'sticky top-0 z-10 border-b border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)] px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_85%,transparent)] sm:px-5 sm:py-3',
                 )}
               >
-                {summary}
+                <div className="mx-auto w-full max-w-[48rem]">{summary}</div>
               </header>
             )}
           />
@@ -123,7 +190,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
           ref={scrollRef}
           className="relative z-0 flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [scrollbar-gutter:stable_both-edges]"
         >
-          <div className="min-h-0 min-w-0 px-4 py-4 sm:px-5 sm:py-5">
+          <div className="min-h-0 min-w-0 px-4 py-4 sm:px-5 sm:py-5 mx-auto w-full max-w-[48rem]">
             <MessageTimeline
               items={timelineItems}
               loading={isLoadingMore}
@@ -153,15 +220,38 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
         />
       </div>
       {showNewMessagesHint ? (
-        <button
-          type="button"
-          onClick={onScrollToBottom}
-          className="pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-2 text-xs font-medium text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-md)] transition hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+        <div
+          className="pointer-events-none absolute left-1/2 z-30 -translate-x-1/2"
           style={{ bottom: composerOffset }}
         >
-          Novas mensagens
-        </button>
+          <button
+            type="button"
+            onClick={onScrollToBottom}
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-[color:var(--surface-overlay-inbox-bold)]/95 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)] transition hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+          >
+            Novas mensagens
+            <span className="text-[color:var(--color-inbox-foreground-muted)]">▼</span>
+          </button>
+        </div>
       ) : null}
+      <ConversationDetailsDrawer
+        open={detailsState.open}
+        onOpenChange={handleDetailsOpenChange}
+        title={drawerTitle}
+      >
+        <ContactDetailsPanel
+          ticket={ticket}
+          onContactFieldSave={onContactFieldSave}
+          onEditContact={onEditContact}
+          onCall={handleCall}
+          onSendSms={handleSendSms}
+          nextStepValue={nextStepValue}
+          onNextStepSave={onNextStepSave}
+          nextStepEditorRef={nextStepEditorRef}
+          stageKey={stageKey}
+          onDealFieldSave={onDealFieldSave}
+        />
+      </ConversationDetailsDrawer>
     </section>
   );
 };

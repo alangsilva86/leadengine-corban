@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible.jsx';
 import { toast } from 'sonner';
 import { Archive, CheckCircle2, CircleDashed, Clock3, HelpCircle, UserCheck } from 'lucide-react';
 import emitInboxTelemetry from '../../utils/telemetry.js';
@@ -7,7 +6,6 @@ import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 import CallResultDialog from './CallResultDialog.jsx';
 import OutcomeDialog from './OutcomeDialog.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
-import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
 import { AiModeControlMenu } from './AiModeMenu.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
@@ -244,19 +242,14 @@ const ConversationHeader = ({
   timeline = [],
   aiAssistant,
   components,
+  detailsOpen = false,
+  onRequestDetails,
+  nextStepEditorRef: externalNextStepEditorRef,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [activeDialog, setActiveDialog] = useState(null);
   const [outcomeMode, setOutcomeMode] = useState('success');
-  const nextStepEditorRef = useRef(null);
-  const collapseFrameRef = useRef(null);
-
-  const clearCollapseFrame = useCallback(() => {
-    if (collapseFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(collapseFrameRef.current);
-    }
-    collapseFrameRef.current = null;
-  }, []);
+  const internalNextStepEditorRef = useRef(null);
+  const nextStepEditorRef = externalNextStepEditorRef ?? internalNextStepEditorRef;
 
   const focusNextStepEditor = useCallback(() => {
     const target = nextStepEditorRef.current;
@@ -267,64 +260,33 @@ const ConversationHeader = ({
   }, []);
 
   const revealNextStepEditor = useCallback(() => {
-    const focusOrFallback = () => {
-      const focused = focusNextStepEditor();
-      if (!focused) {
-        onFocusComposer?.();
+    onRequestDetails?.({ focus: 'nextStep' });
+    const timeoutId =
+      typeof window !== 'undefined'
+        ? window.setTimeout(() => {
+            const focused = focusNextStepEditor();
+            if (!focused) {
+              onFocusComposer?.();
+            }
+          }, 220)
+        : null;
+
+    return () => {
+      if (timeoutId && typeof window !== 'undefined') {
+        window.clearTimeout(timeoutId);
       }
     };
-
-    clearCollapseFrame();
-    setIsExpanded(true);
-
-    if (isExpanded) {
-      focusOrFallback();
-      return;
-    }
-
-    if (typeof window !== 'undefined') {
-      const schedule = window.requestAnimationFrame ?? ((cb) => window.setTimeout(cb, 16));
-      schedule(() => focusOrFallback());
-    } else {
-      focusOrFallback();
-    }
-  }, [clearCollapseFrame, focusNextStepEditor, isExpanded, onFocusComposer]);
+  }, [focusNextStepEditor, onFocusComposer, onRequestDetails]);
 
   const dialogReturnFocusRef = useRef(null);
   const jro = useTicketJro(ticket);
   const { stageKey, stageInfo, primaryAction } = useTicketStageInfo(ticket);
 
   useEffect(() => {
-    if (!ticket) return undefined;
-
-    setIsExpanded(false);
-
-    if (typeof requestAnimationFrame === 'function') {
-      const frame = requestAnimationFrame(() => {
-        setIsExpanded(false);
-        collapseFrameRef.current = null;
-      });
-      collapseFrameRef.current = frame;
-      return () => {
-        if (typeof cancelAnimationFrame === 'function') {
-          cancelAnimationFrame(frame);
-        }
-        if (collapseFrameRef.current === frame) {
-          collapseFrameRef.current = null;
-        }
-      };
-    }
-
-    collapseFrameRef.current = null;
-    return undefined;
-  }, [ticket?.id]);
-
-  useEffect(() => {
-    emitInboxTelemetry('chat.header.toggle', {
+    emitInboxTelemetry('chat.header.viewed', {
       ticketId: ticket?.id ?? null,
-      open: isExpanded,
     });
-  }, [isExpanded, ticket?.id]);
+  }, [ticket?.id]);
 
   const name = ticket?.contact?.name ?? ticket?.subject ?? 'Contato sem nome';
   const company = ticket?.metadata?.company ?? ticket?.contact?.company ?? null;
@@ -534,7 +496,6 @@ const ConversationHeader = ({
   const {
     PrimaryActionBanner: PrimaryActionBannerComponent = PrimaryActionBanner,
     AiModeMenu: AiModeMenuComponent = AiModeControlMenu,
-    ContactDetailsPanel: ContactDetailsPanelComponent = ContactDetailsPanel,
   } = components ?? {};
 
   const summaryContent = (
@@ -551,7 +512,8 @@ const ConversationHeader = ({
       onPrimaryAction={handlePrimaryAction}
       jro={jro}
       commandContext={commandContext}
-      isExpanded={isExpanded}
+      detailsOpen={detailsOpen}
+      onRequestDetails={() => onRequestDetails?.({})}
       AiModeMenuComponent={AiModeMenuComponent}
       aiControlProps={{
         ticket,
@@ -567,54 +529,12 @@ const ConversationHeader = ({
   );
 
   const renderedSummary = renderSummary
-    ? renderSummary(summaryContent, { isExpanded, onOpenChange: setIsExpanded })
+    ? renderSummary(summaryContent)
     : summaryContent;
 
-  const detailsStyle = useMemo(() => {
-    const style = {
-      '--conversation-header-summary': '190px',
-    };
-    if (Number.isFinite(composerHeight) && composerHeight > 0) {
-      style['--conversation-header-composer'] = `${composerHeight}px`;
-    }
-    return style;
-  }, [composerHeight]);
-
-  const detailsContent = (
-    <ContactDetailsPanelComponent
-      ticket={ticket}
-      onContactFieldSave={onContactFieldSave}
-      onEditContact={onEditContact}
-      onCall={handleCall}
-      onSendSms={handleSendSms}
-      nextStepValue={nextStepValue}
-      onNextStepSave={onNextStepSave}
-      nextStepEditorRef={nextStepEditorRef}
-      stageKey={stageKey}
-      onDealFieldSave={onDealFieldSave}
-    />
-  );
-
-  const renderedDetails = (
-    <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-      <div
-        data-testid="conversation-header-details"
-        className="mt-4 max-h-[calc(100vh-var(--conversation-header-composer,18rem)-var(--conversation-header-summary,12rem)-var(--conversation-header-safe-area,3rem))] overflow-y-auto overscroll-contain pr-1 sm:pr-2 [scrollbar-gutter:stable]"
-        style={detailsStyle}
-      >
-        {detailsContent}
-      </div>
-    </CollapsibleContent>
-  );
-
   return (
-    <Collapsible
-      open={isExpanded}
-      onOpenChange={setIsExpanded}
-      className="relative z-10 flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur"
-    >
+    <section className="relative z-10 flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong px-4 py-3 shadow-[0_6px_24px_rgba(15,23,42,0.3)] backdrop-blur">
       {renderedSummary}
-      {renderedDetails}
       <OutcomeDialog
         open={activeDialog === 'register-result'}
         mode={outcomeMode}
@@ -642,7 +562,7 @@ const ConversationHeader = ({
         }}
         onSubmit={handleCallResultSubmit}
       />
-    </Collapsible>
+    </section>
   );
 };
 

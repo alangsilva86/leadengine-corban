@@ -241,14 +241,14 @@ const InboxAppShell = ({
                 list={listContent}
                 detail={detailSurface}
                 listClassName={cn(
-                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[360px] max-w-[360px] flex-shrink-0',
+                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[320px] min-w-[320px] max-w-[320px] flex-shrink-0',
                 )}
                 detailClassName="flex min-h-0 min-w-0 flex-col"
-                listWidth={360}
+                listWidth={320}
                 isListVisible={Boolean(sidebar) && (isDesktop ? desktopListVisible : true)}
-                minListWidth={360}
-                maxListWidthPx={360}
-                maxListWidthToken="360px"
+                minListWidth={320}
+                maxListWidthPx={320}
+                maxListWidthToken="320px"
                 resizable={false}
               />
             ) : (

@@ -1,7 +1,6 @@
 import { Fragment, useMemo } from 'react';
-import { Loader2, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
+import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import { cn, formatPhoneNumber } from '@/lib/utils.js';
 import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 
@@ -64,6 +63,10 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
     ticket?.metadata?.remoteJid ||
     null;
 
+  const unreadInbound = ticket.timeline?.unreadInboundCount ?? 0;
+  const lastActivity = lastInbound ?? lastOutbound ?? '—';
+  const preview = formatPreview(ticket);
+
   return (
     <button
       type="button"
@@ -71,85 +74,47 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
       aria-pressed={selected}
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
-        'group w-full min-h-[44px] rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-left transition duration-150 hover:border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_35%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_88%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
+        'group/list relative w-full rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-left transition-colors duration-150 hover:border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_38%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_90%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
         selected && 'border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)]'
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col">
-          <p className="truncate text-sm font-semibold text-[color:var(--color-inbox-foreground)]" title={displayName}>
-            {displayName}
-          </p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-            <span>{displayPhone}</span>
-            {remoteJid ? <span className="text-[color:var(--color-inbox-foreground-muted)]/80">{remoteJid}</span> : null}
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-sm font-semibold text-[color:var(--color-inbox-foreground)]" title={displayName}>
+              {displayName}
+            </p>
+            {unreadInbound > 0 ? (
+              <span className="inline-flex items-center justify-center rounded-full bg-[color:var(--accent-inbox-primary)]/10 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--accent-inbox-primary)]">
+                +{unreadInbound}
+              </span>
+            ) : null}
           </div>
-          <p className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</p>
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+            <span className="truncate">{preview}</span>
+            <span className="hidden overflow-hidden text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70 group-hover/list:inline">
+              {slaLabel}
+            </span>
+          </div>
         </div>
-        <Badge
-          variant="status"
-          tone={slaToneClasses.badgeTone}
-          className={cn(slaToneClasses.badgeClassName, 'rounded-full px-2 py-0.5 text-[11px]')}
-        >
-          {slaLabel}
-        </Badge>
+        <div className="flex flex-col items-end gap-1 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+          <span>{lastActivity}</span>
+          <span className="hidden text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:inline">
+            {displayPhone}
+          </span>
+        </div>
       </div>
-      <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--color-inbox-foreground-muted)] opacity-80 transition-opacity group-hover:opacity-100">
-        <span className="flex items-center gap-1">
-          <Clock className="h-3.5 w-3.5 text-[color:var(--color-inbox-foreground-muted)]" />
-          Último cliente: {lastInbound ?? '—'}
-        </span>
-        <span className="text-[color:var(--color-inbox-foreground-muted)]">•</span>
-        <span className="text-[color:var(--color-inbox-foreground-muted)]">Você: {lastOutbound ?? '—'}</span>
+      <div className="mt-1 hidden items-center gap-2 text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:flex">
+        <span>{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</span>
+        {remoteJid ? <span className="truncate">{remoteJid}</span> : null}
       </div>
-      <p className="mt-2 line-clamp-2 text-xs text-[color:var(--color-inbox-foreground-muted)] transition-[max-height] duration-200 ease-out group-hover:line-clamp-none">
-        {formatPreview(ticket)}
-      </p>
       {agentTyping ? (
-        <div className="mt-2 text-xs text-[color:var(--accent-inbox-primary)]">Agente digitando…</div>
-      ) : null}
-      {ticket.timeline?.unreadInboundCount ? (
-        <div className="mt-2 text-xs text-[color:var(--accent-inbox-primary)]">
-          {ticket.timeline.unreadInboundCount} novas mensagens do cliente
+        <div className="mt-2 flex items-center gap-1 text-[10px] font-medium text-[color:var(--accent-inbox-primary)]">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[color:var(--accent-inbox-primary)]" />
+          Digitando…
         </div>
       ) : null}
     </button>
-  );
-};
-
-const QueueMetrics = ({ metrics }) => {
-  if (!metrics) {
-    return null;
-  }
-
-  const median = metrics.firstResponse?.medianMinutes ?? null;
-  const slaRate = metrics.firstResponse?.underFiveMinutesRate ?? null;
-  const qualityTier = metrics.whatsappQuality?.qualityTier ?? null;
-
-  const summary = [
-    {
-      label: '1ª resposta',
-      value: median !== null ? `${median} min` : '—',
-    },
-    {
-      label: 'Dentro de 5 min',
-      value: slaRate !== null ? `${Math.round(slaRate * 100)}%` : '—',
-    },
-    {
-      label: 'Qualidade WA',
-      value: (qualityTier ?? '—').toUpperCase(),
-    },
-  ];
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-      {summary.map((item) => (
-        <div key={item.label} className="flex items-center gap-1">
-          <span className="font-medium text-[color:var(--color-inbox-foreground-muted)]">{item.label}:</span>
-          <span className="font-semibold text-[color:var(--color-inbox-foreground)]">{item.value}</span>
-        </div>
-      ))}
-    </div>
   );
 };
 
@@ -166,23 +131,19 @@ const QueueList = ({
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      <div className="space-y-2 px-1">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">Filas de atendimento</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
-            onClick={onRefresh}
-            disabled={loading}
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            <span className="sr-only">Sincronizar</span>
-          </Button>
-        </div>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <h2 className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">Filas de atendimento</h2>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          <span className="sr-only">Sincronizar</span>
+        </Button>
       </div>
-
-      <QueueMetrics metrics={metrics} />
 
       <div className="space-y-2 px-1 pb-6">
         {tickets.length === 0 ? (
