@@ -510,6 +510,10 @@ server.listen(PORT, () => {
   logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
+  
+  // Log AI configuration após servidor iniciar
+  const { logAiConfiguration } = require('./config/ai');
+  logAiConfiguration();
 
   const mode = getWhatsAppMode();
   logger.info(`💬 WhatsApp transport initialized in ${mode.toUpperCase()} mode`);
