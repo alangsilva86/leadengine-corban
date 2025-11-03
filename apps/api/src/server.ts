@@ -481,6 +481,7 @@ app.head('/', (_req, res) => {
 // Endpoint temporário para debug de AI config
 app.get('/_debug/ai-config', async (req, res) => {
   try {
+    const { prisma } = await import('./lib/prisma');
     const tenant = await prisma.tenant.findUnique({
       where: { id: 'demo-tenant' },
       include: { aiConfig: true },
@@ -496,6 +497,7 @@ app.get('/_debug/ai-config', async (req, res) => {
 
 app.post('/_debug/ai-config/update', async (req, res) => {
   try {
+    const { prisma } = await import('./lib/prisma');
     const updated = await prisma.aiConfig.update({
       where: { tenantId: 'demo-tenant' },
       data: { defaultMode: 'IA_AUTO' },
