@@ -892,15 +892,32 @@ export const processStandardInboundEvent = async (
       });
       
       console.log('DEBUG: ANTES DE CHAMAR processAiAutoReply');
-      const aiPromise = processAiAutoReply({
+      
+      let aiPromise;
+      try {
+        aiPromise = processAiAutoReply({
         tenantId,
         ticketId,
         messageId: persistedMessage.id,
         messageContent: persistedMessage.content,
-        contactId: contactRecord.id,
-        queueId: ticketRecord.queueId ?? null,
-      });
-      console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
+          contactId: contactRecord.id,
+          queueId: ticketRecord.queueId ?? null,
+        });
+        console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
+      } catch (syncError) {
+        console.error('DEBUG: ERRO SINCRONO AO CHAMAR processAiAutoReply:', syncError);
+        logger.error('LeadEngine WhatsApp :: ERRO SINCRONO ao chamar AI auto-reply', {
+          error: syncError instanceof Error ? {
+            name: syncError.name,
+            message: syncError.message,
+            stack: syncError.stack,
+          } : String(syncError),
+          tenantId,
+          ticketId,
+        });
+        // Não continuar se houve erro síncrono
+        return;
+      }
       
       aiPromise.catch((error) => {
         logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
