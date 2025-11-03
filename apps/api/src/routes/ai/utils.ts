@@ -1,5 +1,4 @@
 import type { Request } from 'express';
-import createHttpError from 'http-errors';
 
 export const readQueueParam = (req: Request): string | null => {
   const queueId = (req.query.queueId ?? req.body?.queueId) as string | undefined;
@@ -9,7 +8,9 @@ export const readQueueParam = (req: Request): string | null => {
 export const ensureTenantId = (req: Request): string => {
   const tenantId = req.user?.tenantId;
   if (!tenantId) {
-    throw createHttpError(401, 'Tenant não autenticado.');
+    const error = new Error('Tenant não autenticado.');
+    (error as Error & { status?: number }).status = 401;
+    throw error;
   }
   return tenantId;
 };
