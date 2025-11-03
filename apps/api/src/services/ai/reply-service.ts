@@ -9,16 +9,17 @@ import {
   TokenUsage,
 } from './types';
 
-export type GenerateReplyInput = {
-  tenantId: string;
-  ticketId: string;
-  contactId: string;
-  mode: AiMode;
-  prompt: string;
-  conversation: AiConversationMessage[];
-};
+type NormalizedAiMode = 'auto' | 'assist' | 'manual';
 
-const STREAM_EVENT = 'ai:reply-stream';
+const normalizeAiMode = (mode: AiMode | string | undefined | null): NormalizedAiMode => {
+  if (!mode) return 'auto';
+  const m = String(mode).toLowerCase().replace(/\s+/g, '').replace(/-/g, '_');
+  // Map aliases to normalized set; default to 'auto' (IA_AUTO fallback)
+  if (m === 'ia_auto' || m === 'auto') return 'auto';
+  if (m === 'assist' || m === 'ia_assist') return 'assist';
+  if (m === 'manual' || m === 'ia_manual') return 'manual';
+  return 'auto';
+};
 
 const collectActiveMemories = (tenantId: string, contactId: string) => {
   const now = Date.now();
@@ -36,8 +37,9 @@ const collectActiveMemories = (tenantId: string, contactId: string) => {
     }));
 };
 
-const buildSystemInstructions = (mode: AiMode) => {
-  switch (mode) {
+const buildSystemInstructions = (mode: AiMode | string) => {
+  const normalized: NormalizedAiMode = normalizeAiMode(mode);
+  switch (normalized) {
     case 'auto':
       return 'Atue de forma proativa, propondo próximos passos objetivos e mantendo o tom cordial.';
     case 'manual':
@@ -48,14 +50,14 @@ const buildSystemInstructions = (mode: AiMode) => {
   }
 };
 
-const buildPrompt = (input: GenerateReplyInput, memoriesSummary: string) => {
+const buildPrompt = (input: GenerateReplyInput, memoriesSummary: string, systemInstructions: string) => {
   const conversationSnippet = input.conversation
     .slice(-6)
     .map((entry) => `${entry.role.toUpperCase()}: ${entry.content}`)
     .join('\n');
 
   return [
-    buildSystemInstructions(input.mode),
+    systemInstructions,
     memoriesSummary ? `Memórias relevantes:\n${memoriesSummary}` : null,
     `Últimas mensagens:\n${conversationSnippet}`,
     `Solicitação do agente: ${input.prompt}`,
@@ -103,19 +105,22 @@ const streamReply = (ticketId: string, content: string, metadata: Record<string,
 };
 
 export const generateAiReply = async (input: GenerateReplyInput): Promise<AiReplyResult> => {
+  const resolvedMode: NormalizedAiMode = normalizeAiMode(input.mode);
+  const systemInstructions = buildSystemInstructions(resolvedMode);
+
   const memories = collectActiveMemories(input.tenantId, input.contactId);
   const memoriesSummary = memories
     .map((memory) => `• ${memory.topic}: ${memory.content}`)
     .join('\n');
 
-  const prompt = buildPrompt(input, memoriesSummary);
+  const prompt = buildPrompt(input, memoriesSummary, systemInstructions);
   const completion = `${input.prompt.trim()}\n\nCom base no histórico e nas informações acima, reforço nosso compromisso em avançar com transparência. Seguem os próximos passos sugeridos: \n1. Confirmar os dados compartilhados.\n2. Enviar a documentação complementar.\n3. Agendar a próxima conversa.`;
 
   const usage = estimateUsage(prompt, completion);
   const toolCalls = simulateToolCalls(memoriesSummary);
 
   const record = appendReplyRecord(input.tenantId, input.ticketId, completion, {
-    mode: input.mode,
+    mode: resolvedMode, // IA_AUTO fallback when config/mode is missing or unknown
     prompt,
     usage,
   });
@@ -126,6 +131,7 @@ export const generateAiReply = async (input: GenerateReplyInput): Promise<AiRepl
     tenantId: input.tenantId,
     ticketId: input.ticketId,
     replyId: record.id,
+    mode: resolvedMode,
     usage,
   });
 

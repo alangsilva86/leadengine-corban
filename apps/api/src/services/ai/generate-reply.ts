@@ -52,15 +52,61 @@ export async function generateAiReply(
       };
     }
 
-    // Buscar ou criar configuração de IA
-    const config =
-      (await getAiConfig(tenantId, queueId ?? null)) ??
-      (await upsertAiConfig({
+    // Buscar ou criar configuração de IA (com fallback para IA_AUTO)
+    let config: any;
+    try {
+      config = await getAiConfig(tenantId, queueId ?? null);
+
+      if (!config) {
+        // Se não houver config, cria com modo IA_AUTO por padrão
+        config = await upsertAiConfig({
+          tenantId,
+          queueId: queueId ?? null,
+          scopeKey: queueId ?? '__global__',
+          model: envAiConfig.defaultModel,
+          // Backfill do modo padrão solicitado: IA_AUTO
+          mode: 'IA_AUTO' as any,
+        });
+        logger.debug('AI config created with default IA_AUTO mode', {
+          tenantId,
+          conversationId,
+          queueId: queueId ?? null,
+        });
+      } else if (config && (config as any).mode == null) {
+        // Se existir mas não tiver `mode`, garantimos IA_AUTO
+        (config as any).mode = 'IA_AUTO';
+        // Tenta persistir o backfill de modo, mas não falha o fluxo se der erro
+        try {
+          await upsertAiConfig({
+            id: (config as any).id,
+            tenantId,
+            queueId: queueId ?? null,
+            scopeKey: queueId ?? '__global__',
+            model: config.model ?? envAiConfig.defaultModel,
+            mode: 'IA_AUTO' as any,
+          } as any);
+        } catch (persistErr) {
+          logger.warn('Failed to persist IA_AUTO mode backfill; proceeding with in-memory mode', {
+            error: persistErr instanceof Error ? persistErr.message : String(persistErr),
+          });
+        }
+      }
+    } catch (cfgErr) {
+      // Se falhar leitura ou escrita da config, usamos fallback local IA_AUTO
+      logger.warn('AI config load failed, using local fallback IA_AUTO', {
+        error: cfgErr instanceof Error ? cfgErr.message : String(cfgErr),
         tenantId,
-        queueId: queueId ?? null,
-        scopeKey: queueId ?? '__global__',
+        conversationId,
+      });
+      config = {
+        id: null,
         model: envAiConfig.defaultModel,
-      }));
+        systemPromptReply: undefined,
+        temperature: undefined,
+        maxOutputTokens: undefined,
+        mode: 'IA_AUTO',
+      } as any;
+    }
 
     // Construir mensagens de requisição
     const requestMessages = [
@@ -126,7 +172,7 @@ export async function generateAiReply(
     await recordAiRun({
       tenantId,
       conversationId,
-      configId: config.id,
+      configId: (config as any)?.id ?? null,
       runType: 'reply',
       requestPayload: requestBody as Prisma.JsonValue,
       responsePayload: {
@@ -141,6 +187,7 @@ export async function generateAiReply(
       tenantId,
       conversationId,
       model: config.model,
+      mode: (config as any)?.mode ?? 'IA_AUTO',
       messageLength: message.length,
       latencyMs: Date.now() - startedAt,
     });

@@ -1,4 +1,5 @@
 import { aiConfig, isAiEnabled } from '../../config/ai';
+import { getAiConfig, upsertAiConfig } from '@ticketz/storage';
 import { recordAiRun } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
 import { logger } from '../../config/logger';
@@ -38,6 +39,65 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     metadata = {},
   } = input;
 
+  // Resolve per-tenant AI config with resilient fallback (default to IA_AUTO)
+  let resolvedConfig: any | null = null;
+  let resolvedConfigId: string | null = null;
+  try {
+    // Try to get queue-scoped config when provided via configId metadata in callers; otherwise global (null queue)
+    resolvedConfig = await getAiConfig(tenantId, null);
+  } catch (e) {
+    logger.warn('getAiConfig failed, using local fallback IA_AUTO', { tenantId, error: (e as Error)?.message });
+  }
+
+  if (!resolvedConfig) {
+    try {
+      // Create a global config with IA_AUTO if none exists
+      const upserted = await upsertAiConfig({
+        tenantId,
+        queueId: null,
+        scopeKey: '__global__',
+        model: aiConfig.defaultModel,
+        mode: 'IA_AUTO',
+      });
+      resolvedConfig = upserted;
+      resolvedConfigId = (upserted as any)?.id ?? null;
+      logger.info('AI config created with IA_AUTO as default', { tenantId });
+    } catch (e) {
+      // Last-resort local fallback (not persisted)
+      resolvedConfig = {
+        id: null,
+        tenantId,
+        queueId: null,
+        scopeKey: '__global__',
+        model: aiConfig.defaultModel,
+        mode: 'IA_AUTO',
+      };
+      logger.warn('upsertAiConfig failed; proceeding with local IA_AUTO fallback', { tenantId, error: (e as Error)?.message });
+    }
+  } else {
+    resolvedConfigId = (resolvedConfig as any)?.id ?? null;
+    if (!('mode' in resolvedConfig) || !resolvedConfig.mode) {
+      // Backfill mode to IA_AUTO non-blockingly
+      try {
+        await upsertAiConfig({
+          tenantId,
+          queueId: resolvedConfig.queueId ?? null,
+          scopeKey: resolvedConfig.scopeKey ?? '__global__',
+          model: resolvedConfig.model ?? aiConfig.defaultModel,
+          mode: 'IA_AUTO',
+        });
+        resolvedConfig.mode = 'IA_AUTO';
+        logger.debug('Backfilled AI config mode to IA_AUTO', { tenantId });
+      } catch (e) {
+        logger.warn('Failed to backfill AI config mode; continuing with in-memory IA_AUTO', { tenantId, error: (e as Error)?.message });
+        resolvedConfig.mode = 'IA_AUTO';
+      }
+    }
+  }
+
+  const selectedModel = resolvedConfig?.model ?? aiConfig.defaultModel;
+  const systemPrompt = (resolvedConfig as any)?.systemPromptSuggest as string | undefined;
+
   if (!isAiEnabled) {
     const fallback = {
       next_step: 'Aguardando contato humano',
@@ -69,8 +129,9 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
   }
 
   const requestBody = {
-    model: aiConfig.defaultModel,
+    model: selectedModel,
     input: [
+      ...(systemPrompt ? [{ role: 'system' as const, content: [{ type: 'text' as const, text: systemPrompt }] }] : []),
       ...contextMessages.map((message) => ({
         role: message.role,
         content: [{ type: 'text', text: message.content }],
@@ -88,7 +149,12 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
       name: 'crm_suggestion_schema',
       schema: structuredSchema,
     },
-    metadata,
+    metadata: {
+      tenantId,
+      conversationId,
+      mode: resolvedConfig?.mode ?? 'IA_AUTO',
+      ...metadata,
+    },
   };
 
   const startedAt = Date.now();
@@ -124,7 +190,7 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     await recordAiRun({
       tenantId,
       conversationId,
-      configId: configId ?? null,
+      configId: resolvedConfigId,
       runType: 'suggest',
       requestPayload: requestBody as Prisma.JsonValue,
       responsePayload: json as Prisma.JsonValue,
@@ -138,7 +204,7 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     return {
       payload: parsedPayload,
       confidence: (parsedPayload as any)?.confidence ?? null,
-      model: json?.model ?? aiConfig.defaultModel,
+      model: json?.model ?? selectedModel,
       usage: {
         promptTokens: json?.usage?.prompt_tokens ?? undefined,
         completionTokens: json?.usage?.completion_tokens ?? undefined,
@@ -153,7 +219,7 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     await recordAiRun({
       tenantId,
       conversationId,
-      configId: configId ?? null,
+      configId: resolvedConfigId,
       runType: 'suggest',
       requestPayload: requestBody as Prisma.JsonValue,
       responsePayload: { error: (error as Error).message },
