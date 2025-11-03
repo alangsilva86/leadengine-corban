@@ -356,6 +356,51 @@ app.get('/_diag/echo', (req, res) => {
   res.status(200).json(payload);
 });
 
+// Debug endpoint para verificar AI auto-reply
+app.get('/_diag/ai-auto-reply', async (_req, res) => {
+  try {
+    const { prisma } = await import('./lib/prisma');
+    
+    // Buscar configurações de AI de todos os tenants
+    const tenants = await prisma.tenant.findMany({
+      select: {
+        id: true,
+        slug: true,
+        aiEnabled: true,
+        aiMode: true,
+        aiModel: true,
+      },
+    });
+
+    const payload = {
+      ok: true,
+      timestamp: new Date().toISOString(),
+      environment: NODE_ENV,
+      openaiKeyConfigured: !!process.env.OPENAI_API_KEY,
+      loggerTransports: logger.transports.map((t: any) => ({
+        name: t.name,
+        level: t.level,
+      })),
+      tenants: tenants.map(t => ({
+        id: t.id,
+        slug: t.slug,
+        aiEnabled: t.aiEnabled,
+        aiMode: t.aiMode,
+        aiModel: t.aiModel,
+      })),
+    };
+
+    logger.info('🔍 AI AUTO-REPLY DEBUG ENDPOINT ACCESSED', payload);
+    res.status(200).json(payload);
+  } catch (error) {
+    logger.error('❌ Error in AI auto-reply debug endpoint', { error });
+    res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 // Rotas públicas (sem autenticação)
 app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
