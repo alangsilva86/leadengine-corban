@@ -62,6 +62,12 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       aiConfigExists: !!aiConfig,
     });
 
+    // Normaliza ator/labels conforme modo atual
+    const aiActor =
+      aiMode === 'IA_AUTO'
+        ? { origin: 'ai_auto', authorType: 'ai_auto', aiMode: 'IA_AUTO' as const, label: 'IA (auto)' }
+        : { origin: 'copilot', authorType: 'ai_suggest', aiMode: 'COPILOTO' as const, label: 'Copiloto' };
+
     // Apenas responder automaticamente se estiver em modo IA_AUTO
     if (aiMode !== 'IA_AUTO') {
       logger.warn('🤖 AI AUTO-REPLY :: ⚠️ PULADO - Modo não é IA_AUTO', {
@@ -131,6 +137,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       metadata: {
         autoReply: true,
         triggeredByMessageId: messageId,
+        aiMode: aiActor.aiMode,
       },
     });
 
@@ -156,7 +163,9 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
           metadata: {
             aiGenerated: true,
             aiModel: aiResponse.model,
-            aiMode: 'auto',
+            aiMode: aiActor.aiMode, // 'IA_AUTO' | 'COPILOTO'
+            origin: aiActor.origin, // 'ai_auto' | 'copilot'
+            authorType: aiActor.authorType, // 'ai_auto' | 'ai_suggest'
             usage: aiResponse.usage,
           },
         }
@@ -166,6 +175,9 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
         tenantId,
         ticketId,
         model: aiResponse.model,
+        aiMode: aiActor.aiMode,
+        origin: aiActor.origin,
+        authorType: aiActor.authorType,
       });
     } else {
       logger.warn('AI auto-reply: failed to generate response', {

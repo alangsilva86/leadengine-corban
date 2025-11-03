@@ -11,7 +11,7 @@ import { logger } from '../../config/logger';
 
 export type AiConfigRecord = Awaited<ReturnType<typeof getAiConfig>>;
 
-export const DEFAULT_MODE: AiAssistantMode = 'COPILOTO';
+export const DEFAULT_MODE: AiAssistantMode = 'IA_AUTO';
 
 export const defaultSuggestionSchema: Prisma.JsonValue = {
   type: 'object',
