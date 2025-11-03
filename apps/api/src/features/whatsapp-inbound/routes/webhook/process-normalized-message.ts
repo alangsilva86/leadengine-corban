@@ -14,6 +14,10 @@ import { asRecord, readNumber, readString } from '../../utils/webhook-parsers';
 import { normalizeChatId } from '../../utils/poll-helpers';
 import { toRawPreview } from './helpers';
 
+// AI routing hint: if set to 'front', backend should annotate envelope to let front take the lead
+const AI_ROUTE_MODE = (process.env.AI_ROUTE_MODE ?? '').toLowerCase();
+const __aiRouteIsFront = AI_ROUTE_MODE === 'front';
+
 type ProcessNormalizedMessageOptions = {
   normalized: NormalizedRawUpsertMessage;
   eventRecord: Record<string, unknown>;
@@ -220,7 +224,8 @@ export const processNormalizedMessage = async (
 
     const metadata: Record<string, unknown> = {
       ...metadataBase,
-      source: metadataBase.source ?? 'baileys:webhook',
+      // identify webhook origin and, if applicable, front-first route for observability
+      source: metadataBase.source ?? (__aiRouteIsFront ? 'baileys:webhook:front_first' : 'baileys:webhook'),
       direction,
       remoteJid: metadataBase.remoteJid ?? remoteJid,
       chatId: metadataBase.chatId ?? chatId,
@@ -230,6 +235,15 @@ export const processNormalizedMessage = async (
       normalizedIndex: normalized.messageIndex,
       raw: metadataBase.raw ?? rawPreview,
       broker: brokerMetadata,
+      // new: routing hints for downstream processors and UI
+      aiRouteMode: __aiRouteIsFront ? 'front' : 'server',
+      flags: {
+        ...(typeof (metadataBase as Record<string, unknown>)?.flags === 'object' && !Array.isArray((metadataBase as Record<string, unknown>)?.flags)
+          ? ((metadataBase as Record<string, unknown>)?.flags as Record<string, unknown>)
+          : {}),
+        // when front-first, signal backend processors to avoid auto IA reply here
+        skipServerAi: __aiRouteIsFront === true,
+      },
     };
 
     emitWhatsAppDebugPhase({
@@ -238,12 +252,13 @@ export const processNormalizedMessage = async (
       tenantId: tenantId ?? null,
       instanceId: instanceId ?? null,
       chatId,
-      tags: ['webhook'],
+      tags: ['webhook', __aiRouteIsFront ? 'front' : 'server'],
       context: {
         requestId,
         normalizedIndex: normalized.messageIndex,
         direction,
         source: 'webhook',
+        routeMode: __aiRouteIsFront ? 'front' : 'server',
       },
       payload: {
         contact: contactRecord,
@@ -275,6 +290,14 @@ export const processNormalizedMessage = async (
       });
     }
 
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: tenantId ?? 'unknown',
+      instanceId: instanceId ?? 'unknown',
+      result: 'accepted',
+      reason: __aiRouteIsFront ? 'routed_front' : 'routed_server',
+    });
+
     enqueueInboundWebhookJob({
       requestId,
       tenantId,
@@ -286,6 +309,7 @@ export const processNormalizedMessage = async (
         instanceId: instanceId ?? 'unknown-instance',
         chatId,
         tenantId,
+        route: __aiRouteIsFront ? 'front' : 'server',
         message: {
           kind: 'message',
           id: normalized.messageId ?? null,

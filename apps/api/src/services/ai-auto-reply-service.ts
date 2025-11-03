@@ -5,6 +5,13 @@ import { generateAiReply } from './ai/generate-reply';
 import { sendMessage } from './ticket-service';
 import { prisma } from '../lib/prisma';
 
+type AiRouteMode = 'front' | 'server';
+
+function resolveAiRouteMode(): AiRouteMode {
+  const value = (process.env.AI_ROUTE_MODE ?? '').toLowerCase().trim();
+  return value === 'front' ? 'front' : 'server';
+}
+
 /**
  * Serviço responsável por processar respostas automáticas da IA
  * quando uma mensagem inbound é recebida.
@@ -103,6 +110,18 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
     messageId,
     messageContentPreview: messageContent?.substring(0, 80) ?? '',
   });
+
+    // Hard guard: only allow server-side auto reply when AI_ROUTE_MODE=server
+    const routeMode = resolveAiRouteMode();
+    logger.debug('AI AUTO-REPLY :: route mode check', { routeMode });
+    if (routeMode !== 'server') {
+      logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - AI_ROUTE_MODE=front (responder apenas via front-end)', {
+        tenantId,
+        ticketId,
+        messageId,
+      });
+      return;
+    }
 
   try {
     const aiEnabled = resolveAiEnabled();
@@ -301,6 +320,7 @@ export async function shouldTriggerAiAutoReply(
   ticketId: string,
   queueId?: string | null
 ): Promise<boolean> {
+  if (resolveAiRouteMode() !== 'server') return false;
   if (!resolveAiEnabled()) return false;
 
   try {

@@ -11,6 +11,8 @@ interface InboundQueueJob {
   chatId: string | null;
   normalizedIndex: number | null;
   envelope: Parameters<typeof ingestInboundWhatsAppMessage>[0];
+  route?: 'front' | 'server';
+  flags?: { skipServerAi?: boolean } | null;
 }
 
 const queue: InboundQueueJob[] = [];
@@ -53,6 +55,21 @@ const processQueue = async (): Promise<void> => {
     }
 
     const { requestId, tenantId, instanceId, chatId, normalizedIndex, envelope } = job;
+
+    // Enforce route/flags into envelope metadata before ingestion
+    try {
+      const msg = (envelope as any)?.message ?? ((envelope as any).envelope?.message);
+      const metadata = (msg?.metadata ||= {});
+      const metaFlags = (metadata.flags ||= {});
+      if (job.route === 'front') {
+        metaFlags.skipServerAi = true; // hard guard: do not trigger server-side AI
+        (metadata.aiRouteMode ||= 'front');
+      } else if (job.route === 'server') {
+        (metadata.aiRouteMode ||= 'server');
+      }
+    } catch (_) {
+      // best-effort; do not break ingestion if envelope structure differs
+    }
     
     logger.warn('📥 INBOUND QUEUE :: ⚙️ PROCESSANDO job', {
       requestId,
@@ -60,16 +77,21 @@ const processQueue = async (): Promise<void> => {
       instanceId,
       chatId,
       remainingInQueue: queue.length,
+      route: job.route ?? 'server',
+      flags: job.flags ?? null,
     });
 
     try {
+      const startedAt = Date.now();
       const processed = await ingestInboundWhatsAppMessage(envelope);
+      const durationMs = Date.now() - startedAt;
       
       logger.warn('📥 INBOUND QUEUE :: 📊 Resultado do ingest', {
         requestId,
         processed,
         tenantId,
         instanceId,
+        durationMs,
       });
 
       if (processed) {
@@ -78,7 +100,7 @@ const processQueue = async (): Promise<void> => {
           tenantId: tenantId ?? 'unknown',
           instanceId: instanceId ?? 'unknown',
           result: 'accepted',
-          reason: 'ok',
+          reason: job.route === 'front' ? 'ok_front' : 'ok_server',
         });
 
         logger.info('🎯 LeadEngine • WhatsApp :: 🎉 Webhook ingestão concluída', {
@@ -94,7 +116,7 @@ const processQueue = async (): Promise<void> => {
           tenantId: tenantId ?? 'unknown',
           instanceId: instanceId ?? 'unknown',
           result: 'failed',
-          reason: 'ingest_failed',
+          reason: job.route === 'front' ? 'ingest_failed_front' : 'ingest_failed_server',
         });
 
         logger.warn('🎯 LeadEngine • WhatsApp :: 🎭 Webhook ingestão não persistiu mensagem', {
@@ -134,6 +156,8 @@ export const enqueueInboundWebhookJob = (job: InboundQueueJob): void => {
     instanceId: job.instanceId,
     chatId: job.chatId,
     queueLength: queue.length + 1,
+    route: job.route ?? 'server',
+    flags: job.flags ?? null,
   });
   
   queue.push(job);
@@ -162,4 +186,3 @@ export const __testing = {
 };
 
 export type { InboundQueueJob };
-
