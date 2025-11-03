@@ -5,6 +5,22 @@ import { generateAiReply } from './ai/generate-reply';
 import { sendMessage } from './ticket-service';
 import { prisma } from '../lib/prisma';
 
+// ---- AI Auto-Reply runtime guards & helpers ----
+const AI_TIMEOUT_MS = Number(process.env.AI_AUTO_REPLY_TIMEOUT_MS ?? '15000');
+
+function safePreview(input?: string, max = 120) {
+  if (!input) return '';
+  const s = String(input);
+  return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return (await Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), ms)),
+  ])) as T;
+}
+
 type AiRouteMode = 'front' | 'server';
 
 function resolveAiRouteMode(): AiRouteMode {
@@ -108,8 +124,13 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
     tenantId,
     ticketId,
     messageId,
-    messageContentPreview: messageContent?.substring(0, 80) ?? '',
+    messageContentPreview: safePreview(messageContent, 80),
   });
+
+    if (!messageContent || !messageContent.trim()) {
+      logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - conteúdo vazio', { tenantId, ticketId, messageId });
+      return;
+    }
 
     // Hard guard: only allow server-side auto reply when AI_ROUTE_MODE=server
     const routeMode = resolveAiRouteMode();
@@ -232,23 +253,46 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       return;
     }
 
-    logger.info('🤖 AI AUTO-REPLY :: ⚙️ GERANDO resposta da IA', {
+    logger.debug('AI AUTO-REPLY :: CALLING generateAiReply', {
       tenantId,
       ticketId,
-      messageCount: conversationMessages.length,
+      queueId: queueId ?? null,
+      timeoutMs: AI_TIMEOUT_MS,
+      lastUserPreview: safePreview(conversationMessages[conversationMessages.length - 1]?.content as string),
     });
 
-    // Gerar resposta da IA
-    const aiResponse = await generateAiReply({
+    let aiResponse;
+    try {
+      aiResponse = await withTimeout(
+        generateAiReply({
+          tenantId,
+          conversationId: ticketId,
+          messages: conversationMessages,
+          queueId: queueId ?? null,
+          metadata: {
+            autoReply: true,
+            triggeredByMessageId: messageId,
+            aiMode: aiActor.aiMode,
+          },
+        }),
+        AI_TIMEOUT_MS
+      );
+    } catch (err: any) {
+      logger.error('🤖 AI AUTO-REPLY :: 🛑 FALHA ao gerar resposta', {
+        tenantId,
+        ticketId,
+        errorName: err?.name,
+        errorMessage: err?.message,
+      });
+      return;
+    }
+
+    logger.debug('AI AUTO-REPLY :: generateAiReply OK', {
       tenantId,
-      conversationId: ticketId,
-      messages: conversationMessages,
-      queueId: queueId ?? null,
-      metadata: {
-        autoReply: true,
-        triggeredByMessageId: messageId,
-        aiMode: aiActor.aiMode,
-      },
+      ticketId,
+      status: aiResponse?.status,
+      model: aiResponse?.model,
+      replyPreview: safePreview(aiResponse?.message ?? ''),
     });
 
     if (aiResponse.status === 'success' || aiResponse.status === 'stubbed') {
@@ -261,49 +305,63 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       logger.info('🤖 AI AUTO-REPLY :: 📤 ENVIANDO resposta', {
         tenantId,
         ticketId,
-        messageLength: reply.length,
+        replyLength: reply.length,
         model: aiResponse.model,
       });
 
-      await sendMessage(
-        tenantId,
-        undefined, // userId (sistema automático)
-        {
+      try {
+        await sendMessage(
+          tenantId,
+          undefined, // userId (sistema automático)
+          {
+            ticketId,
+            contactId,
+            content: reply,
+            direction: 'OUTBOUND',
+            status: 'PENDING',
+            metadata: {
+              aiGenerated: true,
+              aiModel: aiResponse.model,
+              aiMode: aiActor.aiMode, // 'IA_AUTO' | 'COPILOTO'
+              origin: aiActor.origin, // 'ai_auto' | 'copilot'
+              authorType: aiActor.authorType, // 'ai_auto' | 'ai_suggest'
+              usage: aiResponse.usage,
+              triggeredByMessageId: messageId,
+            },
+          }
+        );
+        logger.info('🤖 AI AUTO-REPLY :: ✅ RESPOSTA ENVIADA COM SUCESSO', {
+          tenantId,
           ticketId,
-          contactId,
-          content: reply,
-          direction: 'OUTBOUND',
-          status: 'PENDING',
-          metadata: {
-            aiGenerated: true,
-            aiModel: aiResponse.model,
-            aiMode: aiActor.aiMode, // 'IA_AUTO' | 'COPILOTO'
-            origin: aiActor.origin, // 'ai_auto' | 'copilot'
-            authorType: aiActor.authorType, // 'ai_auto' | 'ai_suggest'
-            usage: aiResponse.usage,
-            triggeredByMessageId: messageId,
-          },
-        }
-      );
-
-      logger.info('🤖 AI AUTO-REPLY :: ✅ RESPOSTA ENVIADA COM SUCESSO', {
-        tenantId,
-        ticketId,
-        model: aiResponse.model,
-        aiMode: aiActor.aiMode,
-        origin: aiActor.origin,
-        authorType: aiActor.authorType,
-      });
+          model: aiResponse.model,
+          aiMode: aiActor.aiMode,
+          origin: aiActor.origin,
+          authorType: aiActor.authorType,
+        });
+      } catch (sendErr: any) {
+        logger.error('🤖 AI AUTO-REPLY :: 📩 ERRO NO ENVIO', {
+          tenantId,
+          ticketId,
+          errorName: sendErr?.name,
+          errorMessage: sendErr?.message,
+          status: sendErr?.response?.status,
+        });
+        return;
+      }
     } else {
       logger.warn('AI auto-reply: failed to generate response', {
         tenantId,
         ticketId,
         status: aiResponse.status,
+        model: (aiResponse as any)?.model,
+        replyPreview: safePreview((aiResponse as any)?.message ?? ''),
       });
     }
-  } catch (error) {
+  } catch (error: any) {
     logger.error('🤖 AI AUTO-REPLY :: ❌ ERRO ao processar', {
       error: error instanceof Error ? error.message : String(error),
+      name: error?.name,
+      cause: (error as any)?.cause ? String((error as any).cause) : undefined,
       stack: error instanceof Error ? error.stack : undefined,
       tenantId,
       ticketId,
@@ -331,6 +389,7 @@ export async function shouldTriggerAiAutoReply(
       error: error instanceof Error ? error.message : String(error),
       tenantId,
       ticketId,
+      queueId,
     });
     return false;
   }

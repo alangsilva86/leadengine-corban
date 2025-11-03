@@ -117,12 +117,13 @@ const normalizeOutboundResponsePayload = (
   const record = unwrapOutboundResponsePayload(payload);
   const normalized: Record<string, unknown> = record ? { ...record } : {};
 
+  // Fallbacks sourced from the original request in case the broker returns 204/empty/shape-mismatch
   const fallbackExternalId = pickFirstString(
     normalizedRequest.externalId,
     typeof normalizedRequest.metadata?.['idempotencyKey'] === 'string'
       ? (normalizedRequest.metadata?.['idempotencyKey'] as string)
       : undefined
-  );
+  ) ?? `msg-${Date.now()}`;
 
   const resolvedId =
     pickFirstString(
@@ -143,12 +144,9 @@ const normalizeOutboundResponsePayload = (
   if (!normalized.externalId) {
     const externalIdCandidate = pickFirstString(
       normalized.external_id,
-      fallbackExternalId,
       normalized.id
     );
-    if (externalIdCandidate) {
-      normalized.externalId = externalIdCandidate;
-    }
+    normalized.externalId = externalIdCandidate ?? fallbackExternalId;
   }
 
   const resolvedStatus =
@@ -180,8 +178,8 @@ const normalizeOutboundResponsePayload = (
 
   if (timestampCandidate) {
     normalized.timestamp = timestampCandidate;
-  } else if ('timestamp' in normalized) {
-    normalized.timestamp = null;
+  } else {
+    normalized.timestamp = new Date().toISOString();
   }
 
   if (!normalized.raw && isRecord(payload)) {
@@ -401,6 +399,13 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       requestOptions.idempotencyKey = options.idempotencyKey;
     }
 
+    logger.debug('📤 [WhatsApp Broker] Enviando requisição', {
+      instanceId,
+      endpoint: routePath,
+      bodySize: JSON.stringify(directRequestBody).length,
+      isMediaType,
+    });
+
     const response = await performWhatsAppBrokerRequest<Record<string, unknown>>(
       routePath,
       {
@@ -412,25 +417,40 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
     );
 
     const parsedResponsePayload = normalizeOutboundResponsePayload(response, normalizedPayload);
-    let normalizedResponse: BrokerOutboundResponse;
+    let normalizedResponse: BrokerOutboundResponse | null = null;
 
     try {
       normalizedResponse = BrokerOutboundResponseSchema.parse(parsedResponsePayload);
     } catch (error) {
-      logger.warn('⚠️ [WhatsApp Broker] Unable to parse direct route response', {
+      // Broker retornou 204, vazio ou shape divergente. Geramos uma resposta mínima para não quebrar o fluxo.
+      logger.warn('⚠️ [WhatsApp Broker] Falling back to minimal response shape', {
         instanceId,
         to: normalizedPayload.to,
         endpoint: routePath,
-        responseShape: Object.keys(parsedResponsePayload),
-        originalKeys: isRecord(response) ? Object.keys(response) : null,
+        responseType: typeof response,
+        responseKeys: isRecord(response) ? Object.keys(response) : null,
+        parsedKeys: isRecord(parsedResponsePayload) ? Object.keys(parsedResponsePayload) : null,
         error,
       });
-      throw error;
+      normalizedResponse = {
+        externalId:
+          (parsedResponsePayload && (parsedResponsePayload as any).externalId) ||
+          (parsedResponsePayload && (parsedResponsePayload as any).id) ||
+          (normalizedPayload.externalId as string | undefined) ||
+          (options.idempotencyKey as string | undefined) ||
+          `msg-${Date.now()}`,
+        status: (parsedResponsePayload && (parsedResponsePayload as any).status) || 'sent',
+        timestamp:
+          (parsedResponsePayload && (parsedResponsePayload as any).timestamp) ||
+          new Date().toISOString(),
+        raw: isRecord(response) ? (response as Record<string, unknown>) : (parsedResponsePayload as any) ?? null,
+      } as BrokerOutboundResponse;
     }
 
     const enrichedResponse: BrokerOutboundResponse = {
       ...normalizedResponse,
-      raw: normalizedResponse.raw ?? (isRecord(response) ? response : parsedResponsePayload ?? null),
+      raw:
+        normalizedResponse.raw ?? (isRecord(response) ? (response as Record<string, unknown>) : (parsedResponsePayload as any) ?? null),
     };
 
     logger.info('🎉 [WhatsApp Broker] Resposta recebida da rota direta', {
@@ -464,6 +484,15 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
 
     const contentValue = payload.content ?? payload.caption ?? '';
 
+    // Guard para evitar envio de texto vazio que alguns brokers rejeitam silenciosamente
+    const resolvedType = (payload.type ?? (payload.media || payload.mediaUrl ? 'image' : 'text')) as string;
+    if (resolvedType === 'text' && (!contentValue || contentValue.trim().length === 0)) {
+      throw new WhatsAppBrokerError('TEXT_WITHOUT_CONTENT', {
+        code: 'INVALID_TEXT_PAYLOAD',
+        brokerStatus: 422,
+      });
+    }
+
     const mediaPayload = payload.media
       ? (payload.media as Record<string, unknown>)
       : payload.mediaUrl
@@ -478,7 +507,7 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
       sessionId: instanceId,
       instanceId,
       to: payload.to,
-      type: payload.type ?? (mediaPayload ? 'image' : 'text'),
+      type: resolvedType,
       content: contentValue,
       externalId: payload.externalId,
       previewUrl: payload.previewUrl,
@@ -518,6 +547,15 @@ export class HttpWhatsAppTransport implements WhatsAppTransport {
     if (normalizedIdempotencyKey) {
       dispatchOptions.idempotencyKey = normalizedIdempotencyKey;
     }
+
+    logger.debug('🧾 [WhatsApp Broker] Payload normalizado para envio', {
+      instanceId,
+      to: normalizedPayload.to,
+      type: normalizedPayload.type,
+      hasMedia: Boolean(mediaPayload),
+      contentPreview: typeof normalizedPayload.content === 'string' ? normalizedPayload.content.slice(0, 80) : null,
+      idempotencyKey: normalizedIdempotencyKey ?? null,
+    });
 
     try {
       return await this.sendViaDirectRoutes(config, instanceId, normalizedPayload, dispatchOptions);
