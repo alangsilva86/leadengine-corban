@@ -37,13 +37,24 @@ export const logger = winston.createLogger({
   ],
 });
 
-// Em desenvolvimento, também log no console com cores
+// Console transport para desenvolvimento e produção
 if (process.env.NODE_ENV !== 'production') {
+  // Desenvolvimento: logs com cores
   logger.add(
     new winston.transports.Console({
       format: combine(
         colorize(),
         simple()
+      ),
+    })
+  );
+} else {
+  // Produção: logs em JSON para Railway capturar
+  logger.add(
+    new winston.transports.Console({
+      format: combine(
+        timestamp(),
+        json()
       ),
     })
   );
