@@ -1,6 +1,6 @@
 import { getAiConfig } from '@ticketz/storage';
 import { logger } from '../config/logger';
-import { isAiEnabled } from '../config/ai';
+import { isAiEnabled as isAiEnabledImported } from '../config/ai';
 import { generateAiReply } from './ai/generate-reply';
 import { sendMessage } from './ticket-service';
 import { prisma } from '../lib/prisma';
@@ -20,57 +20,158 @@ interface ProcessAiReplyOptions {
 }
 
 /**
+ * Normaliza feature-flag de IA: funciona se exportada como função ou boolean.
+ */
+function resolveAiEnabled(): boolean {
+  try {
+    // @ts-expect-error – aceitar função ou boolean vindo de config
+    return typeof isAiEnabledImported === 'function'
+      ? Boolean(isAiEnabledImported())
+      : Boolean(isAiEnabledImported);
+  } catch (e) {
+    logger.warn('AI AUTO-REPLY :: isAiEnabled falhou, assumindo desabilitado', {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return false;
+  }
+}
+
+/**
+ * Evita duplicidade: já respondemos automaticamente a este messageId?
+ */
+async function alreadyRepliedToMessage(
+  tenantId: string,
+  ticketId: string,
+  messageId: string
+): Promise<boolean> {
+  try {
+    // Busca uma resposta OUTBOUND com metadados que referenciem o disparador
+    const found = await prisma.message.findFirst({
+      where: {
+        tenantId,
+        ticketId,
+        direction: 'OUTBOUND',
+        // JSON filter: metadata.triggeredByMessageId == messageId
+        metadata: {
+          path: ['triggeredByMessageId'],
+          equals: messageId,
+        } as any, // compatibilidade de tipos JSON
+      },
+      select: { id: true },
+    });
+    return Boolean(found);
+  } catch (e) {
+    logger.warn('AI AUTO-REPLY :: falha ao verificar idempotência, prosseguindo com cautela', {
+      error: e instanceof Error ? e.message : String(e),
+      tenantId,
+      ticketId,
+      messageId,
+    });
+    return false;
+  }
+}
+
+/**
+ * Protege contra loops: não responder mensagens OUTBOUND (ex.: da própria IA)
+ */
+async function isOutboundMessage(
+  tenantId: string,
+  ticketId: string,
+  messageId: string
+): Promise<boolean> {
+  try {
+    const msg = await prisma.message.findFirst({
+      where: { tenantId, ticketId, id: messageId },
+      select: { id: true, direction: true },
+    });
+    return msg?.direction === 'OUTBOUND';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Processa uma mensagem inbound e aciona a IA se necessário
  */
 export async function processAiAutoReply(options: ProcessAiReplyOptions): Promise<void> {
   const { tenantId, ticketId, messageId, messageContent, contactId, queueId } = options;
 
   // Log de início SEMPRE visível
-  logger.warn('🤖 AI AUTO-REPLY :: 🚀 INICIANDO processamento', {
+  logger.info('🤖 AI AUTO-REPLY :: 🚀 INICIANDO processamento', {
     tenantId,
     ticketId,
     messageId,
-    messageContent: messageContent.substring(0, 50),
+    messageContentPreview: messageContent?.substring(0, 80) ?? '',
   });
 
   try {
-    // Log de debug: verificar valor de isAiEnabled
-    logger.warn('AI AUTO-REPLY :: DEBUG Verificando isAiEnabled', {
-      isAiEnabled,
-      typeOfIsAiEnabled: typeof isAiEnabled,
+    const aiEnabled = resolveAiEnabled();
+
+    logger.debug('AI AUTO-REPLY :: DEBUG isAiEnabled', {
+      aiEnabled,
+      typeOfIsAiEnabled: typeof isAiEnabledImported,
     });
 
     // Verificar se a IA está habilitada globalmente
-    if (!isAiEnabled) {
-      logger.warn('🤖 AI AUTO-REPLY :: ⚠️ PULADO - IA desabilitada globalmente', {
+    if (!aiEnabled) {
+      logger.info('🤖 AI AUTO-REPLY :: ⚠️ PULADO - IA desabilitada globalmente', {
         tenantId,
         ticketId,
       });
       return;
     }
 
+    // Não responder a mensagens OUTBOUND (prevenção de eco/loop)
+    if (await isOutboundMessage(tenantId, ticketId, messageId)) {
+      logger.info('🤖 AI AUTO-REPLY :: ⛔ PULADO - mensagem é OUTBOUND (possível eco)', {
+        tenantId,
+        ticketId,
+        messageId,
+      });
+      return;
+    }
+
+    // Idempotência: não responder duas vezes ao mesmo gatilho
+    if (await alreadyRepliedToMessage(tenantId, ticketId, messageId)) {
+      logger.info('🤖 AI AUTO-REPLY :: ⏩ PULADO - já respondido para este messageId', {
+        tenantId,
+        ticketId,
+        messageId,
+      });
+      return;
+    }
+
     // Buscar configuração de IA para o tenant/queue
-    const aiConfig = await getAiConfig(tenantId, queueId ?? null);
-    
+    let aiConfig: Awaited<ReturnType<typeof getAiConfig>> | null = null;
+    try {
+      aiConfig = await getAiConfig(tenantId, queueId ?? null);
+    } catch (e) {
+      logger.warn('AI AUTO-REPLY :: falha ao obter configuração, usando padrão IA_AUTO', {
+        error: e instanceof Error ? e.message : String(e),
+        tenantId,
+        ticketId,
+      });
+    }
+
     // Verificar o modo de IA configurado
-    const aiMode = aiConfig?.defaultMode ?? 'COPILOTO';
-    
-    logger.warn('🤖 AI AUTO-REPLY :: 🔍 Verificando modo', {
+    const aiMode = aiConfig?.defaultMode ?? 'IA_AUTO';
+
+    logger.info('🤖 AI AUTO-REPLY :: 🔍 Verificando modo', {
       tenantId,
       ticketId,
       aiMode,
-      aiConfigExists: !!aiConfig,
+      aiConfigExists: Boolean(aiConfig),
     });
 
     // Normaliza ator/labels conforme modo atual
     const aiActor =
       aiMode === 'IA_AUTO'
-        ? { origin: 'ai_auto', authorType: 'ai_auto', aiMode: 'IA_AUTO' as const, label: 'IA (auto)' }
-        : { origin: 'copilot', authorType: 'ai_suggest', aiMode: 'COPILOTO' as const, label: 'Copiloto' };
+        ? { origin: 'ai_auto', authorType: 'ai_auto' as const, aiMode: 'IA_AUTO' as const, label: 'IA (auto)' }
+        : { origin: 'copilot', authorType: 'ai_suggest' as const, aiMode: 'COPILOTO' as const, label: 'Copiloto' };
 
     // Apenas responder automaticamente se estiver em modo IA_AUTO
     if (aiMode !== 'IA_AUTO') {
-      logger.warn('🤖 AI AUTO-REPLY :: ⚠️ PULADO - Modo não é IA_AUTO', {
+      logger.info('🤖 AI AUTO-REPLY :: ⚠️ PULADO - Modo não é IA_AUTO', {
         tenantId,
         ticketId,
         currentMode: aiMode,
@@ -78,51 +179,41 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       return;
     }
 
-    // Buscar histórico de mensagens do ticket
+    // Buscar histórico de mensagens do ticket (limite e seleção enxutos)
     const messages = await prisma.message.findMany({
-      where: {
-        tenantId,
-        ticketId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 10, // Últimas 10 mensagens para contexto
+      where: { tenantId, ticketId },
+      orderBy: { createdAt: 'desc' },
+      take: 12, // ligeiro aumento p/ contexto com limite
       select: {
         id: true,
         content: true,
         direction: true,
         createdAt: true,
+        metadata: true,
       },
     });
 
-    // Construir contexto de mensagens para a IA
+    // Construir contexto de mensagens para a IA (cap conteúdo para reduzir tokens)
+    const MAX_CONTENT = 1500; // por mensagem
     const conversationMessages = messages
       .reverse()
-      .filter((msg) => msg.content) // Filtrar mensagens sem conteúdo
+      .filter((msg) => Boolean(msg.content))
       .map((msg) => ({
         role: msg.direction === 'OUTBOUND' ? ('assistant' as const) : ('user' as const),
-        content: msg.content!,
+        content: (msg.content as string).slice(0, MAX_CONTENT),
       }));
 
     // Adicionar mensagem atual se não estiver no histórico
     if (!messages.find((m) => m.id === messageId)) {
-      conversationMessages.push({
-        role: 'user' as const,
-        content: messageContent,
-      });
+      conversationMessages.push({ role: 'user', content: messageContent.slice(0, MAX_CONTENT) });
     }
 
-    // Garantir que há pelo menos uma mensagem
     if (conversationMessages.length === 0) {
-      logger.warn('AI auto-reply skipped: no messages to process', {
-        tenantId,
-        ticketId,
-      });
+      logger.info('AI auto-reply skipped: no messages to process', { tenantId, ticketId });
       return;
     }
 
-    logger.warn('🤖 AI AUTO-REPLY :: ⚙️ GERANDO resposta da IA', {
+    logger.info('🤖 AI AUTO-REPLY :: ⚙️ GERANDO resposta da IA', {
       tenantId,
       ticketId,
       messageCount: conversationMessages.length,
@@ -141,23 +232,27 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       },
     });
 
-    // Se a resposta foi gerada com sucesso, enviar mensagem
     if (aiResponse.status === 'success' || aiResponse.status === 'stubbed') {
-      logger.warn('🤖 AI AUTO-REPLY :: 📤 ENVIANDO resposta', {
+      const reply = (aiResponse.message || '').trim();
+      if (!reply) {
+        logger.warn('AI auto-reply: resposta vazia, nada será enviado', { tenantId, ticketId });
+        return;
+      }
+
+      logger.info('🤖 AI AUTO-REPLY :: 📤 ENVIANDO resposta', {
         tenantId,
         ticketId,
-        messageLength: aiResponse.message.length,
+        messageLength: reply.length,
         model: aiResponse.model,
       });
 
-      // Enviar mensagem de resposta
       await sendMessage(
         tenantId,
         undefined, // userId (sistema automático)
         {
           ticketId,
           contactId,
-          content: aiResponse.message,
+          content: reply,
           direction: 'OUTBOUND',
           status: 'PENDING',
           metadata: {
@@ -167,11 +262,12 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
             origin: aiActor.origin, // 'ai_auto' | 'copilot'
             authorType: aiActor.authorType, // 'ai_auto' | 'ai_suggest'
             usage: aiResponse.usage,
+            triggeredByMessageId: messageId,
           },
         }
       );
 
-      logger.warn('🤖 AI AUTO-REPLY :: ✅ RESPOSTA ENVIADA COM SUCESSO', {
+      logger.info('🤖 AI AUTO-REPLY :: ✅ RESPOSTA ENVIADA COM SUCESSO', {
         tenantId,
         ticketId,
         model: aiResponse.model,
@@ -186,7 +282,6 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
         status: aiResponse.status,
       });
     }
-
   } catch (error) {
     logger.error('🤖 AI AUTO-REPLY :: ❌ ERRO ao processar', {
       error: error instanceof Error ? error.message : String(error),
@@ -206,9 +301,7 @@ export async function shouldTriggerAiAutoReply(
   ticketId: string,
   queueId?: string | null
 ): Promise<boolean> {
-  if (!isAiEnabled) {
-    return false;
-  }
+  if (!resolveAiEnabled()) return false;
 
   try {
     const aiConfig = await getAiConfig(tenantId, queueId ?? null);
