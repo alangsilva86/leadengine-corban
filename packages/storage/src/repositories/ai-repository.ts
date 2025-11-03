@@ -27,12 +27,20 @@ export type UpsertAiConfigInput = {
 
 export const getAiConfig = async (tenantId: string, queueId?: string | null) => {
   const scopeKey = queueId ?? '__global__';
-  return prisma().aiConfig.findFirst({
+  console.log('🔍 getAiConfig CHAMADO:', { tenantId, queueId, scopeKey });
+  const result = await prisma().aiConfig.findFirst({
     where: {
       tenantId,
       scopeKey,
     },
   });
+  console.log('🔍 getAiConfig RESULTADO:', { 
+    found: !!result, 
+    defaultMode: result?.defaultMode,
+    id: result?.id,
+    scopeKey: result?.scopeKey 
+  });
+  return result;
 };
 
 export const upsertAiConfig = async (input: UpsertAiConfigInput) => {
