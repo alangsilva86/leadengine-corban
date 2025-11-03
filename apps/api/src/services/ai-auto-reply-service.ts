@@ -25,10 +25,18 @@ interface ProcessAiReplyOptions {
 export async function processAiAutoReply(options: ProcessAiReplyOptions): Promise<void> {
   const { tenantId, ticketId, messageId, messageContent, contactId, queueId } = options;
 
+  // Log de início SEMPRE visível
+  logger.warn('🤖 AI AUTO-REPLY :: 🚀 INICIANDO processamento', {
+    tenantId,
+    ticketId,
+    messageId,
+    messageContent: messageContent.substring(0, 50),
+  });
+
   try {
     // Verificar se a IA está habilitada globalmente
     if (!isAiEnabled) {
-      logger.debug('AI auto-reply skipped: AI is disabled globally', {
+      logger.warn('🤖 AI AUTO-REPLY :: ⚠️ PULADO - IA desabilitada globalmente', {
         tenantId,
         ticketId,
       });
@@ -41,7 +49,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
     // Verificar o modo de IA configurado
     const aiMode = aiConfig?.defaultMode ?? 'COPILOTO';
     
-    logger.debug('AI auto-reply check', {
+    logger.warn('🤖 AI AUTO-REPLY :: 🔍 Verificando modo', {
       tenantId,
       ticketId,
       aiMode,
@@ -50,7 +58,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Apenas responder automaticamente se estiver em modo IA_AUTO
     if (aiMode !== 'IA_AUTO') {
-      logger.debug('AI auto-reply skipped: mode is not IA_AUTO', {
+      logger.warn('🤖 AI AUTO-REPLY :: ⚠️ PULADO - Modo não é IA_AUTO', {
         tenantId,
         ticketId,
         currentMode: aiMode,
@@ -102,7 +110,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       return;
     }
 
-    logger.info('AI auto-reply: generating response', {
+    logger.warn('🤖 AI AUTO-REPLY :: ⚙️ GERANDO resposta da IA', {
       tenantId,
       ticketId,
       messageCount: conversationMessages.length,
@@ -122,7 +130,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Se a resposta foi gerada com sucesso, enviar mensagem
     if (aiResponse.status === 'success' || aiResponse.status === 'stubbed') {
-      logger.info('AI auto-reply: sending response', {
+      logger.warn('🤖 AI AUTO-REPLY :: 📤 ENVIANDO resposta', {
         tenantId,
         ticketId,
         messageLength: aiResponse.message.length,
@@ -145,7 +153,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
         },
       });
 
-      logger.info('AI auto-reply: response sent successfully', {
+      logger.warn('🤖 AI AUTO-REPLY :: ✅ RESPOSTA ENVIADA COM SUCESSO', {
         tenantId,
         ticketId,
         model: aiResponse.model,
@@ -159,7 +167,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
     }
 
   } catch (error) {
-    logger.error('AI auto-reply: failed to process', {
+    logger.error('🤖 AI AUTO-REPLY :: ❌ ERRO ao processar', {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       tenantId,
