@@ -26,6 +26,9 @@ WORKDIR /app
 # ============================================================================
 FROM base AS builder
 
+# Copiar BUILD_VERSION para invalidar cache quando houver mudanças
+COPY BUILD_VERSION ./
+
 # Copiar arquivos de configuração do workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tsconfig.json tsconfig.base.json ./

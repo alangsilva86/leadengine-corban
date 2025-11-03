@@ -1,0 +1,4 @@
+BUILD_VERSION=2025-11-02-22-30-AI-AUTO-REPLY-FIX
+COMMIT_HASH=b49f1c27
+FEATURES=ai-auto-reply,queue-logging
+DESCRIPTION=Implementação completa de auto-reply da IA com logs visíveis
