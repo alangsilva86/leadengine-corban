@@ -883,6 +883,15 @@ export const processStandardInboundEvent = async (
     });
 
     // Processar resposta automática da IA se configurado
+    logger.error('🔍 DEBUG: ANTES DA CONDIÇÃO AI AUTO-REPLY', {
+      direction,
+      hasPersistedMessage: !!persistedMessage,
+      hasContent: !!persistedMessage?.content,
+      messageId: persistedMessage?.id,
+      tenantId,
+      ticketId,
+    });
+    
     if (direction === 'INBOUND' && persistedMessage.content) {
       logger.warn('🎯 LeadEngine • WhatsApp :: 🤖 ACIONANDO AI AUTO-REPLY', {
         tenantId,
