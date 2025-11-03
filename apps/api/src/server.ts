@@ -478,6 +478,34 @@ app.head('/', (_req, res) => {
     .end();
 });
 
+// Endpoint temporário para debug de AI config
+app.get('/_debug/ai-config', async (req, res) => {
+  try {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: 'demo-tenant' },
+      include: { aiConfig: true },
+    });
+    res.json({
+      tenant: tenant?.id,
+      aiConfig: tenant?.aiConfig,
+    });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+app.post('/_debug/ai-config/update', async (req, res) => {
+  try {
+    const updated = await prisma.aiConfig.update({
+      where: { tenantId: 'demo-tenant' },
+      data: { defaultMode: 'IA_AUTO' },
+    });
+    res.json({ success: true, updated });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 // Middleware de tratamento de erros (deve ser o último)
 app.use(errorHandler);
 
