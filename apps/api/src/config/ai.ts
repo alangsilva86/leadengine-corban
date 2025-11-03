@@ -32,3 +32,11 @@ export const aiConfig = {
 };
 
 export const isAiEnabled = Boolean(aiConfig.apiKey);
+
+// Log de debug para verificar se AI está habilitada
+logger.info('AI Configuration', {
+  isAiEnabled,
+  hasApiKey: Boolean(aiConfig.apiKey),
+  apiKeyLength: aiConfig.apiKey?.length ?? 0,
+  defaultModel: aiConfig.defaultModel,
+});
