@@ -1,7 +1,7 @@
 import { getAiConfig } from '@ticketz/storage';
 import { logger } from '../config/logger';
 import { getAiRoutingPreferences } from '../config/ai-route';
-import { isAiEnabled as isAiEnabledImported } from '../config/ai';
+import { isAiEnabled as isAiEnabledImported, resolveDefaultAiMode } from '../config/ai';
 import { generateAiReply } from './ai/generate-reply';
 import { sendMessage } from './ticket-service';
 import { prisma } from '../lib/prisma';
@@ -113,6 +113,7 @@ async function isOutboundMessage(
  */
 export async function processAiAutoReply(options: ProcessAiReplyOptions): Promise<void> {
   const { tenantId, ticketId, messageId, messageContent, contactId, queueId } = options;
+  const fallbackMode = resolveDefaultAiMode();
 
   // Log de início SEMPRE visível
   logger.info('🤖 AI AUTO-REPLY :: 🚀 INICIANDO processamento', {
@@ -193,15 +194,16 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
     try {
       aiConfig = await getAiConfig(tenantId, queueId ?? null);
     } catch (e) {
-      logger.warn('AI AUTO-REPLY :: falha ao obter configuração, usando padrão IA_AUTO', {
+      logger.warn('AI AUTO-REPLY :: falha ao obter configuração, usando modo padrão configurado', {
         error: e instanceof Error ? e.message : String(e),
         tenantId,
         ticketId,
+        fallbackMode,
       });
     }
 
     // Verificar o modo de IA configurado
-    const aiMode = aiConfig?.defaultMode ?? 'IA_AUTO';
+    const aiMode = aiConfig?.defaultMode ?? fallbackMode;
     const effectiveAiMode =
       aiMode === 'IA_AUTO' ? 'IA_AUTO' : forceServerAutoReply ? 'IA_AUTO' : aiMode;
 
@@ -400,7 +402,8 @@ export async function shouldTriggerAiAutoReply(
 
   try {
     const aiConfig = await getAiConfig(tenantId, queueId ?? null);
-    return aiConfig?.defaultMode === 'IA_AUTO';
+    const fallbackMode = resolveDefaultAiMode();
+    return (aiConfig?.defaultMode ?? fallbackMode) === 'IA_AUTO';
   } catch (error) {
     logger.error('Failed to check AI auto-reply config', {
       error: error instanceof Error ? error.message : String(error),

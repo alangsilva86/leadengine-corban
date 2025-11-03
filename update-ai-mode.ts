@@ -2,6 +2,25 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const RELEASE_SUFFIX_REGEX = /-(?:20\d{2}-\d{2}-\d{2}|latest)$/i;
+
+const normalizeOpenAiModel = (value: string | null | undefined): string => {
+  const fallback = 'gpt-4o-mini';
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const sanitized = trimmed.replace(RELEASE_SUFFIX_REGEX, '');
+  return sanitized.length > 0 ? sanitized : fallback;
+};
+
+const DEFAULT_MODEL = normalizeOpenAiModel(process.env.OPENAI_MODEL);
+
 /**
  * Normaliza modos legados/inválidos para 'IA_AUTO'
  */
@@ -76,13 +95,15 @@ async function updateAiMode() {
       // Atualização idempotente: somente altera se necessário
       if (
         existingConfig.defaultMode !== normalized ||
-        existingConfig.enabled !== true
+        existingConfig.enabled !== true ||
+        existingConfig.model !== DEFAULT_MODEL
       ) {
         const updated = await prisma.aiConfig.update({
           where: { id: existingConfig.id },
           data: {
             defaultMode: normalized, // garante IA_AUTO
             enabled: true,           // habilita IA
+            model: DEFAULT_MODEL,
           },
         });
 
@@ -114,7 +135,7 @@ async function updateAiMode() {
           queueId: null,
           enabled: true,
           defaultMode: 'IA_AUTO',
-          model: 'gpt-4o-mini-2024-08-06',
+          model: DEFAULT_MODEL,
           temperature: 0.7,
           maxTokens: 1000,
           streamingEnabled: true,

@@ -29,6 +29,7 @@ export const getAiRouteMode = (): AiRouteMode => {
 const resolveServerAutoReplyEnabled = (): boolean => {
   const fallback = true;
   const raw =
+    process.env.AI_AUTO_REPLY_ENABLED ??
     process.env.AI_AUTO_REPLY_SERVER_ENABLED ??
     process.env.AI_AUTO_REPLY_FORCE_SERVER ??
     process.env.AI_ROUTE_ALLOW_SERVER_AUTO_REPLY;

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolveDefaultAiMode } from '../config/ai';
 
 export type AiMode = 'manual' | 'assist' | 'auto';
 
@@ -9,7 +10,17 @@ export type AiModeRecord = {
   updatedBy: string | null;
 };
 
-const DEFAULT_MODE: AiMode = 'assist';
+const mapAssistantModeToStore = (mode: ReturnType<typeof resolveDefaultAiMode>): AiMode => {
+  if (mode === 'IA_AUTO') {
+    return 'auto';
+  }
+  if (mode === 'HUMANO') {
+    return 'manual';
+  }
+  return 'assist';
+};
+
+const DEFAULT_MODE: AiMode = mapAssistantModeToStore(resolveDefaultAiMode());
 
 const modeStore = new Map<string, AiModeRecord>();
 

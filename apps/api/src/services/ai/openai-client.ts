@@ -1,4 +1,9 @@
-import { aiConfig, isAiEnabled } from '../../config/ai';
+import {
+  aiConfig,
+  isAiEnabled,
+  normalizeOpenAiModel,
+  resolveDefaultAiMode,
+} from '../../config/ai';
 import { getAiConfig, upsertAiConfig } from '@ticketz/storage';
 import { recordAiRun } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
@@ -47,29 +52,34 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     metadata = {},
   } = input;
 
-  // Resolve per-tenant AI config with resilient fallback (default to IA_AUTO)
+  // Resolve per-tenant AI config with resilient fallback (default to configured mode)
   let resolvedConfig: any | null = null;
   let resolvedConfigId: string | null = null;
+  const fallbackMode = aiConfig.defaultAssistantMode ?? resolveDefaultAiMode();
   try {
     // Try to get queue-scoped config when provided via configId metadata in callers; otherwise global (null queue)
     resolvedConfig = await getAiConfig(tenantId, null);
   } catch (e) {
-    logger.warn('getAiConfig failed, using local fallback IA_AUTO', { tenantId, error: (e as Error)?.message });
+    logger.warn('getAiConfig failed, using local fallback AI mode', {
+      tenantId,
+      error: (e as Error)?.message,
+      fallbackMode,
+    });
   }
 
   if (!resolvedConfig) {
     try {
-      // Create a global config with IA_AUTO if none exists
+      // Create a global config with fallback mode if none exists
       const upserted = await upsertAiConfig({
         tenantId,
         queueId: null,
         scopeKey: '__global__',
         model: aiConfig.defaultModel,
-        mode: 'IA_AUTO',
+        mode: fallbackMode,
       });
       resolvedConfig = upserted;
       resolvedConfigId = (upserted as any)?.id ?? null;
-      logger.info('AI config created with IA_AUTO as default', { tenantId });
+      logger.info('AI config created with fallback AI mode', { tenantId, fallbackMode });
     } catch (e) {
       // Last-resort local fallback (not persisted)
       resolvedConfig = {
@@ -78,32 +88,43 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
         queueId: null,
         scopeKey: '__global__',
         model: aiConfig.defaultModel,
-        mode: 'IA_AUTO',
+        mode: fallbackMode,
       };
-      logger.warn('upsertAiConfig failed; proceeding with local IA_AUTO fallback', { tenantId, error: (e as Error)?.message });
+      logger.warn('upsertAiConfig failed; proceeding with local AI mode fallback', {
+        tenantId,
+        error: (e as Error)?.message,
+        fallbackMode,
+      });
     }
   } else {
     resolvedConfigId = (resolvedConfig as any)?.id ?? null;
     if (!('mode' in resolvedConfig) || !resolvedConfig.mode) {
-      // Backfill mode to IA_AUTO non-blockingly
+      // Backfill mode to fallback non-blockingly
       try {
         await upsertAiConfig({
           tenantId,
           queueId: resolvedConfig.queueId ?? null,
           scopeKey: resolvedConfig.scopeKey ?? '__global__',
           model: resolvedConfig.model ?? aiConfig.defaultModel,
-          mode: 'IA_AUTO',
+          mode: fallbackMode,
         });
-        resolvedConfig.mode = 'IA_AUTO';
-        logger.debug('Backfilled AI config mode to IA_AUTO', { tenantId });
+        resolvedConfig.mode = fallbackMode;
+        logger.debug('Backfilled AI config mode to fallback value', { tenantId, fallbackMode });
       } catch (e) {
-        logger.warn('Failed to backfill AI config mode; continuing with in-memory IA_AUTO', { tenantId, error: (e as Error)?.message });
-        resolvedConfig.mode = 'IA_AUTO';
+        logger.warn('Failed to backfill AI config mode; continuing with in-memory fallback', {
+          tenantId,
+          error: (e as Error)?.message,
+          fallbackMode,
+        });
+        resolvedConfig.mode = fallbackMode;
       }
     }
   }
 
-  const selectedModel = resolvedConfig?.model ?? aiConfig.defaultModel;
+  const selectedModel = normalizeOpenAiModel(
+    (resolvedConfig as any)?.model ?? undefined,
+    aiConfig.defaultModel
+  );
   const systemPrompt = (resolvedConfig as any)?.systemPromptSuggest as string | undefined;
 
   if (!isAiEnabled) {
@@ -163,7 +184,7 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     metadata: {
       tenantId,
       conversationId,
-      mode: resolvedConfig?.mode ?? 'IA_AUTO',
+      mode: resolvedConfig?.mode ?? fallbackMode,
       ...(sanitizeMetadata(metadata) ?? {}),
     },
   };

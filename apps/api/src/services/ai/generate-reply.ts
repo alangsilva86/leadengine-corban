@@ -1,6 +1,11 @@
 import { getAiConfig, upsertAiConfig, recordAiRun } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
-import { aiConfig as envAiConfig, isAiEnabled } from '../../config/ai';
+import {
+  aiConfig as envAiConfig,
+  isAiEnabled,
+  normalizeOpenAiModel,
+  resolveDefaultAiMode,
+} from '../../config/ai';
 import { logger } from '../../config/logger';
 
 const RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
@@ -40,6 +45,7 @@ export async function generateAiReply(
 ): Promise<GenerateReplyResult> {
   const { tenantId, conversationId, messages, queueId, metadata = {} } = options;
   const startedAt = Date.now();
+  const fallbackMode = envAiConfig.defaultAssistantMode ?? resolveDefaultAiMode();
 
   try {
     // Se a IA não estiver habilitada, retornar mensagem stub
@@ -60,29 +66,29 @@ export async function generateAiReply(
       };
     }
 
-    // Buscar ou criar configuração de IA (com fallback para IA_AUTO)
+    // Buscar ou criar configuração de IA (com fallback configurável)
     let config: any;
     try {
       config = await getAiConfig(tenantId, queueId ?? null);
 
       if (!config) {
-        // Se não houver config, cria com modo IA_AUTO por padrão
+        // Se não houver config, cria com modo padrão configurado via ambiente
         config = await upsertAiConfig({
           tenantId,
           queueId: queueId ?? null,
           scopeKey: queueId ?? '__global__',
           model: envAiConfig.defaultModel,
-          // Backfill do modo padrão solicitado: IA_AUTO
-          mode: 'IA_AUTO' as any,
+          mode: fallbackMode as any,
         });
-        logger.debug('AI config created with default IA_AUTO mode', {
+        logger.debug('AI config created with default AI mode', {
           tenantId,
           conversationId,
           queueId: queueId ?? null,
+          defaultMode: fallbackMode,
         });
       } else if (config && (config as any).mode == null) {
-        // Se existir mas não tiver `mode`, garantimos IA_AUTO
-        (config as any).mode = 'IA_AUTO';
+        // Se existir mas não tiver `mode`, garantimos fallback configurado
+        (config as any).mode = fallbackMode;
         // Tenta persistir o backfill de modo, mas não falha o fluxo se der erro
         try {
           await upsertAiConfig({
@@ -91,20 +97,21 @@ export async function generateAiReply(
             queueId: queueId ?? null,
             scopeKey: queueId ?? '__global__',
             model: config.model ?? envAiConfig.defaultModel,
-            mode: 'IA_AUTO' as any,
+            mode: fallbackMode as any,
           } as any);
         } catch (persistErr) {
-          logger.warn('Failed to persist IA_AUTO mode backfill; proceeding with in-memory mode', {
+          logger.warn('Failed to persist AI mode backfill; proceeding with in-memory mode', {
             error: persistErr instanceof Error ? persistErr.message : String(persistErr),
           });
         }
       }
     } catch (cfgErr) {
-      // Se falhar leitura ou escrita da config, usamos fallback local IA_AUTO
-      logger.warn('AI config load failed, using local fallback IA_AUTO', {
+      // Se falhar leitura ou escrita da config, usamos fallback local
+      logger.warn('AI config load failed, using local fallback mode', {
         error: cfgErr instanceof Error ? cfgErr.message : String(cfgErr),
         tenantId,
         conversationId,
+        fallbackMode,
       });
       config = {
         id: null,
@@ -112,7 +119,7 @@ export async function generateAiReply(
         systemPromptReply: undefined,
         temperature: undefined,
         maxOutputTokens: undefined,
-        mode: 'IA_AUTO',
+        mode: fallbackMode,
       } as any;
     }
 
@@ -139,8 +146,13 @@ export async function generateAiReply(
       })),
     ];
 
+    const effectiveModel = normalizeOpenAiModel(
+      (config as any)?.model ?? undefined,
+      envAiConfig.defaultModel
+    );
+
     const requestBody: Record<string, unknown> = {
-      model: config.model ?? envAiConfig.defaultModel,
+      model: effectiveModel,
       input: requestMessages,
       temperature: config.temperature ?? undefined,
       max_output_tokens: config.maxOutputTokens ?? undefined,
@@ -205,15 +217,15 @@ export async function generateAiReply(
     logger.info('AI reply generated successfully', {
       tenantId,
       conversationId,
-      model: config.model,
-      mode: (config as any)?.mode ?? 'IA_AUTO',
+      model: effectiveModel,
+      mode: (config as any)?.mode ?? fallbackMode,
       messageLength: message.length,
       latencyMs: Date.now() - startedAt,
     });
 
     return {
       message,
-      model: config.model ?? envAiConfig.defaultModel,
+      model: effectiveModel,
       usage,
       status: 'success',
     };
