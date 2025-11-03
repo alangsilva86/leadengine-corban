@@ -444,24 +444,25 @@ app.use('*', (req, res) => {
   });
 });
 
+// Banner de startup (ANTES de server.listen para garantir que sempre apareça)
+logger.warn('🔥🔥🔥 ========================================');
+logger.warn('🔥 LEADENGINE API STARTED');
+logger.warn('🔥 VERSION: 2025-11-02-23-15-AI-AUTO-REPLY');
+logger.warn('🔥 FEATURES: ai-auto-reply, queue-logging');
+logger.warn('🔥🔥🔥 ========================================');
+logger.warn('🤖 AI AUTO-REPLY: ENABLED');
+logger.warn('📥 INBOUND QUEUE: LOGGING ENABLED');
+logger.info(`🔧 Attempting to start server on port ${PORT} in ${NODE_ENV} mode`);
+
 // Iniciar servidor
 server.listen(PORT, () => {
-  logger.warn('🔥🔥🔥 ========================================');
-  logger.warn('🔥 LEADENGINE API STARTED');
-  logger.warn('🔥 VERSION: 2025-11-02-23-15-AI-AUTO-REPLY');
-  logger.warn('🔥 FEATURES: ai-auto-reply, queue-logging');
-  logger.warn('🔥🔥🔥 ========================================');
-  
-  logger.info(`🚀 Server running on port ${PORT} in ${NODE_ENV} mode`);
+  logger.info(`✅ Server successfully bound to port ${PORT}`);
   logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
 
   const mode = getWhatsAppMode();
   logger.info(`💬 WhatsApp transport initialized in ${mode.toUpperCase()} mode`);
-  
-  logger.warn('🤖 AI AUTO-REPLY: ENABLED');
-  logger.warn('📥 INBOUND QUEUE: LOGGING ENABLED');
 });
 
 // Graceful shutdown
