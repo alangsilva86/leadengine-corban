@@ -896,12 +896,12 @@ export const processStandardInboundEvent = async (
       let aiPromise;
       try {
         aiPromise = processAiAutoReply({
-        tenantId,
-        ticketId,
-        messageId: persistedMessage.id,
-        messageContent: persistedMessage.content,
+          tenantId,
+          ticketId,
+          messageId: persistedMessage.id,
+          messageContent: persistedMessage.content,
           contactId: contactRecord.id,
-          queueId: ticketRecord.queueId ?? null,
+          queueId: queueId ?? null,
         });
         console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
       } catch (syncError) {
