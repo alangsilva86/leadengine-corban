@@ -62,6 +62,7 @@ import { emitRealtimeUpdatesForInbound } from './realtime-service';
 import { upsertLeadFromInbound } from './lead-service';
 import { ensureTicketForContact } from './ticket-service';
 import type { MessageType } from '../../../../types/tickets';
+import { processAiAutoReply } from '../../../../services/ai-auto-reply-service';
 
 const campaignCache = getCampaignCache();
 
@@ -880,6 +881,26 @@ export const processStandardInboundEvent = async (
       providerMessageId,
       leadId: inboundLeadId,
     });
+
+    // Processar resposta automática da IA se configurado
+    if (direction === 'INBOUND' && persistedMessage.content) {
+      processAiAutoReply({
+        tenantId,
+        ticketId,
+        messageId: persistedMessage.id,
+        messageContent: persistedMessage.content,
+        contactId: contactRecord.id,
+        queueId: ticketRecord.queueId ?? null,
+      }).catch((error) => {
+        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
+          error: mapErrorForLog(error),
+          requestId,
+          tenantId,
+          ticketId,
+          messageId: persistedMessage.id,
+        });
+      });
+    }
   }
 
   const allocationTargets: Array<{
