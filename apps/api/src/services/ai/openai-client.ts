@@ -80,12 +80,13 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
         content: [{ type: 'text', text: prompt }],
       },
     ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'crm_suggestion_schema',
-        schema: structuredSchema,
-      },
+    // Nova API Responses (novembro/2025)
+    text: {
+      format: 'json' as const,
+    },
+    json_schema: {
+      name: 'crm_suggestion_schema',
+      schema: structuredSchema,
     },
     metadata,
   };

@@ -83,7 +83,10 @@ export async function generateAiReply(
       input: requestMessages,
       temperature: config.temperature ?? undefined,
       max_output_tokens: config.maxOutputTokens ?? undefined,
-      response_format: { type: 'text' },
+      // Nova API Responses (novembro/2025)
+      text: {
+        format: 'plain' as const,
+      },
       metadata: {
         tenantId,
         conversationId,
