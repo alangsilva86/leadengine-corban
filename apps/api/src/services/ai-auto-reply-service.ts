@@ -121,7 +121,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       tenantId,
       conversationId: ticketId,
       messages: conversationMessages,
-      queueId,
+      queueId: queueId ?? null,
       metadata: {
         autoReply: true,
         triggeredByMessageId: messageId,
@@ -138,20 +138,23 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       });
 
       // Enviar mensagem de resposta
-      await sendMessage({
+      await sendMessage(
         tenantId,
-        ticketId,
-        contactId,
-        content: aiResponse.message,
-        direction: 'OUTBOUND',
-        status: 'PENDING',
-        metadata: {
-          aiGenerated: true,
-          aiModel: aiResponse.model,
-          aiMode: 'auto',
-          usage: aiResponse.usage,
-        },
-      });
+        undefined, // userId (sistema automático)
+        {
+          ticketId,
+          contactId,
+          content: aiResponse.message,
+          direction: 'OUTBOUND',
+          status: 'PENDING',
+          metadata: {
+            aiGenerated: true,
+            aiModel: aiResponse.model,
+            aiMode: 'auto',
+            usage: aiResponse.usage,
+          },
+        }
+      );
 
       logger.warn('🤖 AI AUTO-REPLY :: ✅ RESPOSTA ENVIADA COM SUCESSO', {
         tenantId,
