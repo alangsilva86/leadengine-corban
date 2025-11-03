@@ -127,8 +127,12 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       return;
     }
 
-    const { mode: routeMode, serverAutoReplyEnabled } = getAiRoutingPreferences();
-    logger.debug('AI AUTO-REPLY :: route mode check', { routeMode, serverAutoReplyEnabled });
+    const { mode: routeMode, serverAutoReplyEnabled, forceServerAutoReply } = getAiRoutingPreferences();
+    logger.debug('AI AUTO-REPLY :: route mode check', {
+      routeMode,
+      serverAutoReplyEnabled,
+      forceServerAutoReply,
+    });
     if (!serverAutoReplyEnabled) {
       logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - respostas automáticas desabilitadas para o backend', {
         tenantId,
@@ -198,26 +202,36 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Verificar o modo de IA configurado
     const aiMode = aiConfig?.defaultMode ?? 'IA_AUTO';
+    const effectiveAiMode =
+      aiMode === 'IA_AUTO' ? 'IA_AUTO' : forceServerAutoReply ? 'IA_AUTO' : aiMode;
+
+    if (aiMode !== 'IA_AUTO' && effectiveAiMode === 'IA_AUTO') {
+      logger.info('🤖 AI AUTO-REPLY :: ✅ Forçando IA_AUTO para responder via backend', {
+        tenantId,
+        ticketId,
+        originalMode: aiMode,
+      });
+    }
 
     logger.info('🤖 AI AUTO-REPLY :: 🔍 Verificando modo', {
       tenantId,
       ticketId,
-      aiMode,
+      aiMode: effectiveAiMode,
       aiConfigExists: Boolean(aiConfig),
     });
 
     // Normaliza ator/labels conforme modo atual
     const aiActor =
-      aiMode === 'IA_AUTO'
+      effectiveAiMode === 'IA_AUTO'
         ? { origin: 'ai_auto', authorType: 'ai_auto' as const, aiMode: 'IA_AUTO' as const, label: 'IA (auto)' }
         : { origin: 'copilot', authorType: 'ai_suggest' as const, aiMode: 'COPILOTO' as const, label: 'Copiloto' };
 
     // Apenas responder automaticamente se estiver em modo IA_AUTO
-    if (aiMode !== 'IA_AUTO') {
+    if (effectiveAiMode !== 'IA_AUTO') {
       logger.info('🤖 AI AUTO-REPLY :: ⚠️ PULADO - Modo não é IA_AUTO', {
         tenantId,
         ticketId,
-        currentMode: aiMode,
+        currentMode: effectiveAiMode,
       });
       return;
     }

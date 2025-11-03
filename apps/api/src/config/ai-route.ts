@@ -40,11 +40,13 @@ export const getAiRoutingPreferences = () => {
   const mode = getAiRouteMode();
   const serverAutoReplyEnabled = resolveServerAutoReplyEnabled();
   const skipServerAutoReply = !serverAutoReplyEnabled && mode === 'front';
+  const forceServerAutoReply = serverAutoReplyEnabled && mode !== 'server';
 
   return {
     mode,
     serverAutoReplyEnabled,
     skipServerAutoReply,
+    forceServerAutoReply,
   };
 };
 
