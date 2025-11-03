@@ -1,5 +1,6 @@
 import { getAiConfig } from '@ticketz/storage';
 import { logger } from '../config/logger';
+import { getAiRoutingPreferences } from '../config/ai-route';
 import { isAiEnabled as isAiEnabledImported } from '../config/ai';
 import { generateAiReply } from './ai/generate-reply';
 import { sendMessage } from './ticket-service';
@@ -21,13 +22,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ])) as T;
 }
 
-type AiRouteMode = 'front' | 'server';
-
-function resolveAiRouteMode(): AiRouteMode {
-  const value = (process.env.AI_ROUTE_MODE ?? '').toLowerCase().trim();
-  return value === 'front' ? 'front' : 'server';
-}
-
 /**
  * Serviço responsável por processar respostas automáticas da IA
  * quando uma mensagem inbound é recebida.
@@ -47,10 +41,11 @@ interface ProcessAiReplyOptions {
  */
 function resolveAiEnabled(): boolean {
   try {
-    // @ts-expect-error – aceitar função ou boolean vindo de config
-    return typeof isAiEnabledImported === 'function'
-      ? Boolean(isAiEnabledImported())
-      : Boolean(isAiEnabledImported);
+    const resolved = isAiEnabledImported as unknown;
+    if (typeof resolved === 'function') {
+      return Boolean((resolved as () => unknown)());
+    }
+    return Boolean(resolved);
   } catch (e) {
     logger.warn('AI AUTO-REPLY :: isAiEnabled falhou, assumindo desabilitado', {
       error: e instanceof Error ? e.message : String(e),
@@ -132,16 +127,24 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       return;
     }
 
-    // Hard guard: only allow server-side auto reply when AI_ROUTE_MODE=server
-    const routeMode = resolveAiRouteMode();
-    logger.debug('AI AUTO-REPLY :: route mode check', { routeMode });
-    if (routeMode !== 'server') {
-      logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - AI_ROUTE_MODE=front (responder apenas via front-end)', {
+    const { mode: routeMode, serverAutoReplyEnabled } = getAiRoutingPreferences();
+    logger.debug('AI AUTO-REPLY :: route mode check', { routeMode, serverAutoReplyEnabled });
+    if (!serverAutoReplyEnabled) {
+      logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - respostas automáticas desabilitadas para o backend', {
+        tenantId,
+        ticketId,
+        messageId,
+        aiRouteMode: routeMode,
+      });
+      return;
+    }
+
+    if (routeMode === 'front') {
+      logger.debug('AI AUTO-REPLY :: override ativo — enviando resposta server-side mesmo em modo front', {
         tenantId,
         ticketId,
         messageId,
       });
-      return;
     }
 
   try {
@@ -315,7 +318,6 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
           undefined, // userId (sistema automático)
           {
             ticketId,
-            contactId,
             content: reply,
             direction: 'OUTBOUND',
             status: 'PENDING',
@@ -378,7 +380,8 @@ export async function shouldTriggerAiAutoReply(
   ticketId: string,
   queueId?: string | null
 ): Promise<boolean> {
-  if (resolveAiRouteMode() !== 'server') return false;
+  const { serverAutoReplyEnabled } = getAiRoutingPreferences();
+  if (!serverAutoReplyEnabled) return false;
   if (!resolveAiEnabled()) return false;
 
   try {

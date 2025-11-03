@@ -3,6 +3,7 @@ import { setImmediate as scheduleImmediate } from 'node:timers';
 import { logger } from '../../../config/logger';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import { ingestInboundWhatsAppMessage } from './inbound-lead-service';
+import { getAiRoutingPreferences } from '../../../config/ai-route';
 
 interface InboundQueueJob {
   requestId: string;
@@ -86,11 +87,18 @@ const processQueue = async (): Promise<void> => {
         metadata.flags = {};
       }
 
-      if (route === 'front') {
-        metadata.flags.skipServerAi = true; // hard guard: do not trigger server-side AI
-        if (metadata.aiRouteMode == null) metadata.aiRouteMode = 'front';
-      } else if (route === 'server') {
-        if (metadata.aiRouteMode == null) metadata.aiRouteMode = 'server';
+      const aiRouting = getAiRoutingPreferences();
+      const preferredRoute = route ?? aiRouting.mode;
+      const shouldSkipServerAi = !aiRouting.serverAutoReplyEnabled;
+
+      if (shouldSkipServerAi) {
+        metadata.flags.skipServerAi = true;
+      } else if (metadata.flags.skipServerAi) {
+        delete metadata.flags.skipServerAi;
+      }
+
+      if (metadata.aiRouteMode == null) {
+        metadata.aiRouteMode = preferredRoute;
       }
     } catch (_) {
       // best-effort; do not break ingestion if envelope structure differs

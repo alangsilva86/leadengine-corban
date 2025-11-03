@@ -891,52 +891,77 @@ export const processStandardInboundEvent = async (
       tenantId,
       ticketId,
     });
-    
+    const messageMetadata =
+      persistedMessage &&
+      typeof persistedMessage.metadata === 'object' &&
+      persistedMessage.metadata !== null &&
+      !Array.isArray(persistedMessage.metadata)
+        ? (persistedMessage.metadata as Record<string, unknown>)
+        : null;
+    const metadataFlags =
+      messageMetadata &&
+      typeof messageMetadata.flags === 'object' &&
+      messageMetadata.flags !== null &&
+      !Array.isArray(messageMetadata.flags)
+        ? (messageMetadata.flags as Record<string, unknown>)
+        : null;
+    const skipServerAiFlag = metadataFlags?.skipServerAi === true;
+
     if (direction === 'INBOUND' && persistedMessage.content) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: 🤖 ACIONANDO AI AUTO-REPLY', {
-        tenantId,
-        ticketId,
-        messageId: persistedMessage.id,
-        messageContent: persistedMessage.content.substring(0, 50),
-      });
-      
-      console.log('DEBUG: ANTES DE CHAMAR processAiAutoReply');
-      
-      let aiPromise;
-      try {
-        aiPromise = processAiAutoReply({
+      if (skipServerAiFlag) {
+        logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - sinalizado via metadata.flags.skipServerAi', {
           tenantId,
           ticketId,
           messageId: persistedMessage.id,
-          messageContent: persistedMessage.content,
-          contactId: contactRecord.id,
-          queueId: queueId ?? null,
         });
-        console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
-      } catch (syncError) {
-        console.error('DEBUG: ERRO SINCRONO AO CHAMAR processAiAutoReply:', syncError);
-        logger.error('LeadEngine WhatsApp :: ERRO SINCRONO ao chamar AI auto-reply', {
-          error: syncError instanceof Error ? {
-            name: syncError.name,
-            message: syncError.message,
-            stack: syncError.stack,
-          } : String(syncError),
+      } else {
+        logger.warn('🎯 LeadEngine • WhatsApp :: 🤖 ACIONANDO AI AUTO-REPLY', {
           tenantId,
           ticketId,
+          messageId: persistedMessage.id,
+          messageContent: persistedMessage.content.substring(0, 50),
         });
-        // Não continuar se houve erro síncrono
-        return;
+
+        console.log('DEBUG: ANTES DE CHAMAR processAiAutoReply');
+
+        let aiPromise;
+        try {
+          aiPromise = processAiAutoReply({
+            tenantId,
+            ticketId,
+            messageId: persistedMessage.id,
+            messageContent: persistedMessage.content,
+            contactId: contactRecord.id,
+            queueId: queueId ?? null,
+          });
+          console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
+        } catch (syncError) {
+          console.error('DEBUG: ERRO SINCRONO AO CHAMAR processAiAutoReply:', syncError);
+          logger.error('LeadEngine WhatsApp :: ERRO SINCRONO ao chamar AI auto-reply', {
+            error: syncError instanceof Error
+              ? {
+                  name: syncError.name,
+                  message: syncError.message,
+                  stack: syncError.stack,
+                }
+              : String(syncError),
+            tenantId,
+            ticketId,
+          });
+          // Não continuar se houve erro síncrono
+          return finalize(false);
+        }
+
+        aiPromise.catch((error) => {
+          logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
+            error: mapErrorForLog(error),
+            requestId,
+            tenantId,
+            ticketId,
+            messageId: persistedMessage.id,
+          });
+        });
       }
-      
-      aiPromise.catch((error) => {
-        logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
-          error: mapErrorForLog(error),
-          requestId,
-          tenantId,
-          ticketId,
-          messageId: persistedMessage.id,
-        });
-      });
     }
   }
 
