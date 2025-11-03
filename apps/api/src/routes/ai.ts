@@ -643,6 +643,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0;
 
+// Keep in sync with MAX_AI_TIMELINE_ITEMS in
+// apps/web/src/features/chat/utils/aiTimeline.js so backend truncation matches
+// the frontend behaviour when preparing AI context.
+const MAX_AI_TIMELINE_ITEMS = 50;
+
 const parseMessageRole = (value: unknown): 'user' | 'assistant' | 'system' => {
   if (!value) {
     return 'user';
@@ -698,7 +703,9 @@ const buildMessagesFromTimeline = (
     return [];
   }
 
-  return timeline
+  const truncatedTimeline = timeline.slice(-MAX_AI_TIMELINE_ITEMS);
+
+  return truncatedTimeline
     .map((entry) => {
       const payload = getEntryPayload(entry);
       if (!payload) {

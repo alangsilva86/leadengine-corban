@@ -332,7 +332,7 @@ describe('AI routes', () => {
   });
 
   it('aceita payload com ticket e timeline convertendo para mensagens recentes', async () => {
-    const app = buildTestApp();
+    const app = await buildTestApp();
 
     const response = await request(app)
       .post('/ai/suggest')
@@ -395,6 +395,42 @@ describe('AI routes', () => {
     ]);
     expect(requestPayload?.prompt).toContain('Perfil do lead');
     expect(requestPayload?.prompt).toContain('ticket-123');
+  });
+
+  it('limita timeline a no máximo 50 itens ao montar contexto para sugestão', async () => {
+    const app = await buildTestApp();
+
+    const timeline = Array.from({ length: 60 }, (_, index) => ({
+      id: `entry-${index}`,
+      type: 'message',
+      timestamp: new Date(2024, 0, 1, 12, index).toISOString(),
+      payload: {
+        id: `msg-${index}`,
+        direction: index % 2 === 0 ? 'inbound' : 'outbound',
+        content: `Mensagem ${index}`,
+      },
+    }));
+
+    const response = await request(app)
+      .post('/ai/suggest')
+      .send({
+        conversationId: 'conv-timeline',
+        timeline,
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(runStore).toHaveLength(1);
+    const requestPayload = runStore[0]?.requestPayload as { contextMessages?: any[] };
+    const contextMessages = requestPayload?.contextMessages ?? [];
+    expect(contextMessages).toHaveLength(50);
+
+    const expected = timeline.slice(-50).map((entry) => ({
+      role: entry.payload.direction === 'outbound' ? 'assistant' : 'user',
+      content: entry.payload.content,
+    }));
+
+    expect(contextMessages).toEqual(expected);
   });
 
   it('upserts AI memory entries', async () => {
