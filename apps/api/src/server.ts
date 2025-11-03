@@ -446,6 +446,12 @@ app.use('*', (req, res) => {
 
 // Iniciar servidor
 server.listen(PORT, () => {
+  logger.warn('🔥🔥🔥 ========================================');
+  logger.warn('🔥 LEADENGINE API STARTED');
+  logger.warn('🔥 VERSION: 2025-11-02-23-15-AI-AUTO-REPLY');
+  logger.warn('🔥 FEATURES: ai-auto-reply, queue-logging');
+  logger.warn('🔥🔥🔥 ========================================');
+  
   logger.info(`🚀 Server running on port ${PORT} in ${NODE_ENV} mode`);
   logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
@@ -453,6 +459,9 @@ server.listen(PORT, () => {
 
   const mode = getWhatsAppMode();
   logger.info(`💬 WhatsApp transport initialized in ${mode.toUpperCase()} mode`);
+  
+  logger.warn('🤖 AI AUTO-REPLY: ENABLED');
+  logger.warn('📥 INBOUND QUEUE: LOGGING ENABLED');
 });
 
 // Graceful shutdown
