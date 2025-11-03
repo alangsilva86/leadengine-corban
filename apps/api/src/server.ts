@@ -482,13 +482,12 @@ app.head('/', (_req, res) => {
 app.get('/_debug/ai-config', async (req, res) => {
   try {
     const { prisma } = await import('./lib/prisma');
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: 'demo-tenant' },
-      include: { aiConfig: true },
+    const aiConfig = await prisma.aiConfig.findUnique({
+      where: { tenantId: 'demo-tenant' },
     });
     res.json({
-      tenant: tenant?.id,
-      aiConfig: tenant?.aiConfig,
+      tenantId: 'demo-tenant',
+      aiConfig,
     });
   } catch (error) {
     res.status(500).json({ error: String(error) });
