@@ -405,31 +405,33 @@ export const MessageBubble = ({
         ) : null}
 
         <div className="break-words whitespace-pre-wrap text-sm leading-tight">{renderBody()}</div>
-        <div
-          className={cn(
-            'mt-1 flex items-center gap-2 text-[11px] text-foreground-muted',
-            outbound ? 'justify-end' : 'justify-start'
-          )}
-        >
-          <span>{formatTime(message.createdAt)}</span>
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--accent-inbox-primary)]',
-                  ack.tone,
-                  isFailedStatus && 'text-status-error focus-visible:ring-status-error/60'
-                )}
-                aria-label={ack.label}
-              >
-                <AckIcon className={cn('h-3 w-3', isPendingStatus && 'animate-spin')} aria-hidden="true" />
-                <span className="sr-only">{ack.label}</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{ack.label}</TooltipContent>
-          </Tooltip>
-        </div>
+        {isTail ? (
+          <div
+            className={cn(
+              'mt-1 flex items-center gap-2 text-[11px] text-foreground-muted',
+              outbound ? 'justify-end' : 'justify-start'
+            )}
+          >
+            <span>{formatTime(message.createdAt)}</span>
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--accent-inbox-primary)]',
+                    ack.tone,
+                    isFailedStatus && 'text-status-error focus-visible:ring-status-error/60'
+                  )}
+                  aria-label={ack.label}
+                >
+                  <AckIcon className={cn('h-3 w-3', isPendingStatus && 'animate-spin')} aria-hidden="true" />
+                  <span className="sr-only">{ack.label}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{ack.label}</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null}
       </div>
     </div>
   );

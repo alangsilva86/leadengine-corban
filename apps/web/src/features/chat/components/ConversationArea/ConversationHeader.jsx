@@ -7,7 +7,6 @@ import CallResultDialog from './CallResultDialog.jsx';
 import OutcomeDialog from './OutcomeDialog.jsx';
 import useTicketJro from '../../hooks/useTicketJro.js';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
-import { AiModeControlMenu } from './AiModeMenu.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
 
@@ -495,7 +494,6 @@ const ConversationHeader = ({
 
   const {
     PrimaryActionBanner: PrimaryActionBannerComponent = PrimaryActionBanner,
-    AiModeMenu: AiModeMenuComponent = AiModeControlMenu,
   } = components ?? {};
 
   const summaryContent = (
@@ -514,17 +512,6 @@ const ConversationHeader = ({
       commandContext={commandContext}
       detailsOpen={detailsOpen}
       onRequestDetails={() => onRequestDetails?.({})}
-      AiModeMenuComponent={AiModeMenuComponent}
-      aiControlProps={{
-        ticket,
-        aiMode,
-        aiConfidence,
-        aiModeChangeDisabled,
-        onAiModeChange,
-        onTakeOver,
-        onGiveBackToAi,
-        className: 'shrink-0',
-      }}
     />
   );
 

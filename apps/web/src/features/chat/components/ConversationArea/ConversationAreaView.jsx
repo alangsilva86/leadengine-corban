@@ -1,7 +1,6 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils.js';
 import ConversationHeader from './ConversationHeader.jsx';
-import { AiModeControlMenu } from './AiModeMenu.jsx';
 import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner from './PrimaryActionBanner.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
@@ -73,7 +72,6 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
     scrollRef,
     showNewMessagesHint,
     onScrollToBottom,
-    composerOffset,
   } = timeline ?? {};
 
   const {
@@ -168,7 +166,6 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
             {...mergedHeaderProps}
             components={{
               PrimaryActionBanner,
-              AiModeMenu: AiModeControlMenu,
               ...headerComponents,
             }}
             detailsOpen={detailsState.open}
@@ -197,6 +194,8 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
               hasMore={hasMore}
               onLoadMore={onLoadMore}
               typingAgents={typingAgents}
+              showNewMessagesHint={showNewMessagesHint}
+              onScrollToBottom={onScrollToBottom}
             />
           </div>
         </div>
@@ -217,23 +216,9 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
           aiMode={aiMode}
           aiModeChangeDisabled={aiModeChangeDisabled}
           onAiModeChange={onAiModeChange}
+          aiStreaming={aiStreaming}
         />
       </div>
-      {showNewMessagesHint ? (
-        <div
-          className="pointer-events-none absolute left-1/2 z-30 -translate-x-1/2"
-          style={{ bottom: composerOffset }}
-        >
-          <button
-            type="button"
-            onClick={onScrollToBottom}
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-[color:var(--surface-overlay-inbox-bold)]/95 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)] transition hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
-          >
-            Novas mensagens
-            <span className="text-[color:var(--color-inbox-foreground-muted)]">▼</span>
-          </button>
-        </div>
-      ) : null}
       <ConversationDetailsDrawer
         open={detailsState.open}
         onOpenChange={handleDetailsOpenChange}

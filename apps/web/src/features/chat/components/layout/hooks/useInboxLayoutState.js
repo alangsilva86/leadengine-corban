@@ -19,7 +19,7 @@ const useInboxLayoutState = ({
       ? readPreference(CONTEXT_PREFERENCE_KEY, defaultContextOpen)
       : defaultContextOpen,
   );
-  const [desktopListVisible, setDesktopListVisible] = useState(true);
+  const [desktopListVisible, setDesktopListVisible] = useState(false);
   const [mobileListOpen, setMobileListOpen] = useState(false);
 
   const isTablet = useMediaQuery('(min-width: 1024px)');

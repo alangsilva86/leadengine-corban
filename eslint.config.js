@@ -18,25 +18,7 @@ const tailwindPlugin = {
   },
 }
 
-export default tseslint.config(
-  {
-    ignores: [
-      '**/dist/**',
-      '**/build/**',
-      '**/coverage/**',
-      '**/.next/**',
-      '**/.turbo/**',
-      '**/storybook-static/**',
-      '**/node_modules/**',
-      '**/apps/api/src/features/whatsapp-inbound/routes/__tests__/**',
-      '**/apps/api/src/routes/webhooks.test.ts',
-      '**/apps/web/src/features/chat/api/useUpdateNextStep.d.ts',
-      '**/config/feature-flags.d.ts',
-    ],
-    linterOptions: {
-      reportUnusedDisableDirectives: 'off',
-    },
-  },
+const baseConfig = tseslint.config(
   {
     languageOptions: {
       ecmaVersion: 'latest',
@@ -147,3 +129,25 @@ export default tseslint.config(
     },
   },
 )
+
+export default [
+  {
+    ignores: [
+      '**/dist/**',
+      '**/build/**',
+      '**/coverage/**',
+      '**/.next/**',
+      '**/.turbo/**',
+      '**/storybook-static/**',
+      '**/node_modules/**',
+      '**/apps/api/src/features/whatsapp-inbound/routes/__tests__/**',
+      '**/apps/api/src/routes/webhooks.test.ts',
+      '**/apps/web/src/features/chat/api/useUpdateNextStep.d.ts',
+      '**/config/feature-flags.d.ts',
+    ],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'off',
+    },
+  },
+  ...baseConfig,
+]

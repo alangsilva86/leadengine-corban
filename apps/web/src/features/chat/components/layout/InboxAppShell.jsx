@@ -10,7 +10,7 @@ import { createScrollMemory, LIST_SCROLL_STORAGE_KEY } from './preferences.ts';
 
 const listScrollMemory = createScrollMemory(LIST_SCROLL_STORAGE_KEY);
 
-const ListPanelHeader = ({ showCloseButton = false }) => (
+const ListPanelHeader = ({ showCloseButton = false, onToggleListVisibility, toggleLabel = 'Ocultar lista' }) => (
   <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-4 py-3 text-sm font-semibold text-[color:var(--color-inbox-foreground)]">
     <div className="flex items-center gap-2">
       <span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] text-[color:var(--accent-inbox-primary)] shadow-[var(--shadow-sm)]">
@@ -33,10 +33,27 @@ const ListPanelHeader = ({ showCloseButton = false }) => (
         </Button>
       </SheetClose>
     ) : null}
+    {!showCloseButton && onToggleListVisibility ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_30%,transparent)] px-3 text-xs font-semibold text-[color:var(--color-inbox-foreground-muted)] transition hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_60%,transparent)] hover:text-[color:var(--color-inbox-foreground)] focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+        onClick={onToggleListVisibility}
+      >
+        <PanelLeftClose className="h-4 w-4" aria-hidden />
+        {toggleLabel}
+      </Button>
+    ) : null}
   </div>
 );
 
-const ListPanelContent = ({ children }) => <div className="flex min-h-0 min-w-0 flex-col">{children}</div>;
+const ListPanelContent = ({ children, toolbar }) => (
+  <div className="flex min-h-0 min-w-0 flex-col gap-3">
+    {toolbar ? <div className="px-1">{toolbar}</div> : null}
+    {children}
+  </div>
+);
 
 const ListPanelFooter = ({ canPersistPreferences }) => (
   <div className="shrink-0 border-t border-[color:var(--color-inbox-border)] px-4 py-3 text-[11px] text-[color:var(--color-inbox-foreground-muted)]">
@@ -47,7 +64,14 @@ const ListPanelFooter = ({ canPersistPreferences }) => (
   </div>
 );
 
-const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) => {
+const ListPanel = ({
+  sidebar,
+  canPersistPreferences,
+  showCloseButton = false,
+  onToggleListVisibility,
+  toggleLabel,
+  toolbar = null,
+}) => {
   const viewportRef = useRef(null);
 
   useEffect(() => {
@@ -79,7 +103,11 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col" data-pane="sidebar">
-      <ListPanelHeader showCloseButton={showCloseButton} />
+      <ListPanelHeader
+        showCloseButton={showCloseButton}
+        onToggleListVisibility={onToggleListVisibility}
+        toggleLabel={toggleLabel}
+      />
       <div
         ref={viewportRef}
         id="listViewport"
@@ -87,7 +115,7 @@ const ListPanel = ({ sidebar, canPersistPreferences, showCloseButton = false }) 
         style={{ overscrollBehavior: 'contain' }}
       >
         <div className="px-4 py-4">
-          <ListPanelContent>{sidebar}</ListPanelContent>
+          <ListPanelContent toolbar={toolbar}>{sidebar}</ListPanelContent>
         </div>
       </div>
       <ListPanelFooter canPersistPreferences={canPersistPreferences} />
@@ -177,13 +205,28 @@ const InboxAppShell = ({
   });
 
   const listContent = useMemo(
-    () => <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} />,
-    [sidebar, canPersistPreferences],
+    () => (
+      <ListPanel
+        sidebar={sidebar}
+        canPersistPreferences={canPersistPreferences}
+        onToggleListVisibility={handleToggleListVisibility}
+        toggleLabel={headerListButtonLabel}
+        toolbar={toolbar}
+      />
+    ),
+    [sidebar, canPersistPreferences, handleToggleListVisibility, headerListButtonLabel, toolbar],
   );
 
   const mobileListContent = useMemo(
-    () => <ListPanel sidebar={sidebar} canPersistPreferences={canPersistPreferences} showCloseButton />,
-    [sidebar, canPersistPreferences],
+    () => (
+      <ListPanel
+        sidebar={sidebar}
+        canPersistPreferences={canPersistPreferences}
+        showCloseButton
+        toolbar={toolbar}
+      />
+    ),
+    [sidebar, canPersistPreferences, toolbar],
   );
 
   const detailSurface = (
@@ -216,12 +259,7 @@ const InboxAppShell = ({
                 ) : null}
               </div>
             </div>
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
-              {toolbar ? (
-                <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
-                  {toolbar}
-                </div>
-              ) : null}
+            <div className="flex flex-1 items-center justify-end">
               <DesktopToolbar
                 onToggleListVisibility={handleToggleListVisibility}
                 onToggleContext={handleToggleContext}

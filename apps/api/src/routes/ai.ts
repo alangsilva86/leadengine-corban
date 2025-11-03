@@ -18,6 +18,7 @@ import { aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
 import { logger } from '../config/logger';
 import { getRegisteredTools, executeTool } from '../services/ai/tool-registry';
 import { ReplyStreamer } from './reply-streamer';
+import { ensureTenantId, readQueueParam } from './ai/utils';
 
 const router: Router = Router();
 const RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
@@ -54,11 +55,6 @@ const defaultSuggestionSchema: Prisma.JsonValue = {
     },
     confidence: { type: 'number' },
   },
-};
-
-const readQueueParam = (req: Request): string | null => {
-  const queueId = (req.query.queueId ?? req.body?.queueId) as string | undefined;
-  return queueId?.trim() ? queueId.trim() : null;
 };
 
 const DEFAULT_MODE: AiAssistantMode = 'COPILOTO';
@@ -166,7 +162,7 @@ router.get(
   query('queueId').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const config = await getAiConfig(tenantId, queueId);
 
@@ -187,7 +183,7 @@ router.post(
   modeValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const rawMode = req.body.mode as string;
     const mode = normalizeModeFromFrontend(rawMode) ?? DEFAULT_MODE;
@@ -218,7 +214,7 @@ router.get(
   query('queueId').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
 
     const existing = await getAiConfig(tenantId, queueId);
@@ -289,7 +285,7 @@ router.put(
   configValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const payload = req.body as UpsertAiConfigInput;
     const existing = await getAiConfig(tenantId, queueId);
@@ -350,7 +346,7 @@ router.post(
   replyValidators,
   validateRequest,
   (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const { conversationId, messages, metadata = {} } = req.body as {
       conversationId: string;
       messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -899,7 +895,7 @@ router.post(
   suggestValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const { conversationId: bodyConversationId, goal: rawGoal } = req.body as {
       conversationId?: unknown;
       goal?: unknown;
@@ -1021,7 +1017,7 @@ router.post(
   memoryUpsertValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const { contactId, topic, content, metadata = null, expiresAt } = req.body as {
       contactId: string;
       topic: string;

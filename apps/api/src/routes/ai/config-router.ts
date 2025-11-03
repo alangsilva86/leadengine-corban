@@ -12,7 +12,7 @@ import {
   getConfigSettings,
   updateConfigSettings,
 } from './config-controller';
-import { readQueueParam } from './utils';
+import { readQueueParam, ensureTenantId } from './utils';
 
 const router: Router = Router();
 
@@ -29,7 +29,7 @@ router.get(
   query('queueId').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const data = await getModeConfig(tenantId, queueId);
 
@@ -46,7 +46,7 @@ router.post(
   modeValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const { mode } = req.body as { mode: AiAssistantMode };
 
@@ -90,7 +90,7 @@ router.get(
   query('queueId').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const data = await getConfigSettings(tenantId, queueId);
 
@@ -107,7 +107,7 @@ router.put(
   configValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const queueId = readQueueParam(req);
     const payload = req.body as UpsertAiConfigInput;
 

@@ -56,7 +56,7 @@ export const useConversationExperience = ({
   const aiReplyStream = useAiReplyStream();
 
   const { timelineItems, hasMore, isLoadingMore, handleLoadMore, lastEntryKey } = useTicketMessages(messagesQuery);
-  const { composerHeight, composerOffset } = useComposerMetrics(composerRef, ticketId);
+  const { composerHeight } = useComposerMetrics(composerRef, ticketId);
   const { typingAgents, broadcastTyping } = useWhatsAppPresence({ typingIndicator, ticketId });
   const slaClock = useSLAClock(ticket);
 
@@ -278,7 +278,6 @@ export const useConversationExperience = ({
       scrollRef,
       showNewMessagesHint: !isNearBottom,
       onScrollToBottom: handleScrollToBottom,
-      composerOffset,
     },
     composer: {
       ref: composerRef,

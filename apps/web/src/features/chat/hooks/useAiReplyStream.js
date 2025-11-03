@@ -105,6 +105,27 @@ export const useAiReplyStream = () => {
         status: 'streaming',
       }));
 
+      let watchdogTimer = null;
+      const lastActivityRef = { current: Date.now() };
+      const resetWatchdog = () => {
+        lastActivityRef.current = Date.now();
+      };
+      const startWatchdog = () => {
+        if (watchdogTimer) return;
+        watchdogTimer = setInterval(() => {
+          const now = Date.now();
+          if (now - lastActivityRef.current > 30000) {
+            controller.abort();
+          }
+        }, 5000);
+      };
+      const stopWatchdog = () => {
+        if (watchdogTimer) {
+          clearInterval(watchdogTimer);
+          watchdogTimer = null;
+        }
+      };
+
       try {
         const response = await fetch(buildUrl('/api/ai/reply'), {
           method: 'POST',
@@ -132,26 +153,6 @@ export const useAiReplyStream = () => {
         let buffer = '';
         let finished = false;
 
-        let watchdogTimer = null;
-        const lastActivityRef = { current: Date.now() };
-        const resetWatchdog = () => {
-          lastActivityRef.current = Date.now();
-        };
-        const startWatchdog = () => {
-          if (watchdogTimer) return;
-          watchdogTimer = setInterval(() => {
-            const now = Date.now();
-            if (now - lastActivityRef.current > 30000) {
-              controller.abort();
-            }
-          }, 5000);
-        };
-        const stopWatchdog = () => {
-          if (watchdogTimer) {
-            clearInterval(watchdogTimer);
-            watchdogTimer = null;
-          }
-        };
         startWatchdog();
 
         const emitToolCalls = () => {

@@ -2,10 +2,10 @@ import MessageBubble from './MessageBubble.jsx';
 import EventCard from './EventCard.jsx';
 
 const Divider = ({ label }) => (
-  <div className="my-4 flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-foreground-muted">
-    <span className="h-px flex-1 bg-gradient-to-r from-transparent via-surface-overlay-glass-border to-transparent" />
+  <div className="my-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-foreground-muted">
+    <span className="h-px flex-1 bg-surface-overlay-glass-border" />
     <span className="px-2 text-foreground">{label}</span>
-    <span className="h-px flex-1 bg-gradient-to-l from-transparent via-surface-overlay-glass-border to-transparent" />
+    <span className="h-px flex-1 bg-surface-overlay-glass-border" />
   </div>
 );
 
@@ -27,7 +27,15 @@ const resolveAuthorKey = (payload = {}) => {
   return `${direction}|${authorCandidate}`;
 };
 
-export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAgents = [] }) => (
+export const MessageTimeline = ({
+  items,
+  loading,
+  hasMore,
+  onLoadMore,
+  typingAgents = [],
+  showNewMessagesHint = false,
+  onScrollToBottom,
+}) => (
   <div
     className="chat-scroll-content flex h-full min-h-0 flex-col gap-3"
     role="log"
@@ -78,6 +86,25 @@ export const MessageTimeline = ({ items, loading, hasMore, onLoadMore, typingAge
       <div className="flex items-center gap-2 rounded-full bg-success-soft px-3 py-1 text-xs text-success-strong">
         <div className="h-2 w-2 animate-pulse rounded-full bg-success" />
         {typingAgents[0].userName ?? 'Agente'} digitando…
+      </div>
+    ) : null}
+
+    {showNewMessagesHint ? (
+      <div className="sticky bottom-4 z-20 mt-2 flex flex-col items-center gap-2 px-2">
+        <div className="flex w-full items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.4em] text-foreground-muted">
+          <span className="h-px flex-1 bg-surface-overlay-glass-border" />
+          <span>Novas mensagens</span>
+          <span className="h-px flex-1 bg-surface-overlay-glass-border" />
+        </div>
+        <button
+          type="button"
+          onClick={() => onScrollToBottom?.()}
+          disabled={!onScrollToBottom}
+          className="inline-flex items-center gap-1 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-3 py-1 text-[11px] font-medium text-foreground shadow-[0_8px_20px_-16px_rgba(15,23,42,0.8)] transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Pular para o fim
+          <span aria-hidden="true">↓</span>
+        </button>
       </div>
     ) : null}
   </div>

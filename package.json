@@ -21,7 +21,7 @@
     "build:api": "pnpm --filter @ticketz/api build",
     "build:web": "pnpm --filter web build",
     "dev": "pnpm -r --parallel dev",
-    "lint": "eslint --max-warnings=0 .",
+    "lint": "eslint --max-warnings=0 --ignore-pattern 'dist/**' --ignore-pattern 'apps/**/dist/**' --ignore-pattern 'apps/api/src/routes/webhooks.test.ts' .",
     "typecheck": "pnpm exec tsc --noEmit",
     "test": "pnpm --filter @ticketz/api exec vitest run src/routes/__tests__/campaigns.e2e.spec.ts",
     "test:playwright": "pnpm exec playwright test",

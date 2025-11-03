@@ -8,7 +8,7 @@ import { recordAiSuggestion } from '@ticketz/storage';
 import { logger } from '../../config/logger';
 import { isAiEnabled } from '../../config/ai';
 import { ensureAiConfig, defaultSuggestionSchema } from './config-controller';
-import { readQueueParam } from './utils';
+import { readQueueParam, ensureTenantId } from './utils';
 import type { Request, Response } from 'express';
 
 const suggestValidators = [
@@ -24,7 +24,7 @@ export const suggestMiddlewares = [
   ...suggestValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const { conversationId, goal, lastMessages = [], leadProfile } = req.body as {
       conversationId: string;
       goal?: string;

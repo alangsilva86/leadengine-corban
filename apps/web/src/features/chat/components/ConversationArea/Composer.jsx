@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Paperclip, Smile, Send, Loader2, Wand2 } from 'lucide-react';
+import { Paperclip, Smile, Send, Loader2, Wand2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
@@ -9,6 +9,8 @@ import TemplatePicker from './TemplatePicker.jsx';
 import { useUploadWhatsAppMedia } from '../../api/useUploadWhatsAppMedia.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import AiModeMenu from './AiModeMenu.jsx';
+import { DEFAULT_AI_MODE, getAiModeOption, isValidAiMode } from './aiModes.js';
 
 const DEFAULT_REPLIES = [
   { id: 'hello', label: 'Saudação', text: 'Olá! Aqui é da Corban, tudo bem?' },
@@ -116,6 +118,9 @@ export const Composer = forwardRef(function Composer(
     sendError,
     aiConfidence,
     aiError,
+    aiMode,
+    aiModeChangeDisabled,
+    onAiModeChange,
     aiStreaming = null,
   },
   ref
@@ -123,6 +128,7 @@ export const Composer = forwardRef(function Composer(
   const [value, setValue] = useState('');
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [aiModeMenuOpen, setAiModeMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -148,6 +154,11 @@ export const Composer = forwardRef(function Composer(
     return 'Escreva uma resposta...';
   }, [disabled, isAiGenerating]);
 
+  const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
+  const aiModeOption = getAiModeOption(normalizedAiMode);
+  const aiModeLabel = aiModeOption.shortLabel ?? aiModeOption.label;
+  const aiModeButtonDisabled = disabled || aiModeChangeDisabled;
+
   useEffect(() => {
     const command = detectCommand(value);
     if (command === 'template') {
@@ -168,6 +179,12 @@ export const Composer = forwardRef(function Composer(
       setEmojiPickerOpen(false);
     }
   }, [disabled]);
+
+  useEffect(() => {
+    if (aiModeButtonDisabled) {
+      setAiModeMenuOpen(false);
+    }
+  }, [aiModeButtonDisabled]);
 
   const resetComposer = () => {
     setValue('');
@@ -419,35 +436,80 @@ export const Composer = forwardRef(function Composer(
               multiple
               onChange={handleFilesSelected}
             />
-          <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground"
-                disabled={inputDisabled}
-              >
-                <Smile className="h-4 w-4" />
-                <span className="sr-only">Abrir emojis</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 max-h-60 overflow-y-auto rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet p-3">
-              <div className="grid grid-cols-8 gap-1">
-                {DEFAULT_EMOJIS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-surface-overlay-strong"
-                    onClick={() => handleSelectEmoji(emoji)}
-                  >
-                    <span role="img" aria-label="emoji">
-                      {emoji}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+            <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground"
+                  disabled={inputDisabled}
+                >
+                  <Smile className="h-4 w-4" />
+                  <span className="sr-only">Abrir emojis</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 max-h-60 overflow-y-auto rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet p-3">
+                <div className="grid grid-cols-8 gap-1">
+                  {DEFAULT_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-surface-overlay-strong"
+                      onClick={() => handleSelectEmoji(emoji)}
+                    >
+                      <span role="img" aria-label="emoji">
+                        {emoji}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="hidden text-[11px] font-medium uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)] sm:inline">
+              Modo IA: {aiModeOption.label}
+            </span>
+            <Popover
+              open={aiModeMenuOpen}
+              onOpenChange={(open) => {
+                if (aiModeButtonDisabled) return;
+                setAiModeMenuOpen(open);
+              }}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'inline-flex items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-xs font-semibold text-foreground transition hover:bg-surface-overlay-strong',
+                        normalizedAiMode !== 'manual' && 'text-[color:var(--accent-inbox-primary)] border-[color:var(--accent-inbox-primary)]/60'
+                      )}
+                      disabled={aiModeButtonDisabled}
+                    >
+                      <Wand2 className="h-3.5 w-3.5" aria-hidden />
+                      <span>{aiModeLabel}</span>
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Selecionar modo da IA</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-60 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet p-2 shadow-[0_16px_40px_-24px_rgba(15,23,42,0.65)]">
+                <AiModeMenu
+                  mode={normalizedAiMode}
+                  onSelect={(mode) => {
+                    if (mode !== normalizedAiMode) {
+                      onAiModeChange?.(mode);
+                    }
+                  }}
+                  disabled={aiModeButtonDisabled}
+                  onRequestClose={() => setAiModeMenuOpen(false)}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 

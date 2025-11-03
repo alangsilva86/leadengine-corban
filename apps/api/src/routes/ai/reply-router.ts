@@ -5,7 +5,7 @@ import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { logger } from '../../config/logger';
 import { streamReply } from './reply-streamer';
-import { readQueueParam } from './utils';
+import { readQueueParam, ensureTenantId } from './utils';
 
 const router: Router = Router();
 
@@ -31,7 +31,7 @@ router.post(
   replyValidators,
   validateRequest,
   (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const { conversationId, messages, metadata = {} } = req.body as {
       conversationId: string;
       messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;

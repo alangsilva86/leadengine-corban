@@ -7,6 +7,7 @@ import { validateRequest } from '../middleware/validation';
 import { upsertAiMemory } from '@ticketz/storage';
 import { logger } from '../../config/logger';
 import type { Request, Response } from 'express';
+import { ensureTenantId } from './utils';
 
 const memoryUpsertValidators = [
   body('contactId').isString().notEmpty(),
@@ -21,7 +22,7 @@ export const memoryUpsertMiddlewares = [
   ...memoryUpsertValidators,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId!;
+    const tenantId = ensureTenantId(req);
     const { contactId, topic, content, metadata = null, expiresAt } = req.body as {
       contactId: string;
       topic: string;
