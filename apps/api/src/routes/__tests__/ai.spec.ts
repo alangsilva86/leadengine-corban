@@ -331,6 +331,108 @@ describe('AI routes', () => {
     expect(response.body.data.aiEnabled).toBe(false);
   });
 
+  it('aceita payload com ticket e timeline convertendo para mensagens recentes', async () => {
+    const app = await buildTestApp();
+
+    const response = await request(app)
+      .post('/ai/suggest')
+      .send({
+        ticket: {
+          id: 'ticket-123',
+          status: 'open',
+          stage: 'negotiation',
+          value: 1500,
+          contact: {
+            id: 'contact-123',
+            name: 'Maria Souza',
+            phone: '+5511999999999',
+          },
+          metadata: { origin: 'whatsapp' },
+        },
+        timeline: [
+          {
+            id: 'entry-1',
+            type: 'message',
+            timestamp: '2024-01-01T12:00:00.000Z',
+            payload: {
+              id: 'msg-1',
+              direction: 'inbound',
+              content: 'Oi, tudo bem?',
+            },
+          },
+          {
+            id: 'entry-2',
+            type: 'message',
+            timestamp: '2024-01-01T12:05:00.000Z',
+            payload: {
+              id: 'msg-2',
+              direction: 'outbound',
+              content: 'Olá! Posso ajudar com a proposta?',
+            },
+          },
+        ],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.suggestion).toMatchObject({
+      next_step: expect.any(String),
+      confidence: 0,
+    });
+    expect(response.body.data.aiEnabled).toBe(false);
+
+    expect(suggestionStore).toHaveLength(1);
+    expect(suggestionStore[0]).toMatchObject({
+      tenantId: 'tenant-1',
+      conversationId: 'ticket-123',
+    });
+
+    expect(runStore).toHaveLength(1);
+    const requestPayload = runStore[0]?.requestPayload as { prompt?: string; contextMessages?: any[] };
+    expect(requestPayload?.contextMessages).toEqual([
+      { role: 'user', content: 'Oi, tudo bem?' },
+      { role: 'assistant', content: 'Olá! Posso ajudar com a proposta?' },
+    ]);
+    expect(requestPayload?.prompt).toContain('Perfil do lead');
+    expect(requestPayload?.prompt).toContain('ticket-123');
+  });
+
+  it('limita timeline a no máximo 50 itens ao montar contexto para sugestão', async () => {
+    const app = await buildTestApp();
+
+    const timeline = Array.from({ length: 60 }, (_, index) => ({
+      id: `entry-${index}`,
+      type: 'message',
+      timestamp: new Date(2024, 0, 1, 12, index).toISOString(),
+      payload: {
+        id: `msg-${index}`,
+        direction: index % 2 === 0 ? 'inbound' : 'outbound',
+        content: `Mensagem ${index}`,
+      },
+    }));
+
+    const response = await request(app)
+      .post('/ai/suggest')
+      .send({
+        conversationId: 'conv-timeline',
+        timeline,
+      });
+
+    expect(response.status).toBe(200);
+
+    expect(runStore).toHaveLength(1);
+    const requestPayload = runStore[0]?.requestPayload as { contextMessages?: any[] };
+    const contextMessages = requestPayload?.contextMessages ?? [];
+    expect(contextMessages).toHaveLength(50);
+
+    const expected = timeline.slice(-50).map((entry) => ({
+      role: entry.payload.direction === 'outbound' ? 'assistant' : 'user',
+      content: entry.payload.content,
+    }));
+
+    expect(contextMessages).toEqual(expected);
+  });
+
   it('upserts AI memory entries', async () => {
     const app = await buildTestApp();
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
