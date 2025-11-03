@@ -444,15 +444,20 @@ app.use('*', (req, res) => {
   });
 });
 
-// Banner de startup (ANTES de server.listen para garantir que sempre apareça)
-logger.warn('🔥🔥🔥 ========================================');
-logger.warn('🔥 LEADENGINE API STARTED');
-logger.warn('🔥 VERSION: 2025-11-02-23-15-AI-AUTO-REPLY');
-logger.warn('🔥 FEATURES: ai-auto-reply, queue-logging');
-logger.warn('🔥🔥🔥 ========================================');
-logger.warn('🤖 AI AUTO-REPLY: ENABLED');
-logger.warn('📥 INBOUND QUEUE: LOGGING ENABLED');
-logger.info(`🔧 Attempting to start server on port ${PORT} in ${NODE_ENV} mode`);
+// ========================================
+// BANNER DE STARTUP COM CONSOLE.LOG DIRETO
+// (Bypass do logger para garantir que apareça no Railway)
+// ========================================
+console.log('\n');
+console.log('🔥🔥🔥 ========================================');
+console.log('🔥 LEADENGINE API STARTED');
+console.log('🔥 VERSION: 2025-11-03-CONSOLE-LOG-DIRECT');
+console.log('🔥 FEATURES: ai-auto-reply, queue-logging');
+console.log('🔥🔥🔥 ========================================');
+console.log('🤖 AI AUTO-REPLY: ENABLED');
+console.log('📥 INBOUND QUEUE: LOGGING ENABLED');
+console.log(`🔧 Attempting to start server on port ${PORT} in ${NODE_ENV} mode`);
+console.log('\n');
 
 // Iniciar servidor
 server.listen(PORT, () => {
