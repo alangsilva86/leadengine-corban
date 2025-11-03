@@ -301,14 +301,53 @@ describe('AI routes', () => {
     const app = await buildTestApp();
 
     const initialMode = await request(app).get('/ai/mode');
-    expect(initialMode.body.data.mode).toBe('COPILOTO');
+    expect(initialMode.body.data.mode).toBe('assist');
 
-    const updateMode = await request(app).post('/ai/mode').send({ mode: 'HUMANO' });
+    const updateMode = await request(app).post('/ai/mode').send({ mode: 'manual' });
     expect(updateMode.status).toBe(200);
-    expect(updateMode.body.data.mode).toBe('HUMANO');
+    expect(updateMode.body.data.mode).toBe('manual');
 
     const afterUpdate = await request(app).get('/ai/mode');
-    expect(afterUpdate.body.data.mode).toBe('HUMANO');
+    expect(afterUpdate.body.data.mode).toBe('manual');
+  });
+
+  it('accepts frontend mode values (assist, auto, manual)', async () => {
+    const app = await buildTestApp();
+
+    const assistMode = await request(app).post('/ai/mode').send({ mode: 'assist' });
+    expect(assistMode.status).toBe(200);
+    expect(assistMode.body.data.mode).toBe('assist');
+
+    const autoMode = await request(app).post('/ai/mode').send({ mode: 'auto' });
+    expect(autoMode.status).toBe(200);
+    expect(autoMode.body.data.mode).toBe('auto');
+
+    const manualMode = await request(app).post('/ai/mode').send({ mode: 'manual' });
+    expect(manualMode.status).toBe(200);
+    expect(manualMode.body.data.mode).toBe('manual');
+  });
+
+  it('accepts backend mode values (COPILOTO, IA_AUTO, HUMANO)', async () => {
+    const app = await buildTestApp();
+
+    const copilotoMode = await request(app).post('/ai/mode').send({ mode: 'COPILOTO' });
+    expect(copilotoMode.status).toBe(200);
+    expect(copilotoMode.body.data.mode).toBe('assist');
+
+    const iaAutoMode = await request(app).post('/ai/mode').send({ mode: 'IA_AUTO' });
+    expect(iaAutoMode.status).toBe(200);
+    expect(iaAutoMode.body.data.mode).toBe('auto');
+
+    const humanoMode = await request(app).post('/ai/mode').send({ mode: 'HUMANO' });
+    expect(humanoMode.status).toBe(200);
+    expect(humanoMode.body.data.mode).toBe('manual');
+  });
+
+  it('rejects invalid mode values', async () => {
+    const app = await buildTestApp();
+
+    const invalidMode = await request(app).post('/ai/mode').send({ mode: 'invalid_mode' });
+    expect(invalidMode.status).toBe(400);
   });
 
   it('returns structured suggestion stub when OpenAI is disabled', async () => {

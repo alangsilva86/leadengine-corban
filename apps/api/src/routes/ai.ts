@@ -63,6 +63,31 @@ const readQueueParam = (req: Request): string | null => {
 
 const DEFAULT_MODE: AiAssistantMode = 'COPILOTO';
 
+// Mapeamento de modos do frontend para o backend
+const normalizeModeFromFrontend = (mode: string): AiAssistantMode | null => {
+  const normalized = mode.trim().toLowerCase();
+  
+  // Aceitar valores do frontend
+  if (normalized === 'assist') return 'COPILOTO';
+  if (normalized === 'auto' || normalized === 'autonomous') return 'IA_AUTO';
+  if (normalized === 'manual') return 'HUMANO';
+  
+  // Aceitar valores do backend (case-insensitive)
+  if (normalized === 'copiloto') return 'COPILOTO';
+  if (normalized === 'ia_auto') return 'IA_AUTO';
+  if (normalized === 'humano') return 'HUMANO';
+  
+  return null;
+};
+
+// Converter modo do backend para formato do frontend
+const modeToFrontend = (mode: AiAssistantMode): string => {
+  if (mode === 'COPILOTO') return 'assist';
+  if (mode === 'IA_AUTO') return 'auto';
+  if (mode === 'HUMANO') return 'manual';
+  return 'assist'; // fallback
+};
+
 type AiConfigRecord = Awaited<ReturnType<typeof getAiConfig>>;
 
 const buildConfigUpsertPayload = (
@@ -121,8 +146,17 @@ const buildConfigUpsertPayload = (
 
 const modeValidators = [
   body('mode')
-    .isIn(['IA_AUTO', 'COPILOTO', 'HUMANO'])
-    .withMessage('Modo inválido: use IA_AUTO, COPILOTO ou HUMANO.'),
+    .isString()
+    .trim()
+    .notEmpty()
+    .withMessage('Modo é obrigatório')
+    .custom((value) => {
+      const normalized = normalizeModeFromFrontend(value);
+      if (!normalized) {
+        throw new Error('Modo inválido: use assist/auto/manual ou IA_AUTO/COPILOTO/HUMANO.');
+      }
+      return true;
+    }),
   body('queueId').optional({ nullable: true }).isString().trim(),
 ];
 
@@ -136,10 +170,11 @@ router.get(
     const queueId = readQueueParam(req);
     const config = await getAiConfig(tenantId, queueId);
 
+    const backendMode = config?.defaultMode ?? DEFAULT_MODE;
     res.json({
       success: true,
       data: {
-        mode: config?.defaultMode ?? DEFAULT_MODE,
+        mode: modeToFrontend(backendMode),
         aiEnabled: isAiEnabled,
       },
     });
@@ -154,7 +189,8 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.user?.tenantId!;
     const queueId = readQueueParam(req);
-    const { mode } = req.body as { mode: AiAssistantMode };
+    const rawMode = req.body.mode as string;
+    const mode = normalizeModeFromFrontend(rawMode) ?? DEFAULT_MODE;
 
     const existing = await getAiConfig(tenantId, queueId);
     const configData = buildConfigUpsertPayload(tenantId, queueId, existing, { defaultMode: mode });
@@ -166,10 +202,11 @@ router.post(
       mode,
     });
 
+    const backendMode = config.defaultMode ?? DEFAULT_MODE;
     res.json({
       success: true,
       data: {
-        mode: config.defaultMode ?? DEFAULT_MODE,
+        mode: modeToFrontend(backendMode),
       },
     });
   })
