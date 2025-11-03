@@ -399,6 +399,14 @@ router.post(
           structuredOutputSchema: defaultSuggestionSchema,
         }));
 
+      const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
+        if (!raw || typeof raw !== 'object') return undefined;
+        const entries = Object.entries(raw)
+          .filter(([, value]) => value !== undefined && value !== null)
+          .map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]);
+        return entries.length > 0 ? (Object.fromEntries(entries) as Record<string, string>) : undefined;
+      };
+
       const normalizeContentType = (role: 'user' | 'assistant' | 'system'): 'input_text' | 'output_text' => {
         if (role === 'assistant') {
           return 'output_text';
@@ -462,10 +470,19 @@ router.post(
         metadata: {
           tenantId,
           conversationId,
-          ...metadata,
+          ...(sanitizeMetadata(metadata) ?? {}),
         },
         tools: mergedTools.length > 0 ? mergedTools : undefined,
       };
+
+      logger.debug('🎛️ AI STREAM :: requisição pronta para a OpenAI', {
+        tenantId,
+        conversationId,
+        model: requestBody.model,
+        stream: true,
+        metadataPreview: requestBody.metadata,
+        toolCount: mergedTools.length,
+      });
 
       requestBody.stream = true;
       requestBody.stream_options = { include_usage: true };

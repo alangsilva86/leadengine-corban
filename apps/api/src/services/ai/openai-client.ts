@@ -28,6 +28,14 @@ export interface SuggestResult {
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 
+const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const entries = Object.entries(raw)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]);
+  return entries.length > 0 ? (Object.fromEntries(entries) as Record<string, string>) : undefined;
+};
+
 export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult> => {
   const {
     tenantId,
@@ -160,9 +168,17 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
       tenantId,
       conversationId,
       mode: resolvedConfig?.mode ?? 'IA_AUTO',
-      ...metadata,
+      ...(sanitizeMetadata(metadata) ?? {}),
     },
   };
+
+  logger.debug('🧪 AI SUGGEST :: requisicao lapidada', {
+    tenantId,
+    conversationId,
+    model: requestBody.model,
+    contextRoles: requestBody.input.map((entry) => entry.role),
+    metadataPreview: requestBody.metadata,
+  });
 
   const startedAt = Date.now();
 

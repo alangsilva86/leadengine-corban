@@ -24,6 +24,14 @@ interface GenerateReplyResult {
   status: 'success' | 'stubbed' | 'error';
 }
 
+const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const entries = Object.entries(raw)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]);
+  return entries.length > 0 ? Object.fromEntries(entries) as Record<string, string> : undefined;
+};
+
 /**
  * Gera uma resposta da IA sem streaming (para uso em automações)
  */
@@ -143,9 +151,17 @@ export async function generateAiReply(
       metadata: {
         tenantId,
         conversationId,
-        ...metadata,
+        ...(sanitizeMetadata(metadata) ?? {}),
       },
     };
+
+    logger.debug('🧩 AI AUTO-REPLY :: pacote preparado para a OpenAI', {
+      tenantId,
+      conversationId,
+      queueId: queueId ?? null,
+      metadataPreview: requestBody.metadata,
+      sampleRoles: requestMessages.map((msg) => msg.role),
+    });
 
     // Fazer requisição à API da OpenAI (sem streaming)
     const response = await fetch(RESPONSES_API_URL, {
