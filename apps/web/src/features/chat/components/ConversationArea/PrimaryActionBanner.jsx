@@ -1,13 +1,9 @@
-import { useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import { BatteryCharging, Clock3, MessageCircleMore, PanelRightOpen, Wand2 } from 'lucide-react';
+import { Clock3, MessageCircleMore, PanelRightOpen } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
-import AiModeMenu from './AiModeMenu.jsx';
-import { DEFAULT_AI_MODE, getAiModeOption, isValidAiMode } from './aiModes.js';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -48,33 +44,21 @@ const PRIMARY_BUTTON_TONE = {
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
 };
 
-const Indicator = ({
-  icon: Icon,
-  tone = 'neutral',
-  label,
-  description,
-  className,
-  iconClassName,
-  onClick,
-}) => {
+const Indicator = ({ icon: Icon, tone = 'neutral', label, description, className }) => {
   if (!label) return null;
-  const resolvedToneClass = tone ? INDICATOR_TONES[tone] ?? INDICATOR_TONES.neutral : INDICATOR_TONES.neutral;
-  const Component = onClick ? 'button' : 'span';
+  const resolvedToneClass = INDICATOR_TONES[tone] ?? INDICATOR_TONES.neutral;
   return (
-    <Component
-      type={onClick ? 'button' : undefined}
+    <span
       aria-label={description ?? label}
-      onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[color:var(--surface-shell)]',
-        !onClick && 'cursor-default focus-visible:ring-0 focus-visible:ring-offset-0',
+        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium',
         resolvedToneClass,
         className,
       )}
     >
-      {Icon ? <Icon className={cn('h-3.5 w-3.5', iconClassName)} aria-hidden /> : null}
-      <span>{label}</span>
-    </Component>
+      {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden /> : null}
+      <span className="truncate">{label}</span>
+    </span>
   );
 };
 
@@ -187,56 +171,6 @@ const AI_MODE_TONES = {
   manual: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
 };
 
-const AiModeBadge = ({ aiMode, disabled, onChange }) => {
-  const [open, setOpen] = useState(false);
-  const normalizedMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
-  const option = getAiModeOption(normalizedMode);
-  const toneClass = AI_MODE_TONES[normalizedMode] ?? AI_MODE_TONES.assist;
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        if (disabled) return;
-        setOpen(next);
-      }}
-    >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={disabled}
-              className={cn(
-                'inline-flex items-center gap-2 rounded-full px-3 text-xs font-semibold shadow-none transition hover:shadow-[var(--shadow-sm)]',
-                toneClass,
-              )}
-            >
-              <Wand2 className="h-3.5 w-3.5" aria-hidden />
-              <span>{option.shortLabel ?? option.label}</span>
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Modo IA: {option.label}</TooltipContent>
-      </Tooltip>
-      <PopoverContent className="w-64 rounded-2xl border-surface-overlay-glass-border bg-[color:var(--surface-overlay-inbox-quiet)] p-2 shadow-[0_20px_45px_-28px_rgba(2,6,23,0.8)]">
-        <AiModeMenu
-          mode={normalizedMode}
-          onSelect={(mode) => {
-            if (mode !== normalizedMode) {
-              onChange?.(mode);
-            }
-            setOpen(false);
-          }}
-          disabled={disabled}
-          onRequestClose={() => setOpen(false)}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-};
 
 const PrimaryActionBanner = ({
   name,
@@ -253,9 +187,6 @@ const PrimaryActionBanner = ({
   commandContext,
   detailsOpen = false,
   onRequestDetails,
-  aiMode,
-  aiModeChangeDisabled,
-  onAiModeChange,
   nextStepValue,
 }) => {
   const handleDetails = (intent = {}) => {
@@ -267,10 +198,10 @@ const PrimaryActionBanner = ({
   return (
     <div
       data-testid="conversation-header-summary"
-      className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border/70 bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_94%,transparent)]/95 p-4 shadow-[0_18px_40px_-26px_rgba(2,6,23,0.75)]"
+      className="rounded-2xl border border-surface-overlay-glass-border/60 bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)]/95 p-4 shadow-[0_16px_32px_-28px_rgba(2,6,23,0.75)]"
     >
-      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="grid gap-3 lg:grid-cols-12 lg:items-center">
+        <div className="flex min-w-0 items-center gap-3 lg:col-span-4">
           <Avatar className="h-12 w-12">
             <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
           </Avatar>
@@ -288,8 +219,7 @@ const PrimaryActionBanner = ({
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <AiModeBadge aiMode={aiMode} disabled={aiModeChangeDisabled} onChange={onAiModeChange} />
+        <div className="flex flex-wrap items-center gap-2 lg:col-span-5 lg:justify-end">
           <Indicator
             icon={statusInfo?.icon}
             tone={statusInfo?.tone}
@@ -314,33 +244,11 @@ const PrimaryActionBanner = ({
             />
           ) : null}
           {hasNextStep ? (
-            <Indicator
-              icon={BatteryCharging}
-              tone="info"
-              label={`Próximo passo: ${nextStepValue}`}
-              onClick={() => handleDetails({ focus: 'nextStep' })}
-            />
+            <Indicator icon={Clock3} tone="info" label={`Follow-up · ${nextStepValue}`} />
           ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 lg:col-span-3 lg:justify-end">
           <JroIndicator jro={jro} />
-        </div>
-      </div>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <PrimaryActionButton
-            action={primaryAction}
-            jroState={jro?.state}
-            onExecute={onPrimaryAction}
-            disabled={!primaryAction}
-          />
-          <div className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-2 py-1">
-            <CommandBar
-              context={commandContext}
-              className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
-            />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <TypingIndicator agents={typingAgents} />
           <Button
             type="button"
             variant="outline"
@@ -356,6 +264,18 @@ const PrimaryActionBanner = ({
             <span className="hidden sm:inline">Detalhes</span>
           </Button>
         </div>
+      </div>
+      <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <PrimaryActionButton
+            action={primaryAction}
+            jroState={jro?.state}
+            onExecute={onPrimaryAction}
+            disabled={!primaryAction}
+          />
+          <CommandBar context={commandContext} className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none" />
+        </div>
+        <TypingIndicator agents={typingAgents} />
       </div>
     </div>
   );

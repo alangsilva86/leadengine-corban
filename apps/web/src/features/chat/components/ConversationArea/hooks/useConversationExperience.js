@@ -39,10 +39,6 @@ export const useConversationExperience = ({
   composerDisabledReason = null,
   aiMode,
   aiConfidence,
-  aiModeChangeDisabled = false,
-  onTakeOver,
-  onGiveBackToAi,
-  onAiModeChange,
 }) => {
   const disabled = Boolean(composerDisabled);
   const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
@@ -223,12 +219,6 @@ export const useConversationExperience = ({
       currentUser,
       slaClock,
       typingAgents: augmentedTypingAgents,
-      aiMode,
-      aiConfidence,
-      aiModeChangeDisabled,
-      onTakeOver,
-      onGiveBackToAi,
-      onAiModeChange,
       composerHeight,
       onCreateNote,
       timeline: conversation?.timeline ?? [],
@@ -259,12 +249,6 @@ export const useConversationExperience = ({
       slaClock,
       ticket,
       augmentedTypingAgents,
-      aiMode,
-      aiConfidence,
-      aiModeChangeDisabled,
-      onTakeOver,
-      onGiveBackToAi,
-      onAiModeChange,
     ],
   );
 
@@ -291,9 +275,6 @@ export const useConversationExperience = ({
       aiState,
       isSending,
       sendError,
-      aiMode,
-      aiModeChangeDisabled,
-      onAiModeChange,
       aiStreaming: {
         status: aiReplyStream.status,
         error: aiReplyStream.error,
