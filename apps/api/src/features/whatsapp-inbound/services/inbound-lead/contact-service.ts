@@ -182,11 +182,13 @@ export const ensureContact = async (
     customFields['lastInboundAt'] = interactionIso;
   }
 
-  const derivedName = pickPreferredName([
-    name,
-    readString(existing?.fullName),
-    'Contato WhatsApp',
-  ]) ?? 'Contato WhatsApp';
+  const derivedName =
+    pickPreferredName(
+      name,
+      readString(existing?.fullName),
+      readString(existing?.displayName),
+      'Contato WhatsApp'
+    ) ?? 'Contato WhatsApp';
 
   const normalizedPhone = phone?.trim() ?? existing?.primaryPhone ?? null;
 
