@@ -422,11 +422,47 @@ export const processStandardInboundEvent = async (
     avatar: resolvedAvatar ?? null,
   });
 
+  const contactName =
+    contactRecord.displayName ??
+    contactRecord.fullName ??
+    leadName ??
+    resolvedName ??
+    null;
+
+  const primaryPhone = contactRecord.primaryPhone ?? normalizedPhone ?? null;
+  const remoteJid =
+    (typeof chatId === 'string' && chatId.trim().length > 0 ? chatId.trim() : null) ??
+    deterministicIdentifiers.contactId ??
+    normalizedPhone ??
+    null;
+
   const ticketMetadata: Record<string, unknown> = {
     source: 'WHATSAPP',
     instanceId,
     campaignIds: campaigns.map((campaign) => campaign.id),
     pipelineStep: 'follow-up',
+  };
+
+  if (contactName) {
+    ticketMetadata.contactName = contactName;
+  }
+  if (primaryPhone) {
+    ticketMetadata.contactPhone = primaryPhone;
+  }
+
+  ticketMetadata.contact = {
+    id: contactRecord.id,
+    name: contactName ?? 'Contato WhatsApp',
+    phone: primaryPhone ?? null,
+    pushName: resolvedName ?? null,
+    remoteJid,
+  };
+
+  ticketMetadata.whatsapp = {
+    pushName: resolvedName ?? null,
+    phone: primaryPhone ?? normalizedPhone ?? null,
+    remoteJid,
+    instanceId,
   };
 
   const ticketSubject =

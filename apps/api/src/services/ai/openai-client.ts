@@ -221,6 +221,14 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     return 'input_text';
   };
 
+  const responseSchema =
+    structuredSchema && typeof structuredSchema === 'object'
+      ? structuredSchema
+      : {
+          type: 'object',
+          additionalProperties: false,
+        };
+
   const requestBody = {
     model: selectedModel,
     input: [
@@ -234,9 +242,13 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
         content: [{ type: 'input_text', text: prompt }],
       },
     ],
-    json_schema: {
-      name: 'crm_suggestion_schema',
-      schema: structuredSchema,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'crm_suggestion_schema',
+        schema: responseSchema,
+        strict: false,
+      },
     },
     metadata: {
       tenantId,
