@@ -9,6 +9,7 @@ import useTicketJro from '../../hooks/useTicketJro.js';
 import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
+import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -287,7 +288,8 @@ const ConversationHeader = ({
     });
   }, [ticket?.id]);
 
-  const name = ticket?.contact?.name ?? ticket?.subject ?? 'Contato sem nome';
+  const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
+  const name = identity.displayName ?? ticket?.subject ?? 'Contato sem nome';
   const company = ticket?.metadata?.company ?? ticket?.contact?.company ?? null;
   const title = company ? `${name} | ${company}` : name;
   const leadIdentifier = ticket?.lead?.id ?? ticket?.id ?? null;
@@ -302,7 +304,7 @@ const ConversationHeader = ({
     return normalized.slice(-8).toUpperCase();
   }, [leadIdentifier]);
 
-  const rawPhone = ticket?.contact?.phone || ticket?.metadata?.contactPhone || null;
+  const rawPhone = identity.rawPhone ?? ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? null;
 
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
@@ -423,9 +425,11 @@ const ConversationHeader = ({
       analytics: ({ id }) => emitInboxTelemetry('chat.command.execute', { ticketId: ticket?.id ?? null, actionId: id }),
       timeline,
       ai: aiAssistant,
+      contactIdentity: identity,
     }),
     [
       aiAssistant,
+      identity,
       handleCall,
       handleSendSms,
       isRegisteringResult,
@@ -520,6 +524,7 @@ const ConversationHeader = ({
       onAiModeChange={onAiModeChange}
       onTakeOver={onTakeOver}
       onGiveBackToAi={onGiveBackToAi}
+      contactPhone={identity.displayPhone ?? identity.remoteJid ?? null}
     />
   );
 

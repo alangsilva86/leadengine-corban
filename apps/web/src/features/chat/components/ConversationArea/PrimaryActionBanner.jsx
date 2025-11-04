@@ -168,13 +168,6 @@ const PrimaryActionButton = ({ action, jroState, onExecute, disabled }) => {
   );
 };
 
-const AI_MODE_TONES = {
-  assist: 'border border-[color:var(--accent-inbox-primary)]/40 bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_18%,transparent)] text-[color:var(--accent-inbox-primary)]',
-  auto: 'border border-[color:var(--accent-inbox-primary)]/40 bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_22%,transparent)] text-[color:var(--accent-inbox-primary)]',
-  manual: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-};
-
-
 const PrimaryActionBanner = ({
   name,
   title,
@@ -198,6 +191,7 @@ const PrimaryActionBanner = ({
   onAiModeChange,
   onTakeOver,
   onGiveBackToAi,
+  contactPhone,
 }) => {
   const handleDetails = (intent = {}) => {
     onRequestDetails?.(intent);
@@ -242,6 +236,11 @@ const PrimaryActionBanner = ({
             <p className="mt-1 truncate text-xs text-foreground-muted">
               {stageKey ? `Etapa atual · ${stageKey}` : 'Sem etapa definida'}
             </p>
+            {contactPhone ? (
+              <p className="mt-1 text-xs text-foreground-muted" data-testid="ticket-contact-phone">
+                {contactPhone}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:col-span-5 lg:justify-end">

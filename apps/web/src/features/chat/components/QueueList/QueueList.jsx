@@ -1,8 +1,9 @@
 import { Fragment, useMemo } from 'react';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
-import { cn, formatPhoneNumber } from '@/lib/utils.js';
+import { cn } from '@/lib/utils.js';
 import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
+import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 
 const resolveWindowStatus = (minutes) => {
   if (minutes === null || minutes === undefined) {
@@ -51,17 +52,7 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
   const lastInbound = formatTime(ticket?.timeline?.lastInboundAt);
   const lastOutbound = formatTime(ticket?.timeline?.lastOutboundAt);
   const agentTyping = ticket?.timeline?.typing;
-  const contact = ticket?.contact ?? {};
-  const displayName = contact.name || ticket.subject || 'Contato sem nome';
-  const phoneFromMetadata =
-    ticket?.metadata?.contactPhone ||
-    ticket?.metadata?.whatsapp?.phone ||
-    ticket?.metadata?.remoteJid;
-  const displayPhone = formatPhoneNumber(contact.phone || phoneFromMetadata);
-  const remoteJid =
-    ticket?.metadata?.whatsapp?.remoteJid ||
-    ticket?.metadata?.remoteJid ||
-    null;
+  const { displayName, displayPhone, remoteJid } = getTicketIdentity(ticket);
 
   const unreadInbound = ticket.timeline?.unreadInboundCount ?? 0;
   const lastActivity = lastInbound ?? lastOutbound ?? '—';
@@ -99,9 +90,9 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
         </div>
         <div className="flex flex-col items-end gap-1 text-xs text-[color:var(--color-inbox-foreground-muted)]">
           <span>{lastActivity}</span>
-          <span className="hidden text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:inline">
-            {displayPhone}
-          </span>
+            <span className="hidden text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:inline">
+              {displayPhone ?? remoteJid ?? 'Sem telefone'}
+            </span>
         </div>
       </div>
       <div className="mt-1 hidden items-center gap-2 text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:flex">

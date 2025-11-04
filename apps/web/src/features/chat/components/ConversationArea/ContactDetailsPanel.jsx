@@ -10,6 +10,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatDateTime } from '../../utils/datetime.js';
 import { formatCurrencyField, formatTermField } from '../../utils/deal-fields.js';
+import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 
 const CHANNEL_PRESENTATION = {
   WHATSAPP: {
@@ -402,9 +403,11 @@ const ContactDetailsPanel = ({
   stageKey,
   onDealFieldSave,
 }) => {
+  const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const document = ticket?.contact?.document ?? null;
   const email = ticket?.contact?.email ?? ticket?.metadata?.contactEmail ?? null;
-  const rawPhone = ticket?.contact?.phone || ticket?.metadata?.contactPhone || null;
+  const rawPhone = identity.rawPhone ?? ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? null;
+  const displayName = ticket?.contact?.name ?? identity.displayName ?? '';
 
   const shouldShowDealPanel = DEAL_STAGE_KEYS.has(stageKey);
 
@@ -438,7 +441,7 @@ const ContactDetailsPanel = ({
         <h4 className="text-sm font-semibold text-foreground">Contato</h4>
         <InlineField
           label="Nome"
-          value={ticket?.contact?.name ?? ''}
+          value={displayName}
           placeholder="Nome completo"
           onSave={onContactFieldSave ? (value) => onContactFieldSave('name', value) : undefined}
         />
