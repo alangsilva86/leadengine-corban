@@ -21,6 +21,18 @@ export class AiServiceError extends Error {
   }
 }
 
+type SuggestOutputFormat =
+  | {
+      type: 'json_schema';
+      name: string;
+      schema: Prisma.JsonValue;
+      strict?: boolean;
+    }
+  | {
+      type: 'text';
+      name: string;
+    };
+
 export interface SuggestInput {
   tenantId: string;
   conversationId: string;
@@ -31,6 +43,7 @@ export interface SuggestInput {
   contextMessages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   structuredSchema: Prisma.JsonValue;
   metadata?: Record<string, unknown>;
+  outputFormat?: SuggestOutputFormat;
 }
 
 export interface SuggestResult {
@@ -100,6 +113,7 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     contextMessages = [],
     structuredSchema,
     metadata = {},
+    outputFormat,
   } = input;
 
   // Resolve per-tenant AI config with resilient fallback (default to configured mode)
@@ -261,6 +275,29 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
           additionalProperties: false,
         };
 
+  const appliedFormat: SuggestOutputFormat = (() => {
+    if (outputFormat?.type === 'text') {
+      const name = outputFormat.name && outputFormat.name.trim() ? outputFormat.name.trim() : 'plain';
+      return { type: 'text', name };
+    }
+    if (outputFormat?.type === 'json_schema') {
+      const name = outputFormat.name && outputFormat.name.trim() ? outputFormat.name.trim() : 'AiSuggestion';
+      const schema = outputFormat.schema ?? responseSchema;
+      return {
+        type: 'json_schema',
+        name,
+        schema,
+        strict: outputFormat.strict ?? true,
+      };
+    }
+    return {
+      type: 'json_schema',
+      name: 'AiSuggestion',
+      schema: responseSchema,
+      strict: true,
+    };
+  })();
+
   const requestBody = {
     model: selectedModel,
     input: [
@@ -275,14 +312,18 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
       },
     ],
     text: {
-      format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'crm_suggestion_schema',
-          schema: responseSchema,
-          strict: true,
-        },
-      },
+      format:
+        appliedFormat.type === 'json_schema'
+          ? {
+              type: 'json_schema',
+              name: appliedFormat.name,
+              schema: appliedFormat.schema,
+              strict: appliedFormat.strict ?? true,
+            }
+          : {
+              type: 'text',
+              name: appliedFormat.name,
+            },
     },
     metadata: {
       tenantId,
@@ -389,14 +430,19 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
         ? json.output_text
         : typeof firstContentEntry?.text === 'string'
           ? firstContentEntry.text
-          : '{}';
+          : '';
+
     let parsedPayload: Prisma.JsonValue = {};
 
-    try {
-      parsedPayload = JSON.parse(outputText);
-    } catch (error) {
-      logger.warn('Failed to parse structured output, returning raw text', { error });
-      parsedPayload = { raw: outputText };
+    if (appliedFormat.type === 'json_schema') {
+      try {
+        parsedPayload = JSON.parse(outputText || '{}');
+      } catch (error) {
+        logger.warn('Failed to parse structured output, returning raw text', { error });
+        parsedPayload = { raw: outputText };
+      }
+    } else {
+      parsedPayload = outputText;
     }
 
     await recordAiRun({

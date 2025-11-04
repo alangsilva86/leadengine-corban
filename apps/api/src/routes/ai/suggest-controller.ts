@@ -10,6 +10,7 @@ import { isAiEnabled } from '../../config/ai';
 import { ensureAiConfig, defaultSuggestionSchema } from './config-controller';
 import { readQueueParam, ensureTenantId } from './utils';
 import type { Request, Response } from 'express';
+import type { Prisma } from '@prisma/client';
 
 const suggestValidators = [
   body('conversationId').isString().notEmpty(),
@@ -52,6 +53,38 @@ export const suggestMiddlewares = [
 
     const prompt = promptParts.join('\n\n');
 
+    const textFormatInput =
+      typeof req.body === 'object' && req.body !== null && 'text' in req.body && typeof (req.body as any).text === 'object'
+        ? ((req.body as any).text as Record<string, unknown>)
+        : null;
+    const rawFormatDetails = textFormatInput && typeof textFormatInput.format === 'object' && textFormatInput.format !== null
+      ? (textFormatInput.format as Record<string, unknown>)
+      : null;
+    const rawFormatName = rawFormatDetails && typeof rawFormatDetails.name === 'string'
+      ? rawFormatDetails.name.trim()
+      : null;
+    const normalizedFormatName = rawFormatName ? rawFormatName.toLowerCase() : null;
+
+    const schemaCandidate =
+      (rawFormatDetails && 'schema' in rawFormatDetails
+        ? (rawFormatDetails.schema as Prisma.JsonValue)
+        : null) ??
+      (config.structuredOutputSchema ?? defaultSuggestionSchema);
+
+    const strictFlag =
+      rawFormatDetails && typeof rawFormatDetails.strict === 'boolean'
+        ? Boolean(rawFormatDetails.strict)
+        : true;
+
+    const outputFormat = normalizedFormatName === 'plain' || rawFormatDetails?.type === 'text'
+      ? ({ type: 'text', name: rawFormatName ?? 'plain' } as const)
+      : ({
+          type: 'json_schema',
+          name: rawFormatName ?? 'AiSuggestion',
+          schema: schemaCandidate,
+          strict: strictFlag,
+        } as const);
+
     const aiResult = await suggestWithAi({
       tenantId,
       conversationId,
@@ -68,6 +101,7 @@ export const suggestMiddlewares = [
           content: message.content ?? '',
         })),
       structuredSchema: config.structuredOutputSchema ?? defaultSuggestionSchema,
+      outputFormat,
       metadata: {
         tenantId,
         conversationId,

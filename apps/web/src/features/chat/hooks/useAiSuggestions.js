@@ -89,6 +89,13 @@ export const useAiSuggestions = ({ ticketId = null, tenantId = null, queueId = n
         ...(payloadQueueId ? { queueId: payloadQueueId } : queueId ? { queueId } : {}),
       };
 
+      const formatName = 'AiSuggestion';
+      payload.text = {
+        format: {
+          name: formatName,
+        },
+      };
+
       const response = await apiPost('/api/ai/suggest', payload, { rateLimitKey: 'ai-suggest' });
       return extractAiSuggestion(response ?? {});
     },

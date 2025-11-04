@@ -1002,6 +1002,36 @@ router.post(
     ].filter(Boolean);
 
     const prompt = promptParts.join('\n\n');
+    const textFormatInput = isRecord((req.body as Record<string, unknown>).text)
+      ? ((req.body as Record<string, unknown>).text as Record<string, unknown>)
+      : null;
+    const rawFormatDetails = textFormatInput && isRecord(textFormatInput.format)
+      ? (textFormatInput.format as Record<string, unknown>)
+      : null;
+    const formatNameCandidate = rawFormatDetails && isNonEmptyString(rawFormatDetails.name)
+      ? (rawFormatDetails.name as string).trim()
+      : null;
+    const normalizedFormatName = formatNameCandidate ? formatNameCandidate.toLowerCase() : null;
+
+    const schemaCandidate =
+      (rawFormatDetails && 'schema' in rawFormatDetails
+        ? (rawFormatDetails.schema as Prisma.JsonValue)
+        : null) ??
+      (config.structuredOutputSchema ?? defaultSuggestionSchema);
+
+    const strictFlag =
+      rawFormatDetails && typeof rawFormatDetails.strict === 'boolean'
+        ? Boolean(rawFormatDetails.strict)
+        : true;
+
+    const outputFormat = normalizedFormatName === 'plain' || rawFormatDetails?.type === 'text'
+      ? ({ type: 'text', name: formatNameCandidate ?? 'plain' } as const)
+      : ({
+          type: 'json_schema',
+          name: formatNameCandidate ?? 'AiSuggestion',
+          schema: schemaCandidate,
+          strict: strictFlag,
+        } as const);
 
     try {
       const aiResult = await suggestWithAi({
@@ -1013,6 +1043,7 @@ router.post(
         prompt,
         contextMessages: messagesForPrompt,
         structuredSchema: config.structuredOutputSchema ?? defaultSuggestionSchema,
+        outputFormat,
         metadata: {
           tenantId,
           conversationId,

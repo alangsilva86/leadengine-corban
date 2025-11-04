@@ -136,5 +136,6 @@ describe('useAiSuggestions', () => {
     expect(url).toBe('/api/ai/suggest');
     expect(payload.timeline).toEqual(sanitizeAiTimeline(timeline));
     expect(payload.ticket.id).toBe('ticket-1');
+    expect(payload?.text?.format?.name).toBe('AiSuggestion');
   });
 });
