@@ -501,6 +501,7 @@ const ConversationHeader = ({
       name={name}
       title={title}
       shortId={shortId}
+      ticket={ticket}
       statusInfo={statusInfo}
       stageKey={stageKey}
       stageInfo={stageInfo}
@@ -513,6 +514,12 @@ const ConversationHeader = ({
       detailsOpen={detailsOpen}
       onRequestDetails={onRequestDetails}
       nextStepValue={nextStepValue}
+      aiMode={aiMode}
+      aiConfidence={aiConfidence}
+      aiModeChangeDisabled={aiModeChangeDisabled}
+      onAiModeChange={onAiModeChange}
+      onTakeOver={onTakeOver}
+      onGiveBackToAi={onGiveBackToAi}
     />
   );
 

@@ -39,6 +39,10 @@ export const useConversationExperience = ({
   composerDisabledReason = null,
   aiMode,
   aiConfidence,
+  aiModeChangeDisabled = false,
+  onAiModeChange,
+  onTakeOver,
+  onGiveBackToAi,
 }) => {
   const disabled = Boolean(composerDisabled);
   const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
@@ -223,15 +227,39 @@ export const useConversationExperience = ({
       onCreateNote,
       timeline: conversation?.timeline ?? [],
       aiAssistant,
+      aiMode: (() => {
+        if (typeof aiMode !== 'string') return 'assist';
+        const normalized = aiMode.trim().toLowerCase();
+        if (normalized === 'autonomous') return 'auto';
+        if (normalized === 'assist' || normalized === 'auto' || normalized === 'manual') {
+          return normalized;
+        }
+        return 'assist';
+      })(),
+      aiConfidence:
+        typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)
+          ? aiConfidence
+          : aiState.confidence ?? null,
+      aiModeChangeDisabled: Boolean(aiModeChangeDisabled),
+      onAiModeChange,
+      onTakeOver,
+      onGiveBackToAi,
     }),
     [
       aiAssistant,
+      aiConfidence,
       composerHeight,
       conversation,
       currentUser,
       handleAttachFileFromHeader,
       handleFocusComposer,
+      aiMode,
+      aiModeChangeDisabled,
+      onAiModeChange,
+      onTakeOver,
+      onGiveBackToAi,
       isRegisteringResult,
+      aiState.confidence,
       nextStepValue,
       onAssign,
       onCreateNote,
@@ -275,6 +303,16 @@ export const useConversationExperience = ({
       aiState,
       isSending,
       sendError,
+      aiMode:
+        typeof aiMode === 'string' && aiMode.trim()
+          ? (aiMode.trim().toLowerCase() === 'autonomous'
+              ? 'auto'
+              : ['assist', 'auto', 'manual'].includes(aiMode.trim().toLowerCase())
+              ? aiMode.trim().toLowerCase()
+              : 'assist')
+          : 'assist',
+      aiModeChangeDisabled: Boolean(aiModeChangeDisabled),
+      onAiModeChange,
       aiStreaming: {
         status: aiReplyStream.status,
         error: aiReplyStream.error,

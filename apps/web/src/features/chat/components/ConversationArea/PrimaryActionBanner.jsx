@@ -1,9 +1,12 @@
+import { useCallback, useMemo, useRef } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import { Clock3, MessageCircleMore, PanelRightOpen } from 'lucide-react';
+import { Clock3, MessageCircleMore, PanelRightOpen, Sparkles } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
+import { AiModeControlMenu } from './AiModeMenu.jsx';
+import { ACTIONS_BY_ID } from '@/features/chat/actions/inventory';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -188,12 +191,37 @@ const PrimaryActionBanner = ({
   detailsOpen = false,
   onRequestDetails,
   nextStepValue,
+  ticket,
+  aiMode = 'assist',
+  aiConfidence = null,
+  aiModeChangeDisabled = false,
+  onAiModeChange,
+  onTakeOver,
+  onGiveBackToAi,
 }) => {
   const handleDetails = (intent = {}) => {
     onRequestDetails?.(intent);
   };
 
   const hasNextStep = typeof nextStepValue === 'string' && nextStepValue.trim().length > 0;
+  const askAiAction = ACTIONS_BY_ID['ask-ai-help'];
+  const aiHelpButtonRef = useRef(null);
+
+  const aiHelpState = useMemo(() => askAiAction?.getState?.(commandContext) ?? {}, [askAiAction, commandContext]);
+  const aiHelpLoading = Boolean(aiHelpState.loading);
+  const aiHelpDisabled = useMemo(() => {
+    if (!askAiAction) return true;
+    return !(askAiAction.canExecute?.(commandContext) ?? true);
+  }, [askAiAction, commandContext]);
+
+  const handleAskAiHelp = useCallback(() => {
+    if (!askAiAction) {
+      return;
+    }
+    const contextWithFocus = { ...commandContext, returnFocus: aiHelpButtonRef.current ?? null };
+    askAiAction.run(contextWithFocus);
+    askAiAction.analytics?.(contextWithFocus);
+  }, [askAiAction, commandContext]);
 
   return (
     <div data-testid="conversation-header-summary" className="py-1">
@@ -270,6 +298,41 @@ const PrimaryActionBanner = ({
             onExecute={onPrimaryAction}
             disabled={!primaryAction}
           />
+          <AiModeControlMenu
+            ticket={ticket}
+            aiMode={aiMode}
+            aiConfidence={aiConfidence}
+            onAiModeChange={onAiModeChange}
+            onTakeOver={onTakeOver}
+            onGiveBackToAi={onGiveBackToAi}
+            aiModeChangeDisabled={aiModeChangeDisabled}
+            className="h-9"
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                ref={aiHelpButtonRef}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="inline-flex items-center gap-2 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-xs font-semibold text-foreground transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+                disabled={aiHelpDisabled || aiHelpLoading}
+                onClick={handleAskAiHelp}
+                aria-disabled={aiHelpDisabled || aiHelpLoading}
+                aria-label="Solicitar sugestão da IA"
+              >
+                {aiHelpLoading ? (
+                  <span className="size-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                )}
+                <span className="hidden sm:inline">Sugestão IA</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>
+              Sugestão da IA {askAiAction?.shortcutDisplay ? `(${askAiAction.shortcutDisplay})` : ''}
+            </TooltipContent>
+          </Tooltip>
           <CommandBar context={commandContext} className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none" />
         </div>
         <TypingIndicator agents={typingAgents} />
