@@ -195,14 +195,30 @@ const LayoutShell = ({
     <div className="flex h-full min-h-0 w-full overflow-hidden bg-background text-foreground">
       <Sidebar collapsible="icon" variant="inset">
         <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
-          <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-              <Ticket className="h-5 w-5" />
+          <div className="flex w-full items-center gap-3">
+            <div className="flex flex-1 items-center gap-3 group-data-[collapsible=icon]:justify-center">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                <Ticket className="h-5 w-5" />
+              </div>
+              <div className="space-y-1 group-data-[collapsible=icon]:hidden">
+                <p className="text-sm font-semibold leading-none">Lead Engine</p>
+                <p className="text-xs text-muted-foreground">Máquina de Vendas</p>
+              </div>
             </div>
-            <div className="space-y-1 group-data-[collapsible=icon]:hidden">
-              <p className="text-sm font-semibold leading-none">Lead Engine</p>
-              <p className="text-xs text-muted-foreground">Máquina de Vendas</p>
-            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground group-data-[collapsible=icon]:flex"
+              onClick={toggleSidebar}
+              aria-label={isSidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
+            >
+              {isSidebarCollapsed ? (
+                <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+              )}
+            </Button>
           </div>
         </SidebarHeader>
         <SidebarContent className="px-2 py-4">
@@ -399,7 +415,7 @@ const Layout = ({
   const shouldDisableContentInnerWrapper = isInboxPage;
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={false}>
       <LayoutShell
         navigation={navigation}
         currentPage={currentPage}

@@ -241,42 +241,19 @@ const InboxAppShell = ({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-surface-shell text-foreground">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="sticky top-0 z-40 flex flex-col border-b border-[color:var(--border-shell)] bg-surface-toolbar/95 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-toolbar">
-          <header className="flex flex-col gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5">
-            <div className="flex items-center gap-3">
+        <div className="flex min-h-0 flex-1">
+          <div className="relative mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6">
+            <div className="pointer-events-none absolute left-4 top-4 z-20 lg:hidden">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-full text-[color:var(--text-shell-muted)] hover:text-foreground lg:hidden"
+                className="pointer-events-auto h-10 w-10 rounded-full bg-surface-shell/90 text-[color:var(--text-shell-muted)] shadow-[var(--shadow-md)] hover:text-foreground"
                 onClick={() => setMobileListOpen(true)}
                 aria-label="Abrir lista de tickets"
               >
                 <PanelLeftOpen className="h-5 w-5" />
               </Button>
-              <div className="min-w-0">
-                <h1 className="truncate text-sm font-semibold text-foreground sm:text-base">{title}</h1>
-                {!contextDrawerOpen ? (
-                  <p className="mt-0.5 hidden text-xs text-[color:var(--text-shell-muted)] sm:block">
-                    Foco total nas conversas com clientes.
-                  </p>
-                ) : null}
-              </div>
             </div>
-            <div className="flex flex-1 items-center justify-end">
-              <DesktopToolbar
-                onToggleListVisibility={handleToggleListVisibility}
-                onToggleContext={handleToggleContext}
-                contextOpen={contextDrawerOpen}
-                desktopListVisible={desktopListVisible}
-                headerListButtonLabel={headerListButtonLabel}
-                showContextToggle={isContextAvailable}
-                showListToggle={false}
-              />
-            </div>
-          </header>
-        </div>
-        <div className="flex min-h-0 flex-1">
-          <div className="relative mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6">
             {shouldRenderSplitLayout ? (
               <SplitLayout
                 className="h-full min-h-0 w-full gap-4 sm:gap-6"
