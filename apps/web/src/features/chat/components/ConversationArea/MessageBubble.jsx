@@ -68,10 +68,10 @@ export const MessageBubble = ({
   const phoneLabel = metadata.phoneE164 ?? remoteJid ?? message.chatId ?? 'desconhecido';
   const originChipTone = outbound
     ? 'border border-accent bg-accent text-accent-foreground'
-    : 'border-success-soft-border bg-success-soft text-success-strong';
+    : 'border border-success-soft-border bg-success-strong text-white';
   const directionChipTone = outbound
     ? 'bg-accent text-accent-foreground'
-    : 'bg-success-soft text-success-strong';
+    : 'bg-success-strong text-white';
   const directionLabel = outbound ? 'OUT' : 'IN';
   const timestamp = message.createdAt ? new Date(message.createdAt) : null;
   const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
