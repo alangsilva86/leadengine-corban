@@ -74,7 +74,13 @@ export const useConversationExperience = ({
   const composerApiRef = useRef(null);
   const aiReplyStream = useAiReplyStream();
 
-  const { timelineItems, hasMore, isLoadingMore, handleLoadMore, lastEntryKey } = useTicketMessages(messagesQuery);
+  const {
+    timelineItems: messageTimelineItems,
+    hasMore,
+    isLoadingMore,
+    handleLoadMore,
+    lastEntryKey: messageLastEntryKey,
+  } = useTicketMessages(messagesQuery);
   const { composerHeight } = useComposerMetrics(composerRef, ticketId);
   const { typingAgents, broadcastTyping } = useWhatsAppPresence({ typingIndicator, ticketId });
   const slaClock = useSLAClock(ticket);
@@ -347,10 +353,26 @@ export const useConversationExperience = ({
     ai.reset();
   }, [ai.reset, queueId, tenantId, ticketId]);
 
+  const combinedTimelineItems = useMemo(() => {
+    const conversationTimeline = Array.isArray(conversation?.timeline) ? conversation.timeline : null;
+    if (conversationTimeline && conversationTimeline.length > 0) {
+      return conversationTimeline;
+    }
+    return messageTimelineItems;
+  }, [conversation?.timeline, messageTimelineItems]);
+
+  const combinedLastEntryKey = useMemo(() => {
+    if (combinedTimelineItems.length > 0) {
+      const lastEntry = combinedTimelineItems[combinedTimelineItems.length - 1];
+      return lastEntry?.id ?? combinedTimelineItems.length;
+    }
+    return messageLastEntryKey;
+  }, [combinedTimelineItems, messageLastEntryKey]);
+
   useConversationScroll({
     scrollRef,
     ticketId,
-    lastEntryKey,
+    lastEntryKey: combinedLastEntryKey,
     typingAgentsCount: typingAgents.length,
     scrollToBottom,
     onLoadMore: handleLoadMore,
@@ -580,7 +602,7 @@ export const useConversationExperience = ({
       typingAgents: augmentedTypingAgents,
       composerHeight,
       onCreateNote,
-      timeline: conversation?.timeline ?? [],
+      timeline: combinedTimelineItems,
       aiAssistant,
       aiMode: normalizedAiMode,
       aiConfidence:
@@ -630,7 +652,7 @@ export const useConversationExperience = ({
 
   return {
     timeline: {
-      items: timelineItems,
+      items: combinedTimelineItems,
       hasMore,
       isLoadingMore,
       onLoadMore: handleLoadMore,

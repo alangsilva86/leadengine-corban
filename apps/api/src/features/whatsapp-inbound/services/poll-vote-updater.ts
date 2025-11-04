@@ -139,6 +139,122 @@ type CandidateResolutionMiss = {
   candidates: string[];
 };
 
+const resolveOptionLabel = (
+  option: PollChoiceSelectedOptionPayload | null | undefined,
+  fallback: PollChoiceSelectedOptionPayload | null | undefined,
+  indexFallback: number | null,
+  idFallback: string | null
+): string | null => {
+  const pickLabel = (source: PollChoiceSelectedOptionPayload | null | undefined): string | null => {
+    if (!source || typeof source !== 'object') {
+      return null;
+    }
+
+    const candidates = [
+      (source as Record<string, unknown>).title,
+      (source as Record<string, unknown>).optionName,
+      (source as Record<string, unknown>).name,
+      (source as Record<string, unknown>).text,
+      (source as Record<string, unknown>).description,
+      (source as Record<string, unknown>).label,
+      (source as Record<string, unknown>).displayName,
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = normalizeTextValue(candidate);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return null;
+  };
+
+  const normalizedLabel = pickLabel(option) ?? pickLabel(fallback);
+  if (normalizedLabel) {
+    return normalizedLabel;
+  }
+
+  if (typeof (fallback as { index?: unknown })?.index === 'number') {
+    return `Opção ${((fallback as { index: number }).index ?? 0) + 1}`;
+  }
+
+  if (typeof (fallback as { position?: unknown })?.position === 'number') {
+    return `Opção ${((fallback as { position: number }).position ?? 0) + 1}`;
+  }
+
+  if (indexFallback !== null) {
+    return `Opção ${indexFallback + 1}`;
+  }
+
+  return idFallback;
+};
+
+const normalizeSelectedOptions = (
+  options: PollChoiceSelectedOptionPayload[] | null | undefined,
+  fallbackOptions: PollChoiceSelectedOptionPayload[]
+): PollChoiceSelectedOptionPayload[] => {
+  if (!Array.isArray(options) || options.length === 0) {
+    return [];
+  }
+
+  const fallbackById = new Map<string, PollChoiceSelectedOptionPayload>();
+  fallbackOptions.forEach((entry) => {
+    const normalizedId = sanitizeOptionText(entry.id) ?? normalizeTextValue(entry.id) ?? null;
+    if (normalizedId) {
+      fallbackById.set(normalizedId, entry);
+    }
+  });
+
+  return options
+    .map((option, index) => {
+      const normalizedId = sanitizeOptionText(option.id) ?? normalizeTextValue(option.id) ?? null;
+      const fallback = normalizedId ? fallbackById.get(normalizedId) ?? null : null;
+      const label = resolveOptionLabel(option, fallback, index, normalizedId);
+
+      return {
+        ...option,
+        id: normalizedId ?? option.id ?? `__missing:${index}`,
+        title: label,
+      };
+    })
+    .filter((option) => normalizeTextValue(option.id));
+};
+
+const buildOptionsFromIds = (
+  optionIds: string[] | null | undefined,
+  fallbackOptions: PollChoiceSelectedOptionPayload[]
+): PollChoiceSelectedOptionPayload[] => {
+  if (!Array.isArray(optionIds) || optionIds.length === 0) {
+    return [];
+  }
+
+  const catalogById = new Map<string, PollChoiceSelectedOptionPayload>();
+  fallbackOptions.forEach((entry) => {
+    const normalizedId = sanitizeOptionText(entry.id) ?? normalizeTextValue(entry.id) ?? null;
+    if (normalizedId) {
+      catalogById.set(normalizedId, entry);
+    }
+  });
+
+  return optionIds
+    .map((optionId, index) => {
+      const normalizedId = sanitizeOptionText(optionId) ?? normalizeTextValue(optionId) ?? null;
+      if (!normalizedId) {
+        return null;
+      }
+
+      const fallback = catalogById.get(normalizedId) ?? null;
+      const label = resolveOptionLabel(null, fallback, index, normalizedId);
+
+      return {
+        id: normalizedId,
+        title: label,
+      } satisfies PollChoiceSelectedOptionPayload;
+    })
+    .filter((entry): entry is PollChoiceSelectedOptionPayload => Boolean(entry));
+};
+
 const resolveCandidateMessage = async (
   params: PollVoteUpdateParams,
   tenantId: string,
@@ -252,8 +368,31 @@ const preparePollVoteRewrite = (
   tenantId: string,
   resolution: CandidateResolution
 ): RewritePreparation => {
-  const selectedSummaries = buildSelectedOptionSummaries(params.selectedOptions);
-  const contentCandidate = buildPollVoteMessageContent(params.selectedOptions);
+  const fallbackOptions = Array.isArray(params.options) ? params.options : [];
+  const normalizedSelectedOptions = normalizeSelectedOptions(params.selectedOptions, fallbackOptions);
+
+  const resolvedSelectedOptions =
+    normalizedSelectedOptions.length > 0
+      ? normalizedSelectedOptions
+      : buildOptionsFromIds(params.vote?.optionIds ?? params.selectedOptions.map((entry) => entry.id), fallbackOptions);
+
+  const hydratedSelectedOptions =
+    resolvedSelectedOptions.length > 0
+      ? resolvedSelectedOptions
+      : buildOptionsFromIds(
+          Array.isArray(params.vote?.selectedOptions)
+            ? params.vote?.selectedOptions?.map((entry) => (entry ? (entry as { id?: string }).id ?? null : null)).filter(
+                Boolean
+              )
+            : [],
+          fallbackOptions
+        );
+
+  const finalSelectedOptions =
+    hydratedSelectedOptions.length > 0 ? hydratedSelectedOptions : normalizedSelectedOptions;
+
+  const selectedSummaries = buildSelectedOptionSummaries(finalSelectedOptions);
+  const contentCandidate = buildPollVoteMessageContent(finalSelectedOptions);
 
   if (!contentCandidate) {
     logger.debug('rewrite.poll_vote.skip_empty_content', {
@@ -281,6 +420,24 @@ const preparePollVoteRewrite = (
   const metadataRecord = asJsonRecord((resolution.message as { metadata?: unknown })?.metadata);
   const voteTimestampIso = normalizeTimestamp(params.timestamp) ?? new Date().toISOString();
   const rewriteAppliedAt = new Date().toISOString();
+  const votePayload = (() => {
+    const baseVote = params.vote ? { ...params.vote } : {};
+    const optionIds = Array.isArray(baseVote.optionIds) && baseVote.optionIds.length > 0
+      ? baseVote.optionIds
+      : selectedSummaries.map((entry) => entry.id).filter(Boolean);
+
+    const optionDetails = Array.isArray(baseVote.selectedOptions) && baseVote.selectedOptions.length > 0
+      ? normalizeSelectedOptions(baseVote.selectedOptions, fallbackOptions)
+      : finalSelectedOptions;
+
+    return {
+      ...baseVote,
+      optionIds,
+      selectedOptions: optionDetails,
+      timestamp: normalizeTimestamp((baseVote as { timestamp?: string }).timestamp) ?? voteTimestampIso,
+    } as Required<NonNullable<PollVoteUpdateParams['vote']>>;
+  })();
+
   const pollVoteMetadata = {
     pollId: params.pollId,
     voterJid: params.voterJid,
@@ -289,7 +446,7 @@ const preparePollVoteRewrite = (
     rewriteAppliedAt,
     aggregates: params.aggregates ?? undefined,
     options: params.options ?? undefined,
-    vote: params.vote ?? undefined,
+    vote: votePayload,
   };
 
   const existingPollVote = metadataRecord.pollVote as Record<string, unknown> | undefined;
@@ -308,7 +465,7 @@ const preparePollVoteRewrite = (
     id: existingPollMetadata?.id ?? params.pollId,
     pollId: params.pollId,
     ...(pollMetadataQuestion !== undefined ? { question: pollMetadataQuestion } : {}),
-    selectedOptionIds: selectedSummaries.map((entry) => entry.id),
+    selectedOptionIds: votePayload.optionIds,
     selectedOptions: selectedSummaries,
     aggregates: params.aggregates ?? existingPollMetadata?.aggregates ?? undefined,
     updatedAt: pollVoteMetadata.updatedAt,
@@ -328,13 +485,7 @@ const preparePollVoteRewrite = (
     voterJid: params.voterJid,
     ...(pollChoiceQuestion !== undefined ? { question: pollChoiceQuestion } : {}),
     options: params.options ?? undefined,
-    vote:
-      params.vote ??
-      ({
-        optionIds: params.selectedOptions.map((entry) => entry.id),
-        selectedOptions: params.selectedOptions,
-        timestamp: normalizeTimestamp(params.timestamp),
-      } as Record<string, unknown>),
+    vote: votePayload,
   };
 
   const passthroughMetadata = asJsonRecord(metadataRecord.passthrough);
