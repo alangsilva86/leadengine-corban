@@ -13,6 +13,8 @@ export interface SuggestInput {
   tenantId: string;
   conversationId: string;
   configId?: string | null;
+  queueId?: string | null;
+  config?: AiConfigRecord | null;
   prompt: string;
   contextMessages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   structuredSchema: Prisma.JsonValue;
@@ -33,6 +35,8 @@ export interface SuggestResult {
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 
+type AiConfigRecord = Awaited<ReturnType<typeof getAiConfig>>;
+
 const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
   if (!raw || typeof raw !== 'object') return undefined;
   const entries = Object.entries(raw)
@@ -46,6 +50,8 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     tenantId,
     conversationId,
     configId,
+    queueId: requestedQueueId,
+    config: providedConfig,
     prompt,
     contextMessages = [],
     structuredSchema,
@@ -53,79 +59,116 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
   } = input;
 
   // Resolve per-tenant AI config with resilient fallback (default to configured mode)
-  let resolvedConfig: any | null = null;
-  let resolvedConfigId: string | null = null;
   const fallbackMode = aiConfig.defaultAssistantMode ?? resolveDefaultAiMode();
-  try {
-    // Try to get queue-scoped config when provided via configId metadata in callers; otherwise global (null queue)
-    resolvedConfig = await getAiConfig(tenantId, null);
-  } catch (e) {
-    logger.warn('getAiConfig failed, using local fallback AI mode', {
-      tenantId,
-      error: (e as Error)?.message,
-      fallbackMode,
-    });
+  const normalizedQueueId = requestedQueueId ?? (providedConfig as any)?.queueId ?? null;
+
+  let resolvedConfig: AiConfigRecord | null = providedConfig ?? null;
+  let resolvedConfigId: string | null = providedConfig?.id ?? configId ?? null;
+
+  const fetchScopedConfig = async (scopeQueueId: string | null) => {
+    try {
+      return await getAiConfig(tenantId, scopeQueueId);
+    } catch (error) {
+      logger.warn('AI suggest config fetch failed', {
+        tenantId,
+        queueId: scopeQueueId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  };
+
+  if (!resolvedConfig) {
+    resolvedConfig = await fetchScopedConfig(normalizedQueueId);
+    if (!resolvedConfig && normalizedQueueId) {
+      resolvedConfig = await fetchScopedConfig(null);
+    }
   }
 
   if (!resolvedConfig) {
     try {
-      // Create a global config with fallback mode if none exists
       const upserted = await upsertAiConfig({
         tenantId,
-        queueId: null,
-        scopeKey: '__global__',
+        queueId: normalizedQueueId,
+        scopeKey: normalizedQueueId ?? '__global__',
         model: aiConfig.defaultModel,
-        mode: fallbackMode,
+        defaultMode: fallbackMode,
+        structuredOutputSchema: structuredSchema,
       });
       resolvedConfig = upserted;
       resolvedConfigId = (upserted as any)?.id ?? null;
-      logger.info('AI config created with fallback AI mode', { tenantId, fallbackMode });
+      logger.info('AI config created with fallback AI mode', {
+        tenantId,
+        queueId: normalizedQueueId,
+        fallbackMode,
+      });
     } catch (e) {
-      // Last-resort local fallback (not persisted)
       resolvedConfig = {
         id: null,
         tenantId,
-        queueId: null,
-        scopeKey: '__global__',
+        queueId: normalizedQueueId,
+        scopeKey: normalizedQueueId ?? '__global__',
         model: aiConfig.defaultModel,
-        mode: fallbackMode,
-      };
+        defaultMode: fallbackMode,
+        systemPromptSuggest: null,
+        temperature: null,
+        maxOutputTokens: null,
+      } as unknown as AiConfigRecord;
       logger.warn('upsertAiConfig failed; proceeding with local AI mode fallback', {
         tenantId,
+        queueId: normalizedQueueId,
         error: (e as Error)?.message,
         fallbackMode,
       });
     }
-  } else {
+  } else if (!resolvedConfigId) {
     resolvedConfigId = (resolvedConfig as any)?.id ?? null;
-    if (!('mode' in resolvedConfig) || !resolvedConfig.mode) {
-      // Backfill mode to fallback non-blockingly
-      try {
-        await upsertAiConfig({
-          tenantId,
-          queueId: resolvedConfig.queueId ?? null,
-          scopeKey: resolvedConfig.scopeKey ?? '__global__',
-          model: resolvedConfig.model ?? aiConfig.defaultModel,
-          mode: fallbackMode,
-        });
-        resolvedConfig.mode = fallbackMode;
-        logger.debug('Backfilled AI config mode to fallback value', { tenantId, fallbackMode });
-      } catch (e) {
-        logger.warn('Failed to backfill AI config mode; continuing with in-memory fallback', {
-          tenantId,
-          error: (e as Error)?.message,
-          fallbackMode,
-        });
-        resolvedConfig.mode = fallbackMode;
-      }
+  }
+
+  const resolvedMode =
+    ((resolvedConfig as any)?.defaultMode as string | undefined) ??
+    ((resolvedConfig as any)?.mode as string | undefined) ??
+    fallbackMode;
+
+  if (!resolvedConfig) {
+    const error = new Error('AI configuration could not be resolved.');
+    logger.error('AI suggest :: configuration missing after fallback', {
+      tenantId,
+      queueId: normalizedQueueId,
+      error: error.message,
+    });
+    throw error;
+  }
+
+  let persistedConfig = resolvedConfig;
+  if (!('defaultMode' in (resolvedConfig as any)) || !(resolvedConfig as any)?.defaultMode) {
+    try {
+      persistedConfig = await upsertAiConfig({
+        tenantId,
+        queueId: (resolvedConfig as any)?.queueId ?? normalizedQueueId ?? null,
+        scopeKey: (resolvedConfig as any)?.scopeKey ?? normalizedQueueId ?? '__global__',
+        model: (resolvedConfig as any)?.model ?? aiConfig.defaultModel,
+        defaultMode: resolvedMode ?? fallbackMode,
+      });
+      resolvedConfigId = (persistedConfig as any)?.id ?? resolvedConfigId;
+    } catch (error) {
+      logger.warn('AI suggest :: failed to persist mode backfill', {
+        tenantId,
+        queueId: normalizedQueueId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
+  const selectedConfig = persistedConfig ?? resolvedConfig;
+
   const selectedModel = normalizeOpenAiModel(
-    (resolvedConfig as any)?.model ?? undefined,
+    (selectedConfig as any)?.model ?? undefined,
     aiConfig.defaultModel
   );
-  const systemPrompt = (resolvedConfig as any)?.systemPromptSuggest as string | undefined;
+  const systemPrompt = (selectedConfig as any)?.systemPromptSuggest as string | undefined;
+  const configuredTemperature = (selectedConfig as any)?.temperature;
+  const configuredMaxTokens = (selectedConfig as any)?.maxOutputTokens;
 
   if (!isAiEnabled) {
     const fallback = {
@@ -143,7 +186,7 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     await recordAiRun({
       tenantId,
       conversationId,
-      configId: configId ?? null,
+      configId: resolvedConfigId ?? configId ?? null,
       runType: 'suggest',
       requestPayload: { prompt, contextMessages, structuredSchema },
       responsePayload: fallback,
@@ -184,9 +227,12 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     metadata: {
       tenantId,
       conversationId,
-      mode: resolvedConfig?.mode ?? fallbackMode,
+      queueId: normalizedQueueId ?? undefined,
+      mode: resolvedMode ?? fallbackMode,
       ...(sanitizeMetadata(metadata) ?? {}),
     },
+    temperature: typeof configuredTemperature === 'number' ? configuredTemperature : undefined,
+    max_output_tokens: typeof configuredMaxTokens === 'number' ? configuredMaxTokens : undefined,
   };
 
   logger.debug('🧪 AI SUGGEST :: requisicao lapidada', {

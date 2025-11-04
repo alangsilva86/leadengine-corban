@@ -4,7 +4,36 @@ import { apiPost } from '@/lib/api.js';
 import { extractAiSuggestion } from '../utils/aiSuggestions.js';
 import { sanitizeAiTimeline } from '../utils/aiTimeline.js';
 
-const DEFAULT_AI_MODE = 'IA_AUTO';
+const DEFAULT_AI_MODE = 'auto';
+
+const normalizeMode = (value) => {
+  if (typeof value !== 'string') {
+    return DEFAULT_AI_MODE;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return DEFAULT_AI_MODE;
+  }
+
+  if (normalized === 'autonomous' || normalized === 'ia_auto' || normalized === 'ia-auto') {
+    return 'auto';
+  }
+
+  if (normalized === 'ia_assist' || normalized === 'copiloto') {
+    return 'assist';
+  }
+
+  if (normalized === 'ia_manual' || normalized === 'humano') {
+    return 'manual';
+  }
+
+  if (['assist', 'auto', 'manual'].includes(normalized)) {
+    return normalized;
+  }
+
+  return DEFAULT_AI_MODE;
+};
 
 const sanitizeTicket = (ticket) => {
   if (!ticket || typeof ticket !== 'object') {
@@ -30,7 +59,7 @@ const sanitizeTicket = (ticket) => {
   };
 };
 
-export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
+export const useAiSuggestions = ({ ticketId = null, tenantId = null, queueId = null } = {}) => {
   const mutationKey = useMemo(() => {
     const scope = ['chat', 'ai-suggestions'];
     if (tenantId) {
@@ -39,12 +68,15 @@ export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
     if (ticketId) {
       scope.push(ticketId);
     }
+    if (queueId) {
+      scope.push(`queue:${queueId}`);
+    }
     return scope;
-  }, [tenantId, ticketId]);
+  }, [tenantId, ticketId, queueId]);
 
   const mutation = useMutation({
     mutationKey,
-    mutationFn: async ({ ticket, timeline, mode }) => {
+    mutationFn: async ({ ticket, timeline, mode, conversationId, queueId: payloadQueueId }) => {
       if (!ticket?.id) {
         throw new Error('Ticket inválido para solicitar ajuda da IA.');
       }
@@ -52,7 +84,9 @@ export const useAiSuggestions = ({ ticketId = null, tenantId = null } = {}) => {
       const payload = {
         ticket: sanitizeTicket(ticket),
         timeline: sanitizeAiTimeline(timeline),
-        mode: typeof mode === 'string' && mode.trim() ? mode : DEFAULT_AI_MODE,
+        mode: normalizeMode(mode),
+        ...(conversationId ? { conversationId } : {}),
+        ...(payloadQueueId ? { queueId: payloadQueueId } : queueId ? { queueId } : {}),
       };
 
       const response = await apiPost('/api/ai/suggest', payload, { rateLimitKey: 'ai-suggest' });

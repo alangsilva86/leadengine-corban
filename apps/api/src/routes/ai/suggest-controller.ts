@@ -56,6 +56,8 @@ export const suggestMiddlewares = [
       tenantId,
       conversationId,
       configId: config.id,
+      config,
+      queueId,
       prompt,
       contextMessages: lastMessages
         .filter((message): message is { role: 'user' | 'assistant' | 'system'; content: string } =>
@@ -69,6 +71,7 @@ export const suggestMiddlewares = [
       metadata: {
         tenantId,
         conversationId,
+        ...(queueId ? { queueId } : {}),
         goal,
       },
     });

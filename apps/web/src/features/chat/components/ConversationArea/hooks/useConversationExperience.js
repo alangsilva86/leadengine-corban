@@ -49,7 +49,8 @@ export const useConversationExperience = ({
 
   const ticketId = ticket?.id ?? null;
   const tenantId = ticket?.tenantId ?? null;
-  const ai = useAiSuggestions({ ticketId, tenantId });
+  const queueId = ticket?.queueId ?? null;
+  const ai = useAiSuggestions({ ticketId, tenantId, queueId });
   const { scrollRef, scrollToBottom, isNearBottom } = useChatAutoscroll();
   const composerRef = useRef(null);
   const composerApiRef = useRef(null);
@@ -62,7 +63,7 @@ export const useConversationExperience = ({
 
   useEffect(() => {
     ai.reset();
-  }, [ai.reset, tenantId, ticketId]);
+  }, [ai.reset, queueId, tenantId, ticketId]);
 
   useConversationScroll({
     scrollRef,
@@ -124,16 +125,59 @@ export const useConversationExperience = ({
     };
   }, [ai.data, ai.error, ai.isLoading]);
 
+  const normalizedAiMode = useMemo(() => {
+    if (typeof aiMode !== 'string') return 'assist';
+    const normalized = aiMode.trim().toLowerCase();
+    if (normalized === 'autonomous') return 'auto';
+    if (normalized === 'assist' || normalized === 'auto' || normalized === 'manual') {
+      return normalized;
+    }
+    return 'assist';
+  }, [aiMode]);
+
+  const requestAiSuggestions = useCallback(
+    (payload = {}) => {
+      const basePayload = typeof payload === 'object' && payload !== null ? payload : {};
+
+      const mergedPayload = {
+        ...basePayload,
+        mode: typeof basePayload.mode === 'string' && basePayload.mode.trim()
+          ? basePayload.mode
+          : normalizedAiMode,
+        queueId: basePayload.queueId ?? queueId ?? undefined,
+        ticket: basePayload.ticket ?? ticket ?? null,
+      };
+
+      if (!mergedPayload.conversationId && ticket?.id) {
+        mergedPayload.conversationId = ticket.id;
+      }
+
+      return ai.requestSuggestions(mergedPayload);
+    },
+    [ai.requestSuggestions, normalizedAiMode, queueId, ticket],
+  );
+
   const aiAssistant = useMemo(
     () => ({
-      requestSuggestions: ai.requestSuggestions,
+      requestSuggestions: requestAiSuggestions,
       isLoading: ai.isLoading,
       data: ai.data ?? null,
       error: ai.error ?? null,
       reset: ai.reset,
       replyStream: aiReplyStream,
+      mode: normalizedAiMode,
+      queueId,
     }),
-    [ai.data, ai.error, ai.isLoading, ai.requestSuggestions, ai.reset, aiReplyStream],
+    [
+      ai.data,
+      ai.error,
+      ai.isLoading,
+      ai.reset,
+      aiReplyStream,
+      normalizedAiMode,
+      queueId,
+      requestAiSuggestions,
+    ],
   );
 
   const aiContextTimeline = useMemo(
@@ -227,15 +271,7 @@ export const useConversationExperience = ({
       onCreateNote,
       timeline: conversation?.timeline ?? [],
       aiAssistant,
-      aiMode: (() => {
-        if (typeof aiMode !== 'string') return 'assist';
-        const normalized = aiMode.trim().toLowerCase();
-        if (normalized === 'autonomous') return 'auto';
-        if (normalized === 'assist' || normalized === 'auto' || normalized === 'manual') {
-          return normalized;
-        }
-        return 'assist';
-      })(),
+      aiMode: normalizedAiMode,
       aiConfidence:
         typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)
           ? aiConfidence
@@ -253,7 +289,7 @@ export const useConversationExperience = ({
       currentUser,
       handleAttachFileFromHeader,
       handleFocusComposer,
-      aiMode,
+      normalizedAiMode,
       aiModeChangeDisabled,
       onAiModeChange,
       onTakeOver,
@@ -276,6 +312,7 @@ export const useConversationExperience = ({
       onSendTemplate,
       slaClock,
       ticket,
+      queueId,
       augmentedTypingAgents,
     ],
   );
@@ -303,14 +340,7 @@ export const useConversationExperience = ({
       aiState,
       isSending,
       sendError,
-      aiMode:
-        typeof aiMode === 'string' && aiMode.trim()
-          ? (aiMode.trim().toLowerCase() === 'autonomous'
-              ? 'auto'
-              : ['assist', 'auto', 'manual'].includes(aiMode.trim().toLowerCase())
-              ? aiMode.trim().toLowerCase()
-              : 'assist')
-          : 'assist',
+      aiMode: normalizedAiMode,
       aiModeChangeDisabled: Boolean(aiModeChangeDisabled),
       onAiModeChange,
       aiStreaming: {

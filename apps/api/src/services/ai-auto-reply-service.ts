@@ -204,15 +204,17 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Verificar o modo de IA configurado
     const aiMode = aiConfig?.defaultMode ?? fallbackMode;
-    const effectiveAiMode =
-      aiMode === 'IA_AUTO' ? 'IA_AUTO' : forceServerAutoReply ? 'IA_AUTO' : aiMode;
+    const normalizedAiMode =
+      aiMode === 'IA_AUTO' ? 'IA_AUTO' : aiMode === 'HUMANO' ? 'HUMANO' : 'COPILOTO';
 
-    if (aiMode !== 'IA_AUTO' && effectiveAiMode === 'IA_AUTO') {
-      logger.info('🤖 AI AUTO-REPLY :: ✅ Forçando IA_AUTO para responder via backend', {
+    let effectiveAiMode = normalizedAiMode;
+    if (effectiveAiMode !== 'HUMANO' && effectiveAiMode !== 'IA_AUTO' && forceServerAutoReply) {
+      logger.info('🤖 AI AUTO-REPLY :: ✅ override front-mode → IA_AUTO (assistência permitida)', {
         tenantId,
         ticketId,
-        originalMode: aiMode,
+        originalMode: normalizedAiMode,
       });
+      effectiveAiMode = 'IA_AUTO';
     }
 
     logger.info('🤖 AI AUTO-REPLY :: 🔍 Verificando modo', {

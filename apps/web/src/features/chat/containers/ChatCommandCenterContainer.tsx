@@ -156,11 +156,14 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const [globalAiMode, setGlobalAiMode] = useState<AiMode>(DEFAULT_AI_MODE);
   const [isAiModeReady, setIsAiModeReady] = useState(false);
   const [aiModesByTicket, setAiModesByTicket] = useState<Record<string, AiMode>>({});
+  const [aiModesByQueue, setAiModesByQueue] = useState<Record<string, AiMode>>({});
+  const selectedTicketQueueId = selectedTicket?.queueId ?? null;
 
   useEffect(() => {
     let isMounted = true;
     setIsAiModeReady(false);
     setAiModesByTicket((previous) => (Object.keys(previous).length > 0 ? {} : previous));
+    setAiModesByQueue((previous) => (Object.keys(previous).length > 0 ? {} : previous));
 
     const loadAiMode = async () => {
       try {
@@ -170,6 +173,25 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           normalizeAiMode(payload?.mode) ?? normalizeAiMode(payload?.data?.mode);
         if (isMounted && fetchedMode) {
           setGlobalAiMode(fetchedMode);
+        }
+
+        if (selectedTicketQueueId) {
+          try {
+            const queueResponse = await apiGet(`/api/ai/mode?queueId=${encodeURIComponent(selectedTicketQueueId)}`);
+            const queuePayload = queueResponse as any;
+            const queueMode =
+              normalizeAiMode(queuePayload?.mode) ?? normalizeAiMode(queuePayload?.data?.mode);
+            if (isMounted && queueMode) {
+              setAiModesByQueue((prev) =>
+                prev[selectedTicketQueueId] === queueMode ? prev : { ...prev, [selectedTicketQueueId]: queueMode }
+              );
+            }
+          } catch (queueError) {
+            console.debug('Falha ao obter modo de IA da fila', {
+              queueId: selectedTicketQueueId,
+              error: queueError,
+            });
+          }
         }
       } catch (error) {
         console.debug('Falha ao obter modo de IA', { error });
@@ -185,7 +207,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     return () => {
       isMounted = false;
     };
-  }, [tenantId]);
+  }, [tenantId, selectedTicketQueueId]);
 
   const ticketAiMode = useMemo(() => resolveTicketAiMode(selectedTicket), [selectedTicket]);
   const aiConfidence = useMemo(() => resolveTicketAiConfidence(selectedTicket), [selectedTicket]);
@@ -195,32 +217,49 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       return ticketAiMode ?? globalAiMode ?? DEFAULT_AI_MODE;
     }
 
-    return aiModesByTicket[selectedTicketKey] ?? ticketAiMode ?? globalAiMode ?? DEFAULT_AI_MODE;
-  }, [aiModesByTicket, globalAiMode, selectedTicketKey, ticketAiMode]);
+    const queueMode = selectedTicketQueueId ? aiModesByQueue[selectedTicketQueueId] : null;
+
+    return (
+      aiModesByTicket[selectedTicketKey] ??
+      ticketAiMode ??
+      queueMode ??
+      globalAiMode ??
+      DEFAULT_AI_MODE
+    );
+  }, [aiModesByQueue, aiModesByTicket, globalAiMode, selectedTicketKey, selectedTicketQueueId, ticketAiMode]);
 
   const persistAiMode = useCallback(
-    async (mode: AiMode) => {
+    async (mode: AiMode, queueId: string | null) => {
       try {
-        await apiPost('/api/ai/mode', { mode });
+        const body: Record<string, unknown> = { mode };
+        if (queueId) {
+          body.queueId = queueId;
+        }
+        await apiPost('/api/ai/mode', body);
       } catch (error) {
-        console.debug('Falha ao persistir modo de IA', { mode, error });
+        console.debug('Falha ao persistir modo de IA', { mode, queueId, error });
       }
     },
     [],
   );
 
   const updateAiModePreference = useCallback(
-    (mode: AiMode) => {
-      setGlobalAiMode((current) => (current === mode ? current : mode));
-      if (globalAiMode !== mode) {
-        void persistAiMode(mode);
+    (mode: AiMode, queueId: string | null) => {
+      if (queueId) {
+        setAiModesByQueue((prev) =>
+          prev[queueId] === mode ? prev : { ...prev, [queueId]: mode }
+        );
+      } else {
+        setGlobalAiMode((current) => (current === mode ? current : mode));
       }
+
+      void persistAiMode(mode, queueId);
     },
-    [globalAiMode, persistAiMode],
+    [persistAiMode],
   );
 
   const setAiModeForTicket = useCallback(
-    (mode: AiMode) => {
+    (mode: AiMode, queueId: string | null) => {
       if (selectedTicketKey) {
         setAiModesByTicket((previous) => {
           const current = previous[selectedTicketKey];
@@ -231,7 +270,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         });
       }
 
-      updateAiModePreference(mode);
+      updateAiModePreference(mode, queueId);
     },
     [selectedTicketKey, updateAiModePreference],
   );
@@ -242,7 +281,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         return;
       }
 
-      setAiModeForTicket(mode);
+      setAiModeForTicket(mode, selectedTicketQueueId ?? null);
       if (selectedTicketIdValue != null) {
         emitInboxTelemetry('chat.ai.mode.select', {
           ticketId: selectedTicketIdValue,
@@ -250,7 +289,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         });
       }
     },
-    [isAiModeReady, selectedTicketIdValue, setAiModeForTicket],
+    [isAiModeReady, selectedTicketIdValue, selectedTicketQueueId, setAiModeForTicket],
   );
 
   const handleAiTakeOver = useCallback(() => {
@@ -258,24 +297,24 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       return;
     }
 
-    setAiModeForTicket('manual');
+    setAiModeForTicket('manual', selectedTicketQueueId ?? null);
     emitInboxTelemetry('chat.ai.mode.take_over', {
       ticketId: selectedTicketIdValue,
       mode: 'manual',
     });
-  }, [isAiModeReady, selectedTicketIdValue, setAiModeForTicket]);
+  }, [isAiModeReady, selectedTicketIdValue, selectedTicketQueueId, setAiModeForTicket]);
 
   const handleAiGiveBack = useCallback(() => {
     if (selectedTicketIdValue == null || !isAiModeReady) {
       return;
     }
 
-    setAiModeForTicket('auto');
+    setAiModeForTicket('auto', selectedTicketQueueId ?? null);
     emitInboxTelemetry('chat.ai.mode.give_back', {
       ticketId: selectedTicketIdValue,
       mode: 'auto',
     });
-  }, [isAiModeReady, selectedTicketIdValue, setAiModeForTicket]);
+  }, [isAiModeReady, selectedTicketIdValue, selectedTicketQueueId, setAiModeForTicket]);
 
   const manualConversation = useManualConversationFlow({ controller });
   const availability = useWhatsAppAvailability({ selectedTicketId: controller.selectedTicketId });
