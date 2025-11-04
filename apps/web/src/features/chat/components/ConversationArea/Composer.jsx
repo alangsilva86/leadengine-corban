@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Paperclip, Smile, Send, Loader2, Wand2, X, RefreshCw } from 'lucide-react';
+import { MessageSquarePlus, Paperclip, Smile, Send, Loader2, Wand2, X, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
@@ -134,6 +134,7 @@ export const Composer = forwardRef(function Composer(
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const noteTextareaRef = useRef(null);
   const [quickReplies, setQuickReplies] = useState(() => [...DEFAULT_REPLIES]);
   const [uploadError, setUploadError] = useState(null);
   const {
@@ -197,6 +198,8 @@ export const Composer = forwardRef(function Composer(
   const isAiGenerating = aiStatus === 'streaming';
   const aiErrorMessage = aiStatus === 'error' ? aiStreaming?.error ?? null : null;
   const aiToolCalls = Array.isArray(aiStreaming?.toolCalls) ? aiStreaming.toolCalls : [];
+  const [notePopoverOpen, setNotePopoverOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
   const placeholder = useMemo(() => {
     if (disabled) {
@@ -234,6 +237,7 @@ export const Composer = forwardRef(function Composer(
   useEffect(() => {
     if (disabled) {
       setEmojiPickerOpen(false);
+      setNotePopoverOpen(false);
     }
   }, [disabled]);
 
@@ -248,6 +252,14 @@ export const Composer = forwardRef(function Composer(
       setInstanceMenuOpen(false);
     }
   }, [instanceSelectorDisabled, showInstanceSelector]);
+
+  useEffect(() => {
+    if (notePopoverOpen) {
+      noteTextareaRef.current?.focus?.();
+    } else {
+      setNoteDraft('');
+    }
+  }, [notePopoverOpen]);
 
   const resetComposer = () => {
     setValue('');
@@ -426,6 +438,18 @@ export const Composer = forwardRef(function Composer(
     [inputDisabled]
   );
 
+  const handleSubmitNote = useCallback(() => {
+    if (!onCreateNote) {
+      return;
+    }
+    const trimmed = noteDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+    onCreateNote(trimmed);
+    setNotePopoverOpen(false);
+  }, [noteDraft, onCreateNote]);
+
   const normalizedConfidence =
     typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)
       ? Math.max(0, Math.min(100, Math.round(aiConfidence)))
@@ -505,6 +529,58 @@ export const Composer = forwardRef(function Composer(
               multiple
               onChange={handleFilesSelected}
             />
+            <Popover
+              open={notePopoverOpen}
+              onOpenChange={(open) => setNotePopoverOpen(inputDisabled ? false : open)}
+            >
+              <Tooltip>
+                <PopoverTrigger asChild>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground"
+                      disabled={inputDisabled}
+                    >
+                      <MessageSquarePlus className="h-4 w-4" />
+                      <span className="sr-only">Adicionar nota interna</span>
+                    </Button>
+                  </TooltipTrigger>
+                </PopoverTrigger>
+                <TooltipContent>Adicionar nota interna</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-72 space-y-3 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet p-3 shadow-lg">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Nova nota interna</p>
+                  <Textarea
+                    ref={noteTextareaRef}
+                    value={noteDraft}
+                    onChange={(event) => setNoteDraft(event.target.value)}
+                    rows={4}
+                    placeholder="Escreva uma nota visível apenas para a equipe"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-foreground-muted"
+                    onClick={() => setNotePopoverOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!noteDraft.trim()}
+                    onClick={handleSubmitNote}
+                  >
+                    Registrar nota
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
               <PopoverTrigger asChild>
                 <Button
