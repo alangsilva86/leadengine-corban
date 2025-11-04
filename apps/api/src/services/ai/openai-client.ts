@@ -46,15 +46,47 @@ export interface SuggestResult {
 }
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
+const MAX_SUGGESTION_ATTEMPTS = 3;
+const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const RETRY_BASE_DELAY_MS = 400;
 
 type AiConfigRecord = Awaited<ReturnType<typeof getAiConfig>>;
 
+const clampString = (value: string, limit = 512): string => (value.length > limit ? value.slice(0, limit) : value);
+
 const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
   if (!raw || typeof raw !== 'object') return undefined;
-  const entries = Object.entries(raw)
-    .filter(([, value]) => value !== undefined && value !== null)
-    .map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]);
+  const entries: Array<[string, string]> = [];
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (entries.length >= 16) break;
+    if (value === undefined || value === null) continue;
+    const normalized =
+      typeof value === 'string'
+        ? clampString(value)
+        : clampString(String(value));
+    entries.push([key, normalized]);
+  }
+
   return entries.length > 0 ? (Object.fromEntries(entries) as Record<string, string>) : undefined;
+};
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const parseRetryAfterHeader = (value: string | null): number | null => {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, seconds * 1000);
+  }
+  const asDate = Date.parse(value);
+  if (!Number.isNaN(asDate)) {
+    return Math.max(0, asDate - Date.now());
+  }
+  return null;
 };
 
 export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult> => {
@@ -242,14 +274,13 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
         content: [{ type: 'input_text', text: prompt }],
       },
     ],
-    modalities: ['text'],
     text: {
       format: {
         type: 'json_schema',
         json_schema: {
           name: 'crm_suggestion_schema',
           schema: responseSchema,
-          strict: false,
+          strict: true,
         },
       },
     },
@@ -275,14 +306,43 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
   const startedAt = Date.now();
 
   try {
-    const response = await fetch(OPENAI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${aiConfig.apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    let response: Response | null = null;
+    let attempt = 0;
+    let lastError: Error | null = null;
+
+    while (attempt < MAX_SUGGESTION_ATTEMPTS) {
+      attempt += 1;
+      try {
+        response = await fetch(OPENAI_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${aiConfig.apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+        });
+      } catch (networkError) {
+        lastError = networkError instanceof Error ? networkError : new Error(String(networkError));
+        const delay = RETRY_BASE_DELAY_MS * attempt;
+        await wait(delay);
+        continue;
+      }
+
+      if (!response.ok && RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_SUGGESTION_ATTEMPTS) {
+        const retryAfterMs = parseRetryAfterHeader(response.headers.get('retry-after'));
+        const delay = retryAfterMs ?? RETRY_BASE_DELAY_MS * attempt;
+        await wait(delay);
+        continue;
+      }
+
+      break;
+    }
+
+    if (!response) {
+      throw lastError ?? new Error('Não foi possível contatar o serviço da OpenAI.');
+    }
+
+    const requestId = response.headers.get('x-request-id') ?? null;
 
     if (!response.ok) {
       const rawText = await response.text().catch(() => null);
@@ -309,14 +369,27 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
 
       throw new AiServiceError(message, {
         status: response.status,
-        details,
+        details: {
+          requestId,
+          body: details,
+        },
       });
     }
 
     const json = (await response.json()) as any;
     const latencyMs = Date.now() - startedAt;
 
-    const outputText = json?.output?.[0]?.content?.[0]?.text ?? '{}';
+    const firstContentEntry =
+      Array.isArray(json?.output?.[0]?.content) && json.output[0].content.length > 0
+        ? json.output[0].content.find((entry: any) => entry && entry.type === 'output_text')
+        : null;
+
+    const outputText =
+      typeof json?.output_text === 'string'
+        ? json.output_text
+        : typeof firstContentEntry?.text === 'string'
+          ? firstContentEntry.text
+          : '{}';
     let parsedPayload: Prisma.JsonValue = {};
 
     try {
