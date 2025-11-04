@@ -513,8 +513,8 @@ export const useConversationExperience = ({
   );
 
   const aiContextTimeline = useMemo(
-    () => buildAiContextTimeline(timelineItems),
-    [timelineItems],
+    () => buildAiContextTimeline(combinedTimelineItems),
+    [combinedTimelineItems],
   );
 
   const aiMetadata = useMemo(
