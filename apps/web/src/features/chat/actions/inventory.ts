@@ -209,8 +209,28 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
         }
       } catch (error) {
         console.error('AI help action failed', error);
+        const baseMessage =
+          error instanceof Error ? error.message : 'Tente novamente em instantes.';
+        const detailPayload =
+          (error as any)?.payload?.error?.details ??
+          (error as any)?.payload?.error?.detail ??
+          null;
+        const description = (() => {
+          if (typeof detailPayload === 'string') {
+            return detailPayload;
+          }
+          if (detailPayload && typeof detailPayload === 'object') {
+            try {
+              const serialized = JSON.stringify(detailPayload);
+              return serialized.length > 280 ? `${serialized.slice(0, 277)}...` : serialized;
+            } catch {
+              return baseMessage;
+            }
+          }
+          return baseMessage;
+        })();
         toast.error('Falha ao pedir ajuda da IA', {
-          description: error instanceof Error ? error.message : 'Tente novamente em instantes.',
+          description,
         });
       }
     },

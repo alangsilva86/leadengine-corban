@@ -174,6 +174,7 @@ export async function generateAiReply(
       metadata: {
         tenantId,
         conversationId,
+        ...(normalizedQueueId ? { queueId: normalizedQueueId } : {}),
         ...(sanitizeMetadata(metadata) ?? {}),
       },
     };

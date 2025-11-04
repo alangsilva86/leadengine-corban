@@ -190,6 +190,7 @@ export const useConversationExperience = ({
       ticketId: ticket?.id ?? null,
       contactId: ticket?.contact?.id ?? null,
       leadId: ticket?.lead?.id ?? null,
+      queueId: ticket?.queueId ?? null,
     }),
     [ticket],
   );

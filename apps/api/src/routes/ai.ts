@@ -13,7 +13,7 @@ import {
   recordAiRun,
 } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
-import { suggestWithAi } from '../services/ai/openai-client';
+import { suggestWithAi, AiServiceError } from '../services/ai/openai-client';
 import { aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
 import { logger } from '../config/logger';
 import { getRegisteredTools, executeTool } from '../services/ai/tool-registry';
@@ -385,15 +385,33 @@ router.post(
 
     const handleStreaming = async () => {
       const startedAt = Date.now();
-      const config =
-        (await getAiConfig(tenantId, queueId)) ??
-        (await upsertAiConfig({
+      let config = await getAiConfig(tenantId, queueId);
+      if (!config && queueId) {
+        config = await getAiConfig(tenantId, null);
+        if (config) {
+          logger.debug('crm.ai.reply.config_fallback', {
+            tenantId,
+            queueId,
+            fallback: 'global',
+            configId: config.id,
+          });
+        }
+      }
+
+      if (!config) {
+        config = await upsertAiConfig({
           tenantId,
           queueId,
           scopeKey: queueId ?? '__global__',
           model: envAiConfig.defaultModel,
           structuredOutputSchema: defaultSuggestionSchema,
-        }));
+        });
+        logger.debug('crm.ai.reply.config_created', {
+          tenantId,
+          queueId,
+          configId: config.id,
+        });
+      }
 
       const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
         if (!raw || typeof raw !== 'object') return undefined;
@@ -940,15 +958,33 @@ router.post(
     }
 
     const queueId = readQueueParam(req);
-    const config =
-      (await getAiConfig(tenantId, queueId)) ??
-      (await upsertAiConfig({
+    let config = await getAiConfig(tenantId, queueId);
+    if (!config && queueId) {
+      config = await getAiConfig(tenantId, null);
+      if (config) {
+        logger.debug('crm.ai.suggest.config_fallback', {
+          tenantId,
+          queueId,
+          fallback: 'global',
+          configId: config.id,
+        });
+      }
+    }
+
+    if (!config) {
+      config = await upsertAiConfig({
         tenantId,
         queueId,
         scopeKey: queueId ?? '__global__',
         model: envAiConfig.defaultModel,
         structuredOutputSchema: defaultSuggestionSchema,
-      }));
+      });
+      logger.debug('crm.ai.suggest.config_created', {
+        tenantId,
+        queueId,
+        configId: config.id,
+      });
+    }
 
     const contextPieces: string[] = [];
     if (leadProfile) {
@@ -967,50 +1003,92 @@ router.post(
 
     const prompt = promptParts.join('\n\n');
 
-    const aiResult = await suggestWithAi({
-      tenantId,
-      conversationId,
-      configId: config.id,
-      config,
-      queueId,
-      prompt,
-      contextMessages: messagesForPrompt,
-      structuredSchema: config.structuredOutputSchema ?? defaultSuggestionSchema,
-      metadata: {
+    try {
+      const aiResult = await suggestWithAi({
         tenantId,
         conversationId,
-        ...(queueId ? { queueId } : {}),
-        ...(goal ? { goal } : {}),
-        ...(leadProfile ? { leadProfile } : {}),
-        ...(resolvedTicketId ? { ticketId: resolvedTicketId } : {}),
-      },
-    });
+        configId: config.id,
+        config,
+        queueId,
+        prompt,
+        contextMessages: messagesForPrompt,
+        structuredSchema: config.structuredOutputSchema ?? defaultSuggestionSchema,
+        metadata: {
+          tenantId,
+          conversationId,
+          ...(queueId ? { queueId } : {}),
+          ...(goal ? { goal } : {}),
+          ...(leadProfile ? { leadProfile } : {}),
+          ...(resolvedTicketId ? { ticketId: resolvedTicketId } : {}),
+        },
+      });
 
-    await recordAiSuggestion({
-      tenantId,
-      conversationId,
-      configId: config.id,
-      payload: aiResult.payload,
-      confidence: aiResult.confidence ?? null,
-    });
-
-    logger.info('crm.ai.suggest.completed', {
-      tenantId,
-      conversationId,
-      model: aiResult.model,
-      confidence: aiResult.confidence,
-    });
-
-    return res.json({
-      success: true,
-      data: {
-        suggestion: aiResult.payload,
+      await recordAiSuggestion({
+        tenantId,
+        conversationId,
+        configId: config.id,
+        payload: aiResult.payload,
         confidence: aiResult.confidence ?? null,
+      });
+
+      logger.info('crm.ai.suggest.completed', {
+        tenantId,
+        conversationId,
         model: aiResult.model,
-        usage: aiResult.usage,
-        aiEnabled: isAiEnabled,
-      },
-    });
+        confidence: aiResult.confidence,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          suggestion: aiResult.payload,
+          confidence: aiResult.confidence ?? null,
+          model: aiResult.model,
+          usage: aiResult.usage,
+          aiEnabled: isAiEnabled,
+        },
+      });
+    } catch (error) {
+      const statusFromError =
+        error instanceof AiServiceError && Number.isFinite(error.status) ? error.status : 502;
+      const message =
+        error instanceof Error
+          ? error.message || 'Falha ao gerar sugestões da IA.'
+          : 'Falha ao gerar sugestões da IA.';
+
+      const sanitizeDetails = (value: unknown) => {
+        if (!value) return undefined;
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object') {
+          try {
+            return JSON.parse(JSON.stringify(value));
+          } catch {
+            return undefined;
+          }
+        }
+        return undefined;
+      };
+
+      const details =
+        error instanceof AiServiceError ? sanitizeDetails(error.details) : undefined;
+
+      logger.error('crm.ai.suggest.failed', {
+        tenantId,
+        conversationId,
+        queueId,
+        message,
+        details,
+        error,
+      });
+
+      return res.status(statusFromError).json({
+        success: false,
+        error: {
+          message,
+          ...(details !== undefined ? { details } : {}),
+        },
+      });
+    }
   })
 );
 

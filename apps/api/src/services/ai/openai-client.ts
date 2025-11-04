@@ -9,6 +9,18 @@ import { recordAiRun } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
 import { logger } from '../../config/logger';
 
+export class AiServiceError extends Error {
+  status: number;
+  details?: unknown;
+
+  constructor(message: string, options: { status?: number; details?: unknown } = {}) {
+    super(message);
+    this.name = 'AiServiceError';
+    this.status = options.status ?? 500;
+    this.details = options.details;
+  }
+}
+
 export interface SuggestInput {
   tenantId: string;
   conversationId: string;
@@ -131,7 +143,9 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     fallbackMode;
 
   if (!resolvedConfig) {
-    const error = new Error('AI configuration could not be resolved.');
+    const error = new AiServiceError('AI configuration could not be resolved.', {
+      status: 500,
+    });
     logger.error('AI suggest :: configuration missing after fallback', {
       tenantId,
       queueId: normalizedQueueId,
@@ -256,8 +270,32 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
     });
 
     if (!response.ok) {
-      const errorPayload = await response.text();
-      throw new Error(`OpenAI request failed: ${response.status} ${errorPayload}`);
+      const rawText = await response.text().catch(() => null);
+      let details: unknown = rawText;
+      let message = `OpenAI request failed: ${response.status} ${response.statusText}`;
+
+      if (rawText) {
+        try {
+          const parsed = JSON.parse(rawText);
+          details = parsed;
+          const apiMessage =
+            parsed?.error?.message ??
+            parsed?.message ??
+            parsed?.error ??
+            parsed?.details ??
+            null;
+          if (typeof apiMessage === 'string' && apiMessage.trim().length > 0) {
+            message = apiMessage.trim();
+          }
+        } catch {
+          // mantém texto bruto
+        }
+      }
+
+      throw new AiServiceError(message, {
+        status: response.status,
+        details,
+      });
     }
 
     const json = (await response.json()) as any;
@@ -313,6 +351,13 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
       status: 'error',
     });
 
-    throw error;
+    if (error instanceof AiServiceError) {
+      throw error;
+    }
+
+    throw new AiServiceError(
+      error instanceof Error ? error.message : 'Erro desconhecido ao gerar sugestão da IA.',
+      { status: 500 }
+    );
   }
 };
