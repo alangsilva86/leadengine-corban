@@ -196,10 +196,7 @@ const PrimaryActionBanner = ({
   const hasNextStep = typeof nextStepValue === 'string' && nextStepValue.trim().length > 0;
 
   return (
-    <div
-      data-testid="conversation-header-summary"
-      className="rounded-2xl border border-surface-overlay-glass-border/60 bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_96%,transparent)]/95 p-4 shadow-[0_16px_32px_-28px_rgba(2,6,23,0.75)]"
-    >
+    <div data-testid="conversation-header-summary" className="py-1">
       <div className="grid gap-3 lg:grid-cols-12 lg:items-center">
         <div className="flex min-w-0 items-center gap-3 lg:col-span-4">
           <Avatar className="h-12 w-12">

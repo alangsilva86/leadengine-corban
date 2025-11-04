@@ -171,13 +171,9 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
             detailsOpen={detailsState.open}
             onRequestDetails={handleDetailsRequest}
             renderSummary={(summary) => (
-              <header
-                className={cn(
-                  'sticky top-0 z-20 border-b border-[color:var(--color-inbox-border)]/60 bg-[color:color-mix(in_srgb,var(--surface-shell)_92%,transparent)]/95 px-4 py-2 backdrop-blur-md shadow-[0_6px_20px_-18px_rgba(2,6,23,0.9)] supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--surface-shell)_88%,transparent)] sm:px-5',
-                )}
-              >
-                <div className="mx-auto w-full max-w-[52rem] py-1">{summary}</div>
-              </header>
+              <div className="px-4 py-2 sm:px-5">
+                <div className="mx-auto w-full max-w-[52rem]">{summary}</div>
+              </div>
             )}
           />
         </div>

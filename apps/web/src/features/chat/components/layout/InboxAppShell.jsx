@@ -274,12 +274,12 @@ const InboxAppShell = ({
               <div className="flex h-full w-full">{detailSurface}</div>
             )}
             {isDesktop && sidebar && !desktopListVisible ? (
-              <div className="pointer-events-none absolute left-0 top-4 z-20 hidden translate-x-[-50%] lg:block">
+              <div className="pointer-events-none absolute left-6 top-4 z-20 hidden lg:block">
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="pointer-events-auto inline-flex items-center gap-2 rounded-full border-[color:var(--border-shell)] bg-[color:var(--surface-shell)] px-3 text-xs font-semibold text-[color:var(--text-shell-muted)] shadow-[var(--shadow-sm)] hover:bg-surface-shell-subtle"
+                  className="pointer-events-auto inline-flex items-center gap-2 rounded-full border-[color:var(--border-shell)] bg-[color:var(--surface-shell)]/90 px-3 text-xs font-semibold text-[color:var(--text-shell-muted)] shadow-[var(--shadow-sm)] hover:bg-surface-shell-subtle hover:text-foreground"
                   onClick={handleToggleListVisibility}
                 >
                   <PanelLeftOpen className="h-4 w-4" aria-hidden />
