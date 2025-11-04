@@ -1408,6 +1408,66 @@ export const archiveInstanceSnapshot = async (
   }
 };
 
+export const archiveDetachedInstance = async (
+  tenantId: string,
+  instanceId: string,
+  actorId: string | null,
+  brokerId?: string | null
+): Promise<string> => {
+  const normalizedInstanceId = typeof instanceId === 'string' ? instanceId.trim() : '';
+  if (!normalizedInstanceId) {
+    return new Date().toISOString();
+  }
+
+  const deletedAt = new Date().toISOString();
+  const normalizedBrokerId = typeof brokerId === 'string' ? brokerId.trim() : '';
+
+  const basePayload: Prisma.JsonObject = {
+    tenantId,
+    instanceId: normalizedInstanceId,
+    brokerId: normalizedBrokerId || null,
+    deletedAt,
+    actorId: actorId ?? 'system',
+    stored: null,
+    status: null,
+    qr: null,
+    brokerStatus: null,
+    history: [],
+    instancesBeforeDeletion: [],
+  };
+
+  const targets: Array<{ key: string; value: Prisma.JsonObject }> = [
+    { key: buildInstanceArchiveKey(tenantId, normalizedInstanceId), value: basePayload },
+  ];
+
+  if (normalizedBrokerId && normalizedBrokerId !== normalizedInstanceId) {
+    targets.push({
+      key: buildInstanceArchiveKey(tenantId, normalizedBrokerId),
+      value: {
+        ...basePayload,
+        instanceId: normalizedBrokerId,
+        brokerId: normalizedInstanceId,
+      },
+    });
+  }
+
+  for (const target of targets) {
+    try {
+      await prisma.integrationState.upsert({
+        where: { key: target.key },
+        update: { value: target.value },
+        create: { key: target.key, value: target.value },
+      });
+    } catch (error) {
+      if (!logWhatsAppStorageError('archiveDetachedInstance', error, { tenantId, key: target.key, instanceId: normalizedInstanceId })) {
+        throw error;
+      }
+    }
+  }
+
+  return deletedAt;
+};
+
 type InstanceArchiveRecord = {
   deletedAt: string | null;
 };

@@ -60,6 +60,7 @@ import {
   collectNumericFromSources,
   syncInstancesFromBroker,
   archiveInstanceSnapshot,
+  archiveDetachedInstance,
   scheduleWhatsAppDisconnectRetry,
   clearWhatsAppDisconnectRetry,
   removeCachedSnapshot,
@@ -1352,11 +1353,37 @@ router.post(
       });
 
       if (!stored) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: 'INSTANCE_NOT_FOUND',
-            message: 'Instância não localizada para o tenant informado.',
+        const deletedAt = await archiveDetachedInstance(tenantId, instanceId, actorId);
+        try {
+          await removeCachedSnapshot(tenantId, instanceId, null);
+        } catch (error) {
+          logWhatsAppStorageError('disconnect.removeCachedSnapshot', error, {
+            tenantId,
+            instanceId,
+          });
+        }
+
+        emitToTenant(tenantId, 'whatsapp.instances.deleted', {
+          id: instanceId,
+          tenantId,
+          deletedAt,
+          brokerStatus: 'not_found',
+          existed: false,
+        });
+
+        res.status(200).json({
+          success: true,
+          data: {
+            instanceId,
+            disconnected: true,
+            pending: false,
+            existed: false,
+            connected: null,
+            status: null,
+            qr: null,
+            instance: null,
+            instances: [],
+            deletedAt,
           },
         });
         return;

@@ -273,20 +273,6 @@ const LayoutShell = ({
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden md:inline-flex"
-              onClick={handleSidebarCollapseToggle}
-              aria-label={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-              title={isSidebarCollapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
-            >
-              {isSidebarCollapsed ? (
-                <ChevronsRight className="h-5 w-5" />
-              ) : (
-                <ChevronsLeft className="h-5 w-5" />
-              )}
-            </Button>
             <div className="relative hidden min-w-0 flex-1 items-center sm:flex">
               <Search className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground" />
               <Input
