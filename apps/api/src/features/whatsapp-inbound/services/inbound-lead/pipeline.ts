@@ -829,10 +829,12 @@ export const processStandardInboundEvent = async (
       }
     }
 
+    const safeInstanceId = resolvedInstanceId ?? instanceId ?? 'unknown';
+
     await emitRealtimeUpdatesForInbound({
       tenantId,
       ticketId,
-      instanceId: resolvedInstanceId,
+      instanceId: safeInstanceId,
       message: persistedMessage,
       providerMessageId,
       emitTicketRealtimeEvents: false,
@@ -846,7 +848,7 @@ export const processStandardInboundEvent = async (
           tenantId,
           contactId: contactRecord.id,
           ticketId,
-          instanceId: resolvedInstanceId,
+          instanceId: safeInstanceId,
           providerMessageId,
           message: persistedMessage,
         });
@@ -868,7 +870,7 @@ export const processStandardInboundEvent = async (
     inboundMessagesProcessedCounter.inc({
       origin: 'legacy',
       tenantId,
-      instanceId: resolvedInstanceId ?? 'unknown',
+      instanceId: safeInstanceId,
     });
 
     logger.info('🎯 LeadEngine • WhatsApp :: ✅ Mensagem inbound processada', {
@@ -876,7 +878,7 @@ export const processStandardInboundEvent = async (
       tenantId,
       ticketId,
       contactId: contactRecord.id,
-      instanceId,
+      instanceId: safeInstanceId,
       messageId: persistedMessage.id,
       providerMessageId,
       leadId: inboundLeadId,

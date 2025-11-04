@@ -130,17 +130,20 @@ const DesktopToolbar = ({
   desktopListVisible,
   headerListButtonLabel,
   showContextToggle = true,
+  showListToggle = true,
 }) => (
   <div className="flex items-center gap-2">
-    <Button
-      variant="outline"
-      size="sm"
-      className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell xl:inline-flex"
-      onClick={onToggleListVisibility}
-    >
-      {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-      <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
-    </Button>
+    {showListToggle ? (
+      <Button
+        variant="outline"
+        size="sm"
+        className="hidden border-[color:var(--border-shell)] bg-surface-shell-subtle text-[color:var(--text-shell-muted)] hover:bg-surface-shell xl:inline-flex"
+        onClick={onToggleListVisibility}
+      >
+        {desktopListVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+        <span className="ml-2 hidden text-xs font-medium xl:inline">{headerListButtonLabel}</span>
+      </Button>
+    ) : null}
     {showContextToggle ? (
       <Button
         variant="outline"
@@ -267,12 +270,13 @@ const InboxAppShell = ({
                 desktopListVisible={desktopListVisible}
                 headerListButtonLabel={headerListButtonLabel}
                 showContextToggle={isContextAvailable}
+                showListToggle={false}
               />
             </div>
           </header>
         </div>
         <div className="flex min-h-0 flex-1">
-          <div className="mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6">
+          <div className="relative mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6">
             {shouldRenderSplitLayout ? (
               <SplitLayout
                 className="h-full min-h-0 w-full gap-4 sm:gap-6"
@@ -292,6 +296,20 @@ const InboxAppShell = ({
             ) : (
               <div className="flex h-full w-full">{detailSurface}</div>
             )}
+            {isDesktop && sidebar && !desktopListVisible ? (
+              <div className="pointer-events-none absolute left-0 top-4 z-20 hidden translate-x-[-50%] lg:block">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="pointer-events-auto inline-flex items-center gap-2 rounded-full border-[color:var(--border-shell)] bg-[color:var(--surface-shell)] px-3 text-xs font-semibold text-[color:var(--text-shell-muted)] shadow-[var(--shadow-sm)] hover:bg-surface-shell-subtle"
+                  onClick={handleToggleListVisibility}
+                >
+                  <PanelLeftOpen className="h-4 w-4" aria-hidden />
+                  <span>Mostrar lista</span>
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

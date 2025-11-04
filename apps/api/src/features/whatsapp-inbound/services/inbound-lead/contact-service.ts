@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../../lib/prisma';
 import { pickPreferredName, readString } from '../identifiers';
@@ -26,7 +26,7 @@ const normalizeTagNames = (values: string[] | undefined): string[] => {
 const extractTagNames = (contact: PrismaContactWithRelations | null): string[] => {
   if (!contact?.tags?.length) return [];
   return contact.tags
-    .map((assignment) => assignment.tag?.name ?? null)
+    .map((assignment: Prisma.ContactTagGetPayload<{ include: { tag: true } }>) => assignment.tag?.name ?? null)
     .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
 };
 
@@ -37,7 +37,7 @@ const ensureTagsExist = async (
 ): Promise<Map<string, string>> => {
   if (!tagNames.length) return new Map();
   const existing = await tx.tag.findMany({ where: { tenantId, name: { in: tagNames } } });
-  const tags = new Map(existing.map((tag) => [tag.name, tag.id]));
+  const tags = new Map<string, string>(existing.map((tag) => [tag.name, tag.id]));
   const missing = tagNames.filter((name) => !tags.has(name));
   if (missing.length > 0) {
     const created = await Promise.all(
@@ -61,7 +61,9 @@ const syncContactTags = async (
   }
 
   const tagsByName = await ensureTagsExist(tx, tenantId, normalized);
-  const tagIds = normalized.map((name) => tagsByName.get(name)).filter((id): id is string => typeof id === 'string');
+  const tagIds = normalized
+    .map((name) => tagsByName.get(name))
+    .filter((id): id is string => typeof id === 'string');
 
   await tx.contactTag.deleteMany({ where: { tenantId, contactId, tagId: { notIn: tagIds } } });
   await Promise.all(
