@@ -25,6 +25,43 @@ export const useNotesMutation = ({ fallbackTicketId } = {}) => {
       if (!note?.ticketId) {
         return;
       }
+
+      const applyNote = (ticket) => {
+        if (!ticket || ticket.id !== note.ticketId) {
+          return ticket;
+        }
+        const existing = Array.isArray(ticket.notes) ? ticket.notes : [];
+        const alreadyPresent = existing.some((entry) => entry?.id === note.id);
+        if (alreadyPresent) {
+          return ticket;
+        }
+        const nextNotes = [...existing, note].sort((a, b) => {
+          const left = new Date(a?.createdAt ?? a?.updatedAt ?? 0).getTime();
+          const right = new Date(b?.createdAt ?? b?.updatedAt ?? 0).getTime();
+          return left - right;
+        });
+        return {
+          ...ticket,
+          notes: nextNotes,
+        };
+      };
+
+      const ticketsQueries = queryClient.getQueryCache().findAll({ queryKey: ['chat', 'tickets'] });
+      ticketsQueries.forEach(({ queryKey }) => {
+        queryClient.setQueryData(queryKey, (current) => {
+          if (!current || !Array.isArray(current.items)) return current;
+          return {
+            ...current,
+            items: current.items.map(applyNote),
+          };
+        });
+      });
+
+      queryClient.setQueryData(['chat', 'ticket', note.ticketId], (current) => {
+        if (!current) return current;
+        return applyNote(current);
+      });
+
       queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
       queryClient.invalidateQueries({ queryKey: ['chat', 'ticket', note.ticketId] });
     },
