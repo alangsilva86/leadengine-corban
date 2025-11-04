@@ -68,22 +68,36 @@ export async function generateAiReply(
 
     // Buscar ou criar configuração de IA (com fallback configurável)
     let config: any;
+    const normalizedQueueId = queueId ?? null;
+
     try {
-      config = await getAiConfig(tenantId, queueId ?? null);
+      config = await getAiConfig(tenantId, normalizedQueueId);
+
+      if (!config && normalizedQueueId) {
+        const globalConfig = await getAiConfig(tenantId, null);
+        if (globalConfig) {
+          logger.debug('AI config fallback to global scope', {
+            tenantId,
+            conversationId,
+            queueId: normalizedQueueId,
+          });
+          config = globalConfig;
+        }
+      }
 
       if (!config) {
         // Se não houver config, cria com modo padrão configurado via ambiente
         config = await upsertAiConfig({
           tenantId,
-          queueId: queueId ?? null,
-          scopeKey: queueId ?? '__global__',
+          queueId: normalizedQueueId,
+          scopeKey: normalizedQueueId ?? '__global__',
           model: envAiConfig.defaultModel,
           mode: fallbackMode as any,
         });
         logger.debug('AI config created with default AI mode', {
           tenantId,
           conversationId,
-          queueId: queueId ?? null,
+          queueId: normalizedQueueId,
           defaultMode: fallbackMode,
         });
       } else if (config && (config as any).mode == null) {
@@ -94,8 +108,8 @@ export async function generateAiReply(
           await upsertAiConfig({
             id: (config as any).id,
             tenantId,
-            queueId: queueId ?? null,
-            scopeKey: queueId ?? '__global__',
+            queueId: normalizedQueueId,
+            scopeKey: normalizedQueueId ?? '__global__',
             model: config.model ?? envAiConfig.defaultModel,
             mode: fallbackMode as any,
           } as any);
@@ -112,6 +126,7 @@ export async function generateAiReply(
         tenantId,
         conversationId,
         fallbackMode,
+        queueId: normalizedQueueId,
       });
       config = {
         id: null,

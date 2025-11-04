@@ -100,11 +100,29 @@ export const buildConfigUpsertPayload = (
   return payload;
 };
 
+const fetchConfigWithFallback = async (
+  tenantId: string,
+  queueId: string | null
+): Promise<AiConfigRecord> => {
+  const scoped = await getAiConfig(tenantId, queueId);
+  if (scoped) {
+    return scoped;
+  }
+  if (queueId) {
+    const globalConfig = await getAiConfig(tenantId, null);
+    if (globalConfig) {
+      logger.debug('ai.config.fallback.global', { tenantId, queueId });
+      return globalConfig;
+    }
+  }
+  return null;
+};
+
 export const ensureAiConfig = async (
   tenantId: string,
   queueId: string | null
 ): Promise<NonNullable<AiConfigRecord>> => {
-  const existing = await getAiConfig(tenantId, queueId);
+  const existing = await fetchConfigWithFallback(tenantId, queueId);
   if (existing) {
     return existing;
   }
@@ -119,7 +137,7 @@ export const ensureAiConfig = async (
 };
 
 export const getModeConfig = async (tenantId: string, queueId: string | null) => {
-  const config = await getAiConfig(tenantId, queueId);
+  const config = await fetchConfigWithFallback(tenantId, queueId);
 
   return {
     mode: config?.defaultMode ?? DEFAULT_MODE,
@@ -150,7 +168,7 @@ export const updateModeConfig = async (
 };
 
 export const getConfigSettings = async (tenantId: string, queueId: string | null) => {
-  const existing = await getAiConfig(tenantId, queueId);
+  const existing = await fetchConfigWithFallback(tenantId, queueId);
 
   if (!existing) {
     return {
