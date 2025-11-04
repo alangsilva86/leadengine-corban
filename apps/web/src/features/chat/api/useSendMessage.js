@@ -16,6 +16,7 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
       caption,
       quotedMessageId,
       metadata,
+      instanceId,
     }) => {
       const targetTicketId = ticketId ?? fallbackTicketId;
       if (!targetTicketId) {
@@ -32,6 +33,7 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
         caption,
         quotedMessageId,
         metadata,
+        instanceId,
       });
 
       return payload?.data ?? null;

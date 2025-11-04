@@ -243,11 +243,16 @@ export const suggestWithAi = async (input: SuggestInput): Promise<SuggestResult>
       },
     ],
     response: {
-      format: 'json_schema',
-      json_schema: {
-        name: 'crm_suggestion_schema',
-        schema: responseSchema,
-        strict: false,
+      modalities: ['text'],
+      text: {
+        format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'crm_suggestion_schema',
+            schema: responseSchema,
+            strict: false,
+          },
+        },
       },
     },
     metadata: {

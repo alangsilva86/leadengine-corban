@@ -117,6 +117,9 @@ interface SendMessageInput {
   attachments?: AttachmentLike[] | null;
   template?: TemplateLike | null;
   caption?: string | null;
+  instanceId?: string | null;
+  instanceLabel?: string | null;
+  defaultInstanceId?: string | null;
 }
 
 const inferMessageTypeFromMime = (mimeType: unknown) => {
@@ -327,7 +330,15 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   });
 
   const sendMessage = useCallback(
-    ({ content, attachments = [], template, caption }: SendMessageInput) => {
+    ({
+      content,
+      attachments = [],
+      template,
+      caption,
+      instanceId,
+      instanceLabel,
+      defaultInstanceId,
+    }: SendMessageInput) => {
       const files = Array.isArray(attachments) ? attachments : [];
       const trimmed = (content ?? '').trim();
       if (!trimmed && files.length === 0 && !template) {
@@ -411,6 +422,43 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
 
       if (metadata.attachments || metadata.template) {
         mutationPayload.metadata = metadata;
+      }
+
+      const whatsappMetadataSource =
+        metadata.whatsapp && typeof metadata.whatsapp === 'object'
+          ? (metadata.whatsapp as Record<string, unknown>)
+          : {};
+      const whatsappMetadata: Record<string, unknown> = { ...whatsappMetadataSource };
+
+      if (instanceId) {
+        mutationPayload.instanceId = instanceId;
+        whatsappMetadata.instanceId = instanceId;
+        if (instanceLabel) {
+          whatsappMetadata.instanceLabel = instanceLabel;
+        }
+        if (defaultInstanceId && instanceId !== defaultInstanceId) {
+          whatsappMetadata.instanceOverride = instanceId;
+          whatsappMetadata.defaultInstanceId = defaultInstanceId;
+        } else if (defaultInstanceId && whatsappMetadata.defaultInstanceId === undefined) {
+          whatsappMetadata.defaultInstanceId = defaultInstanceId;
+        }
+      } else if (defaultInstanceId && whatsappMetadata.defaultInstanceId === undefined) {
+        whatsappMetadata.defaultInstanceId = defaultInstanceId;
+      }
+
+      const resolvedSourceInstance =
+        instanceLabel ??
+        instanceId ??
+        (defaultInstanceId && typeof defaultInstanceId === 'string' ? defaultInstanceId : null);
+      if (resolvedSourceInstance && metadata.sourceInstance === undefined) {
+        metadata.sourceInstance = resolvedSourceInstance;
+      }
+
+      if (Object.keys(whatsappMetadata).length > 0) {
+        mutationPayload.metadata = {
+          ...(mutationPayload.metadata ?? {}),
+          whatsapp: whatsappMetadata,
+        } as ChatMessageMetadata;
       }
 
       if (hasAttachments) {

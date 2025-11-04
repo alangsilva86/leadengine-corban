@@ -19,6 +19,15 @@ export type ChatAttachmentMetadata = {
 export type ChatMessageMetadata = {
   template?: ChatTemplateMetadata;
   attachments?: ChatAttachmentMetadata[];
+  sourceInstance?: string | null;
+  whatsapp?: {
+    instanceId?: string | null;
+    instanceLabel?: string | null;
+    defaultInstanceId?: string | null;
+    instanceOverride?: string | null;
+    overrideUserId?: string | null;
+    overrideAt?: string | null;
+  };
 };
 
 export interface SendMessageMutationVariables {
@@ -31,6 +40,7 @@ export interface SendMessageMutationVariables {
   caption?: string | null;
   quotedMessageId?: string | null;
   metadata?: ChatMessageMetadata;
+  instanceId?: string | null;
 }
 
 export type SendMessageMutationResult = any;

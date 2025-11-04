@@ -27,6 +27,7 @@ const ComposerSection = forwardRef(
       aiModeChangeDisabled,
       onAiModeChange,
       aiStreaming,
+      instanceSelector,
     },
     elementRef,
   ) => (
@@ -55,6 +56,7 @@ const ComposerSection = forwardRef(
         aiModeChangeDisabled={aiModeChangeDisabled}
         onAiModeChange={onAiModeChange}
         aiStreaming={aiStreaming}
+        instanceSelector={instanceSelector}
       />
     </footer>
   ),
@@ -90,6 +92,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
     aiModeChangeDisabled,
     onAiModeChange,
     aiStreaming,
+    instanceSelector,
   } = composer ?? {};
 
   const [detailsState, setDetailsState] = useState({ open: false, intent: null });

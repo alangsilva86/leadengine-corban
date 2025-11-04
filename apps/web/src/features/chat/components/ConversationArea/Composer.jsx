@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Paperclip, Smile, Send, Loader2, Wand2, X } from 'lucide-react';
+import { Paperclip, Smile, Send, Loader2, Wand2, X, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
@@ -122,6 +122,7 @@ export const Composer = forwardRef(function Composer(
     aiModeChangeDisabled,
     onAiModeChange,
     aiStreaming = null,
+    instanceSelector = null,
   },
   ref
 ) {
@@ -129,6 +130,7 @@ export const Composer = forwardRef(function Composer(
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [aiModeMenuOpen, setAiModeMenuOpen] = useState(false);
+  const [instanceMenuOpen, setInstanceMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -138,6 +140,58 @@ export const Composer = forwardRef(function Composer(
     mutateAsync: uploadMedia,
     isPending: isUploading,
   } = useUploadWhatsAppMedia();
+  const instanceSelectorData = instanceSelector ?? {};
+  const availableInstanceOptions = Array.isArray(instanceSelectorData.options)
+    ? instanceSelectorData.options
+    : [];
+  const selectedInstanceId = instanceSelectorData.selectedId ?? null;
+  const selectedInstanceLabel =
+    instanceSelectorData.selectedLabel ?? null;
+  const selectedInstanceStatusLabel =
+    instanceSelectorData.selectedStatusLabel ?? null;
+  const selectedInstanceTone =
+    instanceSelectorData.selectedTone ?? 'muted';
+  const selectedInstanceConnected =
+    instanceSelectorData.selectedConnected ?? true;
+  const defaultInstanceId = instanceSelectorData.defaultId ?? null;
+  const defaultInstanceLabel =
+    instanceSelectorData.defaultLabel ?? null;
+  const instanceSelectorLoading = Boolean(instanceSelectorData.loading);
+  const instanceOverrideActive = Boolean(instanceSelectorData.isOverride);
+  const requireConnected = Boolean(instanceSelectorData.requireConnected);
+  const hasInstances = Boolean(instanceSelectorData.hasInstances);
+  const instanceNotice = instanceSelectorData.notice ?? null;
+  const showInstanceSelector = Boolean(instanceSelector);
+  const instanceSelectorDisabled = Boolean(instanceSelectorData.disabled);
+  const STATUS_DOT_CLASSES = {
+    success: 'bg-success-strong',
+    info: 'bg-[color:var(--accent-inbox-primary)]',
+    warning: 'bg-warning-strong',
+    danger: 'bg-status-error-foreground',
+    muted: 'bg-surface-overlay-glass-border',
+  };
+  const STATUS_TEXT_CLASSES = {
+    success: 'text-success-strong',
+    info: 'text-[color:var(--accent-inbox-primary)]',
+    warning: 'text-warning-strong',
+    danger: 'text-status-error-foreground',
+    muted: 'text-foreground-muted',
+  };
+  const NOTICE_CLASS_MAP = {
+    info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
+    warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
+    error: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
+  };
+  const instanceBlockingSend = requireConnected && hasInstances && !selectedInstanceConnected;
+  const instanceToneKey = STATUS_DOT_CLASSES[selectedInstanceTone] ? selectedInstanceTone : 'muted';
+  const instanceDotClass = STATUS_DOT_CLASSES[instanceToneKey] ?? STATUS_DOT_CLASSES.muted;
+  const instanceStatusTextClass =
+    STATUS_TEXT_CLASSES[instanceToneKey] ?? STATUS_TEXT_CLASSES.muted;
+  const instanceDisplayLabel =
+    selectedInstanceLabel ?? defaultInstanceLabel ?? 'Selecionar instância';
+  const instanceDisplayStatus =
+    selectedInstanceStatusLabel ??
+    (selectedInstanceConnected ? 'Conectada' : 'Desconectada');
 
   const aiStatus = aiStreaming?.status ?? 'idle';
   const isAiGenerating = aiStatus === 'streaming';
@@ -148,11 +202,14 @@ export const Composer = forwardRef(function Composer(
     if (disabled) {
       return 'Envio desabilitado no momento';
     }
+    if (instanceBlockingSend) {
+      return 'Selecione uma instância ativa para responder';
+    }
     if (isAiGenerating) {
       return 'Copiloto IA gerando resposta...';
     }
     return 'Escreva uma resposta...';
-  }, [disabled, isAiGenerating]);
+  }, [disabled, instanceBlockingSend, isAiGenerating]);
 
   const normalizedAiMode = isValidAiMode(aiMode) ? aiMode : DEFAULT_AI_MODE;
   const aiModeOption = getAiModeOption(normalizedAiMode);
@@ -186,6 +243,12 @@ export const Composer = forwardRef(function Composer(
     }
   }, [aiModeButtonDisabled]);
 
+  useEffect(() => {
+    if (!showInstanceSelector || instanceSelectorDisabled) {
+      setInstanceMenuOpen(false);
+    }
+  }, [instanceSelectorDisabled, showInstanceSelector]);
+
   const resetComposer = () => {
     setValue('');
     setAttachments([]);
@@ -204,6 +267,12 @@ export const Composer = forwardRef(function Composer(
       isUploading ||
       isAiGenerating
     ) {
+      return;
+    }
+    if (instanceBlockingSend) {
+      if (showInstanceSelector) {
+        setInstanceMenuOpen(true);
+      }
       return;
     }
 
@@ -467,6 +536,134 @@ export const Composer = forwardRef(function Composer(
             </Popover>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {showInstanceSelector ? (
+              <Popover
+                open={instanceMenuOpen}
+                onOpenChange={(open) => {
+                  if (instanceSelectorDisabled && !hasInstances && !instanceNotice) {
+                    return;
+                  }
+                  setInstanceMenuOpen(open);
+                }}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          'inline-flex items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-xs font-semibold text-foreground transition hover:bg-surface-overlay-strong',
+                          instanceOverrideActive && 'border-[color:var(--accent-inbox-primary)]/60 text-[color:var(--accent-inbox-primary)]'
+                        )}
+                        disabled={instanceSelectorDisabled && !hasInstances && !instanceSelectorLoading}
+                      >
+                        {instanceSelectorLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground-muted" />
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <span className={cn('h-2 w-2 rounded-full', instanceDotClass)} aria-hidden />
+                            <span className="flex max-w-[12rem] flex-col items-start">
+                              <span className="truncate">{instanceDisplayLabel}</span>
+                              <span
+                                className={cn(
+                                  'text-[10px] uppercase tracking-[0.18em]',
+                                  instanceStatusTextClass
+                                )}
+                              >
+                                {instanceDisplayStatus}
+                              </span>
+                            </span>
+                          </span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>Selecionar instância de envio</TooltipContent>
+                </Tooltip>
+                <PopoverContent className="w-72 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet p-3 shadow-[0_16px_40px_-24px_rgba(15,23,42,0.65)]">
+                  <div className="flex items-center justify-between gap-2 border-b border-surface-overlay-glass-border pb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-foreground-muted">
+                      Instância de envio
+                    </p>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-full border border-surface-overlay-glass-border text-foreground-muted hover:text-foreground"
+                          onClick={() => instanceSelectorData.onRefresh?.()}
+                          disabled={instanceSelectorLoading}
+                        >
+                          <RefreshCw className={cn('h-4 w-4', instanceSelectorLoading && 'animate-spin')} />
+                          <span className="sr-only">Atualizar instâncias</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Atualizar instâncias</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <div className="mt-3 space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {availableInstanceOptions.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-4 text-center text-xs text-foreground-muted">
+                        Nenhuma instância disponível. Conecte ou atualize para visualizar opções.
+                      </p>
+                    ) : (
+                      availableInstanceOptions.map((option) => {
+                        const toneKey = STATUS_DOT_CLASSES[option.statusTone] ? option.statusTone : 'muted';
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              instanceSelectorData.onSelect?.(option.id);
+                              setInstanceMenuOpen(false);
+                            }}
+                            className={cn(
+                              'w-full rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-[color:var(--accent-inbox-primary)]/40 hover:bg-surface-overlay-strong',
+                              selectedInstanceId === option.id &&
+                                'border-[color:var(--accent-inbox-primary)]/60 bg-[color:var(--accent-inbox-primary)]/10'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={cn(
+                                  'h-2 w-2 rounded-full',
+                                  STATUS_DOT_CLASSES[toneKey] ?? STATUS_DOT_CLASSES.muted
+                                )}
+                                aria-hidden
+                              />
+                              <span className="flex-1 truncate text-sm font-semibold text-foreground">
+                                {option.label}
+                              </span>
+                              {option.id === defaultInstanceId ? (
+                                <Badge
+                                  variant="outline"
+                                  className="border-dashed text-[10px] uppercase tracking-[0.2em] text-foreground-muted"
+                                >
+                                  Padrão
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground-muted">
+                              <span className="truncate">{option.description}</span>
+                              <span
+                                className={cn(
+                                  'font-medium',
+                                  STATUS_TEXT_CLASSES[toneKey] ?? STATUS_TEXT_CLASSES.muted
+                                )}
+                              >
+                                {option.statusLabel}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : null}
             <Popover
               open={aiModeMenuOpen}
               onOpenChange={(open) => {
@@ -509,6 +706,17 @@ export const Composer = forwardRef(function Composer(
             </Popover>
           </div>
         </div>
+        {showInstanceSelector && instanceNotice ? (
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-xl px-3 py-2 text-xs',
+              NOTICE_CLASS_MAP[instanceNotice.type] ?? NOTICE_CLASS_MAP.info
+            )}
+            role="alert"
+          >
+            <span>{instanceNotice.message}</span>
+          </div>
+        ) : null}
 
         <div className="flex items-end gap-2">
           <Textarea
@@ -539,7 +747,7 @@ export const Composer = forwardRef(function Composer(
             variant="default"
             size="icon"
             className="h-12 w-12 rounded-full bg-[color:var(--accent-inbox-primary)] text-white shadow-[0_16px_28px_-20px_rgba(14,165,233,0.7)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]"
-            disabled={inputDisabled}
+            disabled={inputDisabled || instanceBlockingSend}
             onClick={handleSend}
           >
             {isSending || isUploading || isAiGenerating ? (

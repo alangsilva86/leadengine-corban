@@ -1596,7 +1596,45 @@ export const sendMessage = async (
   }
 
   const inferredInstanceId = resolveWhatsAppInstanceId(ticket);
-  const effectiveInstanceId = input.instanceId ?? inferredInstanceId;
+  const requestedInstanceIdRaw = typeof input.instanceId === 'string' ? input.instanceId.trim() : '';
+  const requestedInstanceId = requestedInstanceIdRaw.length > 0 ? requestedInstanceIdRaw : null;
+
+  let effectiveInstanceId = requestedInstanceId ?? inferredInstanceId;
+  let overrideRecord: { id: string; brokerId: string | null } | null = null;
+
+  if (requestedInstanceId && requestedInstanceId !== inferredInstanceId) {
+    const instance = await prisma.whatsAppInstance.findUnique({
+      where: { id: requestedInstanceId },
+      select: {
+        id: true,
+        tenantId: true,
+        brokerId: true,
+        connected: true,
+        status: true,
+      },
+    });
+
+    if (!instance || instance.tenantId !== tenantId) {
+      throw new NotFoundError('WhatsAppInstance', requestedInstanceId);
+    }
+
+    const isConnected = instance.connected === true || instance.status === 'connected';
+    if (!isConnected) {
+      throw new ServiceUnavailableError('A instância selecionada está desconectada no momento.');
+    }
+
+    overrideRecord = { id: instance.id, brokerId: instance.brokerId };
+    effectiveInstanceId = instance.id;
+
+    logger.info('crm.whatsapp.manual_send.instance_override', {
+      tenantId,
+      ticketId: ticket.id,
+      contactId: ticket.contactId,
+      requestedInstanceId,
+      defaultInstanceId: inferredInstanceId ?? null,
+      userId: userId ?? null,
+    });
+  }
   const circuitKey =
     effectiveInstanceId && tenantId ? buildCircuitBreakerKey(tenantId, effectiveInstanceId) : null;
   const circuitConfig = getCircuitBreakerConfig();
@@ -1605,7 +1643,31 @@ export const sendMessage = async (
   let wasDuplicate = false;
   const direction = input.direction;
   const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
-  const messageMetadata = (input.metadata ?? {}) as Record<string, unknown>;
+  const messageMetadata = {
+    ...(input.metadata ?? {}),
+  } as Record<string, unknown>;
+
+  if (effectiveInstanceId) {
+    const whatsappMetadataSource =
+      messageMetadata.whatsapp && typeof messageMetadata.whatsapp === 'object'
+        ? (messageMetadata.whatsapp as Record<string, unknown>)
+        : {};
+    const whatsappMetadata: Record<string, unknown> = { ...whatsappMetadataSource };
+
+    whatsappMetadata.instanceId = effectiveInstanceId;
+
+    if (requestedInstanceId && requestedInstanceId !== inferredInstanceId) {
+      whatsappMetadata.instanceOverride = effectiveInstanceId;
+      whatsappMetadata.defaultInstanceId = inferredInstanceId ?? null;
+      whatsappMetadata.overrideUserId = userId ?? null;
+      whatsappMetadata.overrideAt = new Date().toISOString();
+    } else if (whatsappMetadata.defaultInstanceId === undefined && inferredInstanceId) {
+      whatsappMetadata.defaultInstanceId = inferredInstanceId;
+    }
+
+    messageMetadata.whatsapp = whatsappMetadata;
+    messageMetadata.sourceInstance = effectiveInstanceId;
+  }
 
   try {
     type StorageCreateMessageInput = Parameters<typeof storageCreateMessage>[2];
@@ -1820,7 +1882,7 @@ export const sendMessage = async (
         let dispatchInstanceId: string | null = null;
         let dispatchBrokerId: string | null = null;
         try {
-          const dispatchResolution = await resolveDispatchInstanceId(instanceId);
+          const dispatchResolution = await resolveDispatchInstanceId(instanceId, overrideRecord ?? undefined);
           dispatchInstanceId = dispatchResolution.dispatchInstanceId;
           dispatchBrokerId = dispatchResolution.brokerId;
           if (!dispatchInstanceId) {
