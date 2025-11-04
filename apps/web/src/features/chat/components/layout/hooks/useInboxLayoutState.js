@@ -13,18 +13,18 @@ const useInboxLayoutState = ({
   currentUser,
   telemetry = emitInboxTelemetry,
 } = {}) => {
+  const isTablet = useMediaQuery('(min-width: 1024px)');
+  const isDesktop = useMediaQuery('(min-width: 1280px)');
+  const shouldRenderSplitLayout = isTablet;
+
   const canPersistPreferences = Boolean(currentUser?.id);
   const [contextOpen, setContextOpen] = useState(() =>
     canPersistPreferences
       ? readPreference(CONTEXT_PREFERENCE_KEY, defaultContextOpen)
       : defaultContextOpen,
   );
-  const [desktopListVisible, setDesktopListVisible] = useState(false);
+  const [desktopListVisible, setDesktopListVisible] = useState(() => (isDesktop ? true : false));
   const [mobileListOpen, setMobileListOpen] = useState(false);
-
-  const isTablet = useMediaQuery('(min-width: 1024px)');
-  const isDesktop = useMediaQuery('(min-width: 1280px)');
-  const shouldRenderSplitLayout = isTablet;
 
   useEffect(() => {
     if (!contextAvailable && contextOpen) {
