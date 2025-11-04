@@ -3,7 +3,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import { BatteryCharging, MessageCircleMore, PanelRightOpen, Wand2 } from 'lucide-react';
+import { BatteryCharging, Clock3, MessageCircleMore, PanelRightOpen, Wand2 } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
 import AiModeMenu from './AiModeMenu.jsx';
@@ -48,30 +48,33 @@ const PRIMARY_BUTTON_TONE = {
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
 };
 
-const Indicator = ({ icon: Icon, tone = 'neutral', label, description, className, iconClassName }) => {
-  if (!Icon) return null;
-
-  const resolvedToneClass = tone ? INDICATOR_TONES[tone] ?? INDICATOR_TONES.neutral : null;
-  const accessibleLabel = description ?? label;
-  const content = (
-    <span
+const Indicator = ({
+  icon: Icon,
+  tone = 'neutral',
+  label,
+  description,
+  className,
+  iconClassName,
+  onClick,
+}) => {
+  if (!label) return null;
+  const resolvedToneClass = tone ? INDICATOR_TONES[tone] ?? INDICATOR_TONES.neutral : INDICATOR_TONES.neutral;
+  const Component = onClick ? 'button' : 'span';
+  return (
+    <Component
+      type={onClick ? 'button' : undefined}
+      aria-label={description ?? label}
+      onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium',
+        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[color:var(--surface-shell)]',
+        !onClick && 'cursor-default focus-visible:ring-0 focus-visible:ring-offset-0',
         resolvedToneClass,
         className,
       )}
-      aria-label={accessibleLabel}
     >
-      <Icon className={cn('h-3.5 w-3.5', iconClassName)} aria-hidden />
+      {Icon ? <Icon className={cn('h-3.5 w-3.5', iconClassName)} aria-hidden /> : null}
       <span>{label}</span>
-    </span>
-  );
-
-  return tone ? content : (
-    <span className={cn('inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium', className)}>
-      <Icon className={cn('h-3.5 w-3.5', iconClassName)} aria-hidden />
-      <span>{label}</span>
-    </span>
+    </Component>
   );
 };
 
@@ -107,6 +110,13 @@ const TypingIndicator = ({ agents = [] }) => {
   );
 };
 
+const SLA_TONE_MAP = {
+  neutral: 'neutral',
+  yellow: 'warning',
+  orange: 'warning',
+  overdue: 'danger',
+};
+
 const JroIndicator = ({ jro }) => {
   const normalizedProgress = Number.isFinite(jro?.progress)
     ? Math.max(0, Math.min(jro.progress ?? 0, 1))
@@ -130,14 +140,15 @@ const JroIndicator = ({ jro }) => {
       ? `SLA atrasado há ${timeLabel}`
       : `Tempo restante ${timeLabel}`;
   const meterValue = hasDeadline ? progressPercent : 0;
-  const ariaLabel = `SLA interno. ${readableStatus}`;
+  const chipTone = SLA_TONE_MAP[jro?.state] ?? 'neutral';
 
   return (
-    <section role="group" aria-label={ariaLabel} title={readableStatus} className="rounded-lg bg-surface-overlay-glass/15 px-3 py-2 backdrop-blur-sm">
-      <div className="h-[2px] w-full rounded bg-surface-overlay-glass-border/60" aria-hidden="true">
+    <div className="min-w-[200px] flex-1" role="group" aria-label={`SLA interno. ${readableStatus}`}>
+      <Indicator icon={Clock3} tone={chipTone} label={`SLA interno · ${displayTime}`} />
+      <div className="mt-2 h-1.5 rounded-full bg-surface-overlay-glass-border/60" aria-hidden="true">
         <div
           className={cn(
-            'h-full rounded transition-[width] duration-500 ease-out motion-reduce:transition-none',
+            'h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none',
             tone.bar,
             tone.pulse,
           )}
@@ -145,22 +156,7 @@ const JroIndicator = ({ jro }) => {
         />
       </div>
       <meter className="sr-only" min={0} max={100} value={meterValue} aria-label="Progresso do SLA" />
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <div
-          className={cn(
-            'inline-flex items-center gap-2 rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-wide',
-            tone.text,
-            tone.chip,
-          )}
-        >
-          <BatteryCharging className="h-3.5 w-3.5" aria-hidden />
-          <span>SLA interno</span>
-        </div>
-        <time className={cn('text-sm font-semibold tabular-nums', tone.text)} aria-live={hasDeadline ? 'polite' : 'off'}>
-          {displayTime}
-        </time>
-      </div>
-    </section>
+    </div>
   );
 };
 
@@ -260,84 +256,109 @@ const PrimaryActionBanner = ({
   aiMode,
   aiModeChangeDisabled,
   onAiModeChange,
-}) => (
-  <div data-testid="conversation-header-summary" className="flex flex-col gap-4">
-    <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Avatar className="h-12 w-12">
-          <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
-            {shortId ? (
-              <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
-                #{shortId}
-              </span>
-            ) : null}
-            <Indicator
-              icon={statusInfo?.icon}
-              tone={statusInfo?.tone}
-              label={statusInfo?.label}
-              description={statusInfo ? `Status: ${statusInfo.label}` : undefined}
-            />
-            {stageInfo ? (
-              <Indicator
-                icon={stageInfo.icon}
-                tone={stageInfo.tone}
-                label={stageInfo.label}
-                description={`Etapa: ${stageInfo.label}`}
-              />
-            ) : null}
-            {originInfo ? (
-              <Indicator
-                icon={originInfo.icon}
-                tone={null}
-                className={cn(
-                  'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
-                  originInfo.className,
-                )}
-                label={originInfo.label}
-                description={`Origem: ${originInfo.label}`}
-              />
-            ) : null}
+  nextStepValue,
+}) => {
+  const handleDetails = (intent = {}) => {
+    onRequestDetails?.(intent);
+  };
+
+  const hasNextStep = typeof nextStepValue === 'string' && nextStepValue.trim().length > 0;
+
+  return (
+    <div
+      data-testid="conversation-header-summary"
+      className="flex flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border/70 bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-quiet)_94%,transparent)]/95 p-4 shadow-[0_18px_40px_-26px_rgba(2,6,23,0.75)]"
+    >
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Avatar className="h-12 w-12">
+            <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
+              {shortId ? (
+                <span className="inline-flex items-center rounded-md bg-surface-overlay-quiet px-2 py-0.5 text-[11px] font-medium uppercase text-foreground-muted">
+                  #{shortId}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 truncate text-xs text-foreground-muted">
+              {stageKey ? `Etapa atual · ${stageKey}` : 'Sem etapa definida'}
+            </p>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <AiModeBadge aiMode={aiMode} disabled={aiModeChangeDisabled} onChange={onAiModeChange} />
+          <Indicator
+            icon={statusInfo?.icon}
+            tone={statusInfo?.tone}
+            label={statusInfo?.label}
+            description={statusInfo ? `Status: ${statusInfo.label}` : undefined}
+          />
+          {stageInfo ? (
+            <Indicator
+              icon={stageInfo.icon}
+              tone={stageInfo.tone}
+              label={stageInfo.label}
+              description={`Etapa: ${stageInfo.label}`}
+            />
+          ) : null}
+          {originInfo ? (
+            <Indicator
+              icon={originInfo.icon}
+              tone="neutral"
+              className={cn('text-foreground', originInfo.className)}
+              label={originInfo.label}
+              description={`Origem: ${originInfo.label}`}
+            />
+          ) : null}
+          {hasNextStep ? (
+            <Indicator
+              icon={BatteryCharging}
+              tone="info"
+              label={`Próximo passo: ${nextStepValue}`}
+              onClick={() => handleDetails({ focus: 'nextStep' })}
+            />
+          ) : null}
+          <JroIndicator jro={jro} />
+        </div>
+      </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <PrimaryActionButton
+            action={primaryAction}
+            jroState={jro?.state}
+            onExecute={onPrimaryAction}
+            disabled={!primaryAction}
+          />
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-2 py-1">
+            <CommandBar
+              context={commandContext}
+              className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <TypingIndicator agents={typingAgents} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn(
+              'inline-flex items-center gap-2 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-overlay-strong',
+              detailsOpen && 'bg-surface-overlay-strong text-foreground',
+            )}
+            aria-label={detailsOpen ? 'Ocultar detalhes do contato' : 'Mostrar detalhes do contato'}
+            onClick={() => handleDetails({})}
+          >
+            <PanelRightOpen className="h-4 w-4" aria-hidden />
+            <span className="hidden sm:inline">Detalhes</span>
+          </Button>
         </div>
       </div>
     </div>
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <div className="shrink-0">
-        <TypingIndicator agents={typingAgents} />
-      </div>
-      <AiModeBadge aiMode={aiMode} disabled={aiModeChangeDisabled} onChange={onAiModeChange} />
-      <PrimaryActionButton
-        action={primaryAction}
-        jroState={jro?.state}
-        onExecute={onPrimaryAction}
-        disabled={!primaryAction}
-      />
-      <CommandBar
-        context={commandContext}
-        className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none"
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        className={cn(
-          'h-9 w-9 shrink-0 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground hover:bg-surface-overlay-strong',
-          detailsOpen && 'bg-surface-overlay-strong text-foreground',
-        )}
-        aria-label={detailsOpen ? 'Ocultar detalhes do contato' : 'Mostrar detalhes do contato'}
-        onClick={onRequestDetails}
-      >
-        <PanelRightOpen className={cn('h-4 w-4 transition-transform', detailsOpen ? 'translate-x-[1px]' : '')} aria-hidden />
-      </Button>
-    </div>
-    <div className="rounded-2xl border border-surface-overlay-glass-border/70 bg-surface-overlay-quiet/80 p-3">
-      <JroIndicator jro={jro} />
-    </div>
-  </div>
-);
+  );
+};
 
 export { PrimaryActionBanner as default, PrimaryActionButton, TypingIndicator, JroIndicator, Indicator };

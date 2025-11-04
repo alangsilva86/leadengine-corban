@@ -511,10 +511,11 @@ const ConversationHeader = ({
       jro={jro}
       commandContext={commandContext}
       detailsOpen={detailsOpen}
-      onRequestDetails={() => onRequestDetails?.({})}
+      onRequestDetails={onRequestDetails}
       aiMode={aiMode}
       aiModeChangeDisabled={aiModeChangeDisabled}
       onAiModeChange={onAiModeChange}
+      nextStepValue={nextStepValue}
     />
   );
 
