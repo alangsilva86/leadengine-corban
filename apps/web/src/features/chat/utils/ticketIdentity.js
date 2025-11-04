@@ -2,10 +2,21 @@ import { formatPhoneNumber } from '@/lib/utils.js';
 
 const toRecord = (value) => (value && typeof value === 'object' ? value : {});
 
+const normalizeCandidate = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+  return value;
+};
+
 const pickString = (...candidates) => {
   for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
-    const trimmed = candidate.trim();
+    const normalizedCandidate = normalizeCandidate(candidate);
+    if (typeof normalizedCandidate !== 'string') continue;
+    const trimmed = normalizedCandidate.trim();
     if (trimmed.length > 0) {
       return trimmed;
     }
@@ -14,8 +25,9 @@ const pickString = (...candidates) => {
 };
 
 const sanitizePhone = (value) => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
+  const normalizedValue = normalizeCandidate(value);
+  if (typeof normalizedValue !== 'string') return null;
+  const trimmed = normalizedValue.trim();
   if (!trimmed) return null;
   const withoutDomain = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed;
   const hasPlus = withoutDomain.trim().startsWith('+');
