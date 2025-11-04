@@ -37,7 +37,7 @@ export const MessageTimeline = ({
   onScrollToBottom,
 }) => (
   <div
-    className="chat-scroll-content flex h-full min-h-0 flex-col gap-3"
+    className="chat-scroll-content relative flex h-full min-h-0 flex-col gap-3"
     role="log"
     aria-live="polite"
     aria-relevant="additions"
@@ -90,22 +90,26 @@ export const MessageTimeline = ({
     ) : null}
 
     {showNewMessagesHint ? (
-      <div className="sticky bottom-4 z-20 mt-2 flex flex-col items-center gap-2 px-2">
-        <div className="flex w-full items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.4em] text-foreground-muted">
-          <span className="h-px flex-1 bg-surface-overlay-glass-border" />
+      <>
+        <div
+          role="separator"
+          aria-label="Novas mensagens"
+          className="my-6 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.35em] text-foreground-muted"
+        >
+          <span className="h-px flex-1 bg-surface-overlay-glass-border/80" />
           <span>Novas mensagens</span>
-          <span className="h-px flex-1 bg-surface-overlay-glass-border" />
+          <span className="h-px flex-1 bg-surface-overlay-glass-border/80" />
         </div>
         <button
           type="button"
           onClick={() => onScrollToBottom?.()}
           disabled={!onScrollToBottom}
-          className="inline-flex items-center gap-1 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet/80 px-3 py-1 text-[11px] font-medium text-foreground shadow-[0_8px_20px_-16px_rgba(15,23,42,0.8)] transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="pointer-events-auto absolute bottom-4 right-4 inline-flex items-center gap-1 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet/90 px-3 py-1.5 text-[11px] font-semibold text-foreground shadow-[0_16px_32px_-24px_rgba(15,23,42,0.9)] transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Pular para o fim
           <span aria-hidden="true">↓</span>
         </button>
-      </div>
+      </>
     ) : null}
   </div>
 );

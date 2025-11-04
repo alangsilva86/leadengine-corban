@@ -467,9 +467,6 @@ export const Composer = forwardRef(function Composer(
             </Popover>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden text-[11px] font-medium uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)] sm:inline">
-              Modo IA: {aiModeOption.label}
-            </span>
             <Popover
               open={aiModeMenuOpen}
               onOpenChange={(open) => {
