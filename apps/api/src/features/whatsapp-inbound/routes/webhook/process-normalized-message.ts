@@ -8,6 +8,7 @@ import { emitWhatsAppDebugPhase } from '../../../debug/services/whatsapp-debug-e
 import { enqueueInboundWebhookJob } from '../../services/inbound-queue';
 import { recordEncryptedPollVote } from '../../services/poll-choice-service';
 import { upsertPollMetadata, type PollMetadataOption } from '../../services/poll-metadata-service';
+import { pollRuntimeService } from '../../services/poll-runtime-service';
 import { logBaileysDebugEvent } from '../../utils/baileys-event-logger';
 import type { NormalizedRawUpsertMessage } from '../../services/baileys-raw-normalizer';
 import { asRecord, readNumber, readString } from '../../utils/webhook-parsers';
@@ -152,6 +153,23 @@ export const processNormalizedMessage = async (
           tenantId: tenantId ?? null,
           instanceId: instanceId ?? null,
         });
+
+        await pollRuntimeService.rememberPollCreation({
+          pollId: normalized.messageId,
+          question:
+            readString(messageRecord.text, pollCreationRecord.name, pollCreationRecord.title) ?? null,
+          selectableOptionsCount: readNumber(pollCreationRecord.selectableOptionsCount),
+          allowMultipleAnswers: pollCreationRecord.allowMultipleAnswers === true,
+          options: metadataOptions,
+          creationMessageId: normalized.messageId,
+          creationMessageKey: creationKey,
+          messageSecret: readString(pollContext?.messageSecret),
+          messageSecretVersion: readNumber(pollContext?.messageSecretVersion),
+          tenantId: tenantId ?? null,
+          instanceId: instanceId ?? null,
+          rawMessage: messageRecord,
+          creatorJid: creationKey.participant ?? remoteJid ?? null,
+        });
       } catch (metadataError) {
         logger.warn('Failed to persist poll metadata from webhook message', {
           requestId,
@@ -197,6 +215,20 @@ export const processNormalizedMessage = async (
           pollId: pollIdFromUpdate ?? normalized.messageId,
           voterJid: remoteJid,
           error: encryptedVoteError,
+        });
+      }
+
+      try {
+        await pollRuntimeService.registerReceiptHint({
+          pollId: pollIdFromUpdate ?? normalized.messageId,
+          hintJid: remoteJid,
+        });
+      } catch (runtimeError) {
+        logger.warn('Failed to register poll receipt hint', {
+          requestId,
+          pollId: pollIdFromUpdate ?? normalized.messageId,
+          voterJid: remoteJid,
+          error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
         });
       }
     }

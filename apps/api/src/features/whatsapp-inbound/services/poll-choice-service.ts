@@ -14,6 +14,7 @@ import {
 } from '../schemas/poll-choice';
 import { sanitizeJsonPayload } from '../utils/baileys-event-logger';
 import { getPollMetadata, type PollMetadataOption } from './poll-metadata-service';
+import { pollRuntimeService } from './poll-runtime-service';
 
 interface PollChoiceContext {
   tenantId?: string | null;
@@ -446,26 +447,71 @@ export const recordPollChoiceVote = async (
 
   const stateId = buildStateId(pollId);
 
-  const [existingRecord, pollMetadata] = await Promise.all([
+  const [existingRecord, pollMetadata, runtimeMetadata, runtimeSecret] = await Promise.all([
     prisma.processedIntegrationEvent.findUnique({
       where: { id: stateId },
     }),
     getPollMetadata(pollId),
+    pollRuntimeService.getPollMetadata(pollId),
+    pollRuntimeService.getDecryptedSecret(pollId),
   ]);
 
   const existingState = ensureState(existingRecord?.payload, pollId);
   const previousVote = existingState.votes[voterJid];
 
+  const mergedMetadata = (() => {
+    if (!runtimeMetadata && !pollMetadata) {
+      return null as const;
+    }
+
+    const runtimeOptions = runtimeMetadata?.options ?? [];
+    const persistedOptions = pollMetadata?.options ?? [];
+
+    return {
+      question: runtimeMetadata?.question ?? pollMetadata?.question ?? null,
+      selectableOptionsCount:
+        runtimeMetadata?.selectableOptionsCount ??
+        pollMetadata?.selectableOptionsCount ??
+        null,
+      allowMultipleAnswers:
+        runtimeMetadata?.allowMultipleAnswers ??
+        pollMetadata?.allowMultipleAnswers ??
+        undefined,
+      options:
+        runtimeOptions.length > 0
+          ? runtimeOptions
+          : persistedOptions.length > 0
+            ? persistedOptions
+            : [],
+      creationMessageId:
+        runtimeMetadata?.creationMessageId ?? pollMetadata?.creationMessageId ?? null,
+      creationMessageKey:
+        runtimeMetadata?.creationMessageKey ?? pollMetadata?.creationMessageKey ?? null,
+      messageSecret:
+        runtimeSecret ??
+        pollMetadata?.messageSecret ??
+        existingState.context?.messageSecret ??
+        null,
+      messageSecretVersion:
+        runtimeMetadata?.messageSecretVersion ??
+        pollMetadata?.messageSecretVersion ??
+        existingState.context?.messageSecretVersion ??
+        null,
+      tenantId: runtimeMetadata?.tenantId ?? pollMetadata?.tenantId ?? null,
+      instanceId: runtimeMetadata?.instanceId ?? pollMetadata?.instanceId ?? null,
+    };
+  })();
+
   const resolvedMessageSecret =
-    pollMetadata?.messageSecret ?? existingState.context?.messageSecret ?? null;
+    mergedMetadata?.messageSecret ?? existingState.context?.messageSecret ?? null;
   const resolvedCreationMessageIdForDecrypt =
     parsed.pollCreationMessageId?.trim() ??
-    pollMetadata?.creationMessageId?.trim() ??
+    mergedMetadata?.creationMessageId?.trim() ??
     existingState.context?.creationMessageId?.trim() ??
     pollId;
   const resolvedCreationKey =
     parsed.pollCreationMessageKey ??
-    pollMetadata?.creationMessageKey ??
+    mergedMetadata?.creationMessageKey ??
     existingState.context?.creationMessageKey ??
     null;
 
@@ -480,7 +526,7 @@ export const recordPollChoiceVote = async (
         messageSecret: resolvedMessageSecret,
         creationMessageId: resolvedCreationMessageIdForDecrypt,
         creationMessageKey: resolvedCreationKey,
-        metadataOptions: pollMetadata?.options,
+        metadataOptions: mergedMetadata?.options,
         stateOptions: existingState.options,
       });
       if (Array.isArray(decryptedOptionIds) && decryptedOptionIds.length > 0) {
@@ -495,7 +541,7 @@ export const recordPollChoiceVote = async (
     }
   }
 
-  const options = mergeOptions(existingState.options, parsed.options, pollMetadata?.options);
+  const options = mergeOptions(existingState.options, parsed.options, mergedMetadata?.options);
   const selectedOptions = deriveSelectedOptions(
     selectedOptionIds,
     options,
@@ -504,14 +550,14 @@ export const recordPollChoiceVote = async (
   );
 
   const resolvedQuestion =
-    pollMetadata?.question ?? existingState.context?.question ?? null;
+    mergedMetadata?.question ?? existingState.context?.question ?? null;
   const resolvedSelectableCount =
-    pollMetadata?.selectableOptionsCount ??
+    mergedMetadata?.selectableOptionsCount ??
     existingState.context?.selectableOptionsCount ??
     (parsed.options.length > 0 ? parsed.options.length : null);
 
   let resolvedAllowMultiple =
-    pollMetadata?.allowMultipleAnswers ??
+    mergedMetadata?.allowMultipleAnswers ??
     existingState.context?.allowMultipleAnswers ??
     undefined;
 
@@ -524,14 +570,15 @@ export const recordPollChoiceVote = async (
     selectableOptionsCount: resolvedSelectableCount,
     allowMultipleAnswers: resolvedAllowMultiple ?? undefined,
     creationMessageId:
-      pollMetadata?.creationMessageId ?? existingState.context?.creationMessageId ?? null,
+      mergedMetadata?.creationMessageId ?? existingState.context?.creationMessageId ?? null,
     creationMessageKey: resolvedCreationKey ?? undefined,
-    messageSecret: pollMetadata?.messageSecret ?? existingState.context?.messageSecret ?? null,
+    messageSecret: resolvedMessageSecret ?? null,
     messageSecretVersion:
-      pollMetadata?.messageSecretVersion ?? existingState.context?.messageSecretVersion ?? null,
-    tenantId: context.tenantId ?? pollMetadata?.tenantId ?? existingState.context?.tenantId ?? null,
+      mergedMetadata?.messageSecretVersion ?? existingState.context?.messageSecretVersion ?? null,
+    tenantId:
+      context.tenantId ?? mergedMetadata?.tenantId ?? existingState.context?.tenantId ?? null,
     instanceId:
-      context.instanceId ?? pollMetadata?.instanceId ?? existingState.context?.instanceId ?? null,
+      context.instanceId ?? mergedMetadata?.instanceId ?? existingState.context?.instanceId ?? null,
   };
 
   const normalizedContextEntries = Object.entries(resolvedContext).filter(([, value]) => value !== undefined);
@@ -613,6 +660,21 @@ export const recordPollChoiceVote = async (
       error,
     });
     throw error;
+  }
+
+  try {
+    await pollRuntimeService.recordVoteSelection({
+      pollId,
+      voterJid,
+      optionIds: selectedOptionIds,
+      selectedOptions,
+    });
+  } catch (runtimeError) {
+    logger.warn('Failed to cache poll vote selection in runtime service', {
+      pollId,
+      voterJid,
+      error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
+    });
   }
 
   return { updated: true, state: updatedState, selectedOptions };

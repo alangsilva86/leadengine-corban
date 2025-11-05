@@ -1,6 +1,7 @@
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { sanitizeJsonPayload } from '../utils/baileys-event-logger';
+import { pollRuntimeService } from './poll-runtime-service';
 
 const POLL_METADATA_SOURCE = 'whatsapp.poll_meta';
 
@@ -190,6 +191,15 @@ export const upsertPollMetadata = async (payload: PollMetadataPayload): Promise<
         payload: sanitizeJsonPayload(merged),
       },
     });
+
+    try {
+      await pollRuntimeService.mergeMetadata(merged);
+    } catch (runtimeError) {
+      logger.warn('Failed to sync poll metadata with runtime cache', {
+        pollId,
+        error: runtimeError instanceof Error ? runtimeError.message : String(runtimeError),
+      });
+    }
   } catch (error) {
     logger.warn('Failed to persist WhatsApp poll metadata', {
       pollId: payload.pollId,

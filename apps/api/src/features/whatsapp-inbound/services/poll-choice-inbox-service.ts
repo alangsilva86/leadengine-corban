@@ -10,6 +10,7 @@ import type {
   PollChoiceState,
 } from '../schemas/poll-choice';
 import type { InboundWhatsAppEnvelopeMessage } from './types';
+import { pollRuntimeService } from './poll-runtime-service';
 
 export enum PollChoiceInboxNotificationStatus {
   Ok = 'ok',
@@ -52,12 +53,33 @@ const toTrimmedTitle = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const buildOptionIndex = (state: PollChoiceState): Map<string, { index: number; title: string | null }> => {
+type OptionLike = {
+  id: string;
+  title?: string | null;
+  optionName?: string | null;
+  description?: string | null;
+  index?: number | null;
+};
+
+const buildOptionIndex = (
+  state: PollChoiceState,
+  runtimeOptions: OptionLike[] = []
+): Map<string, { index: number; title: string | null }> => {
   const map = new Map<string, { index: number; title: string | null }>();
 
-  state.options.forEach((option, position) => {
-    const title = toTrimmedTitle(option.title);
-    const normalizedIndex = typeof option.index === 'number' ? option.index : position;
+  const allOptions: OptionLike[] = [
+    ...state.options,
+    ...runtimeOptions.filter((option) => !state.options.some((stateOption) => stateOption.id === option.id)),
+  ];
+
+  allOptions.forEach((option, position) => {
+    if (!option || typeof option.id !== 'string') {
+      return;
+    }
+
+    const title = toTrimmedTitle(option.title ?? option.optionName ?? option.description);
+    const normalizedIndex =
+      typeof option.index === 'number' ? option.index : position;
     map.set(option.id, {
       index: normalizedIndex,
       title: title ?? null,
@@ -70,9 +92,11 @@ const buildOptionIndex = (state: PollChoiceState): Map<string, { index: number; 
 const normalizeSelections = (
   poll: PollChoiceEventPayload,
   selectedOptions: PollChoiceSelectedOptionPayload[],
-  state: PollChoiceState
+  state: PollChoiceState,
+  runtimeVote: { optionIds: string[]; selectedOptions: Array<{ id: string; title: string | null }> } | null,
+  runtimeOptions: OptionLike[] = []
 ): Array<{ id: string; title: string }> => {
-  const voteEntry = state.votes?.[poll.voterJid];
+  const voteEntry = runtimeVote ?? state.votes?.[poll.voterJid] ?? null;
   const optionIds = Array.isArray(voteEntry?.optionIds)
     ? voteEntry?.optionIds
     : Array.isArray(poll.selectedOptionIds)
@@ -80,7 +104,7 @@ const normalizeSelections = (
     : [];
 
   const selectedMap = new Map<string, string>();
-  const optionIndex = buildOptionIndex(state);
+  const optionIndex = buildOptionIndex(state, runtimeOptions);
 
   const pushSelection = (id: string, providedTitle?: string | null) => {
     if (!id || selectedMap.has(id)) {
@@ -109,6 +133,7 @@ const normalizeSelections = (
 
   optionIds.forEach((optionId) => pushSelection(optionId));
   selectedOptions.forEach((option) => pushSelection(option.id, option.title));
+  runtimeVote?.selectedOptions?.forEach((option) => pushSelection(option.id, option.title));
 
   return Array.from(selectedMap.entries()).map(([id, title]) => ({ id, title }));
 };
@@ -153,14 +178,25 @@ export const triggerPollChoiceInboxNotification = async ({
 
   const phone = extractPhoneFromChatId(chatId);
   const now = new Date();
-  const voteSelections = normalizeSelections(poll, selectedOptions, state);
+  const [runtimeMetadata, runtimeVote] = await Promise.all([
+    pollRuntimeService.getPollMetadata(poll.pollId),
+    pollRuntimeService.getVoteSelection(poll.pollId, poll.voterJid),
+  ]);
+
+  const voteSelections = normalizeSelections(
+    poll,
+    selectedOptions,
+    state,
+    runtimeVote,
+    runtimeMetadata?.options ?? []
+  );
   const selectionsText =
     voteSelections.length > 0
       ? voteSelections.map((selection) => `• ${selection.title}`).join('\n')
       : '• Resposta não identificada';
 
   const pollQuestion = (() => {
-    const rawQuestion = state.context?.question;
+    const rawQuestion = runtimeMetadata?.question ?? state.context?.question;
     if (typeof rawQuestion !== 'string') {
       return null;
     }
