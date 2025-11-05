@@ -1,5 +1,8 @@
 import { readString } from './identifiers';
 import type { InboundWhatsAppEnvelope } from './types';
+import { getPollMetadata } from './poll-metadata-service';
+import { decryptPollVote } from '@whiskeysockets/baileys';
+import { logger } from '../../../config/logger';
 
 const toRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -260,6 +263,49 @@ export const extractPollVote = (segments: PollPayloadSegments): PollVote => {
   };
 };
 
+const base64UrlEncode = (buffer: Buffer): string =>
+  buffer
+    .toString('base64')
+    .replace(/=/gu, '')
+    .replace(/\+/gu, '-')
+    .replace(/\//gu, '_');
+
+const decodeBase64Variant = (value: string | null | undefined): Buffer | null => {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const normalized = trimmed.replace(/-/gu, '+').replace(/_/gu, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return Buffer.from(padded, 'base64');
+  } catch (error) {
+    return null;
+  }
+};
+
+const buildOptionLookupFromMetadata = (options: unknown[]): Map<string, { id: string; title: string | null }> => {
+  const map = new Map<string, { id: string; title: string | null }>();
+
+  options.forEach((entry, index) => {
+    const record = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
+    if (!record) {
+      return;
+    }
+    const id = readString(record.id, record.optionId, record.optionName, record.name, record.title) ?? `option_${index}`;
+    const title =
+      readString(record.title, record.name, record.optionName, record.text, record.description) ?? id;
+    map.set(id, { id, title });
+  });
+
+  return map;
+};
+
 export const resolveMessageType = (segments: PollPayloadSegments): string | null => {
   const { payload, message, metadata } = segments;
   const baseType = readString((message as any).type) ?? readString((metadata as any).messageType);
@@ -312,9 +358,9 @@ export type PollUpdateNormalizationResult =
       metadata: Record<string, unknown>;
     };
 
-export const normalizePollUpdate = (
+export const normalizePollUpdate = async (
   input: PollUpdateNormalizationInput
-): PollUpdateNormalizationResult => {
+): Promise<PollUpdateNormalizationResult> => {
   const { envelope, segments, baseMetadata, chatId, externalId } = input;
   const messageType = input.messageType ?? resolveMessageType(segments);
 
@@ -323,7 +369,110 @@ export const normalizePollUpdate = (
   }
 
   const { payload } = segments;
-  const { pollId, question, choiceText, choiceId, optionIds, selectedOptions } = extractPollVote(segments);
+  let { pollId, question, choiceText, choiceId, optionIds, selectedOptions } = extractPollVote(segments);
+
+  const storedMetadata = pollId ? await getPollMetadata(pollId).catch(() => null) : null;
+
+  if (!question && storedMetadata?.question) {
+    question = storedMetadata.question;
+  }
+
+  const metadataOptions = Array.isArray(storedMetadata?.options) ? storedMetadata?.options ?? [] : [];
+  const optionLookup = buildOptionLookupFromMetadata(metadataOptions);
+
+  const voteRecord =
+    (segments.message as Record<string, unknown> | undefined)?.pollUpdateMessage &&
+    typeof (segments.message as Record<string, unknown>).pollUpdateMessage === 'object'
+      ? ((segments.message as Record<string, unknown>).pollUpdateMessage as Record<string, unknown>)
+      : null;
+  const votePayload = voteRecord && typeof voteRecord.vote === 'object' ? (voteRecord.vote as Record<string, unknown>) : null;
+
+  if (storedMetadata && votePayload && (!optionIds.length || !selectedOptions.length)) {
+    const payloadBytes = decodeBase64Variant(readString(votePayload.encPayload));
+    const ivBytes = decodeBase64Variant(readString(votePayload.encIv));
+    const secretBytes = decodeBase64Variant(storedMetadata.messageSecret ?? null);
+    const creationMessageId = readString(storedMetadata.creationMessageId) ?? pollId ?? null;
+    const creationKeyRecord = storedMetadata.creationMessageKey && typeof storedMetadata.creationMessageKey === 'object'
+      ? (storedMetadata.creationMessageKey as Record<string, unknown>)
+      : null;
+    const pollCreatorJid =
+      readString(creationKeyRecord?.participant) ??
+      readString(creationKeyRecord?.remoteJid) ??
+      null;
+
+    if (payloadBytes && ivBytes && secretBytes && pollCreatorJid && creationMessageId && chatId) {
+      try {
+        const voteMessage = decryptPollVote(
+          { encPayload: payloadBytes, encIv: ivBytes },
+          {
+            pollCreatorJid,
+            pollMsgId: creationMessageId,
+            pollEncKey: secretBytes,
+            voterJid: chatId,
+          }
+        );
+
+        const decodedSelections = Array.isArray(voteMessage?.selectedOptions)
+          ? (voteMessage?.selectedOptions as Buffer[])
+          : [];
+
+        const mappedSelections: Array<{ id: string; title: string | null }> = [];
+        const mappedIds: string[] = [];
+
+        decodedSelections.forEach((buffer) => {
+          if (!buffer) {
+            return;
+          }
+          const encoded = base64UrlEncode(buffer);
+          const option = optionLookup.get(encoded) ?? optionLookup.get(buffer.toString()) ?? null;
+          const resolvedId = option?.id ?? encoded;
+          mappedIds.push(resolvedId);
+          mappedSelections.push({ id: resolvedId, title: option?.title ?? resolvedId });
+        });
+
+        if (mappedIds.length > 0) {
+          optionIds = mappedIds;
+        }
+
+        if (mappedSelections.length > 0) {
+          selectedOptions = mappedSelections;
+        }
+      } catch (error) {
+        logger.warn('Failed to decrypt poll vote during normalization', {
+          pollId,
+          voterJid: chatId,
+          error,
+        });
+      }
+    }
+  }
+
+  if (!optionIds.length && selectedOptions.length > 0) {
+    optionIds = selectedOptions.map((entry) => entry.id).filter((value): value is string => Boolean(value));
+  }
+
+  if (optionIds.length > 0 && selectedOptions.length === 0) {
+    selectedOptions = optionIds
+      .map((id) => {
+        const option = optionLookup.get(id) ?? { id, title: id };
+        return option;
+      })
+      .filter(Boolean);
+  }
+
+  const storedOptionsNormalized = metadataOptions.map((entry, index) => {
+    const record = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
+    if (!record) {
+      return null;
+    }
+    const id = readString(record.id, record.optionId, record.optionName, record.name, record.title) ?? `option_${index}`;
+    const title = readString(record.title, record.name, record.optionName, record.text, record.description) ?? id;
+    return {
+      id,
+      title,
+      index: readNumber(record.index) ?? index,
+    };
+  }).filter(Boolean);
 
   const formattedSelectedOptions = selectedOptions.map((entry) => ({
     id: entry.id,
@@ -369,6 +518,7 @@ export const normalizePollUpdate = (
       poll: {
         id: pollId ?? undefined,
         question: question ?? undefined,
+        ...(storedOptionsNormalized.length ? { options: storedOptionsNormalized } : {}),
         ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
         ...(normalizedOptionIds.length ? { selectedOptionIds: normalizedOptionIds } : {}),
         updatedAt: new Date().toISOString(),
@@ -376,6 +526,7 @@ export const normalizePollUpdate = (
       pollChoice: {
         pollId: pollId ?? undefined,
         question: question ?? undefined,
+        ...(storedOptionsNormalized.length ? { options: storedOptionsNormalized } : {}),
         ...(normalizedOptionIds.length ? { optionIds: normalizedOptionIds } : {}),
         ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
         vote: {
@@ -403,6 +554,7 @@ export const normalizePollUpdate = (
     poll: {
       ...metadataPoll,
       id: metadataPoll.id ?? pollId ?? undefined,
+      ...(storedOptionsNormalized.length ? { options: storedOptionsNormalized } : {}),
       updatedAt: new Date().toISOString(),
     },
   } as Record<string, unknown>;

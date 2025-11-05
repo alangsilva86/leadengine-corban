@@ -134,7 +134,7 @@ export const ingestInboundWhatsAppMessage = async (
   const tenantId = readString((metaIn as any).tenantId) ?? readString((envelope as any).tenantId) ?? DEFAULT_TENANT_ID;
 
   // Tratamento especial de voto em enquete: gera envelope normalizado ou sinaliza placeholder.
-  const pollNormalization = normalizePollUpdate({
+  const pollNormalization = await normalizePollUpdate({
     envelope,
     segments: { payload: payloadRecord, message: payloadMessage, metadata: payloadMetadata },
     baseMetadata: metaIn,
