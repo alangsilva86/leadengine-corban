@@ -248,12 +248,12 @@ const PrimaryActionBanner = ({
 
   return (
     <div data-testid="conversation-header-summary" className="py-1">
-      <div className="grid gap-3 lg:grid-cols-12 lg:items-center">
-        <div className="flex min-w-0 items-center gap-3 lg:col-span-4">
-          <Avatar className="h-12 w-12">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className="h-11 w-11">
             <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
           </Avatar>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 space-y-1">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="truncate text-base font-semibold leading-tight text-foreground">{title}</h3>
               {shortId ? (
@@ -261,24 +261,20 @@ const PrimaryActionBanner = ({
                   #{shortId}
                 </span>
               ) : null}
-            </div>
-            <p className="mt-1 truncate text-xs text-foreground-muted">
-              {stageKey ? `Etapa atual · ${stageKey}` : 'Sem etapa definida'}
-            </p>
-            <div className="mt-1 flex items-center gap-2 text-xs text-foreground-muted">
               <InstanceBadge instanceId={instanceId} />
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-foreground-muted">
               <span className="truncate" title={resolvedInstance.number ?? undefined}>
                 {resolvedInstance.number ?? 'Número não informado'}
               </span>
+              <span>Etapa: {stageKey ?? 'Não definida'}</span>
+              {showContactPhone ? (
+                <span data-testid="ticket-contact-phone">{contactPhone}</span>
+              ) : null}
             </div>
-            {showContactPhone ? (
-              <p className="mt-1 text-xs text-foreground-muted" data-testid="ticket-contact-phone">
-                {contactPhone}
-              </p>
-            ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 lg:col-span-5 lg:justify-end">
+        <div className="flex flex-wrap items-center gap-2">
           <Indicator
             icon={statusInfo?.icon}
             tone={statusInfo?.tone}
@@ -306,7 +302,7 @@ const PrimaryActionBanner = ({
             <Indicator icon={Clock3} tone="info" label={`Follow-up · ${nextStepValue}`} />
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 lg:col-span-3 lg:justify-end">
+        <div className="flex items-center gap-2">
           <JroIndicator jro={jro} />
           <Button
             type="button"

@@ -78,13 +78,14 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center justify-between gap-2 text-[10px] text-[color:var(--color-inbox-foreground-muted)]">
+            <InstanceBadge instanceId={instanceId} />
+            <span>{lastActivity}</span>
+          </div>
+          <div className="mt-2 flex min-w-0 items-center gap-2">
             <p className="truncate text-sm font-semibold text-[color:var(--color-inbox-foreground)]" title={displayName}>
               {displayName}
             </p>
-            <span className="hidden sm:inline-flex">
-              <InstanceBadge instanceId={instanceId} />
-            </span>
             {unreadInbound > 0 ? (
               <span className="inline-flex items-center justify-center rounded-full bg-[color:var(--accent-inbox-primary)]/10 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--accent-inbox-primary)]">
                 +{unreadInbound}
@@ -92,25 +93,16 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
             ) : null}
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-            <span className="sm:hidden inline-flex">
-              <InstanceBadge instanceId={instanceId} />
-            </span>
             <span className="truncate">{preview}</span>
             <span className="hidden overflow-hidden text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70 group-hover/list:inline">
               {slaLabel}
             </span>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-          <span>{lastActivity}</span>
-            <span className="hidden text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:inline">
-              {displayPhone ?? remoteJid ?? 'Sem telefone'}
-            </span>
+        <div className="hidden flex-col items-end gap-1 text-xs text-[color:var(--color-inbox-foreground-muted)] group-hover/list:flex">
+          <span>{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</span>
+          <span className="text-[10px]">{displayPhone ?? remoteJid ?? 'Sem telefone'}</span>
         </div>
-      </div>
-      <div className="mt-1 hidden items-center gap-2 text-[10px] text-[color:var(--color-inbox-foreground-muted)] group-hover/list:flex">
-        <span>{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</span>
-        {remoteJid ? <span className="truncate">{remoteJid}</span> : null}
       </div>
       {agentTyping ? (
         <div className="mt-2 flex items-center gap-1 text-[10px] font-medium text-[color:var(--accent-inbox-primary)]">
