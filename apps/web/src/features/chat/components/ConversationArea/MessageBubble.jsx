@@ -59,6 +59,9 @@ export const MessageBubble = ({
     isContinuation ? 'mt-1' : isFirst ? 'mt-0' : 'mt-3'
   );
   const metadata = (message.metadata && typeof message.metadata === 'object' ? message.metadata : {}) ?? {};
+  const mediaPending =
+    metadata.media_pending === true ||
+    (typeof metadata.mediaStatus === 'string' && metadata.mediaStatus.toLowerCase() === 'pending');
   const brokerMetadata = metadata?.broker && typeof metadata.broker === 'object' ? metadata.broker : {};
   const interactiveMetadata =
     metadata?.interactive && typeof metadata.interactive === 'object' ? metadata.interactive : null;
@@ -153,6 +156,19 @@ export const MessageBubble = ({
     <span className="text-xs opacity-60">Mensagem não suportada ({typeLabel || 'desconhecida'})</span>
   );
 
+  const renderDownloadAction = (label = 'Baixar arquivo') =>
+    mediaUrl ? (
+      <a
+        href={mediaUrl}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
+      >
+        <Download className="h-3 w-3" aria-hidden="true" />
+        {label}
+      </a>
+    ) : null;
+
   const renderBody = () => {
     if (resolvedType === 'text' && voteBubble?.shouldRender) {
       return (
@@ -192,6 +208,15 @@ export const MessageBubble = ({
       return <p className="whitespace-pre-wrap break-words text-sm leading-tight">{textContent}</p>;
     }
 
+    if (mediaPending) {
+      return (
+        <div className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+          <Loader2 className="h-4 w-4 animate-spin text-foreground-muted" aria-hidden="true" />
+          <span className="text-xs text-foreground-muted">Processando mídia…</span>
+        </div>
+      );
+    }
+
     if (resolvedType === 'image' && mediaUrl) {
       return (
         <figure className="flex flex-col gap-2">
@@ -201,6 +226,7 @@ export const MessageBubble = ({
             className="max-h-64 w-full rounded-lg object-contain"
           />
           {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
+          {renderDownloadAction('Baixar imagem')}
         </figure>
       );
     }
@@ -219,6 +245,7 @@ export const MessageBubble = ({
             preload="metadata"
           />
           {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
+          {renderDownloadAction('Baixar vídeo')}
         </figure>
       );
     }
@@ -232,6 +259,7 @@ export const MessageBubble = ({
         <div className="flex flex-col gap-2">
           <audio controls src={mediaUrl} className="w-full" preload="metadata" />
           {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+          {renderDownloadAction('Baixar áudio')}
         </div>
       );
     }
@@ -248,17 +276,7 @@ export const MessageBubble = ({
               <span className="text-xs text-foreground-muted">Documento</span>
             </div>
           </div>
-          {mediaUrl ? (
-            <a
-              href={mediaUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
-            >
-              <Download className="h-3 w-3" aria-hidden="true" />
-              Baixar arquivo
-            </a>
-          ) : (
+          {mediaUrl ? renderDownloadAction('Baixar arquivo') : (
             <span className="text-xs opacity-60">Pré-visualização indisponível</span>
           )}
           {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
@@ -349,15 +367,7 @@ export const MessageBubble = ({
             <Download className="h-4 w-4 text-foreground" aria-hidden="true" />
             <span className="text-sm font-semibold text-foreground">Baixar conteúdo</span>
           </div>
-          <a
-            href={mediaUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
-          >
-            <Download className="h-3 w-3" aria-hidden="true" />
-            Abrir arquivo
-          </a>
+          {renderDownloadAction('Abrir arquivo')}
           {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
         </div>
       );
