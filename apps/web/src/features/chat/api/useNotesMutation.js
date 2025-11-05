@@ -26,6 +26,8 @@ export const useNotesMutation = ({ fallbackTicketId } = {}) => {
         return;
       }
 
+      const noteTimestamp = new Date(note?.createdAt ?? note?.updatedAt ?? Date.now()).toISOString();
+
       const applyNote = (ticket) => {
         if (!ticket || ticket.id !== note.ticketId) {
           return ticket;
@@ -40,10 +42,23 @@ export const useNotesMutation = ({ fallbackTicketId } = {}) => {
           const right = new Date(b?.createdAt ?? b?.updatedAt ?? 0).getTime();
           return left - right;
         });
-        return {
-          ...ticket,
-          notes: nextNotes,
-        };
+
+        const updatedTicket = { ...ticket, notes: nextNotes };
+        if (noteTimestamp) {
+          const currentLastMessageAt = ticket.lastMessageAt
+            ? new Date(ticket.lastMessageAt).getTime()
+            : 0;
+          const noteTime = new Date(noteTimestamp).getTime();
+          if (!currentLastMessageAt || noteTime >= currentLastMessageAt) {
+            updatedTicket.lastMessageAt = noteTimestamp;
+          }
+          const currentUpdatedAt = ticket.updatedAt ? new Date(ticket.updatedAt).getTime() : 0;
+          if (!currentUpdatedAt || noteTime >= currentUpdatedAt) {
+            updatedTicket.updatedAt = noteTimestamp;
+          }
+        }
+
+        return updatedTicket;
       };
 
       const ticketsQueries = queryClient.getQueryCache().findAll({ queryKey: ['chat', 'tickets'] });

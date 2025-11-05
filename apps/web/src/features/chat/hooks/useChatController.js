@@ -189,6 +189,8 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       });
 
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'ticket', ticketId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'tickets'] });
 
       if (payload?.ticket) {
         handleTicketUpdated(payload);
@@ -279,6 +281,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       });
 
       queryClient.invalidateQueries({ queryKey: ['chat', 'messages', ticketId] });
+      queryClient.invalidateQueries({ queryKey: ['chat', 'ticket', ticketId] });
 
       if (payload?.ticket) {
         handleTicketUpdated(payload);

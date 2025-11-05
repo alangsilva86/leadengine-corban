@@ -915,6 +915,7 @@ export const normalizeUpsertEvent = (
   const payload = asRecord(eventRecord.payload) ?? {};
   const rawEnvelope = parseRecord(payload.raw);
   const rawPayload = parseRecord(rawEnvelope?.payload) ?? rawEnvelope;
+  const rawInner = parseRecord(rawEnvelope?.raw);
   const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
   const upsertType = readString(payload.type, rawEnvelope?.type) ?? null;
 
@@ -992,7 +993,7 @@ export const normalizeUpsertEvent = (
     ) ?? null;
 
   const primaryMessages = asArray(payload.messages);
-  const rawMessages = asArray(rawPayload?.messages ?? rawEnvelope?.messages);
+  const rawMessages = asArray(rawPayload?.messages ?? rawEnvelope?.messages ?? rawInner?.messages);
   const messages = primaryMessages.length > 0 ? primaryMessages : rawMessages;
 
   logger.info('🎬 WhatsApp raw normalizer subiu ao palco', {

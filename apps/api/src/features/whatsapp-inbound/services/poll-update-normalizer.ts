@@ -376,6 +376,7 @@ export const normalizePollUpdate = (
       pollChoice: {
         pollId: pollId ?? undefined,
         question: question ?? undefined,
+        ...(normalizedOptionIds.length ? { optionIds: normalizedOptionIds } : {}),
         ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
         vote: {
           ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
