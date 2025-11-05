@@ -57,6 +57,27 @@ const asArray = (value: unknown): unknown[] => {
   return [];
 };
 
+const parseRecord = (value: unknown): UnknownRecord | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return asRecord(parsed);
+    } catch (error) {
+      logger.debug('Failed to parse raw Baileys envelope segment', {
+        snippet: value.slice?.(0, 120),
+        error,
+      });
+      return null;
+    }
+  }
+
+  return asRecord(value);
+};
+
 const readString = (...candidates: unknown[]): string | null => {
   for (const candidate of candidates) {
     if (typeof candidate === 'string') {
@@ -892,8 +913,8 @@ export const normalizeUpsertEvent = (
   }
 
   const payload = asRecord(eventRecord.payload) ?? {};
-  const rawEnvelope = asRecord(payload.raw);
-  const rawPayload = asRecord(rawEnvelope?.payload) ?? rawEnvelope;
+  const rawEnvelope = parseRecord(payload.raw);
+  const rawPayload = parseRecord(rawEnvelope?.payload) ?? rawEnvelope;
   const rawMetadata = rawPayload ? asRecord(rawPayload.metadata) : null;
   const upsertType = readString(payload.type, rawEnvelope?.type) ?? null;
 
