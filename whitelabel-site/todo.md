@@ -86,3 +86,22 @@
 - [x] Adicionar fluxo de processamento animado
 - [x] Implementar hover states nos cards de modelos
 - [x] Animar transições de seções
+
+
+## Correção de Cores e UX/UI (Feedback 2)
+
+### Problemas Identificados
+- [x] Cores ainda aparecem brancas/neutras ao invés de azul teal
+- [x] UX/UI precisa de melhorias significativas
+- [x] Falta contraste e hierarquia visual
+- [x] Componentes precisam de mais destaque
+
+### Ações Corretivas
+- [x] Aplicar cores teal diretamente nos componentes (não apenas CSS variables)
+- [x] Adicionar backgrounds coloridos nas seções
+- [x] Melhorar contraste entre elementos
+- [x] Aumentar tamanho de fontes em títulos
+- [x] Adicionar mais gradientes e efeitos visuais
+- [x] Melhorar espaçamento interno dos cards
+- [x] Adicionar bordas e sombras coloridas
+- [x] Refinar animações e transições

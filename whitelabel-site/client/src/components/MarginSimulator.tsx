@@ -34,7 +34,7 @@ export default function MarginSimulator() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium">Convênios ativos</label>
-            <span className="text-2xl font-bold text-primary">{convenios[0]}</span>
+            <span className="text-2xl font-bold text-[#0D9488]">{convenios[0]}</span>
           </div>
           <Slider
             value={convenios}
@@ -53,7 +53,7 @@ export default function MarginSimulator() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium">Ticket médio</label>
-            <span className="text-2xl font-bold text-primary">{formatCurrency(ticketMedio[0])}</span>
+            <span className="text-2xl font-bold text-[#0D9488]">{formatCurrency(ticketMedio[0])}</span>
           </div>
           <Slider
             value={ticketMedio}
@@ -72,7 +72,7 @@ export default function MarginSimulator() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium">Taxa de conversão</label>
-            <span className="text-2xl font-bold text-primary">{conversao[0]}%</span>
+            <span className="text-2xl font-bold text-[#0D9488]">{conversao[0]}%</span>
           </div>
           <Slider
             value={conversao}
@@ -97,10 +97,10 @@ export default function MarginSimulator() {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.3 }}
         >
-          <Card className="bg-card/50 border-border/50">
+          <Card className="bg-gradient-to-br from-[#0D9488]/10 to-transparent border-2 border-[#0D9488]/30">
             <CardContent className="p-6">
-              <div className="text-sm text-muted-foreground mb-2">Servidores elegíveis</div>
-              <div className="text-3xl font-bold">{formatNumber(servidoresElegiveis)}</div>
+              <div className="text-sm font-medium text-[#0D9488]/70 mb-2">Servidores elegíveis</div>
+              <div className="text-4xl font-extrabold text-foreground">{formatNumber(servidoresElegiveis)}</div>
             </CardContent>
           </Card>
         </motion.div>
@@ -111,10 +111,10 @@ export default function MarginSimulator() {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.3, delay: 0.1 }}
         >
-          <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+          <Card className="bg-gradient-to-br from-[#0D9488]/20 to-[#14B8A6]/10 border-2 border-[#0D9488]/40 shadow-lg shadow-[#0D9488]/20">
             <CardContent className="p-6">
-              <div className="text-sm text-muted-foreground mb-2">Volume mensal</div>
-              <div className="text-4xl font-bold text-primary">
+              <div className="text-sm font-medium text-[#0D9488]/70 mb-2">Volume mensal</div>
+              <div className="text-5xl font-extrabold text-[#0D9488]">
                 {volumeMensal < 1 
                   ? formatCurrency(volumeMensal * 1000) + ' mil'
                   : `R$ ${volumeMensal.toFixed(3)} mi`
@@ -130,13 +130,13 @@ export default function MarginSimulator() {
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.3, delay: 0.2 }}
         >
-          <Card className="bg-gradient-to-br from-secondary/10 to-secondary/5 border-secondary/20">
+          <Card className="bg-gradient-to-br from-[#FF6B06]/20 to-[#FF8534]/10 border-2 border-[#FF6B06]/40 shadow-lg shadow-[#FF6B06]/20">
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-muted-foreground">Margem líquida (5%)</div>
-                <TrendingUp className="h-5 w-5 text-secondary" />
+                <div className="text-sm font-medium text-[#FF6B06]/70">Margem líquida (5%)</div>
+                <TrendingUp className="h-6 w-6 text-[#FF6B06]" />
               </div>
-              <div className="text-4xl font-bold text-secondary">
+              <div className="text-5xl font-extrabold text-[#FF6B06]">
                 {formatCurrency(margemLiquida)}/mês
               </div>
             </CardContent>

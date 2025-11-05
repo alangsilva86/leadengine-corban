@@ -41,8 +41,8 @@ export default function Home() {
     <div className="min-h-screen">
       <SEO />
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-secondary/20" />
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#0D9488]/10 via-[#0E0E11] to-[#FF6B06]/10">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0D9488]/30 via-transparent to-[#FF6B06]/20" />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS1vcGFjaXR5PSIwLjAzIiBzdHJva2Utd2lkdGg9IjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-40" />
         
         <div className="container relative z-10 max-w-7xl">
@@ -52,9 +52,9 @@ export default function Home() {
             transition={{ duration: 0.6 }}
             className="text-center space-y-8"
           >
-            <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
+            <h1 className="text-6xl md:text-8xl font-extrabold tracking-tight leading-tight">
               Lance seu próprio cartão benefício.{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] via-[#14B8A6] to-[#FF6B06]">
                 Nós operamos o motor.
               </span>
             </h1>
@@ -64,19 +64,22 @@ export default function Home() {
               <span className="text-foreground font-semibold">Averbadoras e bancarizadoras já plugadas.</span>
             </p>
             
-            <p className="text-lg text-primary/80 max-w-2xl mx-auto">
-              ✓ Já integrado com averbadoras e bancarizadoras homologadas
-            </p>
+            <div className="inline-flex items-center gap-2 px-6 py-3 bg-[#0D9488]/20 border border-[#0D9488]/40 rounded-full">
+              <CheckCircle2 className="h-5 w-5 text-[#0D9488]" />
+              <p className="text-base font-medium text-[#0D9488]">
+                Já integrado com averbadoras e bancarizadoras homologadas
+              </p>
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-6">
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   size="lg" 
-                  className="text-xl px-12 py-7 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity shadow-lg shadow-primary/30"
+                  className="text-xl px-14 py-8 bg-gradient-to-r from-[#0D9488] to-[#14B8A6] hover:from-[#0B7A70] hover:to-[#0D9488] transition-all shadow-2xl shadow-[#0D9488]/50 border-2 border-[#14B8A6]/30 font-bold"
                   onClick={() => setShowForm(true)}
                 >
                   Receber Plano Comercial
-                  <ArrowRight className="ml-2 h-6 w-6" />
+                  <ArrowRight className="ml-3 h-7 w-7" />
                 </Button>
               </motion.div>
             </div>
@@ -88,18 +91,18 @@ export default function Home() {
               Ver como funciona ↓
             </button>
 
-            <div className="flex flex-wrap gap-6 justify-center pt-12 text-base">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-secondary" />
-                <span className="font-medium">Você controla a marca</span>
+            <div className="flex flex-wrap gap-6 justify-center pt-12 text-lg">
+              <div className="flex items-center gap-3 px-5 py-3 bg-[#0D9488]/10 rounded-lg border border-[#0D9488]/20">
+                <CheckCircle2 className="h-6 w-6 text-[#FF6B06]" />
+                <span className="font-semibold text-foreground">Você controla a marca</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-secondary" />
-                <span className="font-medium">Não fica refém de banco</span>
+              <div className="flex items-center gap-3 px-5 py-3 bg-[#0D9488]/10 rounded-lg border border-[#0D9488]/20">
+                <CheckCircle2 className="h-6 w-6 text-[#FF6B06]" />
+                <span className="font-semibold text-foreground">Não fica refém de banco</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-secondary" />
-                <span className="font-medium">Você distribui, nós operamos</span>
+              <div className="flex items-center gap-3 px-5 py-3 bg-[#0D9488]/10 rounded-lg border border-[#0D9488]/20">
+                <CheckCircle2 className="h-6 w-6 text-[#FF6B06]" />
+                <span className="font-semibold text-foreground">Você distribui, nós operamos</span>
               </div>
             </div>
           </motion.div>
@@ -116,7 +119,7 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section id="how-it-works" className="py-32 bg-card/50">
+      <section id="how-it-works" className="py-32 bg-gradient-to-b from-[#0D9488]/5 to-transparent">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -124,7 +127,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Como funciona</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] to-[#14B8A6]">Como funciona</span>
+            </h2>
             <p className="text-xl text-muted-foreground">
               Da captação ao repasse: fluxo completo e automatizado
             </p>
@@ -153,7 +158,7 @@ export default function Home() {
                     className="flex-1 relative"
                   >
                     <div className="flex flex-col items-center">
-                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-primary mb-3 group-hover:scale-110 transition-transform">
+                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#0D9488] to-[#14B8A6] flex items-center justify-center text-white mb-3 shadow-lg shadow-[#0D9488]/30 hover:scale-110 transition-transform">
                         {item.icon}
                       </div>
                       <div className="text-center">
@@ -162,8 +167,8 @@ export default function Home() {
                       </div>
                     </div>
                     {index < 6 && (
-                      <div className="absolute top-10 -right-1 w-2 h-0.5 bg-gradient-to-r from-primary to-secondary">
-                        <ArrowRight className="absolute -right-2 -top-2 h-5 w-5 text-primary" />
+                      <div className="absolute top-10 -right-1 w-2 h-0.5 bg-gradient-to-r from-[#0D9488] to-[#14B8A6]">
+                        <ArrowRight className="absolute -right-2 -top-2 h-5 w-5 text-[#0D9488]" />
                       </div>
                     )}
                   </motion.div>
@@ -214,7 +219,7 @@ export default function Home() {
                   transition={{ delay: index * 0.1 }}
                   className="flex gap-4 items-start"
                 >
-                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-primary">
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-[#0D9488] to-[#14B8A6] flex items-center justify-center text-white shadow-lg shadow-[#0D9488]/30">
                     {item.icon}
                   </div>
                   <div className="flex-1">
@@ -230,7 +235,7 @@ export default function Home() {
       </section>
 
       {/* Architecture 360 Section */}
-      <section className="py-32">
+      <section className="py-32 bg-gradient-to-b from-transparent to-[#FF6B06]/5">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -238,7 +243,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Arquitetura 360</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FF6B06] to-[#FF8534]">Arquitetura 360</span>
+            </h2>
             <p className="text-xl text-muted-foreground">
               Seu cartão, sua marca, nossa engrenagem
             </p>
@@ -309,7 +316,7 @@ export default function Home() {
       </section>
 
       {/* Models Section */}
-      <section className="py-32 bg-card/50">
+      <section className="py-32 bg-gradient-to-b from-[#FF6B06]/5 via-[#0D9488]/5 to-transparent">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -317,7 +324,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Modelos de participação</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] to-[#FF6B06]">Modelos de participação</span>
+            </h2>
             <p className="text-xl text-muted-foreground">
               Escolha o modelo que melhor se adapta ao seu negócio
             </p>
@@ -354,21 +363,21 @@ export default function Home() {
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
               >
-                <Card className="h-full hover:shadow-lg hover:shadow-primary/20 transition-all duration-300 hover:-translate-y-1">
+                <Card className="h-full hover:shadow-2xl hover:shadow-[#0D9488]/30 transition-all duration-300 hover:-translate-y-2 border-2 border-[#0D9488]/20 hover:border-[#0D9488]/50 bg-gradient-to-br from-card to-card/50">
                   <CardHeader>
-                    <div className="mb-4 text-primary">{model.icon}</div>
-                    <CardTitle className="text-2xl">{model.title}</CardTitle>
+                    <div className="mb-4 p-4 bg-gradient-to-br from-[#0D9488] to-[#14B8A6] rounded-xl inline-block text-white shadow-lg shadow-[#0D9488]/30">{model.icon}</div>
+                    <CardTitle className="text-2xl font-bold">{model.title}</CardTitle>
                     <CardDescription className="text-base">{model.desc}</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Risco:</span>
-                        <span className="font-semibold">{model.risk}</span>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center p-3 bg-[#0D9488]/5 rounded-lg">
+                        <span className="text-sm font-medium text-muted-foreground">Risco:</span>
+                        <span className="font-bold text-[#FF6B06]">{model.risk}</span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Retorno:</span>
-                        <span className="font-semibold text-primary">{model.return}</span>
+                      <div className="flex justify-between items-center p-3 bg-[#0D9488]/5 rounded-lg">
+                        <span className="text-sm font-medium text-muted-foreground">Retorno:</span>
+                        <span className="font-bold text-[#0D9488]">{model.return}</span>
                       </div>
                     </div>
                   </CardContent>
@@ -380,7 +389,7 @@ export default function Home() {
       </section>
 
       {/* Differentials Section */}
-      <section className="py-32">
+      <section className="py-32 bg-gradient-to-b from-transparent to-[#0D9488]/5">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -388,7 +397,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Diferenciais estratégicos</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] to-[#14B8A6]">Diferenciais estratégicos</span>
+            </h2>
           </motion.div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -406,10 +417,12 @@ export default function Home() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.05 }}
-                className="flex items-start gap-3 p-4 rounded-lg bg-card hover:bg-muted/50 transition-colors"
+                className="flex items-start gap-4 p-6 rounded-xl bg-gradient-to-br from-[#0D9488]/10 to-transparent border-2 border-[#0D9488]/20 hover:border-[#0D9488]/40 hover:shadow-lg hover:shadow-[#0D9488]/20 transition-all duration-300 hover:-translate-y-1"
               >
-                <CheckCircle2 className="h-6 w-6 text-primary flex-shrink-0 mt-0.5" />
-                <span className="text-lg">{differential}</span>
+                <div className="p-2 bg-gradient-to-br from-[#0D9488] to-[#14B8A6] rounded-lg flex-shrink-0">
+                  <CheckCircle2 className="h-5 w-5 text-white" />
+                </div>
+                <span className="text-lg font-medium">{differential}</span>
               </motion.div>
             ))}
           </div>
@@ -417,7 +430,7 @@ export default function Home() {
       </section>
 
       {/* Economics Section */}
-      <section className="py-32 bg-card/50">
+      <section className="py-32 bg-gradient-to-b from-[#0D9488]/5 to-[#FF6B06]/5">
         <div className="container max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -425,7 +438,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Economia do negócio</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] to-[#FF6B06]">Economia do negócio</span>
+            </h2>
             <p className="text-xl text-muted-foreground">Exemplo de escala</p>
           </motion.div>
 
@@ -449,7 +464,7 @@ export default function Home() {
       </section>
 
       {/* Governance Section */}
-      <section className="py-32">
+      <section className="py-32 bg-gradient-to-b from-[#FF6B06]/5 to-transparent">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -457,7 +472,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Governança & compliance</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FF6B06] to-[#FF8534]">Governança & compliance</span>
+            </h2>
             <p className="text-xl text-muted-foreground">
               Operação segura e auditável
             </p>
@@ -508,7 +525,7 @@ export default function Home() {
       </section>
 
       {/* Integrations Section */}
-      <section className="py-32 bg-card/50">
+      <section className="py-32 bg-gradient-to-b from-transparent to-[#0D9488]/5">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -516,7 +533,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Integrações & stack</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] to-[#14B8A6]">Integrações & stack</span>
+            </h2>
             <p className="text-xl text-muted-foreground">
               Conectado com os principais players do mercado
             </p>
@@ -599,7 +618,7 @@ export default function Home() {
       </section>
 
       {/* FAQ Section */}
-      <section className="py-32">
+      <section className="py-32 bg-gradient-to-b from-[#0D9488]/5 to-transparent">
         <div className="container max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -607,7 +626,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">Perguntas frequentes</h2>
+            <h2 className="text-5xl md:text-6xl font-extrabold mb-4">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] to-[#FF6B06]">Perguntas frequentes</span>
+            </h2>
             <p className="text-xl text-muted-foreground">
               Tire suas dúvidas sobre a operação
             </p>
@@ -662,7 +683,7 @@ export default function Home() {
       </section>
 
       {/* CTA Final */}
-      <section className="py-32 bg-card/50">
+      <section className="py-32 bg-gradient-to-br from-[#0D9488]/10 via-[#0E0E11] to-[#FF6B06]/10">
         <div className="container max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -670,9 +691,9 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center space-y-8"
           >
-            <h2 className="text-4xl md:text-6xl font-bold">
+            <h2 className="text-5xl md:text-7xl font-extrabold">
               Você tem a marca.{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0D9488] via-[#14B8A6] to-[#FF6B06]">
                 Nós temos o motor.
               </span>
             </h2>
@@ -683,7 +704,7 @@ export default function Home() {
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button 
                 size="lg" 
-                className="text-lg px-12 py-6"
+                className="text-xl px-14 py-8 bg-gradient-to-r from-[#0D9488] to-[#14B8A6] hover:from-[#0B7A70] hover:to-[#0D9488] transition-all shadow-2xl shadow-[#0D9488]/50 border-2 border-[#14B8A6]/30 font-bold"
                 onClick={() => setShowForm(true)}
               >
                 Solicitar acesso e proposta
