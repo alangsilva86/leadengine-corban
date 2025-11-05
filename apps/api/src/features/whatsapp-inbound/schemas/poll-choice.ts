@@ -26,6 +26,7 @@ export const PollChoiceSelectedOptionSchema = z
   .passthrough();
 
 export const PollChoiceEventSchema = z.object({
+  id: z.string().min(1).optional(),
   pollId: z.string().min(1, 'pollId is required'),
   voterJid: z.string().min(1, 'voterJid is required'),
   messageId: z.string().min(1).optional(),
@@ -43,8 +44,12 @@ export const PollChoiceEventSchema = z.object({
     .optional(),
   selectedOptionIds: z.array(z.string().min(1)).optional(),
   selectedOptions: z.array(PollChoiceSelectedOptionSchema).optional(),
-  options: z.array(PollChoiceOptionSchema).min(1),
-  aggregates: PollChoiceAggregatesSchema,
+  options: z.array(PollChoiceOptionSchema).default([]),
+  aggregates: PollChoiceAggregatesSchema.optional().default({
+    totalVoters: 0,
+    totalVotes: 0,
+    optionTotals: {},
+  }),
   timestamp: z.string().optional().nullable(),
 });
 

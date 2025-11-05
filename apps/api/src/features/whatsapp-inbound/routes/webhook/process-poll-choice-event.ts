@@ -10,7 +10,7 @@ import { getPollMetadata } from '../../services/poll-metadata-service';
 import { PollChoiceEventSchema } from '../../schemas/poll-choice';
 import { normalizeChatId } from '../../utils/poll-helpers';
 import { buildIdempotencyKey, registerIdempotency } from '../../utils/webhook-idempotency';
-import { asRecord, readString } from '../../utils/webhook-parsers';
+import { asRecord, readNumber, readString } from '../../utils/webhook-parsers';
 import { toRawPreview } from './helpers';
 import {
   POLL_VOTE_RETRY_DELAY_MS,
@@ -19,6 +19,157 @@ import {
 } from './poll-vote-message-rewriter';
 import type { RawBaileysUpsertEvent } from '../../services/baileys-raw-normalizer';
 import { logBaileysDebugEvent } from '../../utils/baileys-event-logger';
+
+const cleanString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const buildFallbackOptionId = (candidates: Array<unknown>, index: number): string => {
+  for (const candidate of candidates) {
+    const asString = cleanString(candidate);
+    if (asString) {
+      return asString;
+    }
+  }
+  return `option_${index}`;
+};
+
+const buildFallbackOptionTitle = (candidates: Array<unknown>, fallbackId: string): string | null => {
+  for (const candidate of candidates) {
+    const asString = cleanString(candidate);
+    if (asString) {
+      return asString;
+    }
+  }
+  return cleanString(fallbackId);
+};
+
+const normalizePollChoiceEventPayload = (
+  payload: Record<string, unknown>
+): Record<string, unknown> => {
+  const normalized: Record<string, unknown> = { ...payload };
+
+  const pollId = cleanString(payload.pollId);
+  const voterJid = cleanString(payload.voterJid);
+  const messageId = cleanString(payload.messageId);
+  const timestamp = cleanString(payload.timestamp);
+
+  if (!cleanString(payload.id)) {
+    const syntheticId =
+      messageId ??
+      (pollId && voterJid
+        ? `${pollId}:${voterJid}${timestamp ? `:${timestamp}` : ''}`
+        : null);
+    if (syntheticId) {
+      normalized.id = syntheticId;
+    }
+  }
+
+  const rawSelectedOptions = Array.isArray(payload.selectedOptions)
+    ? payload.selectedOptions
+    : [];
+  const normalizedSelectedOptions = rawSelectedOptions
+    .map((entry, index) => {
+      const optionRecord = asRecord(entry);
+      const fallbackId = buildFallbackOptionId(
+        [optionRecord?.id, optionRecord?.title, optionRecord?.text],
+        index
+      );
+      const resolvedId = cleanString(optionRecord?.id) ?? fallbackId;
+      const title = buildFallbackOptionTitle(
+        [optionRecord?.title, optionRecord?.text, optionRecord?.id],
+        resolvedId
+      );
+      return {
+        ...optionRecord,
+        id: resolvedId,
+        title,
+      };
+    })
+    .filter((entry) => cleanString(entry.id));
+
+  if (normalizedSelectedOptions.length > 0) {
+    normalized.selectedOptions = normalizedSelectedOptions;
+  }
+
+  const rawOptions = Array.isArray(payload.options) ? payload.options : [];
+  const normalizedOptionsSource =
+    rawOptions.length > 0 ? rawOptions : normalizedSelectedOptions;
+
+  const normalizedOptions = normalizedOptionsSource.map((entry, index) => {
+    const optionRecord = asRecord(entry);
+    const fallbackId = buildFallbackOptionId(
+      [optionRecord?.id, optionRecord?.title, optionRecord?.text],
+      index
+    );
+    const resolvedId = cleanString(optionRecord?.id) ?? fallbackId;
+    const title = buildFallbackOptionTitle(
+      [optionRecord?.title, optionRecord?.text, optionRecord?.id],
+      resolvedId
+    );
+    const normalizedIndex = readNumber(optionRecord?.index);
+    const votesValue = readNumber(optionRecord?.votes);
+    return {
+      ...optionRecord,
+      id: resolvedId,
+      title,
+      index: normalizedIndex !== null && normalizedIndex >= 0 ? normalizedIndex : index,
+      votes: votesValue !== null && votesValue >= 0 ? votesValue : undefined,
+    };
+  });
+
+  normalized.options = normalizedOptions;
+
+  if (!Array.isArray(normalized.selectedOptionIds) && normalizedSelectedOptions.length > 0) {
+    normalized.selectedOptionIds = normalizedSelectedOptions.map((entry) => entry.id);
+  }
+
+  const aggregatesRecord = asRecord(payload.aggregates);
+  const optionTotalsRecord = asRecord(aggregatesRecord?.optionTotals);
+  const optionTotals: Record<string, number> = {};
+
+  if (optionTotalsRecord) {
+    for (const [key, value] of Object.entries(optionTotalsRecord)) {
+      const normalizedKey = cleanString(key);
+      if (!normalizedKey) {
+        continue;
+      }
+      const numericValue = readNumber(value);
+      if (numericValue !== null && numericValue >= 0) {
+        optionTotals[normalizedKey] = numericValue;
+      }
+    }
+  }
+
+  for (const option of normalizedSelectedOptions) {
+    if (!optionTotals[option.id]) {
+      optionTotals[option.id] = 1;
+    }
+  }
+
+  const totalVotesCandidate = readNumber(aggregatesRecord?.totalVotes);
+  const totalVotersCandidate = readNumber(aggregatesRecord?.totalVoters);
+
+  normalized.aggregates = {
+    totalVotes:
+      totalVotesCandidate !== null && totalVotesCandidate >= 0
+        ? totalVotesCandidate
+        : normalizedSelectedOptions.length,
+    totalVoters:
+      totalVotersCandidate !== null && totalVotersCandidate >= 0
+        ? totalVotersCandidate
+        : normalizedSelectedOptions.length > 0
+        ? 1
+        : 0,
+    optionTotals,
+  };
+
+  return normalized;
+};
 
 export const processPollChoiceEvent = async (
   eventRecord: RawBaileysUpsertEvent,
@@ -30,7 +181,8 @@ export const processPollChoiceEvent = async (
   }
 ): Promise<{ persisted: number; ignored: number; failures: number }> => {
   const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
-  const validation = PollChoiceEventSchema.safeParse(payloadRecord);
+  const normalizedPayload = normalizePollChoiceEventPayload(payloadRecord);
+  const validation = PollChoiceEventSchema.safeParse(normalizedPayload);
   const baseTenantId = context.tenantOverride ?? null;
   const baseInstanceId = context.instanceId ?? null;
 
