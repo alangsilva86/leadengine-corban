@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { cn } from '@/lib/utils.js';
 import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
+import InstanceBadge from '../Shared/InstanceBadge.jsx';
 
 const resolveWindowStatus = (minutes) => {
   if (minutes === null || minutes === undefined) {
@@ -53,6 +54,12 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
   const lastOutbound = formatTime(ticket?.timeline?.lastOutboundAt);
   const agentTyping = ticket?.timeline?.typing;
   const { displayName, displayPhone, remoteJid } = getTicketIdentity(ticket);
+  const instanceId =
+    ticket?.metadata?.sourceInstance ??
+    ticket?.instanceId ??
+    ticket?.metadata?.instanceId ??
+    ticket?.timeline?.instanceId ??
+    null;
 
   const unreadInbound = ticket.timeline?.unreadInboundCount ?? 0;
   const lastActivity = lastInbound ?? lastOutbound ?? '—';
@@ -75,6 +82,9 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
             <p className="truncate text-sm font-semibold text-[color:var(--color-inbox-foreground)]" title={displayName}>
               {displayName}
             </p>
+            <span className="hidden sm:inline-flex">
+              <InstanceBadge instanceId={instanceId} />
+            </span>
             {unreadInbound > 0 ? (
               <span className="inline-flex items-center justify-center rounded-full bg-[color:var(--accent-inbox-primary)]/10 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--accent-inbox-primary)]">
                 +{unreadInbound}
@@ -82,6 +92,9 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
             ) : null}
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
+            <span className="sm:hidden inline-flex">
+              <InstanceBadge instanceId={instanceId} />
+            </span>
             <span className="truncate">{preview}</span>
             <span className="hidden overflow-hidden text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70 group-hover/list:inline">
               {slaLabel}

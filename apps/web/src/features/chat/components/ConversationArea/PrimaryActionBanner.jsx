@@ -7,6 +7,7 @@ import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
 import { AiModeControlMenu } from './AiModeMenu.jsx';
 import { ACTIONS_BY_ID } from '@/features/chat/actions/inventory';
+import InstanceBadge from '../Shared/InstanceBadge.jsx';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -192,7 +193,35 @@ const PrimaryActionBanner = ({
   onTakeOver,
   onGiveBackToAi,
   contactPhone,
+  instanceId,
+  instancePresentation,
 }) => {
+  const resolvedInstance = useMemo(() => {
+    const fallback = {
+      label: 'Instância desconhecida',
+      color: '#94A3B8',
+      number: null,
+      phone: null,
+    };
+
+    if (!instancePresentation) {
+      return fallback;
+    }
+
+    return {
+      label: instancePresentation.label ?? fallback.label,
+      color: instancePresentation.color ?? fallback.color,
+      number: instancePresentation.number ?? instancePresentation.phone ?? null,
+      phone: instancePresentation.phone ?? null,
+    };
+  }, [instancePresentation]);
+
+  const showContactPhone = useMemo(() => {
+    if (!contactPhone) return false;
+    if (!resolvedInstance.number) return true;
+    return contactPhone !== resolvedInstance.number;
+  }, [contactPhone, resolvedInstance.number]);
+
   const handleDetails = (intent = {}) => {
     onRequestDetails?.(intent);
   };
@@ -236,7 +265,13 @@ const PrimaryActionBanner = ({
             <p className="mt-1 truncate text-xs text-foreground-muted">
               {stageKey ? `Etapa atual · ${stageKey}` : 'Sem etapa definida'}
             </p>
-            {contactPhone ? (
+            <div className="mt-1 flex items-center gap-2 text-xs text-foreground-muted">
+              <InstanceBadge instanceId={instanceId} />
+              <span className="truncate" title={resolvedInstance.number ?? undefined}>
+                {resolvedInstance.number ?? 'Número não informado'}
+              </span>
+            </div>
+            {showContactPhone ? (
               <p className="mt-1 text-xs text-foreground-muted" data-testid="ticket-contact-phone">
                 {contactPhone}
               </p>

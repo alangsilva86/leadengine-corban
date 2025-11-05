@@ -10,6 +10,7 @@ import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
+import useInstancePresentation from '../../hooks/useInstancePresentation.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
@@ -309,6 +310,12 @@ const ConversationHeader = ({
   const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
   const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
   const originInfo = useMemo(() => (origin ? resolveChannelInfo(origin) : null), [origin]);
+  const instanceId =
+    ticket?.metadata?.sourceInstance ??
+    ticket?.instanceId ??
+    ticket?.metadata?.instanceId ??
+    null;
+  const instancePresentation = useInstancePresentation(instanceId);
 
   const phoneAction = usePhoneActions(rawPhone, {
     missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
@@ -525,6 +532,8 @@ const ConversationHeader = ({
       onTakeOver={onTakeOver}
       onGiveBackToAi={onGiveBackToAi}
       contactPhone={identity.displayPhone ?? identity.remoteJid ?? null}
+      instanceId={instanceId}
+      instancePresentation={instancePresentation}
     />
   );
 

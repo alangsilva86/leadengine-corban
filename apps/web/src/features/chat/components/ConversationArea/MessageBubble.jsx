@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 
 import { usePollMessage } from '../../hooks/usePollMessage.js';
+import InstanceBadge from '../Shared/InstanceBadge.jsx';
+import useInstancePresentation from '../../hooks/useInstancePresentation.js';
 
 const PollVoteBubble = lazy(() => import('./PollVoteBubble.jsx'));
 const ContactBubble = lazy(() => import('./ContactBubble.jsx'));
@@ -66,18 +68,17 @@ export const MessageBubble = ({
   const interactiveMetadata =
     metadata?.interactive && typeof metadata.interactive === 'object' ? metadata.interactive : null;
   const rawKeyMeta = metadata.rawKey && typeof metadata.rawKey === 'object' ? metadata.rawKey : {};
-  const sourceInstance = metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'desconhecido';
+  const sourceInstance =
+    metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'desconhecido';
   const remoteJid = metadata.remoteJid ?? metadata.chatId ?? rawKeyMeta.remoteJid ?? null;
   const phoneLabel = metadata.phoneE164 ?? remoteJid ?? message.chatId ?? 'desconhecido';
-  const originChipTone = outbound
-    ? 'border border-accent bg-accent text-accent-foreground'
-    : 'border border-success-soft-border bg-success-strong text-white';
   const directionChipTone = outbound
     ? 'bg-accent text-accent-foreground'
     : 'bg-success-strong text-white';
   const directionLabel = outbound ? 'OUT' : 'IN';
   const timestamp = message.createdAt ? new Date(message.createdAt) : null;
   const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
+  const instancePresentation = useInstancePresentation(sourceInstance);
 
   const ack = STATUS_ICONS[message.status ?? 'SENT'] ?? STATUS_ICONS.SENT;
   const AckIcon = ack.icon;
@@ -393,17 +394,15 @@ export const MessageBubble = ({
             <span className={cn('rounded-full px-2 py-0.5', directionChipTone)}>{directionLabel}</span>
             <Tooltip delayDuration={200}>
               <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium normal-case',
-                    originChipTone
-                  )}
-                >
-                  via {sourceInstance}
+                <span>
+                  <InstanceBadge instanceId={sourceInstance} withTooltip={false} className="text-[10px]" />
                 </span>
               </TooltipTrigger>
               <TooltipContent className="space-y-1">
-                <p className="font-semibold">Instância: {sourceInstance}</p>
+                <p className="font-semibold">Instância: {instancePresentation.label}</p>
+                <p className="text-xs text-muted-foreground">
+                  Telefone: {instancePresentation.number ?? 'Não informado'}
+                </p>
                 <p className="text-xs text-muted-foreground">Contato: {phoneLabel}</p>
                 {remoteJid ? <p className="text-xs text-muted-foreground">remoteJid: {remoteJid}</p> : null}
                 {tooltipTimestamp ? (

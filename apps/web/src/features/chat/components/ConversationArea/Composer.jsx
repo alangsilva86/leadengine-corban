@@ -5,6 +5,7 @@ import { MessageSquarePlus, Paperclip, Smile, Send, Loader2, Wand2, X, RefreshCw
 import { Badge } from '@/components/ui/badge.jsx';
 import { cn } from '@/lib/utils.js';
 import QuickReplyMenu from '../Shared/QuickReplyMenu.jsx';
+import InstanceBadge from '../Shared/InstanceBadge.jsx';
 import TemplatePicker from './TemplatePicker.jsx';
 import { useUploadWhatsAppMedia } from '../../api/useUploadWhatsAppMedia.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
@@ -185,7 +186,6 @@ export const Composer = forwardRef(function Composer(
   };
   const instanceBlockingSend = requireConnected && hasInstances && !selectedInstanceConnected;
   const instanceToneKey = STATUS_DOT_CLASSES[selectedInstanceTone] ? selectedInstanceTone : 'muted';
-  const instanceDotClass = STATUS_DOT_CLASSES[instanceToneKey] ?? STATUS_DOT_CLASSES.muted;
   const instanceStatusTextClass =
     STATUS_TEXT_CLASSES[instanceToneKey] ?? STATUS_TEXT_CLASSES.muted;
   const instanceDisplayLabel =
@@ -193,6 +193,7 @@ export const Composer = forwardRef(function Composer(
   const instanceDisplayStatus =
     selectedInstanceStatusLabel ??
     (selectedInstanceConnected ? 'Conectada' : 'Desconectada');
+  const effectiveInstanceId = selectedInstanceId ?? defaultInstanceId ?? null;
 
   const aiStatus = aiStreaming?.status ?? 'idle';
   const isAiGenerating = aiStatus === 'streaming';
@@ -639,9 +640,15 @@ export const Composer = forwardRef(function Composer(
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground-muted" />
                         ) : (
                           <span className="flex items-center gap-2">
-                            <span className={cn('h-2 w-2 rounded-full', instanceDotClass)} aria-hidden />
+                            <InstanceBadge
+                              instanceId={effectiveInstanceId}
+                              withTooltip={false}
+                              className="text-[10px]"
+                            />
                             <span className="flex max-w-[12rem] flex-col items-start">
-                              <span className="truncate">{instanceDisplayLabel}</span>
+                              <span className="truncate text-xs font-semibold">
+                                Enviando por {instanceDisplayLabel}
+                              </span>
                               <span
                                 className={cn(
                                   'text-[10px] uppercase tracking-[0.18em]',
