@@ -619,15 +619,6 @@ const normalizeMessagePayload = (
   const fromMe = key?.fromMe === true;
   const direction: 'inbound' | 'outbound' = fromMe ? 'outbound' : 'inbound';
 
-  if (fromMe) {
-    return {
-      ignore: {
-        messageIndex,
-        reason: 'from_me',
-      },
-    };
-  }
-
   const rawContent = asRecord(message.message);
   const messageContent = unwrapMessageContent(rawContent);
 
@@ -636,6 +627,18 @@ const normalizeMessagePayload = (
       ignore: {
         messageIndex,
         reason: 'empty_message',
+      },
+    };
+  }
+
+  const pollCreationRecordRaw = resolvePollCreationRecord(messageContent);
+  const pollContextInfoRaw = normalizePollContextInfo(extractMessageContextInfo(messageContent));
+
+  if (fromMe && !pollCreationRecordRaw) {
+    return {
+      ignore: {
+        messageIndex,
+        reason: 'from_me',
       },
     };
   }
@@ -682,8 +685,8 @@ const normalizeMessagePayload = (
   const interactive = extractInteractiveDetails(messageContent);
   const messageType = determineMessageType(messageContent);
   const quoted = extractQuotedDetails(messageContent);
-  const pollCreationRecord = resolvePollCreationRecord(messageContent);
-  const pollContextInfo = normalizePollContextInfo(extractMessageContextInfo(messageContent));
+  const pollCreationRecord = pollCreationRecordRaw;
+  const pollContextInfo = pollContextInfoRaw;
 
   const normalizedMessage = compactRecord({
     id: messageId,

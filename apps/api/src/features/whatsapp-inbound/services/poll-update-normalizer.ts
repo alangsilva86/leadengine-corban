@@ -13,6 +13,8 @@ type PollVote = {
   question: string | null;
   choiceText: string | null;
   choiceId: string | null;
+  optionIds: string[];
+  selectedOptions: Array<{ id: string; title: string | null }>;
 };
 
 export type PollPayloadSegments = {
@@ -90,6 +92,95 @@ export const extractPollVote = (segments: PollPayloadSegments): PollVote => {
   const { payload, message, metadata } = segments;
   const pick = (v: unknown) => readString(v);
 
+  const optionIdSet = new Set<string>();
+  const selectionMap = new Map<string, { id: string; title: string | null }>();
+
+  const registerOptionId = (value: unknown) => {
+    const normalized = pick(value);
+    if (normalized) {
+      optionIdSet.add(normalized);
+    }
+  };
+
+  const registerSelection = (entry: unknown) => {
+    if (!entry) {
+      return;
+    }
+
+    if (typeof entry === 'string') {
+      const normalized = entry.trim();
+      if (!normalized) {
+        return;
+      }
+      optionIdSet.add(normalized);
+      if (!selectionMap.has(normalized)) {
+        selectionMap.set(normalized, { id: normalized, title: normalized });
+      }
+      return;
+    }
+
+    if (typeof entry !== 'object') {
+      return;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const candidateId =
+      pick(record.id) ??
+      pick((record as { optionId?: unknown }).optionId) ??
+      pick((record as { key?: unknown }).key) ??
+      pick((record as { value?: unknown }).value) ??
+      null;
+    const label = pickOptionLabel(record);
+    const normalizedId = candidateId ?? label ?? null;
+    if (!normalizedId) {
+      return;
+    }
+    optionIdSet.add(normalizedId);
+    if (!selectionMap.has(normalizedId)) {
+      selectionMap.set(normalizedId, {
+        id: normalizedId,
+        title: label ?? (candidateId ? null : normalizedId),
+      });
+    } else if (label && !selectionMap.get(normalizedId)?.title) {
+      selectionMap.set(normalizedId, {
+        id: normalizedId,
+        title: label,
+      });
+    }
+  };
+
+  const selectedOptionsCandidates = (
+    [] as unknown[]
+  )
+    .concat(
+      Array.isArray((metadata as any)?.pollChoice?.selectedOptions)
+        ? (metadata as any)?.pollChoice?.selectedOptions ?? []
+        : [],
+      Array.isArray((metadata as any)?.pollChoice?.vote?.selectedOptions)
+        ? (metadata as any)?.pollChoice?.vote?.selectedOptions ?? []
+        : [],
+      Array.isArray((metadata as any)?.poll?.selectedOptions)
+        ? (metadata as any)?.poll?.selectedOptions ?? []
+        : [],
+      Array.isArray((payload as any)?.selectedOptions)
+        ? (payload as any)?.selectedOptions ?? []
+        : []
+    );
+
+  selectedOptionsCandidates.forEach(registerSelection);
+
+  const optionIdCandidates = (
+    [] as unknown[]
+  )
+    .concat(
+      (metadata as any)?.pollChoice?.optionIds ?? [],
+      (metadata as any)?.pollChoice?.vote?.optionIds ?? [],
+      (metadata as any)?.poll?.selectedOptionIds ?? [],
+      (payload as any)?.optionIds ?? []
+    );
+
+  optionIdCandidates.forEach(registerOptionId);
+
   const selectedOptionFromVote = Array.isArray((metadata as any)?.pollChoice?.vote?.selectedOptions)
     ? (metadata as any)?.pollChoice?.vote?.selectedOptions?.[0]
     : null;
@@ -97,18 +188,22 @@ export const extractPollVote = (segments: PollPayloadSegments): PollVote => {
     ? (metadata as any)?.poll?.selectedOptions?.[0]
     : null;
 
+  const selectionSummary = Array.from(selectionMap.values())
+    .map((entry) => entry.title ?? entry.id)
+    .filter((value): value is string => Boolean(value));
+
   const choiceText =
     pick((message as any).text) ??
+    (selectionSummary.length > 0 ? selectionSummary.join(', ') : null) ??
     pickOptionLabel(selectedOptionFromVote) ??
     pickOptionLabel(selectedOptionFromPoll) ??
     pick((payload as any)?.text) ??
     null;
 
   const choiceId =
+    Array.from(optionIdSet.values())[0] ??
     pick((selectedOptionFromVote as any)?.id) ??
     pick((selectedOptionFromPoll as any)?.id) ??
-    pick((metadata as any)?.pollChoice?.vote?.optionIds?.[0]) ??
-    pick((metadata as any)?.poll?.selectedOptionIds?.[0]) ??
     pick((selectedOptionFromVote as any)?.optionId) ??
     pick((selectedOptionFromPoll as any)?.optionId) ??
     pick((selectedOptionFromVote as any)?.key) ??
@@ -117,6 +212,10 @@ export const extractPollVote = (segments: PollPayloadSegments): PollVote => {
     pick((selectedOptionFromPoll as any)?.value) ??
     pick((payload as any)?.selectedOptionId) ??
     null;
+
+  if (choiceId) {
+    optionIdSet.add(choiceId);
+  }
 
   const enrichedChoiceText =
     choiceText ??
@@ -151,7 +250,14 @@ export const extractPollVote = (segments: PollPayloadSegments): PollVote => {
     pick((message as any)?.id) ??
     null;
 
-  return { pollId, question, choiceText: enrichedChoiceText, choiceId };
+  return {
+    pollId,
+    question,
+    choiceText: enrichedChoiceText,
+    choiceId,
+    optionIds: Array.from(optionIdSet.values()),
+    selectedOptions: Array.from(selectionMap.values()),
+  };
 };
 
 export const resolveMessageType = (segments: PollPayloadSegments): string | null => {
@@ -217,15 +323,33 @@ export const normalizePollUpdate = (
   }
 
   const { payload } = segments;
-  const { pollId, question, choiceText, choiceId } = extractPollVote(segments);
+  const { pollId, question, choiceText, choiceId, optionIds, selectedOptions } = extractPollVote(segments);
 
-  const resolvedOptionId = choiceId ?? choiceText ?? undefined;
-  const selectedOption = choiceText || resolvedOptionId
-    ? {
-        ...(resolvedOptionId ? { id: resolvedOptionId } : {}),
-        ...(choiceText ? { title: choiceText } : {}),
-      }
-    : undefined;
+  const formattedSelectedOptions = selectedOptions.map((entry) => ({
+    id: entry.id,
+    title: entry.title ?? entry.id,
+    text: entry.title ?? entry.id,
+  }));
+
+  const fallbackSelectionId = choiceId ?? (choiceText && choiceText.trim().length ? choiceText.trim() : null);
+  const fallbackSelection =
+    !formattedSelectedOptions.length && fallbackSelectionId
+      ? {
+          id: fallbackSelectionId,
+          title: choiceText ?? fallbackSelectionId,
+          text: choiceText ?? fallbackSelectionId,
+        }
+      : undefined;
+
+  const allSelectedOptions = formattedSelectedOptions.length
+    ? formattedSelectedOptions
+    : fallbackSelection
+      ? [fallbackSelection]
+      : [];
+
+  const normalizedOptionIds = optionIds.length > 0
+    ? optionIds
+    : allSelectedOptions.map((entry) => entry.id).filter((value): value is string => Boolean(value));
 
   if (choiceText || question) {
     const finalText = choiceText ?? buildPollVoteText(question, choiceText);
@@ -245,16 +369,17 @@ export const normalizePollUpdate = (
       poll: {
         id: pollId ?? undefined,
         question: question ?? undefined,
-        ...(selectedOption ? { selectedOptions: [selectedOption] } : {}),
-        ...(resolvedOptionId ? { selectedOptionIds: [resolvedOptionId] } : {}),
+        ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
+        ...(normalizedOptionIds.length ? { selectedOptionIds: normalizedOptionIds } : {}),
         updatedAt: new Date().toISOString(),
       },
       pollChoice: {
         pollId: pollId ?? undefined,
         question: question ?? undefined,
+        ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
         vote: {
-          ...(selectedOption ? { selectedOptions: [selectedOption] } : {}),
-          ...(resolvedOptionId ? { optionIds: [resolvedOptionId] } : {}),
+          ...(allSelectedOptions.length ? { selectedOptions: allSelectedOptions } : {}),
+          ...(normalizedOptionIds.length ? { optionIds: normalizedOptionIds } : {}),
           timestamp: readString((payload as any).timestamp) ?? new Date().toISOString(),
         },
       },
