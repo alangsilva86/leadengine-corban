@@ -49,6 +49,40 @@
 - [ ] Adicionar tracking de scroll depth (opcional - pode ser adicionado depois)
 
 ## Integração e Deploy
-- [ ] Integrar com repositório GitHub
+- [x] Integrar com repositório GitHub
 - [x] Criar checkpoint final
-- [ ] Gerar guia do usuário
+- [x] Gerar guia do usuário
+
+
+## Refinamentos Baseados em Feedback
+
+### Hero
+- [x] Adicionar linha de validação na subheadline
+- [x] Simplificar para 1 CTA primário destacado
+- [ ] Adicionar mockup ou visual do produto (opcional)
+
+### Visualizações
+- [x] Transformar fluxo "Como funciona" em fluxograma horizontal animado
+- [ ] Criar gráfico visual em camadas para Arquitetura 360
+- [ ] Adicionar comparativo visual nos modelos de participação
+
+### Simulador Interativo
+- [x] Criar simulador de margem com sliders dinâmicos
+- [x] Adicionar cálculo em tempo real de volume e margem
+- [x] Incluir visualização gráfica dos resultados
+
+### Design
+- [x] Melhorar tipografia com pesos mais fortes
+- [x] Ajustar paleta de cores (azul teal + laranja)
+- [x] Aumentar espaçamento entre seções (py-32 = 128px)
+- [x] Atualizar iconografia para estilo mais robusto
+
+### Copywriting
+- [x] Reescrever mensagens focando em oportunidade e controle
+- [x] Adicionar frases de impacto sobre autonomia
+- [x] Melhorar CTAs com benefícios claros
+
+### Animações
+- [x] Adicionar fluxo de processamento animado
+- [x] Implementar hover states nos cards de modelos
+- [x] Animar transições de seções

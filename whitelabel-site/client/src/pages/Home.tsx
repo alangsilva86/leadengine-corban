@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/accordion";
 import LeadForm from "@/components/LeadForm";
 import SEO from "@/components/SEO";
+import MarginSimulator from "@/components/MarginSimulator";
 import { useState } from "react";
 
 export default function Home() {
@@ -59,52 +60,48 @@ export default function Home() {
             </h1>
             
             <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto">
-              Tecnologia, back-office, compliance e funding opcional para você lançar um cartão benefício{" "}
-              <span className="text-foreground font-semibold">com a sua marca</span> em até 45 dias.
+              Seu cartão roda em 45 dias. Sem dor de cabeça, sem desenvolvimento, sem risco operacional.{" "}
+              <span className="text-foreground font-semibold">Averbadoras e bancarizadoras já plugadas.</span>
+            </p>
+            
+            <p className="text-lg text-primary/80 max-w-2xl mx-auto">
+              ✓ Já integrado com averbadoras e bancarizadoras homologadas
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-6">
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   size="lg" 
-                  className="text-lg px-8 py-6"
+                  className="text-xl px-12 py-7 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity shadow-lg shadow-primary/30"
                   onClick={() => setShowForm(true)}
                 >
-                  Quero meu white-label
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Button>
-              </motion.div>
-              
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  size="lg" 
-                  variant="outline"
-                  className="text-lg px-8 py-6"
-                  onClick={() => scrollToSection("how-it-works")}
-                >
-                  Ver como funciona
+                  Receber Plano Comercial
+                  <ArrowRight className="ml-2 h-6 w-6" />
                 </Button>
               </motion.div>
             </div>
+            
+            <button 
+              onClick={() => scrollToSection("how-it-works")}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
+            >
+              Ver como funciona ↓
+            </button>
 
-            <div className="flex flex-wrap gap-6 justify-center pt-8 text-sm text-muted-foreground">
+            <div className="flex flex-wrap gap-6 justify-center pt-12 text-base">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span>Estrutura white-label plug-and-play</span>
+                <CheckCircle2 className="h-5 w-5 text-secondary" />
+                <span className="font-medium">Você controla a marca</span>
               </div>
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span>Integração com averbadoras homologadas</span>
+                <CheckCircle2 className="h-5 w-5 text-secondary" />
+                <span className="font-medium">Não fica refém de banco</span>
               </div>
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <span>Compliance e auditoria ponta a ponta</span>
+                <CheckCircle2 className="h-5 w-5 text-secondary" />
+                <span className="font-medium">Você distribui, nós operamos</span>
               </div>
             </div>
-
-            <p className="text-sm text-muted-foreground pt-4">
-              Operação multi-tenant, auditável e escalável.
-            </p>
           </motion.div>
 
           <motion.div
@@ -119,7 +116,7 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section id="how-it-works" className="py-24 bg-card/50">
+      <section id="how-it-works" className="py-32 bg-card/50">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -133,39 +130,107 @@ export default function Home() {
             </p>
           </motion.div>
 
-          <div className="space-y-6">
-            {[
-              { step: "1", title: "Captação", desc: "pelos seus canais (app, URA, WhatsApp, parceiros)" },
-              { step: "2", title: "Consulta de margem", desc: "via averbadoras (Econsig, Consignet, NeoConsig)" },
-              { step: "3", title: "Simulação e proposta", desc: "com CET, IOF e taxas parametrizáveis" },
-              { step: "4", title: "Formalização digital", desc: "por SMS, WhatsApp, e-mail e biometria" },
-              { step: "5", title: "Averbação automática", desc: "com convênios e órgãos públicos" },
-              { step: "6", title: "Liberação e emissão", desc: "pelas bancarizadoras homologadas" },
-              { step: "7", title: "Repasse e gestão", desc: "com conciliação diária e cobrança inteligente" },
-            ].map((item, index) => (
-              <motion.div
-                key={item.step}
-                initial={{ opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-                className="flex gap-4 items-start group"
-              >
-                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                  {item.step}
-                </div>
-                <div className="flex-1 pt-2">
-                  <h3 className="text-xl font-semibold mb-1">{item.title}</h3>
-                  <p className="text-muted-foreground">{item.desc}</p>
-                </div>
-              </motion.div>
-            ))}
+          {/* Fluxograma horizontal */}
+          <div className="relative">
+            {/* Desktop: Horizontal flow */}
+            <div className="hidden lg:block">
+              <div className="flex items-center justify-between gap-2 mb-8">
+                {[
+                  { step: "1", title: "Captação", icon: <Smartphone className="h-6 w-6" /> },
+                  { step: "2", title: "Margem", icon: <Database className="h-6 w-6" /> },
+                  { step: "3", title: "Proposta", icon: <FileCheck className="h-6 w-6" /> },
+                  { step: "4", title: "Formalização", icon: <Shield className="h-6 w-6" /> },
+                  { step: "5", title: "Averbação", icon: <CheckCircle2 className="h-6 w-6" /> },
+                  { step: "6", title: "Emissão", icon: <Zap className="h-6 w-6" /> },
+                  { step: "7", title: "Repasse", icon: <TrendingUp className="h-6 w-6" /> },
+                ].map((item, index) => (
+                  <motion.div
+                    key={item.step}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: index * 0.15 }}
+                    className="flex-1 relative"
+                  >
+                    <div className="flex flex-col items-center">
+                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-primary mb-3 group-hover:scale-110 transition-transform">
+                        {item.icon}
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs font-bold text-muted-foreground mb-1">ETAPA {item.step}</div>
+                        <div className="font-semibold text-sm">{item.title}</div>
+                      </div>
+                    </div>
+                    {index < 6 && (
+                      <div className="absolute top-10 -right-1 w-2 h-0.5 bg-gradient-to-r from-primary to-secondary">
+                        <ArrowRight className="absolute -right-2 -top-2 h-5 w-5 text-primary" />
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+              
+              {/* Descrições detalhadas */}
+              <div className="grid grid-cols-7 gap-4 mt-12">
+                {[
+                  { desc: "Seus canais (app, URA, WhatsApp)" },
+                  { desc: "Averbadoras homologadas" },
+                  { desc: "CET, IOF parametrizáveis" },
+                  { desc: "SMS, e-mail, biometria" },
+                  { desc: "Convênios e órgãos" },
+                  { desc: "Bancarizadoras" },
+                  { desc: "Conciliação diária" },
+                ].map((item, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.5 + index * 0.1 }}
+                    className="text-center text-sm text-muted-foreground"
+                  >
+                    {item.desc}
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Mobile: Vertical flow */}
+            <div className="lg:hidden space-y-4">
+              {[
+                { step: "1", title: "Captação", desc: "pelos seus canais (app, URA, WhatsApp, parceiros)", icon: <Smartphone className="h-5 w-5" /> },
+                { step: "2", title: "Consulta de margem", desc: "via averbadoras (Econsig, Consignet, NeoConsig)", icon: <Database className="h-5 w-5" /> },
+                { step: "3", title: "Simulação e proposta", desc: "com CET, IOF e taxas parametrizáveis", icon: <FileCheck className="h-5 w-5" /> },
+                { step: "4", title: "Formalização digital", desc: "por SMS, WhatsApp, e-mail e biometria", icon: <Shield className="h-5 w-5" /> },
+                { step: "5", title: "Averbação automática", desc: "com convênios e órgãos públicos", icon: <CheckCircle2 className="h-5 w-5" /> },
+                { step: "6", title: "Liberação e emissão", desc: "pelas bancarizadoras homologadas", icon: <Zap className="h-5 w-5" /> },
+                { step: "7", title: "Repasse e gestão", desc: "com conciliação diária e cobrança inteligente", icon: <TrendingUp className="h-5 w-5" /> },
+              ].map((item, index) => (
+                <motion.div
+                  key={item.step}
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.1 }}
+                  className="flex gap-4 items-start"
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-primary">
+                    {item.icon}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-bold text-muted-foreground mb-1">ETAPA {item.step}</div>
+                    <h3 className="text-lg font-semibold mb-1">{item.title}</h3>
+                    <p className="text-sm text-muted-foreground">{item.desc}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
       {/* Architecture 360 Section */}
-      <section className="py-24">
+      <section className="py-32">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -244,7 +309,7 @@ export default function Home() {
       </section>
 
       {/* Models Section */}
-      <section className="py-24 bg-card/50">
+      <section className="py-32 bg-card/50">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -315,7 +380,7 @@ export default function Home() {
       </section>
 
       {/* Differentials Section */}
-      <section className="py-24">
+      <section className="py-32">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -352,7 +417,7 @@ export default function Home() {
       </section>
 
       {/* Economics Section */}
-      <section className="py-24 bg-card/50">
+      <section className="py-32 bg-card/50">
         <div className="container max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -364,50 +429,27 @@ export default function Home() {
             <p className="text-xl text-muted-foreground">Exemplo de escala</p>
           </motion.div>
 
-          <Card className="bg-gradient-to-br from-primary/10 to-secondary/10 border-primary/20">
-            <CardContent className="p-8">
-              <div className="grid md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Convênios ativos</p>
-                    <p className="text-3xl font-bold">10</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Servidores elegíveis</p>
-                    <p className="text-3xl font-bold">25.000</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Ticket médio</p>
-                    <p className="text-3xl font-bold">R$ 2.500</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">Conversão</p>
-                    <p className="text-3xl font-bold">5%</p>
-                  </div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+          >
+            <Card className="bg-gradient-to-br from-card to-card/50 border-border/50">
+              <CardContent className="p-8">
+                <div className="text-center mb-8">
+                  <h3 className="text-2xl font-bold mb-2">Simulador de Margem Interativo</h3>
+                  <p className="text-muted-foreground">Ajuste os parâmetros e veja o potencial de receita em tempo real</p>
                 </div>
-
-                <div className="flex flex-col justify-center space-y-6">
-                  <div className="p-6 bg-background/50 rounded-lg">
-                    <p className="text-sm text-muted-foreground mb-2">Volume mensal</p>
-                    <p className="text-4xl font-bold text-primary">R$ 3,125 mi</p>
-                  </div>
-                  <div className="p-6 bg-background/50 rounded-lg">
-                    <p className="text-sm text-muted-foreground mb-2">Margem líquida (5%)</p>
-                    <p className="text-4xl font-bold text-secondary">R$ 156.250/mês</p>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-sm text-muted-foreground text-center mt-8">
-                *Simulação ilustrativa. Parametrizável no onboarding.
-              </p>
-            </CardContent>
-          </Card>
+                <MarginSimulator />
+              </CardContent>
+            </Card>
+          </motion.div>
         </div>
       </section>
 
       {/* Governance Section */}
-      <section className="py-24">
+      <section className="py-32">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -466,7 +508,7 @@ export default function Home() {
       </section>
 
       {/* Integrations Section */}
-      <section className="py-24 bg-card/50">
+      <section className="py-32 bg-card/50">
         <div className="container max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -557,7 +599,7 @@ export default function Home() {
       </section>
 
       {/* FAQ Section */}
-      <section className="py-24">
+      <section className="py-32">
         <div className="container max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -620,7 +662,7 @@ export default function Home() {
       </section>
 
       {/* CTA Final */}
-      <section className="py-24 bg-card/50">
+      <section className="py-32 bg-card/50">
         <div className="container max-w-4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}

@@ -43,16 +43,16 @@
 }
 
 :root {
-  /* Purple (#5A4BE3) and Orange (#FF6B06) theme */
-  --primary: 265 85% 60%; /* Purple */
+  /* Teal Blue (#0D9488) and Orange (#FF6B06) theme - Professional & Trustworthy */
+  --primary: 174 72% 56%; /* Teal Blue - confiança e tecnologia */
   --primary-foreground: 0 0% 100%;
-  --secondary: 24 100% 52%; /* Orange */
+  --secondary: 24 100% 52%; /* Orange accent - energia e ação */
   --secondary-foreground: 0 0% 100%;
-  --sidebar-primary: 265 85% 60%;
+  --sidebar-primary: 174 72% 56%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --chart-1: 265 85% 70%;
-  --chart-2: 265 85% 60%;
-  --chart-3: 265 85% 50%;
+  --chart-1: 174 72% 66%;
+  --chart-2: 174 72% 56%;
+  --chart-3: 174 72% 46%;
   --chart-4: 24 100% 62%;
   --chart-5: 24 100% 52%;
   --radius: 0.65rem;
@@ -64,19 +64,19 @@
   --popover-foreground: 0 0% 98%;
   --muted: 0 0% 15%;
   --muted-foreground: 0 0% 65%;
-  --accent: 265 85% 60%;
+  --accent: 174 72% 56%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 20%;
   --input: 0 0% 20%;
-  --ring: 265 85% 60%;
+  --ring: 174 72% 56%;
   --sidebar: 0 0% 8%;
   --sidebar-foreground: 0 0% 98%;
   --sidebar-accent: 0 0% 15%;
   --sidebar-accent-foreground: 0 0% 98%;
   --sidebar-border: 0 0% 20%;
-  --sidebar-ring: 265 85% 60%;
+  --sidebar-ring: 174 72% 56%;
 }
 
 .dark {
@@ -85,7 +85,7 @@
   --primary-foreground: 0 0% 100%;
   --secondary: 24 100% 52%;
   --secondary-foreground: 0 0% 100%;
-  --sidebar-primary: 265 85% 60%;
+  --sidebar-primary: 174 72% 56%;
   --sidebar-primary-foreground: 0 0% 100%;
   --background: 0 0% 5.5%;
   --foreground: 0 0% 98%;
@@ -95,16 +95,16 @@
   --popover-foreground: 0 0% 98%;
   --muted: 0 0% 15%;
   --muted-foreground: 0 0% 65%;
-  --accent: 265 85% 60%;
+  --accent: 174 72% 56%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 20%;
   --input: 0 0% 20%;
-  --ring: 265 85% 60%;
-  --chart-1: 265 85% 70%;
-  --chart-2: 265 85% 60%;
-  --chart-3: 265 85% 50%;
+  --ring: 174 72% 56%;
+  --chart-1: 174 72% 66%;
+  --chart-2: 174 72% 56%;
+  --chart-3: 174 72% 46%;
   --chart-4: 24 100% 62%;
   --chart-5: 24 100% 52%;
   --sidebar: 0 0% 8%;
@@ -112,7 +112,7 @@
   --sidebar-accent: 0 0% 15%;
   --sidebar-accent-foreground: 0 0% 98%;
   --sidebar-border: 0 0% 20%;
-  --sidebar-ring: 265 85% 60%;
+  --sidebar-ring: 174 72% 56%;
 }
 
 @layer base {
@@ -122,6 +122,16 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  h1 {
+    font-weight: 800;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
