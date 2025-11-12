@@ -24,6 +24,53 @@ const pickString = (...candidates) => {
   return null;
 };
 
+const PLACEHOLDER_NAME_PATTERNS = [/^contato (do |via )?whatsapp$/i];
+
+const looksLikeWhatsAppJid = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes('@s.whatsapp.net') ||
+    normalized.includes('@g.us') ||
+    normalized.includes('@broadcast') ||
+    normalized.includes('@whatsapp.net') ||
+    normalized.includes('@c.us')
+  );
+};
+
+const isPlaceholderContactLabel = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  return PLACEHOLDER_NAME_PATTERNS.some((pattern) => pattern.test(trimmed));
+};
+
+const isMeaningfulDisplayName = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length === 1) return false;
+  if (isPlaceholderContactLabel(trimmed)) return false;
+  if (looksLikeWhatsAppJid(trimmed)) return false;
+
+  const lettersOnly = trimmed.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, '');
+  if (lettersOnly.length > 0) {
+    return true;
+  }
+
+  const compact = trimmed.replace(/[\s\-()[\]{}_+]/g, '');
+  if (!compact) {
+    return false;
+  }
+
+  const digitsOnly = compact.replace(/\D/g, '');
+  if (digitsOnly.length >= Math.max(5, compact.length)) {
+    return false;
+  }
+
+  return true;
+};
+
 const sanitizePhone = (value) => {
   const normalizedValue = normalizeCandidate(value);
   if (typeof normalizedValue !== 'string') return null;
@@ -75,28 +122,46 @@ export const getTicketIdentity = (ticket) => {
       ? remoteJidCandidate.split('@')[0]
       : remoteJidCandidate;
 
-  const nameCandidate = pickString(
-    contact.name,
-    contact.fullName,
-    contact.displayName,
-    contact.firstName && contact.lastName ? `${contact.firstName} ${contact.lastName}` : null,
-    contactMeta.name,
-    metadataContact.name,
-    metadataContact.fullName,
-    metadataContact.displayName,
+  const nameCandidates = [
     metadataContact.pushName,
     whatsappMeta.pushName,
     whatsappMeta.profileName,
+    contact.displayName,
+    contact.fullName,
+    contact.name,
+    contact.firstName && contact.lastName ? `${contact.firstName} ${contact.lastName}` : null,
+    contactMeta.name,
+    contactMeta.displayName,
+    metadataContact.name,
+    metadataContact.fullName,
+    metadataContact.displayName,
     metadata.contactName,
     metadata.leadName,
     metadataLead.name,
     metadataLead.fullName,
     ticket?.subject,
-    sanitizedPhone,
-    remoteIdentifier,
-  );
+  ];
 
-  const displayName = nameCandidate ?? 'Contato WhatsApp';
+  const normalizedNameCandidates = nameCandidates
+    .map(normalizeCandidate)
+    .filter((value) => typeof value === 'string' && value.trim().length > 0);
+
+  const meaningfulName = normalizedNameCandidates.find(isMeaningfulDisplayName) ?? null;
+  const secondaryName =
+    meaningfulName ??
+    normalizedNameCandidates.find(
+      (candidate) => !looksLikeWhatsAppJid(candidate) && !isPlaceholderContactLabel(candidate)
+    ) ??
+    null;
+
+  const fallbackName =
+    secondaryName ??
+    (sanitizedPhone ?? null) ??
+    normalizedNameCandidates.find((candidate) => !looksLikeWhatsAppJid(candidate)) ??
+    remoteIdentifier ??
+    null;
+
+  const displayName = fallbackName ?? 'Contato WhatsApp';
 
   return {
     displayName,
