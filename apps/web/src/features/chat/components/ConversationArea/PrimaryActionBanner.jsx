@@ -325,7 +325,13 @@ const PrimaryActionBanner = ({
 
   return (
     <div data-testid="conversation-header-summary" className="py-1">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div
+        className={cn(
+          'grid gap-3 items-start',
+          'md:grid-cols-[minmax(0,1fr)_auto]',
+          'lg:grid-cols-[minmax(0,1fr)_auto_auto]',
+        )}
+      >
         <div className="flex min-w-0 items-center gap-3">
           <Avatar className="h-11 w-11">
             <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
@@ -356,7 +362,7 @@ const PrimaryActionBanner = ({
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 md:justify-self-end lg:justify-self-start">
           <Indicator
             icon={statusInfo?.icon}
             tone={statusInfo?.tone}
@@ -384,7 +390,7 @@ const PrimaryActionBanner = ({
             <Indicator icon={Clock3} tone="info" label={`Follow-up · ${nextStepValue}`} />
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-self-end">
           <JroIndicator jro={jro} />
           <Button
             type="button"
@@ -401,9 +407,13 @@ const PrimaryActionBanner = ({
             <span className="hidden sm:inline">Detalhes</span>
           </Button>
         </div>
-      </div>
-      <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-2',
+            'md:col-span-2 md:justify-self-end',
+            'lg:col-span-3 lg:justify-self-end lg:flex-nowrap',
+          )}
+        >
           <PrimaryActionButton
             action={primaryAction}
             jroState={jro?.state}
@@ -446,8 +456,10 @@ const PrimaryActionBanner = ({
             </TooltipContent>
           </Tooltip>
           <CommandBar context={commandContext} className="w-auto shrink-0 flex-nowrap gap-1 border-none bg-transparent p-0 shadow-none" />
+          <div className="ml-auto flex w-full justify-end lg:w-auto">
+            <TypingIndicator agents={typingAgents} />
+          </div>
         </div>
-        <TypingIndicator agents={typingAgents} />
       </div>
     </div>
   );
