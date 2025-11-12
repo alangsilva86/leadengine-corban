@@ -979,145 +979,143 @@ const CreateCampaignWizard = ({
   const isAdvanceDisabled = Boolean(advanceDisabledReason) || isSubmitting;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-6 pb-20 pt-4 md:pb-24 md:pt-6">
-        <div className="grid gap-6 md:grid-cols-12">
-          <div className="md:col-span-3 md:border-r md:border-border/60 md:pr-6">
-            <nav className="hidden flex-col gap-3 md:flex">
-              {STEP_SEQUENCE.map((step, index) => {
-                const status = stepStatuses[step.key];
-                const isActive = status === 'current';
-                const isCompleted = status === 'completed';
-                const isBlocked = status === 'blocked';
-                return (
-                  <Tooltip key={step.key} delayDuration={120}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => goToStep(index)}
-                        className={cn(
-                          'flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                          isActive
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border/70 hover:border-primary/40',
-                          isBlocked && 'cursor-not-allowed opacity-60 hover:border-border/70',
-                        )}
-                        aria-current={isActive ? 'step' : undefined}
-                        aria-disabled={isBlocked}
-                      >
-                        <span
-                          className={cn(
-                            'flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold',
-                            isCompleted
-                              ? 'bg-emerald-500/15 text-emerald-600'
-                              : isActive
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-border text-muted-foreground',
-                          )}
-                        >
-                          {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                        </span>
-                        <div>
-                          <p className="text-xs font-semibold leading-4 text-foreground">{step.title}</p>
-                          <p className="text-[0.7rem] leading-4 text-muted-foreground">{step.description}</p>
-                        </div>
-                        {isBlocked ? <Lock className="ml-auto h-4 w-4 text-muted-foreground" /> : null}
-                      </button>
-                    </TooltipTrigger>
-                    {isBlocked ? (
-                      <TooltipContent side="right" align="start" className="max-w-[220px] text-xs">
-                        {getStepBlockedReason(step.key)}
-                      </TooltipContent>
-                    ) : null}
-                  </Tooltip>
-                );
-              })}
-            </nav>
-            <ol className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground md:hidden">
-              {STEP_SEQUENCE.map((step, index) => {
-                const status = stepStatuses[step.key];
-                const isActive = status === 'current';
-                const isCompleted = status === 'completed';
-                const isBlocked = status === 'blocked';
-                return (
-                  <li key={step.key}>
-                    <button
-                      type="button"
-                      onClick={() => goToStep(index)}
-                      className={cn(
-                        'flex items-center gap-2 rounded-full border px-3 py-1',
-                        isActive
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border/70 text-muted-foreground',
-                        isBlocked && 'cursor-not-allowed opacity-60',
-                      )}
-                      aria-disabled={isBlocked}
-                    >
-                      {isCompleted ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
-                      {step.title}
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-          <div className="md:col-span-9">
-            <div className="space-y-6">
-              {renderStepContent()}
-              {stepError ? (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{stepError}</span>
-                </div>
-              ) : null}
-              {submitError ? (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{submitError}</span>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="sticky bottom-0 border-t border-border/70 bg-background">
-        <div className="flex flex-col gap-3 px-6 py-4 md:flex-row md:items-center md:justify-between">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
-            Cancelar
-          </Button>
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={goToPreviousStep}
-              disabled={stepIndex === 0 || isSubmitting}
-            >
-              Voltar
-            </Button>
-            {isLastStep ? (
-              <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {isSubmitting ? 'Criando…' : 'Criar campanha'}
-              </Button>
-            ) : (
-              <Tooltip delayDuration={120}>
+    <div className="flex h-[70vh] flex-col overflow-hidden md:h-[80vh] md:flex-row">
+      <aside className="border-b border-border/60 bg-muted/5 px-6 py-4 md:flex md:w-64 md:flex-shrink-0 md:flex-col md:gap-6 md:border-b-0 md:border-r md:bg-background/60 md:px-5 md:py-6">
+        <nav className="hidden flex-1 flex-col gap-3 overflow-y-auto pr-1 md:flex">
+          {STEP_SEQUENCE.map((step, index) => {
+            const status = stepStatuses[step.key];
+            const isActive = status === 'current';
+            const isCompleted = status === 'completed';
+            const isBlocked = status === 'blocked';
+            return (
+              <Tooltip key={step.key} delayDuration={120}>
                 <TooltipTrigger asChild>
-                  <span>
-                    <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
-                      Avançar
-                    </Button>
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => goToStep(index)}
+                    className={cn(
+                      'flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      isActive
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border/70 hover:border-primary/40',
+                      isBlocked && 'cursor-not-allowed opacity-60 hover:border-border/70',
+                    )}
+                    aria-current={isActive ? 'step' : undefined}
+                    aria-disabled={isBlocked}
+                  >
+                    <span
+                      className={cn(
+                        'flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold',
+                        isCompleted
+                          ? 'bg-emerald-500/15 text-emerald-600'
+                          : isActive
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-border text-muted-foreground',
+                      )}
+                    >
+                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold leading-4 text-foreground">{step.title}</p>
+                      <p className="text-[0.7rem] leading-4 text-muted-foreground">{step.description}</p>
+                    </div>
+                    {isBlocked ? <Lock className="ml-auto h-4 w-4 text-muted-foreground" /> : null}
+                  </button>
                 </TooltipTrigger>
-                {advanceDisabledReason ? (
-                  <TooltipContent side="top" className="max-w-[200px] text-xs">
-                    {advanceDisabledReason}
+                {isBlocked ? (
+                  <TooltipContent side="right" align="start" className="max-w-[220px] text-xs">
+                    {getStepBlockedReason(step.key)}
                   </TooltipContent>
                 ) : null}
               </Tooltip>
-            )}
+            );
+          })}
+        </nav>
+        <ol className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground md:hidden">
+          {STEP_SEQUENCE.map((step, index) => {
+            const status = stepStatuses[step.key];
+            const isActive = status === 'current';
+            const isCompleted = status === 'completed';
+            const isBlocked = status === 'blocked';
+            return (
+              <li key={step.key}>
+                <button
+                  type="button"
+                  onClick={() => goToStep(index)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-full border px-3 py-1',
+                    isActive
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border/70 text-muted-foreground',
+                    isBlocked && 'cursor-not-allowed opacity-60',
+                  )}
+                  aria-disabled={isBlocked}
+                >
+                  {isCompleted ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                  {step.title}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </aside>
+      <section className="relative flex flex-1 flex-col bg-background">
+        <div className="flex-1 overflow-y-auto px-6 pb-28 pt-4 md:px-8 md:pb-36 md:pt-6">
+          <div className="space-y-6">
+            {renderStepContent()}
+            {stepError ? (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span>{stepError}</span>
+              </div>
+            ) : null}
+            {submitError ? (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <span>{submitError}</span>
+              </div>
+            ) : null}
           </div>
         </div>
-      </div>
+        <footer className="absolute inset-x-0 bottom-0 border-t border-border/70 bg-background/95 px-6 py-4 backdrop-blur md:px-8">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={goToPreviousStep}
+                disabled={stepIndex === 0 || isSubmitting}
+              >
+                Voltar
+              </Button>
+              {isLastStep ? (
+                <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {isSubmitting ? 'Criando…' : 'Criar campanha'}
+                </Button>
+              ) : (
+                <Tooltip delayDuration={120}>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
+                        Avançar
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {advanceDisabledReason ? (
+                    <TooltipContent side="top" className="max-w-[200px] text-xs">
+                      {advanceDisabledReason}
+                    </TooltipContent>
+                  ) : null}
+                </Tooltip>
+              )}
+            </div>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 };

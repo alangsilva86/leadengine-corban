@@ -57,7 +57,7 @@ const CreateCampaignDialog = ({
 
     return (
       <Dialog open={open} onOpenChange={handleDialogChange}>
-        <DialogContent className="flex w-full max-w-[760px] flex-col overflow-hidden p-0">
+        <DialogContent className="w-full max-h-[85vh] max-w-[780px] overflow-hidden rounded-2xl border border-border bg-background p-0">
           <DialogHeader className="border-b border-border/60 px-6 pb-4 pt-5">
             <DialogTitle className="text-lg font-semibold leading-6">Nova campanha do WhatsApp</DialogTitle>
             <DialogDescription className="text-sm leading-5 text-muted-foreground">
