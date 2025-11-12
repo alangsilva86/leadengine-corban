@@ -88,17 +88,21 @@ describe('InstancesPanel', () => {
     statusCodeMeta,
   };
 
-  it('renderiza instâncias disponíveis e permite seleção', async () => {
+  it('renderiza instâncias disponíveis com resumo operacional e ação principal', async () => {
     const user = userEvent.setup();
     render(<InstancesPanel {...baseProps} />);
 
     expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
-    expect(screen.getByText('(11) 9999-9999')).toBeInTheDocument();
-    expect(screen.getByText('Atualizado: 01/01/2024 10:00')).toBeInTheDocument();
-    expect(screen.getByText('1 conectadas')).toBeInTheDocument();
+    expect(screen.getByText(/Instâncias: 1 ativas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Fila total:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Utilização do limite 50%/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Manter saudável/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Selecionar instância/i }));
-    expect(baseProps.onSelectInstance).toHaveBeenCalledWith(expect.objectContaining({ id: 'instance-1' }));
+    await user.click(screen.getByRole('button', { name: /Manter saudável/i }));
+    expect(baseProps.onSelectInstance).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'instance-1' }),
+      expect.objectContaining({ skipAutoQr: true }),
+    );
   });
 
   it('exibe estado vazio quando não há instâncias renderizáveis mas existem ocultas', async () => {
@@ -113,9 +117,9 @@ describe('InstancesPanel', () => {
       />
     );
 
-    const emptyMessage = screen.getByText(/Nenhuma instância conectada/i);
+    const emptyMessage = screen.getByText(/Nenhuma instância conectada no momento/i);
     expect(emptyMessage).toBeInTheDocument();
-    expect(screen.getByText('Nenhuma instância cadastrada')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Mostrar todas/i })).toBeInTheDocument();
 
     const showAllButton = screen.getByRole('button', { name: /Mostrar todas/i });
     await user.click(showAllButton);
