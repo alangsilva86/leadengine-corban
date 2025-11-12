@@ -530,7 +530,7 @@ const ConversationHeader = ({
     : summaryContent;
 
   return (
-    <section className="relative z-10 flex flex-col gap-4 px-2 py-2 sm:px-0">
+    <section className="relative z-10 flex flex-col gap-4 px-0 py-2">
       {renderedSummary}
       <OutcomeDialog
         open={activeDialog === 'register-result'}

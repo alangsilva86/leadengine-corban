@@ -146,31 +146,30 @@ const SelectedInstanceBanner = ({
 
       {renderSummaryContent()}
 
-      <div className="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-5 shadow-[0_10px_40px_rgba(15,23,42,0.35)]">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância ativa</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-base font-semibold text-foreground">{selectedName}</p>
-                {selectedInstanceStatusInfo ? (
-                  <Badge variant={selectedInstanceStatusInfo.variant}>{selectedInstanceStatusInfo.label}</Badge>
-                ) : null}
-                {qrStatusMessage ? (
-                  <span className={cn('rounded-full px-3 py-1 text-[0.65rem] font-medium uppercase', qrBadgeClass)}>
-                    {countdownMessage && countdownMessage !== qrStatusMessage ? countdownMessage : qrStatusMessage}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {selectedInstance
-                ? `Telefone: ${formattedPhone || selectedInstancePhone || '—'}`
-                : copy?.description || 'Selecione uma instância para continuar.'}
-            </p>
+      <div className="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-4 shadow-[0_10px_40px_rgba(15,23,42,0.35)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span className="text-base font-semibold text-foreground">{selectedName}</span>
+            {selectedInstanceStatusInfo ? (
+              <Badge variant={selectedInstanceStatusInfo.variant}>{selectedInstanceStatusInfo.label}</Badge>
+            ) : null}
+            {qrStatusMessage ? (
+              <span className={cn('rounded-full px-3 py-1 text-[0.65rem] font-medium uppercase', qrBadgeClass)}>
+                {countdownMessage && countdownMessage !== qrStatusMessage ? countdownMessage : qrStatusMessage}
+              </span>
+            ) : null}
+            {selectedInstance ? (
+              <span className="text-xs text-muted-foreground/80">
+                Telefone: {formattedPhone || selectedInstancePhone || '—'}
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground/80">
+                {copy?.description || 'Selecione uma instância para continuar.'}
+              </span>
+            )}
           </div>
 
-          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <Button
                 onClick={onConfirm}
