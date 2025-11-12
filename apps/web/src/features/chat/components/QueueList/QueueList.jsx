@@ -1,6 +1,7 @@
 import { Fragment, useMemo } from 'react';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
+import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { cn } from '@/lib/utils.js';
 import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
@@ -46,7 +47,7 @@ const formatTime = (iso) => {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 };
 
-const QueueListItem = ({ ticket, selected, onSelect }) => {
+const QueueListItem = ({ ticket, selected, onSelect, selectedForBulk = false, onToggleSelection }) => {
   const windowStats = ticket?.window;
   const { label: slaLabel, tone: slaTone } = resolveWindowStatus(windowStats?.remainingMinutes ?? null);
   const slaToneClasses = useStatusToneClasses(slaTone, { uppercase: false, className: 'text-xs' });
@@ -69,14 +70,25 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
     <button
       type="button"
       data-active={selected ? 'true' : 'false'}
+      data-bulk-selected={selectedForBulk ? 'true' : 'false'}
       aria-pressed={selected}
       onClick={() => onSelect?.(ticket.id)}
       className={cn(
         'group/list relative w-full rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-left transition-colors duration-150 hover:border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_38%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_90%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
-        selected && 'border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)]'
+        selected && 'border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)]',
+        'data-[bulk-selected=true]:ring-2 data-[bulk-selected=true]:ring-[color:var(--accent-inbox-primary)] data-[bulk-selected=true]:ring-offset-2 data-[bulk-selected=true]:ring-offset-[color:var(--surface-shell)]'
       )}
     >
       <div className="flex items-start gap-3">
+        <div className="flex h-5 items-center pt-1">
+          <Checkbox
+            checked={selectedForBulk}
+            onCheckedChange={() => onToggleSelection?.(ticket.id)}
+            onClick={(event) => event.stopPropagation()}
+            className="h-4 w-4"
+            aria-label={selectedForBulk ? 'Remover ticket da seleção' : 'Selecionar ticket para ações em massa'}
+          />
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center justify-between gap-2 text-[10px] text-[color:var(--color-inbox-foreground-muted)]">
             <InstanceBadge instanceId={instanceId} />
@@ -117,13 +129,22 @@ const QueueListItem = ({ ticket, selected, onSelect }) => {
 const QueueList = ({
   tickets,
   selectedTicketId,
+  selectedTicketIds = [],
   onSelectTicket,
+  onToggleTicketSelection,
+  onClearSelection,
   loading,
   onRefresh,
   typingAgents = [],
   metrics,
+  onBulkRegisterLoss,
+  bulkActionPending = false,
+  bulkActionsDisabled = false,
 }) => {
   const typingTicketIds = useMemo(() => new Set(typingAgents.map((agent) => agent.ticketId)), [typingAgents]);
+  const selectionCount = Array.isArray(selectedTicketIds) ? selectedTicketIds.length : 0;
+  const selectionLabel =
+    selectionCount === 1 ? '1 ticket selecionado' : `${selectionCount} tickets selecionados`;
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
@@ -140,6 +161,36 @@ const QueueList = ({
           <span className="sr-only">Sincronizar</span>
         </Button>
       </div>
+
+      {selectionCount > 0 ? (
+        <div className="mx-1 flex flex-col gap-2 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium">{selectionLabel}</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onClearSelection?.()}
+                className="h-7"
+              >
+                Limpar
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => onBulkRegisterLoss?.()}
+                disabled={bulkActionsDisabled || selectionCount === 0}
+                className="h-7"
+              >
+                {bulkActionPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+                Registrar perda
+              </Button>
+            </div>
+          </div>
+          <p className="text-[10px] text-[color:var(--color-inbox-foreground-muted)]">
+            Aplique ações em massa nos tickets selecionados.
+          </p>
+        </div>
+      ) : null}
 
       <div className="space-y-2 px-1 pb-6">
         {tickets.length === 0 ? (
@@ -159,7 +210,9 @@ const QueueList = ({
                   },
                 }}
                 selected={ticket.id === selectedTicketId}
+                selectedForBulk={selectedTicketIds.includes(ticket.id)}
                 onSelect={onSelectTicket}
+                onToggleSelection={onToggleTicketSelection}
               />
             </Fragment>
           ))

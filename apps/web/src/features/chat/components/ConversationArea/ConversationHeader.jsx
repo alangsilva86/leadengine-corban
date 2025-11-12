@@ -11,21 +11,9 @@ import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 import useInstancePresentation from '../../hooks/useInstancePresentation.js';
+import { LOSS_REASONS, LOSS_REASON_HELPERS } from './lossReasons.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
-
-const LOSS_REASONS = [
-  { value: 'sem_interesse', label: 'Sem interesse' },
-  { value: 'orcamento', label: 'Sem orçamento disponível' },
-  { value: 'concorrencia', label: 'Fechou com a concorrência' },
-  { value: 'documentacao', label: 'Documentação incompleta' },
-  { value: 'outro', label: 'Outro' },
-];
-
-const LOSS_REASON_HELPERS = LOSS_REASONS.reduce((acc, item) => {
-  acc[item.value] = item.label;
-  return acc;
-}, {});
 
 const STATUS_PRESENTATION = {
   OPEN: { label: 'Aberto', tone: 'info', icon: CircleDashed },

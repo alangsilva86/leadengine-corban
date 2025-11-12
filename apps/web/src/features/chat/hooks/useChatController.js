@@ -82,6 +82,7 @@ const findTicketById = (items, ticketId) => {
 export const useChatController = ({ tenantId, currentUser } = {}) => {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [selectedTicketIds, setSelectedTicketIds] = useState([]);
   const [queueAlerts, setQueueAlerts] = useState([]);
 
   const queryClient = useQueryClient();
@@ -103,6 +104,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
   useEffect(() => {
     if (tickets.length === 0) {
       setSelectedTicketId((previous) => (previous && findTicketById(tickets, previous) ? previous : null));
+      setSelectedTicketIds([]);
       return;
     }
 
@@ -112,6 +114,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       }
       return tickets[0]?.id ?? null;
     });
+    setSelectedTicketIds((previous) => previous.filter((id) => findTicketById(tickets, id)));
   }, [tickets]);
 
   const selectedTicket = useMemo(
@@ -339,6 +342,22 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     setSelectedTicketId(ticketId);
   }, []);
 
+  const toggleTicketSelection = useCallback((ticketId) => {
+    if (!ticketId) {
+      return;
+    }
+    setSelectedTicketIds((current) => {
+      if (current.includes(ticketId)) {
+        return current.filter((id) => id !== ticketId);
+      }
+      return [...current, ticketId];
+    });
+  }, []);
+
+  const clearTicketSelection = useCallback(() => {
+    setSelectedTicketIds([]);
+  }, []);
+
   const updateFilters = useCallback((updater) => {
     setFilters((current) => {
       const next = typeof updater === 'function' ? updater(current) : updater;
@@ -370,7 +389,10 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     metrics,
     selectedTicketId,
     selectedTicket,
+    selectedTicketIds,
     selectTicket,
+    toggleTicketSelection,
+    clearTicketSelection,
     messagesQuery,
     conversation,
     sendMessageMutation,

@@ -14,6 +14,8 @@ import emitInboxTelemetry from '../utils/telemetry.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';
 import { apiGet, apiPost } from '@/lib/api.js';
+import LossReasonDialog from '../components/ConversationArea/LossReasonDialog.jsx';
+import { LOSS_REASONS, LOSS_REASON_HELPERS } from '../components/ConversationArea/lossReasons.js';
 
 const AI_MODE_VALUES = ['assist', 'auto', 'manual'] as const;
 
@@ -277,6 +279,9 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const selectedLead = selectedTicket?.lead ?? null;
   const selectedTicketIdValue = selectedTicket?.id ?? controller.selectedTicketId ?? null;
   const selectedTicketKey = selectedTicketIdValue == null ? null : String(selectedTicketIdValue);
+
+  const [isBulkLossDialogOpen, setBulkLossDialogOpen] = useState(false);
+  const [isBulkLossSubmitting, setBulkLossSubmitting] = useState(false);
 
   const [globalAiMode, setGlobalAiMode] = useState<AiMode>(DEFAULT_AI_MODE);
   const [isAiModeReady, setIsAiModeReady] = useState(false);
@@ -708,6 +713,46 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     [controller]
   );
 
+
+  const handleBulkLossConfirm = useCallback(
+    async ({ reason, notes }: { reason: string; notes?: string }) => {
+      const ticketIds = controller.selectedTicketIds ?? [];
+      if (ticketIds.length === 0) {
+        toast.error('Selecione ao menos um ticket para registrar perda.');
+        return;
+      }
+
+      const reasonLabel = LOSS_REASON_HELPERS[reason] ?? reason;
+      const finalReason = notes ? `${reasonLabel} — ${notes}` : reasonLabel;
+
+      setBulkLossSubmitting(true);
+      try {
+        for (const ticketId of ticketIds) {
+          await controller.statusMutation.mutateAsync({
+            ticketId,
+            status: 'CLOSED',
+            reason: finalReason,
+          });
+        }
+
+        const message =
+          ticketIds.length === 1
+            ? 'Perda registrada para 1 ticket.'
+            : `Perda registrada para ${ticketIds.length} tickets.`;
+        toast.success(message);
+        controller.clearTicketSelection();
+        setBulkLossDialogOpen(false);
+      } catch (error: any) {
+        toast.error('Não foi possível concluir. Tente novamente.', {
+          description: error?.message,
+        });
+      } finally {
+        setBulkLossSubmitting(false);
+      }
+    },
+    [controller],
+  );
+
   const assignToMe = useCallback(
     (ticket?: { id?: string | null }) => {
       if (!currentUser?.id) {
@@ -900,6 +945,9 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const conversationRegisterResultHandler = canRegisterResult ? registerResult : undefined;
   const conversationRegisterCallResultHandler = selectedTicket ? handleRegisterCallResult : undefined;
 
+  const bulkSelectedTicketIds = controller.selectedTicketIds ?? [];
+  const hasBulkSelection = bulkSelectedTicketIds.length > 0;
+
   const manualConversationProps = {
     isAvailable: manualConversation.isAvailable,
     isOpen: manualConversation.isDialogOpen,
@@ -914,11 +962,17 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const queueListProps = {
     tickets: controller.tickets,
     selectedTicketId: controller.selectedTicketId,
+    selectedTicketIds: bulkSelectedTicketIds,
     onSelectTicket: controller.selectTicket,
+    onToggleTicketSelection: controller.toggleTicketSelection,
+    onClearSelection: controller.clearTicketSelection,
     loading: controller.ticketsQuery.isFetching,
     onRefresh: handleManualSync,
     typingAgents: controller.typingIndicator?.agentsTyping ?? [],
     metrics,
+    onBulkRegisterLoss: () => setBulkLossDialogOpen(true),
+    bulkActionPending: isBulkLossSubmitting,
+    bulkActionsDisabled: isBulkLossSubmitting || !hasBulkSelection,
   };
 
   const filterToolbarProps = {
@@ -978,6 +1032,13 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         queueList={queueListProps}
         filterToolbar={filterToolbarProps}
         conversationArea={conversationAreaProps}
+      />
+      <LossReasonDialog
+        open={isBulkLossDialogOpen}
+        onOpenChange={setBulkLossDialogOpen}
+        options={LOSS_REASONS}
+        onConfirm={handleBulkLossConfirm}
+        isSubmitting={isBulkLossSubmitting}
       />
     </WhatsAppInstancesProvider>
   );
