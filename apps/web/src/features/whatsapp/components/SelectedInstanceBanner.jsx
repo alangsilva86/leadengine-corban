@@ -30,9 +30,6 @@ const SelectedInstanceBanner = ({
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">
-            Passo 1 · Instâncias &amp; Canais
-          </p>
           <h2 className="text-xl font-semibold text-foreground">Conecte seu WhatsApp</h2>
           <p className="text-sm text-muted-foreground">
             Use os números que já atendem os clientes e mantenha o canal pronto para receber leads.
