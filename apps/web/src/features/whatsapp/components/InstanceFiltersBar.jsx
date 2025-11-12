@@ -1,3 +1,5 @@
+import { Badge } from '@/components/ui/badge.jsx';
+import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import {
   Select,
@@ -6,7 +8,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import { Search } from 'lucide-react';
 
 const InstanceFiltersBar = ({
@@ -26,11 +27,15 @@ const InstanceFiltersBar = ({
   sortOptions,
   activeInstances,
   totalInstances,
+  filtersApplied,
+  onClearFilters,
 }) => {
+  const filtersActive = filtersApplied > 0;
+
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-1 flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <Input
             value={searchTerm}
@@ -77,7 +82,7 @@ const InstanceFiltersBar = ({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Select value={sortBy} onValueChange={onSortByChange}>
           <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="Ordenar por" />
@@ -90,6 +95,22 @@ const InstanceFiltersBar = ({
             ))}
           </SelectContent>
         </Select>
+        <Badge
+          variant={filtersActive ? 'secondary' : 'outline'}
+          className="px-3 py-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground"
+        >
+          {filtersActive ? `${filtersApplied} filtro${filtersApplied > 1 ? 's' : ''} ativos` : 'Nenhum filtro ativo'}
+        </Badge>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onClearFilters}
+          disabled={!filtersActive}
+          className="rounded-full text-xs"
+        >
+          Limpar filtros
+        </Button>
         <Badge variant="outline" className="px-3 py-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
           {activeInstances} de {totalInstances} exibidas
         </Badge>

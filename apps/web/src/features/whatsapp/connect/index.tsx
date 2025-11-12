@@ -99,6 +99,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     nextStage,
     stepLabel,
     onboardingDescription,
+    canCreateCampaigns,
   } = useWhatsAppConnect(props);
 
   const instanceHealth = useMemo(() => {
@@ -248,6 +249,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           onRequestDelete={setInstancePendingDelete}
           deletingInstanceId={deletingInstanceId}
           statusCodeMeta={statusCodeMeta}
+          qrStatusMessage={qrStatusMessage}
+          countdownMessage={countdownMessage}
+          canContinue={canContinue}
+          canCreateCampaigns={canCreateCampaigns}
         />
       </Suspense>
 
