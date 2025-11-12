@@ -81,35 +81,38 @@ export const createCampaignSchema = z
       .max(64)
       .optional()
       .transform((value) => (value && value.length > 0 ? value : undefined)),
-    strategy: z
-      .string()
-      .trim()
-      .max(64)
-      .optional()
-      .transform((value) => (value && value.length > 0 ? value : undefined)),
     tags: z
       .array(z.string().trim().min(1))
       .optional()
       .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
   })
-  .transform(({ name, instanceId, status, productType, marginType, strategy, tags }) => ({
-    name,
-    instanceId,
-    status,
-    ...(productType ? { productType } : {}),
-    ...(marginType ? { marginType } : {}),
-    ...(strategy ? { strategy } : {}),
-    ...(tags ? { tags } : {}),
-  .transform(({ name, instanceId, status, agreementId, agreementName, product, margin, strategy }) => ({
-    name,
-    instanceId,
-    status,
-    agreementId,
-    agreementName,
-    product,
-    margin,
-    strategy,
-  }));
+  .transform(
+    ({
+      name,
+      instanceId,
+      status,
+      agreementId,
+      agreementName,
+      product,
+      margin,
+      strategy,
+      productType,
+      marginType,
+      tags,
+    }) => ({
+      name,
+      instanceId,
+      status,
+      agreementId,
+      agreementName,
+      product,
+      margin,
+      strategy,
+      ...(productType ? { productType } : {}),
+      ...(marginType ? { marginType } : {}),
+      ...(tags ? { tags } : {}),
+    })
+  );
 
 export type PairingPhoneInput = z.infer<typeof pairingPhoneSchema>;
 export type CreateInstanceInput = z.infer<typeof createInstanceSchema>;

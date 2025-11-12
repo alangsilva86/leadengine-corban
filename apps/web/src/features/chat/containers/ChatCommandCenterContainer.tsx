@@ -142,6 +142,128 @@ const inferMessageTypeFromMime = (mimeType: unknown) => {
   return 'DOCUMENT';
 };
 
+const normalizeTicketString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return null;
+};
+
+const resolveTicketMetadataField = (ticket: any, key: string): string | null => {
+  if (!ticket || typeof ticket !== 'object') {
+    return null;
+  }
+  const metadata = (ticket as any).metadata;
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  return normalizeTicketString((metadata as Record<string, unknown>)[key]);
+};
+
+const resolveTicketSourceInstance = (ticket: any): string | null => {
+  const metadataSource = resolveTicketMetadataField(ticket, 'sourceInstance');
+  if (metadataSource) {
+    return metadataSource;
+  }
+  const metadataInstance = resolveTicketMetadataField(ticket, 'instanceId');
+  if (metadataInstance) {
+    return metadataInstance;
+  }
+  return normalizeTicketString((ticket as any)?.instanceId);
+};
+
+const resolveTicketCampaignId = (ticket: any): string | null => {
+  const metadataCampaignId = resolveTicketMetadataField(ticket, 'campaignId');
+  if (metadataCampaignId) {
+    return metadataCampaignId;
+  }
+  return normalizeTicketString((ticket as any)?.lead?.campaignId);
+};
+
+const resolveTicketCampaignName = (ticket: any): string | null => {
+  const metadataCampaignName = resolveTicketMetadataField(ticket, 'campaignName');
+  if (metadataCampaignName) {
+    return metadataCampaignName;
+  }
+  const leadCampaignName = normalizeTicketString((ticket as any)?.lead?.campaignName);
+  if (leadCampaignName) {
+    return leadCampaignName;
+  }
+  return normalizeTicketString((ticket as any)?.lead?.campaign?.name);
+};
+
+const resolveTicketProductType = (ticket: any): string | null => {
+  return resolveTicketMetadataField(ticket, 'productType');
+};
+
+const resolveTicketStrategy = (ticket: any): string | null => {
+  return resolveTicketMetadataField(ticket, 'strategy');
+};
+
+const buildFilterOptions = (tickets: any[]) => {
+  const instanceMap = new Map<string, string>();
+  const campaignMap = new Map<string, { value: string; label: string }>();
+  const productMap = new Map<string, string>();
+  const strategyMap = new Map<string, string>();
+
+  for (const ticket of tickets) {
+    const instanceId = resolveTicketSourceInstance(ticket);
+    if (instanceId) {
+      const key = instanceId.toLowerCase();
+      if (!instanceMap.has(key)) {
+        instanceMap.set(key, instanceId);
+      }
+    }
+
+    const campaignId = resolveTicketCampaignId(ticket);
+    const campaignName = resolveTicketCampaignName(ticket);
+    const campaignValue = campaignId ?? campaignName;
+    if (campaignValue) {
+      const key = campaignId ? `id:${campaignId.toLowerCase()}` : `name:${campaignValue.toLowerCase()}`;
+      if (!campaignMap.has(key)) {
+        const label = campaignName ?? campaignValue;
+        campaignMap.set(key, { value: campaignId ?? campaignValue, label });
+      }
+    }
+
+    const productType = resolveTicketProductType(ticket);
+    if (productType) {
+      const key = productType.toLowerCase();
+      if (!productMap.has(key)) {
+        productMap.set(key, productType);
+      }
+    }
+
+    const strategy = resolveTicketStrategy(ticket);
+    if (strategy) {
+      const key = strategy.toLowerCase();
+      if (!strategyMap.has(key)) {
+        strategyMap.set(key, strategy);
+      }
+    }
+  }
+
+  const sortByLabel = (a: { label: string }, b: { label: string }) =>
+    a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' });
+
+  return {
+    instanceOptions: Array.from(instanceMap.values())
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+      .map((value) => ({ value, label: value })),
+    campaignOptions: Array.from(campaignMap.values()).sort(sortByLabel),
+    productTypeOptions: Array.from(productMap.values())
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+      .map((value) => ({ value, label: value })),
+    strategyOptions: Array.from(strategyMap.values())
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+      .map((value) => ({ value, label: value })),
+  };
+};
+
 export interface ChatCommandCenterContainerProps {
   tenantId?: string | null;
   currentUser?: { id?: string | null } | null;
@@ -446,13 +568,30 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         whatsappMetadata.defaultInstanceId = defaultInstanceId;
       }
 
+      const ticketSourceInstance = resolveTicketSourceInstance(selectedTicket);
       const resolvedSourceInstance =
         instanceLabel ??
         instanceId ??
-        (defaultInstanceId && typeof defaultInstanceId === 'string' ? defaultInstanceId : null);
+        (defaultInstanceId && typeof defaultInstanceId === 'string' ? defaultInstanceId : null) ??
+        ticketSourceInstance;
       if (resolvedSourceInstance && metadata.sourceInstance === undefined) {
         metadata.sourceInstance = resolvedSourceInstance;
       }
+
+      const enrichmentMetadata = {
+        campaignId: resolveTicketCampaignId(selectedTicket),
+        campaignName: resolveTicketCampaignName(selectedTicket),
+        productType: resolveTicketProductType(selectedTicket),
+        strategy: resolveTicketStrategy(selectedTicket),
+      } as const;
+
+      (Object.entries(enrichmentMetadata) as Array<
+        [keyof typeof enrichmentMetadata, string | null]
+      >).forEach(([key, value]) => {
+        if (value && metadata[key as keyof ChatMessageMetadata] === undefined) {
+          metadata[key as keyof ChatMessageMetadata] = value;
+        }
+      });
 
       if (Object.keys(whatsappMetadata).length > 0) {
         mutationPayload.metadata = {
@@ -518,7 +657,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         },
       });
     },
-    [availability, controller]
+    [availability, controller, selectedTicket]
   );
 
   const createNote = useCallback(
@@ -695,6 +834,10 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
 
   const metrics = controller.metrics;
   const filters = controller.filters;
+  const filterOptionSets = useMemo(
+    () => buildFilterOptions(controller.tickets ?? []),
+    [controller.tickets]
+  );
 
   const lastQueueAlertRef = useRef<number | null>(null);
 
@@ -785,6 +928,10 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onFiltersChange: controller.setFilters,
     loading: controller.ticketsQuery.isFetching,
     onRefresh: handleManualSync,
+    instanceOptions: filterOptionSets.instanceOptions,
+    campaignOptions: filterOptionSets.campaignOptions,
+    productTypeOptions: filterOptionSets.productTypeOptions,
+    strategyOptions: filterOptionSets.strategyOptions,
     onStartManualConversation: manualConversation.isAvailable ? manualConversation.openDialog : undefined,
     manualConversationPending: manualConversation.isPending,
     manualConversationUnavailableReason: manualConversation.unavailableReason,

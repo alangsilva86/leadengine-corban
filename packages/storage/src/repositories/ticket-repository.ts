@@ -253,7 +253,7 @@ const mapTicket = (record: PrismaTicket): Ticket => ({
   lastMessageAt: record.lastMessageAt ?? undefined,
   lastMessagePreview: record.lastMessagePreview ?? undefined,
   tags: [...record.tags],
-  metadata: (record.metadata as Record<string, unknown>) ?? {},
+  metadata: sanitizeEnrichmentKeys(normalizeMetadataRecord(record.metadata)),
   closedAt: record.closedAt ?? undefined,
   closedBy: record.closedBy ?? undefined,
   closeReason: record.closeReason ?? undefined,
@@ -330,7 +330,7 @@ const mapMessage = (record: PrismaMessage): Message => ({
   status: record.status,
   externalId: record.externalId ?? undefined,
   quotedMessageId: record.quotedMessageId ?? undefined,
-  metadata: (record.metadata as Record<string, unknown>) ?? {},
+  metadata: sanitizeEnrichmentKeys(normalizeMetadataRecord(record.metadata)),
   idempotencyKey: record.idempotencyKey ?? undefined,
   deliveredAt: record.deliveredAt ?? undefined,
   readAt: record.readAt ?? undefined,
@@ -444,6 +444,82 @@ const normalizeMetadataRecord = (
 ): Record<string, unknown> => {
   const record = asRecord(current);
   return record ? { ...record } : {};
+};
+
+const ENRICHMENT_METADATA_KEYS = [
+  'sourceInstance',
+  'campaignId',
+  'campaignName',
+  'productType',
+  'strategy',
+] as const;
+
+type EnrichmentMetadataKey = (typeof ENRICHMENT_METADATA_KEYS)[number];
+
+const normalizeEnrichmentValue = (
+  value: unknown
+): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return null;
+};
+
+const sanitizeEnrichmentKeys = (
+  metadata: Record<string, unknown>
+): Record<string, unknown> => {
+  const result = { ...metadata } as Record<string, unknown>;
+  for (const key of ENRICHMENT_METADATA_KEYS) {
+    if (!(key in result)) {
+      continue;
+    }
+    const normalized = normalizeEnrichmentValue(result[key]);
+    if (normalized === undefined) {
+      delete result[key];
+    } else {
+      result[key] = normalized;
+    }
+  }
+  return result;
+};
+
+const mergeEnrichmentMetadata = (
+  target: Record<string, unknown>,
+  ...sources: Array<Record<string, unknown> | null | undefined>
+): void => {
+  for (const key of ENRICHMENT_METADATA_KEYS) {
+    if (target[key] !== undefined) {
+      const normalized = normalizeEnrichmentValue(target[key]);
+      if (normalized === undefined) {
+        delete target[key];
+      } else {
+        target[key] = normalized;
+      }
+      continue;
+    }
+
+    for (const source of sources) {
+      if (!source || !(key in source)) {
+        continue;
+      }
+      const normalized = normalizeEnrichmentValue(source[key]);
+      if (normalized === undefined) {
+        continue;
+      }
+      target[key] = normalized;
+      break;
+    }
+  }
 };
 
 export const mapPassthroughMessage = (
@@ -657,6 +733,40 @@ const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.Tick
     tenantId,
   };
 
+  const pushAndCondition = (condition: Prisma.TicketWhereInput) => {
+    if (!condition) {
+      return;
+    }
+    const existingAnd = Array.isArray(where.AND)
+      ? where.AND
+      : where.AND
+        ? [where.AND]
+        : [];
+    where.AND = [...existingAnd, condition];
+  };
+
+  const applyMetadataFilter = (
+    key: EnrichmentMetadataKey,
+    values: string[] | undefined
+  ) => {
+    const normalized = values
+      ?.map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
+
+    if (!normalized || normalized.length === 0) {
+      return;
+    }
+
+    pushAndCondition({
+      OR: normalized.map((value) => ({
+        metadata: {
+          path: [key],
+          equals: value,
+        },
+      })),
+    });
+  };
+
   if (filters.status?.length) {
     where.status = { in: filters.status };
   }
@@ -704,13 +814,14 @@ const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.Tick
         },
       },
     ];
-    const existingAnd = Array.isArray(where.AND)
-      ? where.AND
-      : where.AND
-        ? [where.AND]
-        : [];
-    where.AND = [...existingAnd, { OR: searchOr }];
+    pushAndCondition({ OR: searchOr });
   }
+
+  applyMetadataFilter('sourceInstance', filters.sourceInstance);
+  applyMetadataFilter('campaignId', filters.campaignId);
+  applyMetadataFilter('campaignName', filters.campaignName);
+  applyMetadataFilter('productType', filters.productType);
+  applyMetadataFilter('strategy', filters.strategy);
 
   return where;
 };
@@ -831,10 +942,12 @@ const mergeMessageMetadata = (
     return base as Prisma.InputJsonValue;
   }
 
-  return {
+  const merged = {
     ...base,
     ...updates,
-  } as Prisma.InputJsonValue;
+  } as Record<string, unknown>;
+
+  return sanitizeEnrichmentKeys(merged) as Prisma.InputJsonValue;
 };
 
 export const resetTicketStore = async (): Promise<void> => {
@@ -865,6 +978,7 @@ export const findTicketsByContact = async (tenantId: string, contactId: string):
 
 export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   const prisma = getPrismaClient();
+  const metadataRecord = sanitizeEnrichmentKeys(normalizeMetadataRecord(input.metadata ?? null));
   const record = await prisma.ticket.create({
     data: {
       tenantId: input.tenantId,
@@ -875,7 +989,7 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
       subject: input.subject ?? null,
       channel: input.channel,
       tags: input.tags ?? [],
-      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      metadata: metadataRecord as Prisma.InputJsonValue,
     },
   });
 
@@ -928,7 +1042,8 @@ export const updateTicket = async (
   }
 
   if (input.metadata !== undefined) {
-    data.metadata = (input.metadata ?? {}) as Prisma.InputJsonValue;
+    const metadataRecord = sanitizeEnrichmentKeys(normalizeMetadataRecord(input.metadata ?? null));
+    data.metadata = metadataRecord as Prisma.InputJsonValue;
   }
 
   if (input.closeReason !== undefined) {
@@ -1034,7 +1149,9 @@ export const createMessage = async (
     return null;
   }
 
-  const metadataRecord = (input.metadata ?? {}) as Record<string, unknown>;
+  const ticketMetadataRecord = normalizeMetadataRecord(ticket.metadata);
+  const metadataRecord = sanitizeEnrichmentKeys(normalizeMetadataRecord(input.metadata ?? null));
+  mergeEnrichmentMetadata(metadataRecord, ticketMetadataRecord);
   const createdAtCandidate =
     resolveTimestamp(metadataRecord['normalizedTimestamp']) ??
     resolveTimestamp(metadataRecord['brokerMessageTimestamp']) ??
@@ -1068,10 +1185,7 @@ export const createMessage = async (
       },
     });
 
-    const currentMetadata =
-      ticket.metadata && typeof ticket.metadata === 'object'
-        ? ({ ...(ticket.metadata as Record<string, unknown>) } as Record<string, unknown>)
-        : ({} as Record<string, unknown>);
+    const currentMetadata = { ...ticketMetadataRecord } as Record<string, unknown>;
 
     const timelineSource =
       currentMetadata['timeline'] && typeof currentMetadata['timeline'] === 'object'
@@ -1106,6 +1220,8 @@ export const createMessage = async (
     if (Object.keys(timelineSource).length > 0) {
       currentMetadata['timeline'] = timelineSource;
     }
+
+    mergeEnrichmentMetadata(currentMetadata, metadataRecord);
 
     await tx.ticket.update({
       where: { id: ticket.id },
@@ -1558,7 +1674,7 @@ export const upsertMessageByExternalId = async (
 ): Promise<{ message: PassthroughMessage; wasCreated: boolean }> => {
   const prisma = getPrismaClient();
   const normalizedExternalId = input.externalId.trim();
-  const metadataBase = normalizeMetadataRecord(input.metadata ?? null);
+  const metadataBase = sanitizeEnrichmentKeys(normalizeMetadataRecord(input.metadata ?? null));
   const timestamp = coerceTimestamp(input.timestamp) ?? new Date();
 
   const normalizedMedia: PassthroughMessageMedia | null = (() => {
@@ -1622,6 +1738,7 @@ export const upsertMessageByExternalId = async (
     chatId: input.chatId,
     passthrough: passthroughMetadata,
   };
+  mergeEnrichmentMetadata(metadataRecord, metadataBase);
 
   const direction = normalizePassthroughDirectionForWrite(input.direction);
   const storageType = mapPassthroughTypeToPrisma(input.type, normalizedMedia?.mediaType ?? null);
@@ -1694,6 +1811,7 @@ export const upsertMessageByExternalId = async (
     normalizedTimestamp: timestamp.getTime(),
     receivedAt: timestamp.getTime(),
   };
+  mergeEnrichmentMetadata(metadataWithTimestamps, metadataRecord);
 
     const instanceIdValue =
       typeof metadataBase.sourceInstance === 'string' ? metadataBase.sourceInstance : undefined;

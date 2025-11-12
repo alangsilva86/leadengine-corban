@@ -132,7 +132,10 @@ describe('ticket-service logging', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({ id: 'contact-1', phone: '5511999999999' });
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-1',
+      primaryPhone: '5511999999999',
+    });
     prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-1', brokerId: 'broker-42' });
 
     const transport = {
@@ -209,7 +212,10 @@ describe('ticket-service logging', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(failedMessage);
-    prisma.contact.findUnique.mockResolvedValue({ id: 'contact-2', phone: '5511999999988' });
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-2',
+      primaryPhone: '5511999999988',
+    });
     prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-2', brokerId: 'broker-77' });
 
     const transport = {
@@ -269,6 +275,96 @@ describe('ticket-service logging', () => {
       brokerId: 'broker-77',
     });
 
+  });
+});
+
+describe('ticket-service metadata enrichment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('propagates ticket campaign metadata into created messages', async () => {
+    const ticket = {
+      id: 'ticket-enrichment-1',
+      tenantId: 'tenant-enrichment-1',
+      contactId: 'contact-enrichment-1',
+      channel: 'WHATSAPP',
+      metadata: {
+        sourceInstance: 'stored-instance',
+        campaignId: 'CAMP-001 ',
+        campaignName: ' Campanha XPTO ',
+        productType: 'Saúde',
+        strategy: 'Digital  ',
+      },
+      userId: 'user-enrichment-1',
+      updatedAt: new Date(),
+      lastMessageAt: new Date(),
+      lastMessagePreview: 'preview',
+    };
+
+    const messageRecord = {
+      id: 'message-enrichment-1',
+      ticketId: ticket.id,
+      type: 'text',
+      direction: 'OUTBOUND',
+      content: 'Olá',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'PENDING',
+      instanceId: 'inst-enrichment-1',
+    };
+
+    let capturedPayload;
+    storageFindTicketById.mockResolvedValue(ticket);
+    storageCreateMessage.mockImplementation(async (_tenantId, _ticketId, payload) => {
+      capturedPayload = payload;
+      return messageRecord;
+    });
+    storageUpdateMessage.mockResolvedValue({ ...messageRecord, status: 'SENT', metadata: {} });
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-enrichment-1',
+      primaryPhone: '5511999999999',
+    });
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({
+      id: 'inst-enrichment-1',
+      tenantId: 'tenant-enrichment-1',
+      brokerId: 'broker-enrichment-1',
+      connected: true,
+      status: 'connected',
+    });
+
+    const transport = {
+      sendMessage: vi.fn().mockResolvedValue({
+        externalId: 'external-enrichment-1',
+        status: 'SENT',
+        timestamp: new Date().toISOString(),
+      }),
+    };
+
+    const { sendMessage } = await import('../ticket-service');
+
+    await sendMessage(
+      'tenant-enrichment-1',
+      'user-enrichment-1',
+      {
+        ticketId: ticket.id,
+        type: 'text',
+        instanceId: 'inst-enrichment-1',
+        direction: 'OUTBOUND',
+        content: 'Olá',
+        metadata: {},
+      },
+      { transport }
+    );
+
+    expect(capturedPayload?.metadata).toMatchObject({
+      sourceInstance: 'inst-enrichment-1',
+      campaignId: 'CAMP-001',
+      campaignName: 'Campanha XPTO',
+      productType: 'Saúde',
+      strategy: 'Digital',
+    });
   });
 });
 
@@ -422,7 +518,10 @@ describe('ticket-service dispatch guard', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({ id: 'contact-out-1', phone: '5511988887777' });
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-out-1',
+      primaryPhone: '5511988887777',
+    });
     prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-out-1', brokerId: 'broker-out-1' });
 
     const transport = {
@@ -525,7 +624,10 @@ describe('ticket-service dispatch guard', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({ id: 'contact-media-1', phone: '5511999998888' });
+    prisma.contact.findUnique.mockResolvedValue({
+      id: 'contact-media-1',
+      primaryPhone: '5511999998888',
+    });
     prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-media-1', brokerId: 'broker-media-1' });
 
     const transport = {
@@ -576,7 +678,9 @@ describe('ticket-service dispatch guard', () => {
         mediaFileName: 'contrato.pdf',
         mediaMimeType: 'application/pdf',
         caption: 'Contrato assinado',
-        metadata: messageRecord.metadata,
+        metadata: expect.objectContaining({
+          attachments: messageRecord.metadata.attachments,
+        }),
       })
     );
   });

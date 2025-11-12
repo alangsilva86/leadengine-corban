@@ -84,6 +84,62 @@ const normalizeNullableString = (value: string | null | undefined): string | nul
   return normalized.length > 0 ? normalized : null;
 };
 
+const ENRICHMENT_METADATA_KEYS = [
+  'sourceInstance',
+  'campaignId',
+  'campaignName',
+  'productType',
+  'strategy',
+] as const;
+
+const normalizeEnrichmentValue = (
+  value: unknown
+): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return null;
+};
+
+const mergeEnrichmentMetadata = (
+  target: Record<string, unknown>,
+  ...sources: Array<Record<string, unknown> | null | undefined>
+): void => {
+  for (const key of ENRICHMENT_METADATA_KEYS) {
+    if (target[key] !== undefined) {
+      const normalized = normalizeEnrichmentValue(target[key]);
+      if (normalized === undefined) {
+        delete target[key];
+      } else {
+        target[key] = normalized;
+      }
+      continue;
+    }
+
+    for (const source of sources) {
+      if (!source || !(key in source)) {
+        continue;
+      }
+      const normalized = normalizeEnrichmentValue(source[key]);
+      if (normalized === undefined) {
+        continue;
+      }
+      target[key] = normalized;
+      break;
+    }
+  }
+};
+
 const syncContactPrimaryPhone = async (
   tenantId: string,
   contactId: string,
@@ -1646,6 +1702,7 @@ export const sendMessage = async (
   const messageMetadata = {
     ...(input.metadata ?? {}),
   } as Record<string, unknown>;
+  mergeEnrichmentMetadata(messageMetadata, input.metadata ?? null, ticket.metadata ?? null);
 
   if (effectiveInstanceId) {
     const whatsappMetadataSource =
@@ -1668,6 +1725,8 @@ export const sendMessage = async (
     messageMetadata.whatsapp = whatsappMetadata;
     messageMetadata.sourceInstance = effectiveInstanceId;
   }
+
+  mergeEnrichmentMetadata(messageMetadata);
 
   try {
     type StorageCreateMessageInput = Parameters<typeof storageCreateMessage>[2];

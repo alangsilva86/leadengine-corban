@@ -38,6 +38,11 @@ export interface TicketFilters {
   dateFrom?: Date | undefined;
   dateTo?: Date | undefined;
   search?: string | undefined;
+  sourceInstance?: string[] | undefined;
+  campaignId?: string[] | undefined;
+  campaignName?: string[] | undefined;
+  productType?: string[] | undefined;
+  strategy?: string[] | undefined;
 }
 
 export interface MessageFilters {
