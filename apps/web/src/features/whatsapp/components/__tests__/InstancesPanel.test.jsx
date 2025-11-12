@@ -78,7 +78,6 @@ describe('InstancesPanel', () => {
     onMarkConnected: vi.fn(),
     onRefresh: vi.fn(),
     onCreateInstance: vi.fn(),
-    onToggleShowAll: vi.fn(),
     onShowAll: vi.fn(),
     onRetry: vi.fn(),
     onSelectInstance: vi.fn(),
@@ -95,7 +94,7 @@ describe('InstancesPanel', () => {
     expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
     expect(screen.getByText(/Instâncias: 1 ativas/i)).toBeInTheDocument();
     expect(screen.getByText(/Fila total:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Utilização do limite 50%/i)).toBeInTheDocument();
+    expect(screen.getByText(/Uso médio do limite: 50%/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Manter saudável/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Manter saudável/i }));

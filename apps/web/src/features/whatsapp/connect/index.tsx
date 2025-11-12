@@ -22,7 +22,7 @@ import useWhatsAppConnect from './useWhatsAppConnect';
 const InstancesPanel = lazy(() => import('../components/InstancesPanel.jsx'));
 const CreateInstanceDialog = lazy(() => import('../components/CreateInstanceDialog.jsx'));
 const QrPreview = lazy(() => import('../components/QrPreview.jsx'));
-const QrFlow = lazy(() => import('./QrFlow'));
+const AdvancedOperationsPanel = lazy(() => import('../components/AdvancedOperationsPanel.jsx'));
 
 const SectionFallback = () => (
   <Card className="border border-border/60 bg-surface-overlay-quiet p-6 text-sm text-muted-foreground">
@@ -241,7 +241,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           onMarkConnected={handleMarkConnected}
           onRefresh={handleRefreshInstances}
           onCreateInstance={handleCreateInstance}
-          onToggleShowAll={() => setShowAllInstances(!showAllInstances)}
           onShowAll={() => setShowAllInstances(true)}
           onRetry={handleRetry}
           onSelectInstance={handleInstanceSelect}
@@ -253,7 +252,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
       </Suspense>
 
       <Suspense fallback={<SectionFallback />}>
-        <QrFlow
+        <AdvancedOperationsPanel
           surfaceStyles={surfaceStyles}
           open={qrPanelOpen}
           onOpenChange={(value) => setQrPanelOpen(value)}

@@ -9,6 +9,7 @@ import WhatsAppConnect from '../connect/index';
 const onContinueMock = vi.fn();
 const onBackMock = vi.fn();
 const handleRefreshInstancesMock = vi.fn();
+const handleViewQrMock = vi.fn();
 
 vi.mock('../connect/useWhatsAppConnect', () => ({
   __esModule: true,
@@ -36,13 +37,31 @@ vi.mock('../connect/useWhatsAppConnect', () => ({
     hasAgreement: true,
     agreementDisplayName: 'Convênio XPTO',
     selectedAgreement: { id: 'agreement-1' },
-    selectedInstance: null,
-    selectedInstancePhone: null,
-    selectedInstanceStatusInfo: null,
+    selectedInstance: { id: 'instance-1', name: 'Instância Alpha' },
+    selectedInstancePhone: '+5511999999999',
+    selectedInstanceStatusInfo: { label: 'Desconectado', variant: 'warning' },
     instancesReady: true,
     hasHiddenInstances: false,
     hasRenderableInstances: true,
-    instanceViewModels: [],
+    instanceViewModels: [
+      {
+        key: 'instance-1',
+        id: 'instance-1',
+        displayName: 'Instância Alpha',
+        phoneLabel: '+5511999999999',
+        formattedPhone: '(11) 99999-9999',
+        addressLabel: 'alpha@wa',
+        statusInfo: { label: 'Desconectado', variant: 'warning' },
+        metrics: { sent: 0, queued: 5, failed: 1, status: { 1: 3, 2: 2 } },
+        statusValues: { 1: 3, 2: 2 },
+        rateUsage: { used: 10, remaining: 90, limit: 100, percentage: 10 },
+        ratePercentage: 10,
+        lastUpdatedLabel: 'agora',
+        user: null,
+        instance: { id: 'instance-1' },
+        isCurrent: false,
+      },
+    ],
     showFilterNotice: false,
     instancesCountLabel: '0 instâncias',
     loadingInstances: false,
@@ -66,7 +85,7 @@ vi.mock('../connect/useWhatsAppConnect', () => ({
     timelineItems: [],
     realtimeConnected: false,
     handleInstanceSelect: vi.fn(),
-    handleViewQr: vi.fn(),
+    handleViewQr: handleViewQrMock,
     handleGenerateQr: vi.fn(),
     handleMarkConnected: vi.fn(),
     handleDeleteInstance: vi.fn(),
@@ -103,9 +122,9 @@ vi.mock('../components/QrPreview.jsx', () => ({
   default: () => <div data-testid="qr-preview">QR Preview</div>,
 }));
 
-vi.mock('../connect/QrFlow', () => ({
+vi.mock('../components/AdvancedOperationsPanel.jsx', () => ({
   __esModule: true,
-  default: () => <div data-testid="qr-flow">QR Flow</div>,
+  default: () => <div data-testid="advanced-ops">Advanced Ops</div>,
 }));
 
 describe('WhatsAppConnect', () => {
@@ -131,6 +150,10 @@ describe('WhatsAppConnect', () => {
 
     fireEvent.click(refreshButton);
     expect(handleRefreshInstancesMock).toHaveBeenCalledTimes(1);
+
+    const qrButton = await screen.findByRole('button', { name: /Gerar QR Code/i });
+    fireEvent.click(qrButton);
+    expect(handleViewQrMock).toHaveBeenCalledTimes(1);
 
     expect(screen.queryByText('Campanhas e roteamento')).not.toBeInTheDocument();
   });

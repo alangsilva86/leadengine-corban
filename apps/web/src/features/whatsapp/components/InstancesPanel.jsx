@@ -1,23 +1,14 @@
 import { useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer.jsx';
-import { Input } from '@/components/ui/input.jsx';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select.jsx';
-import { Separator } from '@/components/ui/separator.jsx';
-import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
 import { formatMetricValue, formatTimestampLabel } from '../lib/formatting';
-import InstanceSummaryCard from './InstanceSummaryCard.jsx';
-import { AlertCircle, History, Inbox, Plus, RefreshCcw, Search } from 'lucide-react';
+import SelectedInstanceBanner from './SelectedInstanceBanner.jsx';
+import InstanceFiltersBar from './InstanceFiltersBar.jsx';
+import InstanceGrid from './InstanceGrid.jsx';
+import { AlertCircle } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -181,21 +172,14 @@ const buildSearchBlob = (viewModel, provider) => {
 
 const InstancesPanel = ({
   surfaceStyles,
-  agreementDisplayName,
-  selectedAgreementRegion,
-  selectedAgreementId,
   selectedInstance,
   selectedInstanceStatusInfo,
   selectedInstancePhone,
-  hasCampaign,
-  campaign,
   instancesReady,
   hasHiddenInstances,
   hasRenderableInstances,
   instanceViewModels,
-  instanceHealth,
   showFilterNotice,
-  showAllInstances,
   instancesCountLabel,
   errorState,
   isBusy,
@@ -209,7 +193,6 @@ const InstancesPanel = ({
   onMarkConnected,
   onRefresh,
   onCreateInstance,
-  onToggleShowAll,
   onShowAll,
   onRetry,
   onSelectInstance,
@@ -382,134 +365,47 @@ const InstancesPanel = ({
       }
     : null;
 
+  const handleClearFilters = () => setSearchTerm('');
+
   return (
     <section className="space-y-6">
-      <Card className="sticky top-16 z-10 space-y-6 border border-slate-800/60 bg-slate-950/80 p-6 backdrop-blur">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <h2 className="text-2xl font-semibold text-foreground">Instâncias &amp; Canais</h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Conecte, monitore e mantenha saudáveis seus números de WhatsApp. Campanhas são configuradas em <strong>Campanhas</strong>.
-              </p>
-            </div>
-            {summary.state === 'ready' ? (
-              <div className="flex flex-wrap items-center gap-2 text-[0.7rem] uppercase tracking-wide">
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1 text-emerald-300">
-                  Instâncias: {summary.totals.connected} ativas / {summary.totals.disconnected} desconectadas
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1 text-slate-200">
-                  Fila total: {formatMetricValue(summary.queueTotal)}
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1 text-slate-200">
-                  Falhas 24h: {formatMetricValue(summary.failureTotal)}
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1 text-indigo-200">
-                  Uso médio do limite: {summary.usageAverage}%
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-800/60 bg-slate-950/60 px-3 py-1 text-slate-300">
-                  Última sync: {summary.lastSyncLabel}
-                </span>
-              </div>
-            ) : summary.state === 'loading' ? (
-              <div className="flex flex-wrap items-center gap-2 text-[0.7rem] uppercase tracking-wide text-slate-400">
-                <Badge variant="status" tone="info">Sincronizando instâncias…</Badge>
-                <span>{instancesCountLabel}</span>
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground">Nenhuma instância cadastrada.</div>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onRefresh}
-              disabled={loadingInstances || !isAuthenticated}
-            >
-              <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar lista
-            </Button>
-            <Button size="sm" onClick={onCreateInstance}>
-              <Plus className="mr-2 h-4 w-4" /> Nova instância
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => onViewLogs?.()} disabled={!onViewLogs}>
-              <History className="mr-2 h-4 w-4" /> Ver logs de eventos
-            </Button>
-            {onConfirm ? (
-              <Button size="sm" variant="ghost" onClick={onConfirm} disabled={confirmDisabled}>
-                <Inbox className="mr-2 h-4 w-4" /> {confirmLabel || 'Ir para a Inbox'}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <Separator className="border-slate-800/60" />
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-1 flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <Input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar instância por nome ou telefone"
-                className="pl-9"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_FILTERS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={healthFilter} onValueChange={setHealthFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Saúde" />
-              </SelectTrigger>
-              <SelectContent>
-                {HEALTH_FILTERS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={providerFilter} onValueChange={setProviderFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Provedor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os provedores</SelectItem>
-                {providerOptions.map((provider) => (
-                  <SelectItem key={provider} value={provider}>
-                    {provider}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-3">
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Ordenar por" />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Badge variant="outline" className="px-3 py-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-              {activeInstances} de {summary.total} exibidas
-            </Badge>
-          </div>
-        </div>
+      <Card className="space-y-6 border border-slate-800/60 bg-slate-950/80 p-6">
+        <SelectedInstanceBanner
+          copy={copy}
+          summary={summary}
+          selectedInstance={selectedInstance}
+          selectedInstanceStatusInfo={selectedInstanceStatusInfo}
+          selectedInstancePhone={selectedInstancePhone}
+          instancesCountLabel={instancesCountLabel}
+          confirmLabel={confirmLabel}
+          confirmDisabled={confirmDisabled}
+          onConfirm={onConfirm}
+          onMarkConnected={onMarkConnected}
+          localStatus={localStatus}
+          onRefresh={onRefresh}
+          onCreateInstance={onCreateInstance}
+          onViewLogs={onViewLogs}
+          loadingInstances={loadingInstances}
+          isAuthenticated={isAuthenticated}
+        />
+        <InstanceFiltersBar
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          statusOptions={STATUS_FILTERS}
+          healthFilter={healthFilter}
+          onHealthFilterChange={setHealthFilter}
+          healthOptions={HEALTH_FILTERS}
+          providerFilter={providerFilter}
+          onProviderFilterChange={setProviderFilter}
+          providerOptions={providerOptions}
+          sortBy={sortBy}
+          onSortByChange={setSortBy}
+          sortOptions={SORT_OPTIONS}
+          activeInstances={activeInstances}
+          totalInstances={summary.total}
+        />
         {showFilterNotice ? (
           <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
             Mostrando apenas instâncias conectadas. Utilize os filtros para incluir sessões desconectadas.
@@ -517,79 +413,29 @@ const InstancesPanel = ({
         ) : null}
       </Card>
 
-      {highQueue ? (
-        <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-sm text-indigo-100">
-          <strong>Fila elevada nas últimas 2h.</strong> Revise a distribuição por instância para equilibrar o tráfego.
-        </div>
-      ) : null}
-
-      {allDisconnected ? (
-        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-          Nenhum canal conectado. Gere um QR Code a partir do card da instância para ativar novamente.
-        </div>
-      ) : null}
-
-      {!instancesReady ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
-              <Skeleton className="h-5 w-3/4" />
-              <Skeleton className="mt-2 h-4 w-1/2" />
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-              </div>
-              <Skeleton className="mt-4 h-16 w-full" />
-              <Skeleton className="mt-4 h-10 w-full" />
-            </div>
-          ))}
-        </div>
-      ) : hasRenderableInstances ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredInstances.map((viewModel) => (
-            <InstanceSummaryCard
-              key={viewModel.key}
-              viewModel={viewModel}
-              statusCodeMeta={statusCodeMeta}
-              isBusy={isBusy}
-              isAuthenticated={isAuthenticated}
-              deletingInstanceId={deletingInstanceId}
-              onSelectInstance={onSelectInstance}
-              onViewQr={onViewQr}
-              onRequestDelete={onRequestDelete}
-              onOpenStatusDrawer={(instance) => setStatusDrawerTarget(instance)}
-              onOpenHealthDrawer={(instance) => setHealthDrawerTarget(instance)}
-              onRenameInstance={onRenameInstance}
-              onViewLogs={(instance) => onViewLogs?.(instance.instance ?? instance)}
-            />
-          ))}
-        </div>
-      ) : hasHiddenInstances ? (
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-6 text-center text-sm text-muted-foreground">
-          <p>Nenhuma instância conectada no momento. Ajuste os filtros para gerenciar sessões desconectadas.</p>
-          <Button size="sm" className="mt-4" onClick={onShowAll} disabled={isBusy}>
-            Mostrar todas
-          </Button>
-        </div>
-      ) : zeroInstances ? (
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-8 text-center">
-          <h3 className="text-lg font-semibold text-foreground">Crie sua primeira instância</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Configure um canal do WhatsApp para começar a operar com o Lead Engine.
-          </p>
-          <Button size="sm" className="mt-4" onClick={onCreateInstance}>
-            Nova instância
-          </Button>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-6 text-center text-sm text-muted-foreground">
-          <p>Nenhuma instância encontrada para os filtros aplicados.</p>
-          <Button size="sm" className="mt-4" variant="outline" onClick={() => setSearchTerm('')}>
-            Limpar filtros
-          </Button>
-        </div>
-      )}
+      <InstanceGrid
+        instancesReady={instancesReady}
+        filteredInstances={filteredInstances}
+        statusCodeMeta={statusCodeMeta}
+        isBusy={isBusy}
+        isAuthenticated={isAuthenticated}
+        deletingInstanceId={deletingInstanceId}
+        hasRenderableInstances={hasRenderableInstances}
+        hasHiddenInstances={hasHiddenInstances}
+        zeroInstances={zeroInstances}
+        onShowAll={onShowAll}
+        onCreateInstance={onCreateInstance}
+        onSelectInstance={onSelectInstance}
+        onViewQr={onViewQr}
+        onRequestDelete={onRequestDelete}
+        onOpenStatusDrawer={setStatusDrawerTarget}
+        onOpenHealthDrawer={setHealthDrawerTarget}
+        onRenameInstance={onRenameInstance}
+        onViewLogs={onViewLogs}
+        highQueue={highQueue}
+        allDisconnected={allDisconnected}
+        onClearFilters={handleClearFilters}
+      />
 
       {errorState ? (
         <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
