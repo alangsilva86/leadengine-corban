@@ -112,6 +112,9 @@ const reducer = (state: WhatsAppConnectState, action: WhatsAppConnectAction): Wh
     case 'set-show-all-instances':
       return { ...state, showAllInstances: action.value };
     case 'set-qr-panel-open':
+      if (state.qrPanelOpen === action.value) {
+        return state;
+      }
       return { ...state, qrPanelOpen: action.value };
     case 'set-qr-dialog-open':
       return { ...state, isQrDialogOpen: action.value };
@@ -711,3 +714,4 @@ const useWhatsAppConnect = ({
 };
 
 export default useWhatsAppConnect;
+export { reducer as whatsappConnectReducer };
