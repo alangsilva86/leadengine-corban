@@ -444,10 +444,6 @@ const Reports = () => {
     keepPreviousData: true,
   });
 
-  if (query.isLoading && !query.data) {
-    return <LoadingSkeleton />;
-  }
-
   const data = query.data ?? {
     summary: { ...EMPTY_METRICS },
     groups: [],
@@ -485,6 +481,11 @@ const Reports = () => {
     const option = DIMENSION_OPTIONS.find((item) => item.key === groupBy);
     return option ? option.label : 'Segmento';
   }, [groupBy]);
+
+  if (query.isLoading && !query.data) {
+    return <LoadingSkeleton />;
+  }
+
 
   return (
     <div className="p-6 space-y-6">

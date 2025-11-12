@@ -218,7 +218,11 @@ describe('Reports dashboard', () => {
     await userEvent.click(thirtyButton);
 
     await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(within(leadsCardContainer).getByText('240')).toBeInTheDocument());
+    const refreshedLeadsCard = screen.getByText('Leads recebidos');
+    const refreshedLeadsCardContainer =
+      refreshedLeadsCard.closest('[data-slot="card"]') ?? refreshedLeadsCard.parentElement?.parentElement;
+
+    await waitFor(() => expect(within(refreshedLeadsCardContainer).getByText('240')).toBeInTheDocument());
 
     const [, secondCall] = apiGet.mock.calls;
     const url = secondCall[0];
