@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import QueuesTab from './settings/QueuesTab.jsx';
 import AiSettingsTab from './settings/AiSettingsTab';
+import MetaSettingsTab from './settings/MetaSettingsTab';
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -81,11 +82,12 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="general">Geral</TabsTrigger>
           <TabsTrigger value="users">Usuários</TabsTrigger>
           <TabsTrigger value="notifications">Notificações</TabsTrigger>
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
+          <TabsTrigger value="meta">Meta</TabsTrigger>
           <TabsTrigger value="ai">IA</TabsTrigger>
           <TabsTrigger value="security">Segurança</TabsTrigger>
           <TabsTrigger value="queues">Filas</TabsTrigger>
@@ -154,6 +156,10 @@ const Settings = () => {
 
         <TabsContent value="ai" className="space-y-6">
           <AiSettingsTab />
+        </TabsContent>
+
+        <TabsContent value="meta" className="space-y-6">
+          <MetaSettingsTab />
         </TabsContent>
 
         {/* Gerenciamento de Usuários */}

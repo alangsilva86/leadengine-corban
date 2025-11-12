@@ -94,3 +94,9 @@ export {
   type UpsertAiConfigInput,
   type AiAssistantMode,
 } from './repositories/ai-repository';
+
+export {
+  getIntegrationState,
+  upsertIntegrationState,
+  deleteIntegrationState,
+} from './repositories/integration-state-repository';

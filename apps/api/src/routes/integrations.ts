@@ -67,10 +67,13 @@ import {
   collectInstancesForTenant,
 } from '../modules/whatsapp/instances/service';
 import { parseListInstancesQuery, listInstancesUseCase } from '../modules/whatsapp/instances/list-instances';
+import { metaOfflineRouter } from './integrations/meta-offline-router';
 import type { InstanceOperationContext, StoredInstance } from '../modules/whatsapp/instances/service';
 
 
 const router: Router = Router();
+
+router.use('/meta/offline-conversions', metaOfflineRouter);
 
 // ============================================================================
 // WhatsApp Routes
