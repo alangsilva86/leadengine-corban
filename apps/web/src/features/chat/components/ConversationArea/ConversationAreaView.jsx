@@ -97,6 +97,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
 
   const [detailsState, setDetailsState] = useState({ open: false, intent: null });
   const nextStepEditorRef = useRef(null);
+  const contextSectionRef = useRef(null);
 
   const headerProps = header?.props ?? {};
   const headerComponents = header?.components ?? {};
@@ -118,13 +119,27 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
 
   useEffect(() => {
     if (!detailsState.open) return;
+
     if (detailsState.intent?.focus === 'nextStep') {
       const target = nextStepEditorRef.current;
       if (target && typeof target.focus === 'function') {
         target.focus();
+        return;
       }
     }
-  }, [detailsState.open, detailsState.intent]);
+
+    if (detailsState.intent?.focus === 'context') {
+      const target = contextSectionRef.current;
+      if (target) {
+        if (typeof target.scrollIntoView === 'function') {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        if (typeof target.focus === 'function') {
+          target.focus({ preventScroll: true });
+        }
+      }
+    }
+  }, [detailsState.intent, detailsState.open]);
 
   const drawerTitle = useMemo(() => {
     const contactName = ticket?.contact?.name ?? ticket?.subject ?? 'Contato';
@@ -234,6 +249,7 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
           nextStepEditorRef={nextStepEditorRef}
           stageKey={stageKey}
           onDealFieldSave={onDealFieldSave}
+          contextSectionRef={contextSectionRef}
         />
       </ConversationDetailsDrawer>
     </section>

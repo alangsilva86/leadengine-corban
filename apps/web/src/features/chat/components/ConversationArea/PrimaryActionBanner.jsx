@@ -8,6 +8,13 @@ import { CommandBar } from './CommandBar.jsx';
 import { AiModeControlMenu } from './AiModeMenu.jsx';
 import { ACTIONS_BY_ID } from '@/features/chat/actions/inventory';
 import InstanceBadge from '../Shared/InstanceBadge.jsx';
+import {
+  resolveTicketCampaignId,
+  resolveTicketCampaignName,
+  resolveTicketProductType,
+  resolveTicketSourceInstance,
+  resolveTicketStrategy,
+} from './utils/ticketMetadata.js';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -46,68 +53,6 @@ const PRIMARY_BUTTON_TONE = {
   yellow: 'bg-amber-500 text-white hover:bg-amber-500/90',
   orange: 'bg-orange-500 text-white hover:bg-orange-500/90',
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
-};
-
-const normalizeTicketString = (value) => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  return null;
-};
-
-const resolveTicketMetadataField = (ticket, key) => {
-  if (!ticket || typeof ticket !== 'object') {
-    return null;
-  }
-  const metadata = ticket.metadata;
-  if (!metadata || typeof metadata !== 'object') {
-    return null;
-  }
-  return normalizeTicketString(metadata[key]);
-};
-
-const resolveTicketSourceInstance = (ticket) => {
-  const metadataSource = resolveTicketMetadataField(ticket, 'sourceInstance');
-  if (metadataSource) {
-    return metadataSource;
-  }
-  const metadataInstance = resolveTicketMetadataField(ticket, 'instanceId');
-  if (metadataInstance) {
-    return metadataInstance;
-  }
-  return normalizeTicketString(ticket?.instanceId);
-};
-
-const resolveTicketCampaignId = (ticket) => {
-  const metadataCampaignId = resolveTicketMetadataField(ticket, 'campaignId');
-  if (metadataCampaignId) {
-    return metadataCampaignId;
-  }
-  return normalizeTicketString(ticket?.lead?.campaignId);
-};
-
-const resolveTicketCampaignName = (ticket) => {
-  const metadataCampaignName = resolveTicketMetadataField(ticket, 'campaignName');
-  if (metadataCampaignName) {
-    return metadataCampaignName;
-  }
-  const leadCampaignName = normalizeTicketString(ticket?.lead?.campaignName);
-  if (leadCampaignName) {
-    return leadCampaignName;
-  }
-  return normalizeTicketString(ticket?.lead?.campaign?.name);
-};
-
-const resolveTicketProductType = (ticket) => {
-  return resolveTicketMetadataField(ticket, 'productType');
-};
-
-const resolveTicketStrategy = (ticket) => {
-  return resolveTicketMetadataField(ticket, 'strategy');
 };
 
 const Indicator = ({ icon: Icon, tone = 'neutral', label, description, className }) => {
@@ -285,18 +230,27 @@ const PrimaryActionBanner = ({
     return contactPhone !== resolvedInstance.number;
   }, [contactPhone, resolvedInstance.number]);
 
-  const enrichmentChips = useMemo(() => {
+  const contextSummary = useMemo(() => {
     const campaignId = resolveTicketCampaignId(ticket);
     const campaignName = resolveTicketCampaignName(ticket);
     const productType = resolveTicketProductType(ticket);
     const strategy = resolveTicketStrategy(ticket);
 
-    return [
-      { id: 'instance', label: `Instância · ${resolvedInstance.label ?? 'Instância desconhecida'}` },
-      { id: 'campaign', label: `Campanha · ${campaignName ?? campaignId ?? 'Não informada'}` },
-      { id: 'productType', label: `Convênio · ${productType ?? 'Não informado'}` },
-      { id: 'strategy', label: `Estratégia · ${strategy ?? 'Não informada'}` },
-    ];
+    const instanceLabel = resolvedInstance.label ?? 'Instância desconhecida';
+    const campaignLabel = campaignName ?? campaignId ?? 'Não informada';
+    const productLabel = productType ?? 'Não informado';
+    const strategyLabel = strategy ?? 'Não informada';
+
+    const description = [
+      `Instância · ${instanceLabel}`,
+      `Campanha · ${campaignLabel}`,
+      `Convênio · ${productLabel}`,
+      `Estratégia · ${strategyLabel}`,
+    ].join(' • ');
+
+    return {
+      description,
+    };
   }, [resolvedInstance.label, ticket]);
 
   const handleDetails = (intent = {}) => {
@@ -350,9 +304,15 @@ const PrimaryActionBanner = ({
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {enrichmentChips.map((chip) => (
-                <Indicator key={chip.id} tone="neutral" label={chip.label} />
-              ))}
+              <button
+                type="button"
+                onClick={() => handleDetails({ focus: 'context' })}
+                className="inline-flex items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+                aria-label={`Abrir detalhes de contexto do lead (${contextSummary.description})`}
+                title={contextSummary.description}
+              >
+                <span>Contexto do lead</span>
+              </button>
             </div>
           </div>
         </div>
