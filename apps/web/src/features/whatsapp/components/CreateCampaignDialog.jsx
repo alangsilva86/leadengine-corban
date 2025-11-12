@@ -95,25 +95,11 @@ const CreateCampaignDialog = ({
           <DialogDescription className="text-sm leading-5 text-muted-foreground">
             Configure a campanha em cinco passos: instância conectada, origem, produto, estratégia e revisão final.
           </DialogDescription>
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs font-semibold uppercase text-muted-foreground">
-            {STEP_SEQUENCE.map((step, index) => {
-              const isActive = index === activeStepIndex;
-              const isCompleted = index < activeStepIndex;
-              const baseClass = isActive
-                ? 'border-indigo-400/60 bg-indigo-500/10 text-indigo-200'
-                : isCompleted
-                  ? 'border-emerald-400/50 bg-emerald-500/10 text-emerald-200'
-                  : 'border-border/60 bg-muted/10 text-muted-foreground';
-              const isLast = index === STEP_SEQUENCE.length - 1;
-              return (
-                <div key={step.key} className="flex items-center gap-3">
-                  <span className={`rounded-full border px-4 py-1.5 text-[0.7rem] tracking-wide ${baseClass}`}>
-                    {index + 1}. {step.title}
-                  </span>
-                  {!isLast ? <span className="h-px w-6 bg-border/60" /> : null}
-                </div>
-              );
-            })}
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="border-border/60 bg-muted/10 uppercase tracking-wide">
+              Passo {Math.min(activeStepIndex + 1, STEP_SEQUENCE.length)} de {STEP_SEQUENCE.length}
+            </Badge>
+            <span>Campanhas conectam Instâncias (Passo 1) à Inbox (Passo 3).</span>
           </div>
           {selectionSummary.instance ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

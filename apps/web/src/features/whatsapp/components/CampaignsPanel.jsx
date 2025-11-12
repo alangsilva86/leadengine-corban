@@ -61,6 +61,12 @@ const CampaignsPanel = ({
   } = useCampaignFilters({ campaigns, selectedAgreementId });
 
   const groupedCampaigns = useCampaignGroups(filteredCampaigns);
+  const activeFilters = useMemo(() => {
+    let count = 0;
+    if (agreementFilter !== ALL_FILTER_VALUE) count += 1;
+    if (instanceFilter !== ALL_FILTER_VALUE) count += 1;
+    return count;
+  }, [agreementFilter, instanceFilter]);
 
   const { activeCampaigns, totalCampaigns } = useMemo(() => {
     const total = filteredCampaigns.length;
@@ -97,10 +103,15 @@ const CampaignsPanel = ({
     [canCreateCampaigns, hasAgreementContext, isFiltered, onCreateClick]
   );
 
+  const resetFilters = useCallback(() => {
+    handleAgreementFilterChange(ALL_FILTER_VALUE);
+    setInstanceFilter(ALL_FILTER_VALUE);
+  }, [handleAgreementFilterChange, setInstanceFilter]);
+
   return (
     <Card className="border border-[var(--border)]/60 bg-[rgba(15,23,42,0.45)]">
       <CardHeader className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <CardTitle>Painel de campanhas</CardTitle>
             <CardDescription>
@@ -114,11 +125,16 @@ const CampaignsPanel = ({
               </p>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <Badge variant="info">{activeCampaigns} ativa(s)</Badge>
             <Badge variant="secondary">
               {totalCampaigns} {isFiltered ? 'filtrada(s)' : 'no total'}
             </Badge>
+            {activeFilters > 0 ? (
+              <Badge variant="outline" className="text-[0.65rem] uppercase tracking-wide">
+                {activeFilters} filtro(s)
+              </Badge>
+            ) : null}
             <Button size="sm" variant="outline" onClick={onRefresh} disabled={loading}>
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -126,9 +142,6 @@ const CampaignsPanel = ({
                 <RefreshCcw className="mr-2 h-4 w-4" />
               )}
               Atualizar
-            </Button>
-            <Button size="sm" onClick={onCreateClick} disabled={!canCreateCampaigns}>
-              <Plus className="mr-2 h-4 w-4" /> Nova campanha
             </Button>
           </div>
         </div>
@@ -163,6 +176,16 @@ const CampaignsPanel = ({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          {isFiltered ? (
+            <Button size="sm" variant="ghost" onClick={resetFilters}>
+              Limpar filtros
+            </Button>
+          ) : null}
+          <div className="ms-auto flex items-center gap-2">
+            <Button size="sm" onClick={onCreateClick} disabled={!canCreateCampaigns}>
+              <Plus className="mr-2 h-4 w-4" /> Nova campanha
+            </Button>
           </div>
         </div>
       </CardHeader>

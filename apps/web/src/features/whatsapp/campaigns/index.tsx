@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils.js';
 
 import useWhatsAppConnect from '../connect/useWhatsAppConnect';
 
@@ -57,31 +58,59 @@ const WhatsAppCampaigns = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
   } = useWhatsAppConnect(props);
 
   const backLabel = 'Voltar';
+  const journeySteps = ['Instâncias & Canais', 'Campanhas', 'Inbox'];
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <header className="glass-surface space-y-6 rounded-[var(--radius)] border border-[var(--border)] px-6 py-5 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/80">
+      <header className="space-y-4 rounded-[var(--radius)] border border-[var(--border)] bg-surface-overlay-strong px-6 py-5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">
+          {journeySteps.map((step, index) => (
+            <div
+              key={step}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full border px-3 py-1',
+                index === 1 ? 'border-primary/50 bg-primary/15 text-primary' : 'border-border/70 text-muted-foreground',
+              )}
+            >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-background text-[0.65rem]">
+                {index + 1}
+              </span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
               <Badge variant="secondary">{stepLabel}</Badge>
               {nextStage ? <span>Próximo: {nextStage}</span> : null}
             </div>
-            <div className="space-y-2">
+            <div>
               <h1 className="text-2xl font-semibold text-foreground">Gerencie suas campanhas</h1>
-              <p className="max-w-xl text-sm text-muted-foreground">{onboardingDescription}</p>
+              <p className="max-w-2xl text-sm text-muted-foreground">{onboardingDescription}</p>
             </div>
-            {onBack ? (
-              <Button variant="ghost" size="sm" onClick={onBack} className="w-fit">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                {backLabel}
-              </Button>
-            ) : null}
           </div>
-          <div className="flex flex-col items-end gap-3 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedInstance ? (
+              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-200">
+                Instância ativa · {selectedInstance.name ?? selectedInstance.id}
+              </Badge>
+            ) : null}
             <Badge variant="status" tone={statusTone as any} className="gap-2 text-xs font-medium uppercase">
               {statusCopy.badge}
             </Badge>
+            <div className="flex gap-2">
+              {onBack ? (
+                <Button variant="ghost" size="sm" onClick={onBack}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  {backLabel}
+                </Button>
+              ) : null}
+              <Button size="sm" onClick={() => setCreateCampaignOpen(true)} disabled={!canCreateCampaigns}>
+                Nova campanha
+              </Button>
+            </div>
           </div>
         </div>
         <Separator className="section-divider" />

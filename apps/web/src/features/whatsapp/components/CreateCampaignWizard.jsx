@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
@@ -255,7 +256,7 @@ const CreateCampaignWizard = ({
       instanceId: preferredInstance?.id ?? '',
       agreementId: preferredAgreementId,
       agreementName: preferredAgreementName,
-        leadSource: prev.leadSource || (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
+      leadSource: prev.leadSource ?? (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
       segments: Array.isArray(prev.segments) ? prev.segments : [],
       name: nameDirty
         ? prev.name
@@ -852,6 +853,26 @@ const CreateCampaignWizard = ({
         return (
           <div className="space-y-6">
             {renderStepHeading('Revise e crie a campanha', null)}
+            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm leading-5 text-emerald-100">
+              <p className="font-semibold text-emerald-50">Passo 3 (Inbox) preparado</p>
+              <p className="mt-1 text-xs text-emerald-100/80">
+                Assim que esta campanha for criada, os leads qualificados seguirão para a Inbox com esta mesma configuração.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button asChild size="sm" variant="outline" className="border-emerald-200/60 text-emerald-900">
+                  <Link to="/whatsapp/inbox">Ir para a Inbox</Link>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-emerald-50 hover:bg-emerald-500/20"
+                  onClick={() => goToStep(0)}
+                >
+                  Conferir instância
+                </Button>
+              </div>
+            </div>
             <div className="space-y-4">
               <div className="grid gap-3">
                 <div className="flex items-center gap-3 rounded-lg border border-border p-3">
@@ -1000,51 +1021,91 @@ const CreateCampaignWizard = ({
     ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
     : 'bg-amber-500/10 text-amber-200 border border-amber-500/40';
 
-  const SummaryPanel = ({ className = '' }) => (
-    <div className={cn('rounded-2xl border border-slate-800/60 bg-slate-950/70 p-4 shadow-inner', className)}>
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância escolhida</p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-foreground">{formatInstanceLabel(selectedInstance) || 'Selecione uma instância'}</span>
-        <span className={cn('rounded-full px-2.5 py-0.5 text-[0.65rem] font-medium uppercase', instanceStatusTone)}>
-          {instanceStatusLabel}
-        </span>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">Telefone: {instancePhoneLabel}</p>
-      {selectedAgreement ? (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Origem: <span className="font-medium text-foreground">{formatAgreementLabel(selectedAgreement)}</span>
-        </p>
-      ) : null}
-      {selectedProduct ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Produto: <span className="font-medium text-foreground">{selectedProduct.label}</span>
-        </p>
-      ) : null}
-      {selectedStrategy ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Estratégia: <span className="font-medium text-foreground">{selectedStrategy.title}</span>
-        </p>
-      ) : null}
-    </div>
-  );
+  const CampaignSummary = () => {
+    const summaryItems = [
+      {
+        label: 'Instância',
+        value: formatInstanceLabel(selectedInstance) || 'Selecione uma instância',
+        helper: selectedInstance ? (selectedInstance.connected ? 'Conectada' : 'Desconectada') : null,
+      },
+      {
+        label: 'Origem',
+        value: formatAgreementLabel(selectedAgreement) || 'Escolha um convênio',
+        helper: formState.leadSource ? `Fonte: ${LEAD_SOURCE_LABELS[formState.leadSource] ?? '—'}` : null,
+      },
+      {
+        label: 'Produto',
+        value: selectedProduct?.label || 'Defina o produto',
+        helper: formState.margin ? `Margem alvo: ${formState.margin}%` : null,
+      },
+      {
+        label: 'Estratégia',
+        value: selectedStrategy?.title || 'Selecione a régua',
+        helper: selectedStrategyCard?.cadence ?? null,
+      },
+      {
+        label: 'Status inicial',
+        value: STATUS_OPTIONS.find((option) => option.value === formState.status)?.label ?? 'Ativar imediatamente',
+        helper: null,
+      },
+    ];
 
-  return (
-    <div className="flex h-[70vh] flex-col overflow-hidden md:h-[80vh] md:flex-row">
-      <aside className="border-b border-border/60 bg-muted/5 px-6 py-4 md:flex md:w-64 md:flex-shrink-0 md:flex-col md:gap-6 md:border-b-0 md:border-r md:bg-background/60 md:px-5 md:py-6">
-        <nav className="hidden flex-1 flex-col gap-3 overflow-y-auto pr-1 md:flex">
-          {STEP_SEQUENCE.map((step, index) => {
-            const status = stepStatuses[step.key];
-            const isActive = status === 'current';
-            const isCompleted = status === 'completed';
-            const isBlocked = status === 'blocked';
-            return (
-              <Tooltip key={step.key} delayDuration={120}>
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-inner">
+          <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Passo 2 de 3</p>
+          <p className="text-sm font-semibold text-foreground">Campanhas & roteamento</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Depois de criar, você pode acompanhar os leads na Inbox (Passo 3) sem perder o contexto.
+          </p>
+          <Button asChild variant="outline" size="sm" className="mt-3 w-full">
+            <Link to="/whatsapp/inbox">Ir para a Inbox</Link>
+          </Button>
+        </div>
+        <div className="rounded-2xl border border-border/80 bg-background/60 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resumo vivo</p>
+          <dl className="mt-3 space-y-3 text-sm leading-5 text-muted-foreground">
+            {summaryItems.map((item) => (
+              <div key={item.label}>
+                <dt className="text-[0.7rem] uppercase tracking-wide text-muted-foreground/80">{item.label}</dt>
+                <dd className="text-foreground">{item.value}</dd>
+                {item.helper ? <p className="text-[0.7rem] text-muted-foreground">{item.helper}</p> : null}
+              </div>
+            ))}
+          </dl>
+        </div>
+        {selectedStrategyCard ? (
+          <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-xs leading-5 text-primary">
+            <p className="text-sm font-semibold text-primary-foreground">Estratégia atual</p>
+            <p className="mt-1 text-primary-foreground/80">
+              {selectedStrategyCard.definition} • {selectedStrategyCard.cadence}
+            </p>
+            {selectedStrategyCard.compliance ? (
+              <p className="mt-2 text-[0.7rem] text-amber-200">{selectedStrategyCard.compliance}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const StepperRail = () => (
+    <div className="overflow-x-auto border-b border-border/70 bg-background/80 px-4 py-3 shadow-sm backdrop-blur">
+      <ol className="flex min-w-full items-stretch gap-3">
+        {STEP_SEQUENCE.map((step, index) => {
+          const status = stepStatuses[step.key];
+          const isActive = status === 'current';
+          const isCompleted = status === 'completed';
+          const isBlocked = status === 'blocked';
+          return (
+            <li key={step.key} className="flex items-center gap-3">
+              <Tooltip delayDuration={120}>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     onClick={() => goToStep(index)}
                     className={cn(
-                      'flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      'flex min-w-[180px] items-start gap-3 rounded-xl border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                       isActive
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border/70 hover:border-primary/40',
@@ -1073,51 +1134,27 @@ const CreateCampaignWizard = ({
                   </button>
                 </TooltipTrigger>
                 {isBlocked ? (
-                  <TooltipContent side="right" align="start" className="max-w-[220px] text-xs">
+                  <TooltipContent side="bottom" className="max-w-[220px] text-xs">
                     {getStepBlockedReason(step.key)}
                   </TooltipContent>
                 ) : null}
               </Tooltip>
-            );
-          })}
-        </nav>
-        <ol className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground md:hidden">
-          {STEP_SEQUENCE.map((step, index) => {
-            const status = stepStatuses[step.key];
-            const isActive = status === 'current';
-            const isCompleted = status === 'completed';
-            const isBlocked = status === 'blocked';
-            return (
-              <li key={step.key}>
-                <button
-                  type="button"
-                  onClick={() => goToStep(index)}
-                  className={cn(
-                    'flex items-center gap-2 rounded-full border px-3 py-1',
-                    isActive
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border/70 text-muted-foreground',
-                    isBlocked && 'cursor-not-allowed opacity-60',
-                  )}
-                  aria-disabled={isBlocked}
-                >
-                  {isCompleted ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
-                  {step.title}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-        <div className="hidden md:block">
-          <SummaryPanel />
-        </div>
-      </aside>
-      <section className="relative flex flex-1 flex-col bg-background">
-        <div className="flex-1 overflow-y-auto px-6 pb-28 pt-4 md:px-8 md:pb-36 md:pt-6">
-          <div className="mb-4 md:hidden">
-            <SummaryPanel />
-          </div>
-          <div className="space-y-6">
+              {index < STEP_SEQUENCE.length - 1 ? (
+                <span className="hidden h-px w-10 bg-border/60 lg:block" aria-hidden />
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+
+  return (
+    <div className="flex h-[78vh] flex-col">
+      <StepperRail />
+      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <section className="flex-1 overflow-y-auto px-5 pb-8 pt-5 sm:px-8 lg:pb-12">
+          <div className="mx-auto w-full max-w-3xl space-y-6">
             {renderStepContent()}
             {stepError ? (
               <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
@@ -1132,46 +1169,49 @@ const CreateCampaignWizard = ({
               </div>
             ) : null}
           </div>
-        </div>
-        <footer className="absolute inset-x-0 bottom-0 border-t border-border/70 bg-background/95 px-6 py-4 backdrop-blur md:px-8">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
-              Cancelar
+        </section>
+        <aside className="border-t border-border/60 bg-slate-950/40 px-5 py-5 backdrop-blur lg:w-80 lg:border-t-0 lg:border-l lg:px-6 lg:py-6">
+          <CampaignSummary />
+        </aside>
+      </div>
+      <footer className="border-t border-border/70 bg-background/95 px-5 py-4 backdrop-blur sm:px-8">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
+            Cancelar
+          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={goToPreviousStep}
+              disabled={stepIndex === 0 || isSubmitting}
+            >
+              Voltar
             </Button>
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={goToPreviousStep}
-                disabled={stepIndex === 0 || isSubmitting}
-              >
-                Voltar
+            {isLastStep ? (
+              <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {isSubmitting ? 'Criando…' : 'Criar campanha'}
               </Button>
-              {isLastStep ? (
-                <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {isSubmitting ? 'Criando…' : 'Criar campanha'}
-                </Button>
-              ) : (
-                <Tooltip delayDuration={120}>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
-                        Avançar
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {advanceDisabledReason ? (
-                    <TooltipContent side="top" className="max-w-[200px] text-xs">
-                      {advanceDisabledReason}
-                    </TooltipContent>
-                  ) : null}
-                </Tooltip>
-              )}
-            </div>
+            ) : (
+              <Tooltip delayDuration={120}>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
+                      Avançar
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {advanceDisabledReason ? (
+                  <TooltipContent side="top" className="max-w-[200px] text-xs">
+                    {advanceDisabledReason}
+                  </TooltipContent>
+                ) : null}
+              </Tooltip>
+            )}
           </div>
-        </footer>
-      </section>
+        </div>
+      </footer>
     </div>
   );
 };
