@@ -14,7 +14,6 @@ import type {
 
 const DEFAULT_CONFIG: InstancesConfig = {
   tenantId: null,
-  agreementId: null,
   campaignInstanceId: null,
   autoRefresh: false,
   pauseWhenHidden: true,
@@ -25,7 +24,6 @@ const DEFAULT_CONFIG: InstancesConfig = {
 const hasConfigChanged = (current: InstancesConfig, next: InstancesConfig): boolean => {
   return (
     current.tenantId !== next.tenantId ||
-    current.agreementId !== next.agreementId ||
     current.campaignInstanceId !== next.campaignInstanceId ||
     current.autoRefresh !== next.autoRefresh ||
     current.pauseWhenHidden !== next.pauseWhenHidden ||

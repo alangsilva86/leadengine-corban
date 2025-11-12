@@ -71,7 +71,7 @@ const CreateInstanceDialog = ({
         setIdentifier(suggestedId);
       }
       const message = err instanceof Error ? err.message : 'Não foi possível criar a instância.';
-      setError(suggestedId ? `${message} Usamos a sugestão “${suggestedId}”.` : message);
+      setError(message);
     } finally {
       setSubmitting(false);
     }

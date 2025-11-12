@@ -138,7 +138,6 @@ export const WhatsAppInstancesProvider = ({
   const providerConfig = useMemo(
     () => ({
       tenantId: providerConfigProps.tenantId ?? null,
-      agreementId: providerConfigProps.agreementId ?? null,
       campaignInstanceId: providerConfigProps.campaignInstanceId ?? null,
       autoRefresh: providerConfigProps.autoRefresh ?? false,
       pauseWhenHidden: providerConfigProps.pauseWhenHidden ?? true,
@@ -147,7 +146,6 @@ export const WhatsAppInstancesProvider = ({
     }),
     [
       providerConfigProps.tenantId,
-      providerConfigProps.agreementId,
       providerConfigProps.campaignInstanceId,
       providerConfigProps.autoRefresh,
       providerConfigProps.pauseWhenHidden,
@@ -189,21 +187,14 @@ export const WhatsAppInstancesProvider = ({
   );
 };
 
-const ensureAgreementMeta = (selectedAgreement, payload) => {
-  if (!selectedAgreement) {
+const ensureTenantMeta = (selectedAgreement, payload) => {
+  if (!selectedAgreement?.tenantId) {
     return payload;
   }
-  const next = { ...payload };
-  if (!next.agreementId && selectedAgreement.id) {
-    next.agreementId = selectedAgreement.id;
+  if (payload.tenantId) {
+    return payload;
   }
-  if (!next.agreementName && selectedAgreement.name) {
-    next.agreementName = selectedAgreement.name;
-  }
-  if (!next.tenantId && selectedAgreement.tenantId) {
-    next.tenantId = selectedAgreement.tenantId;
-  }
-  return next;
+  return { ...payload, tenantId: selectedAgreement.tenantId };
 };
 
 const resolveFriendlyError = (error, fallback) => {
@@ -270,7 +261,6 @@ export default function useWhatsAppInstances(options = {}) {
   useEffect(() => {
     const desiredConfig = {
       tenantId: selectedAgreement?.tenantId ?? null,
-      agreementId: selectedAgreement?.id ?? null,
       campaignInstanceId: options.campaignInstanceId ?? null,
       autoGenerateQr:
         typeof autoGenerateQrOption === 'boolean'
@@ -293,7 +283,6 @@ export default function useWhatsAppInstances(options = {}) {
   }, [
     store,
     selectedAgreement?.tenantId,
-    selectedAgreement?.id,
     options.campaignInstanceId,
     controller.providerConfig?.autoGenerateQr,
     controller.providerConfig?.autoRefresh,
@@ -511,7 +500,7 @@ export default function useWhatsAppInstances(options = {}) {
         onError?.(message, { code: 'INVALID_NAME' });
         throw new Error(message);
       }
-      const payload = ensureAgreementMeta(selectedAgreement, {
+      const payload = ensureTenantMeta(selectedAgreement, {
         name: name.trim(),
         id: id ?? undefined,
       });

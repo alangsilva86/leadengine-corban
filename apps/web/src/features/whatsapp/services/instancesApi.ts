@@ -54,15 +54,8 @@ const readErrorMessage = (error: unknown): string => {
   if (typeof error === 'object' && error) {
     const payloadMessage =
       (error as { payload?: { error?: { message?: string } } }).payload?.error?.message;
-    const suggestedId =
-      (error as { payload?: { error?: { details?: { suggestedId?: string } } } }).payload?.error?.details?.suggestedId;
     if (typeof payloadMessage === 'string' && payloadMessage.trim()) {
-      return suggestedId
-        ? `${payloadMessage.trim()} Sugestão automática: ${suggestedId}`
-        : payloadMessage;
-    }
-    if (suggestedId) {
-      return `Já existe uma instância com esse identificador. Sugestão automática: ${suggestedId}`;
+      return payloadMessage.trim();
     }
   }
   return 'Falha inesperada ao comunicar com o servidor.';
@@ -74,12 +67,6 @@ const normalizeCreateBody = (payload: CreateInstancePayload) => {
   const body: Record<string, unknown> = { name: payload.name };
   if (payload.id) {
     body.id = payload.id;
-  }
-  if (payload.agreementId) {
-    body.agreementId = payload.agreementId;
-  }
-  if (payload.agreementName) {
-    body.agreementName = payload.agreementName;
   }
   if (payload.tenantId) {
     body.tenantId = payload.tenantId;
@@ -260,12 +247,6 @@ export const createInstancesApiService = ({
         message: readErrorMessage(err),
         code: readStatusCode(err)?.toString() ?? null,
       });
-      const suggestedId =
-        (err as { payload?: { error?: { details?: { suggestedId?: string } } } }).payload?.error?.details
-          ?.suggestedId;
-      if (suggestedId && typeof err === 'object' && err) {
-        Object.assign(err as Record<string, unknown>, { suggestedId });
-      }
       throw err;
     }
   };

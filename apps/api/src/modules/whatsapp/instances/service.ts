@@ -925,14 +925,6 @@ export const createWhatsAppInstanceSchema = z
       .transform((value) => value.trim())
       .refine((value) => value.length > 0, INVALID_INSTANCE_ID_MESSAGE)
       .optional(),
-    agreementId: z
-      .string()
-      .optional()
-      .transform((value) => (typeof value === 'string' ? value.trim() : value)),
-    agreementName: z
-      .string()
-      .optional()
-      .transform((value) => (typeof value === 'string' ? value.trim() : value)),
     tenantId: z
       .string()
       .optional()
@@ -941,8 +933,6 @@ export const createWhatsAppInstanceSchema = z
   .transform((data) => ({
     ...data,
     id: data.id && data.id.length > 0 ? data.id : undefined,
-    agreementId: data.agreementId && data.agreementId.length > 0 ? data.agreementId : undefined,
-    agreementName: data.agreementName && data.agreementName.length > 0 ? data.agreementName : undefined,
     tenantId: data.tenantId && data.tenantId.length > 0 ? data.tenantId : undefined,
   }));
 
