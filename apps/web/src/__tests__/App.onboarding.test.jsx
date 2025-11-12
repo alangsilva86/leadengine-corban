@@ -164,7 +164,7 @@ describe('App onboarding journey', () => {
     expect(latestLayout?.activeStep).toBe(1);
   });
 
-  it('restores agreements stage when an agreement is selected', async () => {
+  it('mantém a régua apenas com os passos principais mesmo com convênio selecionado', async () => {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -178,7 +178,7 @@ describe('App onboarding journey', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,agreements,campaigns,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,campaigns,inbox')
     );
 
     const startButton = await screen.findByRole('button', { name: /começar/i });
@@ -187,34 +187,24 @@ describe('App onboarding journey', () => {
     await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'channels'));
 
     const latestLayout = getLatestLayoutCall();
-    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual([
-      'channels',
-      'agreements',
-      'campaigns',
-      'inbox',
-    ]);
+    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['channels', 'campaigns', 'inbox']);
     expect(latestLayout?.activeStep).toBe(0);
   });
 
-  it('includes agreements stage when navigating manually to agreements', async () => {
+  it('mantém a régua inalterada ao navegar manualmente para convênios', async () => {
     render(<App />);
 
     const goAgreements = await screen.findByTestId('navigate-agreements');
     await userEvent.click(goAgreements);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,agreements,campaigns,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,campaigns,inbox')
     );
     expect(await screen.findByTestId('agreements-page')).toBeInTheDocument();
 
     const latestLayout = getLatestLayoutCall();
-    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual([
-      'channels',
-      'agreements',
-      'campaigns',
-      'inbox',
-    ]);
-    expect(latestLayout?.activeStep).toBe(1);
+    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['channels', 'campaigns', 'inbox']);
+    expect(latestLayout?.activeStep).toBe(0);
   });
 });
 
