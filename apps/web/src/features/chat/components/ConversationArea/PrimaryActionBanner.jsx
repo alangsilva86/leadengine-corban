@@ -11,11 +11,8 @@ import { ACTIONS_BY_ID } from '@/features/chat/actions/inventory';
 import InstanceBadge from '../Shared/InstanceBadge.jsx';
 import StageProgress from './StageProgress.jsx';
 import {
-  resolveTicketCampaignId,
-  resolveTicketCampaignName,
   resolveTicketProductType,
   resolveTicketSourceInstance,
-  resolveTicketStrategy,
 } from './utils/ticketMetadata.js';
 
 const INDICATOR_TONES = {
@@ -226,35 +223,6 @@ const PrimaryActionBanner = ({
     };
   }, [instancePresentation, ticket]);
 
-  const showContactPhone = useMemo(() => {
-    if (!contactPhone) return false;
-    if (!resolvedInstance.number) return true;
-    return contactPhone !== resolvedInstance.number;
-  }, [contactPhone, resolvedInstance.number]);
-
-  const contextSummary = useMemo(() => {
-    const campaignId = resolveTicketCampaignId(ticket);
-    const campaignName = resolveTicketCampaignName(ticket);
-    const productType = resolveTicketProductType(ticket);
-    const strategy = resolveTicketStrategy(ticket);
-
-    const instanceLabel = resolvedInstance.label ?? 'Instância desconhecida';
-    const campaignLabel = campaignName ?? campaignId ?? 'Não informada';
-    const productLabel = productType ?? 'Não informado';
-    const strategyLabel = strategy ?? 'Não informada';
-
-    const description = [
-      `Instância · ${instanceLabel}`,
-      `Campanha · ${campaignLabel}`,
-      `Convênio · ${productLabel}`,
-      `Estratégia · ${strategyLabel}`,
-    ].join(' • ');
-
-    return {
-      description,
-    };
-  }, [resolvedInstance.label, ticket]);
-
   const handleDetails = (intent = {}) => {
     onRequestDetails?.(intent);
   };
@@ -304,26 +272,9 @@ const PrimaryActionBanner = ({
               ) : null}
               <InstanceBadge instanceId={instanceId} />
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-foreground-muted">
-              <span className="truncate" title={resolvedInstance.number ?? undefined}>
-                {resolvedInstance.number ?? 'Número não informado'}
-              </span>
-              <span>Etapa: {stageKey ?? 'Não definida'}</span>
-              {showContactPhone ? (
-                <span data-testid="ticket-contact-phone">{contactPhone}</span>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleDetails({ focus: 'context' })}
-                className="inline-flex items-center gap-2 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground-muted transition hover:bg-surface-overlay-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
-                aria-label={`Abrir detalhes de contexto do lead (${contextSummary.description})`}
-                title={contextSummary.description}
-              >
-                <span>Contexto do lead</span>
-              </button>
-            </div>
+            <span className="text-xs text-foreground-muted">
+              {resolvedInstance.number ?? 'Número não informado'}
+            </span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 md:justify-self-end lg:justify-self-start">
