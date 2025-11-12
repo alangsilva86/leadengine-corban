@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet } from '@/lib/api.js';
 
-const DEFAULT_ERROR_MESSAGE = 'Falha ao carregar convênios';
+const DEFAULT_ERROR_MESSAGE = 'Falha ao carregar origens comerciais';
 
 const useAgreements = () => {
   const [agreements, setAgreements] = useState([]);

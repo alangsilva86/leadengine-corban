@@ -47,7 +47,7 @@
 2. **Criação de views via prompt** – interação bloqueia a UI, não tem acessibilidade e dificulta padronização de nomenclatura; recomenda-se modal/form estruturado.
 3. **Ausência de feedback sobre auto-refresh** – badge exibe contagem, mas falta histórico de atualização/sincronização contínua com eventos de telemetria conforme plano (eventos `view_change`, `filter_apply` ainda não coletados).
 4. **Fases seguintes sem backlog refinado** – Epics C–G permanecem não iniciados; sugerir roadmap detalhado ou issues para garantir alinhamento com Definition of Done.
-5. **Dados avançados nos filtros** – Drawer não oferece filtros por convênio/canal mencionados nos requisitos; necessário evoluir heurística "Mais filtros".
+5. **Dados avançados nos filtros** – Drawer não oferece filtros por origem comercial/canal mencionados nos requisitos; necessário evoluir heurística "Mais filtros".
 
 ## Recomendações
 - Priorizar ampliação do `StatusFilter` e introduzir uma estrutura declarativa para estados (com metadados de transição e cores) antes de liberar para agentes.

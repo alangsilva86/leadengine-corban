@@ -112,7 +112,7 @@ const InstancesPanel = ({
   };
 
   const complementaryInfoAvailable = Boolean(
-    (agreementDisplayName && agreementDisplayName !== 'Nenhum convênio selecionado') ||
+    (agreementDisplayName && agreementDisplayName !== 'Nenhuma origem vinculada') ||
       selectedAgreementRegion ||
       (hasCampaign && campaign)
   );
@@ -198,16 +198,16 @@ const InstancesPanel = ({
             )}
           >
             <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              <Badge variant="outline" className="px-2 py-0 text-[0.65rem] uppercase">
+              <Badge variant="outline" className="px-2 py-0 text-[0.65rem] uppercase" aria-hidden="true">
                 Opcional
               </Badge>
-              <span>Dados de convênio e campanhas</span>
+              <span>Dados de origem e campanhas</span>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Convênio</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Origem comercial</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">
-                  {agreementDisplayName || 'Nenhum convênio vinculado'}
+                  {agreementDisplayName || 'Nenhuma origem vinculada'}
                 </p>
                 {selectedAgreementRegion ? (
                   <p className="text-xs text-muted-foreground">{selectedAgreementRegion}</p>
@@ -231,7 +231,7 @@ const InstancesPanel = ({
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Você pode criar ou associar campanhas após confirmar a instância ideal.
+                    Vincule campanhas quando precisar de regras avançadas de distribuição.
                   </p>
                 )}
               </div>

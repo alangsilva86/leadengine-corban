@@ -61,7 +61,7 @@ const CreateCampaignDialog = ({
         <DialogHeader>
           <DialogTitle>Nova campanha do WhatsApp</DialogTitle>
           <DialogDescription>
-            Configure a campanha em etapas rápidas: selecione a instância, convênio, produto e estratégia antes de revisar.
+            Configure a campanha em etapas rápidas: selecione a instância conectada, escolha a origem comercial, defina produto, margem e estratégia antes de revisar.
           </DialogDescription>
         </DialogHeader>
         <CreateCampaignWizard

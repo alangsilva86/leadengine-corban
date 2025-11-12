@@ -8,18 +8,18 @@ Este documento descreve o contrato dos novos endpoints de relatórios utilizados
 
 ### Parâmetros de query
 
-| Parâmetro    | Obrigatório | Descrição                                                                                              |
+| Parâmetro    | Obrigatório | Descrição |
 |--------------|-------------|----------------------------------------------------------------------------------------------------------|
-| `groupBy`    | não         | Dimensão de agregação (`agreement`, `campaign`, `instance`, `product`, `strategy`). Default: `agreement`. |
-| `from`       | não         | Data/hora inicial em ISO 8601. Quando ausente, considera os últimos 7 dias.                              |
-| `to`         | não         | Data/hora final em ISO 8601. Default: instante atual.                                                    |
-| `limit`      | não         | Quantidade máxima de grupos no retorno (1-100). Default: 10.                                             |
-| `campaignId` | não         | Filtra métricas para uma campanha específica.                                                            |
-| `agreementId`| não         | Filtra por convênio (acordo) associado à campanha.                                                       |
-| `instanceId` | não         | Filtra por instância do WhatsApp vinculada à campanha.                                                   |
-| `productType`| não         | Filtra por tipo de produto configurado na campanha.                                                      |
-| `strategy`   | não         | Filtra por estratégia cadastrada na campanha.                                                            |
-| `marginType` | não         | Filtra por tipo de margem da campanha.                                                                   |
+| `groupBy`    | não         | Dimensão de agregação (`agreement`, `campaign`, `instance`, `product`, `strategy`). Default: `agreement` (origem comercial). |
+| `from`       | não         | Data/hora inicial em ISO 8601. Quando ausente, considera os últimos 7 dias. |
+| `to`         | não         | Data/hora final em ISO 8601. Default: instante atual. |
+| `limit`      | não         | Quantidade máxima de grupos no retorno (1-100). Default: 10. |
+| `campaignId` | não         | Filtra métricas para uma campanha específica. |
+| `agreementId`| não         | Filtra por origem comercial (convênio, parceiro ou carteira) associada à campanha. |
+| `instanceId` | não         | Filtra por instância do WhatsApp vinculada à campanha. |
+| `productType`| não         | Filtra por tipo de produto configurado na campanha. |
+| `strategy`   | não         | Filtra por estratégia cadastrada na campanha. |
+| `marginType` | não         | Filtra por tipo de margem da campanha. |
 
 ### Resposta (`200 OK`)
 
@@ -109,7 +109,7 @@ Cada item em `groups[]` representa a agregação por valor da dimensão solicita
 - `key`: identificador único interno (`<groupBy>:<valor>` ou marcador `unknown`).
 - `dimension`: dimensão utilizada (`agreement`, `campaign`, `instance`, `product`, `strategy`).
 - `label`: nome amigável exibido na UI.
-- `metadata`: dados auxiliares disponíveis para drill-down (IDs de campanha, instância, convênio, produto, estratégia e margem).
+- `metadata`: dados auxiliares disponíveis para drill-down (IDs de campanha, instância, origem comercial, produto, estratégia e margem).
 - `metrics`: métricas consolidadas do grupo.
 - `breakdown[]`: série diária com o mesmo conjunto de métricas, permitindo montar gráficos de tendência.
 
@@ -120,7 +120,7 @@ Cada item em `groups[]` representa a agregação por valor da dimensão solicita
 
 ## Boas práticas de consumo
 
-1. Utilize `groupBy` para alternar rapidamente entre visões de convênio, campanha, instância, produto ou estratégia.
+1. Utilize `groupBy` para alternar rapidamente entre visões de origem comercial, campanha, instância, produto ou estratégia.
 2. Ajuste `from` e `to` para análises históricas maiores que 90 dias, respeitando os limites de volume.
 3. Use `limit` para restringir o número de grupos retornados quando for renderizar gráficos de pizza ou tabelas mais compactas.
 4. Aproveite `metadata` para construir links ou filtros secundários (ex.: navegar para a campanha ou instância específica).

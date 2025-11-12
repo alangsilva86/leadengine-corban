@@ -2,7 +2,7 @@ export const WHATSAPP_CAMPAIGN_PRODUCTS = [
   {
     value: 'consigned_credit',
     label: 'Crédito consignado',
-    description: 'Para convênios com consignação em folha e margem consignável.',
+    description: 'Para operações com consignação em folha e margem consignável (convênios ou parcerias).',
     defaultMargin: 1.8,
   },
   {

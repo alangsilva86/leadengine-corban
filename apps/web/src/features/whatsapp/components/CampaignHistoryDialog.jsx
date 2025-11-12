@@ -51,7 +51,7 @@ const CampaignHistoryDialog = ({ agreementId }) => {
           : [];
         setCampaigns(items);
         if (items.length === 0) {
-          warn('Convênio ainda não possui campanhas registradas', { agreementId });
+          warn('Origem ainda não possui campanhas registradas', { agreementId });
         }
       } catch (error) {
         if (!cancelled) {
@@ -92,9 +92,9 @@ const CampaignHistoryDialog = ({ agreementId }) => {
       </DialogTrigger>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Campanhas do convênio</DialogTitle>
+          <DialogTitle>Campanhas da origem</DialogTitle>
           <DialogDescription>
-            Histórico das campanhas vinculadas ao convênio selecionado para garantir rastreabilidade.
+            Histórico das campanhas vinculadas à origem selecionada (convênio, parceiro ou carteira) para garantir rastreabilidade.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

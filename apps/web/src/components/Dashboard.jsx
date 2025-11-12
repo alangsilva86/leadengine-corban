@@ -110,7 +110,7 @@ const Dashboard = ({ onboarding, onStart }) => {
   const { total, progressValue, displayIndex, nextStage, isComplete } = getOnboardingProgress(onboarding);
   const stageLabel = nextStage || 'Conclua as etapas';
   const hasStarted = Boolean(onboarding?.selectedAgreement || onboarding?.whatsappStatus !== 'disconnected');
-  const primaryCtaLabel = hasStarted ? 'Continuar configuração' : 'Ativar meu primeiro convênio';
+  const primaryCtaLabel = hasStarted ? 'Continuar configuração' : 'Conectar meu primeiro número';
 
   return (
     <div className="space-y-6">
@@ -121,8 +121,8 @@ const Dashboard = ({ onboarding, onStart }) => {
         <div className="grid max-w-xl gap-4">
           <h1 className="text-3xl font-semibold text-foreground">Mudamos a forma de gerar demanda</h1>
           <p className="text-base leading-relaxed text-muted-foreground">
-            Conecte um convênio, sincronize seu WhatsApp e receba apenas leads que já levantaram a mão. Acompanhe tudo em
-            tempo real neste painel.
+            Conecte o número que já conversa com os clientes, vincule origens comerciais quando necessário e acompanhe a
+            performance das campanhas em tempo real neste painel.
           </p>
           {total ? (
             <div className="space-y-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet p-4">
