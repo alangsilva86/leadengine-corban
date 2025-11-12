@@ -32,12 +32,14 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
@@ -50,20 +52,23 @@ const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;
 const showWhatsappDebug = isWhatsAppDebugEnabled() || shouldShowWhatsappDebug;
 
 const NAVIGATION_ITEMS = (() => {
-  const items = [
+  const primary = [
     { id: 'dashboard', label: 'Visão Geral', icon: Home },
+    { id: 'channels', label: 'Instâncias & Canais', icon: QrCode },
+  ];
+
+  const contextual = [
     { id: 'contacts', label: 'Contatos', icon: Users },
     { id: 'crm', label: 'CRM', icon: Layers },
     { id: 'agreements', label: 'Convênios', icon: Briefcase },
-    { id: 'whatsapp', label: 'WhatsApp', icon: QrCode },
     { id: 'inbox', label: 'Inbox', icon: MessageSquare },
     { id: 'reports', label: 'Relatórios', icon: BarChart3 },
     ...(showWhatsappDebug ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }] : []),
     { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
     { id: 'settings', label: 'Configurações', icon: Settings },
   ];
- 
-  return items;
+
+  return { primary, contextual };
 })();
 
 const LayoutHeader = ({ children, className }) => (
@@ -174,6 +179,27 @@ const LayoutShell = ({
     }
   };
 
+  const navigationSections = navigation ?? { primary: [], contextual: [] };
+
+  const renderNavigationItems = useCallback(
+    (items) =>
+      items.map((item) => (
+        <SidebarMenuItem key={item.id}>
+          <SidebarMenuButton
+            type="button"
+            onClick={handleNavigate(item.id)}
+            isActive={currentPage === item.id}
+            tooltip={item.label}
+            aria-label={item.label}
+          >
+            <item.icon className="h-4 w-4" />
+            <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      )),
+    [currentPage, handleNavigate]
+  );
+
   const handleSidebarCollapseToggle = () => {
     if (isMobile) {
       setOpenMobile(true);
@@ -224,26 +250,20 @@ const LayoutShell = ({
         <SidebarContent className="px-2 py-4">
           <SidebarGroup>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {navigation.map((item) => (
-                  <SidebarMenuItem key={item.id}>
-                    <SidebarMenuButton
-                      type="button"
-                      onClick={handleNavigate(item.id)}
-                      isActive={currentPage === item.id}
-                      tooltip={item.label}
-                      aria-label={item.label}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      <span className="truncate group-data-[collapsible=icon]:hidden">
-                        {item.label}
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
+              <SidebarMenu>{renderNavigationItems(navigationSections.primary)}</SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          {navigationSections.contextual.length > 0 ? (
+            <>
+              <SidebarSeparator />
+              <SidebarGroup>
+                <SidebarGroupLabel>Contexto</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>{renderNavigationItems(navigationSections.contextual)}</SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </>
+          ) : null}
         </SidebarContent>
         <SidebarFooter className="border-t border-sidebar-border px-4 py-4">
           <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
@@ -372,9 +392,9 @@ const Layout = ({
     return () => window.removeEventListener('leadengine:inbox-count', handler);
   }, []);
 
-  const navigation = useMemo(
-    () =>
-      NAVIGATION_ITEMS.map((item) => {
+  const navigation = useMemo(() => {
+    const mapItems = (items) =>
+      items.map((item) => {
         if (item.id !== 'inbox') {
           return item;
         }
@@ -386,9 +406,13 @@ const Layout = ({
           ...item,
           label: inboxLabel,
         };
-      }),
-    [inboxCount]
-  );
+      });
+
+    return {
+      primary: mapItems(NAVIGATION_ITEMS.primary),
+      contextual: mapItems(NAVIGATION_ITEMS.contextual),
+    };
+  }, [inboxCount]);
 
   const stageList = onboarding?.stages ?? [];
 

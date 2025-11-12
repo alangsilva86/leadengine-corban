@@ -18,16 +18,18 @@ import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstance
 
 type OnboardingPage =
   | 'dashboard'
+  | 'channels'
   | 'agreements'
-  | 'whatsapp'
   | 'inbox'
   | 'reports'
   | 'settings'
   | 'baileys-logs'
   | 'whatsapp-debug';
 
+type StoredOnboardingPage = OnboardingPage | 'whatsapp';
+
 type JourneyStage = {
-  id: 'dashboard' | 'agreements' | 'whatsapp' | 'inbox';
+  id: 'dashboard' | 'channels' | 'agreements' | 'inbox';
   label: string;
 };
 
@@ -44,15 +46,16 @@ type OnboardingAgreement = {
   [key: string]: unknown;
 };
 
-const ONBOARDING_PAGES: readonly OnboardingPage[] = [
+const ONBOARDING_PAGES: readonly StoredOnboardingPage[] = [
   'dashboard',
+  'channels',
   'agreements',
-  'whatsapp',
   'inbox',
   'reports',
   'settings',
   'baileys-logs',
   'whatsapp-debug',
+  'whatsapp',
 ];
 
 const Dashboard = lazy(() => import('../../components/Dashboard.jsx'));
@@ -73,27 +76,48 @@ const shouldEnableWhatsappDebug = frontendFeatureFlags.whatsappDebug;
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
-const journeyStages: JourneyStage[] = [
+const normalizePage = (page?: StoredOnboardingPage | null): OnboardingPage => {
+  if (!page) {
+    return 'dashboard';
+  }
+
+  if (page === 'whatsapp') {
+    return 'channels';
+  }
+
+  return page as OnboardingPage;
+};
+
+const BASE_JOURNEY_STAGES: JourneyStage[] = [
   { id: 'dashboard', label: 'Visão Geral' },
-  { id: 'agreements', label: 'Convênios' },
-  { id: 'whatsapp', label: 'WhatsApp' },
+  { id: 'channels', label: 'Instâncias & Canais' },
   { id: 'inbox', label: 'Inbox' },
 ];
 
-export function useOnboardingJourney() {
-  const [currentPage, setCurrentPage] = useState<OnboardingPage>('dashboard');
+const AGREEMENTS_STAGE: JourneyStage = { id: 'agreements', label: 'Convênios' };
+
+type UseOnboardingJourneyOptions = {
+  initialPage?: StoredOnboardingPage | null;
+};
+
+export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
+  const normalizedInitialPage = normalizePage(options?.initialPage ?? null);
+  const [currentPage, setCurrentPage] = useState<OnboardingPage>(normalizedInitialPage);
   const [selectedAgreement, setSelectedAgreement] = useState<OnboardingAgreement | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<string>('disconnected');
   const [activeCampaign, setActiveCampaign] = useState<Record<string, unknown> | null>(null);
   const [me, setMe] = useState<CurrentUserLike | null>(null);
   const [loadingCurrentUser, setLoadingCurrentUser] = useState<boolean>(true);
 
+  const debugDisabled = !WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug;
+  const shouldRestorePage = options?.initialPage == null;
+
   const safeCurrentPage = useMemo<OnboardingPage>(() => {
-    if (!WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug && currentPage === 'whatsapp-debug') {
+    if (debugDisabled && currentPage === 'whatsapp-debug') {
       return 'dashboard';
     }
     return currentPage;
-  }, [currentPage, shouldEnableWhatsappDebug]);
+  }, [currentPage, debugDisabled]);
 
   const loadCurrentUser = useCallback(
     async (signal?: AbortSignal) => {
@@ -133,23 +157,26 @@ export function useOnboardingJourney() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const persisted = JSON.parse(raw);
-      const restoredPage = persisted.currentPage || 'dashboard';
-      if (!WHATSAPP_DEBUG_ENABLED && restoredPage === 'whatsapp-debug') {
-        setCurrentPage('dashboard');
-      } else {
-        setCurrentPage(restoredPage);
+      const restoredPage = normalizePage(persisted.currentPage as StoredOnboardingPage | null);
+      const safeRestoredPage = debugDisabled && restoredPage === 'whatsapp-debug' ? 'dashboard' : restoredPage;
+
+      if (shouldRestorePage) {
+        setCurrentPage(safeRestoredPage);
+      } else if (debugDisabled) {
+        setCurrentPage((prev) => (prev === 'whatsapp-debug' ? 'dashboard' : prev));
       }
+
       setSelectedAgreement(persisted.selectedAgreement || null);
       setWhatsappStatus(persisted.whatsappStatus || 'disconnected');
       setActiveCampaign(persisted.activeCampaign || null);
     } catch (error) {
       console.warn('Failed to restore onboarding state', error);
     }
-  }, []);
+  }, [debugDisabled, shouldRestorePage]);
 
   useEffect(() => {
     const payload = {
-      currentPage,
+      currentPage: safeCurrentPage,
       selectedAgreement,
       whatsappStatus,
       activeCampaign,
@@ -161,7 +188,7 @@ export function useOnboardingJourney() {
     } catch (error) {
       console.warn('Failed to persist onboarding state', error);
     }
-  }, [currentPage, selectedAgreement, whatsappStatus, activeCampaign]);
+  }, [safeCurrentPage, selectedAgreement, whatsappStatus, activeCampaign]);
 
   useEffect(() => {
     const handleExternalNavigation = (event: Event) => {
@@ -175,11 +202,16 @@ export function useOnboardingJourney() {
         return;
       }
 
-      if (!ONBOARDING_PAGES.includes(targetPage as OnboardingPage)) {
+      if (!ONBOARDING_PAGES.includes(targetPage as StoredOnboardingPage)) {
         return;
       }
 
-      setCurrentPage(targetPage as OnboardingPage);
+      const normalizedTarget = normalizePage(targetPage as StoredOnboardingPage);
+      if (normalizedTarget === 'whatsapp-debug' && debugDisabled) {
+        return;
+      }
+
+      setCurrentPage(normalizedTarget);
     };
 
     if (typeof window !== 'undefined') {
@@ -191,14 +223,14 @@ export function useOnboardingJourney() {
         window.removeEventListener('leadengine:navigate', handleExternalNavigation);
       }
     };
-  }, []);
+  }, [debugDisabled]);
 
   const onboardingStages = useMemo<JourneyStage[]>(() => {
     if (selectedAgreement || currentPage === 'agreements') {
-      return journeyStages;
+      return [BASE_JOURNEY_STAGES[0], AGREEMENTS_STAGE, ...BASE_JOURNEY_STAGES.slice(1)];
     }
 
-    return journeyStages.filter((stage) => stage.id !== 'agreements');
+    return [...BASE_JOURNEY_STAGES];
   }, [currentPage, selectedAgreement]);
 
   const activeStep = useMemo<number>(() => {
@@ -252,18 +284,20 @@ export function useOnboardingJourney() {
       return 'inbox';
     }
 
-    return 'whatsapp';
+    return 'channels';
   }, [whatsappStatus]);
 
   const handleNavigate = useCallback(
-    (nextPage: OnboardingPage) => {
-      if (nextPage === 'whatsapp-debug' && !WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug) {
+    (nextPage: StoredOnboardingPage) => {
+      const normalizedPage = normalizePage(nextPage);
+
+      if (normalizedPage === 'whatsapp-debug' && debugDisabled) {
         return;
       }
 
-      setCurrentPage(nextPage);
+      setCurrentPage(normalizedPage);
     },
-    [shouldEnableWhatsappDebug]
+    [debugDisabled]
   );
 
   const renderPage = useCallback((): ReactNode => {
@@ -292,9 +326,10 @@ export function useOnboardingJourney() {
           onSelect: (agreement: OnboardingAgreement) => {
             setSelectedAgreement(agreement);
             setActiveCampaign(null);
-            setCurrentPage('whatsapp');
+            setCurrentPage('channels');
           },
         });
+      case 'channels':
       case 'whatsapp': {
         const providerProps = {
           key:

@@ -125,17 +125,17 @@ describe('App onboarding journey', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,whatsapp,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,channels,inbox')
     );
 
     const startButton = await screen.findByRole('button', { name: /começar/i });
     await userEvent.click(startButton);
 
-    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'whatsapp'));
+    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'channels'));
     expect(await screen.findByTestId('whatsapp-page')).toBeInTheDocument();
 
     const latestLayout = getLatestLayoutCall();
-    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['dashboard', 'whatsapp', 'inbox']);
+    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['dashboard', 'channels', 'inbox']);
     expect(latestLayout?.activeStep).toBe(1);
   });
 
@@ -159,7 +159,7 @@ describe('App onboarding journey', () => {
     expect(await screen.findByTestId('inbox-page')).toBeInTheDocument();
 
     const latestLayout = getLatestLayoutCall();
-    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['dashboard', 'whatsapp', 'inbox']);
+    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['dashboard', 'channels', 'inbox']);
     expect(latestLayout?.activeStep).toBe(2);
   });
 
@@ -177,19 +177,19 @@ describe('App onboarding journey', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,agreements,whatsapp,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,agreements,channels,inbox')
     );
 
     const startButton = await screen.findByRole('button', { name: /começar/i });
     await userEvent.click(startButton);
 
-    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'whatsapp'));
+    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'channels'));
 
     const latestLayout = getLatestLayoutCall();
     expect(latestLayout?.stages.map((stage) => stage.id)).toEqual([
       'dashboard',
       'agreements',
-      'whatsapp',
+      'channels',
       'inbox',
     ]);
     expect(latestLayout?.activeStep).toBe(2);
@@ -202,7 +202,7 @@ describe('App onboarding journey', () => {
     await userEvent.click(goAgreements);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,agreements,whatsapp,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,agreements,channels,inbox')
     );
     expect(await screen.findByTestId('agreements-page')).toBeInTheDocument();
 
@@ -210,7 +210,7 @@ describe('App onboarding journey', () => {
     expect(latestLayout?.stages.map((stage) => stage.id)).toEqual([
       'dashboard',
       'agreements',
-      'whatsapp',
+      'channels',
       'inbox',
     ]);
     expect(latestLayout?.activeStep).toBe(1);
