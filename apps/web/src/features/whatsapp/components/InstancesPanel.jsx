@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button.jsx';
-import { Card } from '@/components/ui/card.jsx';
+
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer.jsx';
 import { cn } from '@/lib/utils.js';
 import { formatMetricValue, formatTimestampLabel } from '../lib/formatting';
@@ -171,7 +171,7 @@ const buildSearchBlob = (viewModel, provider) => {
 };
 
 const InstancesPanel = ({
-  surfaceStyles,
+  surfaceStyles: _surfaceStyles,
   selectedInstance,
   selectedInstanceStatusInfo,
   selectedInstancePhone,
@@ -202,6 +202,10 @@ const InstancesPanel = ({
   statusCodeMeta,
   onViewLogs,
   onRenameInstance,
+  qrStatusMessage,
+  countdownMessage,
+  canContinue,
+  canCreateCampaigns,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -365,77 +369,118 @@ const InstancesPanel = ({
       }
     : null;
 
-  const handleClearFilters = () => setSearchTerm('');
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setHealthFilter('all');
+    setProviderFilter('all');
+  };
+
+  const filtersApplied = useMemo(() => {
+    let count = 0;
+    if (searchTerm.trim()) count += 1;
+    if (statusFilter !== 'all') count += 1;
+    if (healthFilter !== 'all') count += 1;
+    if (providerFilter !== 'all') count += 1;
+    return count;
+  }, [healthFilter, providerFilter, searchTerm, statusFilter]);
+
+  const selectedInstanceHealthy = Boolean(
+    selectedInstance && (localStatus === 'connected' || selectedInstanceStatusInfo?.variant === 'success'),
+  );
+
+  const journeySteps = [
+    { key: 'instances', label: '1. Instâncias', status: 'current' },
+    {
+      key: 'campaigns',
+      label: '2. Campanhas',
+      status: selectedInstanceHealthy || canCreateCampaigns ? 'ready' : 'upcoming',
+    },
+    {
+      key: 'inbox',
+      label: '3. Inbox',
+      status: canContinue ? 'ready' : 'upcoming',
+    },
+  ];
 
   return (
     <section className="space-y-6">
-      <Card className="space-y-6 border border-slate-800/60 bg-slate-950/80 p-6">
-        <SelectedInstanceBanner
-          copy={copy}
-          summary={summary}
-          selectedInstance={selectedInstance}
-          selectedInstanceStatusInfo={selectedInstanceStatusInfo}
-          selectedInstancePhone={selectedInstancePhone}
-          instancesCountLabel={instancesCountLabel}
-          confirmLabel={confirmLabel}
-          confirmDisabled={confirmDisabled}
-          onConfirm={onConfirm}
-          onMarkConnected={onMarkConnected}
-          localStatus={localStatus}
-          onRefresh={onRefresh}
-          onCreateInstance={onCreateInstance}
-          onViewLogs={onViewLogs}
-          loadingInstances={loadingInstances}
-          isAuthenticated={isAuthenticated}
-        />
-        <InstanceFiltersBar
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          statusOptions={STATUS_FILTERS}
-          healthFilter={healthFilter}
-          onHealthFilterChange={setHealthFilter}
-          healthOptions={HEALTH_FILTERS}
-          providerFilter={providerFilter}
-          onProviderFilterChange={setProviderFilter}
-          providerOptions={providerOptions}
-          sortBy={sortBy}
-          onSortByChange={setSortBy}
-          sortOptions={SORT_OPTIONS}
-          activeInstances={activeInstances}
-          totalInstances={summary.total}
-        />
-        {showFilterNotice ? (
-          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
-            Mostrando apenas instâncias conectadas. Utilize os filtros para incluir sessões desconectadas.
-          </div>
-        ) : null}
-      </Card>
-
-      <InstanceGrid
-        instancesReady={instancesReady}
-        filteredInstances={filteredInstances}
-        statusCodeMeta={statusCodeMeta}
-        isBusy={isBusy}
-        isAuthenticated={isAuthenticated}
-        deletingInstanceId={deletingInstanceId}
-        hasRenderableInstances={hasRenderableInstances}
-        hasHiddenInstances={hasHiddenInstances}
-        zeroInstances={zeroInstances}
-        onShowAll={onShowAll}
+      <SelectedInstanceBanner
+        copy={copy}
+        summary={summary}
+        selectedInstance={selectedInstance}
+        selectedInstanceStatusInfo={selectedInstanceStatusInfo}
+        selectedInstancePhone={selectedInstancePhone}
+        instancesCountLabel={instancesCountLabel}
+        confirmLabel={confirmLabel}
+        confirmDisabled={confirmDisabled}
+        onConfirm={onConfirm}
+        onMarkConnected={onMarkConnected}
+        localStatus={localStatus}
+        onRefresh={onRefresh}
         onCreateInstance={onCreateInstance}
-        onSelectInstance={onSelectInstance}
-        onViewQr={onViewQr}
-        onRequestDelete={onRequestDelete}
-        onOpenStatusDrawer={setStatusDrawerTarget}
-        onOpenHealthDrawer={setHealthDrawerTarget}
-        onRenameInstance={onRenameInstance}
         onViewLogs={onViewLogs}
-        highQueue={highQueue}
-        allDisconnected={allDisconnected}
-        onClearFilters={handleClearFilters}
+        loadingInstances={loadingInstances}
+        isAuthenticated={isAuthenticated}
+        qrStatusMessage={qrStatusMessage}
+        countdownMessage={countdownMessage}
+        journeySteps={journeySteps}
+        canContinue={canContinue}
       />
+
+      <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_16px_50px_rgba(15,23,42,0.45)]">
+        <div className="space-y-6">
+          <InstanceFiltersBar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            statusOptions={STATUS_FILTERS}
+            healthFilter={healthFilter}
+            onHealthFilterChange={setHealthFilter}
+            healthOptions={HEALTH_FILTERS}
+            providerFilter={providerFilter}
+            onProviderFilterChange={setProviderFilter}
+            providerOptions={providerOptions}
+            sortBy={sortBy}
+            onSortByChange={setSortBy}
+            sortOptions={SORT_OPTIONS}
+            activeInstances={activeInstances}
+            totalInstances={summary.total}
+            filtersApplied={filtersApplied}
+            onClearFilters={handleClearFilters}
+          />
+          {showFilterNotice ? (
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+              Mostrando apenas instâncias conectadas. Utilize os filtros para incluir sessões desconectadas.
+            </div>
+          ) : null}
+
+          <InstanceGrid
+            instancesReady={instancesReady}
+            filteredInstances={filteredInstances}
+            statusCodeMeta={statusCodeMeta}
+            isBusy={isBusy}
+            isAuthenticated={isAuthenticated}
+            deletingInstanceId={deletingInstanceId}
+            hasRenderableInstances={hasRenderableInstances}
+            hasHiddenInstances={hasHiddenInstances}
+            zeroInstances={zeroInstances}
+            onShowAll={onShowAll}
+            onCreateInstance={onCreateInstance}
+            onSelectInstance={onSelectInstance}
+            onViewQr={onViewQr}
+            onRequestDelete={onRequestDelete}
+            onOpenStatusDrawer={setStatusDrawerTarget}
+            onOpenHealthDrawer={setHealthDrawerTarget}
+            onRenameInstance={onRenameInstance}
+            onViewLogs={onViewLogs}
+            highQueue={highQueue}
+            allDisconnected={allDisconnected}
+            onClearFilters={handleClearFilters}
+          />
+        </div>
+      </div>
 
       {errorState ? (
         <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">

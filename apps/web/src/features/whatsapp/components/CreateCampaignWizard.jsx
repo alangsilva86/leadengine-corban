@@ -191,6 +191,8 @@ const CreateCampaignWizard = ({
   onSubmit,
   onCancel,
   onSubmittingChange,
+  onStepChange,
+  onSelectionChange,
 }) => {
   const { agreements, isLoading: agreementsLoading, error: agreementsError, retry } = useAgreements();
   const [stepIndex, setStepIndex] = useState(0);
@@ -289,6 +291,15 @@ const CreateCampaignWizard = ({
   const allowedProducts = useMemo(() => collectAllowedProducts(selectedAgreement), [selectedAgreement]);
 
   useEffect(() => {
+    onSelectionChange?.({
+      instance: selectedInstance,
+      agreement: selectedAgreement,
+      product: selectedProduct,
+      strategy: selectedStrategy,
+    });
+  }, [onSelectionChange, selectedAgreement, selectedInstance, selectedProduct, selectedStrategy]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
@@ -350,6 +361,10 @@ const CreateCampaignWizard = ({
     });
     return statuses;
   }, [stepIndex, stepValidation]);
+
+  useEffect(() => {
+    onStepChange?.({ index: stepIndex, step: currentStep, statuses: stepStatuses });
+  }, [currentStep, onStepChange, stepIndex, stepStatuses]);
 
   const handleInstanceChange = (value) => {
     setFormState((prev) => ({ ...prev, instanceId: value }));
@@ -978,6 +993,41 @@ const CreateCampaignWizard = ({
       : null;
   const isAdvanceDisabled = Boolean(advanceDisabledReason) || isSubmitting;
 
+  const instancePhoneLabel =
+    selectedInstance?.phoneLabel || selectedInstance?.formattedPhone || selectedInstance?.phone || '—';
+  const instanceStatusLabel = selectedInstance?.connected ? 'Saudável' : 'Conectar';
+  const instanceStatusTone = selectedInstance?.connected
+    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
+    : 'bg-amber-500/10 text-amber-200 border border-amber-500/40';
+
+  const SummaryPanel = ({ className = '' }) => (
+    <div className={cn('rounded-2xl border border-slate-800/60 bg-slate-950/70 p-4 shadow-inner', className)}>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância escolhida</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-foreground">{formatInstanceLabel(selectedInstance) || 'Selecione uma instância'}</span>
+        <span className={cn('rounded-full px-2.5 py-0.5 text-[0.65rem] font-medium uppercase', instanceStatusTone)}>
+          {instanceStatusLabel}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">Telefone: {instancePhoneLabel}</p>
+      {selectedAgreement ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Origem: <span className="font-medium text-foreground">{formatAgreementLabel(selectedAgreement)}</span>
+        </p>
+      ) : null}
+      {selectedProduct ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Produto: <span className="font-medium text-foreground">{selectedProduct.label}</span>
+        </p>
+      ) : null}
+      {selectedStrategy ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Estratégia: <span className="font-medium text-foreground">{selectedStrategy.title}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+
   return (
     <div className="flex h-[70vh] flex-col overflow-hidden md:h-[80vh] md:flex-row">
       <aside className="border-b border-border/60 bg-muted/5 px-6 py-4 md:flex md:w-64 md:flex-shrink-0 md:flex-col md:gap-6 md:border-b-0 md:border-r md:bg-background/60 md:px-5 md:py-6">
@@ -1058,9 +1108,15 @@ const CreateCampaignWizard = ({
             );
           })}
         </ol>
+        <div className="hidden md:block">
+          <SummaryPanel />
+        </div>
       </aside>
       <section className="relative flex flex-1 flex-col bg-background">
         <div className="flex-1 overflow-y-auto px-6 pb-28 pt-4 md:px-8 md:pb-36 md:pt-6">
+          <div className="mb-4 md:hidden">
+            <SummaryPanel />
+          </div>
           <div className="space-y-6">
             {renderStepContent()}
             {stepError ? (
@@ -1121,3 +1177,4 @@ const CreateCampaignWizard = ({
 };
 
 export default CreateCampaignWizard;
+export { STEP_SEQUENCE };
