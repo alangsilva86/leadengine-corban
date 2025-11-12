@@ -59,7 +59,9 @@ export const createCampaignSchema = z
         }
         return value;
       }, z.number({ required_error: 'Informe a margem desejada.' }))
-      .positive('Informe a margem desejada.'),
+      .refine((value) => (typeof value === 'number' ? value > 0 : false), {
+        message: 'Informe a margem desejada.',
+      }),
     strategy: z
       .string({ required_error: 'Selecione a estratégia operacional.' })
       .trim()
