@@ -22,9 +22,11 @@ const dispatchGlobalNavigation = (targetPage) => {
   window.dispatchEvent(event);
 };
 
-const OnboardingRoute = () => {
+const OnboardingRoute = ({ initialPage }) => {
   const navigate = useNavigate();
-  const { safeCurrentPage, onboarding, handleNavigate, renderPage } = useOnboardingJourney();
+  const { safeCurrentPage, onboarding, handleNavigate, renderPage } = useOnboardingJourney({
+    initialPage,
+  });
 
   const handleRouteNavigate = useCallback(
     (nextPage) => {
@@ -37,6 +39,20 @@ const OnboardingRoute = () => {
       if (nextPage === 'crm') {
         dispatchGlobalNavigation(nextPage);
         navigate('/crm');
+        return;
+      }
+
+      if (nextPage === 'channels') {
+        dispatchGlobalNavigation(nextPage);
+        handleNavigate(nextPage);
+        navigate('/channels');
+        return;
+      }
+
+      if (nextPage === 'dashboard') {
+        dispatchGlobalNavigation(nextPage);
+        handleNavigate(nextPage);
+        navigate('/');
         return;
       }
 
@@ -72,7 +88,11 @@ const CrmBoundary = () => (
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <OnboardingRoute />,
+    element: <OnboardingRoute initialPage={null} />,
+  },
+  {
+    path: '/channels',
+    element: <OnboardingRoute initialPage="channels" />,
   },
   {
     path: '/contacts/*',

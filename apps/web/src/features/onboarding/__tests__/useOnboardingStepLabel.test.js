@@ -8,7 +8,7 @@ describe('useOnboardingStepLabel', () => {
   const stages = [
     { id: 'dashboard', label: 'Visão Geral' },
     { id: 'agreements', label: 'Convênios' },
-    { id: 'whatsapp', label: 'WhatsApp' },
+    { id: 'channels', label: 'Instâncias & Canais' },
     { id: 'inbox', label: 'Inbox' },
   ];
 
@@ -17,25 +17,25 @@ describe('useOnboardingStepLabel', () => {
       useOnboardingStepLabel({
         stages,
         targetStageId: 'agreements',
-        fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'WhatsApp' },
+        fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'Instâncias & Canais' },
       })
     );
 
     expect(result.current.stepLabel).toBe('Passo 2 de 4');
-    expect(result.current.nextStage).toBe('WhatsApp');
+    expect(result.current.nextStage).toBe('Instâncias & Canais');
   });
 
   it('returns fallback values when stages are unavailable', () => {
     const { result } = renderHook(() =>
       useOnboardingStepLabel({
         stages: null,
-        targetStageId: 'whatsapp',
-        fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
+        targetStageId: 'channels',
+        fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'Inbox' },
       })
     );
 
-    expect(result.current.stepLabel).toBe('Passo 3');
-    expect(result.current.nextStage).toBe('Inbox de Leads');
+    expect(result.current.stepLabel).toBe('Passo 2');
+    expect(result.current.nextStage).toBe('Inbox');
   });
 
   it('falls back to first stage label when target is missing', () => {

@@ -427,8 +427,8 @@ const useWhatsAppConnect = ({
 
   const { stepLabel, nextStage } = useOnboardingStepLabel({
     stages: onboarding?.stages,
-    targetStageId: 'whatsapp',
-    fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Inbox de Leads' },
+    targetStageId: 'channels',
+    fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'Inbox' },
   });
 
   const copy = statusCopyData ?? STATUS_COPY.disconnected;

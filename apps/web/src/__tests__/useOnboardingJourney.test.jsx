@@ -47,7 +47,7 @@ describe('useOnboardingJourney', () => {
 
   it('restores onboarding state from storage and persists updates', async () => {
     const persistedState = {
-      currentPage: 'agreements',
+      currentPage: 'whatsapp',
       selectedAgreement: { id: 'agreement-1', name: 'Mock Agreement' },
       whatsappStatus: 'connected',
       activeCampaign: { id: 'campaign-1' },
@@ -61,17 +61,23 @@ describe('useOnboardingJourney', () => {
       expect(result.current.onboarding.selectedAgreement).toEqual(persistedState.selectedAgreement)
     );
 
-    expect(result.current.safeCurrentPage).toBe('agreements');
+    expect(result.current.safeCurrentPage).toBe('channels');
     expect(result.current.onboarding.whatsappStatus).toBe('connected');
     expect(result.current.computeNextSetupPage()).toBe('inbox');
+    expect(result.current.onboarding.stages.map((stage) => stage.id)).toEqual([
+      'dashboard',
+      'agreements',
+      'channels',
+      'inbox',
+    ]);
 
     act(() => {
-      result.current.handleNavigate('whatsapp');
+      result.current.handleNavigate('channels');
     });
 
     await waitFor(() => {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      expect(stored.currentPage).toBe('whatsapp');
+      expect(stored.currentPage).toBe('channels');
     });
   });
 
