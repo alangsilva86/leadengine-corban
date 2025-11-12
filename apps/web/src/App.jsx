@@ -49,6 +49,13 @@ const OnboardingRoute = ({ initialPage }) => {
         return;
       }
 
+      if (nextPage === 'campaigns') {
+        dispatchGlobalNavigation(nextPage);
+        handleNavigate(nextPage);
+        navigate('/campaigns');
+        return;
+      }
+
       if (nextPage === 'dashboard') {
         dispatchGlobalNavigation(nextPage);
         handleNavigate(nextPage);
@@ -93,6 +100,10 @@ const router = createBrowserRouter([
   {
     path: '/channels',
     element: <OnboardingRoute initialPage="channels" />,
+  },
+  {
+    path: '/campaigns',
+    element: <OnboardingRoute initialPage="campaigns" />,
   },
   {
     path: '/contacts/*',

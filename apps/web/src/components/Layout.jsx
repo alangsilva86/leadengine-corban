@@ -7,6 +7,7 @@ import {
   Layers,
   QrCode,
   MessageSquare,
+  Megaphone,
   BarChart3,
   Settings,
   Ticket,
@@ -55,6 +56,7 @@ const NAVIGATION_ITEMS = (() => {
   const primary = [
     { id: 'dashboard', label: 'Visão Geral', icon: Home },
     { id: 'channels', label: 'Instâncias & Canais', icon: QrCode },
+    { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
   ];
 
   const contextual = [

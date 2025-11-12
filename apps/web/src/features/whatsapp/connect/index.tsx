@@ -15,17 +15,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.jsx';
-import NoticeBanner from '@/components/ui/notice-banner.jsx';
-import { AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 
 import useWhatsAppConnect from './useWhatsAppConnect';
 
 const InstancesPanel = lazy(() => import('../components/InstancesPanel.jsx'));
 const CreateInstanceDialog = lazy(() => import('../components/CreateInstanceDialog.jsx'));
-const CreateCampaignDialog = lazy(() => import('../components/CreateCampaignDialog.jsx'));
-const ReassignCampaignDialog = lazy(() => import('../components/ReassignCampaignDialog.jsx'));
 const QrPreview = lazy(() => import('../components/QrPreview.jsx'));
-const CampaignManager = lazy(() => import('./CampaignManager'));
 const QrFlow = lazy(() => import('./QrFlow'));
 
 const SectionFallback = () => (
@@ -68,18 +64,8 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     handleRefreshInstances,
     handleCreateInstance,
     submitCreateInstance,
-    createCampaign,
-    updateCampaignStatus,
-    deleteCampaign,
-    reassignCampaign,
-    campaigns,
-    campaignsLoading,
-    campaignError,
-    campaignAction,
     campaign,
-    persistentWarning,
     setShowAllInstances,
-    canCreateCampaigns,
     setQrPanelOpen,
     setQrDialogOpen,
     pairingPhoneInput,
@@ -109,20 +95,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     showAllInstances,
     handleRetry,
     setCreateInstanceOpen,
-    setCreateCampaignOpen,
     isCreateInstanceOpen,
-    isCreateCampaignOpen,
-    renderInstances,
-    setPendingReassign,
-    pendingReassign,
-    setReassignIntent,
-    reassignIntent,
-    fetchCampaignImpact,
-    agreementName,
     nextStage,
     stepLabel,
     onboardingDescription,
-    reloadCampaigns,
   } = useWhatsAppConnect(props);
 
   const instanceHealth = useMemo(() => {
@@ -233,15 +209,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         </div>
       </header>
 
-      {persistentWarning ? (
-        <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
-          <p>{persistentWarning}</p>
-          <p className="text-xs text-amber-200/80">
-            Os leads continuam chegando normalmente; campanhas ajudam apenas no roteamento avançado e podem ser criadas quando achar necessário.
-          </p>
-        </NoticeBanner>
-      ) : null}
-
       <Suspense fallback={<SectionFallback />}>
         <InstancesPanel
           surfaceStyles={surfaceStyles}
@@ -308,32 +275,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         />
       </Suspense>
 
-      <Suspense fallback={<SectionFallback />}>
-        <CampaignManager
-          agreementName={agreementName ?? null}
-          campaigns={campaigns}
-          loading={campaignsLoading}
-          error={campaignError}
-          onRefresh={() => void reloadCampaigns()}
-          onCreateClick={() => setCreateCampaignOpen(true)}
-          onPause={(target) => void updateCampaignStatus(target, 'paused')}
-          onActivate={(target) => void updateCampaignStatus(target, 'active')}
-          onDelete={(target) => void deleteCampaign(target)}
-          onReassign={(target) => {
-            setPendingReassign(target);
-            setReassignIntent('reassign');
-          }}
-          onDisconnect={(target) => {
-            setPendingReassign(target);
-            setReassignIntent('disconnect');
-          }}
-          actionState={campaignAction}
-          selectedInstanceId={selectedInstance?.id ?? null}
-          canCreateCampaigns={canCreateCampaigns}
-          selectedAgreementId={selectedAgreement?.id ?? null}
-        />
-      </Suspense>
-
       <footer className="flex flex-wrap items-center justify-end gap-2">
         <Button size="sm" variant="secondary" onClick={onContinue} disabled={confirmDisabled}>
           {confirmDisabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
@@ -347,40 +288,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           onOpenChange={setCreateInstanceOpen}
           defaultName={defaultInstanceName}
           onSubmit={submitCreateInstance}
-        />
-      </Suspense>
-
-      <Suspense fallback={<DialogFallback />}>
-        <CreateCampaignDialog
-          open={isCreateCampaignOpen}
-          onOpenChange={setCreateCampaignOpen}
-          agreement={selectedAgreement}
-          instances={renderInstances}
-          defaultInstanceId={selectedInstance?.id ?? undefined}
-          onSubmit={createCampaign}
-        />
-      </Suspense>
-
-      <Suspense fallback={<DialogFallback />}>
-        <ReassignCampaignDialog
-          open={Boolean(pendingReassign)}
-          onClose={(value) => {
-            if (!value) {
-              setPendingReassign(null);
-            }
-          }}
-          campaign={pendingReassign}
-          instances={renderInstances}
-          fetchImpact={fetchCampaignImpact}
-          intent={reassignIntent}
-          onSubmit={async ({ instanceId }) => {
-            if (!pendingReassign) {
-              return;
-            }
-            const targetInstance = reassignIntent === 'disconnect' ? null : instanceId ?? null;
-            await reassignCampaign(pendingReassign, targetInstance);
-            setPendingReassign(null);
-          }}
         />
       </Suspense>
 
