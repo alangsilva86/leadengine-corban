@@ -28,19 +28,31 @@ const STATUS_OPTIONS = [
 ];
 
 const STEP_SEQUENCE = [
-  { key: 'instance', title: 'Instância', description: 'Escolha a instância conectada que receberá os leads.' },
+  {
+    key: 'instance',
+    title: 'Instância',
+    description: 'Escolha a instância conectada que receberá os leads automaticamente.',
+  },
   {
     key: 'agreement',
     title: 'Origem dos leads',
-    description: 'Selecione o convênio, parceiro ou carteira que identifica a origem dos leads.',
+    description: 'Selecione o convênio, parceiro ou carteira vinculado à instância escolhida.',
   },
   {
     key: 'product',
     title: 'Produto e margem',
-    description: 'Informe o produto trabalhado e a margem desejada para calibrar metas.',
+    description: 'Defina o produto trabalhado e a margem para calibrar metas financeiras.',
   },
-  { key: 'strategy', title: 'Estratégia', description: 'Selecione a estratégia operacional da campanha.' },
-  { key: 'review', title: 'Revisão', description: 'Revise as informações antes de criar a campanha.' },
+  {
+    key: 'strategy',
+    title: 'Estratégia',
+    description: 'Escolha a estratégia alinhada ao produto, margem e origem definidos.',
+  },
+  {
+    key: 'review',
+    title: 'Revisão',
+    description: 'Confira os dados, ajuste o que for necessário e finalize a campanha.',
+  },
 ];
 
 const formatInstanceLabel = (instance) => {
@@ -137,6 +149,9 @@ const CreateCampaignWizard = ({
     [sortedInstances],
   );
 
+  const hasInstances = sortedInstances.length > 0;
+  const hasConnectedInstances = connectedInstances.length > 0;
+
   useEffect(() => {
     if (!open) {
       return;
@@ -228,6 +243,15 @@ const CreateCampaignWizard = ({
   const handleNameChange = (event) => {
     setFormState((prev) => ({ ...prev, name: event.target.value }));
     setNameDirty(true);
+  };
+
+  const goToStep = (targetIndex) => {
+    if (targetIndex < 0 || targetIndex >= STEP_SEQUENCE.length) {
+      return;
+    }
+    setStepError(null);
+    setSubmitError(null);
+    setStepIndex(targetIndex);
   };
 
   const goToPreviousStep = () => {
@@ -341,7 +365,9 @@ const CreateCampaignWizard = ({
                       <div className="flex flex-col">
                         <span className="font-medium">{formatInstanceLabel(instance)}</span>
                         <span className="text-xs text-muted-foreground">
-                          {instance.connected ? 'Conectada' : 'Desconectada'}
+                          {instance.connected
+                            ? 'Conectada e pronta para receber leads.'
+                            : 'Desconectada: conecte para habilitar o roteamento automático.'}
                         </span>
                       </div>
                     </SelectItem>
@@ -349,8 +375,20 @@ const CreateCampaignWizard = ({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Apenas instâncias conectadas entregam leads automaticamente. Selecione uma instância conectada para continuar.
+                Apenas instâncias conectadas entregam leads automaticamente. Essa escolha desbloqueia as origens comerciais do
+                próximo passo.
               </p>
+              {!hasInstances ? (
+                <p className="text-xs text-destructive">
+                  Nenhuma instância foi encontrada. Conecte um número de WhatsApp no painel de instâncias para avançar.
+                </p>
+              ) : null}
+              {hasInstances && !hasConnectedInstances ? (
+                <p className="text-xs text-amber-600">
+                  Você possui instâncias cadastradas, porém nenhuma conectada. Conclua a conexão para ativar o roteamento de
+                  leads.
+                </p>
+              ) : null}
             </div>
           </div>
         );
@@ -385,8 +423,17 @@ const CreateCampaignWizard = ({
                 </div>
               ) : null}
               <p className="text-xs text-muted-foreground">
+                A lista considera as origens vinculadas à instância escolhida no passo anterior. Ajuste a instância caso não
+                encontre o convênio desejado.
+              </p>
+              <p className="text-xs text-muted-foreground">
                 A origem selecionada será usada para identificar os leads gerados por esta campanha.
               </p>
+              {agreements.length === 0 && !agreementsLoading ? (
+                <p className="text-xs text-amber-600">
+                  Nenhum convênio disponível para a instância atual. Vincule uma origem comercial para liberar este passo.
+                </p>
+              ) : null}
             </div>
           </div>
         );
@@ -410,6 +457,10 @@ const CreateCampaignWizard = ({
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                A definição do produto guia as recomendações de estratégia no passo seguinte e ajuda na comunicação com o
+                time comercial.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -422,7 +473,8 @@ const CreateCampaignWizard = ({
                 placeholder="1,5"
               />
               <p className="text-xs text-muted-foreground">
-                A margem ajuda a calibrar metas de CPL e acompanhar a performance financeira da campanha.
+                A margem ajuda a calibrar metas de CPL e acompanhar a performance financeira da campanha e será destacada no
+                resumo final.
               </p>
             </div>
           </div>
@@ -431,6 +483,10 @@ const CreateCampaignWizard = ({
         return (
           <div className="space-y-4">
             <Label>Estratégia operacional</Label>
+            <p className="text-xs text-muted-foreground">
+              Considere o produto {selectedProduct ? `"${selectedProduct.label}"` : 'definido'} e a margem alvo de{' '}
+              {formState.margin || '—'}% para escolher a abordagem que melhor distribui os leads.
+            </p>
             <div className="grid gap-3 md:grid-cols-3">
               {WHATSAPP_CAMPAIGN_STRATEGIES.map((option) => {
                 const isSelected = formState.strategy === option.value;
@@ -439,8 +495,9 @@ const CreateCampaignWizard = ({
                     type="button"
                     key={option.value}
                     onClick={() => handleStrategyChange(option.value)}
-                    className={`rounded-lg border p-4 text-left transition hover:border-primary/50 ${
-                      isSelected ? 'border-primary bg-primary/10 ring-2 ring-primary/40' : 'border-border/60'
+                    aria-pressed={isSelected}
+                    className={`rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 hover:border-primary/50 ${
+                      isSelected ? 'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/40' : 'border-border/60'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -452,6 +509,9 @@ const CreateCampaignWizard = ({
                 );
               })}
             </div>
+            <p className="text-xs text-muted-foreground">
+              A estratégia escolhida define como os leads serão distribuídos e impacta as recomendações na etapa de revisão.
+            </p>
           </div>
         );
       case 'review':
@@ -465,6 +525,10 @@ const CreateCampaignWizard = ({
                 onChange={handleNameChange}
                 placeholder="Convênio • Produto • Instância"
               />
+              <p className="text-xs text-muted-foreground">
+                Utilize um nome que facilite a identificação rápida no painel de campanhas. Você pode editar novamente sempre
+                que precisar.
+              </p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -482,10 +546,24 @@ const CreateCampaignWizard = ({
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  O status define se a campanha começa ativa, pausada ou apenas salva como rascunho.
+                </p>
               </div>
 
               <div className="space-y-2 text-sm">
-                <Label>Resumo</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Resumo</Label>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-auto px-0 text-xs"
+                    onClick={() => goToStep(0)}
+                  >
+                    Editar passos
+                  </Button>
+                </div>
                 <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-xs text-muted-foreground">
                   <div className="flex flex-wrap gap-2">
                     {formState.agreementName ? <Badge variant="secondary">{formState.agreementName}</Badge> : null}
@@ -496,18 +574,69 @@ const CreateCampaignWizard = ({
                     {selectedStrategy ? <Badge variant="outline">{selectedStrategy.label}</Badge> : null}
                   </div>
                   <Separator className="my-2" />
-                  <dl className="grid gap-1">
-                    <div className="flex justify-between gap-2">
-                      <dt className="font-medium text-foreground">Instância</dt>
-                      <dd>{formatInstanceLabel(selectedInstance)}</dd>
+                  <dl className="grid gap-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <dt className="font-medium text-foreground">Instância</dt>
+                        <dd>{formatInstanceLabel(selectedInstance) || '—'}</dd>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-0 text-xs"
+                        onClick={() => goToStep(0)}
+                      >
+                        Editar
+                      </Button>
                     </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="font-medium text-foreground">Convênio</dt>
-                      <dd>{formState.agreementName || '—'}</dd>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <dt className="font-medium text-foreground">Convênio</dt>
+                        <dd>{formState.agreementName || '—'}</dd>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-0 text-xs"
+                        onClick={() => goToStep(1)}
+                      >
+                        Editar
+                      </Button>
                     </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="font-medium text-foreground">Estratégia</dt>
-                      <dd>{selectedStrategy?.label ?? '—'}</dd>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <dt className="font-medium text-foreground">Produto e margem</dt>
+                        <dd>
+                          {selectedProduct?.label ?? '—'}
+                          {formState.margin ? ` • Margem ${Number(formState.margin).toFixed(2)}%` : ''}
+                        </dd>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-0 text-xs"
+                        onClick={() => goToStep(2)}
+                      >
+                        Editar
+                      </Button>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <dt className="font-medium text-foreground">Estratégia</dt>
+                        <dd>{selectedStrategy?.label ?? '—'}</dd>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto px-0 text-xs"
+                        onClick={() => goToStep(3)}
+                      >
+                        Editar
+                      </Button>
                     </div>
                   </dl>
                 </div>
@@ -532,20 +661,32 @@ const CreateCampaignWizard = ({
           return (
             <li
               key={step.key}
+              aria-current={isActive ? 'step' : undefined}
               className={`rounded-md border px-3 py-2 transition ${
-                isActive ? 'border-primary bg-primary/10 text-primary-foreground' : 'border-border/60 bg-muted/20'
-              } ${isCompleted ? 'opacity-80' : ''}`}
+                isActive
+                  ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                  : 'border-border/60 bg-muted/20 hover:border-border'
+              } ${isCompleted ? 'opacity-90' : ''}`}
             >
-              <div className="flex items-center gap-2">
-                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                  isActive ? 'bg-primary text-primary-foreground' : 'bg-border text-muted-foreground'
-                }`}>
-                  {index + 1}
-                </span>
-                <div>
-                  <p className="font-medium text-foreground">{step.title}</p>
-                  <p className="text-[0.65rem] leading-snug">{step.description}</p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                      isCompleted
+                        ? 'bg-emerald-500/20 text-emerald-600'
+                        : isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-border text-muted-foreground'
+                    }`}
+                  >
+                    {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                  </span>
+                  <div>
+                    <p className="font-medium text-foreground">{step.title}</p>
+                    <p className="text-[0.65rem] leading-snug">{step.description}</p>
+                  </div>
                 </div>
+                {isActive ? <Badge variant="outline">Etapa atual</Badge> : null}
               </div>
             </li>
           );
