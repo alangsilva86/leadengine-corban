@@ -113,18 +113,79 @@ const toFixedNumber = (input: number | null, fractionDigits = 2): number | null 
   return Number(input.toFixed(fractionDigits));
 };
 
+const normalizeClassificationValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const normalizeTagsInput = (value: unknown): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  const values: string[] = [];
+
+  const pushValue = (entry: unknown) => {
+    if (typeof entry === 'string') {
+      entry
+        .split(',')
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+        .forEach((token) => values.push(token));
+      return;
+    }
+
+    if (entry !== null && entry !== undefined) {
+      const asString = String(entry).trim();
+      if (asString.length > 0) {
+        values.push(asString);
+      }
+    }
+  };
+
+  if (Array.isArray(value)) {
+    value.forEach(pushValue);
+  } else {
+    pushValue(value);
+  }
+
+  return Array.from(new Set(values));
+};
+
 const buildCampaignBase = (campaign: CampaignWithInstance): Omit<CampaignDTO, 'metrics'> => {
   const metadata = readMetadata(campaign.metadata as CampaignMetadata);
-  const { whatsappInstance, ...campaignData } = campaign;
+  const { whatsappInstance, tags, productType, marginType, strategy, ...campaignData } = campaign;
   const instanceId = campaign.whatsappInstanceId ?? whatsappInstance?.id ?? null;
   const instanceName = whatsappInstance?.name ?? null;
+  const normalizedTags = Array.isArray(tags)
+    ? Array.from(
+        new Set(
+          tags
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+        )
+      )
+    : [];
 
   return {
     ...campaignData,
     agreementId: campaignData.agreementId ?? null,
+    agreementName: campaignData.agreementName ?? null,
     instanceId,
     instanceName,
     metadata,
+    productType: normalizeClassificationValue(productType),
+    marginType: normalizeClassificationValue(marginType),
+    strategy: normalizeClassificationValue(strategy),
+    tags: normalizedTags,
   } as Omit<CampaignDTO, 'metrics'>;
 };
 
@@ -282,6 +343,10 @@ const extractStatuses = (value: unknown): CampaignStatus[] => {
 export interface CampaignQueryFilters {
   agreementId?: string;
   instanceId?: string;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags: string[];
   statuses: CampaignStatus[];
 }
 
@@ -289,7 +354,12 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
   const agreementId = normalizeQueryValue(query.agreementId);
   const instanceId = normalizeQueryValue(query.instanceId);
   const statuses = extractStatuses(query.status);
+  const productType = normalizeClassificationValue(normalizeQueryValue(query.productType));
+  const marginType = normalizeClassificationValue(normalizeQueryValue(query.marginType));
+  const strategy = normalizeClassificationValue(normalizeQueryValue(query.strategy));
+  const tags = normalizeTagsInput(query.tags);
   const filters: CampaignQueryFilters = {
+    tags,
     statuses: statuses.length > 0 ? statuses : [DEFAULT_STATUS],
   };
 
@@ -299,6 +369,18 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
 
   if (instanceId) {
     filters.instanceId = instanceId;
+  }
+
+  if (productType !== null) {
+    filters.productType = productType;
+  }
+
+  if (marginType !== null) {
+    filters.marginType = marginType;
+  }
+
+  if (strategy !== null) {
+    filters.strategy = strategy;
   }
 
   return filters;
@@ -346,12 +428,20 @@ const loadCampaignsFromStore = async ({
   tenantId,
   agreementId,
   instanceId,
+  productType,
+  marginType,
+  strategy,
+  tags,
   statuses,
   requestId,
 }: {
   tenantId: string;
   agreementId?: string;
   instanceId?: string;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags: string[];
   statuses: CampaignStatus[];
   requestId: string;
 }): Promise<StoreCampaignResult> => {
@@ -360,6 +450,10 @@ const loadCampaignsFromStore = async ({
     tenantId,
     agreementId: agreementId ?? null,
     instanceId: instanceId ?? null,
+    productType: productType ?? null,
+    marginType: marginType ?? null,
+    strategy: strategy ?? null,
+    tags: tags.join(','),
     statuses,
   };
 
@@ -371,6 +465,10 @@ const loadCampaignsFromStore = async ({
       ...(agreementId ? { agreementId } : {}),
       ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
       status: { in: statuses },
+      ...(productType !== undefined && productType !== null ? { productType } : {}),
+      ...(marginType !== undefined && marginType !== null ? { marginType } : {}),
+      ...(strategy !== undefined && strategy !== null ? { strategy } : {}),
+      ...(tags.length > 0 ? { tags: { hasEvery: tags } } : {}),
     },
     orderBy: { createdAt: 'desc' },
     include: {
@@ -438,21 +536,27 @@ const canTransition = (from: CampaignStatus, to: CampaignStatus): boolean => {
 router.post(
   '/',
   body('agreementId').isString().trim().isLength({ min: 1 }),
-  body('agreementName').isString().trim().isLength({ min: 1 }),
+  body('agreementName').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
   body('instanceId').isString().trim().isLength({ min: 1 }),
   body('brokerId').optional().isString().trim().isLength({ min: 1 }),
   body('name').optional().isString().trim().isLength({ min: 1 }),
   body('budget').optional().isFloat({ min: 0 }),
   body('cplTarget').optional().isFloat({ min: 0 }),
+  body('productType').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
+  body('marginType').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
+  body('strategy').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
+  body('tags').optional().isArray(),
+  body('tags.*').optional().isString(),
+  body('metadata').optional().isObject(),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const requestedTenantId = req.user?.tenantId ?? DEFAULT_TENANT_ID;
     const rawAgreementId = typeof req.body?.agreementId === 'string' ? req.body.agreementId.trim() : '';
     const resolvedAgreementId = rawAgreementId || DEFAULT_TENANT_ID;
-    const rawAgreementName = typeof req.body?.agreementName === 'string' ? req.body.agreementName.trim() : '';
+    const rawAgreementName = normalizeClassificationValue(req.body?.agreementName);
     const resolvedAgreementName =
-      rawAgreementName || (resolvedAgreementId === DEFAULT_TENANT_ID ? 'DEMO' : rawAgreementName);
+      rawAgreementName ?? (resolvedAgreementId === DEFAULT_TENANT_ID ? 'DEMO' : null);
     const rawInstanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const resolvedInstanceId = rawInstanceId || 'alan';
     const rawBrokerIdInput = typeof req.body?.brokerId === 'string' ? req.body.brokerId.trim() : '';
@@ -471,6 +575,19 @@ router.post(
     const schedule = req.body?.schedule ?? { type: 'immediate' };
     const channel = typeof req.body?.channel === 'string' ? req.body.channel : 'whatsapp';
     const audienceCount = Array.isArray(req.body?.audience) ? req.body.audience.length : 0;
+    const productType = normalizeClassificationValue(req.body?.productType);
+    const marginType = normalizeClassificationValue(req.body?.marginType);
+    const strategy = normalizeClassificationValue(req.body?.strategy);
+    const explicitTags = normalizeTagsInput(req.body?.tags);
+    const resolvedTags = Array.from(
+      new Set([
+        ...explicitTags,
+        ...([productType, marginType, strategy].filter((value): value is string => Boolean(value))),
+      ])
+    );
+    const userMetadata = isRecord(req.body?.metadata)
+      ? ({ ...(req.body.metadata as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
 
     if (SAFE_MODE) {
       const now = new Date();
@@ -481,6 +598,16 @@ router.post(
         cplTarget: typeof cplTarget === 'number' ? cplTarget : null,
         cpl: null,
       } satisfies CampaignDTO['metrics'];
+      const classificationMetadata: Record<string, string> = {};
+      if (productType) {
+        classificationMetadata.productType = productType;
+      }
+      if (marginType) {
+        classificationMetadata.marginType = marginType;
+      }
+      if (strategy) {
+        classificationMetadata.strategy = strategy;
+      }
       const responsePayload: CampaignDTO = {
         id: fakeId,
         tenantId: resolvedAgreementId,
@@ -493,6 +620,11 @@ router.post(
           channel,
           schedule,
           audienceCount,
+          ...(resolvedTags.length > 0 ? { tags: resolvedTags } : {}),
+          ...(Object.keys(classificationMetadata).length > 0
+            ? { classification: classificationMetadata }
+            : {}),
+          ...userMetadata,
         },
         instanceId: resolvedInstanceId,
         instanceName: resolvedInstanceId,
@@ -500,6 +632,10 @@ router.post(
         createdAt: now,
         updatedAt: now,
         metrics,
+        productType,
+        marginType,
+        strategy,
+        tags: resolvedTags,
       };
 
       res.status(201).json({ success: true, data: responsePayload, meta: { safeMode: true } });
@@ -758,12 +894,31 @@ router.post(
     const slug = toSlug(normalizedName, '');
     const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
 
-    const metadataBase: Record<string, unknown> = slug ? { slug } : {};
+    const metadataBase: Record<string, unknown> = { ...userMetadata };
+    if (slug) {
+      metadataBase.slug = slug;
+    }
     if (typeof budget === 'number') {
       metadataBase.budget = budget;
     }
     if (typeof cplTarget === 'number') {
       metadataBase.cplTarget = cplTarget;
+    }
+    const classificationMetadata: Record<string, string> = {};
+    if (productType) {
+      classificationMetadata.productType = productType;
+    }
+    if (marginType) {
+      classificationMetadata.marginType = marginType;
+    }
+    if (strategy) {
+      classificationMetadata.strategy = strategy;
+    }
+    if (Object.keys(classificationMetadata).length > 0) {
+      metadataBase.classification = classificationMetadata;
+    }
+    if (resolvedTags.length > 0) {
+      metadataBase.tags = resolvedTags;
     }
 
     const buildCreationMetadata = (
@@ -790,6 +945,9 @@ router.post(
         ...(tenantId ? { tenantId } : {}),
         whatsappInstanceId: instance.id,
         agreementId: resolvedAgreementId,
+        productType: productType,
+        marginType: marginType,
+        strategy: strategy,
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -806,6 +964,11 @@ router.post(
 
       if (currentStatus === 'ended') {
         let releasedMetadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
+        if (isRecord(releasedMetadata)) {
+          releasedMetadata = { ...(releasedMetadata as Record<string, unknown>), ...metadataBase };
+        } else {
+          releasedMetadata = metadataBase;
+        }
         releasedMetadata = appendCampaignHistory(
           releasedMetadata,
           buildCampaignHistoryEntry('instance-released', actorId, {
@@ -818,6 +981,11 @@ router.post(
           data: {
             whatsappInstanceId: null,
             metadata: releasedMetadata as Prisma.JsonObject,
+            agreementName: resolvedAgreementName ?? existingCampaign.agreementName ?? null,
+            productType,
+            marginType,
+            strategy,
+            tags: resolvedTags,
           },
         });
 
@@ -848,6 +1016,11 @@ router.post(
         }
 
         let metadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
+        if (isRecord(metadata)) {
+          metadata = { ...(metadata as Record<string, unknown>), ...metadataBase };
+        } else {
+          metadata = metadataBase;
+        }
         metadata = appendCampaignHistory(
           metadata,
           buildCampaignHistoryEntry('status-changed', actorId, {
@@ -880,6 +1053,11 @@ router.post(
           data: {
             status: requestedStatus,
             metadata: metadata as Prisma.JsonObject,
+            agreementName: resolvedAgreementName ?? existingCampaign.agreementName ?? null,
+            productType,
+            marginType,
+            strategy,
+            tags: resolvedTags,
           },
           include: {
             whatsappInstance: {
@@ -904,6 +1082,59 @@ router.post(
         res.json({ success: true, data });
         return;
       } else {
+        const tagsChanged = Array.isArray(existingCampaign.tags)
+          ? existingCampaign.tags.length !== resolvedTags.length ||
+            existingCampaign.tags.some((tag) => !resolvedTags.includes(tag))
+          : resolvedTags.length > 0;
+        const classificationChanged =
+          existingCampaign.productType !== productType ||
+          existingCampaign.marginType !== marginType ||
+          existingCampaign.strategy !== strategy ||
+          existingCampaign.agreementName !== (resolvedAgreementName ?? existingCampaign.agreementName ?? null);
+        const metadataNeedsUpdate = Object.keys(metadataBase).length > 0;
+
+        if (classificationChanged || tagsChanged || metadataNeedsUpdate) {
+          let metadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
+          if (isRecord(metadata)) {
+            metadata = { ...(metadata as Record<string, unknown>), ...metadataBase };
+          } else {
+            metadata = metadataBase;
+          }
+
+          const refreshedCampaign = (await prisma.campaign.update({
+            where: { id: existingCampaign.id },
+            data: {
+              agreementName: resolvedAgreementName ?? existingCampaign.agreementName ?? null,
+              productType,
+              marginType,
+              strategy,
+              tags: resolvedTags,
+              metadata: metadata as Prisma.JsonObject,
+            },
+            include: {
+              whatsappInstance: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          })) as CampaignWithInstance;
+
+          logger.info('Campaign reused and refreshed for instance', {
+            tenantId,
+            agreementId: resolvedAgreementId,
+            instanceId: instance.id,
+            campaignId: existingCampaign.id,
+            status: existingCampaign.status,
+            requestedStatus,
+          });
+
+          const data = await buildCampaignResponse(refreshedCampaign);
+          res.json({ success: true, data });
+          return;
+        }
+
         logger.info('Campaign reused for instance', {
           tenantId,
           agreementId: resolvedAgreementId,
@@ -932,6 +1163,10 @@ router.post(
           whatsappInstanceId: instance.id,
           status: requestedStatus,
           metadata: creationMetadata as Prisma.JsonObject,
+          productType,
+          marginType,
+          strategy,
+          tags: resolvedTags,
         },
         include: {
           whatsappInstance: {
@@ -1161,12 +1396,16 @@ router.get(
     }
 
     const useRealData = getUseRealDataFlag();
-    const { agreementId, instanceId, statuses } = buildFilters(req.query);
+    const { agreementId, instanceId, productType, marginType, strategy, tags, statuses } = buildFilters(req.query);
     const logContext = {
       requestId,
       tenantId,
       agreementId: agreementId ?? null,
       instanceId: instanceId ?? null,
+      productType: productType ?? null,
+      marginType: marginType ?? null,
+      strategy: strategy ?? null,
+      tags: tags.join(','),
       status: statuses,
     };
 
@@ -1190,6 +1429,22 @@ router.get(
 
           if (agreementId) {
             upstreamFilters.agreementId = agreementId;
+          }
+
+          if (productType) {
+            upstreamFilters.productType = productType;
+          }
+
+          if (marginType) {
+            upstreamFilters.marginType = marginType;
+          }
+
+          if (strategy) {
+            upstreamFilters.strategy = strategy;
+          }
+
+          if (tags.length > 0) {
+            upstreamFilters.tags = tags.join(',');
           }
 
           const items = await fetchLeadEngineCampaigns(upstreamFilters);
@@ -1234,6 +1489,10 @@ router.get(
 
       const storeFilters: Parameters<typeof loadCampaignsFromStore>[0] = {
         tenantId,
+        productType: productType ?? null,
+        marginType: marginType ?? null,
+        strategy: strategy ?? null,
+        tags,
         statuses,
         requestId,
       };

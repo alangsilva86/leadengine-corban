@@ -13,6 +13,7 @@ export interface Campaign {
   id: string;
   tenantId: string;
   agreementId: string;
+  agreementName: string | null;
   instanceId: string;
   name: string;
   status: CampaignStatus;
@@ -20,28 +21,45 @@ export interface Campaign {
   endDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  productType: string | null;
+  marginType: string | null;
+  strategy: string | null;
+  tags: string[];
+  metadata: Record<string, unknown>;
 }
 
 export interface CreateCampaignInput {
   tenantId: string;
   agreementId: string;
+  agreementName?: string | null;
   instanceId: string;
   name: string;
   status?: CampaignStatus;
   startDate?: Date | null;
   endDate?: Date | null;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface CampaignFilters {
   tenantId: string;
   agreementId?: string;
   status?: CampaignStatus[];
+  instanceId?: string;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags?: string[];
 }
 
 const CAMPAIGN_SELECT = {
   id: true,
   tenantId: true,
   agreementId: true,
+  agreementName: true,
   whatsappInstanceId: true,
   name: true,
   status: true,
@@ -49,6 +67,11 @@ const CAMPAIGN_SELECT = {
   endDate: true,
   createdAt: true,
   updatedAt: true,
+  productType: true,
+  marginType: true,
+  strategy: true,
+  metadata: true,
+  tags: true,
 } satisfies Prisma.CampaignSelect;
 
 type CampaignRecord = Prisma.CampaignGetPayload<{ select: typeof CAMPAIGN_SELECT }>;
@@ -57,6 +80,7 @@ const mapCampaign = (record: CampaignRecord): Campaign => ({
   id: record.id,
   tenantId: record.tenantId,
   agreementId: record.agreementId,
+  agreementName: record.agreementName ?? null,
   instanceId: record.whatsappInstanceId ?? 'default',
   name: record.name,
   status: record.status as CampaignStatus,
@@ -64,6 +88,11 @@ const mapCampaign = (record: CampaignRecord): Campaign => ({
   endDate: record.endDate ?? null,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
+  productType: record.productType ?? null,
+  marginType: record.marginType ?? null,
+  strategy: record.strategy ?? null,
+  tags: Array.isArray(record.tags) ? record.tags : [],
+  metadata: (record.metadata as Record<string, unknown>) ?? {},
 });
 
 const statusOrder: Record<CampaignStatus, number> = {
@@ -79,13 +108,51 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
   const prisma = getPrismaClient();
   const status = ensureStatus(input.status);
   const now = new Date();
+  const normalizeTag = (value: string | null | undefined): string | null => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  const normalizedTags = new Set<string>();
+  for (const tag of input.tags ?? []) {
+    const normalized = normalizeTag(tag);
+    if (normalized) {
+      normalizedTags.add(normalized);
+    }
+  }
+
+  for (const candidate of [input.productType, input.marginType, input.strategy]) {
+    const normalized = normalizeTag(candidate ?? undefined);
+    if (normalized) {
+      normalizedTags.add(normalized);
+    }
+  }
+
+  const tagList = Array.from(normalizedTags);
+
+  const campaignWhere: Prisma.CampaignWhereInput = {
+    tenantId: input.tenantId,
+    agreementId: input.agreementId,
+    whatsappInstanceId: input.instanceId,
+  };
+
+  if (input.productType !== undefined) {
+    campaignWhere.productType = normalizeTag(input.productType ?? null);
+  }
+
+  if (input.marginType !== undefined) {
+    campaignWhere.marginType = normalizeTag(input.marginType ?? null);
+  }
+
+  if (input.strategy !== undefined) {
+    campaignWhere.strategy = normalizeTag(input.strategy ?? null);
+  }
 
   const existing = await prisma.campaign.findFirst({
-    where: {
-      tenantId: input.tenantId,
-      agreementId: input.agreementId,
-      whatsappInstanceId: input.instanceId,
-    },
+    where: campaignWhere,
     select: CAMPAIGN_SELECT,
   });
 
@@ -97,6 +164,12 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
         status,
         startDate: input.startDate ?? existing.startDate ?? now,
         endDate: input.endDate ?? (status === CampaignStatus.ACTIVE ? null : existing.endDate),
+        agreementName: input.agreementName ?? existing.agreementName ?? null,
+        productType: normalizeTag(input.productType ?? existing.productType ?? null),
+        marginType: normalizeTag(input.marginType ?? existing.marginType ?? null),
+        strategy: normalizeTag(input.strategy ?? existing.strategy ?? null),
+        tags: tagList.length > 0 ? tagList : existing.tags,
+        metadata: (input.metadata ?? existing.metadata ?? {}) as Prisma.JsonObject,
       },
       select: CAMPAIGN_SELECT,
     });
@@ -113,6 +186,12 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
       status,
       startDate: input.startDate ?? now,
       endDate: input.endDate ?? null,
+      agreementName: input.agreementName ?? null,
+      productType: normalizeTag(input.productType ?? null),
+      marginType: normalizeTag(input.marginType ?? null),
+      strategy: normalizeTag(input.strategy ?? null),
+      tags: tagList,
+      metadata: (input.metadata ?? {}) as Prisma.JsonObject,
     },
     select: CAMPAIGN_SELECT,
   });
@@ -168,19 +247,48 @@ export const findCampaignById = async (
   return record ? mapCampaign(record) : null;
 };
 
+export interface ActiveCampaignFilters {
+  instanceId?: string;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags?: string[];
+}
+
 export const findActiveCampaign = async (
   tenantId: string,
   agreementId: string,
-  instanceId?: string
+  filters: ActiveCampaignFilters = {}
 ): Promise<Campaign | null> => {
   const prisma = getPrismaClient();
+  const where: Prisma.CampaignWhereInput = {
+    tenantId,
+    agreementId,
+    status: CampaignStatus.ACTIVE,
+  };
+
+  if (filters.instanceId) {
+    where.whatsappInstanceId = filters.instanceId;
+  }
+
+  if (filters.productType !== undefined) {
+    where.productType = filters.productType;
+  }
+
+  if (filters.marginType !== undefined) {
+    where.marginType = filters.marginType;
+  }
+
+  if (filters.strategy !== undefined) {
+    where.strategy = filters.strategy;
+  }
+
+  if (filters.tags?.length) {
+    where.tags = { hasEvery: filters.tags };
+  }
+
   const record = await prisma.campaign.findFirst({
-    where: {
-      tenantId,
-      agreementId,
-      status: CampaignStatus.ACTIVE,
-      ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
-    },
+    where,
     orderBy: { updatedAt: 'desc' },
     select: CAMPAIGN_SELECT,
   });
@@ -195,8 +303,28 @@ export const listCampaigns = async (filters: CampaignFilters): Promise<Campaign[
     ...(filters.agreementId ? { agreementId: filters.agreementId } : {}),
   };
 
+  if (filters.instanceId) {
+    where.whatsappInstanceId = filters.instanceId;
+  }
+
   if (filters.status?.length) {
     where.status = { in: filters.status };
+  }
+
+  if (filters.productType !== undefined) {
+    where.productType = filters.productType;
+  }
+
+  if (filters.marginType !== undefined) {
+    where.marginType = filters.marginType;
+  }
+
+  if (filters.strategy !== undefined) {
+    where.strategy = filters.strategy;
+  }
+
+  if (filters.tags?.length) {
+    where.tags = { hasEvery: filters.tags };
   }
 
   const records = await prisma.campaign.findMany({ where, select: CAMPAIGN_SELECT });

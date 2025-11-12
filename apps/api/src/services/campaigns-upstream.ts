@@ -5,6 +5,10 @@ export interface LeadEngineCampaignFilters {
   tenantId: string;
   agreementId?: string;
   status?: string;
+  productType?: string;
+  marginType?: string;
+  strategy?: string;
+  tags?: string;
   requestId: string;
 }
 

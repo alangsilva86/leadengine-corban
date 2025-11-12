@@ -69,7 +69,37 @@ export const createCampaignSchema = z
         required_error: 'Escolha o status inicial da campanha.',
       })
       .default('active'),
+    productType: z
+      .string()
+      .trim()
+      .max(64)
+      .optional()
+      .transform((value) => (value && value.length > 0 ? value : undefined)),
+    marginType: z
+      .string()
+      .trim()
+      .max(64)
+      .optional()
+      .transform((value) => (value && value.length > 0 ? value : undefined)),
+    strategy: z
+      .string()
+      .trim()
+      .max(64)
+      .optional()
+      .transform((value) => (value && value.length > 0 ? value : undefined)),
+    tags: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
   })
+  .transform(({ name, instanceId, status, productType, marginType, strategy, tags }) => ({
+    name,
+    instanceId,
+    status,
+    ...(productType ? { productType } : {}),
+    ...(marginType ? { marginType } : {}),
+    ...(strategy ? { strategy } : {}),
+    ...(tags ? { tags } : {}),
   .transform(({ name, instanceId, status, agreementId, agreementName, product, margin, strategy }) => ({
     name,
     instanceId,

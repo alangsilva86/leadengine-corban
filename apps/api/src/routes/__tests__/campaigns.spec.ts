@@ -123,24 +123,26 @@ describe('GET /campaigns', () => {
     const response = await request(app).get('/?status=active,paused&agreementId=agreement-1&instanceId=instance-1');
 
     expect(response.status).toBe(200);
-    expect(findManySpy).toHaveBeenCalledWith({
-      where: {
-        tenantId: 'tenant-1',
-        agreementId: 'agreement-1',
-        whatsappInstanceId: 'instance-1',
-        status: { in: ['active', 'paused'] },
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        whatsappInstance: {
-          select: {
-            id: true,
-            name: true,
+    expect(findManySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-1',
+          agreementId: 'agreement-1',
+          whatsappInstanceId: 'instance-1',
+          status: { in: ['active', 'paused'] },
+        }),
+        orderBy: { createdAt: 'desc' },
+        include: {
+          whatsappInstance: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      take: 100,
-    });
+        take: 100,
+      })
+    );
     expect(response.body).toMatchObject({
       success: true,
       requestId: expect.any(String),
@@ -150,6 +152,10 @@ describe('GET /campaigns', () => {
           instanceId: 'instance-1',
           instanceName: 'Instance One',
           metadata: { budget: 100, cplTarget: 25 },
+          tags: [],
+          productType: null,
+          marginType: null,
+          strategy: null,
           metrics: expect.objectContaining({
             total: 5,
             allocated: 5,

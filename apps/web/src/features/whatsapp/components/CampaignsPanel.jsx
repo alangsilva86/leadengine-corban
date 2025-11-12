@@ -323,6 +323,15 @@ const CampaignsPanel = ({
                 </>
               )}
             </div>
+            {Array.isArray(campaign.tags) && campaign.tags.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {campaign.tags.map((tag) => (
+                  <Badge key={`${campaign.id}-${tag}`} variant="outline" className="text-[10px] uppercase">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {highlight ? <Badge variant="info">Instância selecionada</Badge> : null}
