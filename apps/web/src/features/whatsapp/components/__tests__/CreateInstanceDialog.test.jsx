@@ -44,9 +44,9 @@ describe('CreateInstanceDialog', () => {
       <CreateInstanceDialog open defaultName="  Instância  " onSubmit={onSubmit} onOpenChange={onOpenChange} />
     );
 
-    const nameInput = screen.getByLabelText('Nome da instância');
-    const idInput = screen.getByLabelText('Identificador (opcional)');
-    const submitButton = screen.getByRole('button', { name: /Criar instância/i });
+    const nameInput = screen.getByLabelText('Nome do canal');
+    const idInput = screen.getByLabelText('Identificador do canal (opcional)');
+    const submitButton = screen.getByRole('button', { name: /Criar canal/i });
 
     await user.clear(nameInput);
     expect(submitButton).toBeDisabled();
@@ -75,7 +75,7 @@ describe('CreateInstanceDialog', () => {
 
     render(<CreateInstanceDialog open onSubmit={onSubmit} onOpenChange={onOpenChange} />);
 
-    const submitButton = screen.getByRole('button', { name: /Criar instância/i });
+    const submitButton = screen.getByRole('button', { name: /Criar canal/i });
     await user.click(submitButton);
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
