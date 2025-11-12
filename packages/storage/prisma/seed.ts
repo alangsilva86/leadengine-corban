@@ -638,8 +638,18 @@ async function main() {
       agreementName: 'Convênio SAEC Goiânia',
       whatsappInstanceId: demoInstance.id,
       status: 'active',
+      productType: 'consignado',
+      marginType: 'publico',
+      strategy: 'retencao',
+      tags: ['consignado', 'publico', 'retencao'],
       metadata: {
         note: 'Campanha demo criada pelo seed',
+        classification: {
+          productType: 'consignado',
+          marginType: 'publico',
+          strategy: 'retencao',
+        },
+        tags: ['consignado', 'publico', 'retencao'],
       },
     },
   });

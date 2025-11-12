@@ -24,6 +24,10 @@ export interface CampaignDTO {
   createdAt: Date;
   updatedAt: Date;
   metrics: CampaignMetricsDTO;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags: string[];
 }
 
 type WarningCode = 'CAMPAIGN_METRICS_UNAVAILABLE';

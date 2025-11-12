@@ -41,6 +41,7 @@ export interface Campaign {
   id: string;
   tenantId: string;
   agreementId: string;
+  agreementName: string | null;
   instanceId: string;
   name: string;
   status: CampaignStatus;
@@ -48,22 +49,38 @@ export interface Campaign {
   endDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  productType: string | null;
+  marginType: string | null;
+  strategy: string | null;
+  tags: string[];
+  metadata: Record<string, unknown>;
 }
 
 export interface CreateCampaignInput {
   tenantId: string;
   agreementId: string;
+  agreementName?: string | null;
   instanceId: string;
   name: string;
   status?: CampaignStatus;
   startDate?: Date | null;
   endDate?: Date | null;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface CampaignFilters {
   tenantId: string;
   agreementId?: string;
   status?: CampaignStatus[];
+  instanceId?: string;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags?: string[];
 }
 
 const campaignsByTenant = new Map<string, Map<string, Campaign>>();
@@ -77,14 +94,60 @@ const getCampaignBucket = (tenantId: string): Map<string, Campaign> => {
   return bucket;
 };
 
-const findByCompositeKey = (tenantId: string, agreementId: string, instanceId: string): Campaign | undefined => {
+const normalizeValue = (value: string | null | undefined): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const buildTagSet = (
+  tags: string[] | undefined,
+  productType: string | null | undefined,
+  marginType: string | null | undefined,
+  strategy: string | null | undefined
+): string[] => {
+  const set = new Set<string>();
+  for (const tag of tags ?? []) {
+    const normalized = normalizeValue(tag);
+    if (normalized) {
+      set.add(normalized);
+    }
+  }
+
+  for (const candidate of [productType, marginType, strategy]) {
+    const normalized = normalizeValue(candidate);
+    if (normalized) {
+      set.add(normalized);
+    }
+  }
+
+  return Array.from(set);
+};
+
+const findByCompositeKey = (
+  tenantId: string,
+  agreementId: string,
+  instanceId: string,
+  productType: string | null | undefined,
+  marginType: string | null | undefined,
+  strategy: string | null | undefined
+): Campaign | undefined => {
   const bucket = campaignsByTenant.get(tenantId);
   if (!bucket) {
     return undefined;
   }
 
   for (const campaign of bucket.values()) {
-    if (campaign.agreementId === agreementId && campaign.instanceId === instanceId) {
+    if (
+      campaign.agreementId === agreementId &&
+      campaign.instanceId === instanceId &&
+      (productType === undefined || campaign.productType === normalizeValue(productType)) &&
+      (marginType === undefined || campaign.marginType === normalizeValue(marginType)) &&
+      (strategy === undefined || campaign.strategy === normalizeValue(strategy))
+    ) {
       return campaign;
     }
   }
@@ -94,8 +157,16 @@ const findByCompositeKey = (tenantId: string, agreementId: string, instanceId: s
 export const createOrActivateCampaign = async (input: CreateCampaignInput): Promise<Campaign> => {
   const status = input.status ?? CampaignStatus.DRAFT;
   const bucket = getCampaignBucket(input.tenantId);
-  const existing = findByCompositeKey(input.tenantId, input.agreementId, input.instanceId);
+  const existing = findByCompositeKey(
+    input.tenantId,
+    input.agreementId,
+    input.instanceId,
+    input.productType ?? null,
+    input.marginType ?? null,
+    input.strategy ?? null
+  );
   const now = new Date();
+  const tagList = buildTagSet(input.tags, input.productType ?? null, input.marginType ?? null, input.strategy ?? null);
 
   if (existing) {
     existing.name = input.name;
@@ -103,6 +174,14 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
     existing.startDate = input.startDate ?? existing.startDate ?? now;
     existing.endDate = input.endDate ?? (status === CampaignStatus.ACTIVE ? null : existing.endDate);
     existing.updatedAt = now;
+    existing.agreementName = input.agreementName ?? existing.agreementName ?? null;
+    existing.productType = normalizeValue(input.productType);
+    existing.marginType = normalizeValue(input.marginType);
+    existing.strategy = normalizeValue(input.strategy);
+    if (tagList.length > 0) {
+      existing.tags = tagList;
+    }
+    existing.metadata = input.metadata ?? existing.metadata ?? {};
     return existing;
   }
 
@@ -110,6 +189,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
     id: randomUUID(),
     tenantId: input.tenantId,
     agreementId: input.agreementId,
+    agreementName: input.agreementName ?? null,
     instanceId: input.instanceId,
     name: input.name,
     status,
@@ -117,6 +197,11 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
     endDate: input.endDate ?? null,
     createdAt: now,
     updatedAt: now,
+    productType: normalizeValue(input.productType),
+    marginType: normalizeValue(input.marginType),
+    strategy: normalizeValue(input.strategy),
+    tags: tagList,
+    metadata: input.metadata ?? {},
   };
 
   bucket.set(campaign.id, campaign);
@@ -158,32 +243,50 @@ export const findCampaignById = async (tenantId: string, campaignId: string): Pr
   return campaign ?? null;
 };
 
+export interface ActiveCampaignFilters {
+  instanceId?: string;
+  productType?: string | null;
+  marginType?: string | null;
+  strategy?: string | null;
+  tags?: string[];
+}
+
 export const findActiveCampaign = async (
   tenantId: string,
   agreementId: string,
-  instanceId?: string
+  filters: ActiveCampaignFilters = {}
 ): Promise<Campaign | null> => {
   const bucket = campaignsByTenant.get(tenantId);
   if (!bucket) {
     return null;
   }
 
-  const campaigns = Array.from(bucket.values()).filter((campaign) => {
-    if (campaign.agreementId !== agreementId) {
+  const matchesFilters = (campaign: Campaign): boolean => {
+    if (filters.instanceId && campaign.instanceId !== filters.instanceId) {
       return false;
     }
-    if (instanceId && campaign.instanceId !== instanceId) {
+    if (filters.productType !== undefined && campaign.productType !== filters.productType) {
       return false;
     }
-    return campaign.status === CampaignStatus.ACTIVE;
-  });
+    if (filters.marginType !== undefined && campaign.marginType !== filters.marginType) {
+      return false;
+    }
+    if (filters.strategy !== undefined && campaign.strategy !== filters.strategy) {
+      return false;
+    }
+    if (filters.tags?.length) {
+      const set = new Set(campaign.tags);
+      return filters.tags.every((tag) => set.has(tag));
+    }
+    return true;
+  };
 
-  if (campaigns.length === 0) {
-    return null;
-  }
+  const campaigns = Array.from(bucket.values())
+    .filter((campaign) => campaign.agreementId === agreementId && campaign.status === CampaignStatus.ACTIVE)
+    .filter(matchesFilters)
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-  campaigns.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-  return campaigns[0];
+  return campaigns[0] ?? null;
 };
 
 export const listCampaigns = async (filters: CampaignFilters): Promise<Campaign[]> => {
@@ -198,9 +301,32 @@ export const listCampaigns = async (filters: CampaignFilters): Promise<Campaign[
     campaigns = campaigns.filter((campaign) => campaign.agreementId === filters.agreementId);
   }
 
+  if (filters.instanceId) {
+    campaigns = campaigns.filter((campaign) => campaign.instanceId === filters.instanceId);
+  }
+
   if (filters.status?.length) {
     const allowed = new Set(filters.status);
     campaigns = campaigns.filter((campaign) => allowed.has(campaign.status));
+  }
+
+  if (filters.productType !== undefined) {
+    campaigns = campaigns.filter((campaign) => campaign.productType === filters.productType);
+  }
+
+  if (filters.marginType !== undefined) {
+    campaigns = campaigns.filter((campaign) => campaign.marginType === filters.marginType);
+  }
+
+  if (filters.strategy !== undefined) {
+    campaigns = campaigns.filter((campaign) => campaign.strategy === filters.strategy);
+  }
+
+  if (filters.tags?.length) {
+    campaigns = campaigns.filter((campaign) => {
+      const set = new Set(campaign.tags);
+      return filters.tags?.every((tag) => set.has(tag));
+    });
   }
 
   const statusOrder: Record<CampaignStatus, number> = {

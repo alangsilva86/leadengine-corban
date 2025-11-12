@@ -24,6 +24,7 @@ export {
   findCampaignById,
   findActiveCampaign,
   listCampaigns,
+  type ActiveCampaignFilters,
 } from './repositories/campaign-repository';
 
 export { resetCampaignStore } from './repositories/campaign-repository';

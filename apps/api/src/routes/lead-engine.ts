@@ -28,6 +28,49 @@ const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
 
 const ensureTenantContext = (_req: Request): string => DEFAULT_TENANT_ID;
 
+const normalizeClassificationValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeTagsInput = (value: unknown): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  const tags: string[] = [];
+
+  const pushValue = (entry: unknown) => {
+    if (typeof entry === 'string') {
+      entry
+        .split(',')
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+        .forEach((token) => tags.push(token));
+      return;
+    }
+
+    if (entry !== null && entry !== undefined) {
+      const normalized = String(entry).trim();
+      if (normalized.length > 0) {
+        tags.push(normalized);
+      }
+    }
+  };
+
+  if (Array.isArray(value)) {
+    value.forEach(pushValue);
+  } else {
+    pushValue(value);
+  }
+
+  return Array.from(new Set(tags));
+};
+
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
 
 const buildAgreementFallbackSummaries = (): AgreementSummary[] => {
@@ -222,6 +265,9 @@ router.get(
 router.get(
   '/campaigns',
   query('agreementId').optional().isString().trim(),
+  query('productType').optional().isString().trim(),
+  query('marginType').optional().isString().trim(),
+  query('strategy').optional().isString().trim(),
   query('status')
     .optional()
     .customSanitizer((value) => {
@@ -246,6 +292,10 @@ router.get(
     const tenantId = ensureTenantContext(req);
 
     const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
+    const productType = normalizeClassificationValue(req.query.productType);
+    const marginType = normalizeClassificationValue(req.query.marginType);
+    const strategy = normalizeClassificationValue(req.query.strategy);
+    const tags = normalizeTagsInput(req.query.tags);
     const rawStatus = req.query.status as string[] | undefined;
     const normalizedStatus = rawStatus?.filter((status) => status !== 'ALL');
     const statusFilter =
@@ -258,6 +308,10 @@ router.get(
     logger.info('[LeadEngine] GET /campaigns', {
       tenantId,
       agreementId,
+      productType,
+      marginType,
+      strategy,
+      tags,
       status: statusFilter,
     });
 
@@ -266,6 +320,10 @@ router.get(
         tenantId,
         ...(agreementId ? { agreementId } : {}),
         ...(statusFilter ? { status: statusFilter } : {}),
+        ...(productType ? { productType } : {}),
+        ...(marginType ? { marginType } : {}),
+        ...(strategy ? { strategy } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
       };
 
       const campaigns = await listCampaigns(filters);
@@ -278,6 +336,10 @@ router.get(
       logger.info('[LeadEngine] ✅ Campaigns listed', {
         tenantId,
         agreementId,
+        productType,
+        marginType,
+        strategy,
+        tags,
         status: statusFilter,
         count: campaigns.length,
       });
@@ -285,6 +347,10 @@ router.get(
       logger.error('[LeadEngine] ❌ Failed to list campaigns', {
         tenantId,
         agreementId,
+        productType,
+        marginType,
+        strategy,
+        tags,
         status: statusFilter,
         error,
       });
@@ -500,6 +566,11 @@ router.post(
       }
       throw new Error('Invalid campaign status');
     }),
+  body('productType').optional().isString().trim().isLength({ min: 1 }),
+  body('marginType').optional().isString().trim().isLength({ min: 1 }),
+  body('strategy').optional().isString().trim().isLength({ min: 1 }),
+  body('tags').optional().isArray(),
+  body('tags.*').optional().isString(),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req);
@@ -508,16 +579,22 @@ router.post(
       agreementId: string;
       instanceId: string;
     };
+    const agreementNameInput =
+      typeof req.body.agreementName === 'string' ? req.body.agreementName.trim() : undefined;
     const normalizedNameSource =
       typeof req.body.name === 'string' && req.body.name.trim().length > 0
         ? req.body.name
-        : (req.body.agreementName as string);
+        : agreementNameInput ?? agreementId;
     const normalizedName = normalizedNameSource.trim();
     const rawStatusValue = typeof req.body.status === 'string' ? req.body.status : undefined;
     const status =
       rawStatusValue && Object.values(CampaignStatus).includes(rawStatusValue as CampaignStatus)
         ? (rawStatusValue as CampaignStatus)
         : undefined;
+    const productType = normalizeClassificationValue(req.body.productType);
+    const marginType = normalizeClassificationValue(req.body.marginType);
+    const strategy = normalizeClassificationValue(req.body.strategy);
+    const tags = normalizeTagsInput(req.body.tags);
 
     logger.info('[LeadEngine] POST /campaigns', {
       tenantId,
@@ -525,6 +602,10 @@ router.post(
       instanceId,
       name: normalizedName,
       status: status ?? CampaignStatus.ACTIVE,
+      productType,
+      marginType,
+      strategy,
+      tags,
     });
 
     try {
@@ -534,6 +615,11 @@ router.post(
         instanceId,
         name: normalizedName,
         ...(status ? { status } : {}),
+        ...(agreementNameInput ? { agreementName: agreementNameInput } : {}),
+        ...(productType ? { productType } : {}),
+        ...(marginType ? { marginType } : {}),
+        ...(strategy ? { strategy } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
       };
 
       const campaign = await createOrActivateCampaign(payload);

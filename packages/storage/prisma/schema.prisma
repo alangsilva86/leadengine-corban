@@ -606,12 +606,16 @@ model Campaign {
   agreementId        String
   agreementName      String?
   whatsappInstanceId String?
+  productType        String?
+  marginType         String?
+  strategy           String?
   status             String    @default("draft")
   startDate          DateTime?
   endDate            DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-  metadata           Json?
+  metadata           Json      @default("{}")
+  tags               String[]  @default([])
 
   // Relations
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -619,7 +623,10 @@ model Campaign {
   whatsappInstance WhatsAppInstance? @relation(fields: [whatsappInstanceId], references: [id])
   allocations      LeadAllocation[]
 
-  @@unique([tenantId, agreementId, whatsappInstanceId], map: "campaigns_tenant_agreement_instance_unique")
+  @@index([tenantId, whatsappInstanceId])
+  @@index([tenantId, productType])
+  @@index([tenantId, marginType])
+  @@index([tenantId, strategy])
   @@index([tenantId, status])
   @@index([tenantId, agreementId])
   @@map("campaigns")
