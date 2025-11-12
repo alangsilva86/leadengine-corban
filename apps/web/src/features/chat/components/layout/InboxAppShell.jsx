@@ -242,7 +242,7 @@ const InboxAppShell = ({
     <div className="flex h-full min-h-0 flex-1 flex-col bg-surface-shell text-foreground">
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="flex min-h-0 flex-1">
-          <div className="relative mx-auto flex h-full w-full max-w-7xl flex-1 min-h-0 overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6">
+          <div className="relative flex h-full w-full flex-1 min-h-0 overflow-x-hidden px-2 py-4 sm:px-3 sm:py-5 lg:px-4">
             <div className="pointer-events-none absolute left-4 top-4 z-20 lg:hidden">
               <Button
                 variant="ghost"
@@ -256,18 +256,18 @@ const InboxAppShell = ({
             </div>
             {shouldRenderSplitLayout ? (
               <SplitLayout
-                className="h-full min-h-0 w-full gap-4 sm:gap-6"
+                className="h-full min-h-0 w-full gap-3 sm:gap-4 lg:gap-6"
                 list={listContent}
                 detail={detailSurface}
                 listClassName={cn(
-                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[320px] min-w-[320px] max-w-[320px] flex-shrink-0',
+                  'flex min-h-0 min-w-0 flex-col rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)] w-[360px] min-w-[340px] max-w-[380px] flex-shrink-0',
                 )}
                 detailClassName="flex min-h-0 min-w-0 flex-col"
-                listWidth={320}
+                listWidth={360}
                 isListVisible={Boolean(sidebar) && (isDesktop ? desktopListVisible : true)}
-                minListWidth={320}
-                maxListWidthPx={320}
-                maxListWidthToken="320px"
+                minListWidth={340}
+                maxListWidthPx={380}
+                maxListWidthToken="380px"
                 resizable={false}
               />
             ) : (
