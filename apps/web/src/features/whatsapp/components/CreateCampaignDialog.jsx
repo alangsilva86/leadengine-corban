@@ -55,27 +55,27 @@ const CreateCampaignDialog = ({
     onOpenChange?.(false);
   }, [isSubmitting, onOpenChange]);
 
-  return (
-    <Dialog open={open} onOpenChange={handleDialogChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Nova campanha do WhatsApp</DialogTitle>
-          <DialogDescription>
-            Configure a campanha em etapas rápidas: selecione a instância conectada, escolha a origem comercial, defina produto, margem e estratégia antes de revisar.
-          </DialogDescription>
-        </DialogHeader>
-        <CreateCampaignWizard
-          open={open}
-          agreement={agreement}
-          instances={instances}
-          defaultInstanceId={defaultInstanceId}
-          onSubmit={handleSubmit}
-          onCancel={handleCancel}
-          onSubmittingChange={handleSubmittingChange}
-        />
-      </DialogContent>
-    </Dialog>
-  );
+    return (
+      <Dialog open={open} onOpenChange={handleDialogChange}>
+        <DialogContent className="flex w-full max-w-[760px] flex-col overflow-hidden p-0">
+          <DialogHeader className="border-b border-border/60 px-6 pb-4 pt-5">
+            <DialogTitle className="text-lg font-semibold leading-6">Nova campanha do WhatsApp</DialogTitle>
+            <DialogDescription className="text-sm leading-5 text-muted-foreground">
+              Configure a campanha em cinco passos: instância conectada, origem, produto, estratégia e revisão final.
+            </DialogDescription>
+          </DialogHeader>
+          <CreateCampaignWizard
+            open={open}
+            agreement={agreement}
+            instances={instances}
+            defaultInstanceId={defaultInstanceId}
+            onSubmit={handleSubmit}
+            onCancel={handleCancel}
+            onSubmittingChange={handleSubmittingChange}
+          />
+        </DialogContent>
+      </Dialog>
+    );
 };
 
 export default CreateCampaignDialog;
