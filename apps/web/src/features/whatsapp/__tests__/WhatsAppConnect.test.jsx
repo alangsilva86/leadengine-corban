@@ -141,7 +141,7 @@ describe('WhatsAppConnect', () => {
       </Suspense>
     );
 
-    expect(await screen.findByText('Conecte seu WhatsApp')).toBeInTheDocument();
+    expect(await screen.findByText('Instância em foco')).toBeInTheDocument();
     const refreshButton = await screen.findByRole('button', { name: /Atualizar lista/i });
 
     const continueButtons = screen.getAllByRole('button', { name: /^Continuar$/i });

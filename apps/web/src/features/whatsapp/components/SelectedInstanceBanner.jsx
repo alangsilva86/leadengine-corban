@@ -39,37 +39,23 @@ const SelectedInstanceBanner = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-2">
-          <h2 className="text-xl font-semibold text-foreground">Conecte seu WhatsApp</h2>
-          <p className="text-sm text-muted-foreground">
-            Use os números que já atendem os clientes e mantenha o canal pronto para receber leads.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={onRefresh} disabled={loadingInstances || !isAuthenticated}>
-            <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar lista
+      <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+        <Button size="sm" variant="outline" onClick={onRefresh} disabled={loadingInstances || !isAuthenticated}>
+          <RefreshCcw className="mr-2 h-4 w-4" /> Atualizar lista
+        </Button>
+        <Button size="sm" onClick={onCreateInstance}>
+          <Plus className="mr-2 h-4 w-4" /> Nova instância
+        </Button>
+        {onViewLogs ? (
+          <Button size="sm" variant="outline" onClick={() => onViewLogs?.()} className="gap-2">
+            <Link2 className="h-4 w-4" /> Logs
           </Button>
-          <Button size="sm" onClick={onCreateInstance}>
-            <Plus className="mr-2 h-4 w-4" /> Nova instância
-          </Button>
-          {onViewLogs ? (
-            <Button size="sm" variant="outline" onClick={() => onViewLogs?.()} className="gap-2">
-              <Link2 className="h-4 w-4" /> Logs
-            </Button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
         {normalizedSummary.state === 'ready' ? (
           <>
-            <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-emerald-300">
-              {normalizedSummary.totals.connected} conectada(s)
-            </Badge>
-            <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-slate-200">
-              {normalizedSummary.totals.disconnected} desconectada(s)
-            </Badge>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-slate-200">
               Fila total: {formatMetricValue(normalizedSummary.queueTotal)}
             </Badge>
@@ -95,11 +81,11 @@ const SelectedInstanceBanner = ({
         )}
       </div>
 
-      <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet p-3 lg:p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
+      <div className="rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Instância em foco</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold text-foreground">{selectedName}</p>
               {selectedInstanceStatusInfo ? (
                 <Badge variant={selectedInstanceStatusInfo.variant}>{selectedInstanceStatusInfo.label}</Badge>
