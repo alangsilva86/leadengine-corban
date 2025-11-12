@@ -7,7 +7,6 @@ import useOnboardingStepLabel from '../useOnboardingStepLabel.js';
 describe('useOnboardingStepLabel', () => {
   const stages = [
     { id: 'channels', label: 'Instâncias & Canais' },
-    { id: 'agreements', label: 'Convênios' },
     { id: 'campaigns', label: 'Campanhas' },
     { id: 'inbox', label: 'Inbox' },
   ];
@@ -16,13 +15,13 @@ describe('useOnboardingStepLabel', () => {
     const { result } = renderHook(() =>
       useOnboardingStepLabel({
         stages,
-        targetStageId: 'agreements',
+        targetStageId: 'campaigns',
         fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'Campanhas' },
       })
     );
 
-    expect(result.current.stepLabel).toBe('Passo 2 de 4');
-    expect(result.current.nextStage).toBe('Campanhas');
+    expect(result.current.stepLabel).toBe('Passo 2 de 3');
+    expect(result.current.nextStage).toBe('Inbox');
   });
 
   it('returns fallback values when stages are unavailable', () => {
@@ -43,11 +42,11 @@ describe('useOnboardingStepLabel', () => {
       useOnboardingStepLabel({
         stages,
         targetStageId: 'reports',
-        fallbackStep: { number: 4, label: 'Passo 4', nextStage: 'Relatórios' },
+        fallbackStep: { number: 3, label: 'Passo 3', nextStage: 'Relatórios' },
       })
     );
 
-    expect(result.current.stepLabel).toBe('Passo 4 de 4');
+    expect(result.current.stepLabel).toBe('Passo 3 de 3');
     expect(result.current.nextStage).toBe('Instâncias & Canais');
   });
 });

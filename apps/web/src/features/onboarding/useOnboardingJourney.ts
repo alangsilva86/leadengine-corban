@@ -30,7 +30,7 @@ type OnboardingPage =
 type StoredOnboardingPage = OnboardingPage | 'whatsapp';
 
 type JourneyStage = {
-  id: 'dashboard' | 'channels' | 'campaigns' | 'agreements' | 'inbox';
+  id: 'dashboard' | 'channels' | 'campaigns' | 'inbox';
   label: string;
 };
 
@@ -96,8 +96,6 @@ const BASE_JOURNEY_STAGES: JourneyStage[] = [
   { id: 'campaigns', label: 'Campanhas' },
   { id: 'inbox', label: 'Inbox' },
 ];
-
-const AGREEMENTS_STAGE: JourneyStage = { id: 'agreements', label: 'Convênios' };
 
 type UseOnboardingJourneyOptions = {
   initialPage?: StoredOnboardingPage | null;
@@ -228,13 +226,7 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     };
   }, [debugDisabled]);
 
-  const onboardingStages = useMemo<JourneyStage[]>(() => {
-    if (selectedAgreement || currentPage === 'agreements') {
-      return [BASE_JOURNEY_STAGES[0], AGREEMENTS_STAGE, ...BASE_JOURNEY_STAGES.slice(1)];
-    }
-
-    return [...BASE_JOURNEY_STAGES];
-  }, [currentPage, selectedAgreement]);
+  const onboardingStages = useMemo<JourneyStage[]>(() => [...BASE_JOURNEY_STAGES], []);
 
   const activeStep = useMemo<number>(() => {
     const stageIndex = onboardingStages.findIndex((stage) => stage.id === currentPage);
