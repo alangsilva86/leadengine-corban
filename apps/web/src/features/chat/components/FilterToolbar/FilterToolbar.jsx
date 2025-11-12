@@ -17,7 +17,13 @@ const DEFAULT_FILTERS = {
   state: 'open',
   window: 'in_window',
   outcome: 'all',
+  instanceId: null,
+  campaignId: null,
+  productType: null,
+  strategy: null,
 };
+
+const ALL_OPTION_VALUE = '__all__';
 
 const SCOPE_OPTIONS = [
   { value: 'team', label: 'Equipe' },
@@ -65,6 +71,10 @@ const FilterToolbar = ({
   onStartManualConversation,
   manualConversationPending = false,
   manualConversationUnavailableReason,
+  instanceOptions = [],
+  campaignOptions = [],
+  productTypeOptions = [],
+  strategyOptions = [],
 }) => {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -74,6 +84,10 @@ const FilterToolbar = ({
       state: filters?.state ?? DEFAULT_FILTERS.state,
       window: filters?.window ?? DEFAULT_FILTERS.window,
       outcome: filters?.outcome ?? DEFAULT_FILTERS.outcome,
+      instanceId: filters?.instanceId ?? DEFAULT_FILTERS.instanceId,
+      campaignId: filters?.campaignId ?? DEFAULT_FILTERS.campaignId,
+      productType: filters?.productType ?? DEFAULT_FILTERS.productType,
+      strategy: filters?.strategy ?? DEFAULT_FILTERS.strategy,
     }),
     [filters]
   );
@@ -95,7 +109,13 @@ const FilterToolbar = ({
     });
   };
 
-  const getOptionLabel = (options, value) => options.find((option) => option.value === value)?.label ?? value;
+  const getOptionLabel = (options, value, fallbackLabel) => {
+    if (value === null || value === undefined || value === '') {
+      return fallbackLabel ?? '';
+    }
+    const option = options.find((option) => option.value === value);
+    return option?.label ?? value;
+  };
 
   const filterSummaries = useMemo(
     () => [
@@ -103,8 +123,28 @@ const FilterToolbar = ({
       { id: 'state', label: 'Status', value: getOptionLabel(STATE_OPTIONS, effectiveFilters.state) },
       { id: 'window', label: 'Janela', value: getOptionLabel(WINDOW_OPTIONS, effectiveFilters.window) },
       { id: 'outcome', label: 'Resultado', value: getOptionLabel(OUTCOME_OPTIONS, effectiveFilters.outcome) },
+      {
+        id: 'instanceId',
+        label: 'Instância',
+        value: getOptionLabel(instanceOptions, effectiveFilters.instanceId, 'Todas instâncias'),
+      },
+      {
+        id: 'campaignId',
+        label: 'Campanha',
+        value: getOptionLabel(campaignOptions, effectiveFilters.campaignId, 'Todas campanhas'),
+      },
+      {
+        id: 'productType',
+        label: 'Convênio',
+        value: getOptionLabel(productTypeOptions, effectiveFilters.productType, 'Todos convênios'),
+      },
+      {
+        id: 'strategy',
+        label: 'Estratégia',
+        value: getOptionLabel(strategyOptions, effectiveFilters.strategy, 'Todas estratégias'),
+      },
     ],
-    [effectiveFilters]
+    [campaignOptions, effectiveFilters, instanceOptions, productTypeOptions, strategyOptions]
   );
 
   const activeFilterSummaries = useMemo(
@@ -225,6 +265,94 @@ const FilterToolbar = ({
                   </SelectTrigger>
                   <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
                     {OUTCOME_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Instância</p>
+                <Select
+                  value={effectiveFilters.instanceId ?? ALL_OPTION_VALUE}
+                  onValueChange={(value) =>
+                    applyFilters({ instanceId: value === ALL_OPTION_VALUE ? null : value })
+                  }
+                >
+                  <SelectTrigger className="h-9 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
+                    <SelectValue placeholder="Todas instâncias" />
+                  </SelectTrigger>
+                  <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
+                    <SelectItem value={ALL_OPTION_VALUE}>Todas</SelectItem>
+                    {instanceOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Campanha</p>
+                <Select
+                  value={effectiveFilters.campaignId ?? ALL_OPTION_VALUE}
+                  onValueChange={(value) =>
+                    applyFilters({ campaignId: value === ALL_OPTION_VALUE ? null : value })
+                  }
+                >
+                  <SelectTrigger className="h-9 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
+                    <SelectValue placeholder="Todas campanhas" />
+                  </SelectTrigger>
+                  <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
+                    <SelectItem value={ALL_OPTION_VALUE}>Todas</SelectItem>
+                    {campaignOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Convênio</p>
+                <Select
+                  value={effectiveFilters.productType ?? ALL_OPTION_VALUE}
+                  onValueChange={(value) =>
+                    applyFilters({ productType: value === ALL_OPTION_VALUE ? null : value })
+                  }
+                >
+                  <SelectTrigger className="h-9 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
+                    <SelectValue placeholder="Todos convênios" />
+                  </SelectTrigger>
+                  <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
+                    <SelectItem value={ALL_OPTION_VALUE}>Todos</SelectItem>
+                    {productTypeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Estratégia</p>
+                <Select
+                  value={effectiveFilters.strategy ?? ALL_OPTION_VALUE}
+                  onValueChange={(value) =>
+                    applyFilters({ strategy: value === ALL_OPTION_VALUE ? null : value })
+                  }
+                >
+                  <SelectTrigger className="h-9 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
+                    <SelectValue placeholder="Todas estratégias" />
+                  </SelectTrigger>
+                  <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
+                    <SelectItem value={ALL_OPTION_VALUE}>Todas</SelectItem>
+                    {strategyOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>

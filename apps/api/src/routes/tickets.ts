@@ -459,6 +459,10 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
+    const sourceInstanceParam = (req.query.sourceInstance ?? req.query.instanceId) as
+      | string
+      | string[]
+      | undefined;
     const filters: TicketFilters = {
       status: parseListParam(req.query.status) as TicketFilters['status'],
       priority: parseListParam(req.query.priority) as TicketFilters['priority'],
@@ -469,6 +473,11 @@ router.get(
       dateFrom: parseDateParam(req.query.dateFrom),
       dateTo: parseDateParam(req.query.dateTo),
       search: typeof req.query.search === 'string' ? req.query.search : undefined,
+      sourceInstance: parseListParam(sourceInstanceParam),
+      campaignId: parseListParam(req.query.campaignId),
+      campaignName: parseListParam(req.query.campaignName),
+      productType: parseListParam(req.query.productType),
+      strategy: parseListParam(req.query.strategy),
     };
 
     if (!filters.status) {

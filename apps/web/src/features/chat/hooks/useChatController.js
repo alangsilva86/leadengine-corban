@@ -19,6 +19,10 @@ const DEFAULT_FILTERS = {
   window: 'in_window',
   search: '',
   outcome: null,
+  instanceId: null,
+  campaignId: null,
+  productType: null,
+  strategy: null,
 };
 
 const DEFAULT_MESSAGES_PAGE_SIZE = 40;
@@ -47,6 +51,22 @@ const buildApiFilters = ({ filters, currentUser }) => {
     queryFilters.outcome = 'won';
   } else if (filters?.outcome === 'lost') {
     queryFilters.outcome = 'lost';
+  }
+
+  if (filters?.instanceId) {
+    queryFilters.sourceInstance = filters.instanceId;
+  }
+
+  if (filters?.campaignId) {
+    queryFilters.campaignId = filters.campaignId;
+  }
+
+  if (filters?.productType) {
+    queryFilters.productType = filters.productType;
+  }
+
+  if (filters?.strategy) {
+    queryFilters.strategy = filters.strategy;
   }
 
   return queryFilters;

@@ -20,6 +20,10 @@ export type ChatMessageMetadata = {
   template?: ChatTemplateMetadata;
   attachments?: ChatAttachmentMetadata[];
   sourceInstance?: string | null;
+  campaignId?: string | null;
+  campaignName?: string | null;
+  productType?: string | null;
+  strategy?: string | null;
   whatsapp?: {
     instanceId?: string | null;
     instanceLabel?: string | null;

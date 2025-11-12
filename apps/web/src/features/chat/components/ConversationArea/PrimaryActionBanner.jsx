@@ -48,6 +48,68 @@ const PRIMARY_BUTTON_TONE = {
   overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
 };
 
+const normalizeTicketString = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return null;
+};
+
+const resolveTicketMetadataField = (ticket, key) => {
+  if (!ticket || typeof ticket !== 'object') {
+    return null;
+  }
+  const metadata = ticket.metadata;
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  return normalizeTicketString(metadata[key]);
+};
+
+const resolveTicketSourceInstance = (ticket) => {
+  const metadataSource = resolveTicketMetadataField(ticket, 'sourceInstance');
+  if (metadataSource) {
+    return metadataSource;
+  }
+  const metadataInstance = resolveTicketMetadataField(ticket, 'instanceId');
+  if (metadataInstance) {
+    return metadataInstance;
+  }
+  return normalizeTicketString(ticket?.instanceId);
+};
+
+const resolveTicketCampaignId = (ticket) => {
+  const metadataCampaignId = resolveTicketMetadataField(ticket, 'campaignId');
+  if (metadataCampaignId) {
+    return metadataCampaignId;
+  }
+  return normalizeTicketString(ticket?.lead?.campaignId);
+};
+
+const resolveTicketCampaignName = (ticket) => {
+  const metadataCampaignName = resolveTicketMetadataField(ticket, 'campaignName');
+  if (metadataCampaignName) {
+    return metadataCampaignName;
+  }
+  const leadCampaignName = normalizeTicketString(ticket?.lead?.campaignName);
+  if (leadCampaignName) {
+    return leadCampaignName;
+  }
+  return normalizeTicketString(ticket?.lead?.campaign?.name);
+};
+
+const resolveTicketProductType = (ticket) => {
+  return resolveTicketMetadataField(ticket, 'productType');
+};
+
+const resolveTicketStrategy = (ticket) => {
+  return resolveTicketMetadataField(ticket, 'strategy');
+};
+
 const Indicator = ({ icon: Icon, tone = 'neutral', label, description, className }) => {
   if (!label) return null;
   const resolvedToneClass = INDICATOR_TONES[tone] ?? INDICATOR_TONES.neutral;
@@ -197,11 +259,12 @@ const PrimaryActionBanner = ({
   instancePresentation,
 }) => {
   const resolvedInstance = useMemo(() => {
+    const metadataInstance = resolveTicketSourceInstance(ticket);
     const fallback = {
-      label: 'Instância desconhecida',
+      label: metadataInstance ?? 'Instância desconhecida',
       color: '#94A3B8',
-      number: null,
-      phone: null,
+      number: metadataInstance ?? null,
+      phone: metadataInstance ?? null,
     };
 
     if (!instancePresentation) {
@@ -211,16 +274,30 @@ const PrimaryActionBanner = ({
     return {
       label: instancePresentation.label ?? fallback.label,
       color: instancePresentation.color ?? fallback.color,
-      number: instancePresentation.number ?? instancePresentation.phone ?? null,
-      phone: instancePresentation.phone ?? null,
+      number: instancePresentation.number ?? instancePresentation.phone ?? metadataInstance ?? null,
+      phone: instancePresentation.phone ?? metadataInstance ?? null,
     };
-  }, [instancePresentation]);
+  }, [instancePresentation, ticket]);
 
   const showContactPhone = useMemo(() => {
     if (!contactPhone) return false;
     if (!resolvedInstance.number) return true;
     return contactPhone !== resolvedInstance.number;
   }, [contactPhone, resolvedInstance.number]);
+
+  const enrichmentChips = useMemo(() => {
+    const campaignId = resolveTicketCampaignId(ticket);
+    const campaignName = resolveTicketCampaignName(ticket);
+    const productType = resolveTicketProductType(ticket);
+    const strategy = resolveTicketStrategy(ticket);
+
+    return [
+      { id: 'instance', label: `Instância · ${resolvedInstance.label ?? 'Instância desconhecida'}` },
+      { id: 'campaign', label: `Campanha · ${campaignName ?? campaignId ?? 'Não informada'}` },
+      { id: 'productType', label: `Convênio · ${productType ?? 'Não informado'}` },
+      { id: 'strategy', label: `Estratégia · ${strategy ?? 'Não informada'}` },
+    ];
+  }, [resolvedInstance.label, ticket]);
 
   const handleDetails = (intent = {}) => {
     onRequestDetails?.(intent);
@@ -271,6 +348,11 @@ const PrimaryActionBanner = ({
               {showContactPhone ? (
                 <span data-testid="ticket-contact-phone">{contactPhone}</span>
               ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {enrichmentChips.map((chip) => (
+                <Indicator key={chip.id} tone="neutral" label={chip.label} />
+              ))}
             </div>
           </div>
         </div>
