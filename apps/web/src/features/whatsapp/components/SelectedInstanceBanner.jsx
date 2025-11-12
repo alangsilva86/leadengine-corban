@@ -26,6 +26,17 @@ const SelectedInstanceBanner = ({
   const formattedPhone = selectedInstance ? formatPhoneNumber(selectedInstancePhone) : null;
   const showMarkConnected = Boolean(onMarkConnected) && localStatus !== 'connected';
 
+  const normalizedSummary =
+    summary ??
+    {
+      state: 'loading',
+      totals: { connected: 0, attention: 0, disconnected: 0 },
+      queueTotal: 0,
+      failureTotal: 0,
+      usageAverage: 0,
+      lastSyncLabel: '—',
+    };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -51,28 +62,28 @@ const SelectedInstanceBanner = ({
       </div>
 
       <div className="flex flex-wrap gap-2 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-        {summary.state === 'ready' ? (
+        {normalizedSummary.state === 'ready' ? (
           <>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-emerald-300">
-              {summary.totals.connected} conectada(s)
+              {normalizedSummary.totals.connected} conectada(s)
             </Badge>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-slate-200">
-              {summary.totals.disconnected} desconectada(s)
+              {normalizedSummary.totals.disconnected} desconectada(s)
             </Badge>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-slate-200">
-              Fila total: {formatMetricValue(summary.queueTotal)}
+              Fila total: {formatMetricValue(normalizedSummary.queueTotal)}
             </Badge>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-slate-200">
-              Falhas 24h: {formatMetricValue(summary.failureTotal)}
+              Falhas 24h: {formatMetricValue(normalizedSummary.failureTotal)}
             </Badge>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-indigo-200">
-              Uso médio do limite: {summary.usageAverage}%
+              Uso médio do limite: {normalizedSummary.usageAverage}%
             </Badge>
             <Badge variant="outline" className="border-slate-800/60 bg-transparent px-3 py-1 text-slate-300">
-              Última sync: {summary.lastSyncLabel}
+              Última sync: {normalizedSummary.lastSyncLabel}
             </Badge>
           </>
-        ) : summary.state === 'loading' ? (
+        ) : normalizedSummary.state === 'loading' ? (
           <>
             <Badge variant="status" tone="info">
               Sincronizando instâncias…
