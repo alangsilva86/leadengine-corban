@@ -9,6 +9,7 @@ describe('useOnboardingStepLabel', () => {
     { id: 'dashboard', label: 'Visão Geral' },
     { id: 'agreements', label: 'Convênios' },
     { id: 'channels', label: 'Instâncias & Canais' },
+    { id: 'campaigns', label: 'Campanhas' },
     { id: 'inbox', label: 'Inbox' },
   ];
 
@@ -21,7 +22,7 @@ describe('useOnboardingStepLabel', () => {
       })
     );
 
-    expect(result.current.stepLabel).toBe('Passo 2 de 4');
+    expect(result.current.stepLabel).toBe('Passo 2 de 5');
     expect(result.current.nextStage).toBe('Instâncias & Canais');
   });
 
@@ -47,7 +48,7 @@ describe('useOnboardingStepLabel', () => {
       })
     );
 
-    expect(result.current.stepLabel).toBe('Passo 4 de 4');
+    expect(result.current.stepLabel).toBe('Passo 4 de 5');
     expect(result.current.nextStage).toBe('Visão Geral');
   });
 });
