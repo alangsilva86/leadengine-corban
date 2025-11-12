@@ -41,6 +41,7 @@ interface GroupMetadata {
   agreementName: string | null;
   productType: string | null;
   marginType: string | null;
+  marginValue: number | null;
   strategy: string | null;
 }
 
@@ -84,6 +85,7 @@ type LeadAllocationWithCampaign = Prisma.LeadAllocationGetPayload<{
         productType: true;
         marginType: true;
         strategy: true;
+        metadata: true;
         whatsappInstance: {
           select: {
             id: true;
@@ -165,6 +167,23 @@ const resolveDimension = (
   dimension: DimensionKey
 ): { key: string; label: string; metadata: GroupMetadata } => {
   const campaign = allocation.campaign;
+  const metadataRecord =
+    campaign?.metadata && typeof campaign.metadata === 'object' && !Array.isArray(campaign.metadata)
+      ? (campaign.metadata as Record<string, unknown>)
+      : {};
+  const resolveMarginValue = (): number | null => {
+    const raw = metadataRecord.margin;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw;
+    }
+
+    if (typeof raw === 'string') {
+      const parsed = Number(raw.replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+  };
   const metadata: GroupMetadata = {
     campaignId: normalizeString(campaign?.id) ?? null,
     campaignName: normalizeString(campaign?.name) ?? null,
@@ -174,6 +193,7 @@ const resolveDimension = (
     instanceName: normalizeString(campaign?.whatsappInstance?.name) ?? null,
     productType: normalizeString(campaign?.productType) ?? null,
     marginType: normalizeString(campaign?.marginType) ?? null,
+    marginValue: resolveMarginValue(),
     strategy: normalizeString(campaign?.strategy) ?? null,
   };
 

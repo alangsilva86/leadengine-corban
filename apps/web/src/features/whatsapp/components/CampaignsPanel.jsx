@@ -261,6 +261,7 @@ const CampaignsPanel = ({
         ? campaign.metadata
         : {};
     const productValue =
+      campaign.productType ??
       campaign.product ??
       metadata.product ??
       metadata.productKey ??
@@ -276,6 +277,7 @@ const CampaignsPanel = ({
       metadata.marginTarget ??
       metadata.marginPercentage ??
       metadata.marginPercent ??
+      (typeof campaign.marginValue === 'number' ? campaign.marginValue : null) ??
       (typeof campaign.margin === 'number' ? campaign.margin : null);
     const productOption = productValue ? findCampaignProduct(productValue) : null;
     const strategyOption = strategyValue ? findCampaignStrategy(strategyValue) : null;

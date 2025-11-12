@@ -71,6 +71,24 @@ const normalizeTagsInput = (value: unknown): string[] => {
   return Array.from(new Set(tags));
 };
 
+const normalizeNumericValue = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    const parsed = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+};
+
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
 
 const buildAgreementFallbackSummaries = (): AgreementSummary[] => {
@@ -566,8 +584,9 @@ router.post(
       }
       throw new Error('Invalid campaign status');
     }),
-  body('productType').optional().isString().trim().isLength({ min: 1 }),
+  body('productType').isString().trim().isLength({ min: 1 }),
   body('marginType').optional().isString().trim().isLength({ min: 1 }),
+  body('marginValue').optional({ nullable: true }).isFloat({ min: 0 }),
   body('strategy').optional().isString().trim().isLength({ min: 1 }),
   body('tags').optional().isArray(),
   body('tags.*').optional().isString(),
@@ -591,8 +610,10 @@ router.post(
       rawStatusValue && Object.values(CampaignStatus).includes(rawStatusValue as CampaignStatus)
         ? (rawStatusValue as CampaignStatus)
         : undefined;
-    const productType = normalizeClassificationValue(req.body.productType);
-    const marginType = normalizeClassificationValue(req.body.marginType);
+    const rawProductType = normalizeClassificationValue(req.body.productType);
+    const productType = rawProductType ?? 'generic';
+    const marginType = normalizeClassificationValue(req.body.marginType) ?? 'percentage';
+    const marginValue = normalizeNumericValue(req.body.marginValue);
     const strategy = normalizeClassificationValue(req.body.strategy);
     const tags = normalizeTagsInput(req.body.tags);
 
@@ -604,6 +625,7 @@ router.post(
       status: status ?? CampaignStatus.ACTIVE,
       productType,
       marginType,
+      marginValue,
       strategy,
       tags,
     });
@@ -618,6 +640,7 @@ router.post(
         ...(agreementNameInput ? { agreementName: agreementNameInput } : {}),
         ...(productType ? { productType } : {}),
         ...(marginType ? { marginType } : {}),
+        ...(marginValue !== null ? { marginValue } : {}),
         ...(strategy ? { strategy } : {}),
         ...(tags.length > 0 ? { tags } : {}),
       };

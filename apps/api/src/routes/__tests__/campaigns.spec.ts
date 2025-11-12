@@ -281,10 +281,14 @@ describe('POST /campaigns', () => {
       agreementName: 'Agreement 1',
       name: 'Agreement 1 • instance-1',
       status: 'paused',
-      metadata: { history: [] } as Prisma.JsonValue,
+      metadata: { history: [], margin: 0.9 } as Prisma.JsonValue,
       createdAt: new Date('2024-01-01T00:00:00.000Z'),
       updatedAt: new Date('2024-01-01T00:00:00.000Z'),
       whatsappInstanceId: 'instance-1',
+      productType: 'consigned_credit',
+      marginType: 'percentage',
+      strategy: 'reactive_inbound',
+      tags: ['consigned_credit', 'percentage', 'reactive_inbound'],
       whatsappInstance: {
         id: 'instance-1',
         name: 'Instance One',
@@ -307,12 +311,18 @@ describe('POST /campaigns', () => {
     );
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-1',
-      agreementName: 'Agreement 1',
-      instanceId: 'instance-1',
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-1',
+        agreementName: 'Agreement 1',
+        instanceId: 'instance-1',
+        status: 'active',
+        productType: 'consigned_credit',
+        marginType: 'percentage',
+        marginValue: 1.5,
+        strategy: 'reactive_inbound',
+      });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -330,6 +340,7 @@ describe('POST /campaigns', () => {
     expect(history.map((entry) => entry?.action)).toEqual(
       expect.arrayContaining(['status-changed', 'reactivated'])
     );
+    expect(metadata?.margin).toBe(1.5);
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -343,10 +354,14 @@ describe('POST /campaigns', () => {
       agreementName: 'Agreement 1',
       name: 'Agreement 1 • instance-1',
       status: 'ended',
-      metadata: { history: [] } as Prisma.JsonValue,
+      metadata: { history: [], margin: 0.9 } as Prisma.JsonValue,
       createdAt: new Date('2024-01-01T00:00:00.000Z'),
       updatedAt: new Date('2024-01-02T00:00:00.000Z'),
       whatsappInstanceId: 'instance-1',
+      productType: 'consigned_credit',
+      marginType: 'percentage',
+      strategy: 'reactive_inbound',
+      tags: ['consigned_credit', 'percentage', 'reactive_inbound'],
       whatsappInstance: {
         id: 'instance-1',
         name: 'Instance One',
@@ -382,12 +397,18 @@ describe('POST /campaigns', () => {
     }));
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-1',
-      agreementName: 'Agreement 1',
-      instanceId: 'instance-1',
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-1',
+        agreementName: 'Agreement 1',
+        instanceId: 'instance-1',
+        status: 'active',
+        productType: 'consigned_credit',
+        marginType: 'percentage',
+        marginValue: 1.8,
+        strategy: 'reactive_inbound',
+      });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
@@ -398,6 +419,9 @@ describe('POST /campaigns', () => {
     expect(response.body.data.id).not.toBe(endedCampaign.id);
 
     expect(updateSpy).toHaveBeenCalledTimes(1);
+    const createArgs = createSpy.mock.calls[0]?.[0];
+    const createdMetadata = createArgs?.data?.metadata as Prisma.JsonObject;
+    expect(createdMetadata?.margin).toBe(1.8);
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(updateSpy.mock.invocationCallOrder?.[0]).toBeLessThan(createSpy.mock.invocationCallOrder?.[0] ?? Infinity);
 
@@ -445,12 +469,18 @@ describe('POST /campaigns', () => {
     vi.spyOn(prisma.campaign, 'update').mockRejectedValue(new Error('should not update when creating new'));
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-2',
-      agreementName: 'Agreement 2',
-      instanceId: 'instance-1',
-      status: 'paused',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-2',
+        agreementName: 'Agreement 2',
+        instanceId: 'instance-1',
+        status: 'paused',
+        productType: 'benefit_card',
+        marginType: 'percentage',
+        marginValue: 1.1,
+        strategy: 'proactive_followup',
+      });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
@@ -460,9 +490,16 @@ describe('POST /campaigns', () => {
 
     expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'paused' }),
+        data: expect.objectContaining({
+          status: 'paused',
+          productType: 'benefit_card',
+          marginType: 'percentage',
+          strategy: 'proactive_followup',
+        }),
       })
     );
+    const metadata = createSpy.mock.calls[0]?.[0]?.data?.metadata as Prisma.JsonObject;
+    expect(metadata?.margin).toBe(1.1);
   });
 
   it('reuses existing WhatsApp instance when payload references broker id', async () => {
@@ -522,10 +559,14 @@ describe('POST /campaigns', () => {
       agreementName: 'Agreement Broker',
       name: 'Agreement Broker • WhatsApp Principal',
       status: 'active',
-      metadata: { history: [] } as Prisma.JsonValue,
+      metadata: { history: [], margin: 1.4 } as Prisma.JsonValue,
       createdAt: new Date('2024-06-01T00:00:00.000Z'),
       updatedAt: new Date('2024-06-01T00:00:00.000Z'),
       whatsappInstanceId: canonicalInstance.id,
+      productType: 'benefit_card',
+      marginType: 'percentage',
+      strategy: 'hybrid',
+      tags: ['benefit_card', 'percentage', 'hybrid'],
       whatsappInstance: {
         id: canonicalInstance.id,
         name: canonicalInstance.name,
@@ -537,14 +578,20 @@ describe('POST /campaigns', () => {
       .mockResolvedValue(createdCampaign as never);
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-broker',
-      agreementName: 'Agreement Broker',
-      instanceId: 'broker-alias',
-      brokerId: canonicalInstance.brokerId,
-      name: 'Agreement Broker • WhatsApp Principal',
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-broker',
+        agreementName: 'Agreement Broker',
+        instanceId: 'broker-alias',
+        brokerId: canonicalInstance.brokerId,
+        name: 'Agreement Broker • WhatsApp Principal',
+        status: 'active',
+        productType: 'benefit_card',
+        marginType: 'percentage',
+        marginValue: 1.4,
+        strategy: 'hybrid',
+      });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
@@ -563,6 +610,8 @@ describe('POST /campaigns', () => {
 
     const createArgs = createCampaignSpy.mock.calls[0]?.[0];
     expect(createArgs?.data?.whatsappInstanceId).toBe(canonicalInstance.id);
+    const metadata = createArgs?.data?.metadata as Prisma.JsonObject;
+    expect(metadata?.margin).toBe(1.4);
   });
 
   it('returns the existing campaign when creation hits a unique constraint', async () => {
@@ -575,10 +624,14 @@ describe('POST /campaigns', () => {
       agreementName: 'Agreement 3',
       name: 'Campaign 3',
       status: 'active',
-      metadata: { history: [] } as Prisma.JsonValue,
+      metadata: { history: [], margin: 1.2 } as Prisma.JsonValue,
       createdAt: new Date('2024-03-10T00:00:00.000Z'),
       updatedAt: new Date('2024-03-10T00:00:00.000Z'),
       whatsappInstanceId: 'instance-1',
+      productType: 'salary_portability',
+      marginType: 'percentage',
+      strategy: 'hybrid',
+      tags: ['salary_portability', 'percentage', 'hybrid'],
       whatsappInstance: {
         id: 'instance-1',
         name: 'Instance One',
@@ -598,12 +651,18 @@ describe('POST /campaigns', () => {
     const createSpy = vi.spyOn(prisma.campaign, 'create').mockRejectedValue(createError);
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-3',
-      agreementName: 'Agreement 3',
-      instanceId: 'instance-1',
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-3',
+        agreementName: 'Agreement 3',
+        instanceId: 'instance-1',
+        status: 'active',
+        productType: 'salary_portability',
+        marginType: 'percentage',
+        marginValue: 1.2,
+        strategy: 'hybrid',
+      });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -631,12 +690,18 @@ describe('POST /campaigns', () => {
     const loggerSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-4',
-      agreementName: 'Agreement 4',
-      instanceId: 'instance-1',
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-4',
+        agreementName: 'Agreement 4',
+        instanceId: 'instance-1',
+        status: 'active',
+        productType: 'consigned_credit',
+        marginType: 'percentage',
+        marginValue: 1.6,
+        strategy: 'reactive_inbound',
+      });
 
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({
@@ -666,6 +731,7 @@ describe('POST /campaigns', () => {
 
     const createdCampaignMetadata = {
       history: [],
+      margin: 1.7,
     } as Prisma.JsonValue;
 
     const createSpy = vi.spyOn(prisma.campaign, 'create').mockImplementation(async (args) => ({
@@ -690,12 +756,18 @@ describe('POST /campaigns', () => {
     });
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-3',
-      agreementName: 'Agreement 3',
-      instanceId: 'instance-1',
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-3',
+        agreementName: 'Agreement 3',
+        instanceId: 'instance-1',
+        status: 'active',
+        productType: 'benefit_card',
+        marginType: 'percentage',
+        marginValue: 1.7,
+        strategy: 'proactive_followup',
+      });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
@@ -778,12 +850,18 @@ describe('POST /campaigns', () => {
     }));
 
     const app = buildApp();
-    const response = await request(app).post('/').send({
-      agreementId: 'agreement-ghost',
-      agreementName: 'Agreement Ghost',
-      instanceId: ghostInstance.id,
-      status: 'active',
-    });
+    const response = await request(app)
+      .post('/')
+      .send({
+        agreementId: 'agreement-ghost',
+        agreementName: 'Agreement Ghost',
+        instanceId: ghostInstance.id,
+        status: 'active',
+        productType: 'consigned_credit',
+        marginType: 'percentage',
+        marginValue: 1.3,
+        strategy: 'reactive_inbound',
+      });
 
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({

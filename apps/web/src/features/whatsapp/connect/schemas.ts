@@ -71,18 +71,12 @@ export const createCampaignSchema = z
         required_error: 'Escolha o status inicial da campanha.',
       })
       .default('active'),
-    productType: z
-      .string()
-      .trim()
-      .max(64)
-      .optional()
-      .transform((value) => (value && value.length > 0 ? value : undefined)),
     marginType: z
       .string()
       .trim()
       .max(64)
       .optional()
-      .transform((value) => (value && value.length > 0 ? value : undefined)),
+      .transform((value) => (value && value.length > 0 ? value : 'percentage')),
     tags: z
       .array(z.string().trim().min(1))
       .optional()
@@ -98,7 +92,6 @@ export const createCampaignSchema = z
       product,
       margin,
       strategy,
-      productType,
       marginType,
       tags,
     }) => ({
@@ -107,11 +100,10 @@ export const createCampaignSchema = z
       status,
       agreementId,
       agreementName,
-      product,
-      margin,
       strategy,
-      ...(productType ? { productType } : {}),
-      ...(marginType ? { marginType } : {}),
+      productType: product,
+      marginType,
+      marginValue: margin,
       ...(tags ? { tags } : {}),
     })
   );

@@ -26,6 +26,7 @@ export interface CampaignDTO {
   metrics: CampaignMetricsDTO;
   productType?: string | null;
   marginType?: string | null;
+  marginValue?: number | null;
   strategy?: string | null;
   tags: string[];
 }
