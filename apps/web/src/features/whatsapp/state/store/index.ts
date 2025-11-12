@@ -15,7 +15,7 @@ export const createInstancesStore = (
   const store = createStore<InstancesStoreState>((set, get) => ({
     ...createCoreSlice(set, get, events, deps),
     ...createQrSlice(set, get, events),
-    ...createRealtimeSlice(set),
+    ...createRealtimeSlice(set, get),
     ...createMutationsSlice(events, set, get),
   }));
 
