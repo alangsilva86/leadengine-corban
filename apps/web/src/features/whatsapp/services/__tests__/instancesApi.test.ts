@@ -64,6 +64,16 @@ describe('instancesApiService', () => {
     expect(apiGet).toHaveBeenCalledWith(`${BASE_PATH}?refresh=1`);
   });
 
+  it('normalizes create payload without agreement data', async () => {
+    const { service } = createService();
+    apiPost.mockResolvedValueOnce({ instances: [], instance: null });
+    apiGet.mockResolvedValue({ instances: [] });
+
+    await service.createInstance({ name: 'Nova', tenantId: 'tenant-1' });
+
+    expect(apiPost).toHaveBeenCalledWith(BASE_PATH, { name: 'Nova', tenantId: 'tenant-1' });
+  });
+
   it('connectInstance returns parsed payload and updates store', async () => {
     const { bundle, service } = createService();
     apiGet.mockResolvedValueOnce({

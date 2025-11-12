@@ -88,6 +88,14 @@ describe('instancesStore', () => {
     expect(persistCache).toHaveBeenCalledWith(state.instances, 'inst-2');
   });
 
+  it('updates tenant config without agreement metadata', () => {
+    const bundle = createStore();
+
+    bundle.store.getState().setConfig({ tenantId: 'tenant-1' });
+
+    expect(bundle.store.getState().config).toMatchObject({ tenantId: 'tenant-1' });
+  });
+
   it('resets state on auth fallback reset', () => {
     const bundle = createStore();
     bundle.store.setState({

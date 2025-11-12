@@ -10,7 +10,6 @@ export type Nullable<T> = T | null;
 
 export interface InstancesConfig {
   tenantId: Nullable<string>;
-  agreementId: Nullable<string>;
   campaignInstanceId: Nullable<string>;
   autoRefresh: boolean;
   pauseWhenHidden: boolean;
@@ -30,8 +29,6 @@ export interface InstancesLoadOptions {
 export interface CreateInstancePayload {
   name: string;
   id?: Nullable<string>;
-  agreementId?: Nullable<string>;
-  agreementName?: Nullable<string>;
   tenantId?: Nullable<string>;
 }
 
