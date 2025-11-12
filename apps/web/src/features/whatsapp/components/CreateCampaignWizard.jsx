@@ -253,7 +253,7 @@ const CreateCampaignWizard = ({
       instanceId: preferredInstance?.id ?? '',
       agreementId: preferredAgreementId,
       agreementName: preferredAgreementName,
-      leadSource: prev.leadSource || LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound',
+        leadSource: prev.leadSource || (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
       segments: Array.isArray(prev.segments) ? prev.segments : [],
       name: nameDirty
         ? prev.name
