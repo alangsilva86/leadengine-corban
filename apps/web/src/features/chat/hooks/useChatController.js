@@ -104,7 +104,7 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
   useEffect(() => {
     if (tickets.length === 0) {
       setSelectedTicketId((previous) => (previous && findTicketById(tickets, previous) ? previous : null));
-      setSelectedTicketIds([]);
+      setSelectedTicketIds((current) => (current.length > 0 ? [] : current));
       return;
     }
 
@@ -114,7 +114,18 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
       }
       return tickets[0]?.id ?? null;
     });
-    setSelectedTicketIds((previous) => previous.filter((id) => findTicketById(tickets, id)));
+    setSelectedTicketIds((previous) => {
+      const next = previous.filter((id) => findTicketById(tickets, id));
+      if (next.length !== previous.length) {
+        return next;
+      }
+      for (let index = 0; index < next.length; index += 1) {
+        if (next[index] !== previous[index]) {
+          return next;
+        }
+      }
+      return previous;
+    });
   }, [tickets]);
 
   const selectedTicket = useMemo(
