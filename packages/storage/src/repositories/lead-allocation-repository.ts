@@ -129,35 +129,41 @@ const ensureFallbackCampaignForInstance = async (
   instanceId: string
 ): Promise<PrismaCampaign> => {
   const prisma = getPrismaClient();
+  const fallbackAgreementId = `${FALLBACK_CAMPAIGN_AGREEMENT_PREFIX}:${instanceId}`;
+  const metadata = {
+    fallback: true,
+    source: 'whatsapp-inbound',
+  } as Prisma.InputJsonValue;
 
-  return prisma.campaign.upsert({
+  const existing = await prisma.campaign.findFirst({
     where: {
-      tenantId_agreementId_whatsappInstanceId: {
-        tenantId,
-        agreementId: `${FALLBACK_CAMPAIGN_AGREEMENT_PREFIX}:${instanceId}`,
-        whatsappInstanceId: instanceId,
+      tenantId,
+      agreementId: fallbackAgreementId,
+      whatsappInstanceId: instanceId,
+    },
+  });
+
+  if (existing) {
+    return prisma.campaign.update({
+      where: { id: existing.id },
+      data: {
+        status: 'active',
+        name: FALLBACK_CAMPAIGN_NAME,
+        agreementName: FALLBACK_CAMPAIGN_NAME,
+        metadata,
       },
-    },
-    update: {
-      status: 'active',
-      name: FALLBACK_CAMPAIGN_NAME,
-      agreementName: FALLBACK_CAMPAIGN_NAME,
-      metadata: {
-        fallback: true,
-        source: 'whatsapp-inbound',
-      } as Prisma.InputJsonValue,
-    },
-    create: {
+    });
+  }
+
+  return prisma.campaign.create({
+    data: {
       tenantId,
       name: FALLBACK_CAMPAIGN_NAME,
-      agreementId: `${FALLBACK_CAMPAIGN_AGREEMENT_PREFIX}:${instanceId}`,
+      agreementId: fallbackAgreementId,
       agreementName: FALLBACK_CAMPAIGN_NAME,
       whatsappInstanceId: instanceId,
       status: 'active',
-      metadata: {
-        fallback: true,
-        source: 'whatsapp-inbound',
-      } as Prisma.InputJsonValue,
+      metadata,
     },
   });
 };
