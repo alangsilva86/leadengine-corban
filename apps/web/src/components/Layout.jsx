@@ -57,13 +57,13 @@ const NAVIGATION_ITEMS = (() => {
     { id: 'dashboard', label: 'Visão Geral', icon: Home },
     { id: 'channels', label: 'Instâncias & Canais', icon: QrCode },
     { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
+    { id: 'inbox', label: 'Inbox', icon: MessageSquare },
   ];
 
   const contextual = [
     { id: 'contacts', label: 'Contatos', icon: Users },
     { id: 'crm', label: 'CRM', icon: Layers },
     { id: 'agreements', label: 'Convênios', icon: Briefcase },
-    { id: 'inbox', label: 'Inbox', icon: MessageSquare },
     { id: 'reports', label: 'Relatórios', icon: BarChart3 },
     ...(showWhatsappDebug ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }] : []),
     { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },

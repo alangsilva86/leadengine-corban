@@ -65,9 +65,9 @@ describe('useOnboardingJourney', () => {
     expect(result.current.onboarding.whatsappStatus).toBe('connected');
     expect(result.current.computeNextSetupPage()).toBe('inbox');
     expect(result.current.onboarding.stages.map((stage) => stage.id)).toEqual([
-      'dashboard',
-      'agreements',
       'channels',
+      'agreements',
+      'campaigns',
       'inbox',
     ]);
 

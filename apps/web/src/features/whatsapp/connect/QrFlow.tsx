@@ -6,13 +6,7 @@ interface QrFlowProps {
   surfaceStyles: Record<string, string>;
   open: boolean;
   onOpenChange: (value: boolean) => void;
-  qrImageSrc: string | null;
-  isGeneratingQrImage: boolean;
   qrStatusMessage: string | null;
-  onGenerate: () => void;
-  onOpenQrDialog: () => void;
-  generateDisabled: boolean;
-  openDisabled: boolean;
   pairingPhoneInput: string;
   onPairingPhoneChange: (event: any) => void;
   pairingDisabled: boolean;
@@ -33,13 +27,7 @@ const QrFlow = ({
   surfaceStyles,
   open,
   onOpenChange,
-  qrImageSrc,
-  isGeneratingQrImage,
   qrStatusMessage,
-  onGenerate,
-  onOpenQrDialog,
-  generateDisabled,
-  openDisabled,
   pairingPhoneInput,
   onPairingPhoneChange,
   pairingDisabled,
@@ -55,13 +43,7 @@ const QrFlow = ({
         surfaceStyles={surfaceStyles}
         open={open}
         onOpenChange={onOpenChange}
-        qrImageSrc={qrImageSrc}
-        isGeneratingQrImage={isGeneratingQrImage}
         qrStatusMessage={qrStatusMessage}
-        onGenerate={onGenerate}
-        onOpenQrDialog={onOpenQrDialog}
-        generateDisabled={generateDisabled}
-        openDisabled={openDisabled}
         pairingPhoneInput={pairingPhoneInput}
         onPairingPhoneChange={onPairingPhoneChange}
         pairingDisabled={pairingDisabled}

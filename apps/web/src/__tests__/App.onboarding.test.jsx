@@ -36,6 +36,7 @@ const onTenantIdChangeMock = vi.fn(() => () => {});
 vi.mock('../lib/auth.js', () => ({
   onAuthTokenChange: (...args) => onAuthTokenChangeMock(...args),
   onTenantIdChange: (...args) => onTenantIdChangeMock(...args),
+  getAuthToken: () => 'mock-token',
 }));
 
 vi.mock('../components/Layout.jsx', () => ({
@@ -125,7 +126,7 @@ describe('App onboarding journey', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,channels,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,campaigns,inbox')
     );
 
     const startButton = await screen.findByRole('button', { name: /começar/i });
@@ -135,8 +136,8 @@ describe('App onboarding journey', () => {
     expect(await screen.findByTestId('whatsapp-page')).toBeInTheDocument();
 
     const latestLayout = getLatestLayoutCall();
-    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['dashboard', 'channels', 'inbox']);
-    expect(latestLayout?.activeStep).toBe(1);
+    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['channels', 'campaigns', 'inbox']);
+    expect(latestLayout?.activeStep).toBe(0);
   });
 
   it('navigates directly to inbox when WhatsApp is connected without an agreement', async () => {
@@ -155,12 +156,12 @@ describe('App onboarding journey', () => {
     const startButton = await screen.findByRole('button', { name: /começar/i });
     await userEvent.click(startButton);
 
-    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'inbox'));
-    expect(await screen.findByTestId('inbox-page')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('layout')).toHaveAttribute('data-current-page', 'campaigns'));
+    expect(await screen.findByRole('heading', { name: /Gerencie suas campanhas/i })).toBeInTheDocument();
 
     const latestLayout = getLatestLayoutCall();
-    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['dashboard', 'channels', 'inbox']);
-    expect(latestLayout?.activeStep).toBe(2);
+    expect(latestLayout?.stages.map((stage) => stage.id)).toEqual(['channels', 'campaigns', 'inbox']);
+    expect(latestLayout?.activeStep).toBe(1);
   });
 
   it('restores agreements stage when an agreement is selected', async () => {
@@ -177,7 +178,7 @@ describe('App onboarding journey', () => {
     render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,agreements,channels,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,agreements,campaigns,inbox')
     );
 
     const startButton = await screen.findByRole('button', { name: /começar/i });
@@ -187,12 +188,12 @@ describe('App onboarding journey', () => {
 
     const latestLayout = getLatestLayoutCall();
     expect(latestLayout?.stages.map((stage) => stage.id)).toEqual([
-      'dashboard',
-      'agreements',
       'channels',
+      'agreements',
+      'campaigns',
       'inbox',
     ]);
-    expect(latestLayout?.activeStep).toBe(2);
+    expect(latestLayout?.activeStep).toBe(0);
   });
 
   it('includes agreements stage when navigating manually to agreements', async () => {
@@ -202,15 +203,15 @@ describe('App onboarding journey', () => {
     await userEvent.click(goAgreements);
 
     await waitFor(() =>
-      expect(screen.getByTestId('layout-stages')).toHaveTextContent('dashboard,agreements,channels,inbox')
+      expect(screen.getByTestId('layout-stages')).toHaveTextContent('channels,agreements,campaigns,inbox')
     );
     expect(await screen.findByTestId('agreements-page')).toBeInTheDocument();
 
     const latestLayout = getLatestLayoutCall();
     expect(latestLayout?.stages.map((stage) => stage.id)).toEqual([
-      'dashboard',
-      'agreements',
       'channels',
+      'agreements',
+      'campaigns',
       'inbox',
     ]);
     expect(latestLayout?.activeStep).toBe(1);

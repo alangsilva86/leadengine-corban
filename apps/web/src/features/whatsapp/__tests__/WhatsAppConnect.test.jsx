@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Suspense } from 'react';
+import '@testing-library/jest-dom/vitest';
 
 import WhatsAppConnect from '../connect/index';
 
@@ -92,17 +93,6 @@ vi.mock('../connect/useWhatsAppConnect', () => ({
   })),
 }));
 
-vi.mock('../components/InstancesPanel.jsx', () => ({
-  __esModule: true,
-  default: (props) => (
-    <div data-testid="instances-panel">
-      <button type="button" onClick={props.onRefresh}>
-        Atualizar instâncias
-      </button>
-    </div>
-  ),
-}));
-
 vi.mock('../components/CreateInstanceDialog.jsx', () => ({
   __esModule: true,
   default: ({ open }) => (open ? <div data-testid="create-instance-dialog">Criar instância</div> : null),
@@ -133,12 +123,13 @@ describe('WhatsAppConnect', () => {
     );
 
     expect(await screen.findByText('Conecte seu WhatsApp')).toBeInTheDocument();
-    expect(screen.getByTestId('instances-panel')).toBeInTheDocument();
+    const refreshButton = await screen.findByRole('button', { name: /Atualizar lista/i });
 
-    fireEvent.click(screen.getByText('Continuar'));
+    const continueButtons = screen.getAllByRole('button', { name: /^Continuar$/i });
+    fireEvent.click(continueButtons[0]);
     expect(onContinueMock).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByText('Atualizar instâncias'));
+    fireEvent.click(refreshButton);
     expect(handleRefreshInstancesMock).toHaveBeenCalledTimes(1);
 
     expect(screen.queryByText('Campanhas e roteamento')).not.toBeInTheDocument();

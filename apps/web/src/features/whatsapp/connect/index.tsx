@@ -257,13 +257,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           surfaceStyles={surfaceStyles}
           open={qrPanelOpen}
           onOpenChange={(value) => setQrPanelOpen(value)}
-          qrImageSrc={qrImageSrc}
-          isGeneratingQrImage={isGeneratingQrImage}
           qrStatusMessage={qrStatusMessage}
-          onGenerate={handleGenerateQr}
-          onOpenQrDialog={() => setQrDialogOpen(true)}
-          generateDisabled={!selectedInstance || isBusy}
-          openDisabled={!selectedInstance}
           pairingPhoneInput={pairingPhoneInput}
           onPairingPhoneChange={handlePairingPhoneChange}
           pairingDisabled={!selectedInstance || requestingPairingCode || isBusy}

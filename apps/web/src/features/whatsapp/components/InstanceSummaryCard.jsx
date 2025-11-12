@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { cn } from '@/lib/utils.js';
-import { Check } from 'lucide-react';
+import { Check, QrCode } from 'lucide-react';
 
 import InstanceActionsMenu from './InstanceActionsMenu.jsx';
 import InstanceMetricsTiles from './InstanceMetricsTiles.jsx';
@@ -32,6 +32,9 @@ const InstanceSummaryCard = ({
     user,
     isCurrent,
   } = viewModel;
+
+  const instanceStatus = (instance?.status ?? '').toLowerCase();
+  const showQrButton = ['disconnected', 'qr_required', 'error'].includes(instanceStatus);
 
   return (
     <div
@@ -77,13 +80,24 @@ const InstanceSummaryCard = ({
         {user ? <span>Operador: {user}</span> : null}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
+        {showQrButton ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 min-[320px]:flex-none"
+            onClick={() => onViewQr?.(instance)}
+          >
+            <QrCode className="mr-2 h-4 w-4" />
+            Gerar QR Code
+          </Button>
+        ) : null}
         <Button
           size="sm"
           variant={isCurrent ? 'default' : 'outline'}
           onClick={() => onSelectInstance?.(instance)}
           disabled={isBusy}
-          className="w-full"
+          className={cn('flex-1 min-[320px]:flex-none', isCurrent ? 'whitespace-normal' : '')}
         >
           {isCurrent ? (
             <>

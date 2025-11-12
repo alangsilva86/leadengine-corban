@@ -92,7 +92,6 @@ const normalizePage = (page?: StoredOnboardingPage | null): OnboardingPage => {
 };
 
 const BASE_JOURNEY_STAGES: JourneyStage[] = [
-  { id: 'dashboard', label: 'Visão Geral' },
   { id: 'channels', label: 'Instâncias & Canais' },
   { id: 'campaigns', label: 'Campanhas' },
   { id: 'inbox', label: 'Inbox' },
