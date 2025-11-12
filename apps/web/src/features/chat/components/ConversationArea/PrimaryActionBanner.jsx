@@ -272,9 +272,11 @@ const PrimaryActionBanner = ({
               ) : null}
               <InstanceBadge instanceId={instanceId} />
             </div>
-            <span className="text-xs text-foreground-muted">
-              {resolvedInstance.number ?? 'Número não informado'}
-            </span>
+            {resolvedInstance.number ? (
+              <span className="text-xs text-foreground-muted">
+                {resolvedInstance.number}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 md:justify-self-end lg:justify-self-start">
