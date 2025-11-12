@@ -159,7 +159,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     };
   }, [instanceViewModels, instancesReady]);
 
-  const backLabel = hasAgreement ? 'Trocar convênio' : 'Voltar';
+  const backLabel = 'Voltar';
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -217,7 +217,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
               </span>
             </div>
             {countdownMessage ? (
-              <span className="flex items-center gap-1 text-amber-200">
+              <span className="flex items-center gap-1 text-amber-200" role="status" aria-live="polite">
                 <Clock className="h-3.5 w-3.5" />
                 {countdownMessage}
               </span>

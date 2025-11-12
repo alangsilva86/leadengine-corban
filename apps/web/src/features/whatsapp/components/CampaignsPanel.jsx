@@ -210,7 +210,7 @@ const CampaignsPanel = ({
         {isFiltered
           ? 'Nenhuma campanha corresponde aos filtros aplicados.'
           : hasAgreementContext
-          ? 'Nenhuma campanha cadastrada para este convênio.'
+          ? 'Nenhuma campanha cadastrada para esta origem.'
           : 'Nenhuma campanha cadastrada até o momento.'}
       </p>
       <Button
@@ -339,7 +339,9 @@ const CampaignsPanel = ({
               <TooltipTrigger asChild>
                 <Badge variant="secondary">{agreementLabel}</Badge>
               </TooltipTrigger>
-              <TooltipContent>Convênio que origina os leads desta campanha.</TooltipContent>
+              <TooltipContent>
+                Origem comercial que identifica de onde vêm os leads desta campanha (convênio, parceiro ou carteira).
+              </TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -350,7 +352,7 @@ const CampaignsPanel = ({
               <TooltipContent>
                 {isLinked
                   ? `Leads inbound serão direcionados para ${instanceLabel}.`
-                  : 'Associe uma instância conectada para habilitar o roteamento automático de leads.'}
+                  : 'Associe uma instância conectada quando quiser distribuir leads automaticamente.'}
               </TooltipContent>
             </Tooltip>
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
@@ -458,12 +460,12 @@ const CampaignsPanel = ({
             <CardTitle>Painel de campanhas</CardTitle>
             <CardDescription>
               {agreementName
-                ? `Visão geral das campanhas do convênio ${agreementName}, com acesso rápido aos demais convênios e instâncias.`
+                ? `Visão geral das campanhas da origem ${agreementName}, com acesso rápido às demais origens e instâncias.`
                 : 'Visão global de todas as campanhas vinculadas às instâncias de WhatsApp ativas.'}
             </CardDescription>
             {!canCreateCampaigns ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Vincule um convênio para habilitar a criação de campanhas.
+                Conecte uma instância e defina uma origem quando quiser ativar campanhas automatizadas.
               </p>
             ) : null}
           </div>
@@ -490,10 +492,10 @@ const CampaignsPanel = ({
           <div className="w-full sm:w-auto sm:min-w-[220px]">
             <Select value={agreementFilter} onValueChange={handleAgreementFilterChange}>
               <SelectTrigger>
-                <SelectValue placeholder="Todos os convênios" />
+                <SelectValue placeholder="Todas as origens" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os convênios</SelectItem>
+                <SelectItem value="all">Todas as origens</SelectItem>
                 {availableAgreements.map((item) => (
                   <SelectItem key={item.value} value={item.value}>
                     {item.label}

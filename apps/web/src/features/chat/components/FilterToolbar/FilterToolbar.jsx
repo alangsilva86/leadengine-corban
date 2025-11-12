@@ -136,7 +136,7 @@ const FilterToolbar = ({
       {
         id: 'productType',
         label: 'Convênio',
-        value: getOptionLabel(productTypeOptions, effectiveFilters.productType, 'Todos convênios'),
+        value: getOptionLabel(productTypeOptions, effectiveFilters.productType, 'Todas as origens'),
       },
       {
         id: 'strategy',
@@ -326,7 +326,7 @@ const FilterToolbar = ({
                   }
                 >
                   <SelectTrigger className="h-9 rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
-                    <SelectValue placeholder="Todos convênios" />
+                    <SelectValue placeholder="Todas as origens" />
                   </SelectTrigger>
                   <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
                     <SelectItem value={ALL_OPTION_VALUE}>Todos</SelectItem>

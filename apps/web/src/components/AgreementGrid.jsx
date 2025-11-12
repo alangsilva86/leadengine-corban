@@ -19,16 +19,16 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
     <div className="space-y-6">
       <header className="glass-surface flex flex-col gap-4 rounded-[var(--radius)] border border-[var(--border)] px-6 py-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold text-foreground">Escolha seu convênio</h1>
+          <h1 className="text-2xl font-semibold text-foreground">Escolha a origem comercial</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Veja o tamanho da oportunidade, selecione o convênio ideal e reserve os leads que já responderam à nossa
-            inteligência omnicanal.
+            Veja o tamanho da oportunidade, selecione a parceria que fará sentido para sua operação e lembre-se: você pode
+            conectar números primeiro e vincular a origem quando estiver pronto.
           </p>
         </div>
         {selectedAgreement ? (
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-medium text-primary">
-              Convênio ativo
+              Origem selecionada
             </span>
             <strong className="text-foreground">{selectedAgreement.name}</strong>
             <Button size="sm" onClick={() => onSelect?.(selectedAgreement)}>
@@ -47,7 +47,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
         <div className="flex flex-wrap items-start gap-3 rounded-[var(--radius)] border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertCircle className="mt-0.5 h-4 w-4" />
           <div className="space-y-1">
-            <p className="font-medium">Não foi possível carregar os convênios.</p>
+            <p className="font-medium">Não foi possível carregar as origens comerciais.</p>
             <p className="text-xs text-destructive/80">{error}</p>
           </div>
           <Button size="sm" variant="outline" className="ml-auto" onClick={retry}>
@@ -77,7 +77,7 @@ const AgreementGrid = ({ onboarding, selectedAgreement, onSelect }) => {
 
       {!isLoading && !error && agreements.length === 0 ? (
         <div className="rounded-[var(--radius)] border border-dashed border-[var(--border)]/70 p-6 text-center text-sm text-muted-foreground">
-          Nenhum convênio disponível no momento. Volte mais tarde ou fale com o suporte para liberar novos acordos.
+          Nenhuma origem disponível no momento. Volte mais tarde ou fale com o suporte para liberar novas parcerias.
         </div>
       ) : null}
     </div>

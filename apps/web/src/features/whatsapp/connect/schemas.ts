@@ -39,13 +39,13 @@ export const createCampaignSchema = z
       .trim()
       .min(1, 'Escolha a instância que será vinculada à campanha.'),
     agreementId: z
-      .string({ required_error: 'Selecione o convênio responsável pela campanha.' })
+      .string({ required_error: 'Selecione a origem responsável pela campanha.' })
       .trim()
-      .min(1, 'Selecione o convênio responsável pela campanha.'),
+      .min(1, 'Selecione a origem responsável pela campanha.'),
     agreementName: z
-      .string({ required_error: 'Informe o nome do convênio.' })
+      .string({ required_error: 'Informe o nome da origem.' })
       .trim()
-      .min(1, 'Informe o nome do convênio.'),
+      .min(1, 'Informe o nome da origem.'),
     product: z
       .string({ required_error: 'Selecione o produto principal.' })
       .trim()

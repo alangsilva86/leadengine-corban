@@ -29,7 +29,11 @@ const STATUS_OPTIONS = [
 
 const STEP_SEQUENCE = [
   { key: 'instance', title: 'Instância', description: 'Escolha a instância conectada que receberá os leads.' },
-  { key: 'agreement', title: 'Convênio', description: 'Defina o convênio responsável pela origem dos leads.' },
+  {
+    key: 'agreement',
+    title: 'Origem dos leads',
+    description: 'Selecione o convênio, parceiro ou carteira que identifica a origem dos leads.',
+  },
   {
     key: 'product',
     title: 'Produto e margem',
@@ -68,7 +72,7 @@ const formatAgreementLabel = (agreement) => {
   if (typeof agreement.id === 'string' && agreement.id.trim().length > 0) {
     return agreement.id.trim();
   }
-  return 'Convênio';
+  return 'Origem';
 };
 
 const buildSuggestedName = ({ agreementLabel, instanceLabel, productLabel }) => {
@@ -244,7 +248,7 @@ const CreateCampaignWizard = ({
         return null;
       case 'agreement':
         if (!formState.agreementId) {
-          return 'Selecione o convênio responsável pela campanha.';
+          return 'Selecione a origem responsável pela campanha (convênio, parceiro ou carteira).';
         }
         return null;
       case 'product': {
@@ -357,7 +361,7 @@ const CreateCampaignWizard = ({
               <Label>Convênio de origem</Label>
               <Select value={formState.agreementId} onValueChange={handleAgreementChange} disabled={agreementsLoading}>
                 <SelectTrigger>
-                  <SelectValue placeholder={agreementsLoading ? 'Carregando convênios…' : 'Selecione o convênio'} />
+                  <SelectValue placeholder={agreementsLoading ? 'Carregando origens…' : 'Selecione a origem'} />
                 </SelectTrigger>
                 <SelectContent>
                   {agreements.map((item) => (
@@ -381,7 +385,7 @@ const CreateCampaignWizard = ({
                 </div>
               ) : null}
               <p className="text-xs text-muted-foreground">
-                O convênio selecionado será usado para identificar os leads gerados por esta campanha.
+                A origem selecionada será usada para identificar os leads gerados por esta campanha.
               </p>
             </div>
           </div>

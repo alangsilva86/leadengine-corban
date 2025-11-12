@@ -435,15 +435,14 @@ const useWhatsAppConnect = ({
 
   const hasAgreement = Boolean(selectedAgreement?.id);
   const agreementName = selectedAgreement?.name ?? null;
-  const agreementDisplayName = agreementName ?? 'Nenhum convênio selecionado';
+  const agreementDisplayName = agreementName ?? 'Nenhuma origem vinculada';
   const hasCampaign = Boolean(campaign);
   const isAuthenticated = hookIsAuthenticated;
   
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
-  const onboardingDescription = hasAgreement
-    ? 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Após a conexão, o Lead Engine entrega automaticamente os leads do convênio selecionado. Campanhas são opcionais e podem ser configuradas quando precisar de roteamento avançado.'
-    : 'Utilize o QR Code para sincronizar o número que você usa com os clientes. Você pode vincular um convênio quando for conveniente e criar campanhas opcionais apenas se precisar de roteamento avançado.';
+  const onboardingDescription =
+    '1. Conecte seus números ao Lead Engine. 2. Vincule origens comerciais (convênios, parceiros ou filas) quando fizer sentido. 3. Ative campanhas apenas se precisar de roteamento avançado.';
   const nextInstanceOrdinal = instances.length + 1;
   const defaultInstanceName = hasAgreement && agreementName
     ? `${agreementName} • WhatsApp ${nextInstanceOrdinal}`
