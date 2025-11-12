@@ -41,6 +41,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.jsx';
+import {
+  findCampaignProduct,
+  findCampaignStrategy,
+} from '../utils/campaign-options.js';
 
 const NO_AGREEMENT_VALUE = '__no_agreement__';
 const NO_INSTANCE_VALUE = '__no_instance__';
@@ -252,6 +256,39 @@ const CampaignsPanel = ({
     const instanceLabel = isLinked
       ? campaign.instanceName || campaign.instanceId
       : 'Aguardando vínculo';
+    const metadata =
+      campaign.metadata && typeof campaign.metadata === 'object' && !Array.isArray(campaign.metadata)
+        ? campaign.metadata
+        : {};
+    const productValue =
+      campaign.product ??
+      metadata.product ??
+      metadata.productKey ??
+      metadata.productValue ??
+      null;
+    const strategyValue =
+      campaign.strategy ??
+      metadata.strategy ??
+      metadata.strategyKey ??
+      null;
+    const marginRaw =
+      metadata.margin ??
+      metadata.marginTarget ??
+      metadata.marginPercentage ??
+      metadata.marginPercent ??
+      (typeof campaign.margin === 'number' ? campaign.margin : null);
+    const productOption = productValue ? findCampaignProduct(productValue) : null;
+    const strategyOption = strategyValue ? findCampaignStrategy(strategyValue) : null;
+    const marginValue = (() => {
+      if (typeof marginRaw === 'number' && Number.isFinite(marginRaw)) {
+        return marginRaw;
+      }
+      if (typeof marginRaw === 'string' && marginRaw.trim().length > 0) {
+        const parsed = Number(marginRaw);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    })();
 
     return (
       <div
@@ -265,6 +302,13 @@ const CampaignsPanel = ({
               <span>ID: {campaign.id}</span>
               <span>•</span>
               <span>{agreementLabel}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[0.7rem] text-muted-foreground">
+              {productOption ? <Badge variant="outline">{productOption.label}</Badge> : null}
+              {typeof marginValue === 'number' ? (
+                <Badge variant="outline">Margem {marginValue.toFixed(2)}%</Badge>
+              ) : null}
+              {strategyOption ? <Badge variant="secondary">{strategyOption.label}</Badge> : null}
             </div>
             <div className="flex items-center gap-1.5 text-xs">
               {isLinked ? (

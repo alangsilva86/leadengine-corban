@@ -79,6 +79,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     campaign,
     persistentWarning,
     setShowAllInstances,
+    canCreateCampaigns,
     setQrPanelOpen,
     setQrDialogOpen,
     pairingPhoneInput,
@@ -328,7 +329,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           }}
           actionState={campaignAction}
           selectedInstanceId={selectedInstance?.id ?? null}
-          canCreateCampaigns={Boolean(hasAgreement)}
+          canCreateCampaigns={canCreateCampaigns}
           selectedAgreementId={selectedAgreement?.id ?? null}
         />
       </Suspense>

@@ -453,6 +453,8 @@ const useWhatsAppConnect = ({
   const visibleInstanceCount = visibleInstances.length;
   const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
   const renderInstances = state.showAllInstances ? instances : visibleInstances;
+  const hasConnectedInstances = renderInstances.some((entry) => Boolean(entry?.connected));
+  const canCreateCampaigns = hasConnectedInstances;
   const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
     return renderInstances.map((entry, index) => {
       const statusInfo = getStatusInfo(entry);
@@ -712,7 +714,8 @@ const useWhatsAppConnect = ({
     nextStage,
     stepLabel,
     onboardingDescription,
-  };
+    canCreateCampaigns,
+  }; 
 };
 
 export default useWhatsAppConnect;
