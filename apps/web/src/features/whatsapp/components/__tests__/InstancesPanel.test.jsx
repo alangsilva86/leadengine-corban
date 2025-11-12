@@ -92,7 +92,7 @@ describe('InstancesPanel', () => {
     render(<InstancesPanel {...baseProps} />);
 
     expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
-    expect(screen.getByText(/Instâncias: 1 ativas/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 conectada/i)).toBeInTheDocument();
     expect(screen.getByText(/Fila total:/i)).toBeInTheDocument();
     expect(screen.getByText(/Uso médio do limite: 50%/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Manter saudável/i })).toBeInTheDocument();
