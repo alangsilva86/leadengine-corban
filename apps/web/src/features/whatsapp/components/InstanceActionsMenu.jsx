@@ -15,6 +15,8 @@ const InstanceActionsMenu = ({
   isAuthenticated,
   onViewQr,
   onRequestDelete,
+  onRenameInstance,
+  onViewLogs,
 }) => {
   const isDeleting = deletingInstanceId === instance?.id;
 
@@ -31,9 +33,18 @@ const InstanceActionsMenu = ({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => onRenameInstance?.(instance)}
+          disabled={isDeleting}
+        >
+          Renomear instância
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onViewQr?.(instance)} disabled={isBusy || !isAuthenticated}>
           <QrCode className="mr-2 h-4 w-4" />
-          Ver QR Code
+          Ver QR em tela cheia
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onViewLogs?.(instance)} disabled={isBusy}>
+          Ver logs da sessão
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
