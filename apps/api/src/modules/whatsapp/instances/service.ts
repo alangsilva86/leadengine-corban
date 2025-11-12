@@ -330,6 +330,7 @@ export const respondWhatsAppStorageUnavailable = (res: Response, error: unknown)
     },
   });
   return true;
+};
 export const handleWhatsAppIntegrationError = (res: Response, error: unknown): boolean => {
   if (respondWhatsAppNotConfigured(res, error)) {
     return true;
