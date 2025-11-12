@@ -56,13 +56,12 @@ describe('CreateCampaignDialog wizard', () => {
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 
-    await user.click(screen.getByRole('combobox', { name: /Convênio de origem/i }));
+    await user.click(screen.getByRole('combobox', { name: /^Convênio$/i }));
     await user.click(await screen.findByRole('option', { name: /Convênio Beta/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 
-    await user.click(screen.getByRole('combobox', { name: /Produto principal/i }));
-    await user.click(await screen.findByRole('option', { name: /Cartão benefício/i }));
+    await user.click(screen.getByRole('button', { name: /Cartão benefício/i }));
     const marginInput = screen.getByLabelText(/Margem alvo/);
     expect(marginInput).toHaveValue('0.9');
     await user.clear(marginInput);
@@ -71,7 +70,7 @@ describe('CreateCampaignDialog wizard', () => {
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 
-    await user.click(screen.getByRole('button', { name: /Follow-up proativo/i }));
+    await user.click(screen.getByRole('button', { name: /^WARM/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 
@@ -110,11 +109,8 @@ describe('CreateCampaignDialog wizard', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /Avançar/i }));
-
-    expect(
-      await screen.findByText(/instância precisa estar conectada/i)
-    ).toBeInTheDocument();
+    const advanceButton = screen.getByRole('button', { name: /Avançar/i });
+    expect(advanceButton).toBeDisabled();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -136,15 +132,14 @@ describe('CreateCampaignDialog wizard', () => {
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 
-    await user.click(screen.getByRole('combobox', { name: /Convênio de origem/i }));
+    await user.click(screen.getByRole('combobox', { name: /^Convênio$/i }));
     await user.click(await screen.findByRole('option', { name: /Convênio Alpha/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
-    await user.click(screen.getByRole('combobox', { name: /Produto principal/i }));
-    await user.click(await screen.findByRole('option', { name: /Crédito consignado/i }));
+    await user.click(screen.getByRole('button', { name: /Crédito consignado/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
-    await user.click(screen.getByRole('button', { name: /Inbound reativo/i }));
+    await user.click(screen.getByRole('button', { name: /^HOT/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
     await user.click(screen.getByRole('button', { name: /Criar campanha/i }));
