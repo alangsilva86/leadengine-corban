@@ -11,6 +11,7 @@ export const createRealtimeSlice = (
       | ((state: InstancesStoreState) => Partial<InstancesStoreState>),
     replace?: boolean,
   ) => void,
+  get: () => InstancesStoreState,
 ): RealtimeSlice => ({
   liveEvents: [],
   realtimeConnected: false,
@@ -40,6 +41,9 @@ export const createRealtimeSlice = (
   },
 
   setRealtimeConnected(value) {
+    if (get().realtimeConnected === value) {
+      return;
+    }
     set({ realtimeConnected: value });
   },
 });
