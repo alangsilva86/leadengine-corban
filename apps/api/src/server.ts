@@ -24,6 +24,7 @@ import { registerSocketServer } from './lib/socket-registry';
 import { getWhatsAppMode } from './config/whatsapp';
 import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
+import { reportsRouter } from './routes/reports';
 import { queuesRouter } from './routes/queues';
 import { ticketMessagesRouter } from './routes/messages.ticket';
 import { contactMessagesRouter } from './routes/messages.contact';
@@ -433,6 +434,7 @@ app.use('/api', authMiddleware, whatsappMessagesRouter);
 app.use('/api', authMiddleware, whatsappUploadsRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
+app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api', authMiddleware, preferencesRouter);
 
