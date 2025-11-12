@@ -79,18 +79,16 @@ const ProviderEffects = ({ controller, logger }) => {
   return null;
 };
 
-export const WhatsAppInstancesProvider = ({
-  children,
-  logger: loggerProp = {},
-  ...providerConfigProps
-}) => {
+export const WhatsAppInstancesProvider = ({ children, logger: loggerProp, ...providerConfigProps }) => {
+  const { log: providedLog, warn: providedWarn, error: providedError } = loggerProp ?? {};
+
   const logger = useMemo(
     () => ({
-      log: loggerProp?.log ?? noop,
-      warn: loggerProp?.warn ?? noop,
-      error: loggerProp?.error ?? noop,
+      log: providedLog ?? noop,
+      warn: providedWarn ?? noop,
+      error: providedError ?? noop,
     }),
-    [loggerProp],
+    [providedLog, providedWarn, providedError],
   );
   const bundleRef = useRef(null);
 

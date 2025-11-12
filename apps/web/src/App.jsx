@@ -1,8 +1,16 @@
 import { Suspense, lazy, useCallback } from 'react';
-import { RouterProvider, createBrowserRouter, Navigate, useNavigate } from 'react-router-dom';
+import {
+  RouterProvider,
+  createBrowserRouter,
+  Navigate,
+  useNavigate,
+  useRouteError,
+  isRouteErrorResponse,
+} from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import './App.css';
 import useOnboardingJourney from './features/onboarding/useOnboardingJourney.js';
+import { Button } from '@/components/ui/button.jsx';
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
 const CrmModule = lazy(() => import('./features/crm/CrmModule.jsx'));
@@ -12,6 +20,71 @@ export const PageFallback = () => (
     Carregando módulo...
   </div>
 );
+
+const RouteErrorBoundary = () => {
+  const navigate = useNavigate();
+  const error = useRouteError();
+
+  const routeErrorInfo = isRouteErrorResponse(error)
+    ? {
+        status: error.status,
+        statusText: error.statusText,
+        data: error.data,
+      }
+    : null;
+
+  const resolvedMessage = (() => {
+    if (routeErrorInfo) {
+      if (typeof routeErrorInfo.data === 'string') {
+        return routeErrorInfo.data;
+      }
+      if (routeErrorInfo.data?.message) {
+        return routeErrorInfo.data.message;
+      }
+      return `Código ${routeErrorInfo.status} - ${routeErrorInfo.statusText}`;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    return null;
+  })();
+
+  const handleRetry = () => {
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center gap-6 px-6 text-center">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold text-foreground">Ops! Algo saiu do previsto.</h1>
+        <p className="max-w-xl text-sm text-muted-foreground">
+          Revise a ação anterior, tente novamente ou volte para a visão geral enquanto verificamos os detalhes.
+        </p>
+      </div>
+      {resolvedMessage ? (
+        <pre className="max-w-xl whitespace-pre-wrap rounded-md bg-muted px-4 py-3 text-left text-sm text-muted-foreground">
+          {resolvedMessage}
+        </pre>
+      ) : null}
+      <div className="flex flex-wrap justify-center gap-3">
+        <Button type="button" onClick={() => navigate('/', { replace: true })}>
+          Ir para o painel
+        </Button>
+        <Button type="button" variant="outline" onClick={handleRetry}>
+          Tentar novamente
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 const dispatchGlobalNavigation = (targetPage) => {
   if (typeof window === 'undefined') {
@@ -96,26 +169,32 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <OnboardingRoute initialPage={null} />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/channels',
     element: <OnboardingRoute initialPage="channels" />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/campaigns',
     element: <OnboardingRoute initialPage="campaigns" />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/contacts/*',
     element: <ContactsBoundary />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/crm/*',
     element: <CrmBoundary />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '*',
     element: <Navigate to="/" replace />,
+    errorElement: <RouteErrorBoundary />,
   },
 ]);
 
