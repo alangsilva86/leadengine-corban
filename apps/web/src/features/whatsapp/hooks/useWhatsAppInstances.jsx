@@ -506,7 +506,7 @@ export default function useWhatsAppInstances(options = {}) {
       });
       try {
         await services.api.createInstance(payload);
-        toast.success('Instância criada com sucesso. Gere o QR para conectar.');
+        toast.success('Canal criado! Gerencie e gere o QR no painel de instâncias.');
         return true;
       } catch (err) {
         const friendly = applyErrorMessage(

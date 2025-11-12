@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
@@ -124,33 +124,96 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     reloadCampaigns,
   } = useWhatsAppConnect(props);
 
+  const instanceHealth = useMemo(() => {
+    const totals = { connected: 0, connecting: 0, needsAttention: 0, offline: 0 };
+
+    if (!instancesReady) {
+      return { state: 'loading' as const, total: instanceViewModels.length, totals };
+    }
+
+    instanceViewModels.forEach((viewModel) => {
+      const variant = viewModel.statusInfo?.variant;
+      switch (variant) {
+        case 'success':
+          totals.connected += 1;
+          break;
+        case 'info':
+          totals.connecting += 1;
+          break;
+        case 'warning':
+        case 'destructive':
+          totals.needsAttention += 1;
+          break;
+        default:
+          totals.offline += 1;
+          break;
+      }
+    });
+
+    const total = instanceViewModels.length;
+    return {
+      state: total === 0 ? ('empty' as const) : ('ready' as const),
+      total,
+      totals,
+    };
+  }, [instanceViewModels, instancesReady]);
+
+  const backLabel = hasAgreement ? 'Trocar convênio' : 'Voltar';
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <header className="glass-surface space-y-4 rounded-[var(--radius)] border border-[var(--border)] px-6 py-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-3">
+      <header className="glass-surface space-y-6 rounded-[var(--radius)] border border-[var(--border)] px-6 py-5 shadow-sm">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/80">
               <Badge variant="secondary">{stepLabel}</Badge>
-              <span>Próximo: {nextStage}</span>
+              {nextStage ? <span>Próximo: {nextStage}</span> : null}
             </div>
-            <div>
+            <div className="space-y-2">
               <h1 className="text-2xl font-semibold text-foreground">Conecte seu WhatsApp</h1>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">{onboardingDescription}</p>
+              <p className="max-w-xl text-sm text-muted-foreground">{onboardingDescription}</p>
             </div>
+            {onBack ? (
+              <Button variant="ghost" size="sm" onClick={onBack} className="w-fit">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                {backLabel}
+              </Button>
+            ) : null}
           </div>
-          <div className="flex flex-col items-end gap-2 text-xs text-muted-foreground">
-            <Badge variant="status" tone={statusTone as any} className="gap-2 text-xs font-medium">
+          <div className="flex flex-col items-end gap-3 text-xs text-muted-foreground">
+            <Badge variant="status" tone={statusTone as any} className="gap-2 text-xs font-medium uppercase">
               {statusCopy.badge}
             </Badge>
-            <div className="flex flex-col items-end gap-1">
-              <span>
-                Convênio: <span className="font-medium text-foreground">{agreementDisplayName}</span>
+            <div className="flex flex-wrap items-center justify-end gap-2 text-[0.7rem]">
+              {instanceHealth.state === 'loading' ? (
+                <Badge variant="status" tone="info">Sincronizando instâncias…</Badge>
+              ) : instanceHealth.state === 'empty' ? (
+                <Badge variant="status" tone="info">Nenhuma instância conectada</Badge>
+              ) : (
+                <>
+                  <Badge variant="status" tone="success">
+                    {instanceHealth.totals.connected} conectada(s)
+                  </Badge>
+                  {instanceHealth.totals.connecting ? (
+                    <Badge variant="status" tone="info">
+                      {instanceHealth.totals.connecting} sincronizando
+                    </Badge>
+                  ) : null}
+                  {instanceHealth.totals.needsAttention ? (
+                    <Badge variant="status" tone="warning">
+                      {instanceHealth.totals.needsAttention} requer(em) ação
+                    </Badge>
+                  ) : null}
+                  {instanceHealth.totals.offline ? (
+                    <Badge variant="status" tone="neutral">
+                      {instanceHealth.totals.offline} offline
+                    </Badge>
+                  ) : null}
+                </>
+              )}
+              <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground/80">
+                {instancesCountLabel}
               </span>
-              {!hasAgreement ? (
-                <span className="text-[0.7rem] text-muted-foreground/80">
-                  Convênios e campanhas podem ser definidos depois — avance quando estiver pronto.
-                </span>
-              ) : null}
             </div>
             {countdownMessage ? (
               <span className="flex items-center gap-1 text-amber-200">
@@ -160,12 +223,12 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" /> Voltar aos convênios
-          </Button>
-          <Separator className="section-divider flex-1" />
-          <span>{copy.description}</span>
+        <Separator className="section-divider" />
+        <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">
+            Status do canal
+          </span>
+          <span className="max-w-2xl text-sm text-muted-foreground">{copy.description}</span>
         </div>
       </header>
 
@@ -182,7 +245,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         <InstancesPanel
           surfaceStyles={surfaceStyles}
           hasAgreement={hasAgreement}
-          nextStage={nextStage}
           agreementDisplayName={agreementDisplayName}
           selectedAgreementRegion={selectedAgreement?.region ?? null}
           selectedAgreementId={selectedAgreement?.id ?? null}
@@ -195,6 +257,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           hasHiddenInstances={hasHiddenInstances}
           hasRenderableInstances={hasRenderableInstances}
           instanceViewModels={instanceViewModels}
+          instanceHealth={instanceHealth}
           showFilterNotice={showFilterNotice}
           showAllInstances={showAllInstances}
           instancesCountLabel={instancesCountLabel}

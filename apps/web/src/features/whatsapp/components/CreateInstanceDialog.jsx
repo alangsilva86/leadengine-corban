@@ -19,7 +19,7 @@ const CreateInstanceDialog = ({
   defaultName,
   onSubmit,
 }) => {
-  const suggestedName = defaultName || 'Nova instância';
+  const suggestedName = defaultName || 'Novo canal';
   const [name, setName] = useState(suggestedName);
   const [identifier, setIdentifier] = useState('');
   const [error, setError] = useState(null);
@@ -81,36 +81,39 @@ const CreateInstanceDialog = ({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Nova instância do WhatsApp</DialogTitle>
+          <DialogTitle>Novo canal do WhatsApp</DialogTitle>
           <DialogDescription>
-            Defina um nome amigável e, se preferir, personalize o identificador usado nas integrações.
+            Defina o nome que aparecerá para o time e personalize, se necessário, o identificador utilizado nas integrações.
           </DialogDescription>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Após concluir, o canal será listado automaticamente no painel de instâncias para geração de QR Codes e monitoramento.
+          </p>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="instance-name">Nome da instância</Label>
+            <Label htmlFor="instance-name">Nome do canal</Label>
             <Input
               id="instance-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="WhatsApp principal"
+              placeholder="Canal principal de WhatsApp"
               disabled={submitting}
               required
             />
             <p className="text-xs text-muted-foreground">
-              Esse nome aparece para os operadores e nas listagens do LeadEngine.
+              Esse nome aparece para os operadores e nas listagens do Lead Engine.
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="instance-id">Identificador (opcional)</Label>
+            <Label htmlFor="instance-id">Identificador do canal (opcional)</Label>
             <Input
               id="instance-id"
               value={identifier}
               onChange={(event) => {
                 setIdentifier(event.target.value);
               }}
-              placeholder="Identificador personalizado"
+              placeholder="Ex.: whatsapp-vendas"
               disabled={submitting}
             />
             <p className="text-xs text-muted-foreground">
@@ -130,7 +133,7 @@ const CreateInstanceDialog = ({
               Cancelar
             </Button>
             <Button type="submit" disabled={!canSubmit || submitting}>
-              {submitting ? 'Criando…' : 'Criar instância'}
+              {submitting ? 'Criando…' : 'Criar canal'}
             </Button>
           </DialogFooter>
         </form>

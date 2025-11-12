@@ -95,6 +95,7 @@ describe('InstancesPanel', () => {
     expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
     expect(screen.getByText('(11) 9999-9999')).toBeInTheDocument();
     expect(screen.getByText('Atualizado: 01/01/2024 10:00')).toBeInTheDocument();
+    expect(screen.getByText('1 conectadas')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Selecionar instância/i }));
     expect(baseProps.onSelectInstance).toHaveBeenCalledWith(expect.objectContaining({ id: 'instance-1' }));
@@ -114,6 +115,7 @@ describe('InstancesPanel', () => {
 
     const emptyMessage = screen.getByText(/Nenhuma instância conectada/i);
     expect(emptyMessage).toBeInTheDocument();
+    expect(screen.getByText('Nenhuma instância cadastrada')).toBeInTheDocument();
 
     const showAllButton = screen.getByRole('button', { name: /Mostrar todas/i });
     await user.click(showAllButton);
