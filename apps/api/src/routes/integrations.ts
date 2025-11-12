@@ -45,7 +45,6 @@ import {
   logWhatsAppStorageError,
   respondWhatsAppBrokerFailure,
   respondLegacyEndpointGone,
-  collectInstancesForTenant,
   buildInstanceStatusPayload,
   fetchStatusWithBrokerQr,
   normalizeInstanceStatusResponse,
@@ -65,12 +64,10 @@ import {
   clearWhatsAppDisconnectRetry,
   removeCachedSnapshot,
   clearInstanceArchive,
+  collectInstancesForTenant,
 } from '../modules/whatsapp/instances/service';
-import type {
-  InstanceOperationContext,
-  NormalizedInstance,
-  StoredInstance,
-} from '../modules/whatsapp/instances/service';
+import { parseListInstancesQuery, listInstancesUseCase } from '../modules/whatsapp/instances/list-instances';
+import type { InstanceOperationContext, StoredInstance } from '../modules/whatsapp/instances/service';
 
 
 const router: Router = Router();
@@ -211,90 +208,16 @@ router.get(
   rateLimitInstances as any,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = resolveRequestTenantId(req);
-    const t0 = Date.now();
-
-    // refresh override (legacy)
-    const refreshQuery = req.query.refresh;
-    const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
-    const normalizedRefresh = typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
-    const refreshRequested = normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes';
-
-    // mode = db | snapshot | sync
-    const mode = typeof req.query.mode === 'string' ? (req.query.mode as string) : 'db';
-    const baseOptions =
-      mode === 'sync' ? { refresh: true, fetchSnapshots: true } :
-      mode === 'snapshot' ? { refresh: false, fetchSnapshots: true } :
-      { refresh: false, fetchSnapshots: false }; // db default
-
-    // if ?refresh was provided, override options fully
-    const collectionOptions = { ...baseOptions };
-    if (normalizedRefresh !== null) {
-      collectionOptions.refresh = refreshRequested;
-      collectionOptions.fetchSnapshots = refreshRequested;
-    }
-
-    logger.info('whatsapp.instances.list.request', {
-      tenantId,
-      refreshRequested,
-      mode,
-      options: collectionOptions,
-    });
+    const query = parseListInstancesQuery(req.query);
 
     try {
-      const result = await collectInstancesForTenant(tenantId, collectionOptions);
-      let instancesResult = result.instances;
-
-      // selective fields: basic | metrics | full
-      const fields = typeof req.query.fields === 'string' ? req.query.fields : 'basic';
-
-      const pickBasic = (i: NormalizedInstance) => ({
-        id: i.id,
-        tenantId: i.tenantId,
-        name: i.name,
-        status: i.status,
-        connected: i.connected,
-        phoneNumber: i.phoneNumber,
-        lastActivity: i.lastActivity,
-      });
-
-      const pickMetrics = (i: NormalizedInstance) => ({
-        ...pickBasic(i),
-        metrics: i.metrics ?? null,
-        rate: i.rate ?? null,
-      });
-
-      const instances =
-        fields === 'full'
-          ? instancesResult
-          : fields === 'metrics'
-            ? instancesResult.map(pickMetrics)
-            : instancesResult.map(pickBasic);
-
-      const payload = {
-        success: true,
-        data: { instances },
-        meta: {
-          tenantId,
-          mode,
-          refreshRequested,
-          shouldRefresh: result.shouldRefresh ?? false,
-          fetchSnapshots: result.fetchSnapshots ?? false,
-          synced: result.synced ?? false,
-          instancesCount: instances.length,
-          durationMs: Date.now() - t0,
-        },
-      };
-
-      logger.info('whatsapp.instances.list.response', {
+      const { payload, requestLog, responseLog } = await listInstancesUseCase({
         tenantId,
-        mode,
-        refreshRequested,
-        shouldRefresh: result.shouldRefresh ?? false,
-        fetchSnapshots: result.fetchSnapshots ?? false,
-        synced: result.synced ?? false,
-        instancesCount: instances.length,
-        durationMs: payload.meta.durationMs,
+        query,
       });
+
+      logger.info('whatsapp.instances.list.request', requestLog);
+      logger.info('whatsapp.instances.list.response', responseLog);
 
       res.status(200).json(payload);
     } catch (error: unknown) {
@@ -1464,6 +1387,8 @@ export const __testing = {
   collectNumericFromSources,
   syncInstancesFromBroker,
   collectInstancesForTenant,
+  listInstancesUseCase,
+  parseListInstancesQuery,
   resolveInstanceOperationContext,
   disconnectStoredInstance,
   deleteStoredInstance,

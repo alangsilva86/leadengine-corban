@@ -17,8 +17,10 @@ import {
   useInstancesStoreBundle,
 } from '../state/instancesStore';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
+import { useInstancesBootstrap } from './internal/useInstancesBootstrap';
+import { useInstancesAutoRefresh } from './internal/useInstancesAutoRefresh';
+import { useAutoQr } from './internal/useAutoQr';
 
-const DEFAULT_POLL_INTERVAL_MS = 15000;
 const RATE_LIMIT_COOLDOWN_MS = 60_000;
 const FORCE_REFRESH_DEBOUNCE_MS = 15_000;
 
@@ -35,112 +37,53 @@ const useServices = () => {
 };
 
 const ProviderEffects = ({ controller, logger }) => {
-  const { store, services } = controller;
-  const { api } = services;
+  const { store, services, providerConfig } = controller;
+  const api = services.api;
+
   const config = useInstancesStore((state) => state.config);
   const sessionActive = useInstancesStore((state) => state.sessionActive);
   const authDeferred = useInstancesStore((state) => state.authDeferred);
-  const autoGenerateQr = config.autoGenerateQr;
-  const autoRefresh = config.autoRefresh;
-  const pauseWhenHidden = config.pauseWhenHidden;
-  const initialFetch = config.initialFetch;
   const currentInstanceId = useInstancesStore(
     (state) => state.currentInstance?.id ?? state.preferredInstanceId ?? null,
   );
   const status = useInstancesStore((state) => state.status);
   const generatingQr = useInstancesStore((state) => state.generatingQr);
   const qrState = useInstancesStore((state) => state.qrState);
-  const hasFetchedOnce = useRef(false);
-  const autoQrRef = useRef({ instanceId: null, timestamp: 0 });
 
-  useEffect(() => {
-    store.getState().hydrateFromCache();
-  }, [store]);
+  useInstancesBootstrap({
+    store,
+    api,
+    logger,
+    providerConfig,
+  });
 
-  useEffect(() => {
-    store.getState().setConfig(config);
-  }, [store, config]);
+  useInstancesAutoRefresh({
+    api,
+    autoRefresh: config.autoRefresh,
+    pauseWhenHidden: config.pauseWhenHidden,
+    sessionActive,
+    authDeferred,
+  });
 
-  useEffect(() => {
-    if (!initialFetch) {
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const result = await api.loadInstances({ reason: 'startup' });
-      if (!cancelled && !result.success && result.error) {
-        logger.warn?.('Falha ao carregar instâncias WhatsApp durante o boot', result.error);
-      } else if (result.success) {
-        hasFetchedOnce.current = true;
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api, initialFetch, logger]);
-
-  useEffect(() => {
-    if (!autoRefresh) {
-      return;
-    }
-    const interval = setInterval(() => {
-      void api.loadInstances({ reason: 'auto' });
-    }, DEFAULT_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [api, autoRefresh]);
-
-  useEffect(() => {
-    if (!autoRefresh || !pauseWhenHidden || typeof document === 'undefined') {
-      return noop;
-    }
-    const handler = () => {
-      if (!document.hidden && sessionActive && !authDeferred) {
-        const jitter = 200 + Math.floor(Math.random() * 400);
-        setTimeout(() => {
-          void api.loadInstances({ forceRefresh: true, reason: 'manual' });
-        }, jitter);
-      }
-    };
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, [api, autoRefresh, pauseWhenHidden, sessionActive, authDeferred]);
-
-  useEffect(() => {
-    if (!autoGenerateQr) {
-      return;
-    }
-    if (!currentInstanceId) {
-      return;
-    }
-    if (status === 'connected') {
-      return;
-    }
-    if (generatingQr) {
-      return;
-    }
-    const existingExpires = qrState.instanceId === currentInstanceId ? qrState.expiresAt : null;
-    if (existingExpires && existingExpires > Date.now()) {
-      return;
-    }
-    const last = autoQrRef.current;
-    if (last.instanceId === currentInstanceId && Date.now() - last.timestamp < 15_000) {
-      return;
-    }
-    store
-      .getState()
-      .generateQr({
-        instanceId: currentInstanceId,
-        refresh: true,
-      });
-    autoQrRef.current = { instanceId: currentInstanceId, timestamp: Date.now() };
-  }, [autoGenerateQr, currentInstanceId, generatingQr, qrState, status, store]);
+  useAutoQr({
+    store,
+    autoGenerateQr: config.autoGenerateQr,
+    currentInstanceId,
+    status,
+    generatingQr,
+    qrState,
+  });
 
   useLiveUpdatesService();
 
   return null;
 };
 
-export const WhatsAppInstancesProvider = ({ children, logger: loggerProp = {}, ...config }) => {
+export const WhatsAppInstancesProvider = ({
+  children,
+  logger: loggerProp = {},
+  ...providerConfigProps
+}) => {
   const logger = useMemo(
     () => ({
       log: loggerProp?.log ?? noop,
@@ -192,6 +135,27 @@ export const WhatsAppInstancesProvider = ({ children, logger: loggerProp = {}, .
     });
   }
 
+  const providerConfig = useMemo(
+    () => ({
+      tenantId: providerConfigProps.tenantId ?? null,
+      agreementId: providerConfigProps.agreementId ?? null,
+      campaignInstanceId: providerConfigProps.campaignInstanceId ?? null,
+      autoRefresh: providerConfigProps.autoRefresh ?? false,
+      pauseWhenHidden: providerConfigProps.pauseWhenHidden ?? true,
+      autoGenerateQr: providerConfigProps.autoGenerateQr ?? true,
+      initialFetch: providerConfigProps.initialFetch ?? false,
+    }),
+    [
+      providerConfigProps.tenantId,
+      providerConfigProps.agreementId,
+      providerConfigProps.campaignInstanceId,
+      providerConfigProps.autoRefresh,
+      providerConfigProps.pauseWhenHidden,
+      providerConfigProps.autoGenerateQr,
+      providerConfigProps.initialFetch,
+    ],
+  );
+
   useEffect(() => {
     return () => {
       apiServiceRef.current?.dispose?.();
@@ -210,22 +174,10 @@ export const WhatsAppInstancesProvider = ({ children, logger: loggerProp = {}, .
         api: apiServiceRef.current,
       },
       logger,
-      config,
+      providerConfig,
     }),
-    [bundle.events, bundle.store, logger, config],
+    [bundle.events, bundle.store, logger, providerConfig],
   );
-
-  useEffect(() => {
-    bundle.store.getState().setConfig({
-      tenantId: config.tenantId ?? null,
-      agreementId: config.agreementId ?? null,
-      campaignInstanceId: config.campaignInstanceId ?? null,
-      autoRefresh: config.autoRefresh ?? false,
-      pauseWhenHidden: config.pauseWhenHidden ?? true,
-      autoGenerateQr: config.autoGenerateQr ?? true,
-      initialFetch: config.initialFetch ?? false,
-    });
-  }, [bundle.store, config]);
 
   return (
     <InstancesStoreProvider value={bundle}>
@@ -297,6 +249,7 @@ export default function useWhatsAppInstances(options = {}) {
 
   const instances = useInstancesStore((state) => state.instances);
   const instancesReady = useInstancesStore((state) => state.instancesReady);
+  const loadStatus = useInstancesStore((state) => state.loadStatus);
   const currentInstance = useInstancesStore((state) => state.currentInstance);
   const status = useInstancesStore((state) => state.status);
   const qrData = useInstancesStore((state) => state.qrData);
@@ -322,19 +275,19 @@ export default function useWhatsAppInstances(options = {}) {
       autoGenerateQr:
         typeof autoGenerateQrOption === 'boolean'
           ? autoGenerateQrOption
-          : controller.config?.autoGenerateQr ?? true,
+          : controller.providerConfig?.autoGenerateQr ?? true,
       autoRefresh:
         typeof autoRefreshOption === 'boolean'
           ? autoRefreshOption
-          : controller.config?.autoRefresh ?? false,
+          : controller.providerConfig?.autoRefresh ?? false,
       pauseWhenHidden:
         typeof pauseWhenHiddenOption === 'boolean'
           ? pauseWhenHiddenOption
-          : controller.config?.pauseWhenHidden ?? true,
+          : controller.providerConfig?.pauseWhenHidden ?? true,
       initialFetch:
         typeof initialFetchOption === 'boolean'
           ? initialFetchOption
-          : controller.config?.initialFetch ?? false,
+          : controller.providerConfig?.initialFetch ?? false,
     };
     store.getState().setConfig(desiredConfig);
   }, [
@@ -342,10 +295,10 @@ export default function useWhatsAppInstances(options = {}) {
     selectedAgreement?.tenantId,
     selectedAgreement?.id,
     options.campaignInstanceId,
-    controller.config?.autoGenerateQr,
-    controller.config?.autoRefresh,
-    controller.config?.pauseWhenHidden,
-    controller.config?.initialFetch,
+    controller.providerConfig?.autoGenerateQr,
+    controller.providerConfig?.autoRefresh,
+    controller.providerConfig?.pauseWhenHidden,
+    controller.providerConfig?.initialFetch,
     autoGenerateQrOption,
     autoRefreshOption,
     pauseWhenHiddenOption,
@@ -657,6 +610,7 @@ export default function useWhatsAppInstances(options = {}) {
   return {
     instances,
     instancesReady,
+    loadStatus,
     currentInstance,
     status,
     qrData,
@@ -688,7 +642,6 @@ export default function useWhatsAppInstances(options = {}) {
 }
 
 export {
-  DEFAULT_POLL_INTERVAL_MS,
   RATE_LIMIT_COOLDOWN_MS,
   readInstancesCache,
   persistInstancesCache,

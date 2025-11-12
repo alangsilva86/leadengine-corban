@@ -21,6 +21,61 @@ import { whatsappHttpRequestsCounter } from '../../../lib/metrics';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../../../utils/phone';
 import { getMvpBypassTenantId } from '../../../config/feature-flags';
 import { invalidateCampaignCache } from '../../../features/whatsapp-inbound/services/inbound-lead-service';
+import {
+  hasErrorName,
+  readPrismaErrorCode,
+  isDatabaseDisabledError,
+  resolveWhatsAppStorageError,
+  describeErrorForLog,
+  logWhatsAppStorageError,
+} from './errors';
+import {
+  appendInstanceHistory,
+  buildHistoryEntry,
+  compactRecord,
+  findPhoneNumberInObject,
+  isRecord,
+  pickString,
+  readLastErrorFromMetadata,
+  withInstanceLastError,
+} from './helpers';
+import {
+  archiveInstanceSnapshot,
+  archiveDetachedInstance,
+  readInstanceArchives,
+  clearInstanceArchive,
+} from './archive';
+import { createSyncInstancesFromBroker } from './sync';
+export {
+  archiveInstanceSnapshot,
+  archiveDetachedInstance,
+  readInstanceArchives,
+  clearInstanceArchive,
+} from './archive';
+export {
+  hasErrorName,
+  readPrismaErrorCode,
+  isDatabaseDisabledError,
+  resolveWhatsAppStorageError,
+  describeErrorForLog,
+  logWhatsAppStorageError,
+} from './errors';
+import type {
+  InstanceArchiveRecord,
+  InstanceLastError,
+  InstanceMetadata,
+  NormalizedInstance,
+  PrismaTransactionClient,
+  StoredInstance,
+} from './types';
+export type {
+  InstanceArchiveRecord,
+  InstanceLastError,
+  InstanceMetadata,
+  NormalizedInstance,
+  PrismaTransactionClient,
+  StoredInstance,
+} from './types';
 
 // --- Controls and limits ---
 const SYNC_TTL_MS = 30_000; // 30s cooldown for broker sync per tenant unless forced
@@ -243,98 +298,6 @@ export const respondWhatsAppNotConfigured = (res: Response, error: unknown): boo
   return false;
 };
 
-const PRISMA_STORAGE_ERROR_CODES = new Set([
-  'P1000',
-  'P1001',
-  'P1002',
-  'P1003',
-  'P1008',
-  'P1010',
-  'P2010',
-  'P2021',
-  'P2022',
-  'P2023',
-  'P2024',
-]);
-
-const DATABASE_DISABLED_ERROR_CODES = new Set([
-  'DATABASE_DISABLED',
-  'STORAGE_DATABASE_DISABLED',
-]);
-
-export const hasErrorName = (error: unknown, expected: string): boolean => {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'name' in error &&
-    (error as { name?: unknown }).name === expected
-  );
-};
-
-export const readPrismaErrorCode = (error: unknown): string | null => {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code?: unknown }).code === 'string'
-  ) {
-    return (error as { code: string }).code;
-  }
-
-  return null;
-};
-
-export const isDatabaseDisabledError = (error: unknown): boolean => {
-  if (!error) {
-    return false;
-  }
-
-  if (hasErrorName(error, 'DatabaseDisabledError')) {
-    return true;
-  }
-
-  const code = readPrismaErrorCode(error);
-  if (code && DATABASE_DISABLED_ERROR_CODES.has(code)) {
-    return true;
-  }
-
-  if (
-    typeof error === 'object' &&
-    'code' in (error as Record<string, unknown>) &&
-    typeof (error as { code?: unknown }).code === 'string'
-  ) {
-    const normalized = ((error as { code?: string }).code ?? '').toString().trim();
-    if (DATABASE_DISABLED_ERROR_CODES.has(normalized)) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-export const resolveWhatsAppStorageError = (
-  error: unknown
-): { isStorageError: boolean; prismaCode: string | null } => {
-  if (isDatabaseDisabledError(error)) {
-    return { isStorageError: true, prismaCode: 'DATABASE_DISABLED' };
-  }
-
-  const prismaCode = readPrismaErrorCode(error);
-
-  if (prismaCode && PRISMA_STORAGE_ERROR_CODES.has(prismaCode)) {
-    return { isStorageError: true, prismaCode };
-  }
-
-  if (
-    hasErrorName(error, 'PrismaClientInitializationError') ||
-    hasErrorName(error, 'PrismaClientRustPanicError')
-  ) {
-    return { isStorageError: true, prismaCode: null };
-  }
-
-  return { isStorageError: false, prismaCode: null };
-};
-
 export const respondWhatsAppStorageUnavailable = (res: Response, error: unknown): boolean => {
   const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
 
@@ -367,41 +330,6 @@ export const respondWhatsAppStorageUnavailable = (res: Response, error: unknown)
     },
   });
   return true;
-};
-
-export const describeErrorForLog = (error: unknown): unknown => {
-  if (error instanceof Error) {
-    return { name: error.name, message: error.message, stack: error.stack };
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    return error;
-  }
-
-  return { value: error };
-};
-
-export function logWhatsAppStorageError(
-  operation: string,
-  error: unknown,
-  context: Record<string, unknown> = {}
-): boolean {
-  const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
-
-  if (!isStorageError) {
-    return false;
-  }
-
-  logger.warn(`whatsapp.storage.${operation}.failed`, {
-    operation,
-    ...(prismaCode ? { prismaCode } : {}),
-    ...context,
-    error: describeErrorForLog(error),
-  });
-
-  return true;
-}
-
 export const handleWhatsAppIntegrationError = (res: Response, error: unknown): boolean => {
   if (respondWhatsAppNotConfigured(res, error)) {
     return true;
@@ -465,7 +393,6 @@ type WhatsAppDisconnectRetryState = {
 
 const WHATSAPP_DISCONNECT_RETRY_KEY_PREFIX = 'whatsapp:disconnect:retry:tenant:';
 const MAX_DISCONNECT_RETRY_JOBS = 20;
-const WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX = 'whatsapp:instance:archive:';
 
 const readDisconnectRetryState = (value: unknown): WhatsAppDisconnectRetryState | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -798,47 +725,6 @@ export type BrokerInstance = {
   info?: Record<string, unknown> | null;
 };
 
-export type NormalizedInstance = {
-  id: string;
-  tenantId: string | null;
-  name: string | null;
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'error' | 'pending' | 'failed';
-  connected: boolean;
-  createdAt: string | null;
-  lastActivity: string | null;
-  phoneNumber: string | null;
-  user: string | null;
-  agreementId: string | null;
-  stats?: unknown;
-  metrics?: Record<string, unknown> | null;
-  messages?: Record<string, unknown> | null;
-  rate?: Record<string, unknown> | null;
-  rawStatus?: Record<string, unknown> | null;
-  metadata?: Record<string, unknown> | null;
-  lastError?: InstanceLastError | null;
-};
-
-export type InstanceLastError = {
-  code?: string | null;
-  message?: string | null;
-  requestId?: string | null;
-  at?: string | null;
-};
-
-const compactRecord = (input: Record<string, unknown>): Record<string, unknown> => {
-  const entries = Object.entries(input).filter(([, value]) => {
-    if (value === undefined || value === null) {
-      return false;
-    }
-    if (typeof value === 'string') {
-      return value.trim().length > 0;
-    }
-    return true;
-  });
-
-  return Object.fromEntries(entries);
-};
-
 const normalizeInstanceStatus = (
   status: unknown,
   connectedValue?: unknown
@@ -863,18 +749,6 @@ const normalizeInstanceStatus = (
   })();
 
   return { status: normalizedStatus, connected };
-};
-
-const pickString = (...values: unknown[]): string | null => {
-  for (const value of values) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  }
-  return null;
 };
 
 const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
@@ -965,12 +839,6 @@ const normalizeInstance = (instance: unknown): NormalizedInstance | null => {
     lastError: readLastErrorFromMetadata(metadata),
   };
 };
-
-export type StoredInstance = NonNullable<Awaited<ReturnType<typeof prisma.whatsAppInstance.findFirst>>>;
-
-export type InstanceMetadata = Record<string, unknown> | null | undefined;
-
-export type PrismaTransactionClient = Prisma.TransactionClient;
 
 export type AsyncSideEffect = () => Promise<void> | void;
 
@@ -1328,250 +1196,6 @@ const withInstanceLastError = (
   return base as Prisma.JsonObject;
 };
 
-const appendInstanceHistory = (metadata: InstanceMetadata, entry: ReturnType<typeof buildHistoryEntry>): Prisma.JsonObject => {
-  const base: Record<string, unknown> = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
-  const history = Array.isArray(base.history) ? [...(base.history as unknown[])] : [];
-  history.push(entry);
-  base.history = history.slice(-50);
-  return base as Prisma.JsonObject;
-};
-
-const buildInstanceArchiveKey = (tenantId: string, instanceId: string): string => {
-  return `${WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX}${tenantId}:${instanceId}`;
-};
-
-type InstanceArchiveInput = {
-  tenantId: string;
-  stored: StoredInstance;
-  context: InstanceOperationContext;
-  actorId: string;
-  deletedAt: string;
-};
-
-export const archiveInstanceSnapshot = async (
-  client: PrismaTransactionClient | typeof prisma,
-  input: InstanceArchiveInput
-): Promise<void> => {
-  const { tenantId, stored, context, actorId, deletedAt } = input;
-  const serialized = serializeStoredInstance(context.stored, context.brokerStatus);
-
-  const history =
-    Array.isArray((stored.metadata as Record<string, unknown> | null)?.history) && (stored.metadata as Record<string, unknown> | null)?.history
-      ? ((stored.metadata as Record<string, unknown>).history as unknown[])
-      : [];
-
-  const archivePayload: Prisma.JsonObject = {
-    tenantId,
-    instanceId: stored.id,
-    brokerId: stored.brokerId,
-    deletedAt,
-    actorId,
-    stored: toJsonObject(serialized),
-    status: toJsonValue(context.status) ?? null,
-    qr: toJsonValue(context.qr) ?? null,
-    brokerStatus: toJsonValue(context.brokerStatus) ?? null,
-    history: toJsonArray(history),
-    instancesBeforeDeletion: toJsonArray(context.instances),
-  };
-
-  const normalizedBrokerId =
-    typeof stored.brokerId === 'string' ? stored.brokerId.trim() : '';
-
-  const targets: Array<{ key: string; value: Prisma.JsonObject }> = [
-    { key: buildInstanceArchiveKey(tenantId, stored.id), value: archivePayload },
-  ];
-
-  if (normalizedBrokerId && normalizedBrokerId !== stored.id) {
-    targets.push({
-      key: buildInstanceArchiveKey(tenantId, normalizedBrokerId),
-      value: {
-        deletedAt,
-        aliasOf: stored.id,
-        instanceId: stored.id,
-        brokerId: normalizedBrokerId,
-      } satisfies Prisma.JsonObject,
-    });
-  }
-
-  for (const target of targets) {
-    try {
-      await client.integrationState.upsert({
-        where: { key: target.key },
-        update: { value: target.value },
-        create: { key: target.key, value: target.value },
-      });
-    } catch (error) {
-      if (!logWhatsAppStorageError('archiveInstanceSnapshot', error, { tenantId, key: target.key, instanceId: stored.id })) {
-        throw error;
-      }
-    }
-  }
-};
-
-export const archiveDetachedInstance = async (
-  tenantId: string,
-  instanceId: string,
-  actorId: string | null,
-  brokerId?: string | null
-): Promise<string> => {
-  const normalizedInstanceId = typeof instanceId === 'string' ? instanceId.trim() : '';
-  if (!normalizedInstanceId) {
-    return new Date().toISOString();
-  }
-
-  const deletedAt = new Date().toISOString();
-  const normalizedBrokerId = typeof brokerId === 'string' ? brokerId.trim() : '';
-
-  const basePayload: Prisma.JsonObject = {
-    tenantId,
-    instanceId: normalizedInstanceId,
-    brokerId: normalizedBrokerId || null,
-    deletedAt,
-    actorId: actorId ?? 'system',
-    stored: null,
-    status: null,
-    qr: null,
-    brokerStatus: null,
-    history: [],
-    instancesBeforeDeletion: [],
-  };
-
-  const targets: Array<{ key: string; value: Prisma.JsonObject }> = [
-    { key: buildInstanceArchiveKey(tenantId, normalizedInstanceId), value: basePayload },
-  ];
-
-  if (normalizedBrokerId && normalizedBrokerId !== normalizedInstanceId) {
-    targets.push({
-      key: buildInstanceArchiveKey(tenantId, normalizedBrokerId),
-      value: {
-        ...basePayload,
-        instanceId: normalizedBrokerId,
-        brokerId: normalizedInstanceId,
-      },
-    });
-  }
-
-  for (const target of targets) {
-    try {
-      await prisma.integrationState.upsert({
-        where: { key: target.key },
-        update: { value: target.value },
-        create: { key: target.key, value: target.value },
-      });
-    } catch (error) {
-      if (!logWhatsAppStorageError('archiveDetachedInstance', error, { tenantId, key: target.key, instanceId: normalizedInstanceId })) {
-        throw error;
-      }
-    }
-  }
-
-  return deletedAt;
-};
-
-type InstanceArchiveRecord = {
-  deletedAt: string | null;
-};
-
-export const readInstanceArchives = async (
-  tenantId: string,
-  instanceIds: string[]
-): Promise<Map<string, InstanceArchiveRecord>> => {
-  const normalizedIds = Array.from(
-    new Set(
-      instanceIds
-        .map((value) => (typeof value === 'string' ? value.trim() : ''))
-        .filter((value) => value.length > 0)
-    )
-  );
-
-  if (normalizedIds.length === 0) {
-    return new Map();
-  }
-
-  const keyPrefix = `${WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX}${tenantId}:`;
-  const keys = normalizedIds.map((instanceId) => `${keyPrefix}${instanceId}`);
-
-  let rows;
-  try {
-    rows = await prisma.integrationState.findMany({
-      where: { key: { in: keys } },
-      select: { key: true, value: true },
-    });
-  } catch (error) {
-    if (logWhatsAppStorageError('readInstanceArchives', error, { tenantId, keysCount: keys.length })) {
-      return new Map();
-    }
-    throw error;
-  }
-
-  const archives = new Map<string, InstanceArchiveRecord>();
-
-  for (const row of rows) {
-    if (!row.key.startsWith(keyPrefix)) {
-      continue;
-    }
-
-    const rawInstanceId = row.key.slice(keyPrefix.length);
-    if (!rawInstanceId) {
-      continue;
-    }
-
-    const instanceId = rawInstanceId.trim();
-    if (!instanceId) {
-      continue;
-    }
-
-    let deletedAt: string | null = null;
-    const value = row.value;
-    if (value && typeof value === 'object') {
-      const raw = value as Record<string, unknown>;
-      if (typeof raw.deletedAt === 'string') {
-        const trimmed = raw.deletedAt.trim();
-        if (trimmed.length > 0) {
-          deletedAt = raw.deletedAt;
-        }
-      }
-    }
-
-    archives.set(instanceId, { deletedAt });
-  }
-
-  return archives;
-};
-
-export const clearInstanceArchive = async (
-  tenantId: string,
-  ...instanceIds: Array<string | null | undefined>
-): Promise<void> => {
-  const normalizedIds = Array.from(
-    new Set(
-      instanceIds
-        .map((value) => (typeof value === 'string' ? value.trim() : ''))
-        .filter((value) => value.length > 0)
-    )
-  );
-
-  if (normalizedIds.length === 0) {
-    return;
-  }
-
-  for (const instanceId of normalizedIds) {
-    const key = buildInstanceArchiveKey(tenantId, instanceId);
-
-    try {
-      await prisma.integrationState.delete({ where: { key } });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        continue;
-      }
-
-      if (!logWhatsAppStorageError('clearInstanceArchive', error, { tenantId, instanceId })) {
-        throw error;
-      }
-    }
-  }
-};
-
 const mapDbStatusToNormalized = (
   status: WhatsAppInstanceStatus | null | undefined
 ): NormalizedInstance['status'] => {
@@ -1616,10 +1240,6 @@ const mapBrokerStatusToDbStatus = (
   }
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-};
-
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   return isRecord(value) ? (value as Record<string, unknown>) : null;
 };
@@ -1642,57 +1262,6 @@ const mergeRecords = (
   }
 
   return hasValue ? merged : undefined;
-};
-
-const toJsonValue = (value: unknown): Prisma.JsonValue => {
-  if (value === null || value === Prisma.JsonNull) {
-    return null;
-  }
-
-  if (value === undefined) {
-    return null;
-  }
-
-  if (typeof value === 'string' || typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-
-  if (typeof value === 'bigint') {
-    const asNumber = Number(value);
-    return Number.isSafeInteger(asNumber) ? asNumber : value.toString();
-  }
-
-  if (Array.isArray(value)) {
-    const jsonArray: Prisma.JsonArray = value.map((entry) => toJsonValue(entry));
-    return jsonArray;
-  }
-
-  if (typeof value === 'object') {
-    const jsonObject: Prisma.JsonObject = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      jsonObject[key] = toJsonValue(entry);
-    }
-    return jsonObject;
-  }
-
-  return null;
-};
-
-const toJsonObject = (value: unknown): Prisma.JsonObject => {
-  const json = toJsonValue(value);
-  if (json && typeof json === 'object' && !Array.isArray(json)) {
-    return json as Prisma.JsonObject;
-  }
-  return {};
-};
-
-const toJsonArray = (value: unknown): Prisma.JsonArray => {
-  const json = toJsonValue(value);
-  return Array.isArray(json) ? (json as Prisma.JsonArray) : [];
 };
 
 const normalizeKeyName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -2001,24 +1570,6 @@ export const normalizeRateUsageData = (rawRate: unknown): {
   };
 };
 
-const normalizePhoneCandidate = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const digits = trimmed.replace(/\D+/g, '');
-  if (digits.length >= 8) {
-    return trimmed;
-  }
-
-  return null;
-};
-
 const extractPhoneFromJidString = (value: string | null | undefined): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -2098,61 +1649,6 @@ const findPhoneFromJid = (value: unknown): string | null => {
       } else if (isRecord(entry)) {
         queue.push(entry);
       }
-    }
-  }
-
-  return null;
-};
-
-const findPhoneNumberInObject = (value: unknown): string | null => {
-  if (!isRecord(value) && !Array.isArray(value)) {
-    return null;
-  }
-
-  const queue: Array<Record<string, unknown>> = [];
-  const visited = new Set<unknown>();
-
-  const enqueue = (entry: unknown): void => {
-    if (visited.has(entry)) {
-      return;
-    }
-
-    if (Array.isArray(entry)) {
-      visited.add(entry);
-      entry.forEach(enqueue);
-      return;
-    }
-
-    if (isRecord(entry)) {
-      visited.add(entry);
-      queue.push(entry);
-    }
-  };
-
-  enqueue(value);
-
-  const preferredKeys = ['phoneNumber', 'phone_number', 'msisdn'];
-  const fallbackKeys = ['whatsappNumber', 'whatsapp_number', 'jid', 'number', 'address'];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-
-    for (const key of preferredKeys) {
-      const candidate = normalizePhoneCandidate(current[key]);
-      if (candidate) {
-        return candidate;
-      }
-    }
-
-    for (const key of fallbackKeys) {
-      const candidate = normalizePhoneCandidate(current[key]);
-      if (candidate) {
-        return candidate;
-      }
-    }
-
-    for (const entry of Object.values(current)) {
-      enqueue(entry);
     }
   }
 
@@ -2242,6 +1738,21 @@ const mapBrokerInstanceStatusToDbStatus = (status: string | null | undefined): W
       return 'error';
   }
 };
+
+export const syncInstancesFromBroker = createSyncInstancesFromBroker({
+  prisma,
+  logger,
+  whatsappBrokerClient,
+  emitToTenant,
+  readInstanceArchives,
+  appendInstanceHistory,
+  buildHistoryEntry,
+  withInstanceLastError,
+  findPhoneNumberInObject,
+  pickString,
+  mapBrokerStatusToDbStatus,
+  mapBrokerInstanceStatusToDbStatus,
+});
 
 export const serializeStoredInstance = (
   instance: StoredInstance,
@@ -2553,326 +2064,6 @@ export const normalizeInstanceStatusResponse = (
     qrAvailable: Boolean((status.qr ?? status.qrCode)?.trim?.()),
     qrReason: null,
   };
-};
-
-type SyncInstancesResult = {
-  instances: StoredInstance[];
-  snapshots: WhatsAppBrokerInstanceSnapshot[];
-};
-
-export const syncInstancesFromBroker = async (
-  tenantId: string,
-  existing: StoredInstance[],
-  prefetchedSnapshots?: WhatsAppBrokerInstanceSnapshot[]
-): Promise<SyncInstancesResult> => {
-  const brokerSnapshots = prefetchedSnapshots ?? (await whatsappBrokerClient.listInstances(tenantId));
-  if (!brokerSnapshots.length) {
-    logger.info('whatsapp.instances.sync.brokerEmpty', { tenantId });
-    return { instances: existing, snapshots: brokerSnapshots };
-  }
-
-  const snapshotInstanceIds = brokerSnapshots
-    .map((snapshot) => (typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : ''))
-    .filter((value) => value.length > 0);
-  const archivedInstances = await readInstanceArchives(tenantId, snapshotInstanceIds);
-
-  const existingById = new Map(existing.map((item) => [item.id, item]));
-  const existingByBrokerId = new Map<string, StoredInstance>();
-
-  for (const item of existing) {
-    if (typeof item.brokerId !== 'string') {
-      continue;
-    }
-
-    const trimmed = item.brokerId.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-
-    existingByBrokerId.set(trimmed, item);
-  }
-
-  logger.info('whatsapp.instances.sync.snapshot', {
-    tenantId,
-    brokerCount: brokerSnapshots.length,
-    ids: brokerSnapshots.map((snapshot) => snapshot.instance.id),
-  });
-
-  const parseDateValue = (value: unknown): Date | null => {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return null;
-      }
-
-      const parsed = Date.parse(trimmed);
-      if (!Number.isNaN(parsed)) {
-        return new Date(parsed);
-      }
-    }
-
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        return date;
-      }
-    }
-
-    return null;
-  };
-
-  const createdPayload: Array<{ id: string; status: WhatsAppInstanceStatus; connected: boolean; phoneNumber: string | null }> = [];
-  const updatedPayload: Array<{ id: string; status: WhatsAppInstanceStatus; connected: boolean; phoneNumber: string | null }> = [];
-  const unchangedIds: string[] = [];
-
-  for (const snapshot of brokerSnapshots) {
-    const brokerInstance = snapshot.instance;
-    const brokerStatus = snapshot.status ?? null;
-    const instanceId = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
-    if (!instanceId) {
-      continue;
-    }
-
-    const existingInstance = existingById.get(instanceId) ?? existingByBrokerId.get(instanceId) ?? null;
-    const derivedStatus = brokerStatus
-      ? mapBrokerStatusToDbStatus(brokerStatus)
-      : mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
-    const derivedConnected = brokerStatus?.connected ?? Boolean(brokerInstance.connected);
-    const phoneNumber = ((): string | null => {
-      const metadata = (existingInstance?.metadata as Record<string, unknown> | null) ?? {};
-      const brokerMetadata = brokerStatus?.raw && isRecord(brokerStatus.raw) ? brokerStatus.raw : {};
-      const primary = pickString(
-        brokerInstance.phoneNumber,
-        metadata.phoneNumber,
-        metadata.phone_number,
-        metadata.msisdn,
-        metadata.phone,
-        metadata.number,
-        brokerMetadata.phoneNumber,
-        brokerMetadata.phone_number,
-        brokerMetadata.msisdn,
-        brokerMetadata.number,
-        brokerMetadata.address
-      );
-
-      if (primary) {
-        return primary;
-      }
-
-      return (
-        findPhoneNumberInObject(metadata) ??
-        findPhoneNumberInObject(brokerMetadata) ??
-        findPhoneNumberInObject(brokerStatus) ??
-        null
-      );
-    })();
-
-    const historyEntry = buildHistoryEntry('broker-sync', 'system', {
-      status: derivedStatus,
-      connected: derivedConnected,
-      ...(phoneNumber ? { phoneNumber } : {}),
-      ...(brokerStatus?.metrics ? { metrics: brokerStatus.metrics } : {}),
-      ...(brokerStatus?.stats ? { stats: brokerStatus.stats } : {}),
-    });
-
-    const brokerRaw = brokerStatus?.raw && isRecord(brokerStatus.raw) ? brokerStatus.raw : null;
-    const lastActivityCandidate =
-      parseDateValue(brokerInstance.lastActivity) ??
-      parseDateValue(brokerRaw?.['lastActivity']) ??
-      parseDateValue(brokerRaw?.['lastSeen']) ??
-      parseDateValue(brokerRaw?.['last_active_at']) ??
-      parseDateValue(brokerRaw?.['lastSeenAt']) ??
-      null;
-
-    const derivedLastSeenAt = derivedConnected
-      ? new Date()
-      : lastActivityCandidate ?? existingInstance?.lastSeenAt ?? null;
-
-    const brokerSnapshotMetadata: Record<string, unknown> = {
-      syncedAt: new Date().toISOString(),
-      status: brokerStatus?.status ?? derivedStatus,
-      connected: derivedConnected,
-      phoneNumber: phoneNumber ?? null,
-      metrics: brokerStatus?.metrics ?? null,
-      stats: brokerStatus?.stats ?? brokerInstance.stats ?? null,
-      rate: brokerStatus?.rate ?? null,
-      rateUsage: brokerStatus?.rateUsage ?? null,
-      messages: brokerStatus?.messages ?? null,
-      qr: brokerStatus
-        ? {
-            qr: brokerStatus.qr,
-            qrCode: brokerStatus.qrCode,
-            qrExpiresAt: brokerStatus.qrExpiresAt,
-            expiresAt: brokerStatus.expiresAt,
-          }
-        : null,
-    };
-
-    if (brokerStatus?.raw && isRecord(brokerStatus.raw)) {
-      brokerSnapshotMetadata.raw = brokerStatus.raw;
-    }
-
-    if (existingInstance) {
-      const statusChanged = existingInstance.status !== derivedStatus;
-      const connectedChanged = existingInstance.connected !== derivedConnected;
-      const phoneChanged = (existingInstance.phoneNumber ?? null) !== (phoneNumber ?? null);
-      const hasChange = statusChanged || connectedChanged || phoneChanged;
-      // Sempre persistimos histórico/snapshot mesmo sem alteração de status para manter auditoria.
-      const metadataShouldPersist = true;
-
-      if (hasChange || metadataShouldPersist) {
-        logger.info('whatsapp.instances.sync.updateStored', {
-          tenantId,
-          instanceId,
-          status: derivedStatus,
-          connected: derivedConnected,
-          phoneNumber,
-        });
-        const metadataWithHistory = appendInstanceHistory(
-          existingInstance.metadata as InstanceMetadata,
-          historyEntry
-        ) as Record<string, unknown>;
-        metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
-        const brokerNameCandidate =
-          typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
-        const hasBrokerName = brokerNameCandidate.length > 0;
-        const existingDisplayName =
-          typeof existingInstance.name === 'string' && existingInstance.name.trim().length > 0
-            ? existingInstance.name.trim()
-            : null;
-
-        if (hasBrokerName && existingDisplayName && existingDisplayName !== brokerNameCandidate) {
-          logger.debug('whatsapp.instances.sync.preserveStoredName', {
-            tenantId,
-            instanceId,
-            storedName: existingDisplayName,
-            brokerNameCandidate,
-            reason: 'preserve-user-defined-name',
-          });
-        } else if (hasBrokerName && !existingDisplayName) {
-          logger.debug('whatsapp.instances.sync.useBrokerDisplayNameFallback', {
-            tenantId,
-            instanceId,
-            brokerNameCandidate,
-            reason: 'no-stored-name',
-          });
-        }
-
-        const metadataNickname =
-          typeof metadataWithHistory.displayName === 'string' && metadataWithHistory.displayName.trim().length > 0
-            ? metadataWithHistory.displayName.trim()
-            : null;
-        const preservedDisplayName =
-          metadataNickname ?? existingDisplayName ?? (hasBrokerName ? brokerNameCandidate : instanceId);
-        metadataWithHistory.displayName = preservedDisplayName;
-        metadataWithHistory.label = preservedDisplayName;
-        const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-        const updateData: Prisma.WhatsAppInstanceUpdateArgs['data'] = {
-          tenantId,
-          status: derivedStatus,
-          connected: derivedConnected,
-          brokerId: instanceId,
-          ...(phoneNumber ? { phoneNumber } : {}),
-          ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
-          metadata: metadataWithoutError,
-        };
-
-        await prisma.whatsAppInstance.update({
-          where: { id: existingInstance.id },
-          data: updateData,
-        });
-
-        if (hasChange) {
-          updatedPayload.push({
-            id: existingInstance.id,
-            status: derivedStatus,
-            connected: derivedConnected,
-            phoneNumber,
-          });
-        } else {
-          unchangedIds.push(existingInstance.id);
-        }
-      } else {
-        unchangedIds.push(existingInstance.id);
-      }
-    } else {
-      const archiveRecord = archivedInstances.get(instanceId);
-      if (archiveRecord?.deletedAt) {
-        logger.info('whatsapp.instances.sync.skipDeleted', {
-          tenantId,
-          instanceId,
-          deletedAt: archiveRecord.deletedAt,
-        });
-        continue;
-      }
-
-      logger.info('whatsapp.instances.sync.createMissing', {
-        tenantId,
-        instanceId,
-        status: derivedStatus,
-        connected: derivedConnected,
-        phoneNumber,
-      });
-      const baseMetadata: InstanceMetadata = {
-        origin: 'broker-sync',
-      };
-
-      const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry) as Record<
-        string,
-        unknown
-      >;
-      metadataWithHistory.lastBrokerSnapshot = brokerSnapshotMetadata;
-      const snapshotDisplayName =
-        typeof brokerInstance.name === 'string' && brokerInstance.name.trim().length > 0
-          ? brokerInstance.name.trim()
-          : instanceId;
-      metadataWithHistory.displayName = snapshotDisplayName;
-      metadataWithHistory.label = snapshotDisplayName;
-      metadataWithHistory.slug = instanceId;
-      const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-      await prisma.whatsAppInstance.create({
-        data: {
-          id: instanceId,
-          tenantId,
-          name: snapshotDisplayName,
-          brokerId: instanceId,
-          status: derivedStatus,
-          connected: derivedConnected,
-          phoneNumber,
-          ...(derivedLastSeenAt ? { lastSeenAt: derivedLastSeenAt } : {}),
-          metadata: metadataWithoutError,
-        },
-      });
-
-      createdPayload.push({
-        id: instanceId,
-        status: derivedStatus,
-        connected: derivedConnected,
-        phoneNumber,
-      });
-    }
-  }
-
-  const refreshed = (await prisma.whatsAppInstance.findMany({
-    where: { tenantId },
-    orderBy: { createdAt: 'asc' },
-  })) as StoredInstance[];
-
-  emitToTenant(tenantId, 'whatsapp.instances.synced', {
-    syncedAt: new Date().toISOString(),
-    created: createdPayload,
-    updated: updatedPayload,
-    unchanged: unchangedIds,
-    count: {
-      created: createdPayload.length,
-      updated: updatedPayload.length,
-      unchanged: unchangedIds.length
-    }
-  });
-
-  return { instances: refreshed, snapshots: brokerSnapshots };
 };
 
 type InstanceCollectionOptions = {
@@ -3391,7 +2582,17 @@ export const deleteStoredInstance = async (
 
   const deletedAt = new Date().toISOString();
 
-  await archiveInstanceSnapshot(prisma, { tenantId, stored, context, actorId, deletedAt });
+  await archiveInstanceSnapshot(prisma, {
+    tenantId,
+    stored,
+    actorId,
+    deletedAt,
+    serialized: context.serialized,
+    status: context.status,
+    qr: context.qr,
+    brokerStatus: context.brokerStatus,
+    instances: context.instances,
+  });
 
   try {
     await prisma.$transaction(async (tx) => {
