@@ -3,12 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
 import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
-import {
-  getStatusInfo,
-  resolveInstancePhone,
-  shouldDisplayInstance,
-  looksLikeWhatsAppJid,
-} from '../lib/instances';
+import { getStatusInfo, resolveInstancePhone, shouldDisplayInstance } from '../lib/instances';
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
 import { getInstanceMetrics } from '../lib/metrics';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
@@ -612,9 +607,7 @@ const useWhatsAppConnect = ({
     'selecionada';
   const removalKind =
     state.instancePendingDelete?.kind || (state.instancePendingDelete?.isSession ? 'session' : null);
-  const removalTargetIsSession =
-    removalKind === 'session' ||
-    (state.instancePendingDelete?.id ? looksLikeWhatsAppJid(state.instancePendingDelete.id) : false);
+  const removalTargetIsSession = removalKind === 'session';
   const removalDialogTitle = removalTargetIsSession ? 'Desconectar sessão' : 'Remover instância';
   const removalDialogAction = removalTargetIsSession ? 'Desconectar sessão' : 'Remover instância';
   const deletionDialog = {

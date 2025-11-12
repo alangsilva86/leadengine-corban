@@ -1417,18 +1417,6 @@ router.delete(
       return;
     }
 
-    if (looksLikeWhatsAppJid(instanceId)) {
-      const issues: ZodIssue[] = [
-        {
-          code: z.ZodIssueCode.custom,
-          path: ['params', 'id'],
-          message: 'Para desconectar um JID use a rota de disconnect.',
-        },
-      ];
-      respondWithValidationError(res, issues);
-      return;
-    }
-
     const tenantId = resolveRequestTenantId(req);
     const actorId = resolveRequestActorId(req);
 
@@ -1439,7 +1427,9 @@ router.delete(
       },
     });
 
-    if (!stored) {
+    const isBrokerSessionId = looksLikeWhatsAppJid(instanceId);
+
+    if (!stored && !isBrokerSessionId) {
       res.status(404).json({
         success: false,
         error: {
@@ -1458,6 +1448,8 @@ router.delete(
 
     let brokerStatus: 'deleted' | 'not_found' = 'deleted';
 
+    const brokerId = stored?.brokerId ?? instanceId;
+
     try {
       try {
         whatsappHttpRequestsCounter?.inc?.();
@@ -1466,14 +1458,14 @@ router.delete(
       }
 
       const deleteOptions: DeleteInstanceOptions = wipeValue === null
-        ? { instanceId: stored.id }
-        : { instanceId: stored.id, wipe };
+        ? { instanceId: stored?.id ?? instanceId }
+        : { instanceId: stored?.id ?? instanceId, wipe };
 
-      await whatsappBrokerClient.deleteInstance(stored.brokerId, deleteOptions);
+      await whatsappBrokerClient.deleteInstance(brokerId, deleteOptions);
       logger.info('whatsapp.instances.delete.broker', {
         tenantId,
-        instanceId: stored.id,
-        brokerId: stored.brokerId,
+        instanceId: stored?.id ?? instanceId,
+        brokerId,
         wipe,
       });
     } catch (error: unknown) {
@@ -1487,15 +1479,15 @@ router.delete(
         brokerStatus = 'not_found';
         logger.warn('whatsapp.instances.delete.brokerMissing', {
           tenantId,
-          instanceId: stored.id,
-          brokerId: stored.brokerId,
+          instanceId: stored?.id ?? instanceId,
+          brokerId,
           error: describeErrorForLog(error),
         });
       } else {
         logger.error('whatsapp.instances.delete.brokerFailed', {
           tenantId,
-          instanceId: stored.id,
-          brokerId: stored.brokerId,
+          instanceId: stored?.id ?? instanceId,
+          brokerId,
           error: describeErrorForLog(error),
         });
 
@@ -1512,23 +1504,59 @@ router.delete(
     }
 
     try {
-      const result = await deleteStoredInstance(tenantId, stored, actorId);
-      emitToTenant(tenantId, 'whatsapp.instances.deleted', {
-        id: stored.id,
-        tenantId,
-        deletedAt: result.deletedAt,
-        brokerStatus,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: {
+      if (stored) {
+        const result = await deleteStoredInstance(tenantId, stored, actorId);
+        emitToTenant(tenantId, 'whatsapp.instances.deleted', {
           id: stored.id,
-          brokerStatus,
+          tenantId,
           deletedAt: result.deletedAt,
-          instances: result.instances,
-        },
-      });
+          brokerStatus,
+        });
+
+        res.status(200).json({
+          success: true,
+          data: {
+            id: stored.id,
+            brokerStatus,
+            deletedAt: result.deletedAt,
+            instances: result.instances,
+          },
+        });
+      } else {
+        const deletedAt = await archiveDetachedInstance(tenantId, instanceId, brokerId, actorId);
+        try {
+          await clearWhatsAppDisconnectRetry(tenantId, instanceId);
+        } catch (error) {
+          if (!logWhatsAppStorageError('deleteInstance.clearRetryDetached', error, { tenantId, instanceId, brokerId })) {
+            throw error;
+          }
+        }
+
+        try {
+          await removeCachedSnapshot(tenantId, instanceId, brokerId);
+        } catch (error) {
+          if (!logWhatsAppStorageError('deleteInstance.removeCacheDetached', error, { tenantId, instanceId, brokerId })) {
+            throw error;
+          }
+        }
+
+        emitToTenant(tenantId, 'whatsapp.instances.deleted', {
+          id: instanceId,
+          tenantId,
+          deletedAt,
+          brokerStatus,
+        });
+
+        res.status(200).json({
+          success: true,
+          data: {
+            id: instanceId,
+            brokerStatus,
+            deletedAt,
+            instances: [],
+          },
+        });
+      }
     } catch (error: unknown) {
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
@@ -1536,8 +1564,8 @@ router.delete(
 
       logger.error('whatsapp.instances.delete.failed', {
         tenantId,
-        instanceId: stored.id,
-        brokerId: stored.brokerId,
+        instanceId: stored?.id ?? instanceId,
+        brokerId,
         error: describeErrorForLog(error),
       });
 

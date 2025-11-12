@@ -255,15 +255,8 @@ export const createInstancesApiService = ({
     try {
       log('Removendo instância WhatsApp', payload);
       const encodedId = encodeURIComponent(payload.instanceId);
-      const isJid = payload.instanceId.endsWith('@s.whatsapp.net');
-
-      if (isJid) {
-        const wipePayload = payload.hard ? { wipe: true } : undefined;
-        await api.post(`${BASE_PATH}/${encodedId}/disconnect`, wipePayload);
-      } else {
-        const wipeQuery = payload.hard ? '?wipe=1' : '';
-        await api.delete(`${BASE_PATH}/${encodedId}${wipeQuery}`);
-      }
+      const wipeQuery = payload.hard ? '?wipe=1' : '';
+      await api.delete(`${BASE_PATH}/${encodedId}${wipeQuery}`);
       store.getState().removeInstance(payload.instanceId);
       store.getState().setDeletingInstance(null);
       await loadInstances({ forceRefresh: true });

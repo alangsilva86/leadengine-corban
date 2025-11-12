@@ -97,7 +97,7 @@ describe('instancesApiService', () => {
     expect(bundle.store.getState().currentInstance?.id).toBe('inst-1');
   });
 
-  it('deletes real instances using DELETE and forwards wipe flag', async () => {
+  it('deletes instances using DELETE and forwards wipe flag', async () => {
     const { service } = createService();
     apiGet.mockResolvedValue({ instances: [] });
     apiDelete.mockResolvedValueOnce({});
@@ -108,24 +108,14 @@ describe('instancesApiService', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
-  it('disconnects JID instances using POST and forwards wipe payload', async () => {
+  it('deletes JID instances using DELETE and encodes identifiers', async () => {
     const { service } = createService();
     apiGet.mockResolvedValue({ instances: [] });
-    apiPost.mockResolvedValue({});
+    apiDelete.mockResolvedValue({});
 
     await service.deleteInstance({ instanceId: '123@s.whatsapp.net' });
-    await service.deleteInstance({ instanceId: '456@s.whatsapp.net', hard: true });
 
-    expect(apiPost).toHaveBeenNthCalledWith(
-      1,
-      `${BASE_PATH}/123%40s.whatsapp.net/disconnect`,
-      undefined,
-    );
-    expect(apiPost).toHaveBeenNthCalledWith(
-      2,
-      `${BASE_PATH}/456%40s.whatsapp.net/disconnect`,
-      { wipe: true },
-    );
-    expect(apiDelete).not.toHaveBeenCalled();
+    expect(apiDelete).toHaveBeenCalledWith(`${BASE_PATH}/123%40s.whatsapp.net`);
+    expect(apiPost).not.toHaveBeenCalled();
   });
 });
