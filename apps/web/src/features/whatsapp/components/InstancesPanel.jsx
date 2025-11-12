@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/button.jsx';
+
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer.jsx';
 import { cn } from '@/lib/utils.js';
 import { formatMetricValue, formatTimestampLabel } from '../lib/formatting';
