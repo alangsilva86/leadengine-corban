@@ -11,6 +11,7 @@ import { ptBR } from 'date-fns/locale';
 import { formatDateTime } from '../../utils/datetime.js';
 import { formatCurrencyField, formatTermField } from '../../utils/deal-fields.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
+import { resolveTicketContext } from './utils/ticketMetadata.js';
 
 const CHANNEL_PRESENTATION = {
   WHATSAPP: {
@@ -402,6 +403,7 @@ const ContactDetailsPanel = ({
   nextStepEditorRef,
   stageKey,
   onDealFieldSave,
+  contextSectionRef = null,
 }) => {
   const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const document = ticket?.contact?.document ?? null;
@@ -434,6 +436,24 @@ const ContactDetailsPanel = ({
     if (source && typeof source === 'object') return Object.values(source).filter(Boolean);
     return [];
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
+
+  const contextSectionTitleId = useId();
+
+  const contextItems = useMemo(() => {
+    const { instance, campaignId, campaignName, productType, strategy } = resolveTicketContext(ticket);
+
+    const instanceLabel = instance ?? 'Instância desconhecida';
+    const campaignLabel = campaignName ?? campaignId ?? 'Não informada';
+    const productLabel = productType ?? 'Não informado';
+    const strategyLabel = strategy ?? 'Não informada';
+
+    return [
+      { id: 'instance', label: 'Instância', value: instanceLabel },
+      { id: 'campaign', label: 'Campanha', value: campaignLabel },
+      { id: 'productType', label: 'Convênio', value: productLabel },
+      { id: 'strategy', label: 'Estratégia', value: strategyLabel },
+    ];
+  }, [ticket]);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -493,6 +513,26 @@ const ContactDetailsPanel = ({
         </div>
         <ContactSummary ticket={ticket} />
         <NextStepEditor ref={nextStepEditorRef} value={nextStepValue} onSave={onNextStepSave} />
+      </div>
+      <div
+        ref={contextSectionRef}
+        tabIndex={-1}
+        className="flex w-full flex-col gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+        aria-labelledby={contextSectionTitleId}
+      >
+        <h4 id={contextSectionTitleId} className="text-sm font-semibold text-foreground">
+          Contexto do lead
+        </h4>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {contextItems.map((item) => (
+            <div key={item.id} className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">{item.label}</span>
+              <span className="text-sm text-foreground" title={item.value}>
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
       {shouldShowDealPanel ? (
         <div className="w-full rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
