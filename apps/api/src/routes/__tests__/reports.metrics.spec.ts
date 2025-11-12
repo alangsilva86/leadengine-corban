@@ -56,6 +56,7 @@ describe('GET /reports/metrics', () => {
         productType: 'consignado',
         marginType: 'gold',
         strategy: 'push',
+        metadata: { margin: 1.5 },
         whatsappInstance: {
           id: 'instance-1',
           name: 'Instância Norte',
@@ -93,6 +94,7 @@ describe('GET /reports/metrics', () => {
         productType: 'credito',
         marginType: 'silver',
         strategy: 'pull',
+        metadata: { margin: 1.1 },
         whatsappInstance: {
           id: 'instance-2',
           name: 'Instância Sul',
@@ -144,6 +146,7 @@ describe('GET /reports/metrics', () => {
         },
       ],
     });
+    expect(firstGroup.metadata.marginValue).toBe(1.5);
 
     expect(findManySpy).toHaveBeenCalledTimes(1);
     const [{ where }] = findManySpy.mock.calls;
@@ -167,6 +170,7 @@ describe('GET /reports/metrics', () => {
       productType: 'consignado',
       marginType: 'gold',
       strategy: 'push',
+      metadata: { margin: 1.4 },
       whatsappInstance: { id: 'instance-3', name: 'Instância Centro' },
     } as AllocationRecord['campaign'];
 
@@ -179,6 +183,7 @@ describe('GET /reports/metrics', () => {
       productType: 'credito',
       marginType: 'silver',
       strategy: 'pull',
+      metadata: { margin: 1.2 },
       whatsappInstance: { id: 'instance-4', name: 'Instância Leste' },
     } as AllocationRecord['campaign'];
 

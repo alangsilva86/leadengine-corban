@@ -39,6 +39,7 @@ export interface CreateCampaignInput {
   endDate?: Date | null;
   productType?: string | null;
   marginType?: string | null;
+  marginValue?: number | null;
   strategy?: string | null;
   tags?: string[];
   metadata?: Record<string, unknown>;
@@ -133,6 +134,31 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
 
   const tagList = Array.from(normalizedTags);
 
+  const mergeMetadata = (
+    current: Prisma.JsonValue | null | undefined,
+    overrides?: Record<string, unknown>
+  ): Prisma.JsonObject => {
+    let base: Record<string, unknown> = {};
+
+    if (current && typeof current === 'object' && !Array.isArray(current)) {
+      base = { ...(current as Record<string, unknown>) };
+    }
+
+    if (overrides && typeof overrides === 'object') {
+      base = { ...base, ...overrides };
+    }
+
+    if (input.marginValue !== undefined) {
+      if (input.marginValue === null) {
+        delete base.margin;
+      } else {
+        base.margin = input.marginValue;
+      }
+    }
+
+    return base as Prisma.JsonObject;
+  };
+
   const campaignWhere: Prisma.CampaignWhereInput = {
     tenantId: input.tenantId,
     agreementId: input.agreementId,
@@ -169,7 +195,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
         marginType: normalizeTag(input.marginType ?? existing.marginType ?? null),
         strategy: normalizeTag(input.strategy ?? existing.strategy ?? null),
         tags: tagList.length > 0 ? tagList : existing.tags,
-        metadata: (input.metadata ?? existing.metadata ?? {}) as Prisma.JsonObject,
+        metadata: mergeMetadata(existing.metadata, input.metadata),
       },
       select: CAMPAIGN_SELECT,
     });
@@ -191,7 +217,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
       marginType: normalizeTag(input.marginType ?? null),
       strategy: normalizeTag(input.strategy ?? null),
       tags: tagList,
-      metadata: (input.metadata ?? {}) as Prisma.JsonObject,
+      metadata: mergeMetadata(null, input.metadata),
     },
     select: CAMPAIGN_SELECT,
   });

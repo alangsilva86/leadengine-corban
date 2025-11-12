@@ -67,6 +67,7 @@ export interface CreateCampaignInput {
   endDate?: Date | null;
   productType?: string | null;
   marginType?: string | null;
+  marginValue?: number | null;
   strategy?: string | null;
   tags?: string[];
   metadata?: Record<string, unknown>;
@@ -154,6 +155,31 @@ const findByCompositeKey = (
   return undefined;
 };
 
+const mergeMetadata = (
+  current: unknown,
+  overrides: Record<string, unknown> | undefined,
+  marginValue: number | null | undefined
+): Record<string, unknown> => {
+  const base: Record<string, unknown> =
+    current && typeof current === 'object' && !Array.isArray(current)
+      ? { ...(current as Record<string, unknown>) }
+      : {};
+
+  if (overrides) {
+    Object.assign(base, overrides);
+  }
+
+  if (marginValue !== undefined) {
+    if (marginValue === null) {
+      delete base.margin;
+    } else {
+      base.margin = marginValue;
+    }
+  }
+
+  return base;
+};
+
 export const createOrActivateCampaign = async (input: CreateCampaignInput): Promise<Campaign> => {
   const status = input.status ?? CampaignStatus.DRAFT;
   const bucket = getCampaignBucket(input.tenantId);
@@ -176,14 +202,16 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
     existing.updatedAt = now;
     existing.agreementName = input.agreementName ?? existing.agreementName ?? null;
     existing.productType = normalizeValue(input.productType);
-    existing.marginType = normalizeValue(input.marginType);
-    existing.strategy = normalizeValue(input.strategy);
-    if (tagList.length > 0) {
-      existing.tags = tagList;
-    }
-    existing.metadata = input.metadata ?? existing.metadata ?? {};
+   existing.marginType = normalizeValue(input.marginType);
+   existing.strategy = normalizeValue(input.strategy);
+   if (tagList.length > 0) {
+     existing.tags = tagList;
+   }
+    existing.metadata = mergeMetadata(existing.metadata, input.metadata, input.marginValue);
     return existing;
   }
+
+  const metadata = mergeMetadata(undefined, input.metadata, input.marginValue);
 
   const campaign: Campaign = {
     id: randomUUID(),
@@ -201,7 +229,7 @@ export const createOrActivateCampaign = async (input: CreateCampaignInput): Prom
     marginType: normalizeValue(input.marginType),
     strategy: normalizeValue(input.strategy),
     tags: tagList,
-    metadata: input.metadata ?? {},
+    metadata,
   };
 
   bucket.set(campaign.id, campaign);

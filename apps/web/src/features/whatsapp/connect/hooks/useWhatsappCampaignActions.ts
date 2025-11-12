@@ -189,9 +189,11 @@ const useWhatsappCampaignActions = ({
             resolvedAgreementName ||
             `${resolvedAgreementId} • ${parsed.data.instanceId}`,
           status: parsed.data.status,
-          product: parsed.data.product,
-          margin: parsed.data.margin,
+          productType: parsed.data.productType,
+          marginType: parsed.data.marginType,
+          marginValue: parsed.data.marginValue,
           strategy: parsed.data.strategy,
+          ...(parsed.data.tags ? { tags: parsed.data.tags } : {}),
         });
 
         await loadCampaignsRef.current?.({

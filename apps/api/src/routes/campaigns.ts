@@ -174,6 +174,7 @@ const buildCampaignBase = (campaign: CampaignWithInstance): Omit<CampaignDTO, 'm
         )
       )
     : [];
+  const marginValue = readNumeric(metadata, 'margin');
 
   return {
     ...campaignData,
@@ -184,6 +185,7 @@ const buildCampaignBase = (campaign: CampaignWithInstance): Omit<CampaignDTO, 'm
     metadata,
     productType: normalizeClassificationValue(productType),
     marginType: normalizeClassificationValue(marginType),
+    marginValue,
     strategy: normalizeClassificationValue(strategy),
     tags: normalizedTags,
   } as Omit<CampaignDTO, 'metrics'>;
@@ -542,8 +544,9 @@ router.post(
   body('name').optional().isString().trim().isLength({ min: 1 }),
   body('budget').optional().isFloat({ min: 0 }),
   body('cplTarget').optional().isFloat({ min: 0 }),
-  body('productType').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
+  body('productType').isString().trim().isLength({ min: 1 }),
   body('marginType').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
+  body('marginValue').optional({ nullable: true }).isFloat({ min: 0 }),
   body('strategy').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
   body('tags').optional().isArray(),
   body('tags.*').optional().isString(),
@@ -575,8 +578,10 @@ router.post(
     const schedule = req.body?.schedule ?? { type: 'immediate' };
     const channel = typeof req.body?.channel === 'string' ? req.body.channel : 'whatsapp';
     const audienceCount = Array.isArray(req.body?.audience) ? req.body.audience.length : 0;
-    const productType = normalizeClassificationValue(req.body?.productType);
-    const marginType = normalizeClassificationValue(req.body?.marginType);
+    const rawProductType = normalizeClassificationValue(req.body?.productType);
+    const productType = rawProductType ?? 'generic';
+    const marginType = normalizeClassificationValue(req.body?.marginType) ?? 'percentage';
+    const marginValue = readNumeric((req.body ?? {}) as Record<string, unknown>, 'marginValue');
     const strategy = normalizeClassificationValue(req.body?.strategy);
     const explicitTags = normalizeTagsInput(req.body?.tags);
     const resolvedTags = Array.from(
@@ -588,6 +593,10 @@ router.post(
     const userMetadata = isRecord(req.body?.metadata)
       ? ({ ...(req.body.metadata as Record<string, unknown>) } as Record<string, unknown>)
       : {};
+
+    if (marginValue !== null) {
+      userMetadata.margin = marginValue;
+    }
 
     if (SAFE_MODE) {
       const now = new Date();

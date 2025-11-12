@@ -28,12 +28,10 @@ export interface CreateCampaignPayload {
   name: string;
   status: string;
   brokerId?: string | null;
-  productType?: string | null;
-  marginType?: string | null;
-  strategy?: string | null;
+  productType: string;
+  marginType: string;
+  marginValue?: number | null;
   tags?: string[];
-  product?: string | null;
-  margin?: number | null;
   strategy?: string | null;
 }
 
