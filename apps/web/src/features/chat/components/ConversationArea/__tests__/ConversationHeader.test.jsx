@@ -142,6 +142,29 @@ describe('ConversationHeader helpers', () => {
       unmount();
     });
   });
+
+  it('abre o popover de etapas ao acionar o chip da etapa atual', async () => {
+    const ticket = {
+      id: 'ticket-novo',
+      status: 'OPEN',
+      pipelineStep: 'Novo',
+      contact: { name: 'Cliente Teste' },
+      window: {},
+      lead: {},
+    };
+
+    render(<ConversationHeader ticket={ticket} />);
+
+    const stageLabel = formatStageLabel('NOVO');
+    const trigger = screen.getByRole('button', { name: `Etapa: ${stageLabel}` });
+
+    const user = userEvent.setup();
+    await user.click(trigger);
+
+    expect(await screen.findByText('Próximas etapas')).toBeInTheDocument();
+    expect(screen.getByText('Você está aqui')).toBeInTheDocument();
+    expect(screen.getAllByText('Próxima etapa do funil').length).toBeGreaterThan(0);
+  });
 });
 
 describe('ContactSummary channel icons', () => {

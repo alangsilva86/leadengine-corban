@@ -2,12 +2,14 @@ import { useCallback, useMemo, useRef } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover.jsx';
 import { Clock3, MessageCircleMore, PanelRightOpen, Sparkles } from 'lucide-react';
 import { cn, buildInitials } from '@/lib/utils.js';
 import { CommandBar } from './CommandBar.jsx';
 import { AiModeControlMenu } from './AiModeMenu.jsx';
 import { ACTIONS_BY_ID } from '@/features/chat/actions/inventory';
 import InstanceBadge from '../Shared/InstanceBadge.jsx';
+import StageProgress from './StageProgress.jsx';
 
 const INDICATOR_TONES = {
   info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
@@ -323,6 +325,8 @@ const PrimaryActionBanner = ({
     askAiAction.analytics?.(contextWithFocus);
   }, [askAiAction, commandContext]);
 
+  const canShowStageProgress = typeof stageKey === 'string' && stageKey.trim().length > 0;
+
   return (
     <div data-testid="conversation-header-summary" className="py-1">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -363,14 +367,43 @@ const PrimaryActionBanner = ({
             label={statusInfo?.label}
             description={statusInfo ? `Status: ${statusInfo.label}` : undefined}
           />
-          {stageInfo ? (
-            <Indicator
-              icon={stageInfo.icon}
-              tone={stageInfo.tone}
-              label={stageInfo.label}
-              description={`Etapa: ${stageInfo.label}`}
-            />
-          ) : null}
+          {stageInfo
+            ? canShowStageProgress
+              ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-haspopup="dialog"
+                        aria-label={`Etapa: ${stageInfo.label}`}
+                        className={cn(
+                          'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
+                          INDICATOR_TONES[stageInfo.tone] ?? INDICATOR_TONES.neutral,
+                        )}
+                      >
+                        {stageInfo.icon ? <stageInfo.icon className="h-3.5 w-3.5" aria-hidden /> : null}
+                        <span className="truncate">{stageInfo.label}</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="max-w-sm" align="end" sideOffset={12}>
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">
+                          Próximas etapas
+                        </p>
+                        <StageProgress currentStage={stageKey} />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )
+              : (
+                  <Indicator
+                    icon={stageInfo.icon}
+                    tone={stageInfo.tone}
+                    label={stageInfo.label}
+                    description={`Etapa: ${stageInfo.label}`}
+                  />
+                )
+            : null}
           {originInfo ? (
             <Indicator
               icon={originInfo.icon}
