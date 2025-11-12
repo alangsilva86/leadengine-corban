@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import InstanceSummaryCard from './InstanceSummaryCard.jsx';
@@ -27,9 +28,12 @@ const InstanceGrid = ({
 }) => {
   if (!instancesReady) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
+      >
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
+          <div key={index} className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 shadow-inner">
             <Skeleton className="h-5 w-3/4" />
             <Skeleton className="mt-2 h-4 w-1/2" />
             <div className="mt-4 grid grid-cols-3 gap-2">
@@ -47,20 +51,23 @@ const InstanceGrid = ({
 
   return (
     <div className="space-y-4">
-      {highQueue ? (
-        <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-sm text-indigo-100">
-          <strong>Fila elevada nas últimas 2h.</strong> Revise a distribuição por instância para equilibrar o tráfego.
-        </div>
-      ) : null}
-
-      {allDisconnected ? (
-        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-          Nenhum canal conectado. Gere um QR Code a partir do card da instância para ativar novamente.
+      {highQueue || allDisconnected ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {highQueue ? (
+            <Badge className="rounded-full border border-indigo-400/40 bg-indigo-500/10 px-3 py-1 text-[0.65rem] text-indigo-100">
+              Fila elevada nas últimas 2h
+            </Badge>
+          ) : null}
+          {allDisconnected ? (
+            <Badge className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-[0.65rem] text-amber-100">
+              Nenhum canal conectado
+            </Badge>
+          ) : null}
         </div>
       ) : null}
 
       {hasRenderableInstances ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
           {filteredInstances.map((viewModel) => (
             <InstanceSummaryCard
               key={viewModel.key}
