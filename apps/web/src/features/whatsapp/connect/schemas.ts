@@ -38,6 +38,32 @@ export const createCampaignSchema = z
       .string({ required_error: 'Escolha a instância que será vinculada à campanha.' })
       .trim()
       .min(1, 'Escolha a instância que será vinculada à campanha.'),
+    agreementId: z
+      .string({ required_error: 'Selecione o convênio responsável pela campanha.' })
+      .trim()
+      .min(1, 'Selecione o convênio responsável pela campanha.'),
+    agreementName: z
+      .string({ required_error: 'Informe o nome do convênio.' })
+      .trim()
+      .min(1, 'Informe o nome do convênio.'),
+    product: z
+      .string({ required_error: 'Selecione o produto principal.' })
+      .trim()
+      .min(1, 'Selecione o produto principal.'),
+    margin: z
+      .preprocess((value) => {
+        if (typeof value === 'string') {
+          const normalized = value.replace(',', '.');
+          const parsed = Number(normalized);
+          return Number.isFinite(parsed) ? parsed : value;
+        }
+        return value;
+      }, z.number({ required_error: 'Informe a margem desejada.' }))
+      .positive('Informe a margem desejada.'),
+    strategy: z
+      .string({ required_error: 'Selecione a estratégia operacional.' })
+      .trim()
+      .min(1, 'Selecione a estratégia operacional.'),
     status: z
       .enum(['active', 'paused', 'draft'], {
         required_error: 'Escolha o status inicial da campanha.',
@@ -74,6 +100,15 @@ export const createCampaignSchema = z
     ...(marginType ? { marginType } : {}),
     ...(strategy ? { strategy } : {}),
     ...(tags ? { tags } : {}),
+  .transform(({ name, instanceId, status, agreementId, agreementName, product, margin, strategy }) => ({
+    name,
+    instanceId,
+    status,
+    agreementId,
+    agreementName,
+    product,
+    margin,
+    strategy,
   }));
 
 export type PairingPhoneInput = z.infer<typeof pairingPhoneSchema>;

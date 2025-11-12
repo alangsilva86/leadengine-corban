@@ -32,6 +32,9 @@ export interface CreateCampaignPayload {
   marginType?: string | null;
   strategy?: string | null;
   tags?: string[];
+  product?: string | null;
+  margin?: number | null;
+  strategy?: string | null;
 }
 
 export async function createCampaign(payload: CreateCampaignPayload) {
