@@ -17,6 +17,7 @@ const buildCampaign = (overrides = {}) => ({
   metrics: { total: 10, contacted: 4, won: 2, lost: 1 },
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  metadata: { product: 'consigned_credit', margin: 1.5, strategy: 'reactive_inbound' },
   ...overrides,
 });
 
@@ -61,6 +62,9 @@ describe('CampaignsPanel', () => {
     expect(screen.getAllByText('Aguardando vínculo').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Leads recebidos')).toHaveLength(2);
     expect(screen.getAllByText('Contactados')).toHaveLength(2);
+    expect(screen.getAllByText('Crédito consignado')[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/Margem 1\.50%/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Inbound reativo')[0]).toBeInTheDocument();
 
     const [firstActionsButton, secondActionsButton] = screen.getAllByRole('button', {
       name: /Ações/i,

@@ -124,17 +124,32 @@ const useWhatsappCampaignActions = ({
     async ({
       name,
       instanceId,
+      agreementId,
+      agreementName,
+      product,
+      margin,
+      strategy,
       status: requestedStatus = 'active',
     }: {
       name: string;
       instanceId: string;
+      agreementId: string;
+      agreementName: string;
+      product: string;
+      margin: number;
+      strategy: string;
       status?: string;
     }) => {
-      if (!selectedAgreement?.id) {
-        throw new Error('Vincule um convênio antes de criar campanhas.');
-      }
-
-      const parsed = createCampaignSchema.safeParse({ name, instanceId, status: requestedStatus });
+      const parsed = createCampaignSchema.safeParse({
+        name,
+        instanceId,
+        agreementId,
+        agreementName,
+        product,
+        margin,
+        strategy,
+        status: requestedStatus,
+      });
       if (!parsed.success) {
         const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da campanha.';
         dispatch({ type: 'set-campaign-error', value: message });
@@ -142,26 +157,45 @@ const useWhatsappCampaignActions = ({
       }
 
       const targetInstance = instances.find((entry) => entry && entry.id === parsed.data.instanceId) ?? null;
+      if (!targetInstance) {
+        const message = 'Selecione uma instância válida para criar a campanha.';
+        dispatch({ type: 'set-campaign-error', value: message });
+        throw new Error(message);
+      }
+      if (!targetInstance.connected) {
+        const message = 'A campanha exige uma instância conectada para receber leads.';
+        dispatch({ type: 'set-campaign-error', value: message });
+        throw new Error(message);
+      }
       const brokerId =
         targetInstance && targetInstance.metadata && typeof targetInstance.metadata === 'object'
           ? targetInstance.metadata.brokerId || targetInstance.metadata.broker_id || null
           : null;
+
+      const resolvedAgreementId = parsed.data.agreementId;
+      const resolvedAgreementName = parsed.data.agreementName || agreementName || selectedAgreement?.name || '';
 
       dispatch({ type: 'set-campaign-error', value: null });
       dispatch({ type: 'set-campaign-action', value: { id: null, type: 'create' } });
 
       try {
         const payload = await createCampaignRequest({
-          agreementId: selectedAgreement.id,
-          agreementName: selectedAgreement.name,
+          agreementId: resolvedAgreementId,
+          agreementName: resolvedAgreementName || null,
           instanceId: parsed.data.instanceId,
           ...(brokerId ? { brokerId } : {}),
-          name: parsed.data.name || `${selectedAgreement.name} • ${parsed.data.instanceId}`,
+          name:
+            parsed.data.name ||
+            resolvedAgreementName ||
+            `${resolvedAgreementId} • ${parsed.data.instanceId}`,
           status: parsed.data.status,
+          product: parsed.data.product,
+          margin: parsed.data.margin,
+          strategy: parsed.data.strategy,
         });
 
         await loadCampaignsRef.current?.({
-          preferredAgreementId: selectedAgreement.id,
+          preferredAgreementId: resolvedAgreementId,
           preferredCampaignId: payload?.id ?? null,
           preferredInstanceId: payload?.instanceId ?? instance?.id ?? null,
         });
@@ -184,15 +218,7 @@ const useWhatsappCampaignActions = ({
         dispatch({ type: 'set-campaign-action', value: null });
       }
     },
-    [
-      dispatch,
-      selectedAgreement?.id,
-      selectedAgreement?.name,
-      instances,
-      instance?.id,
-      handleAuthFallback,
-      logError,
-    ]
+    [dispatch, instances, instance?.id, handleAuthFallback, logError, selectedAgreement?.name]
   );
 
   const updateCampaignStatus = useCallback(
