@@ -776,7 +776,12 @@ const CreateCampaignWizard = ({
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {rules.map((rule) => (
-                            <Badge key={rule} variant="status" tone="info" className="text-[0.65rem]">
+                            <Badge
+                              key={rule}
+                              variant="status"
+                              tone="info"
+                              className="text-xs leading-4"
+                            >
                               {rule}
                             </Badge>
                           ))}
@@ -858,11 +863,11 @@ const CreateCampaignWizard = ({
                         </div>
                         <p className="mt-2 text-xs leading-4 text-muted-foreground">{card.definition}</p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <Badge variant="status" tone="info" className="text-[0.65rem]">
+                          <Badge variant="status" tone="info" className="text-xs leading-4">
                             {card.cadence}
                           </Badge>
                           {card.compliance ? (
-                            <Badge variant="status" tone="warning" className="text-[0.65rem]">
+                            <Badge variant="status" tone="warning" className="text-xs leading-4">
                               {card.compliance}
                             </Badge>
                           ) : null}
