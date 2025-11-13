@@ -89,7 +89,7 @@ const CreateCampaignDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleDialogChange}>
-      <DialogContent className="w-[95vw] max-h-[85vh] overflow-hidden rounded-2xl border border-border bg-background p-0 md:w-[85vw] md:max-w-[75vw] lg:max-w-[1200px]">
+      <DialogContent className="w-[95vw] max-h-[85vh] min-h-0 overflow-y-auto rounded-2xl border border-border bg-background p-0 md:w-[85vw] md:max-w-[75vw] lg:max-w-[1200px]">
         <DialogHeader className="border-b border-border/60 px-6 pb-4 pt-5">
           <DialogTitle className="text-lg font-semibold leading-6">Nova campanha do WhatsApp</DialogTitle>
           <DialogDescription className="text-sm leading-5 text-muted-foreground">
