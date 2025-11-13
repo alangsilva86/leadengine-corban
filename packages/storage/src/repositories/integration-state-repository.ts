@@ -5,11 +5,14 @@ type PrismaClientOrTx = PrismaClient | Prisma.TransactionClient;
 
 const resolveClient = (client?: PrismaClientOrTx): PrismaClientOrTx => client ?? getPrismaClient();
 
-const normalizeValue = (value: Prisma.JsonValue | null | undefined): Prisma.JsonValue | null => {
+const normalizeValue = (
+  value: Prisma.JsonValue | null | undefined
+): Prisma.InputJsonValue | Prisma.NullTypes.JsonNull => {
   if (value === null || value === undefined) {
     return Prisma.JsonNull;
   }
-  return value;
+
+  return value as Prisma.InputJsonValue;
 };
 
 export const getIntegrationState = async (
