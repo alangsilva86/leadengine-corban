@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 
-import CreateCampaignWizard, { STEP_SEQUENCE } from './CreateCampaignWizard.jsx';
+import CreateCampaignWizard, { STEP_SEQUENCE, TOTAL_STEPS } from './CreateCampaignWizard.jsx';
 
 const resolveInstanceLabel = (instance) => {
   if (!instance) {
@@ -99,7 +99,7 @@ const CreateCampaignDialog = ({
             <Badge variant="outline" className="border-border/60 bg-muted/10 uppercase tracking-wide">
               Passo {Math.min(activeStepIndex + 1, STEP_SEQUENCE.length)} de {STEP_SEQUENCE.length}
             </Badge>
-            <span>Campanhas conectam Instâncias (Passo 1) à Inbox (Passo 3).</span>
+            <span>Campanhas conectam Instâncias (Passo 1) à Inbox (Passo {TOTAL_STEPS}).</span>
           </div>
           {selectionSummary.instance ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

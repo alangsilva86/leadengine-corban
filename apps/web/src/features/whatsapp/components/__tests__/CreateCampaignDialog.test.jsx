@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import CreateCampaignDialog from '../CreateCampaignDialog.jsx';
+import { TOTAL_STEPS } from '../CreateCampaignWizard.jsx';
 
 const useAgreementsMock = vi.fn();
 
@@ -38,6 +39,13 @@ describe('CreateCampaignDialog wizard', () => {
     useAgreementsMock.mockReturnValue(buildAgreementsState());
   });
 
+  const expectStepLabelToBe = async (stepNumber) => {
+    const label = new RegExp(`Passo ${stepNumber} de ${TOTAL_STEPS}`);
+    await waitFor(() => {
+      expect(screen.getAllByText(label)).toHaveLength(2);
+    });
+  };
+
   it('permite configurar a campanha em múltiplos passos e envia o payload completo', async () => {
     const onSubmit = vi.fn(async () => {});
     const onOpenChange = vi.fn();
@@ -54,12 +62,18 @@ describe('CreateCampaignDialog wizard', () => {
       />
     );
 
+    await expectStepLabelToBe(1);
+
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
+
+    await expectStepLabelToBe(2);
 
     await user.click(screen.getByRole('combobox', { name: /^Convênio$/i }));
     await user.click(await screen.findByRole('option', { name: /Convênio Beta/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
+
+    await expectStepLabelToBe(3);
 
     await user.click(screen.getByRole('button', { name: /Cartão benefício/i }));
     const marginInput = screen.getByLabelText(/Margem alvo/);
@@ -70,9 +84,13 @@ describe('CreateCampaignDialog wizard', () => {
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 
+    await expectStepLabelToBe(4);
+
     await user.click(screen.getByRole('button', { name: /^WARM/i }));
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
+
+    await expectStepLabelToBe(5);
 
     const nameInput = screen.getByLabelText(/Nome da campanha/i);
     await user.clear(nameInput);

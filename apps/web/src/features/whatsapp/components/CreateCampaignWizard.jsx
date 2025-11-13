@@ -65,6 +65,8 @@ const STEP_SEQUENCE = [
   },
 ];
 
+export const TOTAL_STEPS = STEP_SEQUENCE.length;
+
 const STEP_DEPENDENCIES = {
   agreement: ['instance'],
   product: ['agreement'],
@@ -884,7 +886,7 @@ const CreateCampaignWizard = ({
           <div className="space-y-6">
             {renderStepHeading('Revise e crie a campanha', null)}
             <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm leading-5 text-emerald-100">
-              <p className="font-semibold text-emerald-50">Passo 3 (Inbox) preparado</p>
+              <p className="font-semibold text-emerald-50">Passo {finalStepNumber} (Inbox) preparado</p>
               <p className="mt-1 text-xs text-emerald-100/80">
                 Assim que esta campanha for criada, os leads qualificados seguirão para a Inbox com esta mesma configuração.
               </p>
@@ -1037,7 +1039,10 @@ const CreateCampaignWizard = ({
     }
   };
 
-  const isLastStep = stepIndex === STEP_SEQUENCE.length - 1;
+  const totalSteps = TOTAL_STEPS;
+  const currentStepNumber = Math.min(stepIndex + 1, totalSteps);
+  const finalStepNumber = totalSteps;
+  const isLastStep = stepIndex === totalSteps - 1;
   const advanceDisabledReason =
     currentStep?.key === 'instance' && selectedInstance && !selectedInstance.connected
       ? 'Conecte a instância para continuar.'
@@ -1083,10 +1088,12 @@ const CreateCampaignWizard = ({
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-inner">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Passo 2 de 3</p>
+          <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+            Passo {currentStepNumber} de {totalSteps}
+          </p>
           <p className="text-sm font-semibold text-foreground">Campanhas & roteamento</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Depois de criar, você pode acompanhar os leads na Inbox (Passo 3) sem perder o contexto.
+            Depois de criar, você pode acompanhar os leads na Inbox (Passo {finalStepNumber}) sem perder o contexto.
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3 w-full">
             <Link to="/whatsapp/inbox">Ir para a Inbox</Link>
