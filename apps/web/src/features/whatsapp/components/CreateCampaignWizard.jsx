@@ -1188,9 +1188,9 @@ const CreateCampaignWizard = ({
   );
 
   return (
-    <div className="flex h-[78vh] flex-col">
+    <div className="flex flex-col lg:h-[78vh]">
       <StepperRail />
-      <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+      <div className="flex flex-1 flex-col lg:flex-row lg:overflow-hidden">
         <section className="flex-1 overflow-y-auto px-5 pb-8 pt-5 sm:px-8 lg:pb-12">
           <div className="mx-auto w-full max-w-3xl space-y-6">
             {renderStepContent()}
@@ -1208,7 +1208,7 @@ const CreateCampaignWizard = ({
             ) : null}
           </div>
         </section>
-        <aside className="border-t border-border/60 bg-slate-950/40 px-5 py-5 backdrop-blur lg:w-80 lg:border-t-0 lg:border-l lg:px-6 lg:py-6">
+        <aside className="border-t border-border/60 bg-slate-950/40 px-5 py-5 backdrop-blur lg:w-80 lg:border-t-0 lg:border-l lg:px-6 lg:py-6 lg:overflow-y-auto">
           <CampaignSummary />
         </aside>
       </div>
