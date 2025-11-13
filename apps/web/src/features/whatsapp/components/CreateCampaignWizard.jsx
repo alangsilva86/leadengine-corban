@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
@@ -236,52 +236,72 @@ const CreateCampaignWizard = ({
   const hasInstances = sortedInstances.length > 0;
   const hasConnectedInstances = connectedInstances.length > 0;
 
+  const isModalSessionActiveRef = useRef(false);
+
   useEffect(() => {
     if (!open) {
+      isModalSessionActiveRef.current = false;
       return;
     }
 
+    const sorted = [...instances]
+      .filter(Boolean)
+      .map((entry) => ({
+        ...entry,
+        sortKey: formatInstanceLabel(entry).toLowerCase(),
+      }))
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey, 'pt-BR'));
+
+    const connected = sorted.filter((instance) => Boolean(instance?.connected));
+
     const preferredInstance =
-      sortedInstances.find((item) => item?.id === defaultInstanceId) ??
-      connectedInstances[0] ??
-      sortedInstances[0] ??
+      sorted.find((item) => item?.id === defaultInstanceId) ??
+      connected[0] ??
+      sorted[0] ??
       null;
 
     const preferredAgreementId = agreement?.id ?? '';
     const preferredAgreementName = agreement?.name ?? agreement?.displayName ?? '';
-    const productLabel = findCampaignProduct(formState.product)?.label ?? '';
 
-    setFormState((prev) => ({
-      ...prev,
-      instanceId: preferredInstance?.id ?? '',
-      agreementId: preferredAgreementId,
-      agreementName: preferredAgreementName,
-      leadSource: prev.leadSource ?? (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
-      segments: Array.isArray(prev.segments) ? prev.segments : [],
-      name: nameDirty
-        ? prev.name
-        : buildSuggestedName({
-            agreementLabel: preferredAgreementName,
-            productLabel,
-            instanceLabel: formatInstanceLabel(preferredInstance),
-          }),
-    }));
-    setStepIndex(0);
+    const isFirstOpen = !isModalSessionActiveRef.current;
+    isModalSessionActiveRef.current = true;
+
+    setFormState((prev) => {
+      const nextState = {
+        ...prev,
+        instanceId:
+          prev.instanceId && sorted.some((item) => item?.id === prev.instanceId)
+            ? prev.instanceId
+            : preferredInstance?.id ?? '',
+        agreementId:
+          prev.agreementId && prev.agreementId !== preferredAgreementId && !isFirstOpen
+            ? prev.agreementId
+            : preferredAgreementId,
+        agreementName:
+          prev.agreementId && prev.agreementId !== preferredAgreementId && !isFirstOpen
+            ? prev.agreementName
+            : preferredAgreementName,
+        leadSource: prev.leadSource ?? (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
+        segments: Array.isArray(prev.segments) ? prev.segments : [],
+      };
+
+      if (!nextState.agreementId && preferredAgreementId) {
+        nextState.agreementId = preferredAgreementId;
+        nextState.agreementName = preferredAgreementName;
+      }
+
+      return nextState;
+    });
+
+    if (isFirstOpen) {
+      setStepIndex(0);
+      setNameDirty(false);
+    }
+
     setStepError(null);
     setSubmitError(null);
     setIsSubmitting(false);
-    setNameDirty(false);
-  }, [
-    open,
-    agreement?.id,
-    agreement?.name,
-    agreement?.displayName,
-    sortedInstances,
-    connectedInstances,
-    defaultInstanceId,
-    nameDirty,
-    formState.product,
-  ]);
+  }, [open, instances, agreement?.id, agreement?.name, agreement?.displayName, defaultInstanceId]);
 
   const currentStep = STEP_SEQUENCE[stepIndex];
   const selectedInstance = sortedInstances.find((item) => item?.id === formState.instanceId) ?? null;
@@ -300,20 +320,30 @@ const CreateCampaignWizard = ({
     });
   }, [onSelectionChange, selectedAgreement, selectedInstance, selectedProduct, selectedStrategy]);
 
+  const suggestedCampaignName = useMemo(() => {
+    const agreementLabel = formatAgreementLabel(selectedAgreement) || formState.agreementName;
+    const productLabel = selectedProduct?.label ?? '';
+    const instanceLabel = formatInstanceLabel(selectedInstance);
+
+    return buildSuggestedName({ agreementLabel, productLabel, instanceLabel });
+  }, [selectedAgreement, selectedProduct, selectedInstance, formState.agreementName]);
+
   useEffect(() => {
-    if (!open) {
+    if (!open || nameDirty || !suggestedCampaignName) {
       return;
     }
-    if (!nameDirty) {
-      const agreementLabel = formatAgreementLabel(selectedAgreement) || formState.agreementName;
-      const productLabel = selectedProduct?.label ?? '';
-      const instanceLabel = formatInstanceLabel(selectedInstance);
-      setFormState((prev) => ({
+
+    setFormState((prev) => {
+      if (prev.name === suggestedCampaignName) {
+        return prev;
+      }
+
+      return {
         ...prev,
-        name: buildSuggestedName({ agreementLabel, productLabel, instanceLabel }),
-      }));
-    }
-  }, [open, selectedAgreement, selectedProduct, selectedInstance, nameDirty, formState.agreementName]);
+        name: suggestedCampaignName,
+      };
+    });
+  }, [open, nameDirty, suggestedCampaignName]);
 
   useEffect(() => {
     if (!open) {
