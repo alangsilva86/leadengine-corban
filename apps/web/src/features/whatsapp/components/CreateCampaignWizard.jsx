@@ -1128,22 +1128,25 @@ const CreateCampaignWizard = ({
   };
 
   const StepperRail = () => (
-    <div className="overflow-x-auto border-b border-border/70 bg-background/80 px-4 py-3 shadow-sm backdrop-blur">
-      <ol className="flex min-w-full items-stretch gap-3">
+    <div className="border-b border-border/70 bg-background/80 px-4 py-3 shadow-sm backdrop-blur">
+      <ol className="grid w-full gap-3 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {STEP_SEQUENCE.map((step, index) => {
           const status = stepStatuses[step.key];
           const isActive = status === 'current';
           const isCompleted = status === 'completed';
           const isBlocked = status === 'blocked';
           return (
-            <li key={step.key} className="flex items-center gap-3">
+            <li
+              key={step.key}
+              className="flex flex-col items-stretch gap-2 xl:flex-row xl:items-center xl:gap-3"
+            >
               <Tooltip delayDuration={120}>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     onClick={() => goToStep(index)}
                     className={cn(
-                      'flex min-w-[180px] items-start gap-3 rounded-xl border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      'flex w-full min-w-[180px] items-start gap-3 rounded-xl border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                       isActive
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border/70 hover:border-primary/40',
@@ -1178,7 +1181,10 @@ const CreateCampaignWizard = ({
                 ) : null}
               </Tooltip>
               {index < STEP_SEQUENCE.length - 1 ? (
-                <span className="hidden h-px w-10 bg-border/60 lg:block" aria-hidden />
+                <>
+                  <span className="mx-auto block h-6 w-px bg-border/50 sm:hidden" aria-hidden />
+                  <span className="hidden h-px w-10 bg-border/60 xl:block" aria-hidden />
+                </>
               ) : null}
             </li>
           );
