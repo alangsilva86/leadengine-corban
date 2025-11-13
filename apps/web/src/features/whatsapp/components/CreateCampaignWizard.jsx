@@ -1040,7 +1040,8 @@ const CreateCampaignWizard = ({
       },
       {
         label: 'Estratégia',
-        value: selectedStrategy?.title || 'Selecione a régua',
+        value:
+          selectedStrategy?.label || selectedStrategyCard?.title || 'Selecione a régua',
         helper: selectedStrategyCard?.cadence ?? null,
       },
       {
