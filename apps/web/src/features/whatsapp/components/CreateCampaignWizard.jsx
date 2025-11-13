@@ -595,7 +595,7 @@ const CreateCampaignWizard = ({
           <div className="space-y-6">
             {renderStepHeading('Escolha a instância', 'Use um número conectado para receber os leads.')}
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <Label htmlFor="campaign-instance">Instância</Label>
                 <Select value={formState.instanceId} onValueChange={handleInstanceChange}>
                   <SelectTrigger id="campaign-instance">
@@ -656,7 +656,7 @@ const CreateCampaignWizard = ({
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px]">
               <div className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                  <div className="space-y-2 min-w-0">
                     <Label htmlFor="campaign-agreement">Convênio</Label>
                     <Select
                       value={formState.agreementId}
@@ -680,7 +680,7 @@ const CreateCampaignWizard = ({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 min-w-0">
                     <Label htmlFor="campaign-source">Fonte da campanha</Label>
                     <Select value={formState.leadSource} onValueChange={handleLeadSourceChange}>
                       <SelectTrigger id="campaign-source">
