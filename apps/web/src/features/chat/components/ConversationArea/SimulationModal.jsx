@@ -26,7 +26,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.jsx';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.js';
 import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
-import useAgreements from '@/features/agreements/useAgreements.js';
 import {
   buildProposalSnapshot,
   buildSimulationSnapshot,
@@ -158,6 +157,9 @@ const normalizeAgreementProducts = (agreement) => {
     agreement.productOptions,
     agreement.productTypes,
     agreement.productScope,
+    agreement.produtos,
+    agreement.productos,
+    agreement.productList,
     agreement?.metadata?.products,
     agreement?.metadata?.allowedProducts,
     agreement?.metadata?.productOptions,
@@ -166,17 +168,30 @@ const normalizeAgreementProducts = (agreement) => {
     .map((candidate) => (candidate instanceof Set ? Array.from(candidate) : candidate))
     .filter((candidate) => Array.isArray(candidate) && candidate.length > 0);
 
-  for (const source of sources) {
-    const normalized = source
-      .map((entry) => normalizeProductOption(entry))
-      .filter(Boolean);
+  const collected = [];
 
-    if (normalized.length > 0) {
-      return normalized;
-    }
+  for (const source of sources) {
+    collected.push(...source.map((entry) => normalizeProductOption(entry)).filter(Boolean));
   }
 
-  return [];
+  if (Array.isArray(agreement.taxas)) {
+    collected.push(
+      ...agreement.taxas
+        .map((tax) => (tax && typeof tax === 'object' ? tax.produto ?? tax.product : tax))
+        .map((entry) => normalizeProductOption(entry))
+        .filter(Boolean),
+    );
+  }
+
+  const unique = new Map();
+
+  collected.forEach((option) => {
+    if (option && option.value && !unique.has(option.value)) {
+      unique.set(option.value, { value: option.value, label: option.label || formatProductLabel(option.value) });
+    }
+  });
+
+  return Array.from(unique.values());
 };
 
 const normalizeAgreementOption = (agreement) => {
@@ -184,12 +199,21 @@ const normalizeAgreementOption = (agreement) => {
     return null;
   }
 
-  const value = normalizeString(agreement.id) || normalizeString(agreement.identifier);
+  if (agreement.archived === true) {
+    return null;
+  }
+
+  const value =
+    normalizeString(agreement.id) ||
+    normalizeString(agreement.identifier) ||
+    normalizeString(agreement.slug) ||
+    normalizeString(agreement.code);
   if (!value) {
     return null;
   }
 
   const label =
+    normalizeString(agreement.nome) ||
     normalizeString(agreement.name) ||
     normalizeString(agreement.displayName) ||
     normalizeString(agreement.label) ||
@@ -290,20 +314,13 @@ const SimulationModal = ({
   const isProposalMode = mode === 'proposal';
   const { convenios } = useConvenioCatalog();
 
-  const {
-    agreements,
-    isLoading: agreementsLoading,
-    error: agreementsError,
-    retry: retryAgreements,
-  } = useAgreements();
-
   const agreementOptions = useMemo(
     () =>
-      agreements
+      convenios
         .map((agreement) => normalizeAgreementOption(agreement))
         .filter((option) => option && option.value)
         .map((option) => ({ value: option.value, label: option.label, products: option.products })),
-    [agreements]
+    [convenios]
   );
 
   const productsByAgreement = useMemo(() => {
@@ -1040,45 +1057,20 @@ const SimulationModal = ({
             <div className="space-y-2">
               <Label htmlFor="sales-convenio">Convênio</Label>
               {errors.convenio ? <p className="text-xs text-rose-400">{errors.convenio}</p> : null}
-              {agreementsError ? (
-                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
-                  <p className="font-medium">Não foi possível carregar os convênios.</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="text-rose-500/80">{agreementsError}</span>
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      className="h-auto px-0"
-                      onClick={retryAgreements}
-                    >
-                      Tentar novamente
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
               <Select
                 value={convenioId}
                 onValueChange={handleConvenioChange}
-                disabled={fieldsDisabled || agreementsLoading}
+                disabled={fieldsDisabled}
               >
                 <SelectTrigger id="sales-convenio">
                   <SelectValue
                     placeholder={
-                      agreementsLoading
-                        ? 'Carregando convênios…'
-                        : hasAgreementOptions
-                          ? 'Selecione um convênio'
-                          : 'Nenhum convênio disponível'
+                      hasAgreementOptions ? 'Selecione um convênio' : 'Nenhum convênio disponível'
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {agreementsLoading ? (
-                    <SelectItem value="__loading__" disabled>
-                      Carregando convênios…
-                    </SelectItem>
-                  ) : hasAgreementOptions ? (
+                  {hasAgreementOptions ? (
                     agreementOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
@@ -1099,16 +1091,14 @@ const SimulationModal = ({
               <Select
                 value={productId}
                 onValueChange={handleProductChange}
-                disabled={fieldsDisabled || agreementsLoading || !convenioId}
+                disabled={fieldsDisabled || !convenioId}
               >
                 <SelectTrigger id="sales-product">
                   <SelectValue
                     placeholder={
                       !convenioId
                         ? 'Selecione um convênio primeiro'
-                        : agreementsLoading
-                          ? 'Carregando produtos…'
-                          : productOptions.length > 0
+                        : productOptions.length > 0
                             ? 'Selecione um produto'
                             : 'Nenhum produto disponível'
                     }
@@ -1133,13 +1123,13 @@ const SimulationModal = ({
                 </SelectContent>
               </Select>
               {errors.product ? <p className="text-sm text-destructive">{errors.product}</p> : null}
-              {convenioId && !agreementsLoading && productOptions.length === 0 ? (
+              {convenioId && productOptions.length === 0 ? (
                 <p className="text-xs text-foreground-muted">
                   Este convênio ainda não possui produtos configurados. Atualize as configurações para continuar.
                 </p>
               ) : null}
             </div>
-            {!agreementsLoading && !agreementsError && !hasAgreementOptions ? (
+            {!hasAgreementOptions ? (
               <p className="text-xs text-foreground-muted">
                 Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
               </p>

@@ -5,11 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import SimulationModal from '../SimulationModal.jsx';
 import DealDrawer from '../DealDrawer.jsx';
 
-const mockUseAgreements = vi.fn();
+const mockUseConvenioCatalog = vi.fn();
 
-vi.mock('@/features/agreements/useAgreements.js', () => ({
+vi.mock('@/features/agreements/useConvenioCatalog.js', () => ({
   __esModule: true,
-  default: () => mockUseAgreements(),
+  default: () => mockUseConvenioCatalog(),
 }));
 
 const queueAlertSample = {
@@ -49,21 +49,20 @@ const dealSnapshotMock = {
 
 describe('Sales dialogs alerts', () => {
   beforeEach(() => {
-    mockUseAgreements.mockReset();
-    mockUseAgreements.mockReturnValue({
-      agreements: [
+    mockUseConvenioCatalog.mockReset();
+    mockUseConvenioCatalog.mockReturnValue({
+      convenios: [
         {
           id: 'inss',
-          name: 'INSS',
-          products: [
-            { id: 'emprestimo', label: 'Empréstimo consignado' },
-            { id: 'cartao_consignado', label: 'Cartão consignado' },
-          ],
+          nome: 'INSS',
+          produtos: ['Empréstimo consignado', 'Cartão consignado'],
+          taxas: [],
+          janelas: [],
+          archived: false,
         },
       ],
       isLoading: false,
       error: null,
-      retry: vi.fn(),
     });
   });
 
@@ -115,11 +114,10 @@ describe('Sales dialogs alerts', () => {
   });
 
   it('exibe mensagem amigável quando nenhum convênio está disponível', () => {
-    mockUseAgreements.mockReturnValueOnce({
-      agreements: [],
+    mockUseConvenioCatalog.mockReturnValueOnce({
+      convenios: [],
       isLoading: false,
       error: null,
-      retry: vi.fn(),
     });
 
     const { getByText } = render(
