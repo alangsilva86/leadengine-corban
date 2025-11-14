@@ -226,7 +226,7 @@ const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, on
         <Plus className="mr-2 h-4 w-4" /> Novo convênio
       </Button>
     </CardHeader>
-    <CardContent className="p-0">
+    <CardContent className="overflow-hidden p-0">
       <ScrollArea className="max-h-[420px]">
         <Table>
           <TableHeader>
@@ -601,7 +601,7 @@ const CalendarCard = ({ convenio, onUpsert, onRemove, readOnly }) => {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="rounded-md border border-border">
-          <Table>
+          <Table className="min-w-[560px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Janela</TableHead>
@@ -881,12 +881,12 @@ const TaxesCard = ({ convenio, onUpsert, readOnly }) => {
           <CardTitle>Tabela de taxas</CardTitle>
           <CardDescription>Nenhum campo técnico: só taxa, TAC e vigência.</CardDescription>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Filter className="h-4 w-4" /> Produto
           </div>
           <Select value={product} onValueChange={setProduct}>
-            <SelectTrigger className="min-w-[200px]">
+            <SelectTrigger className="w-full min-w-[200px] md:w-[240px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -911,7 +911,7 @@ const TaxesCard = ({ convenio, onUpsert, readOnly }) => {
       </CardHeader>
       <CardContent>
         <div className="rounded-md border border-border">
-          <Table>
+          <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Modalidade</TableHead>
@@ -1035,11 +1035,11 @@ const SimulationPreview = ({ convenio }) => {
         <CardDescription>Margem e prazo simples. Resultado retorna coeficiente e valores para o vendedor.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-5">
-          <div className="space-y-2 md:col-span-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="space-y-2 sm:col-span-2">
             <Label>Produto</Label>
             <Select value={form.produto} onValueChange={(value) => setForm((current) => ({ ...current, produto: value }))}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1054,7 +1054,7 @@ const SimulationPreview = ({ convenio }) => {
           <div className="space-y-2">
             <Label>Modalidade</Label>
             <Select value={form.modalidade} onValueChange={(value) => setForm((current) => ({ ...current, modalidade: value }))}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1097,7 +1097,7 @@ const SimulationPreview = ({ convenio }) => {
           </div>
         ) : null}
         {preview.type === 'success' ? (
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-md border border-border bg-muted/40 p-4">
               <p className="text-xs uppercase text-muted-foreground">Coeficiente estimado</p>
               <p className="text-xl font-semibold text-primary">{preview.simulation.coefficient.toFixed(4)}</p>
@@ -1141,8 +1141,8 @@ const HistoryCard = ({ history }) => (
               <div className="rounded-full bg-primary/10 p-2 text-primary">
                 <ClipboardList className="h-4 w-4" />
               </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">{entry.message}</p>
+              <div className="space-y-1 min-w-0">
+                <p className="text-sm font-medium text-foreground leading-snug">{entry.message}</p>
                 <p className="text-xs text-muted-foreground">
                   {entry.author} · {entry.createdAt.toLocaleString('pt-BR')}
                 </p>
@@ -1325,12 +1325,12 @@ const ConveniosSettingsTab = () => {
               Gestão comercial sem falar em coeficiente. Configure convênios, janelas e taxas e deixe o motor calcular.
             </CardDescription>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <UserCircle className="h-4 w-4" /> Perfil
             </div>
             <Select value={role} onValueChange={setRole}>
-              <SelectTrigger className="min-w-[200px]">
+              <SelectTrigger className="w-full min-w-[200px] md:w-[240px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1347,8 +1347,8 @@ const ConveniosSettingsTab = () => {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-6 lg:grid-cols-[1.1fr_1.9fr]">
-          <div className="space-y-4">
+        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.9fr)]">
+          <div className="space-y-4 min-w-0">
             <ConvenioList
               convenios={convenios}
               selectedId={selectedId}
@@ -1364,7 +1364,7 @@ const ConveniosSettingsTab = () => {
               </p>
             </div>
           </div>
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0">
             {selected?.archived ? (
               <Badge variant="outline" className="border-amber-500 text-amber-600">
                 Arquivado — permanece no histórico, mas não aparece para novas simulações
