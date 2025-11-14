@@ -5,6 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import SimulationModal from '../SimulationModal.jsx';
 import DealDrawer from '../DealDrawer.jsx';
 
+const mockUseAgreements = vi.fn();
+
+vi.mock('@/features/agreements/useAgreements.js', () => ({
+  __esModule: true,
+  default: () => mockUseAgreements(),
+}));
+
 const queueAlertSample = {
   payload: {
     message: 'Fila indisponível no momento.',
@@ -41,6 +48,25 @@ const dealSnapshotMock = {
 };
 
 describe('Sales dialogs alerts', () => {
+  beforeEach(() => {
+    mockUseAgreements.mockReset();
+    mockUseAgreements.mockReturnValue({
+      agreements: [
+        {
+          id: 'inss',
+          name: 'INSS',
+          products: [
+            { id: 'emprestimo', label: 'Empréstimo consignado' },
+            { id: 'cartao_consignado', label: 'Cartão consignado' },
+          ],
+        },
+      ],
+      isLoading: false,
+      error: null,
+      retry: vi.fn(),
+    });
+  });
+
   it('bloqueia submissão da simulação quando há alertas da fila', () => {
     const onSubmit = vi.fn();
     const { getByRole, getByText } = render(
@@ -86,6 +112,32 @@ describe('Sales dialogs alerts', () => {
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('exibe mensagem amigável quando nenhum convênio está disponível', () => {
+    mockUseAgreements.mockReturnValueOnce({
+      agreements: [],
+      isLoading: false,
+      error: null,
+      retry: vi.fn(),
+    });
+
+    const { getByText } = render(
+      <SimulationModal
+        open
+        onOpenChange={() => {}}
+        onSubmit={vi.fn()}
+        defaultValues={{ calculationSnapshot: simulationSnapshotMock }}
+        stageOptions={[]}
+        queueAlerts={[]}
+      />,
+    );
+
+    expect(
+      getByText(
+        'Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('bloqueia submissão do deal e desabilita campos quando há alertas', () => {
