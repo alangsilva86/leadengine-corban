@@ -468,9 +468,9 @@ const mapSalesDealRecord = (
 
 const buildSalesSimulationInclude = (
   options: { includeChildren?: boolean } | undefined
-): Prisma.SalesSimulationInclude | undefined => {
+): Prisma.SalesSimulationInclude | null => {
   if (!options?.includeChildren) {
-    return undefined;
+    return null;
   }
 
   return {
@@ -486,7 +486,7 @@ const buildSalesProposalInclude = (
         includeDeals?: boolean;
       }
     | undefined
-): Prisma.SalesProposalInclude | undefined => {
+): Prisma.SalesProposalInclude | null => {
   const include: Prisma.SalesProposalInclude = {};
 
   if (options?.includeSimulation) {
@@ -497,7 +497,7 @@ const buildSalesProposalInclude = (
     include.deals = true;
   }
 
-  return Object.keys(include).length > 0 ? include : undefined;
+  return Object.keys(include).length > 0 ? include : null;
 };
 
 const buildSalesDealInclude = (
@@ -507,7 +507,7 @@ const buildSalesDealInclude = (
         includeProposal?: boolean;
       }
     | undefined
-): Prisma.SalesDealInclude | undefined => {
+): Prisma.SalesDealInclude | null => {
   const include: Prisma.SalesDealInclude = {};
 
   if (options?.includeSimulation) {
@@ -518,7 +518,7 @@ const buildSalesDealInclude = (
     include.proposal = true;
   }
 
-  return Object.keys(include).length > 0 ? include : undefined;
+  return Object.keys(include).length > 0 ? include : null;
 };
 
 const normalizeSnapshotForWrite = (
