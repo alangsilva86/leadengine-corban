@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { setPrismaClient } from '@ticketz/storage';
+import { ensureTicketStageSupport, setPrismaClient } from '@ticketz/storage';
 import { logger } from '../config/logger';
 
 export interface DatabaseDisabledErrorContext {
@@ -219,6 +219,10 @@ const createPrismaClient = (): PrismaClient => {
 };
 
 export const prisma = createPrismaClient();
+
+if (isDatabaseEnabled) {
+  await ensureTicketStageSupport(prisma, { logger });
+}
 
 if (isDatabaseEnabled && process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;

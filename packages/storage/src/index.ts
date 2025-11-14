@@ -1,6 +1,7 @@
 export const STORAGE_VERSION = '1.0.0';
 
 export { getPrismaClient, setPrismaClient } from './prisma-client';
+export { ensureTicketStageSupport } from './runtime/ensure-ticket-stage-support';
 
 export { CampaignStatus } from './repositories/campaign-repository';
 export type { Campaign } from './repositories/campaign-repository';
