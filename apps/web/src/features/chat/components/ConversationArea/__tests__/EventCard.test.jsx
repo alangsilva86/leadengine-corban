@@ -23,7 +23,13 @@ describe('EventCard', () => {
       payload: {
         label: 'Negócio registrado',
         stageKey: 'APROVADO_LIQUIDACAO',
-        calculationSnapshot: { amount: 1000, term: 24 },
+        calculationSnapshot: {
+          type: 'deal',
+          bank: { label: 'Banco Teste' },
+          term: 24,
+          installment: 250,
+          netAmount: 1000,
+        },
         metadata: { origin: 'chat' },
       },
     });
@@ -33,9 +39,9 @@ describe('EventCard', () => {
     expect(screen.getByText('Negócio registrado')).toBeInTheDocument();
     const stageChip = screen.getByText('Aprovado/Liquidação');
     expect(stageChip.closest('[data-stage-key]')).toHaveAttribute('data-stage-key', 'APROVADO_LIQUIDACAO');
-    expect(screen.getByText('Snapshot de cálculo')).toBeInTheDocument();
-    expect(screen.getByText('Metadata')).toBeInTheDocument();
-    expect(screen.getByText(/"amount"\s*:\s*1000/)).toBeInTheDocument();
+    expect(screen.getByText(/Banco Teste/)).toBeInTheDocument();
+    expect(screen.getByText(/parcela/)).toBeInTheDocument();
+    expect(screen.getByText(/Ver detalhes avançados/)).toBeInTheDocument();
   });
 
   it('falls back to a generic rendering for unknown types', () => {

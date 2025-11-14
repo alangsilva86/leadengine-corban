@@ -159,12 +159,13 @@ const PrimaryActionButton = ({ action, jroState, onExecute, disabled }) => {
     return null;
   }
   const toneClass = PRIMARY_BUTTON_TONE[jroState] ?? PRIMARY_BUTTON_TONE.neutral;
+  const isDisabled = Boolean(disabled || action.disabled);
 
   return (
     <Button
       type="button"
       onClick={onExecute}
-      disabled={disabled}
+      disabled={isDisabled}
       className={cn(
         'flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold shadow-[var(--shadow-md)]',
         toneClass,

@@ -10,6 +10,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { getStageInfo } from './utils/stage.js';
+import {
+  summarizeSimulation,
+  summarizeProposal,
+  summarizeDeal,
+  formatCurrency,
+  formatTermLabel,
+} from './utils/salesSnapshot.js';
 
 const TYPE_PRESENTATION = {
   note: { icon: StickyNote, toneClass: 'text-[color:var(--accent-inbox-primary)]' },
@@ -66,27 +73,6 @@ const SalesStageChip = ({ stageKey, stageLabel }) => {
   );
 };
 
-const JsonSection = ({ title, value }) => {
-  const formatted = formatJson(value);
-  if (!formatted) {
-    return null;
-  }
-
-  return (
-    <details className="group rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 px-3 py-2 text-[11px] text-foreground">
-      <summary className="cursor-pointer list-none font-semibold text-foreground">
-        <span className="inline-flex items-center gap-1">
-          <ScrollText className="h-3.5 w-3.5 text-[color:var(--accent-inbox-primary)]" aria-hidden />
-          {title}
-        </span>
-      </summary>
-      <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-surface-overlay-quiet px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground-muted">
-        {formatted}
-      </pre>
-    </details>
-  );
-};
-
 export const EventCard = ({ entry }) => {
   if (!entry) return null;
   const presentation = TYPE_PRESENTATION[entry.type] ?? { icon: Clock, toneClass: 'text-[color:var(--accent-inbox-primary)]' };
@@ -101,6 +87,38 @@ export const EventCard = ({ entry }) => {
         <SalesStageChip stageKey={payload.stageKey ?? null} stageLabel={payload.stageLabel ?? null} />
       )
     : null;
+  const simulationSummary = entry.type === 'simulation' ? summarizeSimulation(payload.calculationSnapshot) : null;
+  const proposalSummary = entry.type === 'proposal' ? summarizeProposal(payload.calculationSnapshot) : null;
+  const dealSummary = entry.type === 'deal' ? summarizeDeal(payload.calculationSnapshot) : null;
+  const describeOfferTerms = (offer) => {
+    if (!offer?.terms) {
+      return [];
+    }
+    const preferred = offer.terms.filter((term) => term.selected);
+    const base = preferred.length > 0 ? preferred : offer.terms;
+    return base
+      .map((term) => {
+        const termLabel = formatTermLabel(term.term, { fallback: null });
+        const installmentLabel = formatCurrency(term.installment, { fallback: null });
+        const netLabel = formatCurrency(term.netAmount, { fallback: null });
+        if (!termLabel && !installmentLabel && !netLabel) {
+          return null;
+        }
+        const pieces = [];
+        if (termLabel) {
+          pieces.push(termLabel);
+        }
+        if (installmentLabel) {
+          pieces.push(`parcela ${installmentLabel}`);
+        }
+        if (netLabel) {
+          pieces.push(`líquido ${netLabel}`);
+        }
+        return pieces.join(' · ');
+      })
+      .filter(Boolean);
+  };
+  const showAdvancedDetails = entry.type === 'simulation' || entry.type === 'proposal' || entry.type === 'deal';
 
   return (
     <div
@@ -119,11 +137,79 @@ export const EventCard = ({ entry }) => {
           {timestamp.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
         </span>
       ) : null}
-      {entry.type === 'simulation' || entry.type === 'proposal' || entry.type === 'deal' ? (
-        <div className="flex flex-col gap-2">
-          <JsonSection title="Snapshot de cálculo" value={payload.calculationSnapshot} />
-          <JsonSection title="Metadata" value={payload.metadata} />
+      {simulationSummary ? (
+        <div className="space-y-1 text-[11px] text-[color:var(--color-inbox-foreground)]">
+          {simulationSummary.offers
+            .map((offer) => {
+              const lines = describeOfferTerms(offer);
+              if (lines.length === 0) {
+                return null;
+              }
+              return (
+                <div
+                  key={`simulation-${offer.id}`}
+                  className="rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)]/70 p-2"
+                >
+                  <p className="font-semibold text-[color:var(--color-inbox-foreground)]">{offer.bankName}</p>
+                  {offer.table ? (
+                    <p className="text-[color:var(--color-inbox-foreground-muted)]">{offer.table}</p>
+                  ) : null}
+                  <ul className="mt-1 space-y-1 text-[color:var(--color-inbox-foreground-muted)]">
+                    {lines.map((line, index) => (
+                      <li key={`${offer.id}-line-${index}`}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })
+            .filter(Boolean)}
         </div>
+      ) : null}
+      {proposalSummary?.selected?.length ? (
+        <div className="space-y-1 text-[11px] text-[color:var(--color-inbox-foreground)]">
+          <p className="font-semibold text-[color:var(--color-inbox-foreground)]">Proposta gerada</p>
+          <ul className="space-y-1 text-[color:var(--color-inbox-foreground-muted)]">
+            {proposalSummary.selected.map((entryItem) => (
+              <li key={`proposal-${entryItem.offerId}-${entryItem.term.id}`}>
+                {entryItem.bankName} · {formatTermLabel(entryItem.term.term)} · {formatCurrency(entryItem.term.installment)} (líquido {formatCurrency(entryItem.term.netAmount)})
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {dealSummary && (dealSummary.bank?.label || dealSummary.term || dealSummary.installment) ? (
+        <div className="space-y-1 text-[11px] text-[color:var(--color-inbox-foreground)]">
+          <p className="font-semibold text-[color:var(--color-inbox-foreground)]">Negócio</p>
+          <p className="text-[color:var(--color-inbox-foreground-muted)]">
+            {dealSummary.bank?.label ?? 'Banco não informado'} · {formatTermLabel(dealSummary.term)} · {formatCurrency(dealSummary.installment)} (líquido {formatCurrency(dealSummary.netAmount)})
+          </p>
+        </div>
+      ) : null}
+      {showAdvancedDetails ? (
+        <details className="group rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)]/60 px-3 py-2">
+          <summary className="cursor-pointer list-none text-[11px] font-semibold text-[color:var(--color-inbox-foreground)]">
+            <span className="inline-flex items-center gap-1">
+              <ScrollText className="h-3.5 w-3.5 text-[color:var(--accent-inbox-primary)]" aria-hidden />
+              Ver detalhes avançados
+            </span>
+          </summary>
+          {formatJson(payload.calculationSnapshot) ? (
+            <div className="mt-2">
+              <p className="text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Snapshot de cálculo</p>
+              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 font-mono text-[11px] leading-relaxed text-[color:var(--color-inbox-foreground-muted)]">
+                {formatJson(payload.calculationSnapshot)}
+              </pre>
+            </div>
+          ) : null}
+          {formatJson(payload.metadata) ? (
+            <div className="mt-2">
+              <p className="text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Metadata</p>
+              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 font-mono text-[11px] leading-relaxed text-[color:var(--color-inbox-foreground-muted)]">
+                {formatJson(payload.metadata)}
+              </pre>
+            </div>
+          ) : null}
+        </details>
       ) : null}
     </div>
   );
