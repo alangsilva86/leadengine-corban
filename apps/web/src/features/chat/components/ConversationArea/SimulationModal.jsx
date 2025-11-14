@@ -66,6 +66,7 @@ const formatJson = (value) => {
   } catch {
     return '';
   }
+};
 const PRODUCT_LABEL_MAP = {
   emprestimo: 'Empréstimo consignado',
   consigned_credit: 'Empréstimo consignado',
@@ -369,17 +370,6 @@ const SimulationModal = ({
   }, [selectedConvenio]);
 
   const simulationDate = useMemo(() => parseDateInput(simulationDateInput) ?? new Date(), [simulationDateInput]);
-    setStage(normalizeStageState(defaultValues.stage));
-    setLeadId(defaultValues.leadId ?? '');
-    setSimulationId(defaultValues.simulationId ?? '');
-    setMetadataText(formatJson(defaultValues.metadata));
-    setOffers(hydratedOffers);
-    setConvenioId(normalizeString(baseValues.convenioId));
-    setProductId(normalizeString(baseValues.productId));
-    setConvenioLabel(normalizeString(baseValues.convenioLabel));
-    setProductLabel(normalizeString(baseValues.productLabel));
-    setErrors({});
-  }, [defaultValues, isProposalMode, open]);
 
   const activeWindow = useMemo(() => {
     if (!selectedConvenio) {
