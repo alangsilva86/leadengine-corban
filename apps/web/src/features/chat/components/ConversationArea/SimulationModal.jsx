@@ -29,7 +29,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion.jsx';
-import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.js';
+import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.ts';
 import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 import {
   buildProposalSnapshot,

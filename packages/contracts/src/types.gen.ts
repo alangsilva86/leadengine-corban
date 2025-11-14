@@ -3,409 +3,941 @@
  * Do not make direct changes to the file.
  */
 
-
 export interface paths {
-  "/tickets/{ticketId}/messages": {
-    /**
-     * Enfileira uma nova mensagem para um ticket existente
-     * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
-     */
-    post: operations["createTicketMessage"];
-  };
-  "/contacts/{contactId}/messages": {
-    /**
-     * Enfileira uma nova mensagem para um contato específico
-     * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
-     */
-    post: operations["createContactMessage"];
-  };
-  "/integrations/whatsapp/instances/{instanceId}/messages": {
-    /**
-     * Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
-     * @description Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
-     */
-    post: operations["createInstanceMessage"];
-  };
-}
-
-export type webhooks = Record<string, never>;
-
-export interface components {
-  schemas: {
-    MessagePayload: components["schemas"]["TextMessagePayload"] | components["schemas"]["ImageMessagePayload"] | components["schemas"]["DocumentMessagePayload"] | components["schemas"]["AudioMessagePayload"] | components["schemas"]["VideoMessagePayload"] | components["schemas"]["LocationMessagePayload"] | components["schemas"]["ContactMessagePayload"] | components["schemas"]["TemplateMessagePayload"] | components["schemas"]["PollMessagePayload"];
-    MessagePreviewSupport: {
-      previewUrl?: boolean;
-    };
-    TextMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
-      /** @constant */
-      type: "text";
-      /** @description Conteúdo textual da mensagem */
-      text: string;
-    };
-    MediaMessagePayloadBase: components["schemas"]["MessagePreviewSupport"] & {
-      /** @description Texto complementar opcional exibido como mensagem separada */
-      text?: string;
-      /** @description Legenda exibida junto à mídia */
-      caption?: string;
-      /**
-       * Format: uri
-       * @description URL pública da mídia
-       */
-      mediaUrl: string;
-      /** @description MIME type da mídia */
-      mimeType?: string;
-      /** @description Nome sugerido do arquivo */
-      fileName?: string;
-    };
-    ImageMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
-      /** @constant */
-      type: "image";
-    };
-    DocumentMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
-      /** @constant */
-      type: "document";
-    };
-    AudioMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
-      /** @constant */
-      type: "audio";
-    };
-    VideoMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
-      /** @constant */
-      type: "video";
-    };
-    LocationMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
-      /** @constant */
-      type: "location";
-      /** @description Texto complementar opcional que acompanha o envio da localização */
-      text?: string;
-      location: {
-        latitude: number;
-        longitude: number;
-        /** @description Nome amigável do local */
-        name?: string;
-        /** @description Endereço completo exibido no WhatsApp */
-        address?: string;
+    "/tickets/{ticketId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
         /**
-         * Format: uri
-         * @description URL de referência para o local
+         * Enfileira uma nova mensagem para um ticket existente
+         * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
          */
-        url?: string;
-      };
+        post: operations["createTicketMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    ContactEmail: {
-      /** Format: email */
-      email: string;
-      /** @description Rótulo do e-mail (ex. work, personal) */
-      type?: string;
+    "/contacts/{contactId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enfileira uma nova mensagem para um contato específico
+         * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
+         */
+        post: operations["createContactMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    ContactPhone: {
-      /** @description Número do contato no formato internacional */
-      phoneNumber: string;
-      /** @description Rótulo do telefone (ex. mobile, home) */
-      type?: string;
-      /** @description Identificador WhatsApp (JID) quando disponível */
-      waId?: string;
+    "/integrations/whatsapp/instances/{instanceId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
+         * @description Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
+         */
+        post: operations["createInstanceMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    ContactMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
-      /** @constant */
-      type: "contact";
-      /** @description Texto complementar exibido junto ao cartão de contato */
-      text?: string;
-      contact: {
-        /** @description Nome completo do contato */
-        fullName?: string;
-        /** @description Organização associada ao contato */
-        organization?: string;
-        emails?: components["schemas"]["ContactEmail"][];
-        phones?: components["schemas"]["ContactPhone"][];
-        /** @description Representação completa em vCard 3.0/4.0 */
-        vcard?: string;
-      };
+    "/api/v1/agreements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lista convênios comerciais configurados para o LeadEngine
+         * @description Retorna os convênios cadastrados com janelas de contratação, taxas e histórico de alterações.
+         */
+        get: operations["listAgreements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    TemplateLanguage: {
-      /** @description Código do idioma (ex. pt_BR) */
-      code: string;
-      /**
-       * @description Política de fallback do idioma
-       * @enum {string}
-       */
-      policy?: "deterministic" | "fallback";
+    "/api/v1/agreements/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Importa convênios a partir de planilha ou arquivo JSON
+         * @description Recebe um arquivo CSV, XLSX ou JSON contendo convênios, executa a validação e retorna o resumo do processamento.
+         */
+        post: operations["importAgreements"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    TemplateComponentTextParameter: {
-      /** @constant */
-      type: "text";
-      text: string;
+    "/api/v1/agreements/{agreementId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Atualiza dados de um convênio específico
+         * @description Permite alterar dados básicos, janelas, taxas e status de um convênio.
+         */
+        patch: operations["updateAgreement"];
+        trace?: never;
     };
-    TemplateComponentCurrencyParameter: {
-      /** @constant */
-      type: "currency";
-      currency: {
-        /** @description Valor multiplicado por 1000 conforme contrato Meta */
-        amount1000: number;
-        currencyCode: string;
-      };
+    "/api/v1/agreements/providers/{providerId}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dispara sincronização de convênios para um provedor externo
+         * @description Cria uma requisição de sincronização com o provedor informado e retorna o status da operação.
+         */
+        post: operations["syncAgreementProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    TemplateComponentDateTimeParameter: {
-      /** @constant */
-      type: "date_time";
-      dateTime: {
-        fallbackValue?: string;
-        /** @description Epoch seconds */
-        timestamp?: number;
-      };
-    };
-    TemplateComponentImageParameter: {
-      /** @constant */
-      type: "image";
-      image: {
-        /** Format: uri */
-        link: string;
-      };
-    };
-    TemplateComponentDocumentParameter: {
-      /** @constant */
-      type: "document";
-      document: {
-        /** Format: uri */
-        link: string;
-        filename?: string;
-      };
-    };
-    TemplateComponentVideoParameter: {
-      /** @constant */
-      type: "video";
-      video: {
-        /** Format: uri */
-        link: string;
-      };
-    };
-    TemplateComponentParameter: components["schemas"]["TemplateComponentTextParameter"] | components["schemas"]["TemplateComponentCurrencyParameter"] | components["schemas"]["TemplateComponentDateTimeParameter"] | components["schemas"]["TemplateComponentImageParameter"] | components["schemas"]["TemplateComponentDocumentParameter"] | components["schemas"]["TemplateComponentVideoParameter"];
-    TemplateComponent: {
-      /** @enum {string} */
-      type: "header" | "body" | "footer" | "button";
-      /** @enum {string} */
-      subType?: "quick_reply" | "url" | "copy_code" | "phone_number";
-      /** @description Índice do componente conforme posição no template */
-      index?: string;
-      parameters?: components["schemas"]["TemplateComponentParameter"][];
-    };
-    TemplateMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
-      /** @constant */
-      type: "template";
-      /** @description Texto complementar opcional (exibido como fallback) */
-      text?: string;
-      template: {
-        namespace: string;
-        name: string;
-        language: components["schemas"]["TemplateLanguage"];
-        components?: components["schemas"]["TemplateComponent"][];
-      };
-    };
-    PollMessagePayload: {
-      /** @constant */
-      type: "poll";
-      poll: {
-        question: string;
-        options: string[];
-        allowMultipleAnswers?: boolean;
-      };
-    };
-    SendMessageByTicketRequest: {
-      /** @description Identificador opcional da instância do WhatsApp */
-      instanceId?: string;
-      payload: components["schemas"]["MessagePayload"];
-      /** @description Chave utilizada para deduplicação de requisições */
-      idempotencyKey?: string;
-    };
-    SendMessageByContactRequest: components["schemas"]["SendMessageByTicketRequest"] & {
-      /** @description Número de telefone do contato */
-      to: string;
-    };
-    SendMessageByInstanceRequest: {
-      /** @description Número de telefone do destinatário */
-      to: string;
-      payload: components["schemas"]["MessagePayload"];
-      /** @description Chave utilizada para deduplicação de requisições */
-      idempotencyKey?: string;
-    };
-    OutboundMessageError: {
-      message: string;
-      code?: string;
-      status?: number;
-      requestId?: string;
-    };
-    OutboundMessageResponse: {
-      /** @constant */
-      queued: true;
-      ticketId: string;
-      messageId: string;
-      status: string;
-      externalId: string | null;
-      error: components["schemas"]["OutboundMessageError"] | null;
-    };
-    ErrorResponse: {
-      /** @constant */
-      success: false;
-      error: {
-        code: string;
-        message: string;
-        /** @description Informações adicionais sobre o erro */
-        details?: unknown;
-        [key: string]: unknown;
-      };
-    };
-    ValidationErrorIssue: {
-      code: string;
-      message: string;
-      path?: string[];
-      [key: string]: unknown;
-    };
-    ValidationErrorResponse: components["schemas"]["ErrorResponse"] & {
-      error?: {
-        /** @enum {string} */
-        code: "VALIDATION_ERROR";
-        message: string;
-        details: components["schemas"]["ValidationErrorIssue"][];
-      };
-    };
-  };
-  responses: never;
-  parameters: never;
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
 }
-
+export type webhooks = Record<string, never>;
+export interface components {
+    schemas: {
+        MessagePayload: components["schemas"]["TextMessagePayload"] | components["schemas"]["ImageMessagePayload"] | components["schemas"]["DocumentMessagePayload"] | components["schemas"]["AudioMessagePayload"] | components["schemas"]["VideoMessagePayload"] | components["schemas"]["LocationMessagePayload"] | components["schemas"]["ContactMessagePayload"] | components["schemas"]["TemplateMessagePayload"] | components["schemas"]["PollMessagePayload"];
+        MessagePreviewSupport: {
+            previewUrl?: boolean;
+        };
+        TextMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+            /** @constant */
+            type: "text";
+            /** @description Conteúdo textual da mensagem */
+            text: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TextMessagePayload";
+        };
+        MediaMessagePayloadBase: components["schemas"]["MessagePreviewSupport"] & {
+            /** @description Texto complementar opcional exibido como mensagem separada */
+            text?: string;
+            /** @description Legenda exibida junto à mídia */
+            caption?: string;
+            /**
+             * Format: uri
+             * @description URL pública da mídia
+             */
+            mediaUrl: string;
+            /** @description MIME type da mídia */
+            mimeType?: string;
+            /** @description Nome sugerido do arquivo */
+            fileName?: string;
+        };
+        ImageMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+            /** @constant */
+            type: "image";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ImageMessagePayload";
+        };
+        DocumentMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+            /** @constant */
+            type: "document";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "DocumentMessagePayload";
+        };
+        AudioMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+            /** @constant */
+            type: "audio";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "AudioMessagePayload";
+        };
+        VideoMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+            /** @constant */
+            type: "video";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "VideoMessagePayload";
+        };
+        LocationMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+            /** @constant */
+            type: "location";
+            /** @description Texto complementar opcional que acompanha o envio da localização */
+            text?: string;
+            location: {
+                latitude: number;
+                longitude: number;
+                /** @description Nome amigável do local */
+                name?: string;
+                /** @description Endereço completo exibido no WhatsApp */
+                address?: string;
+                /**
+                 * Format: uri
+                 * @description URL de referência para o local
+                 */
+                url?: string;
+            };
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "LocationMessagePayload";
+        };
+        ContactEmail: {
+            /** Format: email */
+            email: string;
+            /** @description Rótulo do e-mail (ex. work, personal) */
+            type?: string;
+        };
+        ContactPhone: {
+            /** @description Número do contato no formato internacional */
+            phoneNumber: string;
+            /** @description Rótulo do telefone (ex. mobile, home) */
+            type?: string;
+            /** @description Identificador WhatsApp (JID) quando disponível */
+            waId?: string;
+        };
+        ContactMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+            /** @constant */
+            type: "contact";
+            /** @description Texto complementar exibido junto ao cartão de contato */
+            text?: string;
+            contact: {
+                /** @description Nome completo do contato */
+                fullName?: string;
+                /** @description Organização associada ao contato */
+                organization?: string;
+                emails?: components["schemas"]["ContactEmail"][];
+                phones?: components["schemas"]["ContactPhone"][];
+                /** @description Representação completa em vCard 3.0/4.0 */
+                vcard?: string;
+            } & (unknown | unknown | unknown | unknown);
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ContactMessagePayload";
+        };
+        TemplateLanguage: {
+            /** @description Código do idioma (ex. pt_BR) */
+            code: string;
+            /**
+             * @description Política de fallback do idioma
+             * @enum {string}
+             */
+            policy?: "deterministic" | "fallback";
+        };
+        TemplateComponentTextParameter: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateComponentTextParameter";
+            text: string;
+        };
+        TemplateComponentCurrencyParameter: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateComponentCurrencyParameter";
+            currency: {
+                /** @description Valor multiplicado por 1000 conforme contrato Meta */
+                amount1000: number;
+                currencyCode: string;
+            };
+        };
+        TemplateComponentDateTimeParameter: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateComponentDateTimeParameter";
+            dateTime: {
+                fallbackValue?: string;
+                /** @description Epoch seconds */
+                timestamp?: number;
+            } & (unknown | unknown);
+        };
+        TemplateComponentImageParameter: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateComponentImageParameter";
+            image: {
+                /** Format: uri */
+                link: string;
+            };
+        };
+        TemplateComponentDocumentParameter: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateComponentDocumentParameter";
+            document: {
+                /** Format: uri */
+                link: string;
+                filename?: string;
+            };
+        };
+        TemplateComponentVideoParameter: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateComponentVideoParameter";
+            video: {
+                /** Format: uri */
+                link: string;
+            };
+        };
+        TemplateComponentParameter: components["schemas"]["TemplateComponentTextParameter"] | components["schemas"]["TemplateComponentCurrencyParameter"] | components["schemas"]["TemplateComponentDateTimeParameter"] | components["schemas"]["TemplateComponentImageParameter"] | components["schemas"]["TemplateComponentDocumentParameter"] | components["schemas"]["TemplateComponentVideoParameter"];
+        TemplateComponent: {
+            /** @enum {string} */
+            type: "header" | "body" | "footer" | "button";
+            /** @enum {string} */
+            subType?: "quick_reply" | "url" | "copy_code" | "phone_number";
+            /** @description Índice do componente conforme posição no template */
+            index?: string;
+            parameters?: components["schemas"]["TemplateComponentParameter"][];
+        };
+        TemplateMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+            /** @constant */
+            type: "template";
+            /** @description Texto complementar opcional (exibido como fallback) */
+            text?: string;
+            template: {
+                namespace: string;
+                name: string;
+                language: components["schemas"]["TemplateLanguage"];
+                components?: components["schemas"]["TemplateComponent"][];
+            };
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TemplateMessagePayload";
+        };
+        PollMessagePayload: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "PollMessagePayload";
+            poll: {
+                question: string;
+                options: string[];
+                allowMultipleAnswers?: boolean;
+            };
+        };
+        SendMessageByTicketRequest: {
+            /** @description Identificador opcional da instância do WhatsApp */
+            instanceId?: string;
+            payload: components["schemas"]["MessagePayload"];
+            /** @description Chave utilizada para deduplicação de requisições */
+            idempotencyKey?: string;
+        };
+        SendMessageByContactRequest: components["schemas"]["SendMessageByTicketRequest"] & {
+            /** @description Número de telefone do contato */
+            to: string;
+        };
+        SendMessageByInstanceRequest: {
+            /** @description Número de telefone do destinatário */
+            to: string;
+            payload: components["schemas"]["MessagePayload"];
+            /** @description Chave utilizada para deduplicação de requisições */
+            idempotencyKey?: string;
+        };
+        OutboundMessageError: {
+            message: string;
+            code?: string;
+            status?: number;
+            requestId?: string;
+        };
+        OutboundMessageResponse: {
+            /** @constant */
+            queued: true;
+            ticketId: string;
+            messageId: string;
+            status: string;
+            externalId: string | null;
+            error: components["schemas"]["OutboundMessageError"] | null;
+        };
+        ErrorResponse: {
+            /** @constant */
+            success: false;
+            error: {
+                code: string;
+                message: string;
+                /** @description Informações adicionais sobre o erro */
+                details?: unknown;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        ValidationErrorIssue: {
+            code: string;
+            message: string;
+            path?: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        ValidationErrorResponse: components["schemas"]["ErrorResponse"] & {
+            error?: {
+                /** @enum {string} */
+                code: "VALIDATION_ERROR";
+                message: string;
+                details: components["schemas"]["ValidationErrorIssue"][];
+            };
+        };
+        RateLimitResponse: {
+            /** @constant */
+            success: false;
+            error: {
+                /** @enum {string} */
+                code: "RATE_LIMITED";
+                message: string;
+                retryAfterSeconds?: number;
+            };
+            data: {
+                limit?: number;
+                remaining?: number;
+            };
+            meta: {
+                /** Format: date-time */
+                resetAt?: string;
+            };
+        };
+        /** @enum {string} */
+        AgreementType: "MUNICIPAL" | "ESTADUAL" | "FEDERAL";
+        /** @enum {string} */
+        AgreementStatus: "EM_IMPLANTACAO" | "ATIVO" | "PAUSADO" | "ENCERRADO";
+        AgreementWindow: {
+            id: string;
+            label?: string;
+            /** Format: date */
+            start: string;
+            /** Format: date */
+            end: string;
+            /** Format: date */
+            firstDueDate: string;
+        };
+        AgreementBankReference: {
+            id: string;
+            name: string;
+        };
+        AgreementTableReference: {
+            id: string;
+            name: string;
+        };
+        AgreementRate: {
+            id: string;
+            produto: string;
+            modalidade: string;
+            bank?: components["schemas"]["AgreementBankReference"];
+            table?: components["schemas"]["AgreementTableReference"];
+            termOptions?: number[];
+            /** Format: float */
+            monthlyRate: number;
+            /** Format: float */
+            tacPercent?: number;
+            /** Format: float */
+            tacFlat?: number;
+            /** Format: date */
+            validFrom: string;
+            /** Format: date */
+            validUntil?: string | null;
+            status?: string;
+        };
+        AgreementHistoryEntry: {
+            id: string;
+            author: string;
+            message: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        Agreement: {
+            id: string;
+            nome: string;
+            averbadora: string;
+            tipo: components["schemas"]["AgreementType"];
+            status: components["schemas"]["AgreementStatus"];
+            produtos: string[];
+            responsavel?: string;
+            archived: boolean;
+            janelas: components["schemas"]["AgreementWindow"][];
+            taxas: components["schemas"]["AgreementRate"][];
+            history: components["schemas"]["AgreementHistoryEntry"][];
+        };
+        AgreementCollectionResponse: {
+            data: components["schemas"]["Agreement"][];
+            meta: {
+                /** Format: date-time */
+                fetchedAt: string;
+            };
+        };
+        AgreementItemResponse: {
+            data: components["schemas"]["Agreement"];
+            meta: {
+                /** Format: date-time */
+                updatedAt?: string;
+            };
+        };
+        AgreementUpdateRequest: {
+            data: components["schemas"]["AgreementUpdateInput"];
+            meta?: {
+                audit?: {
+                    actor?: string;
+                    actorRole?: string;
+                    note?: string;
+                };
+            };
+        };
+        AgreementUpdateInput: {
+            nome?: string;
+            averbadora?: string;
+            tipo?: components["schemas"]["AgreementType"];
+            status?: components["schemas"]["AgreementStatus"];
+            produtos?: string[];
+            responsavel?: string;
+            archived?: boolean;
+            janelas?: components["schemas"]["AgreementWindow"][];
+            taxas?: components["schemas"]["AgreementRate"][];
+            history?: components["schemas"]["AgreementHistoryEntry"][];
+        };
+        AgreementImportError: {
+            row: number;
+            code?: string;
+            message: string;
+            column?: string;
+        };
+        AgreementImportResponse: {
+            data: {
+                imported: number;
+                updated: number;
+                failed: number;
+                errors?: components["schemas"]["AgreementImportError"][];
+            };
+            meta: {
+                jobId?: string;
+                /** Format: date-time */
+                processedAt?: string;
+            };
+        };
+        AgreementImportErrorResponse: components["schemas"]["ErrorResponse"] & {
+            data?: {
+                errors?: components["schemas"]["AgreementImportError"][];
+            };
+            meta?: {
+                jobId?: string;
+            };
+        };
+        AgreementSyncRequest: {
+            requestedBy?: string;
+            reason?: string;
+        };
+        AgreementSyncResponse: {
+            data: {
+                providerId: string;
+                /** @enum {string} */
+                status: "queued" | "running" | "completed";
+                syncId?: string;
+            };
+            meta: {
+                /** Format: date-time */
+                queuedAt?: string;
+                etaSeconds?: number;
+            };
+        };
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
+}
 export type $defs = Record<string, never>;
-
-export type external = Record<string, never>;
-
 export interface operations {
-
-  /**
-   * Enfileira uma nova mensagem para um ticket existente
-   * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
-   */
-  createTicketMessage: {
-    parameters: {
-      path: {
-        ticketId: string;
-      };
+    createTicketMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticketId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageByTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description Mensagem enfileirada com sucesso */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboundMessageResponse"];
+                };
+            };
+            /** @description Ticket ou instância não encontrada */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Instância desconectada */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Erro de validação na requisição */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SendMessageByTicketRequest"];
-      };
+    createContactMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageByContactRequest"];
+            };
+        };
+        responses: {
+            /** @description Mensagem enfileirada com sucesso */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboundMessageResponse"];
+                };
+            };
+            /** @description Contato ou instância não encontrada */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Instância desconectada */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Erro de validação na requisição */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+        };
     };
-    responses: {
-      /** @description Mensagem enfileirada com sucesso */
-      202: {
-        content: {
-          "application/json": components["schemas"]["OutboundMessageResponse"];
+    createInstanceMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: string;
+            };
+            cookie?: never;
         };
-      };
-      /** @description Ticket ou instância não encontrada */
-      404: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageByInstanceRequest"];
+            };
         };
-      };
-      /** @description Instância desconectada */
-      409: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+        responses: {
+            /** @description Mensagem enfileirada com sucesso */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboundMessageResponse"];
+                };
+            };
         };
-      };
-      /** @description Erro de validação na requisição */
-      422: {
-        content: {
-          "application/json": components["schemas"]["ValidationErrorResponse"];
-        };
-      };
     };
-  };
-  /**
-   * Enfileira uma nova mensagem para um contato específico
-   * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
-   */
-  createContactMessage: {
-    parameters: {
-      path: {
-        contactId: string;
-      };
+    listAgreements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lista de convênios encontrada */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgreementCollectionResponse"];
+                };
+            };
+            /** @description Requer autenticação */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Limite de requisições excedido */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitResponse"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SendMessageByContactRequest"];
-      };
+    importAgreements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    /**
+                     * @description Modo de importação (merge ou replace)
+                     * @enum {string}
+                     */
+                    mode?: "merge" | "replace";
+                };
+            };
+        };
+        responses: {
+            /** @description Importação aceita e processada */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgreementImportResponse"];
+                };
+            };
+            /** @description Arquivo inválido ou falha de validação */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgreementImportErrorResponse"];
+                };
+            };
+            /** @description Requer autenticação */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
     };
-    responses: {
-      /** @description Mensagem enfileirada com sucesso */
-      202: {
-        content: {
-          "application/json": components["schemas"]["OutboundMessageResponse"];
+    updateAgreement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agreementId: string;
+            };
+            cookie?: never;
         };
-      };
-      /** @description Contato ou instância não encontrada */
-      404: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgreementUpdateRequest"];
+            };
         };
-      };
-      /** @description Instância desconectada */
-      409: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+        responses: {
+            /** @description Convênio atualizado com sucesso */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgreementItemResponse"];
+                };
+            };
+            /** @description Dados inválidos para atualização */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Requer autenticação */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Convênio não encontrado */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
-      };
-      /** @description Erro de validação na requisição */
-      422: {
-        content: {
-          "application/json": components["schemas"]["ValidationErrorResponse"];
-        };
-      };
     };
-  };
-  /**
-   * Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
-   * @description Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
-   */
-  createInstanceMessage: {
-    parameters: {
-      path: {
-        instanceId: string;
-      };
+    syncAgreementProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgreementSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Sincronização aceita para processamento */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgreementSyncResponse"];
+                };
+            };
+            /** @description Requer autenticação */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Provedor não encontrado */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SendMessageByInstanceRequest"];
-      };
-    };
-    responses: {
-      /** @description Mensagem enfileirada com sucesso */
-      202: {
-        content: {
-          "application/json": components["schemas"]["OutboundMessageResponse"];
-        };
-      };
-      /** @description Instância não encontrada */
-      404: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Instância desconectada */
-      409: {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Erro de validação na requisição */
-      422: {
-        content: {
-          "application/json": components["schemas"]["ValidationErrorResponse"];
-        };
-      };
-    };
-  };
 }
