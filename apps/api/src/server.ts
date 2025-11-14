@@ -42,6 +42,7 @@ import {
   debugMessagesRouter as enabledDebugMessagesRouter,
   buildDisabledDebugMessagesRouter,
 } from './features/debug/routes/messages';
+import { agreementsProvidersRouter } from './routes/agreements.providers';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -435,6 +436,7 @@ app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
+app.use('/api/v1/agreements', authMiddleware, requireTenant, agreementsProvidersRouter);
 app.use('/api', authMiddleware, preferencesRouter);
 
 // Socket.IO para tempo real
