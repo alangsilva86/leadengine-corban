@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dialog.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Switch } from '@/components/ui/switch.jsx';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
 import {
   computeWindowStatus,
   formatCurrency,
@@ -47,6 +48,8 @@ import {
   hasDateOverlap,
   simulateConvenioDeal,
 } from '@/features/agreements/utils/dailyCoefficient.js';
+import { cn } from '@/lib/utils.js';
+import useMediaQuery from '@/hooks/use-media-query.js';
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Gestor / Admin' },
@@ -240,7 +243,23 @@ const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, on
           </TableHeader>
           <TableBody>
             {convenios.map((item) => (
-              <TableRow key={item.id} className={item.id === selectedId ? 'bg-muted/40' : undefined}>
+              <TableRow
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                aria-selected={item.id === selectedId}
+                onClick={() => onSelect(item.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelect(item.id);
+                  }
+                }}
+                className={cn(
+                  'cursor-pointer transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  item.id === selectedId ? 'bg-muted/40' : 'hover:bg-muted/30'
+                )}
+              >
                 <TableCell className="font-medium">
                   <div className="flex flex-col gap-1">
                     <span>{item.nome}</span>
@@ -268,21 +287,19 @@ const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, on
                   </div>
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => onSelect(item.id)}>
-                      Ver tabela
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => onArchive(item.id)}
-                      disabled={readOnly}
-                    >
-                      <Archive className="mr-1 h-4 w-4" /> Arquivar
-                    </Button>
-                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchive(item.id);
+                    }}
+                    disabled={readOnly}
+                  >
+                    <Archive className="mr-1 h-4 w-4" /> Arquivar
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -1179,9 +1196,21 @@ const ConveniosSettingsTab = () => {
   const [requireApproval, setRequireApproval] = useState(true);
   const [convenios, setConvenios] = useState(DEFAULT_CONVENIOS);
   const [selectedId, setSelectedId] = useState(DEFAULT_CONVENIOS[0]?.id ?? null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const readOnly = role === 'seller';
   const selected = useMemo(() => convenios.find((item) => item.id === selectedId) ?? null, [convenios, selectedId]);
+
+  useEffect(() => {
+    if (isDesktop) {
+      setDetailsOpen(true);
+      return;
+    }
+
+    setDetailsOpen(false);
+  }, [isDesktop]);
 
   const addHistory = (convenioId, message) => {
     setConvenios((current) =>
@@ -1313,7 +1342,15 @@ const ConveniosSettingsTab = () => {
 
     setConvenios((current) => [convenio, ...current]);
     setSelectedId(convenio.id);
+    setDetailsOpen(true);
   };
+
+  const handleSelectConvenio = (convenioId) => {
+    setSelectedId(convenioId);
+    setDetailsOpen(true);
+  };
+
+  const sheetOpen = detailsOpen && Boolean(selected);
 
   return (
     <div className="space-y-6">
@@ -1347,45 +1384,61 @@ const ConveniosSettingsTab = () => {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.9fr)]">
-          <div className="space-y-4 min-w-0">
-            <ConvenioList
-              convenios={convenios}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onArchive={handleArchive}
-              readOnly={readOnly}
-              onCreate={handleCreateConvenio}
-            />
-            <div className="rounded-md border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Governança</p>
-              <p>
-                Gestores editam diretamente. Coordenadores podem exigir aprovação antes de publicar. Vendedores enxergam tudo e usam nas simulações, mas não mexem nas tabelas.
-              </p>
-            </div>
-          </div>
-          <div className="space-y-6 min-w-0">
-            {selected?.archived ? (
-              <Badge variant="outline" className="border-amber-500 text-amber-600">
-                Arquivado — permanece no histórico, mas não aparece para novas simulações
-              </Badge>
-            ) : null}
-            {requireApproval && role === 'coordinator' ? (
-              <Badge variant="secondary" className="text-xs">
-                Alterações enviadas aguardam aprovação do gestor
-              </Badge>
-            ) : null}
-            <ConvenioDetails
-              convenio={selected}
-              onUpdateBasic={handleUpdateBasic}
-              onUpsertWindow={handleUpsertWindow}
-              onRemoveWindow={handleRemoveWindow}
-              onUpsertTax={handleUpsertTax}
-              readOnly={readOnly || (requireApproval && role === 'coordinator')}
-            />
+        <CardContent className="space-y-6">
+          <ConvenioList
+            convenios={convenios}
+            selectedId={selectedId}
+            onSelect={handleSelectConvenio}
+            onArchive={handleArchive}
+            readOnly={readOnly}
+            onCreate={handleCreateConvenio}
+          />
+          <div className="rounded-md border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Governança</p>
+            <p>
+              Gestores editam diretamente. Coordenadores podem exigir aprovação antes de publicar. Vendedores enxergam tudo e usam nas simulações, mas não mexem nas tabelas.
+            </p>
           </div>
         </CardContent>
       </Card>
+      <Sheet open={sheetOpen} onOpenChange={setDetailsOpen}>
+        {selected ? (
+          <SheetContent
+            side={isDesktop ? 'right' : 'bottom'}
+            className={cn(
+              'flex w-full flex-col gap-4',
+              isDesktop ? 'h-full sm:max-w-xl lg:max-w-3xl' : 'h-[85vh] max-w-none'
+            )}
+          >
+            <SheetHeader className="border-b border-border/60 pb-4">
+              <SheetTitle className="text-base font-semibold">{selected.nome}</SheetTitle>
+              <SheetDescription>
+                Averbadora: {selected.averbadora || '—'} · {STATUS_OPTIONS.find((item) => item.value === selected.status)?.label ?? selected.status}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 overflow-y-auto px-4 pb-6">
+              {selected.archived ? (
+                <Badge variant="outline" className="border-amber-500 text-amber-600">
+                  Arquivado — permanece no histórico, mas não aparece para novas simulações
+                </Badge>
+              ) : null}
+              {requireApproval && role === 'coordinator' ? (
+                <Badge variant="secondary" className="text-xs">
+                  Alterações enviadas aguardam aprovação do gestor
+                </Badge>
+              ) : null}
+              <ConvenioDetails
+                convenio={selected}
+                onUpdateBasic={handleUpdateBasic}
+                onUpsertWindow={handleUpsertWindow}
+                onRemoveWindow={handleRemoveWindow}
+                onUpsertTax={handleUpsertTax}
+                readOnly={readOnly || (requireApproval && role === 'coordinator')}
+              />
+            </div>
+          </SheetContent>
+        ) : null}
+      </Sheet>
     </div>
   );
 };
