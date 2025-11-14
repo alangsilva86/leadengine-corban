@@ -35,6 +35,7 @@ import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
 import { salesRouter } from './routes/sales';
+import { agreementsRouter } from './routes/agreements';
 import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
@@ -42,6 +43,7 @@ import {
   debugMessagesRouter as enabledDebugMessagesRouter,
   buildDisabledDebugMessagesRouter,
 } from './features/debug/routes/messages';
+import { agreementsProvidersRouter } from './routes/agreements.providers';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -432,9 +434,11 @@ app.use('/api', authMiddleware, whatsappMessagesRouter);
 app.use('/api', authMiddleware, whatsappUploadsRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
+app.use('/api/agreements', authMiddleware, requireTenant, agreementsRouter);
 app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
+app.use('/api/v1/agreements', authMiddleware, requireTenant, agreementsProvidersRouter);
 app.use('/api', authMiddleware, preferencesRouter);
 
 // Socket.IO para tempo real

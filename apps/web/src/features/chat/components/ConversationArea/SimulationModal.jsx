@@ -44,6 +44,7 @@ import {
 } from './utils/salesSnapshot.js';
 import { createProposalMessageFromEntries } from './utils/proposalMessage.js';
 import emitInboxTelemetry from '../../utils/telemetry.js';
+import { useClipboard } from '@/hooks/use-clipboard.js';
 
 const NO_STAGE_VALUE = '__none__';
 const DEFAULT_BASE_VALUE = '350';
@@ -319,6 +320,7 @@ const SimulationModal = ({
   const isProposalMode = mode === 'proposal';
   const { convenios } = useConvenioCatalog();
   const ticketId = defaultValues?.ticketId ?? null;
+  const clipboard = useClipboard();
 
   const agreementOptions = useMemo(
     () =>

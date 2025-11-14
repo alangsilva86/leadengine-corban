@@ -13,6 +13,407 @@ export interface paths {
         };
         get?: never;
         put?: never;
+  "/tickets/{ticketId}/messages": {
+    /**
+     * Enfileira uma nova mensagem para um ticket existente
+     * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
+     */
+    post: operations["createTicketMessage"];
+  };
+  "/api/v1/agreements": {
+    /**
+     * Lista acordos comerciais
+     * @description Retorna uma coleção paginada de acordos aplicando filtros de status, provedor e período de vigência.
+     */
+    get: operations["listAgreements"];
+    /**
+     * Cria um novo acordo comercial
+     * @description Registra um novo acordo com suas tabelas, janelas e taxas vigentes.
+     */
+    post: operations["createAgreement"];
+  };
+  "/api/v1/agreements/{agreementId}": {
+    /** Recupera detalhes de um acordo comercial */
+    get: operations["getAgreement"];
+    /**
+     * Atualiza parcialmente um acordo comercial
+     * @description Permite ajustes pontuais no acordo, como mudança de status, vigência ou definição de novas taxas.
+     */
+    patch: operations["updateAgreement"];
+    parameters: {
+      path: {
+        /** @description Identificador único do acordo. */
+        agreementId: string;
+      };
+    };
+  };
+  "/api/v1/agreements/import": {
+    /**
+     * Importa acordos comerciais em lote
+     * @description Permite subir novos acordos em massa via upload de planilha ou JSON estruturado. A importação é assíncrona e retorna o identificador do job.
+     */
+    post: operations["importAgreements"];
+  };
+  "/api/v1/agreements/providers/{providerId}/sync": {
+    /**
+     * Dispara sincronização de acordos para um provedor
+     * @description Agenda uma sincronização assíncrona dos acordos ativos com o provedor remoto.
+     */
+    post: operations["triggerProviderAgreementSync"];
+  };
+  "/contacts/{contactId}/messages": {
+    /**
+     * Enfileira uma nova mensagem para um contato específico
+     * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
+     */
+    post: operations["createContactMessage"];
+  };
+  "/integrations/whatsapp/instances/{instanceId}/messages": {
+    /**
+     * Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
+     * @description Permite enviar mensagens outbound ad-hoc usando apenas a instância do WhatsApp e o telefone de destino.
+     */
+    post: operations["createInstanceMessage"];
+  };
+}
+
+export type webhooks = Record<string, never>;
+
+export interface components {
+  schemas: {
+    /** @description Metadados opcionais enviados pelo consumidor para rastreabilidade. */
+    RequestMeta: {
+      /** @description Identificador fornecido pelo cliente para correlacionar requisições. */
+      correlationId?: string;
+      /** @description Nome do sistema cliente que originou a requisição. */
+      source?: string;
+    };
+    /** @description Metainformações retornadas pelo serviço em todas as respostas de sucesso. */
+    ResponseMeta: {
+      /** @description Identificador único da requisição gerado pelo serviço. */
+      requestId?: string;
+      /**
+       * Format: date-time
+       * @description Timestamp em que a resposta foi gerada (ISO 8601, UTC).
+       */
+      generatedAt?: string;
+      /** @description Versão da API que produziu a resposta. */
+      version?: string;
+    };
+    PaginationMeta: {
+      page: number;
+      pageSize: number;
+      totalItems: number;
+      totalPages: number;
+      hasNext?: boolean;
+      hasPrevious?: boolean;
+    };
+    /**
+     * @description Situação operacional do acordo.
+     * @enum {string}
+     */
+    AgreementStatus: "draft" | "active" | "suspended" | "terminated" | "archived";
+    /**
+     * @description Identifica a forma de cálculo aplicada pela taxa.
+     * @enum {string}
+     */
+    AgreementRateType: "flat" | "percentage" | "tiered";
+    AgreementRateTier: {
+      id?: string;
+      fromVolume: number;
+      /** @description Volume máximo (inclusive) suportado pela faixa. Null indica ausência de limite superior. */
+      toVolume: number | null;
+      /** @description Valor aplicado para a faixa informada. */
+      value: number;
+      /** @description Código da moeda ISO-4217 aplicável quando a faixa utiliza valor fixo. */
+      currency?: string;
+    };
+    AgreementRateBase: {
+      type: components["schemas"]["AgreementRateType"];
+      description?: string;
+      /** @description Valor absoluto aplicado para taxas do tipo flat ou percentual (0-100). */
+      value?: number;
+      /** @description Código da moeda ISO-4217 quando aplicável. */
+      currency?: string;
+      /** @description Precisão decimal para taxas percentuais. */
+      percentageDecimals?: number;
+      minimumValue?: number;
+      maximumValue?: number;
+      /** @description Coleção de faixas aplicável quando type=tiered. */
+      tiers?: components["schemas"]["AgreementRateTier"][];
+      /** @description Identificadores das janelas às quais a taxa se aplica. */
+      windowIds?: string[];
+    };
+    AgreementRate: components["schemas"]["AgreementRateBase"] & {
+      id: string;
+    };
+    AgreementRateInput: components["schemas"]["AgreementRateBase"] & {
+      id?: string;
+    };
+    AgreementWindowBase: {
+      /** @description Nome exibido da janela. */
+      label: string;
+      /** @description Timezone IANA aplicado às janelas. */
+      timezone: string;
+      daysOfWeek: ("monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday")[];
+      /** @description Horário de início no formato HH:mm. */
+      startTime: string;
+      /** @description Horário de término no formato HH:mm. */
+      endTime: string;
+      /** Format: date */
+      startDate?: string;
+      /** Format: date */
+      endDate?: string | null;
+      /** @description Metadados adicionais específicos da janela. */
+      attributes?: {
+        [key: string]: unknown;
+      };
+    };
+    AgreementWindow: components["schemas"]["AgreementWindowBase"] & {
+      id: string;
+    };
+    AgreementWindowInput: components["schemas"]["AgreementWindowBase"] & {
+      id?: string;
+    };
+    AgreementTableBase: {
+      name: string;
+      description?: string;
+      externalCode?: string;
+      /** @description Código da moeda ISO-4217 utilizada como base para os valores. */
+      currency: string;
+      /** @description Ordem de aplicação da tabela. */
+      priority?: number;
+      windows?: components["schemas"]["AgreementWindowInput"][];
+      rates: components["schemas"]["AgreementRateInput"][];
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    AgreementTable: components["schemas"]["AgreementTableBase"] & {
+      id: string;
+      windows?: components["schemas"]["AgreementWindow"][];
+      rates?: components["schemas"]["AgreementRate"][];
+    };
+    AgreementTableInput: components["schemas"]["AgreementTableBase"] & {
+      id?: string;
+    };
+    AgreementDetail: {
+      id: string;
+      providerId: string;
+      externalCode?: string | null;
+      name: string;
+      description?: string | null;
+      status: components["schemas"]["AgreementStatus"];
+      version: number;
+      /** Format: date-time */
+      validFrom: string;
+      /** Format: date-time */
+      validUntil?: string | null;
+      tags?: string[];
+      tables: components["schemas"]["AgreementTable"][];
+      metadata?: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    AgreementSummary: {
+      id: string;
+      providerId: string;
+      externalCode?: string | null;
+      name: string;
+      status: components["schemas"]["AgreementStatus"];
+      version: number;
+      /** Format: date-time */
+      validFrom: string;
+      /** Format: date-time */
+      validUntil?: string | null;
+      tableCount: number;
+      primaryCurrency?: string;
+      /** Format: date-time */
+      lastSyncedAt?: string | null;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    AgreementListFilters: {
+      statuses?: components["schemas"]["AgreementStatus"][];
+      providerIds?: string[];
+      /** Format: date-time */
+      validOn?: string;
+      search?: string;
+    };
+    AgreementListMeta: components["schemas"]["ResponseMeta"] & {
+      pagination: components["schemas"]["PaginationMeta"];
+      filters?: components["schemas"]["AgreementListFilters"];
+    };
+    AgreementListResponse: {
+      data: components["schemas"]["AgreementSummary"][];
+      meta: components["schemas"]["AgreementListMeta"];
+    };
+    AgreementResponse: {
+      data: components["schemas"]["AgreementDetail"];
+      meta: components["schemas"]["ResponseMeta"];
+    };
+    AgreementWritePayload: {
+      providerId: string;
+      externalCode?: string;
+      name: string;
+      description?: string;
+      status: components["schemas"]["AgreementStatus"];
+      /** Format: date-time */
+      validFrom: string;
+      /** Format: date-time */
+      validUntil?: string | null;
+      tags?: string[];
+      tables: components["schemas"]["AgreementTableInput"][];
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    AgreementCreateRequest: {
+      data: components["schemas"]["AgreementWritePayload"];
+      meta?: components["schemas"]["RequestMeta"];
+    };
+    AgreementUpdatePayload: {
+      name?: string;
+      description?: string;
+      status?: components["schemas"]["AgreementStatus"];
+      /** Format: date-time */
+      validFrom?: string;
+      /** Format: date-time */
+      validUntil?: string | null;
+      tags?: string[];
+      tables?: components["schemas"]["AgreementTableInput"][];
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    AgreementUpdateRequest: {
+      data: components["schemas"]["AgreementUpdatePayload"];
+      meta?: components["schemas"]["RequestMeta"];
+    };
+    AgreementImportInput: {
+      providerId: string;
+      /** @default false */
+      dryRun?: boolean;
+      notifyEmails?: string[];
+      agreements?: components["schemas"]["AgreementWritePayload"][];
+    };
+    AgreementImportRequest: {
+      data: components["schemas"]["AgreementImportInput"];
+      meta?: components["schemas"]["RequestMeta"];
+    };
+    AgreementImportMultipartRequest: {
+      providerId: string;
+      /** @default false */
+      dryRun?: boolean;
+      notifyEmails?: string[];
+      /** Format: binary */
+      file: string;
+    };
+    AgreementImportJob: {
+      /** @description Identificador da importação. */
+      id: string;
+      /** @enum {string} */
+      status: "queued" | "processing" | "completed" | "failed";
+      dryRun: boolean;
+      receivedAgreements: number;
+      importedAgreements?: number;
+      skippedAgreements?: number;
+      errors?: string[];
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      completedAt?: string | null;
+      /** Format: date-time */
+      expiresAt?: string | null;
+    };
+    AgreementImportResponse: {
+      data: components["schemas"]["AgreementImportJob"];
+      meta: components["schemas"]["ResponseMeta"];
+    };
+    ProviderSyncRequest: {
+      /** @description Força uma sincronização completa, ignorando caches. */
+      forceFullRefresh?: boolean;
+      correlationId?: string;
+      /** @description Identificador do operador que iniciou a sincronização. */
+      requestedBy?: string;
+    };
+    ProviderSyncStatus: {
+      providerId: string;
+      jobId: string;
+      /** @enum {string} */
+      status: "queued" | "syncing" | "completed" | "failed";
+      /** Format: date-time */
+      triggeredAt: string;
+      /** Format: date-time */
+      lastSuccessfulSyncAt?: string | null;
+      /** Format: date-time */
+      estimatedCompletionAt?: string | null;
+      warnings?: string[];
+      message?: string;
+    };
+    ProviderSyncResponse: {
+      data: components["schemas"]["ProviderSyncStatus"];
+      meta: components["schemas"]["ResponseMeta"];
+    };
+    MessagePayload: components["schemas"]["TextMessagePayload"] | components["schemas"]["ImageMessagePayload"] | components["schemas"]["DocumentMessagePayload"] | components["schemas"]["AudioMessagePayload"] | components["schemas"]["VideoMessagePayload"] | components["schemas"]["LocationMessagePayload"] | components["schemas"]["ContactMessagePayload"] | components["schemas"]["TemplateMessagePayload"] | components["schemas"]["PollMessagePayload"];
+    MessagePreviewSupport: {
+      previewUrl?: boolean;
+    };
+    TextMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+      /** @constant */
+      type: "text";
+      /** @description Conteúdo textual da mensagem */
+      text: string;
+    };
+    MediaMessagePayloadBase: components["schemas"]["MessagePreviewSupport"] & {
+      /** @description Texto complementar opcional exibido como mensagem separada */
+      text?: string;
+      /** @description Legenda exibida junto à mídia */
+      caption?: string;
+      /**
+       * Format: uri
+       * @description URL pública da mídia
+       */
+      mediaUrl: string;
+      /** @description MIME type da mídia */
+      mimeType?: string;
+      /** @description Nome sugerido do arquivo */
+      fileName?: string;
+    };
+    ImageMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "image";
+    };
+    DocumentMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "document";
+    };
+    AudioMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "audio";
+    };
+    VideoMessagePayload: components["schemas"]["MediaMessagePayloadBase"] & {
+      /** @constant */
+      type: "video";
+    };
+    LocationMessagePayload: components["schemas"]["MessagePreviewSupport"] & {
+      /** @constant */
+      type: "location";
+      /** @description Texto complementar opcional que acompanha o envio da localização */
+      text?: string;
+      location: {
+        latitude: number;
+        longitude: number;
+        /** @description Nome amigável do local */
+        name?: string;
+        /** @description Endereço completo exibido no WhatsApp */
+        address?: string;
         /**
          * Enfileira uma nova mensagem para um ticket existente
          * @description Recebe os dados de uma nova mensagem outbound associada a um ticket existente e retorna o status do enfileiramento.
@@ -728,6 +1129,318 @@ export interface operations {
                 };
             };
         };
+  };
+  /**
+   * Lista acordos comerciais
+   * @description Retorna uma coleção paginada de acordos aplicando filtros de status, provedor e período de vigência.
+   */
+  listAgreements: {
+    parameters: {
+      query?: {
+        /** @description Número da página a ser retornada. */
+        page?: number;
+        /** @description Quantidade de itens por página. */
+        pageSize?: number;
+        /** @description Filtra acordos pelos status informados. */
+        status?: components["schemas"]["AgreementStatus"][];
+        /** @description Filtra acordos por identificador do provedor de origem. */
+        providerId?: string[];
+        /** @description Retorna apenas acordos válidos na data informada (ISO 8601, UTC). */
+        validOn?: string;
+        /** @description Texto livre aplicado em nome, descrição ou código externo do acordo. */
+        search?: string;
+      };
+    };
+    responses: {
+      /** @description Lista paginada de acordos comerciais. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AgreementListResponse"];
+        };
+      };
+      /** @description Parâmetros inválidos para a listagem. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Limite de requisições excedido. */
+      429: {
+        headers: {
+          /** @description Tempo em segundos até que uma nova tentativa seja permitida. */
+          "Retry-After"?: number;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Cria um novo acordo comercial
+   * @description Registra um novo acordo com suas tabelas, janelas e taxas vigentes.
+   */
+  createAgreement: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgreementCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Acordo criado com sucesso. */
+      201: {
+        content: {
+          "application/json": components["schemas"]["AgreementResponse"];
+        };
+      };
+      /** @description Dados inválidos para criação do acordo. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Já existe um acordo ativo conflitante para o provedor informado. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Falhas de validação no payload enviado. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+    };
+  };
+  /** Recupera detalhes de um acordo comercial */
+  getAgreement: {
+    parameters: {
+      path: {
+        /** @description Identificador único do acordo. */
+        agreementId: string;
+      };
+    };
+    responses: {
+      /** @description Dados completos do acordo solicitado. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AgreementResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Acordo não encontrado. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Atualiza parcialmente um acordo comercial
+   * @description Permite ajustes pontuais no acordo, como mudança de status, vigência ou definição de novas taxas.
+   */
+  updateAgreement: {
+    parameters: {
+      path: {
+        /** @description Identificador único do acordo. */
+        agreementId: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgreementUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description Acordo atualizado com sucesso. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AgreementResponse"];
+        };
+      };
+      /** @description Payload inválido para atualização. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Acordo não encontrado. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Conflito ao atualizar o acordo (ex. vigência sobreposta). */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Falhas de validação no payload enviado. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Importa acordos comerciais em lote
+   * @description Permite subir novos acordos em massa via upload de planilha ou JSON estruturado. A importação é assíncrona e retorna o identificador do job.
+   */
+  importAgreements: {
+    requestBody: {
+      content: {
+        "multipart/form-data": components["schemas"]["AgreementImportMultipartRequest"];
+        "application/json": components["schemas"]["AgreementImportRequest"];
+      };
+    };
+    responses: {
+      /** @description Importação enfileirada para processamento. */
+      202: {
+        content: {
+          "application/json": components["schemas"]["AgreementImportResponse"];
+        };
+      };
+      /** @description Payload inválido para importação. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Já existe um job de importação em andamento para o provedor informado. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Erros de validação encontrados no conteúdo enviado. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Dispara sincronização de acordos para um provedor
+   * @description Agenda uma sincronização assíncrona dos acordos ativos com o provedor remoto.
+   */
+  triggerProviderAgreementSync: {
+    parameters: {
+      path: {
+        /** @description Identificador do provedor de integrações. */
+        providerId: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ProviderSyncRequest"];
+      };
+    };
+    responses: {
+      /** @description Sincronização agendada. */
+      202: {
+        content: {
+          "application/json": components["schemas"]["ProviderSyncResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Provedor não encontrado. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Já existe uma sincronização em andamento para o provedor informado. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Enfileira uma nova mensagem para um contato específico
+   * @description Cria uma nova mensagem outbound vinculada a um contato e opcionalmente a uma instância específica de WhatsApp.
+   */
+  createContactMessage: {
+    parameters: {
+      path: {
+        contactId: string;
+      };
     };
     createInstanceMessage: {
         parameters: {
