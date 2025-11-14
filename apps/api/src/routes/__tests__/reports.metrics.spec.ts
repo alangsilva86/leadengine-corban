@@ -122,6 +122,7 @@ describe('GET /reports/metrics', () => {
       },
       totalGroups: 2,
     });
+    expect(response.body.data.salesSummary).toBeNull();
 
     expect(response.body.data.groups).toHaveLength(2);
     const [firstGroup] = response.body.data.groups;
@@ -147,6 +148,7 @@ describe('GET /reports/metrics', () => {
       ],
     });
     expect(firstGroup.metadata.marginValue).toBe(1.5);
+    expect(firstGroup.salesFunnel).toBeNull();
 
     expect(findManySpy).toHaveBeenCalledTimes(1);
     const [{ where }] = findManySpy.mock.calls;
@@ -219,6 +221,7 @@ describe('GET /reports/metrics', () => {
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
     expect(response.body.data.groups).toHaveLength(1);
+    expect(response.body.data.salesSummary).toBeNull();
     expect(response.body.data.groups[0]).toMatchObject({
       label: 'Instância Centro',
       metrics: {
@@ -229,6 +232,7 @@ describe('GET /reports/metrics', () => {
         conversionRate: 0.5,
       },
     });
+    expect(response.body.data.groups[0].salesFunnel).toBeNull();
 
     expect(findManySpy).toHaveBeenCalledWith(
       expect.objectContaining({

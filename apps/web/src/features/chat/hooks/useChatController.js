@@ -241,7 +241,10 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
           entry.payload?.instanceId !== payload?.instanceId &&
           timestamp - entry.timestamp < 5 * 60 * 1000
       );
-      return [{ payload, timestamp }, ...filtered].slice(0, 5);
+      return [
+        { event: 'whatsapp.queue.missing', payload, timestamp },
+        ...filtered,
+      ].slice(0, 5);
     });
   }, []);
 

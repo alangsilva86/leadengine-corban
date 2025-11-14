@@ -47,7 +47,6 @@ import {
   whatsappOutboundMetrics,
   whatsappOutboundDeliverySuccessCounter,
   whatsappSocketReconnectsCounter,
-  salesOperationsCounter,
 } from '../lib/metrics';
 import { WhatsAppBrokerError, translateWhatsAppBrokerError } from './whatsapp-broker-client';
 import {
@@ -702,8 +701,6 @@ const emitTicketRealtimeEnvelope = (
   emitTicketEvent(tenantId, ticket.id, 'tickets.updated', envelope, userId ?? null, agreementId);
 };
 
-type SalesOperationKind = 'simulation' | 'proposal' | 'deal';
-
 const emitTicketSalesTimelineEvent = (
   tenantId: string,
   ticket: Ticket,
@@ -723,14 +720,6 @@ const broadcastSalesOperationResult = (
   const ticketEnvelope = buildTicketRealtimeEnvelope({ tenantId, ticket });
   emitTicketRealtimeEnvelope(tenantId, ticket, ticketEnvelope, actorId);
   emitTicketSalesTimelineEvent(tenantId, ticket, event, actorId);
-};
-
-const recordSalesTelemetry = (
-  tenantId: string,
-  operation: SalesOperationKind,
-  stage: Ticket['stage']
-) => {
-  salesOperationsCounter.inc({ tenantId, operation, stage });
 };
 
 const emitMessageCreatedEvents = (
@@ -2625,7 +2614,6 @@ export const simulateTicketSales = async (
   const actorId = input.actorId ?? null;
 
   broadcastSalesOperationResult(input.tenantId, result.ticket, result.event, actorId);
-  recordSalesTelemetry(input.tenantId, 'simulation', result.ticket.stage);
 
   return result;
 };
@@ -2637,7 +2625,6 @@ export const createTicketSalesProposal = async (
   const actorId = input.actorId ?? null;
 
   broadcastSalesOperationResult(input.tenantId, result.ticket, result.event, actorId);
-  recordSalesTelemetry(input.tenantId, 'proposal', result.ticket.stage);
 
   return result;
 };
@@ -2649,7 +2636,6 @@ export const createTicketSalesDeal = async (
   const actorId = input.actorId ?? null;
 
   broadcastSalesOperationResult(input.tenantId, result.ticket, result.event, actorId);
-  recordSalesTelemetry(input.tenantId, 'deal', result.ticket.stage);
 
   return result;
 };

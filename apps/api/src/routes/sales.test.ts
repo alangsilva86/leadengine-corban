@@ -11,12 +11,28 @@ vi.mock('../middleware/auth', () => ({
   AUTH_MVP_BYPASS_TENANT_ID: 'tenant-mock',
 }));
 
+vi.mock('../config/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 import { salesRouter } from './sales';
 import { ticketsRouter } from './tickets';
 import { errorHandler } from '../middleware/error-handler';
 import { registerSocketServer, type SocketServerAdapter } from '../lib/socket-registry';
 import { createTicket, resetTicketStore } from '@ticketz/storage';
 import { resetTicketSalesEventStore, listTicketSalesEvents } from '../data/ticket-sales-event-store';
+import { renderMetrics, resetMetrics } from '../lib/metrics';
+import {
+  getSalesFunnelForDimension,
+  getSalesFunnelSummary,
+  resetSalesFunnelAggregations,
+} from '../data/sales-funnel-aggregator';
+import { logger } from '../config/logger';
 
 class MockSocketServer {
   public events: Array<{ room: string; event: string; payload: unknown }> = [];
@@ -76,6 +92,8 @@ describe('Sales routes', () => {
     registerSocketServer(mockSocket as unknown as SocketServerAdapter);
     await resetTicketStore();
     resetTicketSalesEventStore();
+    resetMetrics();
+    resetSalesFunnelAggregations();
   });
 
   afterEach(() => {
@@ -87,6 +105,7 @@ describe('Sales routes', () => {
     const { server, url } = await startTestServer();
 
     try {
+      const infoSpy = vi.spyOn(logger, 'info');
       const ticket = await createTicket({
         tenantId: 'tenant-123',
         contactId: 'contact-1',
@@ -120,6 +139,37 @@ describe('Sales routes', () => {
       expect(timeline).toHaveLength(1);
       expect(timeline[0].stage).toBe(SalesStage.QUALIFICACAO);
 
+      const metricsSnapshot = renderMetrics();
+      expect(metricsSnapshot).toMatch(
+        /sales_simulation_total\{[^}]*stage="QUALIFICACAO"[^}]*tenantId="tenant-123"/
+      );
+      expect(metricsSnapshot).toMatch(
+        /sales_funnel_stage_total\{[^}]*dimension="agreement"[^}]*stage="QUALIFICACAO"/
+      );
+
+      const agreementFunnel = getSalesFunnelForDimension('tenant-123', 'agreement', 'unknown');
+      expect(agreementFunnel?.operations.simulation).toBe(1);
+      expect(agreementFunnel?.stages).toEqual([
+        expect.objectContaining({
+          stage: SalesStage.QUALIFICACAO,
+          simulation: 1,
+          total: 1,
+        }),
+      ]);
+
+      const summary = getSalesFunnelSummary('tenant-123');
+      expect(summary?.operations.simulation).toBe(1);
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        'sales.operation.simulation',
+        expect.objectContaining({
+          tenantId: 'tenant-123',
+          ticketId: ticket.id,
+          operation: 'simulation',
+          simulationId: expect.any(String),
+        })
+      );
+
       const listResponse = await fetch(`${url}/api/tickets`, {
         headers: { 'content-type': 'application/json' },
       });
@@ -137,6 +187,7 @@ describe('Sales routes', () => {
     const { server, url } = await startTestServer();
 
     try {
+      const infoSpy = vi.spyOn(logger, 'info');
       const ticket = await createTicket({
         tenantId: 'tenant-123',
         contactId: 'contact-2',
@@ -175,6 +226,33 @@ describe('Sales routes', () => {
       expect(body.data.proposal.calculationSnapshot.total).toBe(1500);
       expect(body.data.event.type).toBe('proposal.created');
       expect(body.data.ticket.stage).toBe(SalesStage.PROPOSTA);
+
+      const metricsSnapshot = renderMetrics();
+      expect(metricsSnapshot).toMatch(
+        /sales_proposal_total\{[^}]*stage="PROPOSTA"[^}]*tenantId="tenant-123"/
+      );
+
+      const funnel = getSalesFunnelForDimension('tenant-123', 'agreement', 'unknown');
+      expect(funnel?.operations.proposal).toBeGreaterThanOrEqual(1);
+      expect(funnel?.stages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            stage: SalesStage.PROPOSTA,
+            proposal: expect.any(Number),
+          }),
+        ])
+      );
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        'sales.operation.proposal',
+        expect.objectContaining({
+          tenantId: 'tenant-123',
+          ticketId: ticket.id,
+          operation: 'proposal',
+          proposalId: expect.any(String),
+          simulationId,
+        })
+      );
     } finally {
       await stopTestServer(server);
     }

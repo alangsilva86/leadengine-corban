@@ -8,6 +8,11 @@ import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { resolveTenantId } from './campaigns';
+import {
+  getSalesFunnelForDimension,
+  getSalesFunnelSummary,
+  type SalesFunnelSnapshot,
+} from '../data/sales-funnel-aggregator';
 
 const reportsRouter = Router();
 
@@ -52,6 +57,7 @@ interface MetricsResponseEntry {
   metrics: MetricSnapshot;
   metadata: GroupMetadata;
   breakdown: BreakdownEntry[];
+  salesFunnel?: SalesFunnelSnapshot | null;
 }
 
 interface MetricSnapshot {
@@ -254,6 +260,31 @@ const resolveDimension = (
         label: metadata.campaignName ?? 'Campanha',
         metadata,
       };
+  }
+};
+
+const resolveSalesDimensionValue = (dimension: DimensionKey, metadata: GroupMetadata): string => {
+  const normalize = (value: string | null): string => {
+    if (!value) {
+      return 'unknown';
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : 'unknown';
+  };
+
+  switch (dimension) {
+    case 'agreement':
+      return normalize(metadata.agreementId);
+    case 'campaign':
+      return normalize(metadata.campaignId);
+    case 'instance':
+      return normalize(metadata.instanceId);
+    case 'product':
+      return normalize(metadata.productType);
+    case 'strategy':
+      return normalize(metadata.strategy);
+    default:
+      return 'unknown';
   }
 };
 
@@ -483,19 +514,31 @@ reportsRouter.get(
         return b.metrics.total - a.metrics.total;
       });
 
-      const limitedGroups = sortedGroups.slice(0, limit).map<MetricsResponseEntry>((group) => ({
-        key: group.key,
-        dimension: group.dimension,
-        label: group.label,
-        metadata: group.metadata,
-        metrics: finalizeAccumulator(group.metrics),
-        breakdown: Array.from(group.breakdown.entries())
-          .sort(([dateA], [dateB]) => (dateA < dateB ? -1 : dateA > dateB ? 1 : 0))
-          .map(([date, metrics]) => ({
-            date,
-            metrics: finalizeAccumulator(metrics),
-          })),
-      }));
+      const limitedGroups = sortedGroups.slice(0, limit).map<MetricsResponseEntry>((group) => {
+        const salesDimensionValue = resolveSalesDimensionValue(group.dimension, group.metadata);
+        const salesFunnel = getSalesFunnelForDimension(
+          tenantId,
+          group.dimension,
+          salesDimensionValue
+        );
+
+        return {
+          key: group.key,
+          dimension: group.dimension,
+          label: group.label,
+          metadata: group.metadata,
+          metrics: finalizeAccumulator(group.metrics),
+          breakdown: Array.from(group.breakdown.entries())
+            .sort(([dateA], [dateB]) => (dateA < dateB ? -1 : dateA > dateB ? 1 : 0))
+            .map(([date, metrics]) => ({
+              date,
+              metrics: finalizeAccumulator(metrics),
+            })),
+          salesFunnel: salesFunnel ?? null,
+        } satisfies MetricsResponseEntry;
+      });
+
+      const salesSummary = getSalesFunnelSummary(tenantId);
 
       res.json({
         success: true,
@@ -509,6 +552,7 @@ reportsRouter.get(
           summary: finalizeAccumulator(overall),
           groups: limitedGroups,
           totalGroups,
+          salesSummary: salesSummary ?? null,
         },
       });
     } catch (error) {

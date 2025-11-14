@@ -7,11 +7,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import CreateCampaignDialog from '../CreateCampaignDialog.jsx';
 import { TOTAL_STEPS } from '../CreateCampaignWizard.jsx';
 
-const useAgreementsMock = vi.fn();
+const mockUseAgreements = vi.fn();
 
 vi.mock('@/features/agreements/useAgreements.js', () => ({
   __esModule: true,
-  default: () => useAgreementsMock(),
+  default: () => mockUseAgreements(),
 }));
 
 const buildAgreementsState = (overrides = {}) => ({
@@ -36,7 +36,7 @@ const buildInstance = (overrides = {}) => ({
 
 describe('CreateCampaignDialog wizard', () => {
   beforeEach(() => {
-    useAgreementsMock.mockReturnValue(buildAgreementsState());
+    mockUseAgreements.mockReturnValue(buildAgreementsState());
   });
 
   const expectStepLabelToBe = async (stepNumber) => {

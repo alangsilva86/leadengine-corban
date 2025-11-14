@@ -6,11 +6,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import CreateCampaignWizard from '../CreateCampaignWizard.jsx';
 
-const useAgreementsMock = vi.fn();
+const mockUseAgreements = vi.fn();
 
 vi.mock('@/features/agreements/useAgreements.js', () => ({
   __esModule: true,
-  default: () => useAgreementsMock(),
+  default: () => mockUseAgreements(),
 }));
 
 describe('CreateCampaignWizard', () => {
@@ -48,7 +48,7 @@ describe('CreateCampaignWizard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useAgreementsMock.mockReturnValue(buildAgreementsState());
+    mockUseAgreements.mockReturnValue(buildAgreementsState());
   });
 
   it('keeps progress when advancing to Produto & margem and preserves a custom name on review', async () => {

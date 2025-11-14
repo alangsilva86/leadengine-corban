@@ -57,6 +57,26 @@ const SALES_OPERATIONS_HELP =
   '# HELP sales_operations_total Contador de operações do serviço de vendas por estágio e tipo';
 const SALES_OPERATIONS_TYPE = '# TYPE sales_operations_total counter';
 
+const SALES_SIMULATION_METRIC = 'sales_simulation_total';
+const SALES_SIMULATION_HELP =
+  '# HELP sales_simulation_total Contador de simulações registradas por estágio e contexto comercial';
+const SALES_SIMULATION_TYPE = '# TYPE sales_simulation_total counter';
+
+const SALES_PROPOSAL_METRIC = 'sales_proposal_total';
+const SALES_PROPOSAL_HELP =
+  '# HELP sales_proposal_total Contador de propostas geradas por estágio e contexto comercial';
+const SALES_PROPOSAL_TYPE = '# TYPE sales_proposal_total counter';
+
+const SALES_DEAL_METRIC = 'sales_deal_total';
+const SALES_DEAL_HELP =
+  '# HELP sales_deal_total Contador de deals registrados por estágio e contexto comercial';
+const SALES_DEAL_TYPE = '# TYPE sales_deal_total counter';
+
+const SALES_FUNNEL_STAGE_METRIC = 'sales_funnel_stage_total';
+const SALES_FUNNEL_STAGE_HELP =
+  '# HELP sales_funnel_stage_total Gauge com total de operações de vendas por estágio e dimensão agregada';
+const SALES_FUNNEL_STAGE_TYPE = '# TYPE sales_funnel_stage_total gauge';
+
 const LEAD_LAST_CONTACT_METRIC = 'lead_last_contact_timestamp';
 const LEAD_LAST_CONTACT_HELP =
   '# HELP lead_last_contact_timestamp Timestamp (epoch ms) do último contato inbound por lead';
@@ -77,6 +97,13 @@ const INSTANCE_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknow
 const TRANSPORT_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
 const OPERATION_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
 const STAGE_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'desconhecido' };
+const AGREEMENT_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
+const AGREEMENT_NAME_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
+const PRODUCT_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
+const CAMPAIGN_CONSTRAINT: LabelConstraint = { limit: 500, defaultValue: 'unknown' };
+const STRATEGY_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
+const DIMENSION_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
+const DIMENSION_VALUE_CONSTRAINT: LabelConstraint = { limit: 500, defaultValue: 'unknown' };
 
 const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
   origin: ORIGIN_CONSTRAINT,
@@ -106,6 +133,39 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     operation: OPERATION_CONSTRAINT,
     stage: STAGE_CONSTRAINT,
   },
+  [SALES_SIMULATION_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    stage: STAGE_CONSTRAINT,
+    agreementId: AGREEMENT_CONSTRAINT,
+    agreementName: AGREEMENT_NAME_CONSTRAINT,
+    campaignId: CAMPAIGN_CONSTRAINT,
+    productType: PRODUCT_CONSTRAINT,
+    strategy: STRATEGY_CONSTRAINT,
+  },
+  [SALES_PROPOSAL_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    stage: STAGE_CONSTRAINT,
+    agreementId: AGREEMENT_CONSTRAINT,
+    agreementName: AGREEMENT_NAME_CONSTRAINT,
+    campaignId: CAMPAIGN_CONSTRAINT,
+    productType: PRODUCT_CONSTRAINT,
+    strategy: STRATEGY_CONSTRAINT,
+  },
+  [SALES_DEAL_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    stage: STAGE_CONSTRAINT,
+    agreementId: AGREEMENT_CONSTRAINT,
+    agreementName: AGREEMENT_NAME_CONSTRAINT,
+    campaignId: CAMPAIGN_CONSTRAINT,
+    productType: PRODUCT_CONSTRAINT,
+    strategy: STRATEGY_CONSTRAINT,
+  },
+  [SALES_FUNNEL_STAGE_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    dimension: DIMENSION_CONSTRAINT,
+    dimensionValue: DIMENSION_VALUE_CONSTRAINT,
+    stage: STAGE_CONSTRAINT,
+  },
 };
 
 const labelValueTracker = new Map<string, Map<string, Set<string>>>();
@@ -123,6 +183,10 @@ const inboundMediaRetryAttemptsStore = new Map<string, number>();
 const inboundMediaRetrySuccessStore = new Map<string, number>();
 const inboundMediaRetryDlqStore = new Map<string, number>();
 const salesOperationsCounterStore = new Map<string, number>();
+const salesSimulationCounterStore = new Map<string, number>();
+const salesProposalCounterStore = new Map<string, number>();
+const salesDealCounterStore = new Map<string, number>();
+const salesFunnelStageGaugeStore = new Map<string, number>();
 const leadLastContactGaugeStore = new Map<string, number>();
 
 const toLabelString = (value: unknown): string | null => {
@@ -343,6 +407,35 @@ export const salesOperationsCounter = buildCounter(
   salesOperationsCounterStore
 );
 
+export const salesSimulationCounter = buildCounter(
+  SALES_SIMULATION_METRIC,
+  salesSimulationCounterStore
+);
+
+export const salesProposalCounter = buildCounter(
+  SALES_PROPOSAL_METRIC,
+  salesProposalCounterStore
+);
+
+export const salesDealCounter = buildCounter(
+  SALES_DEAL_METRIC,
+  salesDealCounterStore
+);
+
+export const salesFunnelStageGauge = {
+  set(labels: CounterLabels = {}, value: number): void {
+    if (!Number.isFinite(value) || value < 0) {
+      return;
+    }
+
+    const key = buildLabelKey(SALES_FUNNEL_STAGE_METRIC, labels);
+    salesFunnelStageGaugeStore.set(key, value);
+  },
+  clear(): void {
+    salesFunnelStageGaugeStore.clear();
+  },
+};
+
 export const leadLastContactGauge = {
   set(labels: CounterLabels = {}, timestampMs: number): void {
     if (!Number.isFinite(timestampMs)) {
@@ -439,6 +532,46 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(SALES_SIMULATION_HELP, SALES_SIMULATION_TYPE);
+  if (salesSimulationCounterStore.size === 0) {
+    lines.push(`${SALES_SIMULATION_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of salesSimulationCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${SALES_SIMULATION_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(SALES_PROPOSAL_HELP, SALES_PROPOSAL_TYPE);
+  if (salesProposalCounterStore.size === 0) {
+    lines.push(`${SALES_PROPOSAL_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of salesProposalCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${SALES_PROPOSAL_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(SALES_DEAL_HELP, SALES_DEAL_TYPE);
+  if (salesDealCounterStore.size === 0) {
+    lines.push(`${SALES_DEAL_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of salesDealCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${SALES_DEAL_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(SALES_FUNNEL_STAGE_HELP, SALES_FUNNEL_STAGE_TYPE);
+  if (salesFunnelStageGaugeStore.size === 0) {
+    lines.push(`${SALES_FUNNEL_STAGE_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of salesFunnelStageGaugeStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${SALES_FUNNEL_STAGE_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(INBOUND_MESSAGES_HELP, INBOUND_MESSAGES_TYPE);
   if (inboundMessagesCounterStore.size === 0) {
     lines.push(`${INBOUND_MESSAGES_METRIC} 0`);
@@ -518,6 +651,10 @@ export const resetMetrics = (): void => {
   inboundMediaRetrySuccessStore.clear();
   inboundMediaRetryDlqStore.clear();
   salesOperationsCounterStore.clear();
+  salesSimulationCounterStore.clear();
+  salesProposalCounterStore.clear();
+  salesDealCounterStore.clear();
+  salesFunnelStageGaugeStore.clear();
   leadLastContactGaugeStore.clear();
   labelValueTracker.clear();
 };
