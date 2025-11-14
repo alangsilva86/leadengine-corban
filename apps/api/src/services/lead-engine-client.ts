@@ -18,7 +18,7 @@ export interface LeadEngineError extends Error {
   details?: unknown;
 }
 
-const createLeadEngineError = (
+export const createLeadEngineError = (
   message: string,
   options: { status?: number; statusText?: string; retryAfter?: string | number; details?: unknown } = {}
 ): LeadEngineError => {

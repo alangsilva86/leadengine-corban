@@ -13,6 +13,8 @@ servers:
 tags:
   - name: messages
     description: Operações relacionadas ao envio de mensagens outbound.
+  - name: agreements
+    description: Operações para gestão de acordos comerciais, tabelas e sincronizações com provedores.
 paths:
   /tickets/{ticketId}/messages:
     post:
@@ -57,6 +59,335 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
+  /api/v1/agreements:
+    get:
+      operationId: listAgreements
+      summary: Lista acordos comerciais
+      description: Retorna uma coleção paginada de acordos aplicando filtros de status, provedor e período de vigência.
+      tags: [agreements]
+      parameters:
+        - name: page
+          in: query
+          description: Número da página a ser retornada.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Quantidade de itens por página.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 25
+        - name: status
+          in: query
+          description: Filtra acordos pelos status informados.
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/AgreementStatus'
+          style: form
+          explode: true
+        - name: providerId
+          in: query
+          description: Filtra acordos por identificador do provedor de origem.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: validOn
+          in: query
+          description: Retorna apenas acordos válidos na data informada (ISO 8601, UTC).
+          schema:
+            type: string
+            format: date-time
+        - name: search
+          in: query
+          description: Texto livre aplicado em nome, descrição ou código externo do acordo.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista paginada de acordos comerciais.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementListResponse'
+        '400':
+          description: Parâmetros inválidos para a listagem.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Operação não autorizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Limite de requisições excedido.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Tempo em segundos até que uma nova tentativa seja permitida.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      operationId: createAgreement
+      summary: Cria um novo acordo comercial
+      description: Registra um novo acordo com suas tabelas, janelas e taxas vigentes.
+      tags: [agreements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgreementCreateRequest'
+      responses:
+        '201':
+          description: Acordo criado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementResponse'
+        '400':
+          description: Dados inválidos para criação do acordo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Operação não autorizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Já existe um acordo ativo conflitante para o provedor informado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Falhas de validação no payload enviado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /api/v1/agreements/{agreementId}:
+    parameters:
+      - name: agreementId
+        in: path
+        required: true
+        description: Identificador único do acordo.
+        schema:
+          type: string
+    get:
+      operationId: getAgreement
+      summary: Recupera detalhes de um acordo comercial
+      description: Retorna o acordo completo com tabelas, janelas, taxas e metadados vigentes.
+      tags: [agreements]
+      responses:
+        '200':
+          description: Dados completos do acordo solicitado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Operação não autorizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Acordo não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      operationId: updateAgreement
+      summary: Atualiza parcialmente um acordo comercial
+      description: Permite ajustes pontuais no acordo, como mudança de status, vigência ou definição de novas taxas.
+      tags: [agreements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgreementUpdateRequest'
+      responses:
+        '200':
+          description: Acordo atualizado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementResponse'
+        '400':
+          description: Payload inválido para atualização.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Operação não autorizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Acordo não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflito ao atualizar o acordo (ex. vigência sobreposta).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Falhas de validação no payload enviado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /api/v1/agreements/import:
+    post:
+      operationId: importAgreements
+      summary: Importa acordos comerciais em lote
+      description: Permite subir novos acordos em massa via upload de planilha ou JSON estruturado. A importação é assíncrona e retorna o identificador do job.
+      tags: [agreements]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AgreementImportMultipartRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgreementImportRequest'
+      responses:
+        '202':
+          description: Importação enfileirada para processamento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementImportResponse'
+        '400':
+          description: Payload inválido para importação.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Operação não autorizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Já existe um job de importação em andamento para o provedor informado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Erros de validação encontrados no conteúdo enviado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+  /api/v1/agreements/providers/{providerId}/sync:
+    post:
+      operationId: triggerProviderAgreementSync
+      summary: Dispara sincronização de acordos para um provedor
+      description: Agenda uma sincronização assíncrona dos acordos ativos com o provedor remoto.
+      tags: [agreements]
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          description: Identificador do provedor de integrações.
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderSyncRequest'
+      responses:
+        '202':
+          description: Sincronização agendada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderSyncResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Operação não autorizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Provedor não encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Já existe uma sincronização em andamento para o provedor informado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /contacts/{contactId}/messages:
     post:
       operationId: createContactMessage
@@ -145,6 +476,603 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
 components:
   schemas:
+    RequestMeta:
+      type: object
+      description: Metadados opcionais enviados pelo consumidor para rastreabilidade.
+      properties:
+        correlationId:
+          type: string
+          description: Identificador fornecido pelo cliente para correlacionar requisições.
+        source:
+          type: string
+          description: Nome do sistema cliente que originou a requisição.
+      additionalProperties: false
+    ResponseMeta:
+      type: object
+      description: Metainformações retornadas pelo serviço em todas as respostas de sucesso.
+      properties:
+        requestId:
+          type: string
+          description: Identificador único da requisição gerado pelo serviço.
+        generatedAt:
+          type: string
+          format: date-time
+          description: Timestamp em que a resposta foi gerada (ISO 8601, UTC).
+        version:
+          type: string
+          description: Versão da API que produziu a resposta.
+      additionalProperties: false
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        totalItems:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+        hasPrevious:
+          type: boolean
+      additionalProperties: false
+    AgreementStatus:
+      type: string
+      enum: [draft, active, suspended, terminated, archived]
+      description: Situação operacional do acordo.
+    AgreementRateType:
+      type: string
+      enum: [flat, percentage, tiered]
+      description: Identifica a forma de cálculo aplicada pela taxa.
+    AgreementRateTier:
+      type: object
+      required: [fromVolume, toVolume, value]
+      properties:
+        id:
+          type: string
+        fromVolume:
+          type: integer
+          minimum: 0
+        toVolume:
+          type: [integer, 'null']
+          description: Volume máximo (inclusive) suportado pela faixa. Null indica ausência de limite superior.
+          minimum: 0
+        value:
+          type: number
+          description: Valor aplicado para a faixa informada.
+        currency:
+          type: string
+          description: Código da moeda ISO-4217 aplicável quando a faixa utiliza valor fixo.
+      additionalProperties: false
+    AgreementRateBase:
+      type: object
+      required: [type]
+      properties:
+        type:
+          $ref: '#/components/schemas/AgreementRateType'
+        description:
+          type: string
+        value:
+          type: number
+          description: Valor absoluto aplicado para taxas do tipo flat ou percentual (0-100).
+        currency:
+          type: string
+          description: Código da moeda ISO-4217 quando aplicável.
+        percentageDecimals:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: Precisão decimal para taxas percentuais.
+        minimumValue:
+          type: number
+        maximumValue:
+          type: number
+        tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementRateTier'
+          description: Coleção de faixas aplicável quando type=tiered.
+        windowIds:
+          type: array
+          items:
+            type: string
+          description: Identificadores das janelas às quais a taxa se aplica.
+      additionalProperties: false
+    AgreementRate:
+      allOf:
+        - $ref: '#/components/schemas/AgreementRateBase'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+          additionalProperties: false
+    AgreementRateInput:
+      allOf:
+        - $ref: '#/components/schemas/AgreementRateBase'
+        - type: object
+          properties:
+            id:
+              type: string
+          additionalProperties: false
+    AgreementWindowBase:
+      type: object
+      required: [label, timezone, daysOfWeek, startTime, endTime]
+      properties:
+        label:
+          type: string
+          description: Nome exibido da janela.
+        timezone:
+          type: string
+          description: Timezone IANA aplicado às janelas.
+        daysOfWeek:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+        startTime:
+          type: string
+          pattern: '^[0-2][0-9]:[0-5][0-9]$'
+          description: Horário de início no formato HH:mm.
+        endTime:
+          type: string
+          pattern: '^[0-2][0-9]:[0-5][0-9]$'
+          description: Horário de término no formato HH:mm.
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: [string, 'null']
+          format: date
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Metadados adicionais específicos da janela.
+      additionalProperties: false
+    AgreementWindow:
+      allOf:
+        - $ref: '#/components/schemas/AgreementWindowBase'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+          additionalProperties: false
+    AgreementWindowInput:
+      allOf:
+        - $ref: '#/components/schemas/AgreementWindowBase'
+        - type: object
+          properties:
+            id:
+              type: string
+          additionalProperties: false
+    AgreementTableBase:
+      type: object
+      required: [name, currency, rates]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        externalCode:
+          type: string
+        currency:
+          type: string
+          description: Código da moeda ISO-4217 utilizada como base para os valores.
+        priority:
+          type: integer
+          description: Ordem de aplicação da tabela.
+        windows:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementWindowInput'
+        rates:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AgreementRateInput'
+        metadata:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AgreementTable:
+      allOf:
+        - $ref: '#/components/schemas/AgreementTableBase'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+            windows:
+              type: array
+              items:
+                $ref: '#/components/schemas/AgreementWindow'
+            rates:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/AgreementRate'
+          additionalProperties: false
+    AgreementTableInput:
+      allOf:
+        - $ref: '#/components/schemas/AgreementTableBase'
+        - type: object
+          properties:
+            id:
+              type: string
+          additionalProperties: false
+    AgreementDetail:
+      type: object
+      required:
+        - id
+        - providerId
+        - name
+        - status
+        - version
+        - validFrom
+        - tables
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        providerId:
+          type: string
+        externalCode:
+          type: [string, 'null']
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        version:
+          type: integer
+          minimum: 1
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        tables:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AgreementTable'
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AgreementSummary:
+      type: object
+      required:
+        - id
+        - providerId
+        - name
+        - status
+        - version
+        - validFrom
+        - tableCount
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        providerId:
+          type: string
+        externalCode:
+          type: [string, 'null']
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        version:
+          type: integer
+          minimum: 1
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+        tableCount:
+          type: integer
+          minimum: 0
+        primaryCurrency:
+          type: string
+        lastSyncedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AgreementListFilters:
+      type: object
+      properties:
+        statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementStatus'
+        providerIds:
+          type: array
+          items:
+            type: string
+        validOn:
+          type: string
+          format: date-time
+        search:
+          type: string
+      additionalProperties: false
+    AgreementListMeta:
+      allOf:
+        - $ref: '#/components/schemas/ResponseMeta'
+        - type: object
+          required: [pagination]
+          properties:
+            pagination:
+              $ref: '#/components/schemas/PaginationMeta'
+            filters:
+              $ref: '#/components/schemas/AgreementListFilters'
+          additionalProperties: false
+    AgreementListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementSummary'
+        meta:
+          $ref: '#/components/schemas/AgreementListMeta'
+      additionalProperties: false
+    AgreementResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgreementDetail'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+      additionalProperties: false
+    AgreementWritePayload:
+      type: object
+      required: [providerId, name, status, validFrom, tables]
+      properties:
+        providerId:
+          type: string
+        externalCode:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        tables:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AgreementTableInput'
+        metadata:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AgreementCreateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgreementWritePayload'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      additionalProperties: false
+    AgreementUpdatePayload:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: [string, 'null']
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementTableInput'
+        metadata:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AgreementUpdateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgreementUpdatePayload'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      additionalProperties: false
+    AgreementImportInput:
+      type: object
+      required: [providerId]
+      properties:
+        providerId:
+          type: string
+        dryRun:
+          type: boolean
+          default: false
+        notifyEmails:
+          type: array
+          items:
+            type: string
+            format: email
+        agreements:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementWritePayload'
+      additionalProperties: false
+    AgreementImportRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgreementImportInput'
+        meta:
+          $ref: '#/components/schemas/RequestMeta'
+      additionalProperties: false
+    AgreementImportMultipartRequest:
+      type: object
+      required: [providerId, file]
+      properties:
+        providerId:
+          type: string
+        dryRun:
+          type: boolean
+          default: false
+        notifyEmails:
+          type: array
+          items:
+            type: string
+            format: email
+        file:
+          type: string
+          format: binary
+      additionalProperties: false
+    AgreementImportJob:
+      type: object
+      required: [id, status, dryRun, receivedAgreements, createdAt]
+      properties:
+        id:
+          type: string
+          description: Identificador da importação.
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        dryRun:
+          type: boolean
+        receivedAgreements:
+          type: integer
+          minimum: 0
+        importedAgreements:
+          type: integer
+          minimum: 0
+        skippedAgreements:
+          type: integer
+          minimum: 0
+        errors:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+      additionalProperties: false
+    AgreementImportResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgreementImportJob'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+      additionalProperties: false
+    ProviderSyncRequest:
+      type: object
+      properties:
+        forceFullRefresh:
+          type: boolean
+          description: Força uma sincronização completa, ignorando caches.
+        correlationId:
+          type: string
+        requestedBy:
+          type: string
+          description: Identificador do operador que iniciou a sincronização.
+      additionalProperties: false
+    ProviderSyncStatus:
+      type: object
+      required: [providerId, jobId, status, triggeredAt]
+      properties:
+        providerId:
+          type: string
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [queued, syncing, completed, failed]
+        triggeredAt:
+          type: string
+          format: date-time
+        lastSuccessfulSyncAt:
+          type: [string, 'null']
+          format: date-time
+        estimatedCompletionAt:
+          type: [string, 'null']
+          format: date-time
+        warnings:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+      additionalProperties: false
+    ProviderSyncResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProviderSyncStatus'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+      additionalProperties: false
     MessagePayload:
       oneOf:
         - $ref: '#/components/schemas/TextMessagePayload'
