@@ -1038,15 +1038,6 @@ const SimulationModal = ({
         <div className="mt-4 space-y-6">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
-              <Label>Convênio</Label>
-              <Select value={convenioId} onValueChange={setConvenioId} disabled={fieldsDisabled}>
-                <SelectTrigger ref={stageTriggerRef}>
-                  <SelectValue placeholder="Selecione um convênio" />
-                </SelectTrigger>
-                <SelectContent>
-                  {convenios.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.nome}
               <Label htmlFor="sales-convenio">Convênio</Label>
               {errors.convenio ? <p className="text-xs text-rose-400">{errors.convenio}</p> : null}
               {agreementsError ? (
@@ -1103,22 +1094,6 @@ const SimulationModal = ({
               {errors.convenio ? <p className="text-sm text-destructive">{errors.convenio}</p> : null}
             </div>
             <div className="space-y-2">
-              <Label>Produto</Label>
-              <Select value={productId} onValueChange={setProductId} disabled={fieldsDisabled || productOptions.length === 0}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um produto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-              {!agreementsLoading && !agreementsError && !hasAgreementOptions ? (
-                <p className="text-xs text-foreground-muted">
-                  Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="sales-product">Produto</Label>
               {errors.product ? <p className="text-xs text-rose-400">{errors.product}</p> : null}
               <Select
@@ -1164,6 +1139,11 @@ const SimulationModal = ({
                 </p>
               ) : null}
             </div>
+            {!agreementsLoading && !agreementsError && !hasAgreementOptions ? (
+              <p className="text-xs text-foreground-muted">
+                Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
+              </p>
+            ) : null}
             <div className="space-y-2">
               <Label>Data da simulação</Label>
               <Input
