@@ -11,6 +11,9 @@ import type {
   TicketFilters,
   TicketStatus,
   UpdateTicketDTO,
+  SalesSimulation,
+  SalesProposal,
+  SalesDeal,
 } from '../types/tickets';
 import { Prisma } from '@prisma/client';
 import {
@@ -34,11 +37,17 @@ import {
   type TicketNote,
   type TicketNoteVisibility,
 } from '../data/ticket-note-store';
+import {
+  listTicketSalesEvents,
+  listTicketSalesEventsByTickets,
+  type TicketSalesEvent,
+} from '../data/ticket-sales-event-store';
 import { logger } from '../config/logger';
 import {
   whatsappOutboundMetrics,
   whatsappOutboundDeliverySuccessCounter,
   whatsappSocketReconnectsCounter,
+  salesOperationsCounter,
 } from '../lib/metrics';
 import { WhatsAppBrokerError, translateWhatsAppBrokerError } from './whatsapp-broker-client';
 import {
@@ -72,6 +81,16 @@ import type {
   OutboundMessageError,
   OutboundMessageResponse,
 } from '@ticketz/contracts';
+import {
+  createSalesDeal as salesCreateDeal,
+  createSalesProposal as salesCreateProposal,
+  createSalesSimulation as salesCreateSimulation,
+  getSalesSimulationFilters,
+  type CreateSalesDealContext,
+  type CreateSalesProposalContext,
+  type CreateSalesSimulationContext,
+  type SalesOperationResponse,
+} from './sales-service';
 
 const OPEN_STATUSES = new Set(['OPEN', 'PENDING', 'ASSIGNED']);
 
@@ -459,6 +478,7 @@ export type TicketHydrated = Ticket & {
   timeline?: TicketTimelineSnapshot;
   pipelineStep?: string | null;
   qualityScore?: number | null;
+  salesTimeline?: TicketSalesEvent[];
 };
 
 export type InboxHealthMetrics = {
@@ -532,6 +552,7 @@ type TicketRealtimeEnvelope = {
   messageId: string | null;
   providerMessageId: string | null;
   ticketStatus: TicketStatus;
+  ticketStage: Ticket['stage'];
   ticketUpdatedAt: string;
   ticket: Ticket;
 };
@@ -601,6 +622,7 @@ const buildRealtimeEnvelopeBase = ({
     messageId: resolvedMessageId,
     providerMessageId: resolvedProviderMessageId,
     ticketStatus: ticket.status,
+    ticketStage: ticket.stage,
     ticketUpdatedAt: updatedAtIso,
   };
 };
@@ -678,6 +700,37 @@ const emitTicketRealtimeEnvelope = (
 ) => {
   const agreementId = resolveTicketAgreementId(ticket);
   emitTicketEvent(tenantId, ticket.id, 'tickets.updated', envelope, userId ?? null, agreementId);
+};
+
+type SalesOperationKind = 'simulation' | 'proposal' | 'deal';
+
+const emitTicketSalesTimelineEvent = (
+  tenantId: string,
+  ticket: Ticket,
+  event: TicketSalesEvent,
+  actorId: string | null
+) => {
+  const agreementId = resolveTicketAgreementId(ticket);
+  emitTicketEvent(tenantId, ticket.id, 'tickets.sales.timeline', event, actorId, agreementId);
+};
+
+const broadcastSalesOperationResult = (
+  tenantId: string,
+  ticket: Ticket,
+  event: TicketSalesEvent,
+  actorId: string | null
+) => {
+  const ticketEnvelope = buildTicketRealtimeEnvelope({ tenantId, ticket });
+  emitTicketRealtimeEnvelope(tenantId, ticket, ticketEnvelope, actorId);
+  emitTicketSalesTimelineEvent(tenantId, ticket, event, actorId);
+};
+
+const recordSalesTelemetry = (
+  tenantId: string,
+  operation: SalesOperationKind,
+  stage: Ticket['stage']
+) => {
+  salesOperationsCounter.inc({ tenantId, operation, stage });
 };
 
 const emitMessageCreatedEvents = (
@@ -1316,6 +1369,10 @@ export const listTickets = async (
   const rawItems = baseResult.items;
 
   const conversations = await fetchConversationStatsForTickets(tenantId, rawItems);
+  const salesTimelineMap = await listTicketSalesEventsByTickets(
+    tenantId,
+    rawItems.map((ticket: Ticket) => ticket.id)
+  );
   const contactIds: string[] = Array.from(new Set(rawItems.map((ticket: Ticket) => ticket.contactId)));
 
   const [contacts, leads, notes] = await Promise.all([
@@ -1338,6 +1395,7 @@ export const listTickets = async (
       qualityScore,
       ...(stats?.window ? { window: stats.window } : {}),
       ...(stats?.timeline ? { timeline: stats.timeline } : {}),
+      salesTimeline: salesTimelineMap.get(ticket.id) ?? [],
     };
 
     if (includeSet.has('contact')) {
@@ -1382,6 +1440,7 @@ export const getTicketById = async (
   const includeSet = new Set(options.include ?? []);
   const conversations = await fetchConversationStatsForTickets(tenantId, [ticket]);
   const stats = conversations.get(ticketId);
+  const salesTimeline = await listTicketSalesEvents(tenantId, ticketId);
 
   const [contacts, leads, notes] = await Promise.all([
     includeSet.has('contact') ? safeResolveContacts(tenantId, [ticket.contactId]) : Promise.resolve(new Map()),
@@ -1399,6 +1458,7 @@ export const getTicketById = async (
     qualityScore,
     ...(stats?.window ? { window: stats.window } : {}),
     ...(stats?.timeline ? { timeline: stats.timeline } : {}),
+    salesTimeline,
   };
 
   if (includeSet.has('contact')) {
@@ -2558,6 +2618,42 @@ export const sendAdHoc = async (
   return sendToContact(sendParams, dependencies);
 };
 
+export const simulateTicketSales = async (
+  input: CreateSalesSimulationContext
+): Promise<SalesOperationResponse<SalesSimulation>> => {
+  const result = await salesCreateSimulation(input);
+  const actorId = input.actorId ?? null;
+
+  broadcastSalesOperationResult(input.tenantId, result.ticket, result.event, actorId);
+  recordSalesTelemetry(input.tenantId, 'simulation', result.ticket.stage);
+
+  return result;
+};
+
+export const createTicketSalesProposal = async (
+  input: CreateSalesProposalContext
+): Promise<SalesOperationResponse<SalesProposal>> => {
+  const result = await salesCreateProposal(input);
+  const actorId = input.actorId ?? null;
+
+  broadcastSalesOperationResult(input.tenantId, result.ticket, result.event, actorId);
+  recordSalesTelemetry(input.tenantId, 'proposal', result.ticket.stage);
+
+  return result;
+};
+
+export const createTicketSalesDeal = async (
+  input: CreateSalesDealContext
+): Promise<SalesOperationResponse<SalesDeal>> => {
+  const result = await salesCreateDeal(input);
+  const actorId = input.actorId ?? null;
+
+  broadcastSalesOperationResult(input.tenantId, result.ticket, result.event, actorId);
+  recordSalesTelemetry(input.tenantId, 'deal', result.ticket.stage);
+
+  return result;
+};
+
 export const addTicketNote = async (
   tenantId: string,
   ticketId: string,
@@ -2604,3 +2700,5 @@ export const addTicketNote = async (
 
   return note;
 };
+
+export { getSalesSimulationFilters };

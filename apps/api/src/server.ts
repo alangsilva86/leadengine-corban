@@ -34,6 +34,7 @@ import { aiRouter } from './routes/ai';
 import { registerSocketConnectionHandlers } from './socket/connection-handlers';
 import { buildHealthPayload } from './health';
 import { preferencesRouter } from './routes/preferences';
+import { salesRouter } from './routes/sales';
 import { whatsappDebugRouter } from './features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from './config/feature-flags';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
@@ -436,6 +437,7 @@ app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
 app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
+app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
 app.use('/api', authMiddleware, preferencesRouter);
 
 // Socket.IO para tempo real

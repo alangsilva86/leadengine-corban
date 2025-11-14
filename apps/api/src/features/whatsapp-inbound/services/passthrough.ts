@@ -94,6 +94,7 @@ export const emitPassthroughRealtimeUpdates = async ({
       messageId: message.id,
       providerMessageId: message.externalId ?? null,
       ticketStatus: ticketRecord.status,
+      ticketStage: ticketRecord.stage,
       ticketUpdatedAt: ticketRecord.updatedAt?.toISOString?.() ?? new Date().toISOString(),
       ticket: ticketRecord,
     };

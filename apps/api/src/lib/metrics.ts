@@ -52,6 +52,11 @@ const INBOUND_MEDIA_RETRY_DLQ_HELP =
   '# HELP inbound_media_retry_dlq_total Jobs de mídia inbound enviados para DLQ após esgotar tentativas';
 const INBOUND_MEDIA_RETRY_DLQ_TYPE = '# TYPE inbound_media_retry_dlq_total counter';
 
+const SALES_OPERATIONS_METRIC = 'sales_operations_total';
+const SALES_OPERATIONS_HELP =
+  '# HELP sales_operations_total Contador de operações do serviço de vendas por estágio e tipo';
+const SALES_OPERATIONS_TYPE = '# TYPE sales_operations_total counter';
+
 const LEAD_LAST_CONTACT_METRIC = 'lead_last_contact_timestamp';
 const LEAD_LAST_CONTACT_HELP =
   '# HELP lead_last_contact_timestamp Timestamp (epoch ms) do último contato inbound por lead';
@@ -70,6 +75,8 @@ const ORIGIN_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' 
 const TENANT_CONSTRAINT: LabelConstraint = { limit: 100, defaultValue: 'unknown' };
 const INSTANCE_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
 const TRANSPORT_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
+const OPERATION_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
+const STAGE_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'desconhecido' };
 
 const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
   origin: ORIGIN_CONSTRAINT,
@@ -94,6 +101,11 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
   [INBOUND_MEDIA_RETRY_ATTEMPTS_METRIC]: BASE_LABEL_CONSTRAINTS,
   [INBOUND_MEDIA_RETRY_SUCCESS_METRIC]: BASE_LABEL_CONSTRAINTS,
   [INBOUND_MEDIA_RETRY_DLQ_METRIC]: BASE_LABEL_CONSTRAINTS,
+  [SALES_OPERATIONS_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    operation: OPERATION_CONSTRAINT,
+    stage: STAGE_CONSTRAINT,
+  },
 };
 
 const labelValueTracker = new Map<string, Map<string, Set<string>>>();
@@ -110,6 +122,7 @@ const inboundMessagesCounterStore = new Map<string, number>();
 const inboundMediaRetryAttemptsStore = new Map<string, number>();
 const inboundMediaRetrySuccessStore = new Map<string, number>();
 const inboundMediaRetryDlqStore = new Map<string, number>();
+const salesOperationsCounterStore = new Map<string, number>();
 const leadLastContactGaugeStore = new Map<string, number>();
 
 const toLabelString = (value: unknown): string | null => {
@@ -325,6 +338,11 @@ export const inboundMediaRetryDlqCounter = buildCounter(
   inboundMediaRetryDlqStore
 );
 
+export const salesOperationsCounter = buildCounter(
+  SALES_OPERATIONS_METRIC,
+  salesOperationsCounterStore
+);
+
 export const leadLastContactGauge = {
   set(labels: CounterLabels = {}, timestampMs: number): void {
     if (!Number.isFinite(timestampMs)) {
@@ -411,6 +429,16 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(SALES_OPERATIONS_HELP, SALES_OPERATIONS_TYPE);
+  if (salesOperationsCounterStore.size === 0) {
+    lines.push(`${SALES_OPERATIONS_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of salesOperationsCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${SALES_OPERATIONS_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(INBOUND_MESSAGES_HELP, INBOUND_MESSAGES_TYPE);
   if (inboundMessagesCounterStore.size === 0) {
     lines.push(`${INBOUND_MESSAGES_METRIC} 0`);
@@ -489,6 +517,7 @@ export const resetMetrics = (): void => {
   inboundMediaRetryAttemptsStore.clear();
   inboundMediaRetrySuccessStore.clear();
   inboundMediaRetryDlqStore.clear();
+  salesOperationsCounterStore.clear();
   leadLastContactGaugeStore.clear();
   labelValueTracker.clear();
 };
