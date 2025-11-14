@@ -464,7 +464,6 @@ const DealDrawer = ({
                     className="mt-1 font-mono text-xs"
                     value={metadataText}
                     onChange={(event) => setMetadataText(event.target.value)}
-                    placeholder="{\n  \"origin\": \"crm\"\n}"
                     placeholder={METADATA_PLACEHOLDER}
                     minRows={4}
                     disabled={fieldsDisabled}
