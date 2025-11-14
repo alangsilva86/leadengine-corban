@@ -28,6 +28,7 @@ import {
 } from './utils/salesSnapshot.js';
 
 const NO_STAGE_VALUE = '__none__';
+const METADATA_PLACEHOLDER = '{\n  "origin": "crm"\n}';
 
 const normalizeStageState = (value) => {
   if (typeof value === 'string' && value.trim().length > 0) {
@@ -464,6 +465,7 @@ const DealDrawer = ({
                     value={metadataText}
                     onChange={(event) => setMetadataText(event.target.value)}
                     placeholder="{\n  \"origin\": \"crm\"\n}"
+                    placeholder={METADATA_PLACEHOLDER}
                     minRows={4}
                     disabled={fieldsDisabled}
                   />
