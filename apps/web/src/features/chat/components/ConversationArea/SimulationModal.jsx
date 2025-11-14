@@ -22,6 +22,7 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import { useClipboard } from '@/hooks/use-clipboard.js';
+import useAgreements from '@/features/agreements/useAgreements.js';
 import {
   buildProposalSnapshot,
   buildSimulationSnapshot,
@@ -37,54 +38,139 @@ import {
 
 const NO_STAGE_VALUE = '__none__';
 
-const CONVENIO_OPTIONS = [
-  {
-    value: 'inss',
-    label: 'INSS',
-    products: [
-      { value: 'emprestimo', label: 'Empréstimo consignado' },
-      { value: 'cartao_consignado', label: 'Cartão consignado' },
-      { value: 'fgts', label: 'Antecipação FGTS' },
-    ],
-  },
-  {
-    value: 'siape',
-    label: 'SIAPE',
-    products: [
-      { value: 'emprestimo', label: 'Empréstimo consignado' },
-      { value: 'cartao_beneficio', label: 'Cartão benefício' },
-    ],
-  },
-  {
-    value: 'municipal',
-    label: 'Prefeituras municipais',
-    products: [
-      { value: 'emprestimo', label: 'Empréstimo consignado' },
-      { value: 'cartao_consignado', label: 'Cartão consignado' },
-    ],
-  },
-  {
-    value: 'estadual',
-    label: 'Servidores estaduais',
-    products: [
-      { value: 'emprestimo', label: 'Empréstimo consignado' },
-      { value: 'fgts', label: 'Antecipação FGTS' },
-    ],
-  },
-];
-
-const NO_PRODUCT_OPTION = {
-  value: '__placeholder__',
-  label: 'Selecione um produto',
-  disabled: true,
+const PRODUCT_LABEL_MAP = {
+  emprestimo: 'Empréstimo consignado',
+  consigned_credit: 'Empréstimo consignado',
+  cartao_consignado: 'Cartão consignado',
+  cartao_beneficio: 'Cartão benefício',
+  benefit_card: 'Cartão benefício',
+  fgts: 'Antecipação FGTS',
+  fgts_advance: 'Antecipação FGTS',
+  credit_card: 'Cartão consignado',
+  payroll_portability: 'Portabilidade de salário',
 };
 
-const resolveProductOptions = (convenioId) => {
-  const convenio = CONVENIO_OPTIONS.find((option) => option.value === convenioId);
-  if (!convenio) {
+const normalizeString = (value) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : '';
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return '';
+};
+
+const formatProductLabel = (value) => {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return '';
+  }
+
+  const mapped = PRODUCT_LABEL_MAP[normalized];
+  if (mapped) {
+    return mapped;
+  }
+
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .replace(/(^|\s)([a-z])/g, (match) => match.toUpperCase());
+};
+
+const normalizeProductOption = (entry) => {
+  if (!entry) {
+    return null;
+  }
+
+  if (typeof entry === 'string' || typeof entry === 'number') {
+    const value = normalizeString(entry);
+    if (!value) {
+      return null;
+    }
+    return { value, label: formatProductLabel(value) };
+  }
+
+  if (typeof entry === 'object') {
+    const value =
+      normalizeString(entry.id) ||
+      normalizeString(entry.value) ||
+      normalizeString(entry.key) ||
+      normalizeString(entry.slug) ||
+      normalizeString(entry.code);
+
+    if (!value) {
+      return null;
+    }
+
+    const label =
+      normalizeString(entry.label) ||
+      normalizeString(entry.name) ||
+      normalizeString(entry.title) ||
+      normalizeString(entry.description) ||
+      formatProductLabel(value);
+
+    return { value, label: label || formatProductLabel(value) };
+  }
+
+  return null;
+};
+
+const normalizeAgreementProducts = (agreement) => {
+  if (!agreement || typeof agreement !== 'object') {
     return [];
   }
-  return convenio.products ?? [];
+
+  const sources = [
+    agreement.products,
+    agreement.allowedProducts,
+    agreement.availableProducts,
+    agreement.productOptions,
+    agreement.productTypes,
+    agreement.productScope,
+    agreement?.metadata?.products,
+    agreement?.metadata?.allowedProducts,
+    agreement?.metadata?.productOptions,
+    agreement?.metadata?.productScope,
+  ]
+    .map((candidate) => (candidate instanceof Set ? Array.from(candidate) : candidate))
+    .filter((candidate) => Array.isArray(candidate) && candidate.length > 0);
+
+  for (const source of sources) {
+    const normalized = source
+      .map((entry) => normalizeProductOption(entry))
+      .filter(Boolean);
+
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+
+  return [];
+};
+
+const normalizeAgreementOption = (agreement) => {
+  if (!agreement || typeof agreement !== 'object') {
+    return null;
+  }
+
+  const value = normalizeString(agreement.id) || normalizeString(agreement.identifier);
+  if (!value) {
+    return null;
+  }
+
+  const label =
+    normalizeString(agreement.name) ||
+    normalizeString(agreement.displayName) ||
+    normalizeString(agreement.label) ||
+    formatProductLabel(value);
+
+  return {
+    value,
+    label: label || value,
+    products: normalizeAgreementProducts(agreement),
+  };
 };
 
 const normalizeStageState = (value) => {
@@ -217,6 +303,32 @@ const SimulationModal = ({
   const stageTriggerRef = useRef(null);
   const isProposalMode = mode === 'proposal';
 
+  const {
+    agreements,
+    isLoading: agreementsLoading,
+    error: agreementsError,
+    retry: retryAgreements,
+  } = useAgreements();
+
+  const agreementOptions = useMemo(
+    () =>
+      agreements
+        .map((agreement) => normalizeAgreementOption(agreement))
+        .filter((option) => option && option.value)
+        .map((option) => ({ value: option.value, label: option.label, products: option.products })),
+    [agreements]
+  );
+
+  const productsByAgreement = useMemo(() => {
+    const map = new Map();
+    agreementOptions.forEach((option) => {
+      if (option.products && option.products.length > 0) {
+        map.set(option.value, option.products);
+      }
+    });
+    return map;
+  }, [agreementOptions]);
+
   const [stage, setStage] = useState(() => normalizeStageState(defaultValues.stage));
   const [leadId, setLeadId] = useState(defaultValues.leadId ?? '');
   const [simulationId, setSimulationId] = useState(defaultValues.simulationId ?? '');
@@ -232,6 +344,23 @@ const SimulationModal = ({
   const normalizedAlerts = useQueueAlerts(queueAlerts);
   const alertsActive = normalizedAlerts.length > 0;
   const fieldsDisabled = disabled || alertsActive;
+  const hasAgreementOptions = agreementOptions.length > 0;
+
+  const handleConvenioChange = (value) => {
+    setConvenioId(value);
+    const option = agreementOptions.find((item) => item.value === value);
+    setConvenioLabel(option?.label ?? '');
+    setProductId('');
+    setProductLabel('');
+  };
+
+  const handleProductChange = (value) => {
+    setProductId(value);
+    const option = (productsByAgreement.get(convenioId) ?? []).find(
+      (item) => item.value === value,
+    );
+    setProductLabel(option?.label ?? '');
+  };
 
   useEffect(() => {
     if (!open) {
@@ -257,10 +386,10 @@ const SimulationModal = ({
     setSimulationId(defaultValues.simulationId ?? '');
     setMetadataText(formatJson(defaultValues.metadata));
     setOffers(hydratedOffers);
-    setConvenioId(baseValues.convenioId ?? '');
-    setProductId(baseValues.productId ?? '');
-    setConvenioLabel(baseValues.convenioLabel ?? '');
-    setProductLabel(baseValues.productLabel ?? '');
+    setConvenioId(normalizeString(baseValues.convenioId));
+    setProductId(normalizeString(baseValues.productId));
+    setConvenioLabel(normalizeString(baseValues.convenioLabel));
+    setProductLabel(normalizeString(baseValues.productLabel));
     setErrors({});
   }, [defaultValues, isProposalMode, open]);
 
@@ -269,14 +398,29 @@ const SimulationModal = ({
       return;
     }
 
-    const convenioOption = CONVENIO_OPTIONS.find((option) => option.value === convenioId);
-    setConvenioLabel(convenioOption?.label ?? '');
+    const convenioOption = agreementOptions.find((option) => option.value === convenioId);
+    if (convenioOption && convenioOption.label !== convenioLabel) {
+      setConvenioLabel(convenioOption.label);
+    }
 
-    const productOption = resolveProductOptions(convenioId).find((option) => option.value === productId);
-    setProductLabel(productOption?.label ?? '');
-  }, [convenioId, open, productId]);
+    const options = productsByAgreement.get(convenioId) ?? [];
+    const productOption = options.find((option) => option.value === productId);
 
-  const productOptions = useMemo(() => resolveProductOptions(convenioId), [convenioId]);
+    if (options.length > 0 && !productOption && productId) {
+      setProductId('');
+      setProductLabel('');
+      return;
+    }
+
+    if (productOption && productOption.label !== productLabel) {
+      setProductLabel(productOption.label);
+    }
+  }, [agreementOptions, convenioId, convenioLabel, open, productId, productLabel, productsByAgreement]);
+
+  const productOptions = useMemo(
+    () => productsByAgreement.get(convenioId) ?? [],
+    [convenioId, productsByAgreement]
+  );
 
   const snapshotPreview = useMemo(() => {
     const snapshotBase = buildSimulationSnapshot({
@@ -454,12 +598,24 @@ const SimulationModal = ({
   const validateForm = () => {
     const nextErrors = {};
 
-    if (!convenioId) {
-      nextErrors.convenio = 'Selecione um convênio.';
+    const trimmedConvenioId = normalizeString(convenioId);
+    const trimmedProductId = normalizeString(productId);
+    const availableProducts = productsByAgreement.get(trimmedConvenioId) ?? [];
+
+    if (!trimmedConvenioId) {
+      nextErrors.convenio = hasAgreementOptions
+        ? 'Selecione um convênio.'
+        : 'Nenhum convênio disponível no momento. Configure um convênio para continuar.';
     }
 
-    if (!productId) {
-      nextErrors.product = 'Selecione um produto.';
+    if (!trimmedProductId) {
+      if (!trimmedConvenioId) {
+        nextErrors.product = 'Selecione um convênio para listar os produtos disponíveis.';
+      } else if (availableProducts.length === 0) {
+        nextErrors.product = 'Este convênio não possui produtos configurados.';
+      } else {
+        nextErrors.product = 'Selecione um produto.';
+      }
     }
 
     const metadataErrors = {};
@@ -505,9 +661,18 @@ const SimulationModal = ({
       }
     }
 
+    const trimmedConvenioId = normalizeString(convenioId);
+    const trimmedProductId = normalizeString(productId);
+    const agreementOption = agreementOptions.find((option) => option.value === trimmedConvenioId);
+    const productOption = (productsByAgreement.get(trimmedConvenioId) ?? []).find(
+      (option) => option.value === trimmedProductId,
+    );
+    const effectiveConvenioLabel = agreementOption?.label || convenioLabel || trimmedConvenioId;
+    const effectiveProductLabel = productOption?.label || productLabel || trimmedProductId;
+
     const simulationSnapshot = buildSimulationSnapshot({
-      convenio: { id: convenioId, label: convenioLabel },
-      product: { id: productId, label: productLabel },
+      convenio: { id: trimmedConvenioId, label: effectiveConvenioLabel },
+      product: { id: trimmedProductId, label: effectiveProductLabel },
       offers,
     });
 
@@ -583,42 +748,107 @@ const SimulationModal = ({
             <div className="space-y-2">
               <Label htmlFor="sales-convenio">Convênio</Label>
               {errors.convenio ? <p className="text-xs text-rose-400">{errors.convenio}</p> : null}
+              {agreementsError ? (
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+                  <p className="font-medium">Não foi possível carregar os convênios.</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-rose-500/80">{agreementsError}</span>
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0"
+                      onClick={retryAgreements}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
               <Select
                 value={convenioId}
-                onValueChange={setConvenioId}
-                disabled={fieldsDisabled}
+                onValueChange={handleConvenioChange}
+                disabled={fieldsDisabled || agreementsLoading}
               >
                 <SelectTrigger id="sales-convenio">
-                  <SelectValue placeholder="Selecione um convênio" />
+                  <SelectValue
+                    placeholder={
+                      agreementsLoading
+                        ? 'Carregando convênios…'
+                        : hasAgreementOptions
+                          ? 'Selecione um convênio'
+                          : 'Nenhum convênio disponível'
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {CONVENIO_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {agreementsLoading ? (
+                    <SelectItem value="__loading__" disabled>
+                      Carregando convênios…
                     </SelectItem>
-                  ))}
+                  ) : hasAgreementOptions ? (
+                    agreementOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="__empty__" disabled>
+                      Nenhum convênio disponível
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+              {!agreementsLoading && !agreementsError && !hasAgreementOptions ? (
+                <p className="text-xs text-foreground-muted">
+                  Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="sales-product">Produto</Label>
               {errors.product ? <p className="text-xs text-rose-400">{errors.product}</p> : null}
               <Select
                 value={productId}
-                onValueChange={setProductId}
-                disabled={fieldsDisabled || productOptions.length === 0}
+                onValueChange={handleProductChange}
+                disabled={fieldsDisabled || agreementsLoading || !convenioId}
               >
                 <SelectTrigger id="sales-product">
-                  <SelectValue placeholder="Selecione um produto" />
+                  <SelectValue
+                    placeholder={
+                      !convenioId
+                        ? 'Selecione um convênio primeiro'
+                        : agreementsLoading
+                          ? 'Carregando produtos…'
+                          : productOptions.length > 0
+                            ? 'Selecione um produto'
+                            : 'Nenhum produto disponível'
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {(productOptions.length > 0 ? productOptions : [NO_PRODUCT_OPTION]).map((option) => (
-                    <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
-                      {option.label}
+                  {!convenioId ? (
+                    <SelectItem value="__select-convenio__" disabled>
+                      Selecione um convênio primeiro
                     </SelectItem>
-                  ))}
+                  ) : productOptions.length > 0 ? (
+                    productOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="__no-products__" disabled>
+                      Nenhum produto disponível para este convênio
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
+              {convenioId && !agreementsLoading && productOptions.length === 0 ? (
+                <p className="text-xs text-foreground-muted">
+                  Este convênio ainda não possui produtos configurados. Atualize as configurações para continuar.
+                </p>
+              ) : null}
             </div>
           </div>
 
