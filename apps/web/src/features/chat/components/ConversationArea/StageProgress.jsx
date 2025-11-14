@@ -7,7 +7,19 @@ import {
   normalizeStage,
 } from './utils/stage.js';
 
-const STAGE_SEQUENCE = Object.keys(STAGE_LABELS).filter((key) => key !== 'DESCONHECIDO');
+const STAGE_SEQUENCE = [
+  'NOVO',
+  'CONECTADO',
+  'QUALIFICACAO',
+  'PROPOSTA',
+  'DOCUMENTACAO',
+  'DOCUMENTOS_AVERBACAO',
+  'AGUARDANDO',
+  'AGUARDANDO_CLIENTE',
+  'LIQUIDACAO',
+  'APROVADO_LIQUIDACAO',
+  'RECICLAR',
+];
 
 const ACTIVE_STEP_TONE = {
   info: 'border-[color:var(--accent-inbox-primary)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)] text-[color:var(--accent-inbox-primary)]',

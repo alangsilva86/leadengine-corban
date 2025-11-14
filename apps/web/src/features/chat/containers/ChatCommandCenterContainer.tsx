@@ -16,6 +16,9 @@ import { getTenantId } from '@/lib/auth.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import LossReasonDialog from '../components/ConversationArea/LossReasonDialog.jsx';
 import { LOSS_REASONS, LOSS_REASON_HELPERS } from '../components/ConversationArea/lossReasons.js';
+import useSalesSimulation from '../api/useSalesSimulation.js';
+import useSalesProposal from '../api/useSalesProposal.js';
+import useSalesDeal from '../api/useSalesDeal.js';
 
 const AI_MODE_VALUES = ['assist', 'auto', 'manual'] as const;
 
@@ -455,6 +458,15 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     selectedLead,
     currentUser: currentUser ?? null,
   });
+  const salesSimulationMutation = useSalesSimulation({
+    fallbackTicketId: controller.selectedTicketId,
+  });
+  const salesProposalMutation = useSalesProposal({
+    fallbackTicketId: controller.selectedTicketId,
+  });
+  const salesDealMutation = useSalesDeal({
+    fallbackTicketId: controller.selectedTicketId,
+  });
 
   const sendMessage = useCallback(
     ({
@@ -776,9 +788,158 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     [controller, currentUser?.id]
   );
 
-  const handleGenerateProposal = useCallback(() => {
-    toast.success('Proposta gerada.');
-  }, []);
+  const handleCreateSalesSimulation = useCallback(
+    async ({
+      calculationSnapshot,
+      leadId,
+      stage,
+      metadata,
+    }: {
+      calculationSnapshot: Record<string, unknown>;
+      leadId?: string | null;
+      stage?: string | null;
+      metadata?: Record<string, unknown> | null;
+    }) => {
+      const ticketId = controller.selectedTicketId;
+      if (!ticketId) {
+        toast.error('Selecione um ticket para registrar a simulação.');
+        return;
+      }
+
+      try {
+        const result = await salesSimulationMutation.mutateAsync({
+          ticketId,
+          calculationSnapshot,
+          leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
+          stage: stage ?? null,
+          metadata: metadata ?? null,
+        });
+        const updatedTicketId = result?.ticket?.id ?? ticketId;
+        if (updatedTicketId) {
+          controller.selectTicket(updatedTicketId);
+        }
+        toast.success('Simulação registrada com sucesso');
+        return result;
+      } catch (error: any) {
+        toast.error('Não foi possível registrar a simulação', {
+          description: error?.message ?? 'Tente novamente em instantes.',
+        });
+        throw error;
+      }
+    },
+    [
+      controller.selectedTicket?.lead?.id,
+      controller.selectedTicketId,
+      controller.selectTicket,
+      salesSimulationMutation,
+    ],
+  );
+
+  const handleCreateSalesProposal = useCallback(
+    async ({
+      calculationSnapshot,
+      leadId,
+      simulationId,
+      stage,
+      metadata,
+    }: {
+      calculationSnapshot: Record<string, unknown>;
+      leadId?: string | null;
+      simulationId?: string | null;
+      stage?: string | null;
+      metadata?: Record<string, unknown> | null;
+    }) => {
+      const ticketId = controller.selectedTicketId;
+      if (!ticketId) {
+        toast.error('Selecione um ticket para registrar a proposta.');
+        return;
+      }
+
+      try {
+        const result = await salesProposalMutation.mutateAsync({
+          ticketId,
+          calculationSnapshot,
+          leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
+          simulationId: simulationId ?? null,
+          stage: stage ?? null,
+          metadata: metadata ?? null,
+        });
+        const updatedTicketId = result?.ticket?.id ?? ticketId;
+        if (updatedTicketId) {
+          controller.selectTicket(updatedTicketId);
+        }
+        toast.success('Proposta registrada com sucesso');
+        return result;
+      } catch (error: any) {
+        toast.error('Não foi possível registrar a proposta', {
+          description: error?.message ?? 'Tente novamente em instantes.',
+        });
+        throw error;
+      }
+    },
+    [
+      controller.selectedTicket?.lead?.id,
+      controller.selectedTicketId,
+      controller.selectTicket,
+      salesProposalMutation,
+    ],
+  );
+
+  const handleCreateSalesDeal = useCallback(
+    async ({
+      calculationSnapshot,
+      leadId,
+      simulationId,
+      proposalId,
+      stage,
+      metadata,
+      closedAt,
+    }: {
+      calculationSnapshot: Record<string, unknown>;
+      leadId?: string | null;
+      simulationId?: string | null;
+      proposalId?: string | null;
+      stage?: string | null;
+      metadata?: Record<string, unknown> | null;
+      closedAt?: string | null;
+    }) => {
+      const ticketId = controller.selectedTicketId;
+      if (!ticketId) {
+        toast.error('Selecione um ticket para registrar o negócio.');
+        return;
+      }
+
+      try {
+        const result = await salesDealMutation.mutateAsync({
+          ticketId,
+          calculationSnapshot,
+          leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
+          simulationId: simulationId ?? null,
+          proposalId: proposalId ?? null,
+          stage: stage ?? null,
+          metadata: metadata ?? null,
+          closedAt: closedAt ?? null,
+        });
+        const updatedTicketId = result?.ticket?.id ?? ticketId;
+        if (updatedTicketId) {
+          controller.selectTicket(updatedTicketId);
+        }
+        toast.success('Negócio registrado com sucesso');
+        return result;
+      } catch (error: any) {
+        toast.error('Não foi possível registrar o negócio', {
+          description: error?.message ?? 'Tente novamente em instantes.',
+        });
+        throw error;
+      }
+    },
+    [
+      controller.selectedTicket?.lead?.id,
+      controller.selectedTicketId,
+      controller.selectTicket,
+      salesDealMutation,
+    ],
+  );
 
   const handleScheduleFollowUp = useCallback(() => {
     toast.info('Agendar follow-up', {
@@ -1002,7 +1163,6 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onRegisterResult: conversationRegisterResultHandler,
     onRegisterCallResult: conversationRegisterCallResultHandler,
     onAssign: conversationAssignHandler,
-    onGenerateProposal: handleGenerateProposal,
     onScheduleFollowUp: conversationScheduleFollowUpHandler,
     onSendSMS: handleSendSms,
     onEditContact: handleEditContact,
@@ -1022,6 +1182,15 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onTakeOver: selectedTicket && isAiModeReady ? handleAiTakeOver : undefined,
     onGiveBackToAi: selectedTicket && isAiModeReady ? handleAiGiveBack : undefined,
     onAiModeChange: selectedTicket && isAiModeReady ? handleAiModeChange : undefined,
+    sales: {
+      onCreateSimulation: handleCreateSalesSimulation,
+      onCreateProposal: handleCreateSalesProposal,
+      onCreateDeal: handleCreateSalesDeal,
+      isCreatingSimulation: salesSimulationMutation.isPending,
+      isCreatingProposal: salesProposalMutation.isPending,
+      isCreatingDeal: salesDealMutation.isPending,
+      queueAlerts: controller.queueAlerts ?? [],
+    },
   };
 
   return (

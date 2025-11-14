@@ -404,6 +404,11 @@ const ContactDetailsPanel = ({
   stageKey,
   onDealFieldSave,
   contextSectionRef = null,
+  onOpenSimulation,
+  onOpenProposal,
+  onOpenDeal,
+  salesActionsDisabled = false,
+  salesDisabledReason = null,
 }) => {
   const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const document = ticket?.contact?.document ?? null;
@@ -412,6 +417,8 @@ const ContactDetailsPanel = ({
   const displayName = ticket?.contact?.name ?? identity.displayName ?? '';
 
   const shouldShowDealPanel = DEAL_STAGE_KEYS.has(stageKey);
+
+  const showSalesActions = Boolean(onOpenSimulation || onOpenProposal || onOpenDeal);
 
   const dealFields = useMemo(() => {
     if (!shouldShowDealPanel) {
@@ -510,11 +517,56 @@ const ContactDetailsPanel = ({
               </Button>
             </div>
           </div>
-        </div>
-        <ContactSummary ticket={ticket} />
-        <NextStepEditor ref={nextStepEditorRef} value={nextStepValue} onSave={onNextStepSave} />
+        {showSalesActions ? (
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+              Operações de vendas
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {onOpenSimulation ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenSimulation}
+                  disabled={salesActionsDisabled}
+                >
+                  Registrar simulação
+                </Button>
+              ) : null}
+              {onOpenProposal ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenProposal}
+                  disabled={salesActionsDisabled}
+                >
+                  Gerar proposta
+                </Button>
+              ) : null}
+              {onOpenDeal ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={onOpenDeal}
+                  disabled={salesActionsDisabled}
+                >
+                  Registrar deal
+                </Button>
+              ) : null}
+            </div>
+            {salesActionsDisabled && salesDisabledReason ? (
+              <p className="text-xs text-warning-strong">{salesDisabledReason}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-      <div
+      <ContactSummary ticket={ticket} />
+      <NextStepEditor ref={nextStepEditorRef} value={nextStepValue} onSave={onNextStepSave} />
+    </div>
+    <div
         ref={contextSectionRef}
         tabIndex={-1}
         className="flex w-full flex-col gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"

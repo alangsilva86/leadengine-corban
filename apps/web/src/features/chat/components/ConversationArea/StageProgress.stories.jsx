@@ -29,6 +29,20 @@ export const Proposta = {
   },
 };
 
+export const Qualificando = {
+  args: {
+    currentStage: 'qualificando',
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Alias do novo enum de vendas. O componente converte automaticamente o valor em caixa alta e mantém a nomenclatura tradicional.',
+      },
+    },
+  },
+};
+
 export const Liquidacao = {
   args: {
     currentStage: 'Liquidação',
