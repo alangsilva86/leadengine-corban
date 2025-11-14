@@ -834,7 +834,9 @@ const SimulationModal = ({
                   className="mt-1 font-mono text-xs"
                   value={metadataText}
                   onChange={(event) => setMetadataText(event.target.value)}
-                  placeholder="{\n  \"origin\": \"chat\"\n}"
+                  placeholder={`{
+  "origin": "chat"
+}`}
                   minRows={4}
                   disabled={fieldsDisabled}
                 />
