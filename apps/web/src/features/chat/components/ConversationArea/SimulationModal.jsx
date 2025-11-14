@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Copy, Plus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,12 @@ import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.jsx';
-import { useClipboard } from '@/hooks/use-clipboard.js';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion.jsx';
 import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.js';
 import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 import {
@@ -309,8 +314,6 @@ const SimulationModal = ({
   disabledReason = null,
   queueAlerts = [],
 }) => {
-  const clipboard = useClipboard();
-  const stageTriggerRef = useRef(null);
   const isProposalMode = mode === 'proposal';
   const { convenios } = useConvenioCatalog();
 
@@ -574,6 +577,27 @@ const SimulationModal = ({
     return prefilledSnapshot.offers ?? [];
   }, [calculationResult.offers, prefilledSnapshot.offers]);
 
+  const visibleOffers = useMemo(() => {
+    if (displayOffers.length === 0) {
+      return [];
+    }
+
+    const sorted = [...displayOffers].sort((a, b) => {
+      const rankAValue = Number(a?.rank);
+      const rankBValue = Number(b?.rank);
+      const rankA = Number.isFinite(rankAValue) ? rankAValue : Number.MAX_SAFE_INTEGER;
+      const rankB = Number.isFinite(rankBValue) ? rankBValue : Number.MAX_SAFE_INTEGER;
+      if (rankA === rankB) {
+        const bankA = typeof a?.bankName === 'string' ? a.bankName : '';
+        const bankB = typeof b?.bankName === 'string' ? b.bankName : '';
+        return bankA.localeCompare(bankB);
+      }
+      return rankA - rankB;
+    });
+
+    return sorted.slice(0, 3);
+  }, [displayOffers]);
+
   const currentParameters = useMemo(() => {
     if (calculationResult.parameters) {
       return calculationResult.parameters;
@@ -588,14 +612,14 @@ const SimulationModal = ({
 
   const resolvedOffers = useMemo(
     () =>
-      displayOffers.map((offer) => ({
+      visibleOffers.map((offer) => ({
         ...offer,
         terms: offer.terms.map((term) => ({
           ...term,
           selected: selectionSet.has(`${offer.id}::${term.id}`),
         })),
       })),
-    [displayOffers, selectionSet],
+    [selectionSet, visibleOffers],
   );
   const proposalSummary = useMemo(() => {
     if (!isProposalMode) {
@@ -821,7 +845,7 @@ const SimulationModal = ({
     }
 
     const validKeys = new Set(
-      displayOffers.flatMap((offer) => offer.terms.map((term) => `${offer.id}::${term.id}`)),
+      visibleOffers.flatMap((offer) => offer.terms.map((term) => `${offer.id}::${term.id}`)),
     );
 
     setSelection((prev) => {
@@ -829,15 +853,15 @@ const SimulationModal = ({
       if (filtered.length > 0) {
         return filtered;
       }
-      if (displayOffers.length === 0) {
+      if (visibleOffers.length === 0) {
         return filtered;
       }
-      return displayOffers.flatMap((offer) => {
+      return visibleOffers.flatMap((offer) => {
         const primary = offer.terms[0];
         return primary ? [{ offerId: offer.id, termId: primary.id }] : [];
       });
     });
-  }, [displayOffers, open]);
+  }, [open, visibleOffers]);
 
   const handleToggleTermSelection = (offerId, termId, checked) => {
     setSelection((prev) => {
@@ -861,12 +885,6 @@ const SimulationModal = ({
     setCustomTermInput('');
   };
 
-  const handleCopyMessage = () => {
-    if (!proposalMessage) {
-      return;
-    }
-    clipboard.copy(proposalMessage);
-  };
   const validateForm = () => {
     const nextErrors = {};
 
@@ -1053,7 +1071,7 @@ const SimulationModal = ({
         ) : null}
 
         <div className="mt-4 space-y-6">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="sales-convenio">Convênio</Label>
               {errors.convenio ? <p className="text-xs text-rose-400">{errors.convenio}</p> : null}
@@ -1145,42 +1163,6 @@ const SimulationModal = ({
               <p className="text-xs text-muted-foreground">
                 Usada para validar a janela vigente e a vigência das taxas configuradas.
               </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Etapa (opcional)</Label>
-              <Select value={stage} onValueChange={setStage} disabled={fieldsDisabled || stageOptions.length === 0}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma etapa" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem key="__none__" value={NO_STAGE_VALUE}>
-                    Sem alteração
-                  </SelectItem>
-                  {stageOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Lead (opcional)</Label>
-              <Input
-                value={leadId}
-                onChange={(event) => setLeadId(event.target.value)}
-                placeholder="Identificador do lead"
-                disabled={fieldsDisabled}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Simulação (opcional)</Label>
-              <Input
-                value={simulationId}
-                onChange={(event) => setSimulationId(event.target.value)}
-                placeholder="Identificador da simulação"
-                disabled={fieldsDisabled}
-              />
             </div>
           </div>
 
@@ -1299,7 +1281,7 @@ const SimulationModal = ({
                 Configure convênio, produto e parâmetros para gerar as condições automaticamente.
               </div>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-4 lg:grid-cols-3">
                 {resolvedOffers.map((offer) => (
                   <div
                     key={offer.id}
@@ -1369,18 +1351,63 @@ const SimulationModal = ({
             {errors.selection ? <p className="text-sm text-destructive">{errors.selection}</p> : null}
           </div>
 
-          <div className="space-y-2">
-            <Label>Metadata (JSON opcional)</Label>
-            <Textarea
-              value={metadataText}
-              onChange={(event) => setMetadataText(event.target.value)}
-              placeholder="{ }"
-              className="font-mono text-xs"
-              rows={4}
-              disabled={fieldsDisabled}
-            />
-            {errors.metadata ? <p className="text-sm text-destructive">{errors.metadata}</p> : null}
-          </div>
+          <Accordion type="single" collapsible className="rounded-xl border border-border/60 bg-muted/10">
+            <AccordionItem value="advanced">
+              <AccordionTrigger className="px-4">Opções avançadas</AccordionTrigger>
+              <AccordionContent className="px-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Etapa (opcional)</Label>
+                    <Select value={stage} onValueChange={setStage} disabled={fieldsDisabled || stageOptions.length === 0}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma etapa" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem key="__none__" value={NO_STAGE_VALUE}>
+                          Sem alteração
+                        </SelectItem>
+                        {stageOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Lead (opcional)</Label>
+                    <Input
+                      value={leadId}
+                      onChange={(event) => setLeadId(event.target.value)}
+                      placeholder="Identificador do lead"
+                      disabled={fieldsDisabled}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Simulação (opcional)</Label>
+                    <Input
+                      value={simulationId}
+                      onChange={(event) => setSimulationId(event.target.value)}
+                      placeholder="Identificador da simulação"
+                      disabled={fieldsDisabled}
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <Label>Metadata (JSON opcional)</Label>
+                  <Textarea
+                    value={metadataText}
+                    onChange={(event) => setMetadataText(event.target.value)}
+                    placeholder="{ }"
+                    className="font-mono text-xs"
+                    rows={4}
+                    disabled={fieldsDisabled}
+                  />
+                  {errors.metadata ? <p className="text-sm text-destructive">{errors.metadata}</p> : null}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
 
           <div className="space-y-2">
             <Label>Pré-visualização do payload</Label>
@@ -1389,17 +1416,11 @@ const SimulationModal = ({
 
           {isProposalMode ? (
             <div className="rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Mensagem para WhatsApp</h3>
-                  <p className="text-xs text-foreground-muted">
-                    Copie e envie diretamente para o cliente com as condições selecionadas.
-                  </p>
-                </div>
-                <Button type="button" size="sm" variant="outline" onClick={handleCopyMessage} disabled={!proposalMessage}>
-                  <Copy className="mr-2 h-3.5 w-3.5" aria-hidden />
-                  Copiar mensagem
-                </Button>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">Mensagem para WhatsApp</h3>
+                <p className="text-xs text-foreground-muted">
+                  Use o resumo para copiar e enviar as condições selecionadas.
+                </p>
               </div>
               <Textarea value={proposalMessage} readOnly rows={6} className="mt-3 text-sm" />
               <p className="mt-2 text-xs text-muted-foreground">Arquivo gerado: {proposalFileName}</p>
@@ -1411,14 +1432,9 @@ const SimulationModal = ({
           <p className="text-sm text-muted-foreground">
             Revisado automaticamente com base nas tabelas do convênio. Ajustes manuais ficam registrados no payload.
           </p>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange?.(false)} disabled={isSubmitting}>
-              Cancelar
-            </Button>
-            <Button type="button" onClick={handleSubmit} disabled={isSubmitting || fieldsDisabled}>
-              {isProposalMode ? 'Enviar proposta' : 'Registrar simulação'}
-            </Button>
-          </div>
+          <Button type="button" onClick={handleSubmit} disabled={isSubmitting || fieldsDisabled}>
+            {isProposalMode ? 'Gerar proposta' : 'Simular proposta'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
