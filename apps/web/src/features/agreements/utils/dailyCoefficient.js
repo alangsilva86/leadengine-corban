@@ -36,6 +36,7 @@ const calculatePresentValueUnit = (dailyRate, graceDays, months) => {
 
 export const simulateConvenioDeal = ({
   margem,
+  targetNetAmount,
   prazoMeses,
   dataSimulacao,
   janela,
@@ -49,23 +50,60 @@ export const simulateConvenioDeal = ({
     throw new Error('Nenhuma taxa configurada para o produto/modalidade nesta data.');
   }
 
+  if (!Number.isFinite(prazoMeses) || prazoMeses <= 0) {
+    throw new Error('Prazo inválido para simulação.');
+  }
+
   const contratoDate = clampDate(dataSimulacao, janela.start, janela.end);
   const graceDays = differenceInDays(contratoDate, janela.firstDueDate);
   const dailyRate = monthlyToDailyRate(taxa.monthlyRate);
   const presentValueUnit = calculatePresentValueUnit(dailyRate, graceDays, prazoMeses);
 
-  const bruto = margem * presentValueUnit;
+  if (!Number.isFinite(presentValueUnit) || presentValueUnit <= 0) {
+    throw new Error('Não foi possível calcular o coeficiente diário para este prazo.');
+  }
+
+  const resolveMargin = () => {
+    if (Number.isFinite(margem) && margem > 0) {
+      return margem;
+    }
+
+    if (Number.isFinite(targetNetAmount) && targetNetAmount > 0) {
+      const tacPercent = taxa.tacPercent ?? 0;
+      const percentFactor = 1 - tacPercent / 100;
+      if (percentFactor <= 0) {
+        throw new Error('TAC percentual inválida para calcular valor líquido desejado.');
+      }
+      const tacFlat = taxa.tacFlat ?? 0;
+      const adjustedNet = targetNetAmount + tacFlat;
+      const margin = adjustedNet / (presentValueUnit * percentFactor);
+      if (!Number.isFinite(margin) || margin <= 0) {
+        throw new Error('Valor desejado não pôde ser convertido em margem.');
+      }
+      return margin;
+    }
+
+    throw new Error('Informe a margem ou o valor líquido desejado.');
+  };
+
+  const effectiveMargin = resolveMargin();
+
+  const bruto = effectiveMargin * presentValueUnit;
   const tacPercent = taxa.tacPercent ?? 0;
   const tacFlat = taxa.tacFlat ?? 0;
   const tacValue = (tacPercent / 100) * bruto + tacFlat;
   const liquidValue = bruto - tacValue;
-  const coefficient = margem / bruto;
+  const coefficient = effectiveMargin / bruto;
+
+  const baseType = Number.isFinite(margem) && margem > 0 ? 'margin' : 'net';
+  const baseValue = baseType === 'margin' ? effectiveMargin : targetNetAmount;
 
   return {
     coefficient,
     grossAmount: bruto,
     tacValue,
     netAmount: liquidValue,
+    installment: effectiveMargin,
     details: {
       monthlyRate: taxa.monthlyRate,
       dailyRate,
@@ -77,6 +115,11 @@ export const simulateConvenioDeal = ({
       },
       modalidade: taxa.modalidade,
       produto: taxa.produto,
+      presentValueUnit,
+      baseType,
+      baseValue,
+      tacPercent,
+      tacFlat,
     },
   };
 };

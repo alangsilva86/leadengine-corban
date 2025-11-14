@@ -93,6 +93,7 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 
 - `components/dashboard/useDashboardData.ts`
 - `features/agreements/useAgreements.js`
+- `features/agreements/useConvenioCatalog.js`
 - `features/chat/api/useInboxLayoutPreferences.js`
 - `features/chat/api/useMessagesQuery.js`
 - `features/chat/api/useNotesMutation.js`
@@ -115,3 +116,14 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 - `features/whatsapp/hooks/useInstanceLiveUpdates.js`
 - `features/whatsapp/hooks/useQrImageSource.js`
 - `features/whatsapp/hooks/useWhatsAppInstances.js`
+
+### Sales simulation modal
+
+- `features/chat/components/ConversationArea/SimulationModal.jsx` centraliza o fluxo de simulação e proposta.
+- O componente consome `useConvenioCatalog` para carregar janelas, taxas e prazos disponíveis por convênio/produto.
+- Ao selecionar convênio, produto, data, base de cálculo (margem ou valor líquido) e prazos, as condições são calculadas via
+  `simulateConvenioDeal` e exibidas automaticamente por banco/tabela, incluindo coeficiente, TAC e valores bruto/líquido.
+- A função `buildSimulationSnapshot` agrega o resultado com o novo campo `parameters`, permitindo rastrear janela, modalidade e
+  base de cálculo utilizada em cada submissão.
+- O modo de proposta reutiliza as mesmas condições calculadas para montar mensagem padrão e arquivo PDF com rastreabilidade das
+  tabelas selecionadas.

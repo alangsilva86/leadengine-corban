@@ -41,6 +41,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Switch } from '@/components/ui/switch.jsx';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
+import { buildConvenioCatalog } from '@/features/agreements/data/convenioCatalog.js';
 import {
   computeWindowStatus,
   formatCurrency,
@@ -106,115 +107,6 @@ const generateId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `id-${Math.random().toString(36).slice(2)}`;
-
-const DEFAULT_CONVENIOS = [
-  {
-    id: 'gov-pr',
-    nome: 'Governo do Paraná',
-    averbadora: 'Celepar',
-    tipo: 'ESTADUAL',
-    status: 'ATIVO',
-    produtos: ['Cartão benefício – Saque', 'Consignado tradicional'],
-    responsavel: 'Ana Paula (Comercial)',
-    archived: false,
-    janelas: [
-      {
-        id: 'gov-pr-nov',
-        start: new Date('2025-11-01'),
-        end: new Date('2025-11-30'),
-        firstDueDate: new Date('2026-02-10'),
-        label: 'Novembro/25',
-      },
-      {
-        id: 'gov-pr-dez',
-        start: new Date('2025-12-01'),
-        end: new Date('2025-12-31'),
-        firstDueDate: new Date('2026-03-10'),
-        label: 'Dezembro/25',
-      },
-    ],
-    taxas: [
-      {
-        id: 'gov-pr-saque-normal',
-        produto: 'Cartão benefício – Saque',
-        modalidade: 'NORMAL',
-        monthlyRate: 4.8,
-        tacPercent: 2.5,
-        tacFlat: 0,
-        validFrom: new Date('2025-10-01'),
-        validUntil: null,
-        status: 'Ativa',
-      },
-      {
-        id: 'gov-pr-saque-flex1',
-        produto: 'Cartão benefício – Saque',
-        modalidade: 'FLEX1',
-        monthlyRate: 4.3,
-        tacPercent: 2.5,
-        tacFlat: 0,
-        validFrom: new Date('2025-10-01'),
-        validUntil: null,
-        status: 'Ativa',
-      },
-      {
-        id: 'gov-pr-saque-flex2',
-        produto: 'Cartão benefício – Saque',
-        modalidade: 'FLEX2',
-        monthlyRate: 3.9,
-        tacPercent: 2.5,
-        tacFlat: 0,
-        validFrom: new Date('2025-10-01'),
-        validUntil: null,
-        status: 'Ativa',
-      },
-      {
-        id: 'gov-pr-consig-normal',
-        produto: 'Consignado tradicional',
-        modalidade: 'NORMAL',
-        monthlyRate: 2.99,
-        tacPercent: 1.8,
-        tacFlat: 0,
-        validFrom: new Date('2025-10-01'),
-        validUntil: null,
-        status: 'Ativa',
-      },
-    ],
-    history: [
-      {
-        id: 'hist-1',
-        author: 'Carlos (Admin)',
-        message: 'Taxa Normal ajustada de 4,50% para 4,80%.',
-        createdAt: new Date('2025-10-14T10:22:00'),
-      },
-      {
-        id: 'hist-2',
-        author: 'Ana Paula (Comercial)',
-        message: 'Criada janela Novembro/25 com 1º vencimento em 10/02/26.',
-        createdAt: new Date('2025-09-30T17:45:00'),
-      },
-    ],
-  },
-  {
-    id: 'pref-curitiba',
-    nome: 'Prefeitura de Curitiba',
-    averbadora: 'Inova Curitiba',
-    tipo: 'MUNICIPAL',
-    status: 'EM_IMPLANTACAO',
-    produtos: ['Consignado tradicional'],
-    responsavel: 'Mariana (Implantação)',
-    archived: false,
-    janelas: [],
-    taxas: [],
-    history: [
-      {
-        id: 'hist-3',
-        author: 'Mariana (Implantação)',
-        message: 'Convênio criado e aguardando calendário de contratação.',
-        createdAt: new Date('2025-11-05T09:10:00'),
-      },
-    ],
-  },
-];
 
 const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, onCreate }) => (
   <Card className="border-dashed border-border/60">
@@ -1194,8 +1086,8 @@ const ConvenioDetails = ({ convenio, onUpdateBasic, onUpsertWindow, onRemoveWind
 const ConveniosSettingsTab = () => {
   const [role, setRole] = useState('admin');
   const [requireApproval, setRequireApproval] = useState(true);
-  const [convenios, setConvenios] = useState(DEFAULT_CONVENIOS);
-  const [selectedId, setSelectedId] = useState(DEFAULT_CONVENIOS[0]?.id ?? null);
+  const [convenios, setConvenios] = useState(() => buildConvenioCatalog());
+  const [selectedId, setSelectedId] = useState(() => (convenios[0]?.id ?? null));
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const isDesktop = useMediaQuery('(min-width: 1024px)');
