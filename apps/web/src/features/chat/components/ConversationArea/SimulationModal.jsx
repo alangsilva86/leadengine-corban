@@ -363,11 +363,17 @@ const SimulationModal = ({
   );
 
   const productOptions = useMemo(() => {
+    const optionsFromAgreements = productsByAgreement.get(convenioId);
+    if (optionsFromAgreements && optionsFromAgreements.length > 0) {
+      return optionsFromAgreements;
+    }
+
     if (!selectedConvenio) {
       return [];
     }
+
     return (selectedConvenio.produtos ?? []).map((produto) => ({ value: produto, label: produto }));
-  }, [selectedConvenio]);
+  }, [convenioId, productsByAgreement, selectedConvenio]);
 
   const simulationDate = useMemo(() => parseDateInput(simulationDateInput) ?? new Date(), [simulationDateInput]);
 
@@ -532,30 +538,6 @@ const SimulationModal = ({
       termOptions: termList,
       taxIds: activeTaxes.map((tax) => tax.id).filter(Boolean),
     };
-    const convenioOption = agreementOptions.find((option) => option.value === convenioId);
-    if (convenioOption && convenioOption.label !== convenioLabel) {
-      setConvenioLabel(convenioOption.label);
-    }
-
-    const options = productsByAgreement.get(convenioId) ?? [];
-    const productOption = options.find((option) => option.value === productId);
-
-    if (options.length > 0 && !productOption && productId) {
-      setProductId('');
-      setProductLabel('');
-      return;
-    }
-
-    if (productOption && productOption.label !== productLabel) {
-      setProductLabel(productOption.label);
-    }
-  }, [agreementOptions, convenioId, convenioLabel, open, productId, productLabel, productsByAgreement]);
-
-  const productOptions = useMemo(
-    () => productsByAgreement.get(convenioId) ?? [],
-    [convenioId, productsByAgreement]
-  );
-
     return { offers, parameters, issues };
   }, [
     activeTaxes,
@@ -745,23 +727,60 @@ const SimulationModal = ({
       return;
     }
 
-    const option = convenios.find((item) => item.id === convenioId);
-    setConvenioLabel(option?.nome ?? '');
-    if (!option) {
-      setProductId('');
-      setProductLabel('');
+    const convenioOption = agreementOptions.find((option) => option.value === convenioId);
+    const selectedConvenioLabel = selectedConvenio?.nome ?? '';
+    const nextConvenioLabel = convenioOption?.label ?? selectedConvenioLabel;
+    if (convenioLabel !== nextConvenioLabel) {
+      setConvenioLabel(nextConvenioLabel);
+    }
+
+    if (!convenioId || (!convenioOption && !selectedConvenio)) {
+      if (productId !== '') {
+        setProductId('');
+      }
+      if (productLabel !== '') {
+        setProductLabel('');
+      }
       return;
     }
 
-    if (!option.produtos?.includes(productId)) {
-      const fallback = option.produtos?.[0] ?? '';
-      setProductId(fallback);
-      setProductLabel(fallback ?? '');
+    if (productOptions.length === 0) {
+      if (productId !== '') {
+        setProductId('');
+      }
+      if (productLabel !== '') {
+        setProductLabel('');
+      }
       return;
     }
 
-    setProductLabel(productId ?? '');
-  }, [convenioId, convenios, open, productId]);
+    const productOption = productOptions.find((option) => option.value === productId);
+    if (!productOption) {
+      const fallback = productOptions[0];
+      const fallbackValue = fallback?.value ?? '';
+      const fallbackLabel = fallback?.label ?? '';
+      if (productId !== fallbackValue) {
+        setProductId(fallbackValue);
+      }
+      if (productLabel !== fallbackLabel) {
+        setProductLabel(fallbackLabel);
+      }
+      return;
+    }
+
+    if (productLabel !== productOption.label) {
+      setProductLabel(productOption.label);
+    }
+  }, [
+    agreementOptions,
+    convenioId,
+    convenioLabel,
+    open,
+    productId,
+    productLabel,
+    productOptions,
+    selectedConvenio,
+  ]);
 
   useEffect(() => {
     if (!open) {
@@ -1019,15 +1038,6 @@ const SimulationModal = ({
         <div className="mt-4 space-y-6">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
-              <Label>Convênio</Label>
-              <Select value={convenioId} onValueChange={setConvenioId} disabled={fieldsDisabled}>
-                <SelectTrigger ref={stageTriggerRef}>
-                  <SelectValue placeholder="Selecione um convênio" />
-                </SelectTrigger>
-                <SelectContent>
-                  {convenios.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.nome}
               <Label htmlFor="sales-convenio">Convênio</Label>
               {errors.convenio ? <p className="text-xs text-rose-400">{errors.convenio}</p> : null}
               {agreementsError ? (
@@ -1084,22 +1094,6 @@ const SimulationModal = ({
               {errors.convenio ? <p className="text-sm text-destructive">{errors.convenio}</p> : null}
             </div>
             <div className="space-y-2">
-              <Label>Produto</Label>
-              <Select value={productId} onValueChange={setProductId} disabled={fieldsDisabled || productOptions.length === 0}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um produto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-              {!agreementsLoading && !agreementsError && !hasAgreementOptions ? (
-                <p className="text-xs text-foreground-muted">
-                  Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="sales-product">Produto</Label>
               {errors.product ? <p className="text-xs text-rose-400">{errors.product}</p> : null}
               <Select
@@ -1145,6 +1139,11 @@ const SimulationModal = ({
                 </p>
               ) : null}
             </div>
+            {!agreementsLoading && !agreementsError && !hasAgreementOptions ? (
+              <p className="text-xs text-foreground-muted">
+                Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
+              </p>
+            ) : null}
             <div className="space-y-2">
               <Label>Data da simulação</Label>
               <Input
