@@ -1257,7 +1257,8 @@ const calculateInboxMetrics = (
     totalMessages += stats.totalMessages;
     totalOutboundMessages += stats.timeline.outboundCount;
 
-    const stage = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata?.pipelineStep : 'desconhecido';
+    const stageKey = ticket.stage ?? 'desconhecido';
+    const stage = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : stageKey;
     if (stats.durationMinutes !== null) {
       const bucket = handleTimeByStageAccumulator.get(stage) ?? [];
       bucket.push(stats.durationMinutes);
@@ -1327,7 +1328,8 @@ export const listTickets = async (
 
   const hydratedItems: TicketHydrated[] = rawItems.map((ticket: Ticket) => {
     const stats = conversations.get(ticket.id);
-    const pipelineStep = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : null;
+    const pipelineStep =
+      typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : ticket.stage ?? null;
     const qualityScore = stats && stats.totalMessages > 0 ? Math.round(((stats.totalMessages - stats.failedCount) / stats.totalMessages) * 100) : null;
 
     const hydrated: TicketHydrated = {
@@ -1387,7 +1389,8 @@ export const getTicketById = async (
     includeSet.has('notes') ? resolveTicketNotes(tenantId, [ticket]) : Promise.resolve(new Map()),
   ]);
 
-  const pipelineStep = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : null;
+  const pipelineStep =
+    typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : ticket.stage ?? null;
   const qualityScore = stats && stats.totalMessages > 0 ? Math.round(((stats.totalMessages - stats.failedCount) / stats.totalMessages) * 100) : null;
 
   const hydrated: TicketHydrated = {

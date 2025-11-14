@@ -46,6 +46,9 @@ model Tenant {
   aiSuggestions       AiSuggestion[]
   aiRuns              AiRun[]
   aiMemories          AiMemory[]
+  salesSimulations    SalesSimulation[]
+  salesProposals      SalesProposal[]
+  salesDeals          SalesDeal[]
 
   @@map("tenants")
 }
@@ -73,6 +76,21 @@ enum AiAssistantMode {
   IA_AUTO
   COPILOTO
   HUMANO
+}
+
+enum TicketStage {
+  novo
+  conectado
+  qualificacao
+  proposta
+  documentacao
+  documentos_averbacao
+  aguardando
+  aguardando_cliente
+  liquidacao
+  aprovado_liquidacao
+  reciclar
+  desconhecido
 }
 
 model User {
@@ -471,6 +489,7 @@ model Ticket {
   userId             String?
   status             TicketStatus   @default(OPEN)
   priority           TicketPriority @default(NORMAL)
+  stage              TicketStage    @default(novo)
   subject            String?
   channel            ChannelType
   lastMessageAt      DateTime?
@@ -489,7 +508,11 @@ model Ticket {
   queue    Queue     @relation(fields: [queueId], references: [id], onDelete: Cascade)
   assignee User?     @relation("TicketAssignee", fields: [userId], references: [id], onDelete: SetNull)
   messages Message[]
+  salesSimulations SalesSimulation[]
+  salesProposals   SalesProposal[]
+  salesDeals       SalesDeal[]
 
+  @@index([tenantId, stage])
   @@map("tickets")
 }
 
@@ -566,6 +589,76 @@ model InboundMediaJob {
   @@map("inbound_media_jobs")
 }
 
+model SalesSimulation {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  ticketId            String
+  leadId              String?
+  calculationSnapshot Json
+  metadata            Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lead      Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  proposals SalesProposal[]
+  deals     SalesDeal[]
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, leadId])
+  @@map("sales_simulations")
+}
+
+model SalesProposal {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  ticketId            String
+  leadId              String?
+  simulationId        String?
+  calculationSnapshot Json
+  metadata            Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket     Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lead       Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  simulation SalesSimulation? @relation(fields: [simulationId], references: [id], onDelete: SetNull)
+  deals      SalesDeal[]
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, leadId])
+  @@index([tenantId, simulationId])
+  @@map("sales_proposals")
+}
+
+model SalesDeal {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  ticketId            String
+  leadId              String?
+  simulationId        String?
+  proposalId          String?
+  calculationSnapshot Json
+  metadata            Json     @default("{}")
+  closedAt            DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket     Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lead       Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  simulation SalesSimulation? @relation(fields: [simulationId], references: [id], onDelete: SetNull)
+  proposal   SalesProposal?   @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, ticketId])
+  @@index([tenantId, leadId])
+  @@index([tenantId, simulationId])
+  @@index([tenantId, proposalId])
+  @@map("sales_deals")
+}
+
 model Lead {
   id                String     @id @default(cuid())
   tenantId          String
@@ -594,6 +687,9 @@ model Lead {
   campaign   Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   assignee   User?          @relation("LeadAssignee", fields: [userId], references: [id], onDelete: SetNull)
   activities LeadActivity[]
+  salesSimulations SalesSimulation[]
+  salesProposals   SalesProposal[]
+  salesDeals       SalesDeal[]
 
   @@unique([tenantId, contactId], map: "leads_tenant_contact_unique")
   @@map("leads")

@@ -37,6 +37,21 @@ export {
   assignTicket,
   closeTicket,
   listTickets,
+  createSalesSimulation,
+  findSalesSimulationById,
+  listSalesSimulations,
+  updateSalesSimulation,
+  deleteSalesSimulation,
+  createSalesProposal,
+  findSalesProposalById,
+  listSalesProposals,
+  updateSalesProposal,
+  deleteSalesProposal,
+  createSalesDeal,
+  findSalesDealById,
+  listSalesDeals,
+  updateSalesDeal,
+  deleteSalesDeal,
   createMessage,
   createOutboundMessage,
   updateMessage,
@@ -53,6 +68,19 @@ export type {
   PassthroughMessage,
   PassthroughMessageMedia,
 } from './repositories/ticket-repository';
+
+export type {
+  TicketStage,
+  SalesSimulation,
+  SalesProposal,
+  SalesDeal,
+  CreateSalesSimulationDTO,
+  UpdateSalesSimulationDTO,
+  CreateSalesProposalDTO,
+  UpdateSalesProposalDTO,
+  CreateSalesDealDTO,
+  UpdateSalesDealDTO,
+} from './repositories/ticket-types';
 
 export { resetTicketStore } from './repositories/ticket-repository';
 
