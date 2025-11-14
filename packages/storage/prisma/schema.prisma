@@ -7,8 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DATABASE_DIRECT_URL")
 }
 
@@ -49,6 +49,12 @@ model Tenant {
   salesSimulations    SalesSimulation[]
   salesProposals      SalesProposal[]
   salesDeals          SalesDeal[]
+  agreements          Agreement[]
+  agreementTables     AgreementTable[]
+  agreementWindows    AgreementWindow[]
+  agreementRates      AgreementRate[]
+  agreementHistory    AgreementHistoryEntry[]
+  agreementImportJobs AgreementImportJob[]
 
   @@map("tenants")
 }
@@ -141,7 +147,7 @@ model Queue {
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tickets    Ticket[]
   userQueues UserQueue[]
-  aiConfigs AiConfig[]
+  aiConfigs  AiConfig[]
 
   @@unique([tenantId, name])
   @@map("queues")
@@ -193,11 +199,11 @@ model Contact {
   updatedAt         DateTime              @updatedAt
 
   // Relations
-  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  owner              User?                @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  phones             ContactPhone[]
-  emails             ContactEmail[]
-  tags               ContactTag[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner               User?                @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  phones              ContactPhone[]
+  emails              ContactEmail[]
+  tags                ContactTag[]
   interactions        Interaction[]
   tickets             Ticket[]
   messages            Message[]
@@ -240,28 +246,28 @@ model ContactPhone {
 }
 
 model AiConfig {
-  id                      String   @id @default(cuid())
-  tenantId                String
-  queueId                 String?
-  scopeKey                String   @default("__global__")
-  model                   String
-  temperature             Float    @default(0.3)
-  maxOutputTokens         Int?
-  systemPromptReply       String?
-  systemPromptSuggest     String?
-  structuredOutputSchema  Json?
-  tools                   Json?
-  vectorStoreEnabled      Boolean  @default(false)
-  vectorStoreIds          String[] @default([])
-  streamingEnabled        Boolean  @default(true)
-  defaultMode             AiAssistantMode @default(COPILOTO)
-  confidenceThreshold     Float?   @default(0.0)
-  fallbackPolicy          String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                     String          @id @default(cuid())
+  tenantId               String
+  queueId                String?
+  scopeKey               String          @default("__global__")
+  model                  String
+  temperature            Float           @default(0.3)
+  maxOutputTokens        Int?
+  systemPromptReply      String?
+  systemPromptSuggest    String?
+  structuredOutputSchema Json?
+  tools                  Json?
+  vectorStoreEnabled     Boolean         @default(false)
+  vectorStoreIds         String[]        @default([])
+  streamingEnabled       Boolean         @default(true)
+  defaultMode            AiAssistantMode @default(COPILOTO)
+  confidenceThreshold    Float?          @default(0.0)
+  fallbackPolicy         String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  queue  Queue? @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  queue       Queue?         @relation(fields: [queueId], references: [id], onDelete: SetNull)
   suggestions AiSuggestion[]
   runs        AiRun[]
 
@@ -286,21 +292,21 @@ model AiSuggestion {
 }
 
 model AiRun {
-  id              String   @id @default(cuid())
-  tenantId        String
-  conversationId  String
-  configId        String?
-  runType         String
-  adapter         String?
-  requestPayload  Json
-  responsePayload Json?
-  latencyMs       Int?
-  promptTokens    Int?
+  id               String   @id @default(cuid())
+  tenantId         String
+  conversationId   String
+  configId         String?
+  runType          String
+  adapter          String?
+  requestPayload   Json
+  responsePayload  Json?
+  latencyMs        Int?
+  promptTokens     Int?
   completionTokens Int?
-  totalTokens     Int?
-  costUsd         Decimal? @db.Decimal(10, 6)
-  status          String   @default("success")
-  createdAt       DateTime @default(now())
+  totalTokens      Int?
+  costUsd          Decimal? @db.Decimal(10, 6)
+  status           String   @default("success")
+  createdAt        DateTime @default(now())
 
   tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   config AiConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
@@ -310,15 +316,15 @@ model AiRun {
 }
 
 model AiMemory {
-  id         String          @id @default(cuid())
-  tenantId   String
-  contactId  String
-  topic      String
-  content    String
-  metadata   Json?
-  expiresAt  DateTime?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id        String    @id @default(cuid())
+  tenantId  String
+  contactId String
+  topic     String
+  content   String
+  metadata  Json?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -440,37 +446,37 @@ model Task {
 }
 
 model ContactInteraction {
-  id          String                        @id @default(cuid())
-  tenantId    String
-  contactId   String
-  channel     ContactInteractionChannel
-  direction   ContactInteractionDirection   @default(INBOUND)
-  summary     String
-  payload     Json                          @default("{}")
-  occurredAt  DateTime                      @default(now())
-  createdAt   DateTime                      @default(now())
+  id         String                      @id @default(cuid())
+  tenantId   String
+  contactId  String
+  channel    ContactInteractionChannel
+  direction  ContactInteractionDirection @default(INBOUND)
+  summary    String
+  payload    Json                        @default("{}")
+  occurredAt DateTime                    @default(now())
+  createdAt  DateTime                    @default(now())
 
   // Relations
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, contactId, occurredAt])
   @@map("contact_interactions")
 }
 
 model ContactTask {
-  id           String            @id @default(cuid())
-  tenantId     String
-  contactId    String
-  title        String
-  description  String?
-  dueAt        DateTime?
-  status       ContactTaskStatus @default(PENDING)
-  assigneeId   String?
-  metadata     Json              @default("{}")
-  completedAt  DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id          String            @id @default(cuid())
+  tenantId    String
+  contactId   String
+  title       String
+  description String?
+  dueAt       DateTime?
+  status      ContactTaskStatus @default(PENDING)
+  assigneeId  String?
+  metadata    Json              @default("{}")
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   // Relations
   tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -503,11 +509,11 @@ model Ticket {
   updatedAt          DateTime       @updatedAt
 
   // Relations
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  queue    Queue     @relation(fields: [queueId], references: [id], onDelete: Cascade)
-  assignee User?     @relation("TicketAssignee", fields: [userId], references: [id], onDelete: SetNull)
-  messages Message[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact          Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  queue            Queue             @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  assignee         User?             @relation("TicketAssignee", fields: [userId], references: [id], onDelete: SetNull)
+  messages         Message[]
   salesSimulations SalesSimulation[]
   salesProposals   SalesProposal[]
   salesDeals       SalesDeal[]
@@ -542,12 +548,12 @@ model Message {
   updatedAt       DateTime         @updatedAt
 
   // Relations
-  ticket        Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  sender        User?     @relation("MessageSender", fields: [userId], references: [id], onDelete: SetNull)
-  quotedMessage      Message?          @relation("MessageQuote", fields: [quotedMessageId], references: [id])
-  quotes             Message[]         @relation("MessageQuote")
-  inboundMediaJobs   InboundMediaJob[]
+  ticket           Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  contact          Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sender           User?             @relation("MessageSender", fields: [userId], references: [id], onDelete: SetNull)
+  quotedMessage    Message?          @relation("MessageQuote", fields: [quotedMessageId], references: [id])
+  quotes           Message[]         @relation("MessageQuote")
+  inboundMediaJobs InboundMediaJob[]
 
   @@unique([tenantId, externalId], map: "messages_tenant_external_id_unique")
   @@unique([tenantId, idempotencyKey], map: "messages_tenant_idempotency_key_unique")
@@ -564,7 +570,7 @@ enum InboundMediaJobStatus {
 }
 
 model InboundMediaJob {
-  id                String               @id @default(cuid())
+  id                String                @id @default(cuid())
   tenantId          String
   messageId         String
   messageExternalId String?
@@ -574,18 +580,18 @@ model InboundMediaJob {
   mediaKey          String?
   directPath        String?
   status            InboundMediaJobStatus @default(PENDING)
-  attempts          Int                  @default(0)
+  attempts          Int                   @default(0)
   nextRetryAt       DateTime?
   lastError         String?
-  metadata          Json                 @default("{}")
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  metadata          Json                  @default("{}")
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
+  @@unique([messageId])
   @@index([status, nextRetryAt])
   @@index([tenantId, status])
-  @@unique([messageId])
   @@map("inbound_media_jobs")
 }
 
@@ -599,9 +605,9 @@ model SalesSimulation {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ticket    Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  lead      Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket    Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lead      Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   proposals SalesProposal[]
   deals     SalesDeal[]
 
@@ -621,9 +627,9 @@ model SalesProposal {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ticket     Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  lead       Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket     Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lead       Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull)
   simulation SalesSimulation? @relation(fields: [simulationId], references: [id], onDelete: SetNull)
   deals      SalesDeal[]
 
@@ -634,21 +640,21 @@ model SalesProposal {
 }
 
 model SalesDeal {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   tenantId            String
   ticketId            String
   leadId              String?
   simulationId        String?
   proposalId          String?
   calculationSnapshot Json
-  metadata            Json     @default("{}")
+  metadata            Json      @default("{}")
   closedAt            DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ticket     Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  lead       Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket     Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  lead       Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull)
   simulation SalesSimulation? @relation(fields: [simulationId], references: [id], onDelete: SetNull)
   proposal   SalesProposal?   @relation(fields: [proposalId], references: [id], onDelete: SetNull)
 
@@ -682,11 +688,11 @@ model Lead {
   updatedAt         DateTime   @updatedAt
 
   // Relations
-  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact    Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  campaign   Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  assignee   User?          @relation("LeadAssignee", fields: [userId], references: [id], onDelete: SetNull)
-  activities LeadActivity[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact          Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  campaign         Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  assignee         User?             @relation("LeadAssignee", fields: [userId], references: [id], onDelete: SetNull)
+  activities       LeadActivity[]
   salesSimulations SalesSimulation[]
   salesProposals   SalesProposal[]
   salesDeals       SalesDeal[]
@@ -745,7 +751,7 @@ model BrokerLead {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   allocations LeadAllocation[]
 
   @@unique([tenantId, document], map: "broker_leads_tenant_document_unique")
@@ -770,7 +776,7 @@ model LeadAllocation {
   receivedAt DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
 
-  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   lead     BrokerLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
   campaign Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
@@ -853,6 +859,163 @@ model WhatsAppSession {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@map("whatsapp_sessions")
+}
+
+// ============================================================================
+// Agreements
+// ============================================================================
+
+model Agreement {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  status      String    @default("draft")
+  type        String?
+  segment     String?
+  description String?
+  tags        String[]  @default([])
+  products    Json      @default("{}")
+  metadata    Json      @default("{}")
+  archived    Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tables     AgreementTable[]
+  windows    AgreementWindow[]
+  rates      AgreementRate[]
+  history    AgreementHistoryEntry[]
+  importJobs AgreementImportJob[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@map("agreements")
+}
+
+model AgreementTable {
+  id            String    @id @default(cuid())
+  tenantId      String
+  agreementId   String
+  externalId    String?
+  name          String
+  product       String
+  modality      String
+  version       Int       @default(1)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agreement Agreement         @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  windows   AgreementWindow[]
+  rates     AgreementRate[]
+
+  @@unique([tenantId, agreementId, name, product, modality, version])
+  @@index([tenantId, agreementId])
+  @@map("agreement_tables")
+}
+
+model AgreementWindow {
+  id          String    @id @default(cuid())
+  tenantId    String
+  agreementId String
+  tableId     String?
+  label       String
+  startsAt    DateTime?
+  endsAt      DateTime?
+  isActive    Boolean   @default(true)
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agreement Agreement               @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  table     AgreementTable?         @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  rates     AgreementRate[]
+  history   AgreementHistoryEntry[]
+
+  @@index([tenantId, agreementId])
+  @@index([tenantId, tableId])
+  @@map("agreement_windows")
+}
+
+model AgreementRate {
+  id            String   @id @default(cuid())
+  tenantId      String
+  agreementId   String
+  tableId       String?
+  windowId      String?
+  product       String
+  modality      String
+  termMonths    Int?
+  coefficient   Decimal? @db.Decimal(12, 6)
+  monthlyRate   Decimal? @db.Decimal(12, 6)
+  annualRate    Decimal? @db.Decimal(12, 6)
+  tacPercentage Decimal? @db.Decimal(12, 6)
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agreement Agreement        @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  table     AgreementTable?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  window    AgreementWindow? @relation(fields: [windowId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, agreementId, product, modality, termMonths, windowId, tableId])
+  @@index([tenantId, agreementId])
+  @@index([tenantId, windowId])
+  @@index([tenantId, tableId])
+  @@map("agreement_rates")
+}
+
+model AgreementHistoryEntry {
+  id          String   @id @default(cuid())
+  tenantId    String
+  agreementId String
+  windowId    String?
+  actorId     String?
+  actorName   String?
+  action      String
+  message     String
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agreement Agreement        @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  window    AgreementWindow? @relation(fields: [windowId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, agreementId, createdAt])
+  @@map("agreement_history")
+}
+
+model AgreementImportJob {
+  id            String    @id @default(cuid())
+  tenantId      String
+  agreementId   String?
+  source        String?
+  fileKey       String?
+  fileName      String?
+  checksum      String?
+  status        String    @default("pending")
+  totalRows     Int       @default(0)
+  processedRows Int       @default(0)
+  errorCount    Int       @default(0)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  errorMessage  String?
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agreement Agreement? @relation(fields: [agreementId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@map("agreement_import_jobs")
 }
 
 // ============================================================================
