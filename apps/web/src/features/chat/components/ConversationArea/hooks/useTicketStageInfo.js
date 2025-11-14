@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
-import { resolvePrimaryAction, getTicketStage, getStageInfo } from '../utils/stage.js';
+import {
+  resolvePrimaryAction,
+  getTicketStage,
+  getStageInfo,
+  applyStageSalesHints,
+} from '../utils/stage.js';
 
 const useTicketStageInfo = (ticket) => {
   const stageKey = useMemo(
@@ -9,7 +14,7 @@ const useTicketStageInfo = (ticket) => {
 
   const stageInfo = useMemo(() => getStageInfo(stageKey), [stageKey]);
 
-  const salesState = useMemo(() => {
+  const salesStateFromTimeline = useMemo(() => {
     if (!Array.isArray(ticket?.salesTimeline)) {
       return { hasSimulation: false, hasProposal: false, hasDeal: false };
     }
@@ -33,6 +38,11 @@ const useTicketStageInfo = (ticket) => {
 
     return { hasSimulation, hasProposal, hasDeal };
   }, [ticket?.salesTimeline]);
+
+  const salesState = useMemo(
+    () => applyStageSalesHints(stageKey, salesStateFromTimeline),
+    [salesStateFromTimeline, stageKey],
+  );
 
   const primaryAction = useMemo(() => {
     if (!ticket) {
