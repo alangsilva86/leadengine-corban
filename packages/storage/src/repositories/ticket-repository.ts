@@ -1375,10 +1375,16 @@ export const findSalesSimulationById = async (
   options?: { includeChildren?: boolean }
 ): Promise<SalesSimulation | null> => {
   const prisma = getPrismaClient();
-  const record = await prisma.salesSimulation.findFirst({
+  const include = buildSalesSimulationInclude(options);
+  const query: Prisma.SalesSimulationFindFirstArgs = {
     where: { id: simulationId, tenantId },
-    include: buildSalesSimulationInclude(options),
-  });
+  };
+
+  if (include) {
+    query.include = include;
+  }
+
+  const record = await prisma.salesSimulation.findFirst(query);
 
   return record ? mapSalesSimulationRecord(record, options) : null;
 };
@@ -1399,11 +1405,17 @@ export const listSalesSimulations = async (
     where.leadId = filters.leadId;
   }
 
-  const records = await prisma.salesSimulation.findMany({
+  const include = buildSalesSimulationInclude(options);
+  const query: Prisma.SalesSimulationFindManyArgs = {
     where,
-    include: buildSalesSimulationInclude(options),
     orderBy: { createdAt: 'desc' },
-  });
+  };
+
+  if (include) {
+    query.include = include;
+  }
+
+  const records = await prisma.salesSimulation.findMany(query);
 
   return records.map((record) => mapSalesSimulationRecord(record, options));
 };
@@ -1480,10 +1492,16 @@ export const findSalesProposalById = async (
   options?: { includeSimulation?: boolean; includeDeals?: boolean }
 ): Promise<SalesProposal | null> => {
   const prisma = getPrismaClient();
-  const record = await prisma.salesProposal.findFirst({
+  const include = buildSalesProposalInclude(options);
+  const query: Prisma.SalesProposalFindFirstArgs = {
     where: { id: proposalId, tenantId },
-    include: buildSalesProposalInclude(options),
-  });
+  };
+
+  if (include) {
+    query.include = include;
+  }
+
+  const record = await prisma.salesProposal.findFirst(query);
 
   return record ? mapSalesProposalRecord(record, options) : null;
 };
@@ -1508,11 +1526,17 @@ export const listSalesProposals = async (
     where.simulationId = filters.simulationId;
   }
 
-  const records = await prisma.salesProposal.findMany({
+  const include = buildSalesProposalInclude(options);
+  const query: Prisma.SalesProposalFindManyArgs = {
     where,
-    include: buildSalesProposalInclude(options),
     orderBy: { createdAt: 'desc' },
-  });
+  };
+
+  if (include) {
+    query.include = include;
+  }
+
+  const records = await prisma.salesProposal.findMany(query);
 
   return records.map((record) => mapSalesProposalRecord(record, options));
 };
@@ -1595,10 +1619,16 @@ export const findSalesDealById = async (
   options?: { includeSimulation?: boolean; includeProposal?: boolean }
 ): Promise<SalesDeal | null> => {
   const prisma = getPrismaClient();
-  const record = await prisma.salesDeal.findFirst({
+  const include = buildSalesDealInclude(options);
+  const query: Prisma.SalesDealFindFirstArgs = {
     where: { id: dealId, tenantId },
-    include: buildSalesDealInclude(options),
-  });
+  };
+
+  if (include) {
+    query.include = include;
+  }
+
+  const record = await prisma.salesDeal.findFirst(query);
 
   return record ? mapSalesDealRecord(record, options) : null;
 };
@@ -1627,11 +1657,17 @@ export const listSalesDeals = async (
     where.proposalId = filters.proposalId;
   }
 
-  const records = await prisma.salesDeal.findMany({
+  const include = buildSalesDealInclude(options);
+  const query: Prisma.SalesDealFindManyArgs = {
     where,
-    include: buildSalesDealInclude(options),
     orderBy: { createdAt: 'desc' },
-  });
+  };
+
+  if (include) {
+    query.include = include;
+  }
+
+  const records = await prisma.salesDeal.findMany(query);
 
   return records.map((record) => mapSalesDealRecord(record, options));
 };
