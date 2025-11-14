@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Copy, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Plus } from 'lucide-react';
 import {
@@ -42,6 +44,8 @@ import {
   normalizeSimulationSnapshot,
   summarizeProposal,
 } from './utils/salesSnapshot.js';
+import { createProposalMessageFromEntries } from './utils/proposalMessage.js';
+import emitInboxTelemetry from '../../utils/telemetry.js';
 
 const NO_STAGE_VALUE = '__none__';
 const DEFAULT_BASE_VALUE = '350';
@@ -316,6 +320,7 @@ const SimulationModal = ({
 }) => {
   const isProposalMode = mode === 'proposal';
   const { convenios } = useConvenioCatalog();
+  const ticketId = defaultValues?.ticketId ?? null;
 
   const agreementOptions = useMemo(
     () =>
@@ -655,17 +660,7 @@ const SimulationModal = ({
       return 'Selecione ao menos uma condição para montar a proposta.';
     }
 
-    const lines = proposalSummary.selected.map((entry, index) => {
-      const termLabel = formatTermLabel(entry.term.term);
-      const installmentLabel = formatCurrency(entry.term.installment);
-      const netLabel = formatCurrency(entry.term.netAmount);
-      const tableLabel = entry.offer.table ? ` • ${entry.offer.table}` : '';
-      return `${index + 1}) ${entry.bankName}${tableLabel} • ${termLabel} de ${installmentLabel} (líquido ${netLabel})`;
-    });
-
-    return ['Olá! Preparámos uma proposta com as melhores condições para você:', ...lines, 'Posso avançar com o contrato?'].join(
-      '\n',
-    );
+    return createProposalMessageFromEntries(proposalSummary.selected);
   }, [isProposalMode, proposalSummary, selection]);
 
   const proposalFileName = useMemo(() => {
@@ -885,6 +880,29 @@ const SimulationModal = ({
     setCustomTermInput('');
   };
 
+  const handleCopyMessage = useCallback(() => {
+    if (!proposalMessage) {
+      return;
+    }
+
+    Promise.resolve(clipboard.copy(proposalMessage))
+      .then((copied) => {
+        emitInboxTelemetry('chat.sales.proposal.copy_message', {
+          ticketId,
+          source: 'simulation-modal',
+          copied: Boolean(copied),
+          length: proposalMessage.length,
+        });
+      })
+      .catch(() => {
+        emitInboxTelemetry('chat.sales.proposal.copy_message', {
+          ticketId,
+          source: 'simulation-modal',
+          copied: false,
+          length: proposalMessage.length,
+        });
+      });
+  }, [clipboard, proposalMessage, ticketId]);
   const validateForm = () => {
     const nextErrors = {};
 

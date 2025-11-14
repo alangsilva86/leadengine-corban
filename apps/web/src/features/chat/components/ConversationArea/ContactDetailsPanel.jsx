@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn, formatPhoneNumber } from '@/lib/utils.js';
-import { Copy as CopyIcon, Edit3, Phone as PhoneIcon, MessageCircle, Mail, AlertTriangle } from 'lucide-react';
+import { Copy as CopyIcon, Download, Edit3, Phone as PhoneIcon, MessageCircle, Mail, AlertTriangle } from 'lucide-react';
 import { useClipboard } from '@/hooks/use-clipboard.js';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -19,6 +19,8 @@ import {
   formatCurrency,
   formatTermLabel,
 } from './utils/salesSnapshot.js';
+import { resolveProposalMessageFromSummary } from './utils/proposalMessage.js';
+import emitInboxTelemetry from '../../utils/telemetry.js';
 
 const CHANNEL_PRESENTATION = {
   WHATSAPP: {
@@ -442,6 +444,18 @@ const ContactDetailsPanel = ({
   );
   const dealSummary = useMemo(() => summarizeDeal(dealSnapshot), [dealSnapshot]);
 
+  const ticketId = ticket?.id ?? null;
+
+  const proposalMessage = useMemo(
+    () => resolveProposalMessageFromSummary(proposalSummary),
+    [proposalSummary],
+  );
+  const hasProposalMessage = proposalMessage.trim().length > 0;
+  const proposalPdfUrl =
+    typeof proposalSummary?.pdf?.url === 'string' ? proposalSummary.pdf.url.trim() : '';
+  const proposalPdfFileName = proposalSummary?.pdf?.fileName ?? null;
+  const hasProposalPdf = proposalPdfUrl.length > 0;
+
   const nextActionLabel = salesJourney?.nextAction?.label ?? 'Simular proposta';
   const nextActionDisabled = Boolean(salesJourney?.nextAction?.disabled);
 
@@ -470,6 +484,46 @@ const ContactDetailsPanel = ({
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
   const contextSectionTitleId = useId();
+
+  const handleCopyProposalMessage = useCallback(() => {
+    if (!hasProposalMessage) {
+      return;
+    }
+
+    Promise.resolve(clipboard.copy(proposalMessage))
+      .then((copied) => {
+        emitInboxTelemetry('chat.sales.proposal.copy_message', {
+          ticketId,
+          source: 'contact-details-panel',
+          copied: Boolean(copied),
+          length: proposalMessage.length,
+        });
+      })
+      .catch(() => {
+        emitInboxTelemetry('chat.sales.proposal.copy_message', {
+          ticketId,
+          source: 'contact-details-panel',
+          copied: false,
+          length: proposalMessage.length,
+        });
+      });
+  }, [clipboard, hasProposalMessage, proposalMessage, ticketId]);
+
+  const handleDownloadProposalPdf = useCallback(() => {
+    if (!hasProposalPdf) {
+      return;
+    }
+
+    emitInboxTelemetry('chat.sales.proposal.download_pdf', {
+      ticketId,
+      source: 'contact-details-panel',
+      fileName: proposalPdfFileName ?? null,
+    });
+
+    if (typeof window !== 'undefined') {
+      window.open(proposalPdfUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, [hasProposalPdf, proposalPdfFileName, proposalPdfUrl, ticketId]);
 
   const describeOfferTerms = (offer) => {
     const preferred = offer?.terms?.filter((term) => term.selected) ?? [];
@@ -574,6 +628,36 @@ const ContactDetailsPanel = ({
                 <p className="text-[11px] uppercase tracking-wide text-foreground-muted">
                   PDF: {proposalSummary.pdf.fileName}
                 </p>
+              ) : null}
+            </div>
+          ) : null}
+          {proposalSummary ? (
+            <div className="space-y-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Proposta pronta</p>
+                  <p className="text-xs text-foreground-muted">Mensagem sugerida para seguir a conversa com o cliente.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={handleCopyProposalMessage} disabled={!hasProposalMessage}>
+                    <CopyIcon className="mr-2 h-3.5 w-3.5" aria-hidden />
+                    Copiar mensagem
+                  </Button>
+                  {hasProposalPdf ? (
+                    <Button type="button" size="sm" variant="secondary" onClick={handleDownloadProposalPdf}>
+                      <Download className="mr-2 h-3.5 w-3.5" aria-hidden />
+                      Baixar PDF
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {hasProposalMessage ? (
+                <Textarea value={proposalMessage} readOnly rows={5} className="text-sm" />
+              ) : (
+                <p className="text-xs text-foreground-muted">Nenhuma mensagem disponível para esta proposta.</p>
+              )}
+              {proposalPdfFileName ? (
+                <p className="text-[11px] uppercase tracking-wide text-foreground-muted">Arquivo: {proposalPdfFileName}</p>
               ) : null}
             </div>
           ) : null}
