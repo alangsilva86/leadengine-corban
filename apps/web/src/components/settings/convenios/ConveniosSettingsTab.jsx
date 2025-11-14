@@ -11,9 +11,12 @@ import {
   LineChart,
   Pencil,
   Plus,
+  RefreshCw,
   ShieldCheck,
+  Upload,
   UserCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -41,7 +44,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Switch } from '@/components/ui/switch.jsx';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
-import { buildConvenioCatalog } from '@/features/agreements/data/convenioCatalog.js';
+import useConvenioCatalog, { serializeAgreement } from '@/features/agreements/useConvenioCatalog.ts';
 import {
   computeWindowStatus,
   formatCurrency,
@@ -49,8 +52,10 @@ import {
   hasDateOverlap,
   simulateConvenioDeal,
 } from '@/features/agreements/utils/dailyCoefficient.js';
+import emitAgreementsTelemetry from '@/features/agreements/utils/telemetry.ts';
 import { cn } from '@/lib/utils.js';
 import useMediaQuery from '@/hooks/use-media-query.js';
+import AgreementImportDialog from './AgreementImportDialog.tsx';
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Gestor / Admin' },
@@ -108,7 +113,18 @@ const generateId = () =>
     ? crypto.randomUUID()
     : `id-${Math.random().toString(36).slice(2)}`;
 
-const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, onCreate }) => (
+const ConvenioList = ({
+  convenios,
+  selectedId,
+  onSelect,
+  onArchive,
+  readOnly,
+  onCreate,
+  onOpenImport,
+  onRefresh,
+  isLoading,
+  isFetching,
+}) => (
   <Card className="border-dashed border-border/60">
     <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div>
@@ -117,9 +133,17 @@ const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, on
           Mantenha convênios, produtos e status alinhados com o que o vendedor entende. Arquivar preserva histórico.
         </CardDescription>
       </div>
-      <Button type="button" onClick={onCreate} disabled={readOnly}>
-        <Plus className="mr-2 h-4 w-4" /> Novo convênio
-      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button type="button" variant="outline" onClick={onOpenImport} disabled={readOnly}>
+          <Upload className="mr-2 h-4 w-4" /> Importar planilha
+        </Button>
+        <Button type="button" variant="ghost" onClick={onRefresh} disabled={isFetching}>
+          <RefreshCw className={cn('mr-2 h-4 w-4', isFetching ? 'animate-spin' : '')} /> Atualizar
+        </Button>
+        <Button type="button" onClick={onCreate} disabled={readOnly}>
+          <Plus className="mr-2 h-4 w-4" /> Novo convênio
+        </Button>
+      </div>
     </CardHeader>
     <CardContent className="overflow-hidden p-0">
       <ScrollArea className="max-h-[420px]">
@@ -134,6 +158,13 @@ const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, on
             </TableRow>
           </TableHeader>
           <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                  Carregando convênios...
+                </TableCell>
+              </TableRow>
+            ) : null}
             {convenios.map((item) => (
               <TableRow
                 key={item.id}
@@ -195,7 +226,7 @@ const ConvenioList = ({ convenios, selectedId, onSelect, onArchive, readOnly, on
                 </TableCell>
               </TableRow>
             ))}
-            {convenios.length === 0 ? (
+            {convenios.length === 0 && !isLoading ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
                   Cadastre o primeiro convênio para liberar simulações.
@@ -241,8 +272,10 @@ const BasicInformation = ({ convenio, onSave, disabled }) => {
     }));
   };
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
+  const processSave = () => {
+    if (disabled) {
+      return;
+    }
     onSave?.({
       nome: form.nome.trim(),
       averbadora: form.averbadora.trim(),
@@ -251,6 +284,11 @@ const BasicInformation = ({ convenio, onSave, disabled }) => {
       produtos: form.produtos,
       responsavel: form.responsavel.trim(),
     });
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    processSave();
   };
 
   return (
@@ -350,7 +388,7 @@ const BasicInformation = ({ convenio, onSave, disabled }) => {
             />
           </div>
           <div className="flex justify-end">
-            <Button type="submit" disabled={disabled}>
+            <Button type="submit" onClick={processSave} disabled={disabled}>
               <ShieldCheck className="mr-2 h-4 w-4" /> Salvar dados básicos
             </Button>
           </div>
@@ -1086,14 +1124,15 @@ const ConvenioDetails = ({ convenio, onUpdateBasic, onUpsertWindow, onRemoveWind
 const ConveniosSettingsTab = () => {
   const [role, setRole] = useState('admin');
   const [requireApproval, setRequireApproval] = useState(true);
-  const [convenios, setConvenios] = useState(() => buildConvenioCatalog());
-  const [selectedId, setSelectedId] = useState(() => (convenios[0]?.id ?? null));
+  const [selectedId, setSelectedId] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
+  const { convenios, isLoading, isFetching, error, refetch, mutations } = useConvenioCatalog();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const readOnly = role === 'seller';
-  const selected = useMemo(() => convenios.find((item) => item.id === selectedId) ?? null, [convenios, selectedId]);
+  const locked = readOnly || (requireApproval && role === 'coordinator');
 
   useEffect(() => {
     if (isDesktop) {
@@ -1104,113 +1143,208 @@ const ConveniosSettingsTab = () => {
     setDetailsOpen(false);
   }, [isDesktop]);
 
-  const addHistory = (convenioId, message) => {
-    setConvenios((current) =>
-      current.map((convenio) =>
-        convenio.id === convenioId
-          ? {
-              ...convenio,
-              history: [
-                {
-                  id: generateId(),
-                  author: role === 'seller' ? 'Sugestão do vendedor' : role === 'coordinator' ? 'Coordenador' : 'Admin',
-                  message,
-                  createdAt: new Date(),
-                },
-                ...(convenio.history ?? []),
-              ],
-            }
-          : convenio
-      )
-    );
-  };
-
-  const updateConvenio = (convenioId, updater) => {
-    setConvenios((current) => current.map((convenio) => (convenio.id === convenioId ? updater(convenio) : convenio)));
-  };
-
-  const handleUpdateBasic = (payload) => {
-    if (!selected) {
+  useEffect(() => {
+    if (!convenios.length) {
+      setSelectedId(null);
       return;
     }
 
-    updateConvenio(selected.id, (convenio) => ({
-      ...convenio,
-      ...payload,
-    }));
+    setSelectedId((current) => {
+      if (current && convenios.some((item) => item.id === current)) {
+        return current;
+      }
+      return convenios[0]?.id ?? null;
+    });
+  }, [convenios]);
 
-    addHistory(
-      selected.id,
+  const selected = useMemo(() => convenios.find((item) => item.id === selectedId) ?? null, [convenios, selectedId]);
+
+  const historyAuthor = useMemo(() => {
+    if (role === 'seller') {
+      return 'Sugestão do vendedor';
+    }
+    if (role === 'coordinator') {
+      return 'Coordenador';
+    }
+    return 'Admin';
+  }, [role]);
+
+  const buildErrorMessage = (apiError, fallback) =>
+    apiError?.payload?.error?.message ?? (apiError instanceof Error ? apiError.message : fallback);
+
+  const createHistoryEntry = (message) => ({
+    id: generateId(),
+    author: historyAuthor,
+    message,
+    createdAt: new Date(),
+  });
+
+  const runUpdate = async ({
+    nextAgreement,
+    toastMessage,
+    telemetryEvent,
+    telemetryPayload = {},
+    note,
+    errorMessage = 'Falha ao atualizar convênio',
+  }) => {
+    try {
+      await mutations.updateAgreement.mutateAsync({
+        agreementId: nextAgreement.id,
+        payload: {
+          data: serializeAgreement(nextAgreement),
+          meta: {
+            audit: {
+              actor: historyAuthor,
+              actorRole: role,
+              note,
+            },
+          },
+        },
+      });
+      toast.success(toastMessage);
+      emitAgreementsTelemetry(telemetryEvent, { ...telemetryPayload, agreementId: nextAgreement.id, role });
+      return true;
+    } catch (err) {
+      toast.error(buildErrorMessage(err, errorMessage));
+      return false;
+    }
+  };
+
+  const handleUpdateBasic = async (payload) => {
+    if (!selected || locked) {
+      return;
+    }
+
+    const entry = createHistoryEntry(
       `Dados básicos atualizados: ${payload.nome} (${STATUS_OPTIONS.find((item) => item.value === payload.status)?.label ?? payload.status}).`
     );
+
+    const next = {
+      ...selected,
+      nome: payload.nome,
+      averbadora: payload.averbadora,
+      tipo: payload.tipo,
+      status: payload.status,
+      produtos: [...payload.produtos],
+      responsavel: payload.responsavel,
+      history: [entry, ...selected.history],
+    };
+
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Dados básicos salvos com sucesso',
+      telemetryEvent: 'agreements.basic.updated',
+      telemetryPayload: { status: payload.status },
+      note: entry.message,
+    });
   };
 
-  const handleUpsertWindow = (payload) => {
-    if (!selected) {
+  const handleUpsertWindow = async (payload) => {
+    if (!selected || locked) {
       return;
     }
 
-    updateConvenio(selected.id, (convenio) => {
-      const exists = convenio.janelas.some((window) => window.id === payload.id);
-      const janelas = exists
-        ? convenio.janelas.map((window) => (window.id === payload.id ? payload : window))
-        : [...convenio.janelas, payload];
-      return { ...convenio, janelas };
-    });
+    const exists = selected.janelas.some((window) => window.id === payload.id);
+    const janelas = exists
+      ? selected.janelas.map((window) => (window.id === payload.id ? payload : window))
+      : [...selected.janelas, payload];
 
-    addHistory(
-      selected.id,
-      `Janela ${payload.label} ${selected.janelas.some((window) => window.id === payload.id) ? 'atualizada' : 'cadastrada'} (${formatDate(payload.start)} até ${formatDate(payload.end)}).`
+    const entry = createHistoryEntry(
+      `Janela ${payload.label} ${exists ? 'atualizada' : 'cadastrada'} (${formatDate(payload.start)} até ${formatDate(payload.end)}).`
     );
-  };
 
-  const handleRemoveWindow = (windowId) => {
-    if (!selected) {
-      return;
-    }
+    const next = {
+      ...selected,
+      janelas,
+      history: [entry, ...selected.history],
+    };
 
-    updateConvenio(selected.id, (convenio) => ({
-      ...convenio,
-      janelas: convenio.janelas.filter((window) => window.id !== windowId),
-    }));
-
-    addHistory(selected.id, 'Janela removida do calendário.');
-  };
-
-  const handleUpsertTax = (payload) => {
-    if (!selected) {
-      return;
-    }
-
-    updateConvenio(selected.id, (convenio) => {
-      const exists = convenio.taxas.some((tax) => tax.id === payload.id);
-      const taxas = exists
-        ? convenio.taxas.map((tax) => (tax.id === payload.id ? payload : tax))
-        : [...convenio.taxas, payload];
-      return { ...convenio, taxas };
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Calendário salvo com sucesso',
+      telemetryEvent: 'agreements.window.upserted',
+      telemetryPayload: { windowId: payload.id, hasOverlap: false },
+      note: entry.message,
     });
+  };
 
-    addHistory(
-      selected.id,
+  const handleRemoveWindow = async (windowId) => {
+    if (!selected || locked) {
+      return;
+    }
+
+    const next = {
+      ...selected,
+      janelas: selected.janelas.filter((window) => window.id !== windowId),
+      history: [createHistoryEntry('Janela removida do calendário.'), ...selected.history],
+    };
+
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Janela removida',
+      telemetryEvent: 'agreements.window.removed',
+      telemetryPayload: { windowId },
+      note: 'Janela removida do calendário.',
+    });
+  };
+
+  const handleUpsertTax = async (payload) => {
+    if (!selected || locked) {
+      return;
+    }
+
+    const exists = selected.taxas.some((tax) => tax.id === payload.id);
+    const taxas = exists
+      ? selected.taxas.map((tax) => (tax.id === payload.id ? payload : tax))
+      : [...selected.taxas, payload];
+
+    const entry = createHistoryEntry(
       `${payload.modalidade} atualizado para ${formatPercent(payload.monthlyRate)} (${payload.produto}).`
     );
+
+    const next = {
+      ...selected,
+      taxas,
+      history: [entry, ...selected.history],
+    };
+
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Taxa salva com sucesso',
+      telemetryEvent: 'agreements.rate.upserted',
+      telemetryPayload: { modalidade: payload.modalidade, produto: payload.produto },
+      note: entry.message,
+    });
   };
 
-  const handleArchive = (convenioId) => {
-    setConvenios((current) =>
-      current.map((convenio) =>
-        convenio.id === convenioId
-          ? {
-              ...convenio,
-              archived: true,
-              status: convenio.status === 'ATIVO' ? 'PAUSADO' : convenio.status,
-            }
-          : convenio
-      )
-    );
+  const handleArchive = async (convenioId) => {
+    const target = convenios.find((item) => item.id === convenioId);
+    if (!target || locked) {
+      return;
+    }
+
+    const next = {
+      ...target,
+      archived: true,
+      status: target.status === 'ATIVO' ? 'PAUSADO' : target.status,
+      history: [createHistoryEntry('Convênio arquivado pelo gestor.'), ...target.history],
+    };
+
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Convênio arquivado',
+      telemetryEvent: 'agreements.archived',
+      telemetryPayload: {},
+      note: 'Convênio arquivado pelo gestor.',
+      errorMessage: 'Falha ao arquivar convênio',
+    });
   };
 
-  const handleCreateConvenio = () => {
+  const handleCreateConvenio = async () => {
+    if (locked) {
+      return;
+    }
+
     const convenio = {
       id: generateId(),
       nome: 'Novo convênio',
@@ -1225,21 +1359,48 @@ const ConveniosSettingsTab = () => {
       history: [
         {
           id: generateId(),
-          author: 'Admin',
+          author: historyAuthor,
           message: 'Convênio criado. Complete dados básicos e tabelas.',
           createdAt: new Date(),
         },
       ],
     };
 
-    setConvenios((current) => [convenio, ...current]);
-    setSelectedId(convenio.id);
-    setDetailsOpen(true);
+    const succeeded = await runUpdate({
+      nextAgreement: convenio,
+      toastMessage: 'Convênio criado',
+      telemetryEvent: 'agreements.created',
+      telemetryPayload: {},
+      note: 'Convênio criado manualmente pelo gestor.',
+      errorMessage: 'Falha ao criar convênio',
+    });
+
+    if (succeeded) {
+      setSelectedId(convenio.id);
+      setDetailsOpen(true);
+    }
   };
 
   const handleSelectConvenio = (convenioId) => {
     setSelectedId(convenioId);
     setDetailsOpen(true);
+  };
+
+  const handleSyncProvider = async () => {
+    if (!selected || locked) {
+      return;
+    }
+
+    try {
+      await mutations.syncProvider.mutateAsync({
+        providerId: selected.id,
+        payload: { requestedBy: role, reason: 'manual-trigger' },
+      });
+      toast.success('Sincronização enviada para processamento');
+      emitAgreementsTelemetry('agreements.sync.triggered', { agreementId: selected.id, role });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao acionar sincronização'));
+    }
   };
 
   const sheetOpen = detailsOpen && Boolean(selected);
@@ -1277,13 +1438,25 @@ const ConveniosSettingsTab = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
+          {error ? (
+            <div className="flex items-center justify-between rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              <span>{buildErrorMessage(error, 'Falha ao carregar convênios')}</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : null}
           <ConvenioList
             convenios={convenios}
             selectedId={selectedId}
             onSelect={handleSelectConvenio}
             onArchive={handleArchive}
-            readOnly={readOnly}
+            readOnly={locked}
             onCreate={handleCreateConvenio}
+            onOpenImport={() => setImportOpen(true)}
+            onRefresh={() => refetch()}
+            isLoading={isLoading}
+            isFetching={isFetching}
           />
           <div className="rounded-md border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">Governança</p>
@@ -1303,10 +1476,25 @@ const ConveniosSettingsTab = () => {
             )}
           >
             <SheetHeader className="border-b border-border/60 pb-4">
-              <SheetTitle className="text-base font-semibold">{selected.nome}</SheetTitle>
-              <SheetDescription>
-                Averbadora: {selected.averbadora || '—'} · {STATUS_OPTIONS.find((item) => item.value === selected.status)?.label ?? selected.status}
-              </SheetDescription>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <SheetTitle className="text-base font-semibold">{selected.nome}</SheetTitle>
+                  <SheetDescription>
+                    Averbadora: {selected.averbadora || '—'} ·{' '}
+                    {STATUS_OPTIONS.find((item) => item.value === selected.status)?.label ?? selected.status}
+                  </SheetDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSyncProvider}
+                  disabled={mutations.syncProvider.isPending || locked}
+                >
+                  <RefreshCw className={cn('mr-2 h-4 w-4', mutations.syncProvider.isPending ? 'animate-spin' : '')} />
+                  Sincronizar provedor
+                </Button>
+              </div>
             </SheetHeader>
             <div className="space-y-4 overflow-y-auto px-4 pb-6">
               {selected.archived ? (
@@ -1325,12 +1513,29 @@ const ConveniosSettingsTab = () => {
                 onUpsertWindow={handleUpsertWindow}
                 onRemoveWindow={handleRemoveWindow}
                 onUpsertTax={handleUpsertTax}
-                readOnly={readOnly || (requireApproval && role === 'coordinator')}
+                readOnly={locked}
               />
             </div>
           </SheetContent>
         ) : null}
       </Sheet>
+      <AgreementImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        mutation={mutations.importAgreements}
+        onImported={(response) => {
+          toast.success(
+            `Importação concluída: ${response.data.imported} novos, ${response.data.updated} atualizados, ${response.data.failed} falhas.`
+          );
+          emitAgreementsTelemetry('agreements.import.completed', {
+            imported: response.data.imported,
+            updated: response.data.updated,
+            failed: response.data.failed,
+          });
+          refetch();
+          setImportOpen(false);
+        }}
+      />
     </div>
   );
 };

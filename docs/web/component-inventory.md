@@ -93,7 +93,7 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 
 - `components/dashboard/useDashboardData.ts`
 - `features/agreements/useAgreements.js`
-- `features/agreements/useConvenioCatalog.js`
+- `features/agreements/useConvenioCatalog.ts`
 - `features/chat/api/useInboxLayoutPreferences.js`
 - `features/chat/api/useMessagesQuery.js`
 - `features/chat/api/useNotesMutation.js`

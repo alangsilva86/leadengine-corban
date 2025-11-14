@@ -7,7 +7,7 @@ import DealDrawer from '../DealDrawer.jsx';
 
 const mockUseConvenioCatalog = vi.fn();
 
-vi.mock('@/features/agreements/useConvenioCatalog.js', () => ({
+vi.mock('@/features/agreements/useConvenioCatalog.ts', () => ({
   __esModule: true,
   default: () => mockUseConvenioCatalog(),
 }));
