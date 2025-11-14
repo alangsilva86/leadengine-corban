@@ -9,6 +9,7 @@ export type MessageDirection = $Enums.MessageDirection;
 export type ContactStatus = $Enums.ContactStatus;
 export type ContactLifecycleStage = $Enums.ContactLifecycleStage;
 export type ContactSource = $Enums.ContactSource;
+export type TicketStage = $Enums.TicketStage;
 export type ContactPhoneType = $Enums.ContactPhoneType;
 export type ContactEmailType = $Enums.ContactEmailType;
 export type InteractionType = $Enums.InteractionType;
@@ -43,6 +44,7 @@ export interface TicketFilters {
   queueId?: string[] | undefined;
   userId?: string[] | undefined;
   channel?: ChannelType[] | undefined;
+  stage?: TicketStage[] | undefined;
   tags?: string[] | undefined;
   dateFrom?: Date | undefined;
   dateTo?: Date | undefined;
@@ -73,6 +75,7 @@ export interface CreateTicketDTO {
   subject?: string | undefined;
   channel: ChannelType;
   priority?: TicketPriority | undefined;
+  stage?: TicketStage | undefined;
   tags?: string[] | undefined;
   metadata?: Record<string, unknown> | undefined;
 }
@@ -83,6 +86,7 @@ export interface UpdateTicketDTO {
   subject?: string | undefined;
   userId?: string | undefined;
   queueId?: string | undefined;
+  stage?: TicketStage | undefined;
   tags?: string[] | undefined;
   metadata?: Record<string, unknown> | undefined;
   closeReason?: string | undefined;
@@ -112,6 +116,7 @@ export interface Ticket {
   userId?: string | undefined;
   status: TicketStatus;
   priority: TicketPriority;
+  stage: TicketStage;
   subject?: string | undefined;
   channel: ChannelType;
   lastMessageAt?: Date | undefined;
@@ -123,6 +128,86 @@ export interface Ticket {
   closeReason?: string | undefined;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SalesEntityBase {
+  id: string;
+  tenantId: string;
+  ticketId: string;
+  leadId?: string | undefined;
+  calculationSnapshot: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SalesSimulation extends SalesEntityBase {
+  proposals?: SalesProposal[] | undefined;
+  deals?: SalesDeal[] | undefined;
+}
+
+export interface SalesProposal extends SalesEntityBase {
+  simulationId?: string | undefined;
+  simulation?: SalesSimulation | undefined;
+  deals?: SalesDeal[] | undefined;
+}
+
+export interface SalesDeal extends SalesEntityBase {
+  simulationId?: string | undefined;
+  proposalId?: string | undefined;
+  simulation?: SalesSimulation | undefined;
+  proposal?: SalesProposal | undefined;
+  closedAt?: Date | undefined;
+}
+
+export interface CreateSalesSimulationDTO {
+  tenantId: string;
+  ticketId: string;
+  leadId?: string | null | undefined;
+  calculationSnapshot: Record<string, unknown>;
+  metadata?: Record<string, unknown> | undefined;
+}
+
+export interface UpdateSalesSimulationDTO {
+  leadId?: string | null | undefined;
+  calculationSnapshot?: Record<string, unknown> | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}
+
+export interface CreateSalesProposalDTO {
+  tenantId: string;
+  ticketId: string;
+  calculationSnapshot: Record<string, unknown>;
+  leadId?: string | null | undefined;
+  simulationId?: string | null | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}
+
+export interface UpdateSalesProposalDTO {
+  leadId?: string | null | undefined;
+  simulationId?: string | null | undefined;
+  calculationSnapshot?: Record<string, unknown> | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}
+
+export interface CreateSalesDealDTO {
+  tenantId: string;
+  ticketId: string;
+  calculationSnapshot: Record<string, unknown>;
+  leadId?: string | null | undefined;
+  simulationId?: string | null | undefined;
+  proposalId?: string | null | undefined;
+  metadata?: Record<string, unknown> | undefined;
+  closedAt?: Date | undefined;
+}
+
+export interface UpdateSalesDealDTO {
+  leadId?: string | null | undefined;
+  simulationId?: string | null | undefined;
+  proposalId?: string | null | undefined;
+  calculationSnapshot?: Record<string, unknown> | undefined;
+  metadata?: Record<string, unknown> | undefined;
+  closedAt?: Date | null | undefined;
 }
 
 export interface Message {

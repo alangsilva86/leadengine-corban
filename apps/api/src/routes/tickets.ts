@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { Router, Request, Response } from 'express';
 import { body, param, query } from 'express-validator';
+import { SalesStage } from '@ticketz/core';
 import {
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,
@@ -56,6 +57,8 @@ const router: Router = Router();
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const cuidRegex = /^c[0-9a-z]{24}$/i;
+
+const allowedStageValues = Object.values(SalesStage);
 
 const isUuidOrCuid = (value: unknown): boolean => {
   if (typeof value !== 'string') {
@@ -320,6 +323,7 @@ const createTicketValidation = [
   body('subject').optional().isString().isLength({ max: 200 }),
   body('channel').isIn(['WHATSAPP', 'EMAIL', 'SMS', 'VOICE', 'CHAT', 'SOCIAL']),
   body('priority').optional().isIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']),
+  body('stage').optional().isIn(allowedStageValues),
   body('tags').optional().isArray(),
   body('metadata').optional().isObject(),
 ];
@@ -331,6 +335,7 @@ const updateTicketValidation = [
   body('subject').optional().isString().isLength({ max: 200 }),
   body('userId').optional().isUUID(),
   body('queueId').optional().isUUID(),
+  body('stage').optional().isIn(allowedStageValues),
   body('tags').optional().isArray(),
   body('metadata').optional().isObject(),
   body('closeReason').optional().isString().isLength({ max: 500 }),
@@ -469,6 +474,7 @@ router.get(
       queueId: parseListParam(req.query.queueId),
       userId: parseListParam(req.query.userId),
       channel: parseListParam(req.query.channel) as TicketFilters['channel'],
+      stage: parseListParam(req.query.stage) as TicketFilters['stage'],
       tags: parseListParam(req.query.tags),
       dateFrom: parseDateParam(req.query.dateFrom),
       dateTo: parseDateParam(req.query.dateTo),
@@ -578,6 +584,7 @@ router.post(
       subject: req.body.subject,
       channel: req.body.channel,
       priority: req.body.priority ?? 'NORMAL',
+      stage: req.body.stage,
       tags: req.body.tags ?? [],
       metadata: req.body.metadata ?? {},
     };
@@ -607,6 +614,7 @@ router.put(
       subject: req.body.subject,
       userId: req.body.userId,
       queueId: req.body.queueId,
+      stage: req.body.stage,
       tags: req.body.tags,
       metadata: req.body.metadata,
       closeReason: req.body.closeReason,

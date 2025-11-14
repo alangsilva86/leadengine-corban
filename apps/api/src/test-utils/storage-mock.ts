@@ -8,7 +8,17 @@ import type {
   SendMessageDTO,
   Ticket,
   TicketFilters,
+  TicketStage,
   TicketStatus,
+  SalesSimulation,
+  SalesProposal,
+  SalesDeal,
+  CreateSalesSimulationDTO,
+  UpdateSalesSimulationDTO,
+  CreateSalesProposalDTO,
+  UpdateSalesProposalDTO,
+  CreateSalesDealDTO,
+  UpdateSalesDealDTO,
   UpdateTicketDTO,
 } from '../types/tickets';
 
@@ -836,8 +846,48 @@ interface TicketRecord extends Ticket {
 
 interface MessageRecord extends Message {}
 
+interface SalesSimulationRecord {
+  id: string;
+  tenantId: string;
+  ticketId: string;
+  leadId?: string;
+  calculationSnapshot: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface SalesProposalRecord {
+  id: string;
+  tenantId: string;
+  ticketId: string;
+  leadId?: string;
+  simulationId?: string;
+  calculationSnapshot: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface SalesDealRecord {
+  id: string;
+  tenantId: string;
+  ticketId: string;
+  leadId?: string;
+  simulationId?: string;
+  proposalId?: string;
+  calculationSnapshot: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  closedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 const ticketsByTenant = new Map<string, Map<string, TicketRecord>>();
 const messagesByTenant = new Map<string, Map<string, MessageRecord>>();
+const salesSimulationsByTenant = new Map<string, Map<string, SalesSimulationRecord>>();
+const salesProposalsByTenant = new Map<string, Map<string, SalesProposalRecord>>();
+const salesDealsByTenant = new Map<string, Map<string, SalesDealRecord>>();
 
 const defaultPagination = (
   pagination: Pagination
@@ -866,6 +916,33 @@ const getMessageBucket = (tenantId: string) => {
   return bucket;
 };
 
+const getSalesSimulationBucket = (tenantId: string) => {
+  let bucket = salesSimulationsByTenant.get(tenantId);
+  if (!bucket) {
+    bucket = new Map<string, SalesSimulationRecord>();
+    salesSimulationsByTenant.set(tenantId, bucket);
+  }
+  return bucket;
+};
+
+const getSalesProposalBucket = (tenantId: string) => {
+  let bucket = salesProposalsByTenant.get(tenantId);
+  if (!bucket) {
+    bucket = new Map<string, SalesProposalRecord>();
+    salesProposalsByTenant.set(tenantId, bucket);
+  }
+  return bucket;
+};
+
+const getSalesDealBucket = (tenantId: string) => {
+  let bucket = salesDealsByTenant.get(tenantId);
+  if (!bucket) {
+    bucket = new Map<string, SalesDealRecord>();
+    salesDealsByTenant.set(tenantId, bucket);
+  }
+  return bucket;
+};
+
 const toTicket = (record: TicketRecord): Ticket => ({
   ...record,
   tags: [...record.tags],
@@ -876,6 +953,128 @@ const toMessage = (record: MessageRecord): Message => ({
   ...record,
   metadata: { ...record.metadata },
 });
+
+const toSalesSimulation = (
+  record: SalesSimulationRecord,
+  options: { includeChildren?: boolean } = {}
+): SalesSimulation => {
+  const base: SalesSimulation = {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    leadId: record.leadId ?? undefined,
+    calculationSnapshot: { ...record.calculationSnapshot },
+    metadata: { ...record.metadata },
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+
+  if (options.includeChildren) {
+    const proposalBucket = getSalesProposalBucket(record.tenantId);
+    const dealBucket = getSalesDealBucket(record.tenantId);
+
+    base.proposals = Array.from(proposalBucket.values())
+      .filter((proposal) => proposal.simulationId === record.id)
+      .map((proposal) => toSalesProposal(proposal, { includeDeals: false, includeSimulation: false }));
+
+    base.deals = Array.from(dealBucket.values())
+      .filter((deal) => deal.simulationId === record.id)
+      .map((deal) => toSalesDeal(deal, { includeProposal: false, includeSimulation: false }));
+  }
+
+  return base;
+};
+
+const toSalesProposal = (
+  record: SalesProposalRecord,
+  options: { includeSimulation?: boolean; includeDeals?: boolean } = {}
+): SalesProposal => {
+  const base: SalesProposal = {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    leadId: record.leadId ?? undefined,
+    simulationId: record.simulationId ?? undefined,
+    calculationSnapshot: { ...record.calculationSnapshot },
+    metadata: { ...record.metadata },
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+
+  if (options.includeSimulation && record.simulationId) {
+    const simulation = getSalesSimulationBucket(record.tenantId).get(record.simulationId);
+    if (simulation) {
+      base.simulation = toSalesSimulation(simulation, { includeChildren: false });
+    }
+  }
+
+  if (options.includeDeals) {
+    const deals = Array.from(getSalesDealBucket(record.tenantId).values())
+      .filter((deal) => deal.proposalId === record.id)
+      .map((deal) =>
+        toSalesDeal(deal, { includeProposal: false, includeSimulation: options.includeSimulation ?? false })
+      );
+    base.deals = deals;
+  }
+
+  return base;
+};
+
+const toSalesDeal = (
+  record: SalesDealRecord,
+  options: { includeSimulation?: boolean; includeProposal?: boolean } = {}
+): SalesDeal => {
+  const base: SalesDeal = {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    leadId: record.leadId ?? undefined,
+    simulationId: record.simulationId ?? undefined,
+    proposalId: record.proposalId ?? undefined,
+    calculationSnapshot: { ...record.calculationSnapshot },
+    metadata: { ...record.metadata },
+    closedAt: record.closedAt ?? undefined,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+
+  if (options.includeSimulation && record.simulationId) {
+    const simulation = getSalesSimulationBucket(record.tenantId).get(record.simulationId);
+    if (simulation) {
+      base.simulation = toSalesSimulation(simulation, { includeChildren: false });
+    }
+  }
+
+  if (options.includeProposal && record.proposalId) {
+    const proposal = getSalesProposalBucket(record.tenantId).get(record.proposalId);
+    if (proposal) {
+      base.proposal = toSalesProposal(proposal, {
+        includeDeals: false,
+        includeSimulation: options.includeSimulation ?? false,
+      });
+    }
+  }
+
+  return base;
+};
+
+type SalesSimulationQuery = {
+  ticketId?: string;
+  leadId?: string | null;
+};
+
+type SalesProposalQuery = {
+  ticketId?: string;
+  leadId?: string | null;
+  simulationId?: string | null;
+};
+
+type SalesDealQuery = {
+  ticketId?: string;
+  leadId?: string | null;
+  simulationId?: string | null;
+  proposalId?: string | null;
+};
 
 const matchesTicketFilters = (ticket: TicketRecord, filters: TicketFilters): boolean => {
   if (filters.status && filters.status.length > 0 && !filters.status.includes(ticket.status)) {
@@ -895,6 +1094,10 @@ const matchesTicketFilters = (ticket: TicketRecord, filters: TicketFilters): boo
   }
 
   if (filters.channel && filters.channel.length > 0 && !filters.channel.includes(ticket.channel)) {
+    return false;
+  }
+
+  if (filters.stage && filters.stage.length > 0 && !filters.stage.includes(ticket.stage)) {
     return false;
   }
 
@@ -1053,6 +1256,9 @@ const sortMessages = (messages: MessageRecord[], sortOrder: 'asc' | 'desc') => {
 export const resetTicketStore = async () => {
   ticketsByTenant.clear();
   messagesByTenant.clear();
+  salesSimulationsByTenant.clear();
+  salesProposalsByTenant.clear();
+  salesDealsByTenant.clear();
 };
 
 export const findTicketById = async (tenantId: string, ticketId: string): Promise<Ticket | null> => {
@@ -1079,6 +1285,7 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
     userId: undefined,
     status: 'OPEN',
     priority: input.priority ?? 'NORMAL',
+    stage: (input.stage ?? 'novo') as TicketStage,
     subject: input.subject,
     channel: input.channel,
     lastMessageAt: undefined,
@@ -1130,6 +1337,10 @@ export const updateTicket = async (
 
   if (typeof input.queueId === 'string') {
     record.queueId = input.queueId;
+  }
+
+  if (typeof input.stage === 'string') {
+    record.stage = input.stage as TicketStage;
   }
 
   if (Array.isArray(input.tags)) {
@@ -1215,6 +1426,338 @@ export const listTickets = async (
     hasNext: normalizedPagination.page < totalPages,
     hasPrev: normalizedPagination.page > 1 && total > 0,
   };
+};
+
+export const createSalesSimulation = async (
+  input: CreateSalesSimulationDTO
+): Promise<SalesSimulation> => {
+  const bucket = getSalesSimulationBucket(input.tenantId);
+  const now = new Date();
+  const record: SalesSimulationRecord = {
+    id: randomUUID(),
+    tenantId: input.tenantId,
+    ticketId: input.ticketId,
+    leadId: input.leadId ?? undefined,
+    calculationSnapshot: { ...(input.calculationSnapshot ?? {}) },
+    metadata: { ...(input.metadata ?? {}) },
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  bucket.set(record.id, record);
+  return toSalesSimulation(record);
+};
+
+export const findSalesSimulationById = async (
+  tenantId: string,
+  simulationId: string,
+  options?: { includeChildren?: boolean }
+): Promise<SalesSimulation | null> => {
+  const record = getSalesSimulationBucket(tenantId).get(simulationId);
+  return record ? toSalesSimulation(record, options) : null;
+};
+
+export const listSalesSimulations = async (
+  tenantId: string,
+  filters: SalesSimulationQuery,
+  options?: { includeChildren?: boolean }
+): Promise<SalesSimulation[]> => {
+  const bucket = getSalesSimulationBucket(tenantId);
+  const records = Array.from(bucket.values())
+    .filter((record) => {
+      if (filters.ticketId && record.ticketId !== filters.ticketId) {
+        return false;
+      }
+
+      if (filters.leadId !== undefined && (record.leadId ?? null) !== filters.leadId) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  return records.map((record) => toSalesSimulation(record, options));
+};
+
+export const updateSalesSimulation = async (
+  tenantId: string,
+  simulationId: string,
+  input: UpdateSalesSimulationDTO
+): Promise<SalesSimulation | null> => {
+  const bucket = getSalesSimulationBucket(tenantId);
+  const record = bucket.get(simulationId);
+  if (!record) {
+    return null;
+  }
+
+  if ('leadId' in input) {
+    record.leadId = input.leadId ?? undefined;
+  }
+
+  if (input.calculationSnapshot !== undefined) {
+    record.calculationSnapshot = { ...input.calculationSnapshot };
+  }
+
+  if (input.metadata !== undefined) {
+    record.metadata = { ...input.metadata };
+  }
+
+  record.updatedAt = new Date();
+  bucket.set(record.id, record);
+  return toSalesSimulation(record);
+};
+
+export const deleteSalesSimulation = async (
+  tenantId: string,
+  simulationId: string
+): Promise<boolean> => {
+  const bucket = getSalesSimulationBucket(tenantId);
+  const existed = bucket.delete(simulationId);
+
+  if (!existed) {
+    return false;
+  }
+
+  const proposals = getSalesProposalBucket(tenantId);
+  for (const proposal of proposals.values()) {
+    if (proposal.simulationId === simulationId) {
+      proposal.simulationId = undefined;
+      proposal.updatedAt = new Date();
+    }
+  }
+
+  const deals = getSalesDealBucket(tenantId);
+  for (const deal of deals.values()) {
+    if (deal.simulationId === simulationId) {
+      deal.simulationId = undefined;
+      deal.updatedAt = new Date();
+    }
+  }
+
+  return true;
+};
+
+export const createSalesProposal = async (
+  input: CreateSalesProposalDTO
+): Promise<SalesProposal> => {
+  const bucket = getSalesProposalBucket(input.tenantId);
+  const now = new Date();
+  const record: SalesProposalRecord = {
+    id: randomUUID(),
+    tenantId: input.tenantId,
+    ticketId: input.ticketId,
+    leadId: input.leadId ?? undefined,
+    simulationId: input.simulationId ?? undefined,
+    calculationSnapshot: { ...(input.calculationSnapshot ?? {}) },
+    metadata: { ...(input.metadata ?? {}) },
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  bucket.set(record.id, record);
+  return toSalesProposal(record);
+};
+
+export const findSalesProposalById = async (
+  tenantId: string,
+  proposalId: string,
+  options?: { includeSimulation?: boolean; includeDeals?: boolean }
+): Promise<SalesProposal | null> => {
+  const record = getSalesProposalBucket(tenantId).get(proposalId);
+  return record ? toSalesProposal(record, options) : null;
+};
+
+export const listSalesProposals = async (
+  tenantId: string,
+  filters: SalesProposalQuery,
+  options?: { includeSimulation?: boolean; includeDeals?: boolean }
+): Promise<SalesProposal[]> => {
+  const bucket = getSalesProposalBucket(tenantId);
+  const records = Array.from(bucket.values())
+    .filter((record) => {
+      if (filters.ticketId && record.ticketId !== filters.ticketId) {
+        return false;
+      }
+
+      if (filters.leadId !== undefined && (record.leadId ?? null) !== filters.leadId) {
+        return false;
+      }
+
+      if (filters.simulationId !== undefined && (record.simulationId ?? null) !== filters.simulationId) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  return records.map((record) => toSalesProposal(record, options));
+};
+
+export const updateSalesProposal = async (
+  tenantId: string,
+  proposalId: string,
+  input: UpdateSalesProposalDTO
+): Promise<SalesProposal | null> => {
+  const bucket = getSalesProposalBucket(tenantId);
+  const record = bucket.get(proposalId);
+  if (!record) {
+    return null;
+  }
+
+  if ('leadId' in input) {
+    record.leadId = input.leadId ?? undefined;
+  }
+
+  if ('simulationId' in input) {
+    record.simulationId = input.simulationId ?? undefined;
+  }
+
+  if (input.calculationSnapshot !== undefined) {
+    record.calculationSnapshot = { ...input.calculationSnapshot };
+  }
+
+  if (input.metadata !== undefined) {
+    record.metadata = { ...input.metadata };
+  }
+
+  record.updatedAt = new Date();
+  bucket.set(record.id, record);
+  return toSalesProposal(record);
+};
+
+export const deleteSalesProposal = async (
+  tenantId: string,
+  proposalId: string
+): Promise<boolean> => {
+  const bucket = getSalesProposalBucket(tenantId);
+  const existed = bucket.delete(proposalId);
+
+  if (!existed) {
+    return false;
+  }
+
+  const deals = getSalesDealBucket(tenantId);
+  for (const deal of deals.values()) {
+    if (deal.proposalId === proposalId) {
+      deal.proposalId = undefined;
+      deal.updatedAt = new Date();
+    }
+  }
+
+  return true;
+};
+
+export const createSalesDeal = async (
+  input: CreateSalesDealDTO
+): Promise<SalesDeal> => {
+  const bucket = getSalesDealBucket(input.tenantId);
+  const now = new Date();
+  const record: SalesDealRecord = {
+    id: randomUUID(),
+    tenantId: input.tenantId,
+    ticketId: input.ticketId,
+    leadId: input.leadId ?? undefined,
+    simulationId: input.simulationId ?? undefined,
+    proposalId: input.proposalId ?? undefined,
+    calculationSnapshot: { ...(input.calculationSnapshot ?? {}) },
+    metadata: { ...(input.metadata ?? {}) },
+    closedAt: input.closedAt ?? undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  bucket.set(record.id, record);
+  return toSalesDeal(record);
+};
+
+export const findSalesDealById = async (
+  tenantId: string,
+  dealId: string,
+  options?: { includeSimulation?: boolean; includeProposal?: boolean }
+): Promise<SalesDeal | null> => {
+  const record = getSalesDealBucket(tenantId).get(dealId);
+  return record ? toSalesDeal(record, options) : null;
+};
+
+export const listSalesDeals = async (
+  tenantId: string,
+  filters: SalesDealQuery,
+  options?: { includeSimulation?: boolean; includeProposal?: boolean }
+): Promise<SalesDeal[]> => {
+  const bucket = getSalesDealBucket(tenantId);
+  const records = Array.from(bucket.values())
+    .filter((record) => {
+      if (filters.ticketId && record.ticketId !== filters.ticketId) {
+        return false;
+      }
+
+      if (filters.leadId !== undefined && (record.leadId ?? null) !== filters.leadId) {
+        return false;
+      }
+
+      if (filters.simulationId !== undefined && (record.simulationId ?? null) !== filters.simulationId) {
+        return false;
+      }
+
+      if (filters.proposalId !== undefined && (record.proposalId ?? null) !== filters.proposalId) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  return records.map((record) => toSalesDeal(record, options));
+};
+
+export const updateSalesDeal = async (
+  tenantId: string,
+  dealId: string,
+  input: UpdateSalesDealDTO
+): Promise<SalesDeal | null> => {
+  const bucket = getSalesDealBucket(tenantId);
+  const record = bucket.get(dealId);
+  if (!record) {
+    return null;
+  }
+
+  if ('leadId' in input) {
+    record.leadId = input.leadId ?? undefined;
+  }
+
+  if ('simulationId' in input) {
+    record.simulationId = input.simulationId ?? undefined;
+  }
+
+  if ('proposalId' in input) {
+    record.proposalId = input.proposalId ?? undefined;
+  }
+
+  if (input.calculationSnapshot !== undefined) {
+    record.calculationSnapshot = { ...input.calculationSnapshot };
+  }
+
+  if (input.metadata !== undefined) {
+    record.metadata = { ...input.metadata };
+  }
+
+  if (input.closedAt !== undefined) {
+    record.closedAt = input.closedAt ?? undefined;
+  }
+
+  record.updatedAt = new Date();
+  bucket.set(record.id, record);
+  return toSalesDeal(record);
+};
+
+export const deleteSalesDeal = async (
+  tenantId: string,
+  dealId: string
+): Promise<boolean> => {
+  const bucket = getSalesDealBucket(tenantId);
+  return bucket.delete(dealId);
 };
 
 export const createMessage = async (

@@ -11,6 +11,9 @@ import {
   type Interaction as PrismaInteraction,
   type Task as PrismaTask,
   type Queue as PrismaQueue,
+  type SalesSimulation as PrismaSalesSimulation,
+  type SalesProposal as PrismaSalesProposal,
+  type SalesDeal as PrismaSalesDeal,
 } from '@prisma/client';
 import type {
   Contact,
@@ -18,19 +21,29 @@ import type {
   ContactPhone,
   ContactTag,
   CreateTicketDTO,
+  CreateSalesDealDTO,
+  CreateSalesProposalDTO,
+  CreateSalesSimulationDTO,
   Interaction,
   Message,
   MessageType,
   MessageFilters,
   Pagination,
   PaginatedResult,
+  SalesDeal,
+  SalesProposal,
+  SalesSimulation,
   SendMessageDTO,
   SortOrder,
   Tag,
   Task,
   Ticket,
   TicketFilters,
+  TicketStage,
   TicketStatus,
+  UpdateSalesDealDTO,
+  UpdateSalesProposalDTO,
+  UpdateSalesSimulationDTO,
   UpdateTicketDTO,
 } from './ticket-types';
 
@@ -248,6 +261,7 @@ const mapTicket = (record: PrismaTicket): Ticket => ({
   userId: record.userId ?? undefined,
   status: record.status as TicketStatus,
   priority: record.priority,
+  stage: record.stage as TicketStage,
   subject: record.subject ?? undefined,
   channel: record.channel,
   lastMessageAt: record.lastMessageAt ?? undefined,
@@ -337,6 +351,184 @@ const mapMessage = (record: PrismaMessage): Message => ({
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
 });
+
+const mapJsonSnapshot = (value: Prisma.JsonValue): Record<string, unknown> =>
+  asRecord(value) ?? {};
+
+type PrismaSalesSimulationRecord = PrismaSalesSimulation & {
+  proposals?: PrismaSalesProposalRecord[];
+  deals?: PrismaSalesDealRecord[];
+};
+
+type PrismaSalesProposalRecord = PrismaSalesProposal & {
+  simulation?: PrismaSalesSimulation | null;
+  deals?: PrismaSalesDealRecord[];
+};
+
+type PrismaSalesDealRecord = PrismaSalesDeal & {
+  simulation?: PrismaSalesSimulation | null;
+  proposal?: PrismaSalesProposal | null;
+};
+
+const mapSalesSimulationRecord = (
+  record: PrismaSalesSimulationRecord | PrismaSalesSimulation,
+  options: { includeChildren?: boolean } = {}
+): SalesSimulation => {
+  const base: SalesSimulation = {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    leadId: record.leadId ?? undefined,
+    calculationSnapshot: mapJsonSnapshot(record.calculationSnapshot),
+    metadata: sanitizeEnrichmentKeys(normalizeMetadataRecord(record.metadata)),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+
+  if (options.includeChildren) {
+    if ('proposals' in record && Array.isArray(record.proposals)) {
+      base.proposals = record.proposals.map((proposal) =>
+        mapSalesProposalRecord(proposal, { includeDeals: false, includeSimulation: false })
+      );
+    }
+
+    if ('deals' in record && Array.isArray(record.deals)) {
+      base.deals = record.deals.map((deal) =>
+        mapSalesDealRecord(deal, { includeProposal: false, includeSimulation: false })
+      );
+    }
+  }
+
+  return base;
+};
+
+const mapSalesProposalRecord = (
+  record: PrismaSalesProposalRecord | PrismaSalesProposal,
+  options: { includeSimulation?: boolean; includeDeals?: boolean } = {}
+): SalesProposal => {
+  const base: SalesProposal = {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    leadId: record.leadId ?? undefined,
+    simulationId: record.simulationId ?? undefined,
+    calculationSnapshot: mapJsonSnapshot(record.calculationSnapshot),
+    metadata: sanitizeEnrichmentKeys(normalizeMetadataRecord(record.metadata)),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+
+  if (options.includeSimulation && 'simulation' in record && record.simulation) {
+    base.simulation = mapSalesSimulationRecord(record.simulation, { includeChildren: false });
+  }
+
+  if (options.includeDeals && 'deals' in record && Array.isArray(record.deals)) {
+    base.deals = record.deals.map((deal) =>
+      mapSalesDealRecord(deal, {
+        includeProposal: false,
+        includeSimulation: options.includeSimulation ?? false,
+      })
+    );
+  }
+
+  return base;
+};
+
+const mapSalesDealRecord = (
+  record: PrismaSalesDealRecord | PrismaSalesDeal,
+  options: { includeSimulation?: boolean; includeProposal?: boolean } = {}
+): SalesDeal => {
+  const base: SalesDeal = {
+    id: record.id,
+    tenantId: record.tenantId,
+    ticketId: record.ticketId,
+    leadId: record.leadId ?? undefined,
+    simulationId: record.simulationId ?? undefined,
+    proposalId: record.proposalId ?? undefined,
+    calculationSnapshot: mapJsonSnapshot(record.calculationSnapshot),
+    metadata: sanitizeEnrichmentKeys(normalizeMetadataRecord(record.metadata)),
+    closedAt: record.closedAt ?? undefined,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+
+  if (options.includeSimulation && 'simulation' in record && record.simulation) {
+    base.simulation = mapSalesSimulationRecord(record.simulation, { includeChildren: false });
+  }
+
+  if (options.includeProposal && 'proposal' in record && record.proposal) {
+    base.proposal = mapSalesProposalRecord(record.proposal, {
+      includeDeals: false,
+      includeSimulation: options.includeSimulation ?? false,
+    });
+  }
+
+  return base;
+};
+
+const buildSalesSimulationInclude = (
+  options: { includeChildren?: boolean } | undefined
+): Prisma.SalesSimulationInclude | undefined => {
+  if (!options?.includeChildren) {
+    return undefined;
+  }
+
+  return {
+    proposals: true,
+    deals: true,
+  } satisfies Prisma.SalesSimulationInclude;
+};
+
+const buildSalesProposalInclude = (
+  options:
+    | {
+        includeSimulation?: boolean;
+        includeDeals?: boolean;
+      }
+    | undefined
+): Prisma.SalesProposalInclude | undefined => {
+  const include: Prisma.SalesProposalInclude = {};
+
+  if (options?.includeSimulation) {
+    include.simulation = true;
+  }
+
+  if (options?.includeDeals) {
+    include.deals = true;
+  }
+
+  return Object.keys(include).length > 0 ? include : undefined;
+};
+
+const buildSalesDealInclude = (
+  options:
+    | {
+        includeSimulation?: boolean;
+        includeProposal?: boolean;
+      }
+    | undefined
+): Prisma.SalesDealInclude | undefined => {
+  const include: Prisma.SalesDealInclude = {};
+
+  if (options?.includeSimulation) {
+    include.simulation = true;
+  }
+
+  if (options?.includeProposal) {
+    include.proposal = true;
+  }
+
+  return Object.keys(include).length > 0 ? include : undefined;
+};
+
+const normalizeSnapshotForWrite = (
+  snapshot: Record<string, unknown>
+): Prisma.InputJsonValue => snapshot as Prisma.InputJsonValue;
+
+const normalizeMetadataForWrite = (
+  metadata: Record<string, unknown> | undefined
+): Prisma.InputJsonValue =>
+  sanitizeEnrichmentKeys(normalizeMetadataRecord(metadata ?? null)) as Prisma.InputJsonValue;
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -787,6 +979,10 @@ const buildTicketWhere = (tenantId: string, filters: TicketFilters): Prisma.Tick
     where.channel = { in: filters.channel };
   }
 
+  if (filters.stage?.length) {
+    where.stage = { in: filters.stage };
+  }
+
   if (filters.tags?.length) {
     where.tags = { hasSome: filters.tags };
   }
@@ -953,6 +1149,9 @@ const mergeMessageMetadata = (
 export const resetTicketStore = async (): Promise<void> => {
   const prisma = getPrismaClient();
   await prisma.$transaction([
+    prisma.salesDeal.deleteMany({}),
+    prisma.salesProposal.deleteMany({}),
+    prisma.salesSimulation.deleteMany({}),
     prisma.message.deleteMany({}),
     prisma.ticket.deleteMany({}),
   ]);
@@ -978,7 +1177,7 @@ export const findTicketsByContact = async (tenantId: string, contactId: string):
 
 export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   const prisma = getPrismaClient();
-  const metadataRecord = sanitizeEnrichmentKeys(normalizeMetadataRecord(input.metadata ?? null));
+  const metadataRecord = normalizeMetadataForWrite(input.metadata);
   const record = await prisma.ticket.create({
     data: {
       tenantId: input.tenantId,
@@ -986,6 +1185,7 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
       queueId: input.queueId,
       status: 'OPEN',
       priority: input.priority ?? 'NORMAL',
+      stage: (input.stage ?? 'novo') as TicketStage,
       subject: input.subject ?? null,
       channel: input.channel,
       tags: input.tags ?? [],
@@ -1037,13 +1237,16 @@ export const updateTicket = async (
     data.queueId = input.queueId;
   }
 
+  if (typeof input.stage === 'string') {
+    data.stage = input.stage as TicketStage;
+  }
+
   if (Array.isArray(input.tags)) {
     data.tags = { set: input.tags };
   }
 
   if (input.metadata !== undefined) {
-    const metadataRecord = sanitizeEnrichmentKeys(normalizeMetadataRecord(input.metadata ?? null));
-    data.metadata = metadataRecord as Prisma.InputJsonValue;
+    data.metadata = normalizeMetadataForWrite(input.metadata);
   }
 
   if (input.closeReason !== undefined) {
@@ -1129,6 +1332,368 @@ export const listTickets = async (
     hasNext: normalized.page < totalPages,
     hasPrev: normalized.page > 1 && total > 0,
   };
+};
+
+type SalesSimulationQuery = {
+  ticketId?: string;
+  leadId?: string | null;
+};
+
+type SalesProposalQuery = {
+  ticketId?: string;
+  leadId?: string | null;
+  simulationId?: string | null;
+};
+
+type SalesDealQuery = {
+  ticketId?: string;
+  leadId?: string | null;
+  simulationId?: string | null;
+  proposalId?: string | null;
+};
+
+export const createSalesSimulation = async (
+  input: CreateSalesSimulationDTO
+): Promise<SalesSimulation> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.salesSimulation.create({
+    data: {
+      tenantId: input.tenantId,
+      ticketId: input.ticketId,
+      leadId: input.leadId ?? null,
+      calculationSnapshot: normalizeSnapshotForWrite(input.calculationSnapshot),
+      metadata: normalizeMetadataForWrite(input.metadata),
+    },
+  });
+
+  return mapSalesSimulationRecord(record);
+};
+
+export const findSalesSimulationById = async (
+  tenantId: string,
+  simulationId: string,
+  options?: { includeChildren?: boolean }
+): Promise<SalesSimulation | null> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.salesSimulation.findFirst({
+    where: { id: simulationId, tenantId },
+    include: buildSalesSimulationInclude(options),
+  });
+
+  return record ? mapSalesSimulationRecord(record, options) : null;
+};
+
+export const listSalesSimulations = async (
+  tenantId: string,
+  filters: SalesSimulationQuery,
+  options?: { includeChildren?: boolean }
+): Promise<SalesSimulation[]> => {
+  const prisma = getPrismaClient();
+  const where: Prisma.SalesSimulationWhereInput = { tenantId };
+
+  if (filters.ticketId) {
+    where.ticketId = filters.ticketId;
+  }
+
+  if (filters.leadId !== undefined) {
+    where.leadId = filters.leadId;
+  }
+
+  const records = await prisma.salesSimulation.findMany({
+    where,
+    include: buildSalesSimulationInclude(options),
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return records.map((record) => mapSalesSimulationRecord(record, options));
+};
+
+export const updateSalesSimulation = async (
+  tenantId: string,
+  simulationId: string,
+  input: UpdateSalesSimulationDTO
+): Promise<SalesSimulation | null> => {
+  const prisma = getPrismaClient();
+  const existing = await prisma.salesSimulation.findFirst({
+    where: { id: simulationId, tenantId },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const data: Prisma.SalesSimulationUncheckedUpdateInput = {};
+
+  if ('leadId' in input) {
+    data.leadId = input.leadId ?? null;
+  }
+
+  if (input.calculationSnapshot !== undefined) {
+    data.calculationSnapshot = normalizeSnapshotForWrite(input.calculationSnapshot);
+  }
+
+  if (input.metadata !== undefined) {
+    data.metadata = normalizeMetadataForWrite(input.metadata);
+  }
+
+  const updated = await prisma.salesSimulation.update({
+    where: { id: existing.id },
+    data,
+  });
+
+  return mapSalesSimulationRecord(updated);
+};
+
+export const deleteSalesSimulation = async (
+  tenantId: string,
+  simulationId: string
+): Promise<boolean> => {
+  const prisma = getPrismaClient();
+  const result = await prisma.salesSimulation.deleteMany({
+    where: { id: simulationId, tenantId },
+  });
+
+  return result.count > 0;
+};
+
+export const createSalesProposal = async (
+  input: CreateSalesProposalDTO
+): Promise<SalesProposal> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.salesProposal.create({
+    data: {
+      tenantId: input.tenantId,
+      ticketId: input.ticketId,
+      leadId: input.leadId ?? null,
+      simulationId: input.simulationId ?? null,
+      calculationSnapshot: normalizeSnapshotForWrite(input.calculationSnapshot),
+      metadata: normalizeMetadataForWrite(input.metadata),
+    },
+  });
+
+  return mapSalesProposalRecord(record);
+};
+
+export const findSalesProposalById = async (
+  tenantId: string,
+  proposalId: string,
+  options?: { includeSimulation?: boolean; includeDeals?: boolean }
+): Promise<SalesProposal | null> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.salesProposal.findFirst({
+    where: { id: proposalId, tenantId },
+    include: buildSalesProposalInclude(options),
+  });
+
+  return record ? mapSalesProposalRecord(record, options) : null;
+};
+
+export const listSalesProposals = async (
+  tenantId: string,
+  filters: SalesProposalQuery,
+  options?: { includeSimulation?: boolean; includeDeals?: boolean }
+): Promise<SalesProposal[]> => {
+  const prisma = getPrismaClient();
+  const where: Prisma.SalesProposalWhereInput = { tenantId };
+
+  if (filters.ticketId) {
+    where.ticketId = filters.ticketId;
+  }
+
+  if (filters.leadId !== undefined) {
+    where.leadId = filters.leadId;
+  }
+
+  if (filters.simulationId !== undefined) {
+    where.simulationId = filters.simulationId;
+  }
+
+  const records = await prisma.salesProposal.findMany({
+    where,
+    include: buildSalesProposalInclude(options),
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return records.map((record) => mapSalesProposalRecord(record, options));
+};
+
+export const updateSalesProposal = async (
+  tenantId: string,
+  proposalId: string,
+  input: UpdateSalesProposalDTO
+): Promise<SalesProposal | null> => {
+  const prisma = getPrismaClient();
+  const existing = await prisma.salesProposal.findFirst({
+    where: { id: proposalId, tenantId },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const data: Prisma.SalesProposalUncheckedUpdateInput = {};
+
+  if ('leadId' in input) {
+    data.leadId = input.leadId ?? null;
+  }
+
+  if ('simulationId' in input) {
+    data.simulationId = input.simulationId ?? null;
+  }
+
+  if (input.calculationSnapshot !== undefined) {
+    data.calculationSnapshot = normalizeSnapshotForWrite(input.calculationSnapshot);
+  }
+
+  if (input.metadata !== undefined) {
+    data.metadata = normalizeMetadataForWrite(input.metadata);
+  }
+
+  const updated = await prisma.salesProposal.update({
+    where: { id: existing.id },
+    data,
+  });
+
+  return mapSalesProposalRecord(updated);
+};
+
+export const deleteSalesProposal = async (
+  tenantId: string,
+  proposalId: string
+): Promise<boolean> => {
+  const prisma = getPrismaClient();
+  const result = await prisma.salesProposal.deleteMany({
+    where: { id: proposalId, tenantId },
+  });
+
+  return result.count > 0;
+};
+
+export const createSalesDeal = async (
+  input: CreateSalesDealDTO
+): Promise<SalesDeal> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.salesDeal.create({
+    data: {
+      tenantId: input.tenantId,
+      ticketId: input.ticketId,
+      leadId: input.leadId ?? null,
+      simulationId: input.simulationId ?? null,
+      proposalId: input.proposalId ?? null,
+      calculationSnapshot: normalizeSnapshotForWrite(input.calculationSnapshot),
+      metadata: normalizeMetadataForWrite(input.metadata),
+      closedAt: input.closedAt ?? null,
+    },
+  });
+
+  return mapSalesDealRecord(record);
+};
+
+export const findSalesDealById = async (
+  tenantId: string,
+  dealId: string,
+  options?: { includeSimulation?: boolean; includeProposal?: boolean }
+): Promise<SalesDeal | null> => {
+  const prisma = getPrismaClient();
+  const record = await prisma.salesDeal.findFirst({
+    where: { id: dealId, tenantId },
+    include: buildSalesDealInclude(options),
+  });
+
+  return record ? mapSalesDealRecord(record, options) : null;
+};
+
+export const listSalesDeals = async (
+  tenantId: string,
+  filters: SalesDealQuery,
+  options?: { includeSimulation?: boolean; includeProposal?: boolean }
+): Promise<SalesDeal[]> => {
+  const prisma = getPrismaClient();
+  const where: Prisma.SalesDealWhereInput = { tenantId };
+
+  if (filters.ticketId) {
+    where.ticketId = filters.ticketId;
+  }
+
+  if (filters.leadId !== undefined) {
+    where.leadId = filters.leadId;
+  }
+
+  if (filters.simulationId !== undefined) {
+    where.simulationId = filters.simulationId;
+  }
+
+  if (filters.proposalId !== undefined) {
+    where.proposalId = filters.proposalId;
+  }
+
+  const records = await prisma.salesDeal.findMany({
+    where,
+    include: buildSalesDealInclude(options),
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return records.map((record) => mapSalesDealRecord(record, options));
+};
+
+export const updateSalesDeal = async (
+  tenantId: string,
+  dealId: string,
+  input: UpdateSalesDealDTO
+): Promise<SalesDeal | null> => {
+  const prisma = getPrismaClient();
+  const existing = await prisma.salesDeal.findFirst({
+    where: { id: dealId, tenantId },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const data: Prisma.SalesDealUncheckedUpdateInput = {};
+
+  if ('leadId' in input) {
+    data.leadId = input.leadId ?? null;
+  }
+
+  if ('simulationId' in input) {
+    data.simulationId = input.simulationId ?? null;
+  }
+
+  if ('proposalId' in input) {
+    data.proposalId = input.proposalId ?? null;
+  }
+
+  if (input.calculationSnapshot !== undefined) {
+    data.calculationSnapshot = normalizeSnapshotForWrite(input.calculationSnapshot);
+  }
+
+  if (input.metadata !== undefined) {
+    data.metadata = normalizeMetadataForWrite(input.metadata);
+  }
+
+  if (input.closedAt !== undefined) {
+    data.closedAt = input.closedAt ?? null;
+  }
+
+  const updated = await prisma.salesDeal.update({
+    where: { id: existing.id },
+    data,
+  });
+
+  return mapSalesDealRecord(updated);
+};
+
+export const deleteSalesDeal = async (
+  tenantId: string,
+  dealId: string
+): Promise<boolean> => {
+  const prisma = getPrismaClient();
+  const result = await prisma.salesDeal.deleteMany({
+    where: { id: dealId, tenantId },
+  });
+
+  return result.count > 0;
 };
 
 export const createMessage = async (

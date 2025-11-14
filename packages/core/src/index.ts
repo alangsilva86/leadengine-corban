@@ -13,3 +13,4 @@ export {
 export type { Pagination, PaginatedResult } from './common/types';
 
 export * from './contacts/types';
+export * from './sales/stages';
