@@ -9,9 +9,46 @@ const useTicketStageInfo = (ticket) => {
 
   const stageInfo = useMemo(() => getStageInfo(stageKey), [stageKey]);
 
+  const salesState = useMemo(() => {
+    if (!Array.isArray(ticket?.salesTimeline)) {
+      return { hasSimulation: false, hasProposal: false, hasDeal: false };
+    }
+
+    let hasSimulation = false;
+    let hasProposal = false;
+    let hasDeal = false;
+
+    ticket.salesTimeline.forEach((event) => {
+      const type = typeof event?.type === 'string' ? event.type.split('.')[0] : '';
+      if (type === 'simulation') {
+        hasSimulation = true;
+      }
+      if (type === 'proposal') {
+        hasProposal = true;
+      }
+      if (type === 'deal') {
+        hasDeal = true;
+      }
+    });
+
+    return { hasSimulation, hasProposal, hasDeal };
+  }, [ticket?.salesTimeline]);
+
   const primaryAction = useMemo(() => {
     if (!ticket) {
       return null;
+    }
+
+    if (salesState.hasDeal) {
+      return { id: 'sales-done', label: 'Contrato concluído', disabled: true };
+    }
+
+    if (salesState.hasProposal) {
+      return { id: 'sales-deal', label: 'Registrar negócio' };
+    }
+
+    if (salesState.hasSimulation) {
+      return { id: 'sales-proposal', label: 'Gerar proposta' };
     }
 
     const hasPhone = Boolean(
@@ -52,6 +89,9 @@ const useTicketStageInfo = (ticket) => {
     ticket?.metadata?.channels?.whatsapp?.status,
     ticket?.metadata?.channels?.whatsapp?.valid,
     ticket?.metadata?.contactPhone,
+    salesState.hasDeal,
+    salesState.hasProposal,
+    salesState.hasSimulation,
   ]);
 
   return { stageKey, stageInfo, primaryAction };

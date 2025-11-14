@@ -25,6 +25,7 @@ import {
 import QueuesTab from './settings/QueuesTab.jsx';
 import AiSettingsTab from './settings/AiSettingsTab';
 import MetaSettingsTab from './settings/MetaSettingsTab';
+import ConveniosSettingsTab from './settings/convenios/ConveniosSettingsTab.jsx';
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -82,11 +83,12 @@ const Settings = () => {
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-8">
+        <TabsList className="grid w-full grid-cols-9">
           <TabsTrigger value="general">Geral</TabsTrigger>
           <TabsTrigger value="users">Usuários</TabsTrigger>
           <TabsTrigger value="notifications">Notificações</TabsTrigger>
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
+          <TabsTrigger value="agreements">Convênios & Tabelas</TabsTrigger>
           <TabsTrigger value="meta">Meta</TabsTrigger>
           <TabsTrigger value="ai">IA</TabsTrigger>
           <TabsTrigger value="security">Segurança</TabsTrigger>
@@ -276,6 +278,11 @@ const Settings = () => {
         </TabsContent>
 
         {/* Integrações */}
+
+        <TabsContent value="agreements" className="space-y-6">
+          <ConveniosSettingsTab />
+        </TabsContent>
+
         <TabsContent value="integrations" className="space-y-6">
           <Card>
             <CardHeader>

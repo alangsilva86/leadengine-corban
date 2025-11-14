@@ -208,6 +208,8 @@ const ConversationHeader = ({
   onSendTemplate,
   onCreateNextStep,
   onGenerateProposal,
+  onOpenSimulation,
+  onOpenDeal,
   onScheduleFollowUp,
   onSendSMS,
   onAttachFile,
@@ -466,6 +468,17 @@ const ConversationHeader = ({
       case 'generate-proposal':
         onGenerateProposal?.(ticket);
         break;
+      case 'sales-simulate':
+        onOpenSimulation?.(ticket);
+        break;
+      case 'sales-proposal':
+        onGenerateProposal?.(ticket);
+        break;
+      case 'sales-deal':
+        onOpenDeal?.(ticket);
+        break;
+      case 'sales-done':
+        break;
       case 'send-steps':
         onSendTemplate?.({ id: 'steps' });
         break;
@@ -484,6 +497,8 @@ const ConversationHeader = ({
     onGenerateProposal,
     onScheduleFollowUp,
     onSendTemplate,
+    onOpenSimulation,
+    onOpenDeal,
     openDialog,
     primaryAction,
     revealNextStepEditor,

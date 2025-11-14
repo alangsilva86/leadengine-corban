@@ -12,6 +12,13 @@ import { formatDateTime } from '../../utils/datetime.js';
 import { formatCurrencyField, formatTermField } from '../../utils/deal-fields.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 import { resolveTicketContext } from './utils/ticketMetadata.js';
+import {
+  summarizeSimulation,
+  summarizeProposal,
+  summarizeDeal,
+  formatCurrency,
+  formatTermLabel,
+} from './utils/salesSnapshot.js';
 
 const CHANNEL_PRESENTATION = {
   WHATSAPP: {
@@ -409,6 +416,7 @@ const ContactDetailsPanel = ({
   onOpenDeal,
   salesActionsDisabled = false,
   salesDisabledReason = null,
+  salesJourney = null,
 }) => {
   const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const document = ticket?.contact?.document ?? null;
@@ -419,6 +427,23 @@ const ContactDetailsPanel = ({
   const shouldShowDealPanel = DEAL_STAGE_KEYS.has(stageKey);
 
   const showSalesActions = Boolean(onOpenSimulation || onOpenProposal || onOpenDeal);
+
+  const simulationSnapshot = salesJourney?.events?.simulation?.calculationSnapshot ?? null;
+  const proposalSnapshot = salesJourney?.events?.proposal?.calculationSnapshot ?? null;
+  const dealSnapshot = salesJourney?.events?.deal?.calculationSnapshot ?? null;
+
+  const simulationSummary = useMemo(
+    () => summarizeSimulation(simulationSnapshot),
+    [simulationSnapshot],
+  );
+  const proposalSummary = useMemo(
+    () => summarizeProposal(proposalSnapshot),
+    [proposalSnapshot],
+  );
+  const dealSummary = useMemo(() => summarizeDeal(dealSnapshot), [dealSnapshot]);
+
+  const nextActionLabel = salesJourney?.nextAction?.label ?? 'Simular proposta';
+  const nextActionDisabled = Boolean(salesJourney?.nextAction?.disabled);
 
   const dealFields = useMemo(() => {
     if (!shouldShowDealPanel) {
@@ -446,6 +471,32 @@ const ContactDetailsPanel = ({
 
   const contextSectionTitleId = useId();
 
+  const describeOfferTerms = (offer) => {
+    const preferred = offer?.terms?.filter((term) => term.selected) ?? [];
+    const base = preferred.length > 0 ? preferred : offer?.terms ?? [];
+    return base
+      .map((term) => {
+        const termLabel = formatTermLabel(term.term, { fallback: null });
+        const installmentLabel = formatCurrency(term.installment, { fallback: null });
+        const netLabel = formatCurrency(term.netAmount, { fallback: null });
+        if (!termLabel && !installmentLabel && !netLabel) {
+          return null;
+        }
+        const pieces = [];
+        if (termLabel) {
+          pieces.push(termLabel);
+        }
+        if (installmentLabel) {
+          pieces.push(`parcela ${installmentLabel}`);
+        }
+        if (netLabel) {
+          pieces.push(`líquido ${netLabel}`);
+        }
+        return pieces.join(' · ');
+      })
+      .filter(Boolean);
+  };
+
   const contextItems = useMemo(() => {
     const { instance, campaignId, campaignName, productType, strategy } = resolveTicketContext(ticket);
 
@@ -464,6 +515,81 @@ const ContactDetailsPanel = ({
 
   return (
     <div className="flex w-full flex-col gap-4">
+      {salesJourney ? (
+        <div className="flex w-full flex-col gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Próximo passo sugerido</p>
+              <p className="text-sm font-semibold text-foreground">{nextActionLabel}</p>
+              {nextActionDisabled ? (
+                <p className="text-xs text-foreground-muted">Contrato concluído. Acompanhe pelo histórico.</p>
+              ) : null}
+            </div>
+            {salesJourney.stageLabel ? (
+              <span className="inline-flex items-center rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-1 text-xs font-semibold uppercase tracking-wide text-foreground">
+                {salesJourney.stageLabel}
+              </span>
+            ) : null}
+          </div>
+          {simulationSummary ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Última simulação</p>
+              <div className="space-y-2">
+                {simulationSummary.offers
+                  .map((offer) => {
+                    const descriptions = describeOfferTerms(offer);
+                    if (descriptions.length === 0) {
+                      return null;
+                    }
+                    return (
+                      <div
+                        key={`simulation-${offer.id}`}
+                        className="rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet p-3 text-xs text-foreground"
+                      >
+                        <p className="font-semibold text-foreground">{offer.bankName}</p>
+                        {offer.table ? <p className="text-foreground-muted">{offer.table}</p> : null}
+                        <ul className="mt-1 space-y-1 text-foreground-muted">
+                          {descriptions.map((description, index) => (
+                            <li key={`${offer.id}-term-${index}`}>{description}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })
+                  .filter(Boolean)}
+              </div>
+            </div>
+          ) : null}
+          {proposalSummary?.selected?.length ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Última proposta</p>
+              <ul className="space-y-1 text-xs text-foreground-muted">
+                {proposalSummary.selected.map((entry) => (
+                  <li key={`proposal-${entry.offerId}-${entry.term.id}`}>
+                    <span className="font-semibold text-foreground">{entry.bankName}</span> · {formatTermLabel(entry.term.term)} · {formatCurrency(entry.term.installment)} (líquido {formatCurrency(entry.term.netAmount)})
+                  </li>
+                ))}
+              </ul>
+              {proposalSummary.pdf?.fileName ? (
+                <p className="text-[11px] uppercase tracking-wide text-foreground-muted">
+                  PDF: {proposalSummary.pdf.fileName}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {dealSummary && (dealSummary.bank?.label || dealSummary.term || dealSummary.installment) ? (
+            <div className="space-y-1 text-xs text-foreground">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Último deal registrado</p>
+              <p>
+                {dealSummary.bank?.label ?? 'Banco não informado'} · {formatTermLabel(dealSummary.term)} · {formatCurrency(dealSummary.installment)} (líquido {formatCurrency(dealSummary.netAmount)})
+              </p>
+              {dealSummary.closedAt ? (
+                <p className="text-foreground-muted">Fechado em {formatDateTime(dealSummary.closedAt)}</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex w-full flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
         <h4 className="text-sm font-semibold text-foreground">Contato</h4>
         <InlineField
