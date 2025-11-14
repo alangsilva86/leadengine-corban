@@ -420,6 +420,7 @@ const ContactDetailsPanel = ({
   salesDisabledReason = null,
   salesJourney = null,
 }) => {
+  const clipboard = useClipboard();
   const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const document = ticket?.contact?.document ?? null;
   const email = ticket?.contact?.email ?? ticket?.metadata?.contactEmail ?? null;
