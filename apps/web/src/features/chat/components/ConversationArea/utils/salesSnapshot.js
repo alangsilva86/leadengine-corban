@@ -82,12 +82,63 @@ const toEntity = (value, fallbackIdKeys = ['id', 'identifier', 'value'], fallbac
 
 const ensureArray = (value) => (Array.isArray(value) ? value : []);
 
+const normalizeBaseType = (value) => {
+  const normalized = toStringSafe(value).toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'margin' || normalized === 'margem' || normalized === 'installment') {
+    return 'margin';
+  }
+
+  if (normalized === 'net' || normalized === 'liquido' || normalized === 'netamount' || normalized === 'net_value') {
+    return 'net';
+  }
+
+  return normalized;
+};
+
+const normalizeCalculationParameters = (value) => {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const baseType = normalizeBaseType(record.baseType ?? record.mode ?? record.base_type ?? record.tipoBase);
+  const baseValue = parseNumber(record.baseValue ?? record.base_value ?? record.valorBase ?? record.value);
+  const simulationDate = toStringSafe(record.simulationDate ?? record.date ?? record.data ?? '');
+  const windowId = toStringSafe(record.windowId ?? record.window_id ?? record.janelaId ?? '');
+  const windowLabel = toStringSafe(record.windowLabel ?? record.window_label ?? record.janela ?? '');
+  const termOptions = ensureArray(record.termOptions ?? record.terms ?? record.prazos)
+    .map((term) => parseInteger(term))
+    .filter((value) => Number.isFinite(value));
+  const taxIds = ensureArray(record.taxIds ?? record.tax_ids)
+    .map((taxId) => toStringSafe(taxId))
+    .filter((taxId) => taxId.length > 0);
+
+  return {
+    baseType,
+    baseValue: Number.isFinite(baseValue) ? baseValue : null,
+    simulationDate: simulationDate || null,
+    windowId: windowId || null,
+    windowLabel: windowLabel || null,
+    termOptions,
+    taxIds,
+  };
+};
+
 const createEmptyTerm = (overrides = {}) => ({
   id: overrides.id ?? generateId('term'),
   term: overrides.term ?? '',
   installment: overrides.installment ?? '',
   netAmount: overrides.netAmount ?? '',
   totalAmount: overrides.totalAmount ?? '',
+  coefficient: overrides.coefficient ?? null,
+  tacValue: overrides.tacValue ?? null,
+  source: overrides.source ?? null,
+  calculation: overrides.calculation ?? null,
+  metadata: overrides.metadata ?? null,
   selected: Boolean(overrides.selected),
 });
 
@@ -96,7 +147,12 @@ const createEmptyOffer = (overrides = {}) => ({
   bankId: overrides.bankId ?? '',
   bankName: overrides.bankName ?? '',
   table: overrides.table ?? '',
+  tableId: overrides.tableId ?? '',
+  taxId: overrides.taxId ?? '',
+  modality: overrides.modality ?? '',
   rank: overrides.rank ?? 1,
+  source: overrides.source ?? null,
+  metadata: overrides.metadata ?? null,
   terms:
     Array.isArray(overrides.terms) && overrides.terms.length > 0
       ? overrides.terms.map((term, index) =>
@@ -106,6 +162,11 @@ const createEmptyOffer = (overrides = {}) => ({
             installment: term.installment ?? '',
             netAmount: term.netAmount ?? '',
             totalAmount: term.totalAmount ?? '',
+            coefficient: term.coefficient ?? null,
+            tacValue: term.tacValue ?? null,
+            source: term.source ?? null,
+            calculation: term.calculation ?? null,
+            metadata: term.metadata ?? null,
             selected: Boolean(term.selected),
           }),
         )
@@ -115,6 +176,7 @@ const createEmptyOffer = (overrides = {}) => ({
 export const createDefaultSimulationForm = () => ({
   convenio: { id: '', label: '' },
   product: { id: '', label: '' },
+  parameters: null,
   offers: [
     createEmptyOffer({ rank: 1 }),
     createEmptyOffer({ rank: 2 }),
@@ -184,6 +246,11 @@ const normalizeTerms = (offer, selectedSet) => {
       installment: record.installment ?? record.valorParcela ?? record.amount ?? record.valor ?? '',
       netAmount: record.netAmount ?? record.valorLiquido ?? record.net_value ?? record.net ?? '',
       totalAmount: record.totalAmount ?? record.valorBruto ?? record.total ?? '',
+      coefficient: parseNumber(record.coefficient ?? record.coeficiente ?? null),
+      tacValue: parseNumber(record.tacValue ?? record.tac_value ?? record.tac ?? null),
+      source: toStringSafe(record.source ?? ''),
+      calculation: asRecord(record.calculation) ?? null,
+      metadata: asRecord(record.metadata) ?? null,
       selected,
     });
   });
@@ -212,7 +279,12 @@ export const normalizeSimulationSnapshot = (snapshot) => {
         toStringSafe(offerRecord.bankName ?? offerRecord.bank ?? offerRecord.nome ?? offerRecord.label) ||
         `Banco ${index + 1}`,
       table: toStringSafe(offerRecord.table ?? offerRecord.tabela ?? offerRecord.sheet ?? ''),
+      tableId: toStringSafe(offerRecord.tableId ?? offerRecord.table_id ?? ''),
+      taxId: toStringSafe(offerRecord.taxId ?? offerRecord.tax_id ?? ''),
+      modality: toStringSafe(offerRecord.modality ?? offerRecord.modalidade ?? ''),
       rank: Number.isFinite(offerRecord.rank) ? offerRecord.rank : index + 1,
+      source: toStringSafe(offerRecord.source ?? ''),
+      metadata: asRecord(offerRecord.metadata) ?? null,
       terms: normalizeTerms({ ...offerRecord, id: normalizedId }, selectedOffers),
     });
   });
@@ -223,6 +295,7 @@ export const normalizeSimulationSnapshot = (snapshot) => {
     generatedAt: record.generatedAt ?? record.generated_at ?? null,
     convenio: toEntity(record.convenio ?? record.agreement ?? record.convenioId ?? record.agreementId),
     product: toEntity(record.product ?? record.productType ?? record.productId ?? record.product_id),
+    parameters: normalizeCalculationParameters(record.parameters ?? record.calculation ?? null),
     offers: offers.length > 0 ? offers : createDefaultSimulationForm().offers,
   };
 };
@@ -287,7 +360,7 @@ export const normalizeDealSnapshot = (snapshot) => {
   };
 };
 
-export const buildSimulationSnapshot = ({ convenio, product, offers }) => {
+export const buildSimulationSnapshot = ({ convenio, product, offers, parameters }) => {
   const generatedAt = new Date().toISOString();
   const normalizedOffers = ensureArray(offers)
     .map((offer, index) => {
@@ -302,6 +375,11 @@ export const buildSimulationSnapshot = ({ convenio, product, offers }) => {
           installment: parseNumber(safeTerm.installment),
           netAmount: parseNumber(safeTerm.netAmount),
           totalAmount: parseNumber(safeTerm.totalAmount),
+          coefficient: parseNumber(safeTerm.coefficient),
+          tacValue: parseNumber(safeTerm.tacValue),
+          source: toStringSafe(safeTerm.source ?? ''),
+          calculation: asRecord(safeTerm.calculation) ?? null,
+          metadata: asRecord(safeTerm.metadata) ?? null,
           selected: Boolean(safeTerm.selected),
         };
       });
@@ -311,7 +389,12 @@ export const buildSimulationSnapshot = ({ convenio, product, offers }) => {
         bankId: toStringSafe(safeOffer.bankId ?? offerId),
         bankName: toStringSafe(safeOffer.bankName ?? `Banco ${index + 1}`),
         table: toStringSafe(safeOffer.table ?? ''),
+        tableId: toStringSafe(safeOffer.tableId ?? ''),
+        taxId: toStringSafe(safeOffer.taxId ?? ''),
+        modality: toStringSafe(safeOffer.modality ?? ''),
         rank: Number.isFinite(safeOffer.rank) ? safeOffer.rank : index + 1,
+        source: toStringSafe(safeOffer.source ?? ''),
+        metadata: asRecord(safeOffer.metadata) ?? null,
         terms,
       };
     })
@@ -323,20 +406,52 @@ export const buildSimulationSnapshot = ({ convenio, product, offers }) => {
       .map((term) => ({
         offerId: offer.id,
         bankName: offer.bankName,
+        table: offer.table,
+        taxId: offer.taxId,
+        source: term.source || offer.source || null,
         term: term.term,
         installment: term.installment,
         netAmount: term.netAmount,
+        coefficient: term.coefficient,
       })),
   );
 
+  const normalizedParameters = (() => {
+    const base = normalizeCalculationParameters(parameters);
+    const collectedTaxIds = normalizedOffers.map((offer) => offer.taxId).filter((taxId) => taxId);
+    if (!base && collectedTaxIds.length === 0) {
+      return null;
+    }
+
+    const mergedTaxIds = Array.from(new Set([...(base?.taxIds ?? []), ...collectedTaxIds]));
+
+    if (!base) {
+      return {
+        baseType: null,
+        baseValue: null,
+        simulationDate: null,
+        windowId: null,
+        windowLabel: null,
+        termOptions: [],
+        taxIds: mergedTaxIds,
+      };
+    }
+
+    return {
+      ...base,
+      taxIds: mergedTaxIds,
+    };
+  })();
+
   return {
     type: 'simulation',
-    version: '2024-11',
+    version: '2025-01',
     generatedAt,
     convenio: toEntity(convenio),
     product: toEntity(product),
     offers: normalizedOffers,
     selectedOffers,
+    parameters: normalizedParameters,
   };
 };
 
