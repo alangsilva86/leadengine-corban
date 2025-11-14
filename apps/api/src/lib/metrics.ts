@@ -82,6 +82,21 @@ const LEAD_LAST_CONTACT_HELP =
   '# HELP lead_last_contact_timestamp Timestamp (epoch ms) do último contato inbound por lead';
 const LEAD_LAST_CONTACT_TYPE = '# TYPE lead_last_contact_timestamp gauge';
 
+const AGREEMENT_IMPORT_ENQUEUED_METRIC = 'agreement_import_enqueued_total';
+const AGREEMENT_IMPORT_ENQUEUED_HELP =
+  '# HELP agreement_import_enqueued_total Contador de jobs de importação de convênios enfileirados';
+const AGREEMENT_IMPORT_ENQUEUED_TYPE = '# TYPE agreement_import_enqueued_total counter';
+
+const AGREEMENT_IMPORT_SUCCESS_METRIC = 'agreement_import_success_total';
+const AGREEMENT_IMPORT_SUCCESS_HELP =
+  '# HELP agreement_import_success_total Contador de jobs de importação de convênios concluídos com sucesso';
+const AGREEMENT_IMPORT_SUCCESS_TYPE = '# TYPE agreement_import_success_total counter';
+
+const AGREEMENT_IMPORT_FAILURE_METRIC = 'agreement_import_failure_total';
+const AGREEMENT_IMPORT_FAILURE_HELP =
+  '# HELP agreement_import_failure_total Contador de jobs de importação de convênios que falharam';
+const AGREEMENT_IMPORT_FAILURE_TYPE = '# TYPE agreement_import_failure_total counter';
+
 type CounterLabels = Record<string, string | number | boolean | null | undefined>;
 
 type LabelConstraint = {
@@ -166,6 +181,21 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     dimensionValue: DIMENSION_VALUE_CONSTRAINT,
     stage: STAGE_CONSTRAINT,
   },
+  [AGREEMENT_IMPORT_ENQUEUED_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    agreementId: AGREEMENT_CONSTRAINT,
+    origin: ORIGIN_CONSTRAINT,
+  },
+  [AGREEMENT_IMPORT_SUCCESS_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    agreementId: AGREEMENT_CONSTRAINT,
+    origin: ORIGIN_CONSTRAINT,
+  },
+  [AGREEMENT_IMPORT_FAILURE_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    agreementId: AGREEMENT_CONSTRAINT,
+    origin: ORIGIN_CONSTRAINT,
+  },
 };
 
 const labelValueTracker = new Map<string, Map<string, Set<string>>>();
@@ -188,6 +218,9 @@ const salesProposalCounterStore = new Map<string, number>();
 const salesDealCounterStore = new Map<string, number>();
 const salesFunnelStageGaugeStore = new Map<string, number>();
 const leadLastContactGaugeStore = new Map<string, number>();
+const agreementImportEnqueuedStore = new Map<string, number>();
+const agreementImportSuccessStore = new Map<string, number>();
+const agreementImportFailureStore = new Map<string, number>();
 
 const toLabelString = (value: unknown): string | null => {
   if (value === undefined || value === null) {
@@ -362,6 +395,24 @@ export const inboundMessagesProcessedCounter = {
     const current = inboundMessagesCounterStore.get(key) ?? 0;
     inboundMessagesCounterStore.set(key, current + value);
   },
+};
+
+export const incrementAgreementImportEnqueued = (labels: CounterLabels = {}, value = 1): void => {
+  const key = buildLabelKey(AGREEMENT_IMPORT_ENQUEUED_METRIC, labels);
+  const current = agreementImportEnqueuedStore.get(key) ?? 0;
+  agreementImportEnqueuedStore.set(key, current + value);
+};
+
+export const incrementAgreementImportSuccess = (labels: CounterLabels = {}, value = 1): void => {
+  const key = buildLabelKey(AGREEMENT_IMPORT_SUCCESS_METRIC, labels);
+  const current = agreementImportSuccessStore.get(key) ?? 0;
+  agreementImportSuccessStore.set(key, current + value);
+};
+
+export const incrementAgreementImportFailure = (labels: CounterLabels = {}, value = 1): void => {
+  const key = buildLabelKey(AGREEMENT_IMPORT_FAILURE_METRIC, labels);
+  const current = agreementImportFailureStore.get(key) ?? 0;
+  agreementImportFailureStore.set(key, current + value);
 };
 
 export const whatsappInboundMetrics = {
@@ -562,6 +613,36 @@ export const renderMetrics = (): string => {
     }
   }
 
+  lines.push(AGREEMENT_IMPORT_ENQUEUED_HELP, AGREEMENT_IMPORT_ENQUEUED_TYPE);
+  if (agreementImportEnqueuedStore.size === 0) {
+    lines.push(`${AGREEMENT_IMPORT_ENQUEUED_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of agreementImportEnqueuedStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${AGREEMENT_IMPORT_ENQUEUED_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(AGREEMENT_IMPORT_SUCCESS_HELP, AGREEMENT_IMPORT_SUCCESS_TYPE);
+  if (agreementImportSuccessStore.size === 0) {
+    lines.push(`${AGREEMENT_IMPORT_SUCCESS_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of agreementImportSuccessStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${AGREEMENT_IMPORT_SUCCESS_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(AGREEMENT_IMPORT_FAILURE_HELP, AGREEMENT_IMPORT_FAILURE_TYPE);
+  if (agreementImportFailureStore.size === 0) {
+    lines.push(`${AGREEMENT_IMPORT_FAILURE_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of agreementImportFailureStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${AGREEMENT_IMPORT_FAILURE_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(SALES_FUNNEL_STAGE_HELP, SALES_FUNNEL_STAGE_TYPE);
   if (salesFunnelStageGaugeStore.size === 0) {
     lines.push(`${SALES_FUNNEL_STAGE_METRIC} 0`);
@@ -656,5 +737,8 @@ export const resetMetrics = (): void => {
   salesDealCounterStore.clear();
   salesFunnelStageGaugeStore.clear();
   leadLastContactGaugeStore.clear();
+  agreementImportEnqueuedStore.clear();
+  agreementImportSuccessStore.clear();
+  agreementImportFailureStore.clear();
   labelValueTracker.clear();
 };
