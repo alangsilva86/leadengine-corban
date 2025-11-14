@@ -257,8 +257,11 @@ curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/alloca
 
 ### Campanhas e pipeline comercial
 - `/api/lead-engine/campaigns` – sincronização com upstream, filtros por `agreementId` e `status`.
-- `/api/lead-engine/agreements` – lista acordos ativos/ disponíveis.
+- `/api/v1/agreements` – coleção paginada, criação (`POST`), detalhe (`GET /{agreementId}`) e atualização parcial (`PATCH /{agreementId}`) com tabelas, janelas e taxas modeladas em envelopes `data/meta`.
+- `/api/v1/agreements/import` – importação assíncrona de acordos (JSON ou multipart) com retorno do job.
+- `/api/v1/agreements/providers/{providerId}/sync` – agenda a sincronização de acordos com provedores externos.
 - `/api/campaigns` – gestão interna de campanhas (status, métricas, webhooks).
+- Documentação detalhada dos acordos: [`docs/agreements-api.md`](docs/agreements-api.md).
 
 ### Preferências e filas
 - `/api/preferences` – salva preferências de usuários (tema, filtros, layout).
