@@ -28,6 +28,67 @@ const STAGE_LABELS = {
   DESCONHECIDO: 'Desconhecido',
 };
 
+const STAGE_ALIAS_MAP = {
+  QUALIFICANDO: 'QUALIFICACAO',
+  QUALIFICACAO_INICIAL: 'QUALIFICACAO',
+  QUALIFICANDO_LEAD: 'QUALIFICACAO',
+  QUALIFICACAO_AVANCADA: 'QUALIFICACAO',
+  DOCUMENTANDO: 'DOCUMENTACAO',
+  DOCUMENTOS: 'DOCUMENTACAO',
+  DOCUMENTACAO_COMPLETA: 'DOCUMENTACAO',
+  DOCUMENTOS_RECEBIDOS: 'DOCUMENTACAO',
+  AVERBACAO: 'DOCUMENTOS_AVERBACAO',
+  AVERBANDO: 'DOCUMENTOS_AVERBACAO',
+  AVERBACAO_PENDENTE: 'DOCUMENTOS_AVERBACAO',
+  LIQUIDANDO: 'LIQUIDACAO',
+  LIQUIDACAO_EM_ANDAMENTO: 'LIQUIDACAO',
+  LIQUIDACAO_APROVADA: 'APROVADO_LIQUIDACAO',
+  APROVADO: 'APROVADO_LIQUIDACAO',
+  GANHO: 'APROVADO_LIQUIDACAO',
+  VENCIDO: 'RECICLAR',
+  RECICLANDO: 'RECICLAR',
+  RECICLAGEM: 'RECICLAR',
+  ENGAJADO: 'CONECTADO',
+  CONECTANDO: 'CONECTADO',
+  CONEXAO: 'CONECTADO',
+  AGUARDANDO_ANALISE: 'AGUARDANDO',
+  ANALISE_INTERNA: 'AGUARDANDO',
+  AGUARDANDO_DOCUMENTOS: 'AGUARDANDO_CLIENTE',
+  AGUARDANDO_ASSINATURA: 'AGUARDANDO_CLIENTE',
+  INDEFINIDO: 'DESCONHECIDO',
+  UNKNOWN: 'DESCONHECIDO',
+};
+
+const STAGE_VALUE_MAP = {
+  NOVO: 'novo',
+  CONECTADO: 'conectado',
+  QUALIFICACAO: 'qualificando',
+  PROPOSTA: 'proposta',
+  DOCUMENTACAO: 'documentando',
+  DOCUMENTOS_AVERBACAO: 'averbando',
+  AGUARDANDO: 'aguardando',
+  AGUARDANDO_CLIENTE: 'aguardando_cliente',
+  LIQUIDACAO: 'liquidando',
+  APROVADO_LIQUIDACAO: 'ganho',
+  RECICLAR: 'reciclando',
+  DESCONHECIDO: 'desconhecido',
+};
+
+const LEGACY_STAGE_VALUE_MAP = {
+  NOVO: 'novo',
+  CONECTADO: 'conectado',
+  QUALIFICACAO: 'qualificacao',
+  PROPOSTA: 'proposta',
+  DOCUMENTACAO: 'documentacao',
+  DOCUMENTOS_AVERBACAO: 'documentos_averbacao',
+  AGUARDANDO: 'aguardando',
+  AGUARDANDO_CLIENTE: 'aguardando_cliente',
+  LIQUIDACAO: 'liquidacao',
+  APROVADO_LIQUIDACAO: 'aprovado_liquidacao',
+  RECICLAR: 'reciclar',
+  DESCONHECIDO: 'desconhecido',
+};
+
 const STAGE_PRESENTATION = {
   NOVO: { icon: Sparkles, tone: 'info' },
   CONECTADO: { icon: Link2, tone: 'info' },
@@ -86,6 +147,58 @@ const PRIMARY_ACTION_MAP = {
   RECICLAR: PRIMARY_ACTION_PRESETS.followUp,
 };
 
+const resolveStageKey = (canonical) => {
+  if (!canonical) {
+    return 'DESCONHECIDO';
+  }
+
+  if (STAGE_LABELS[canonical]) {
+    return canonical;
+  }
+
+  if (STAGE_ALIAS_MAP[canonical]) {
+    return STAGE_ALIAS_MAP[canonical];
+  }
+
+  if (canonical.startsWith('QUALIFIC')) {
+    return 'QUALIFICACAO';
+  }
+
+  if (canonical.startsWith('DOCUMENTO')) {
+    return canonical.includes('AVERBAC') ? 'DOCUMENTOS_AVERBACAO' : 'DOCUMENTACAO';
+  }
+
+  if (canonical.startsWith('AVERB')) {
+    return 'DOCUMENTOS_AVERBACAO';
+  }
+
+  if (canonical.startsWith('AGUARDANDO_CLIENTE')) {
+    return 'AGUARDANDO_CLIENTE';
+  }
+
+  if (canonical.startsWith('AGUARDANDO')) {
+    return 'AGUARDANDO';
+  }
+
+  if (canonical.startsWith('LIQUIDA')) {
+    return 'LIQUIDACAO';
+  }
+
+  if (canonical.startsWith('APROV')) {
+    return 'APROVADO_LIQUIDACAO';
+  }
+
+  if (canonical.startsWith('RECIC')) {
+    return 'RECICLAR';
+  }
+
+  if (canonical.startsWith('CONECT') || canonical.startsWith('ENGAJ')) {
+    return 'CONECTADO';
+  }
+
+  return canonical;
+};
+
 const normalizeStage = (value) => {
   if (!value) return 'DESCONHECIDO';
   const canonical = value
@@ -97,8 +210,13 @@ const normalizeStage = (value) => {
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .replace(/_+/g, '_');
+  const resolved = resolveStageKey(canonical);
 
-  return canonical || 'DESCONHECIDO';
+  if (STAGE_LABELS[resolved] || resolved === 'DESCONHECIDO') {
+    return resolved;
+  }
+
+  return canonical && STAGE_LABELS[canonical] ? canonical : 'DESCONHECIDO';
 };
 
 const formatFallbackStageLabel = (stageKey) =>
@@ -166,6 +284,7 @@ const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = 
 export {
   STAGE_LABELS,
   STAGE_PRESENTATION,
+  STAGE_VALUE_MAP,
   PRIMARY_ACTION_PRESETS,
   PRIMARY_ACTION_MAP,
   normalizeStage,
@@ -174,3 +293,11 @@ export {
   getStageInfo,
   resolvePrimaryAction,
 };
+
+export const getStageValue = (stageKey, { legacy = false } = {}) => {
+  const normalized = normalizeStage(stageKey);
+  const map = legacy ? LEGACY_STAGE_VALUE_MAP : STAGE_VALUE_MAP;
+  return map[normalized] ?? normalized.toLowerCase();
+};
+
+export const getLegacyStageValue = (stageKey) => getStageValue(stageKey, { legacy: true });

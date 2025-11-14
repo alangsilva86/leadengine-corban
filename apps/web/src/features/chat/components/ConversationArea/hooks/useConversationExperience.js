@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import useAiSuggestions from '../../../hooks/useAiSuggestions.js';
 import { normalizeConfidence } from '../../../utils/aiSuggestions.js';
 import useChatAutoscroll from '../../../hooks/useChatAutoscroll.js';
@@ -11,6 +12,7 @@ import { useSLAClock } from './useSLAClock.js';
 import { useConversationScroll } from './useConversationScroll.js';
 import { useComposerMetrics } from './useComposerMetrics.js';
 import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
+import { STAGE_LABELS, getTicketStage, getStageValue } from '../utils/stage.js';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -61,6 +63,7 @@ export const useConversationExperience = ({
   onAiModeChange,
   onTakeOver,
   onGiveBackToAi,
+  sales = {},
 }) => {
   const disabled = Boolean(composerDisabled);
   const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
@@ -73,6 +76,210 @@ export const useConversationExperience = ({
   const composerRef = useRef(null);
   const composerApiRef = useRef(null);
   const aiReplyStream = useAiReplyStream();
+  const stageOptions = useMemo(
+    () =>
+      Object.entries(STAGE_LABELS)
+        .filter(([key]) => key !== 'DESCONHECIDO')
+        .map(([key, label]) => ({
+          key,
+          label,
+          value: getStageValue(key),
+        })),
+    [],
+  );
+  const ticketStageKey = useMemo(() => getTicketStage(ticket), [ticket]);
+  const defaultStageValue =
+    ticketStageKey && ticketStageKey !== 'DESCONHECIDO' ? getStageValue(ticketStageKey) : '';
+  const ticketLeadId =
+    (ticket?.lead && ticket.lead.id) ??
+    ticket?.leadId ??
+    ticket?.metadata?.leadId ??
+    null;
+  const lastSimulationId = useMemo(() => {
+    if (!Array.isArray(ticket?.salesTimeline)) {
+      return null;
+    }
+    for (let index = ticket.salesTimeline.length - 1; index >= 0; index -= 1) {
+      const entry = ticket.salesTimeline[index];
+      const type = typeof entry?.type === 'string' ? entry.type : '';
+      if (!type) continue;
+      const kind = type.split('.')[0];
+      if (type === 'simulation.created' || kind === 'simulation') {
+        const payload = entry.payload ?? {};
+        return (
+          payload.simulationId ??
+          payload.simulation_id ??
+          payload.id ??
+          (typeof entry.id === 'string' ? entry.id : null)
+        );
+      }
+    }
+    return null;
+  }, [ticket?.salesTimeline]);
+  const lastProposalId = useMemo(() => {
+    if (!Array.isArray(ticket?.salesTimeline)) {
+      return null;
+    }
+    for (let index = ticket.salesTimeline.length - 1; index >= 0; index -= 1) {
+      const entry = ticket.salesTimeline[index];
+      const type = typeof entry?.type === 'string' ? entry.type : '';
+      if (!type) {
+        continue;
+      }
+      const kind = type.split('.')[0];
+      if (type === 'proposal.created' || kind === 'proposal') {
+        const payload = entry.payload ?? {};
+        return payload.proposalId ?? payload.id ?? (typeof entry.id === 'string' ? entry.id : null);
+      }
+    }
+    return null;
+  }, [ticket?.salesTimeline]);
+  const salesConfig = sales ?? {};
+  const createSimulation = salesConfig.onCreateSimulation ?? salesConfig.createSimulation ?? null;
+  const createProposal = salesConfig.onCreateProposal ?? salesConfig.createProposal ?? null;
+  const createDeal = salesConfig.onCreateDeal ?? salesConfig.createDeal ?? null;
+  const isCreatingSimulation = Boolean(
+    salesConfig.isCreatingSimulation ?? salesConfig.simulationPending ?? false,
+  );
+  const isCreatingProposal = Boolean(
+    salesConfig.isCreatingProposal ?? salesConfig.proposalPending ?? false,
+  );
+  const isCreatingDeal = Boolean(salesConfig.isCreatingDeal ?? salesConfig.dealPending ?? false);
+  const queueAlerts = Array.isArray(salesConfig.queueAlerts) ? salesConfig.queueAlerts : [];
+  const resolvedSalesReason =
+    salesConfig.disabledReason ??
+    (queueAlerts.length > 0
+      ? 'Fila padrão indisponível. Configure as filas para registrar operações de vendas.'
+      : null);
+  const salesBlocked = Boolean(salesConfig.disabled) || queueAlerts.length > 0;
+  const [salesDialog, setSalesDialog] = useState({ type: null, defaults: {} });
+  const closeSalesDialog = useCallback(() => setSalesDialog({ type: null, defaults: {} }), []);
+  const ensureSalesAvailable = useCallback(() => {
+    if (salesBlocked) {
+      if (resolvedSalesReason) {
+        toast.warning(resolvedSalesReason);
+      } else {
+        toast.warning('Operações de vendas indisponíveis no momento.');
+      }
+      return false;
+    }
+
+    if (!ticketId) {
+      toast.warning('Selecione um atendimento para registrar operações de vendas.');
+      return false;
+    }
+
+    return true;
+  }, [resolvedSalesReason, salesBlocked, ticketId]);
+  const handleOpenSimulation = useCallback(() => {
+    if (!ensureSalesAvailable()) {
+      return;
+    }
+
+    setSalesDialog({
+      type: 'simulation',
+      defaults: {
+        stage: defaultStageValue,
+        leadId: ticketLeadId ?? '',
+      },
+    });
+  }, [defaultStageValue, ensureSalesAvailable, ticketLeadId]);
+  const handleOpenProposal = useCallback(() => {
+    if (!ensureSalesAvailable()) {
+      return;
+    }
+
+    setSalesDialog({
+      type: 'proposal',
+      defaults: {
+        stage: defaultStageValue,
+        leadId: ticketLeadId ?? '',
+        simulationId: lastSimulationId ?? '',
+      },
+    });
+  }, [defaultStageValue, ensureSalesAvailable, lastSimulationId, ticketLeadId]);
+  const handleOpenDeal = useCallback(() => {
+    if (!ensureSalesAvailable()) {
+      return;
+    }
+
+    setSalesDialog({
+      type: 'deal',
+      defaults: {
+        stage: defaultStageValue,
+        leadId: ticketLeadId ?? '',
+        simulationId: lastSimulationId ?? '',
+        proposalId: lastProposalId ?? '',
+      },
+    });
+  }, [defaultStageValue, ensureSalesAvailable, lastProposalId, lastSimulationId, ticketLeadId]);
+  const handleSubmitSimulation = useCallback(
+    async (input) => {
+      if (!createSimulation || !ticketId) {
+        return;
+      }
+
+      try {
+        await createSimulation({
+          ticketId,
+          calculationSnapshot: input.calculationSnapshot,
+          leadId: input.leadId ?? null,
+          stage: input.stage ?? null,
+          metadata: input.metadata ?? null,
+        });
+        closeSalesDialog();
+      } catch {
+        // feedback tratado a montante
+      }
+    },
+    [closeSalesDialog, createSimulation, ticketId],
+  );
+  const handleSubmitProposal = useCallback(
+    async (input) => {
+      if (!createProposal || !ticketId) {
+        return;
+      }
+
+      try {
+        await createProposal({
+          ticketId,
+          calculationSnapshot: input.calculationSnapshot,
+          leadId: input.leadId ?? null,
+          simulationId: input.simulationId ?? null,
+          stage: input.stage ?? null,
+          metadata: input.metadata ?? null,
+        });
+        closeSalesDialog();
+      } catch {
+        // feedback tratado a montante
+      }
+    },
+    [closeSalesDialog, createProposal, ticketId],
+  );
+  const handleSubmitDeal = useCallback(
+    async (input) => {
+      if (!createDeal || !ticketId) {
+        return;
+      }
+
+      try {
+        await createDeal({
+          ticketId,
+          calculationSnapshot: input.calculationSnapshot,
+          leadId: input.leadId ?? null,
+          simulationId: input.simulationId ?? null,
+          proposalId: input.proposalId ?? null,
+          stage: input.stage ?? null,
+          metadata: input.metadata ?? null,
+          closedAt: input.closedAt ?? null,
+        });
+        closeSalesDialog();
+      } catch {
+        // feedback tratado a montante
+      }
+    },
+    [closeSalesDialog, createDeal, ticketId],
+  );
 
   const {
     timelineItems: messageTimelineItems,
@@ -527,6 +734,57 @@ export const useConversationExperience = ({
     [ticket],
   );
 
+  const simulationModalProps =
+    salesDialog.type === 'simulation' || salesDialog.type === 'proposal'
+      ? {
+          open: true,
+          mode: salesDialog.type === 'proposal' ? 'proposal' : 'simulation',
+          onOpenChange: (open) => {
+            if (!open) {
+              closeSalesDialog();
+            }
+          },
+          onSubmit: salesDialog.type === 'proposal' ? handleSubmitProposal : handleSubmitSimulation,
+          defaultValues: {
+            stage: salesDialog.defaults?.stage ?? '',
+            leadId: salesDialog.defaults?.leadId ?? '',
+            simulationId: salesDialog.defaults?.simulationId ?? '',
+            calculationSnapshot: salesDialog.defaults?.calculationSnapshot ?? null,
+            metadata: salesDialog.defaults?.metadata ?? null,
+          },
+          stageOptions,
+          isSubmitting: salesDialog.type === 'proposal' ? isCreatingProposal : isCreatingSimulation,
+          disabled: salesBlocked,
+          disabledReason: resolvedSalesReason,
+        }
+      : null;
+
+  const dealDrawerProps =
+    salesDialog.type === 'deal'
+      ? {
+          open: true,
+          onOpenChange: (open) => {
+            if (!open) {
+              closeSalesDialog();
+            }
+          },
+          onSubmit: handleSubmitDeal,
+          defaultValues: {
+            stage: salesDialog.defaults?.stage ?? '',
+            leadId: salesDialog.defaults?.leadId ?? '',
+            simulationId: salesDialog.defaults?.simulationId ?? '',
+            proposalId: salesDialog.defaults?.proposalId ?? '',
+            calculationSnapshot: salesDialog.defaults?.calculationSnapshot ?? null,
+            metadata: salesDialog.defaults?.metadata ?? null,
+            closedAt: salesDialog.defaults?.closedAt ?? null,
+          },
+          stageOptions,
+          isSubmitting: isCreatingDeal,
+          disabled: salesBlocked,
+          disabledReason: resolvedSalesReason,
+        }
+      : null;
+
   const handleGenerateAiReply = useCallback(() => {
     if (!ticket?.id) {
       return;
@@ -586,7 +844,7 @@ export const useConversationExperience = ({
       onAssign,
       onSendTemplate,
       onCreateNextStep,
-      onGenerateProposal,
+      onGenerateProposal: handleOpenProposal,
       onScheduleFollowUp,
       onSendSMS,
       onAttachFile: handleAttachFileFromHeader,
@@ -636,7 +894,7 @@ export const useConversationExperience = ({
       onCreateNextStep,
       onDealFieldSave,
       onEditContact,
-      onGenerateProposal,
+      handleOpenProposal,
       onNextStepSave,
       onRegisterCallResult,
       onRegisterResult,
@@ -688,6 +946,17 @@ export const useConversationExperience = ({
     },
     header: {
       props: headerProps,
+    },
+    sales: {
+      disabled: salesBlocked,
+      disabledReason: resolvedSalesReason,
+      handlers: {
+        openSimulation: handleOpenSimulation,
+        openProposal: handleOpenProposal,
+        openDeal: handleOpenDeal,
+      },
+      simulationModal: simulationModalProps,
+      dealDrawer: dealDrawerProps,
     },
   };
 };

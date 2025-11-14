@@ -22,6 +22,12 @@ describe('StageProgress', () => {
     expect(screen.getByLabelText('Etapa atual: Nova Etapa Misteriosa')).toBeInTheDocument();
   });
 
+  it('supports legacy aliases for the new sales enum', () => {
+    render(<StageProgress currentStage="qualificando" />);
+
+    expect(screen.getByLabelText('Etapa atual: Qualificação')).toBeInTheDocument();
+  });
+
   it('does not render when the stage is unknown', () => {
     const { container } = render(<StageProgress currentStage={null} />);
 
