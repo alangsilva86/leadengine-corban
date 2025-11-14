@@ -42,6 +42,27 @@ Este documento descreve o contrato dos novos endpoints de relatórios utilizados
       "averageResponseSeconds": 1800,
       "conversionRate": 0.2051
     },
+    "salesSummary": {
+      "dimension": "overall",
+      "value": "tenant",
+      "label": "Operações do tenant",
+      "operations": {
+        "simulation": 120,
+        "proposal": 80,
+        "deal": 35,
+        "total": 235
+      },
+      "stages": [
+        {
+          "stage": "QUALIFICACAO",
+          "simulation": 60,
+          "proposal": 12,
+          "deal": 2,
+          "total": 74
+        }
+      ],
+      "updatedAt": "2024-04-07T23:59:59.000Z"
+    },
     "groups": [
       {
         "key": "agreement:saec",
@@ -80,7 +101,35 @@ Este documento descreve o contrato dos novos endpoints de relatórios utilizados
               "conversionRate": 0.25
             }
           }
-        ]
+        ],
+        "salesFunnel": {
+          "dimension": "agreement",
+          "value": "saec",
+          "label": "SAEC Goiânia",
+          "operations": {
+            "simulation": 80,
+            "proposal": 45,
+            "deal": 20,
+            "total": 145
+          },
+          "stages": [
+            {
+              "stage": "QUALIFICACAO",
+              "simulation": 32,
+              "proposal": 10,
+              "deal": 1,
+              "total": 43
+            },
+            {
+              "stage": "PROPOSTA",
+              "simulation": 18,
+              "proposal": 25,
+              "deal": 6,
+              "total": 49
+            }
+          ],
+          "updatedAt": "2024-04-07T23:59:59.000Z"
+        }
       }
     ],
     "totalGroups": 5
@@ -112,6 +161,7 @@ Cada item em `groups[]` representa a agregação por valor da dimensão solicita
 - `metadata`: dados auxiliares disponíveis para drill-down (IDs de campanha, instância, origem comercial, produto, estratégia e margem).
 - `metrics`: métricas consolidadas do grupo.
 - `breakdown[]`: série diária com o mesmo conjunto de métricas, permitindo montar gráficos de tendência.
+- `salesFunnel`: quando disponível, consolida o total de simulações, propostas e deals gerados para o grupo, além do detalhamento por `stage` (valores do enum `SalesStage`).
 
 ### Comportamento em falhas
 
@@ -128,3 +178,4 @@ Cada item em `groups[]` representa a agregação por valor da dimensão solicita
 ## Histórico
 
 - **Abr/2024** — Versão inicial do endpoint consolidando métricas de lead allocations por múltiplas dimensões.
+- **Jun/2024** — Adicionadas métricas de funil de vendas (`salesSummary` e `salesFunnel`) com rótulos alinhados às novas métricas Prometheus.

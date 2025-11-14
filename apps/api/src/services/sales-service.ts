@@ -25,6 +25,19 @@ import {
   type TicketSalesEvent,
 } from '../data/ticket-sales-event-store';
 import type { TicketStage } from '../types/tickets';
+import { logger } from '../config/logger';
+import {
+  salesDealCounter,
+  salesOperationsCounter,
+  salesProposalCounter,
+  salesSimulationCounter,
+} from '../lib/metrics';
+import {
+  extractSalesContext,
+  recordSalesFunnelOperation,
+  type SalesContextMetadata,
+  type SalesOperationKind,
+} from '../data/sales-funnel-aggregator';
 
 type TicketWithSalesStage = Ticket & { stage: TicketStage };
 
@@ -110,6 +123,144 @@ type SalesOperationResult<T> = {
   event: TicketSalesEvent;
 };
 
+const sanitizeMetricLabel = (value: string | null | undefined, fallback = 'unknown'): string => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+};
+
+const buildSalesMetricLabels = (
+  tenantId: string,
+  stage: SalesStage,
+  context: SalesContextMetadata
+): Record<string, string> => ({
+  tenantId,
+  stage,
+  agreementId: sanitizeMetricLabel(context.agreementId),
+  agreementName: sanitizeMetricLabel(context.agreementName ?? context.agreementId),
+  campaignId: sanitizeMetricLabel(context.campaignId),
+  productType: sanitizeMetricLabel(context.productType),
+  strategy: sanitizeMetricLabel(context.strategy),
+});
+
+const logSalesOperation = (
+  operation: SalesOperationKind,
+  params: {
+    tenantId: string;
+    ticket: TicketWithSalesStage;
+    stage: SalesStage;
+    actorId: string | null;
+    operationContext: OperationContext;
+    salesContext: SalesContextMetadata;
+    event: TicketSalesEvent;
+    entity: SalesSimulation | SalesProposal | SalesDeal;
+  }
+): void => {
+  const basePayload = {
+    tenantId: params.tenantId,
+    ticketId: params.ticket.id,
+    stage: params.stage,
+    operation,
+    actorId: params.actorId ?? null,
+    eventId: params.event.id,
+    eventType: params.event.type,
+    agreementId: params.salesContext.agreementId ?? null,
+    agreementName: params.salesContext.agreementName ?? null,
+    campaignId: params.salesContext.campaignId ?? null,
+    campaignName: params.salesContext.campaignName ?? null,
+    productType: params.salesContext.productType ?? null,
+    strategy: params.salesContext.strategy ?? null,
+    instanceId: params.salesContext.instanceId ?? null,
+  } satisfies Record<string, unknown>;
+
+  if (operation === 'simulation') {
+    const entity = params.entity as SalesSimulation;
+    logger.info('sales.operation.simulation', {
+      ...basePayload,
+      simulationId: entity.id,
+      leadId: entity.leadId ?? null,
+      actorContext: params.operationContext.actorId ?? null,
+    });
+    return;
+  }
+
+  if (operation === 'proposal') {
+    const entity = params.entity as SalesProposal;
+    logger.info('sales.operation.proposal', {
+      ...basePayload,
+      proposalId: entity.id,
+      simulationId: entity.simulationId ?? null,
+      leadId: entity.leadId ?? null,
+      actorContext: params.operationContext.actorId ?? null,
+    });
+    return;
+  }
+
+  const entity = params.entity as SalesDeal;
+  let closedAt: string | null = null;
+  if (entity.closedAt instanceof Date) {
+    closedAt = entity.closedAt.toISOString();
+  } else if (typeof entity.closedAt === 'string') {
+    const trimmed = entity.closedAt.trim();
+    closedAt = trimmed.length > 0 ? trimmed : null;
+  }
+
+  logger.info('sales.operation.deal', {
+    ...basePayload,
+    dealId: entity.id,
+    simulationId: entity.simulationId ?? null,
+    proposalId: entity.proposalId ?? null,
+    leadId: entity.leadId ?? null,
+    closedAt,
+    actorContext: params.operationContext.actorId ?? null,
+  });
+};
+
+const applySalesTelemetry = <T extends SalesSimulation | SalesProposal | SalesDeal>({
+  tenantId,
+  operation,
+  ticket,
+  actorId,
+  operationContext,
+  entity,
+  event,
+}: {
+  tenantId: string;
+  operation: SalesOperationKind;
+  ticket: TicketWithSalesStage;
+  actorId: string | null;
+  operationContext: OperationContext;
+  entity: T;
+  event: TicketSalesEvent;
+}): void => {
+  const stage = resolveSalesStage(ticket.stage);
+  const salesContext = extractSalesContext(ticket);
+  const metricLabels = buildSalesMetricLabels(tenantId, stage, salesContext);
+
+  salesOperationsCounter.inc({ tenantId, operation, stage });
+  if (operation === 'simulation') {
+    salesSimulationCounter.inc(metricLabels);
+  } else if (operation === 'proposal') {
+    salesProposalCounter.inc(metricLabels);
+  } else if (operation === 'deal') {
+    salesDealCounter.inc(metricLabels);
+  }
+
+  recordSalesFunnelOperation({ tenantId, ticket, stage, operation, context: salesContext });
+  logSalesOperation(operation, {
+    tenantId,
+    ticket,
+    stage,
+    actorId,
+    operationContext,
+    salesContext,
+    entity,
+    event,
+  });
+};
+
 const buildSimulationDTO = (context: SimulationContext): CreateSalesSimulationDTO => ({
   tenantId: context.tenantId,
   ticketId: context.ticketId,
@@ -181,6 +332,16 @@ export const createSalesSimulation = async (
     calculationSnapshot: { ...simulation.calculationSnapshot },
   });
 
+  applySalesTelemetry({
+    tenantId: context.tenantId,
+    operation: 'simulation',
+    ticket: updatedTicket,
+    actorId: context.actorId ?? null,
+    operationContext: context,
+    entity: simulation,
+    event,
+  });
+
   return {
     entity: simulation,
     ticket: updatedTicket,
@@ -200,6 +361,16 @@ export const createSalesProposal = async (
     simulationId: proposal.simulationId ?? null,
     leadId: proposal.leadId ?? null,
     calculationSnapshot: { ...proposal.calculationSnapshot },
+  });
+
+  applySalesTelemetry({
+    tenantId: context.tenantId,
+    operation: 'proposal',
+    ticket: updatedTicket,
+    actorId: context.actorId ?? null,
+    operationContext: context,
+    entity: proposal,
+    event,
   });
 
   return {
@@ -223,6 +394,16 @@ export const createSalesDeal = async (
     leadId: deal.leadId ?? null,
     closedAt: deal.closedAt ? deal.closedAt.toISOString() : null,
     calculationSnapshot: { ...deal.calculationSnapshot },
+  });
+
+  applySalesTelemetry({
+    tenantId: context.tenantId,
+    operation: 'deal',
+    ticket: updatedTicket,
+    actorId: context.actorId ?? null,
+    operationContext: context,
+    entity: deal,
+    event,
   });
 
   return {

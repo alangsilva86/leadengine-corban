@@ -20,6 +20,15 @@ Este documento descreve os painéis de Grafana e alertas de Prometheus recomenda
 * **Reconexões de socket (`whatsapp_socket_reconnects_total`)** – gráfico de colunas agrupado por `instanceId` para identificar instâncias instáveis.
 * **Mapa de calor de reconexões por hora** – painel `Heatmap` utilizando `increase(whatsapp_socket_reconnects_total[1h])` com eixos `hora do dia` × `instanceId`.
 
+### 4. Funil de vendas
+
+* **Simulações registradas (`sales_simulation_total`)** – painel `Stat` ou `Bar chart` segmentado por `agreementId` e `productType` para acompanhar quantas simulações foram criadas em cada convênio.
+* **Propostas geradas (`sales_proposal_total`)** – série temporal com `sum(rate(sales_proposal_total[15m])) by (tenantId, agreementId)` para visualizar o ritmo de avanço para propostas.
+* **Deals concluídos (`sales_deal_total`)** – gráfico acumulado por estágio (`stage`) destacando as conversões em `LIQUIDACAO` e `APROVADO_LIQUIDACAO`.
+* **Distribuição por estágio (`sales_funnel_stage_total`)** – tabela que cruza `dimension` e `dimensionValue` (por exemplo `agreement` ou `product`) mostrando o total de operações registradas em cada etapa do funil.
+
+> Todas as métricas do funil incluem labels padronizados (`tenantId`, `stage`, `agreementId`, `agreementName`, `campaignId`, `productType`, `strategy`) permitindo filtros consistentes com os relatórios operacionais.
+
 ## Alertas de Prometheus
 
 | Nome | Regra | Objetivo |

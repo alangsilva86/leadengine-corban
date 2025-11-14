@@ -756,6 +756,7 @@ export const useConversationExperience = ({
           isSubmitting: salesDialog.type === 'proposal' ? isCreatingProposal : isCreatingSimulation,
           disabled: salesBlocked,
           disabledReason: resolvedSalesReason,
+          queueAlerts,
         }
       : null;
 
@@ -782,6 +783,7 @@ export const useConversationExperience = ({
           isSubmitting: isCreatingDeal,
           disabled: salesBlocked,
           disabledReason: resolvedSalesReason,
+          queueAlerts,
         }
       : null;
 

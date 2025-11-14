@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,23 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
+
+const NO_STAGE_VALUE = '__none__';
+
+const normalizeStageState = (value) => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return NO_STAGE_VALUE;
+};
+
+const resolveStageValue = (value) => {
+  if (typeof value === 'string' && value !== NO_STAGE_VALUE && value.trim().length > 0) {
+    return value.trim();
+  }
+  return '';
+};
 
 const formatSnapshot = (value) => {
   if (!value || typeof value !== 'object') {
@@ -40,8 +58,9 @@ const SimulationModal = ({
   isSubmitting = false,
   disabled = false,
   disabledReason = null,
+  queueAlerts = [],
 }) => {
-  const [stage, setStage] = useState(defaultValues.stage ?? '');
+  const [stage, setStage] = useState(() => normalizeStageState(defaultValues.stage));
   const [leadId, setLeadId] = useState(defaultValues.leadId ?? '');
   const [simulationId, setSimulationId] = useState(defaultValues.simulationId ?? '');
   const [snapshotText, setSnapshotText] = useState(formatSnapshot(defaultValues.calculationSnapshot));
@@ -49,11 +68,44 @@ const SimulationModal = ({
   const [errors, setErrors] = useState({});
   const stageTriggerRef = useRef(null);
 
+  const normalizedAlerts = useMemo(() => {
+    if (!Array.isArray(queueAlerts)) {
+      return [];
+    }
+
+    return queueAlerts
+      .map((entry) => {
+        const payload = entry && typeof entry === 'object' ? entry.payload ?? {} : {};
+        const message =
+          payload && typeof payload.message === 'string' && payload.message.trim().length > 0
+            ? payload.message.trim()
+            : 'Fila padrão indisponível para registrar operações de vendas.';
+        const reason =
+          payload && typeof payload.reason === 'string' && payload.reason.trim().length > 0
+            ? payload.reason.trim()
+            : null;
+        const instanceId =
+          payload && typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
+            ? payload.instanceId.trim()
+            : null;
+
+        return {
+          message,
+          reason,
+          instanceId,
+        };
+      })
+      .slice(0, 3);
+  }, [queueAlerts]);
+
+  const alertsActive = normalizedAlerts.length > 0;
+  const fieldsDisabled = disabled || alertsActive;
+
   useEffect(() => {
     if (!open) {
       return;
     }
-    setStage(defaultValues.stage ?? '');
+    setStage(normalizeStageState(defaultValues.stage));
     setLeadId(defaultValues.leadId ?? '');
     setSimulationId(defaultValues.simulationId ?? '');
     setSnapshotText(formatSnapshot(defaultValues.calculationSnapshot));
@@ -77,7 +129,7 @@ const SimulationModal = ({
   const submitLabel = useMemo(() => (mode === 'proposal' ? 'Gerar proposta' : 'Registrar simulação'), [mode]);
 
   const handleSubmit = async () => {
-    if (disabled) {
+    if (fieldsDisabled) {
       return;
     }
 
@@ -114,7 +166,7 @@ const SimulationModal = ({
     setErrors({});
 
     const payload = {
-      stage: stage || null,
+      stage: resolveStageValue(stage) || null,
       leadId: leadId?.trim() ? leadId.trim() : null,
       calculationSnapshot,
       metadata,
@@ -135,6 +187,32 @@ const SimulationModal = ({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          {alertsActive ? (
+            <div className="space-y-2">
+              {normalizedAlerts.map((alert, index) => (
+                <Alert
+                  key={`${alert.reason ?? 'missing'}-${alert.instanceId ?? index}`}
+                  className="border-amber-300/80 bg-amber-50 text-amber-900"
+                >
+                  <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden />
+                  <AlertTitle>Fila padrão indisponível</AlertTitle>
+                  <AlertDescription>
+                    <p>{alert.message}</p>
+                    {alert.instanceId ? (
+                      <p className="text-xs text-amber-800/90">
+                        Instância afetada: <span className="font-semibold">{alert.instanceId}</span>
+                      </p>
+                    ) : null}
+                    {alert.reason ? (
+                      <p className="text-xs uppercase tracking-wide text-amber-700/70">
+                        Código: {alert.reason}
+                      </p>
+                    ) : null}
+                  </AlertDescription>
+                </Alert>
+              ))}
+            </div>
+          ) : null}
           {disabled && disabledReason ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               {disabledReason}
@@ -143,12 +221,12 @@ const SimulationModal = ({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="sales-stage">Estágio</Label>
-              <Select value={stage} onValueChange={setStage} disabled={disabled}>
+              <Select value={stage} onValueChange={setStage} disabled={fieldsDisabled}>
                 <SelectTrigger id="sales-stage" ref={stageTriggerRef}>
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sem mudança</SelectItem>
+                  <SelectItem value={NO_STAGE_VALUE}>Sem mudança</SelectItem>
                   {stageOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
@@ -164,7 +242,7 @@ const SimulationModal = ({
                 value={leadId}
                 onChange={(event) => setLeadId(event.target.value)}
                 placeholder="lead-123"
-                disabled={disabled}
+                disabled={fieldsDisabled}
               />
             </div>
             {mode === 'proposal' ? (
@@ -175,7 +253,7 @@ const SimulationModal = ({
                   value={simulationId}
                   onChange={(event) => setSimulationId(event.target.value)}
                   placeholder="simulation-abc"
-                  disabled={disabled}
+                  disabled={fieldsDisabled}
                 />
               </div>
             ) : null}
@@ -187,15 +265,17 @@ const SimulationModal = ({
                 <span className="text-xs text-rose-400">{errors.calculationSnapshot}</span>
               ) : null}
             </div>
-            <Textarea
-              id="sales-snapshot"
-              value={snapshotText}
-              onChange={(event) => setSnapshotText(event.target.value)}
-              minRows={6}
-              className="font-mono text-xs"
-              placeholder="{\n  \"installment\": 250.5\n}"
-              disabled={disabled}
-            />
+              <Textarea
+                id="sales-snapshot"
+                value={snapshotText}
+                onChange={(event) => setSnapshotText(event.target.value)}
+                minRows={6}
+                className="font-mono text-xs"
+                placeholder={`{
+  "installment": 250.5
+}`}
+                disabled={fieldsDisabled}
+              />
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -204,22 +284,28 @@ const SimulationModal = ({
                 <span className="text-xs text-rose-400">{errors.metadata}</span>
               ) : null}
             </div>
-            <Textarea
-              id="sales-metadata"
-              value={metadataText}
-              onChange={(event) => setMetadataText(event.target.value)}
-              minRows={4}
-              className="font-mono text-xs"
-              placeholder="{\n  \"origin\": \"chat\"\n}"
-              disabled={disabled}
-            />
+              <Textarea
+                id="sales-metadata"
+                value={metadataText}
+                onChange={(event) => setMetadataText(event.target.value)}
+                minRows={4}
+                className="font-mono text-xs"
+                placeholder={`{
+  "origin": "chat"
+}`}
+                disabled={fieldsDisabled}
+              />
           </div>
         </div>
         <DialogFooter className="gap-2">
           <Button type="button" variant="outline" onClick={() => onOpenChange?.(false)} disabled={isSubmitting}>
             Cancelar
           </Button>
-          <Button type="button" onClick={handleSubmit} disabled={isSubmitting || disabled}>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting || fieldsDisabled}
+          >
             {isSubmitting ? 'Enviando…' : submitLabel}
           </Button>
         </DialogFooter>
