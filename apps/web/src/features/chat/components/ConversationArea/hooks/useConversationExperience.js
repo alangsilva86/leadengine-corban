@@ -18,6 +18,8 @@ import {
   getStageValue,
   formatStageLabel,
   normalizeStage,
+  applyStageSalesHints,
+  getSalesStageOrder,
 } from '../utils/stage.js';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -187,9 +189,19 @@ export const useConversationExperience = ({
   const lastSimulationEvent = latestSalesEvents.simulation;
   const lastProposalEvent = latestSalesEvents.proposal;
   const lastDealEvent = latestSalesEvents.deal;
-  const hasSimulation = Boolean(lastSimulationEvent);
-  const hasProposal = Boolean(lastProposalEvent);
-  const hasDeal = Boolean(lastDealEvent);
+  const timelineSalesState = useMemo(
+    () => ({
+      hasSimulation: Boolean(lastSimulationEvent),
+      hasProposal: Boolean(lastProposalEvent),
+      hasDeal: Boolean(lastDealEvent),
+    }),
+    [lastDealEvent, lastProposalEvent, lastSimulationEvent],
+  );
+  const mergedSalesState = useMemo(
+    () => applyStageSalesHints(ticketStageKey, timelineSalesState),
+    [ticketStageKey, timelineSalesState],
+  );
+  const { hasSimulation, hasProposal, hasDeal } = mergedSalesState;
   const canOpenSimulation = !hasDeal;
   const canOpenProposal = hasSimulation && !hasDeal;
   const canOpenDeal = hasProposal && !hasDeal;
@@ -249,6 +261,29 @@ export const useConversationExperience = ({
       : null);
   const salesBlocked = Boolean(salesConfig.disabled) || queueAlerts.length > 0;
   const [salesDialog, setSalesDialog] = useState({ type: null, defaults: {} });
+  const resolveTargetStageValue = useCallback(
+    (targetStageKey) => {
+      if (!targetStageKey) {
+        return defaultStageValue;
+      }
+
+      const targetOrder = getSalesStageOrder(targetStageKey);
+      const currentOrder = getSalesStageOrder(ticketStageKey);
+
+      if (
+        ticketStageKey &&
+        ticketStageKey !== 'DESCONHECIDO' &&
+        targetOrder !== null &&
+        currentOrder !== null &&
+        currentOrder >= targetOrder
+      ) {
+        return defaultStageValue;
+      }
+
+      return getStageValue(targetStageKey);
+    },
+    [defaultStageValue, ticketStageKey],
+  );
   const closeSalesDialog = useCallback(() => setSalesDialog({ type: null, defaults: {} }), []);
   const ensureSalesAvailable = useCallback(() => {
     if (salesBlocked) {
@@ -275,7 +310,7 @@ export const useConversationExperience = ({
     setSalesDialog({
       type: 'simulation',
       defaults: {
-        stage: defaultStageValue,
+        stage: resolveTargetStageValue('SIMULADO'),
         leadId: ticketLeadId ?? '',
         calculationSnapshot: lastSimulationEvent?.calculationSnapshot ?? null,
         metadata: lastSimulationEvent?.metadata ?? null,
@@ -286,10 +321,10 @@ export const useConversationExperience = ({
   }, [
     canOpenSimulation,
     contactName,
-    defaultStageValue,
     ensureSalesAvailable,
     lastSimulationEvent?.calculationSnapshot,
     lastSimulationEvent?.metadata,
+    resolveTargetStageValue,
     ticketId,
     ticketLeadId,
   ]);
@@ -301,7 +336,7 @@ export const useConversationExperience = ({
     setSalesDialog({
       type: 'proposal',
       defaults: {
-        stage: defaultStageValue,
+        stage: resolveTargetStageValue('PROPOSTA_ENVIADA'),
         leadId: ticketLeadId ?? '',
         simulationId: lastSimulationEvent?.resourceId ?? '',
         calculationSnapshot: lastProposalEvent?.calculationSnapshot ?? null,
@@ -314,12 +349,12 @@ export const useConversationExperience = ({
   }, [
     canOpenProposal,
     contactName,
-    defaultStageValue,
     ensureSalesAvailable,
     lastProposalEvent?.calculationSnapshot,
     lastProposalEvent?.metadata,
     lastSimulationEvent?.calculationSnapshot,
     lastSimulationEvent?.resourceId,
+    resolveTargetStageValue,
     ticketId,
     ticketLeadId,
   ]);
@@ -331,7 +366,7 @@ export const useConversationExperience = ({
     setSalesDialog({
       type: 'deal',
       defaults: {
-        stage: defaultStageValue,
+        stage: resolveTargetStageValue('CONCLUIDO'),
         leadId: ticketLeadId ?? '',
         simulationId: lastSimulationEvent?.resourceId ?? '',
         proposalId: lastProposalEvent?.resourceId ?? '',
@@ -343,7 +378,6 @@ export const useConversationExperience = ({
     });
   }, [
     canOpenDeal,
-    defaultStageValue,
     ensureSalesAvailable,
     lastDealEvent?.calculationSnapshot,
     lastDealEvent?.closedAt,
@@ -351,6 +385,7 @@ export const useConversationExperience = ({
     lastProposalEvent?.calculationSnapshot,
     lastProposalEvent?.resourceId,
     lastSimulationEvent?.resourceId,
+    resolveTargetStageValue,
     ticketLeadId,
   ]);
   const handleSubmitSimulation = useCallback(

@@ -18,6 +18,11 @@ const STAGE_LABELS = {
   CONECTADO: 'Conectado',
   QUALIFICACAO: 'Qualificação',
   PROPOSTA: 'Proposta',
+  SIMULADO: 'Simulado',
+  PROPOSTA_ENVIADA: 'Proposta enviada',
+  ACEITO: 'Aceito',
+  DIGITANDO: 'Digitando',
+  CONCLUIDO: 'Concluído',
   DOCUMENTACAO: 'Documentação',
   DOCUMENTOS_AVERBACAO: 'Documentos/Averbação',
   AGUARDANDO: 'Aguardando',
@@ -33,6 +38,18 @@ const STAGE_ALIAS_MAP = {
   QUALIFICACAO_INICIAL: 'QUALIFICACAO',
   QUALIFICANDO_LEAD: 'QUALIFICACAO',
   QUALIFICACAO_AVANCADA: 'QUALIFICACAO',
+  SIMULACAO: 'SIMULADO',
+  SIMULANDO: 'SIMULADO',
+  SIMULACAO_CONCLUIDA: 'SIMULADO',
+  PROPOSTA_ENVIADO: 'PROPOSTA_ENVIADA',
+  PROPOSTA_APROVADA: 'ACEITO',
+  ACEITE: 'ACEITO',
+  ACEITA: 'ACEITO',
+  DIGITACAO: 'DIGITANDO',
+  DIGITACAO_CONTRATO: 'DIGITANDO',
+  DIGITACAO_CONCLUIDA: 'CONCLUIDO',
+  CONCLUSAO: 'CONCLUIDO',
+  CONCLUIDA: 'CONCLUIDO',
   DOCUMENTANDO: 'DOCUMENTACAO',
   DOCUMENTOS: 'DOCUMENTACAO',
   DOCUMENTACAO_COMPLETA: 'DOCUMENTACAO',
@@ -64,6 +81,11 @@ const STAGE_VALUE_MAP = {
   CONECTADO: 'conectado',
   QUALIFICACAO: 'qualificando',
   PROPOSTA: 'proposta',
+  SIMULADO: 'simulado',
+  PROPOSTA_ENVIADA: 'proposta_enviada',
+  ACEITO: 'aceito',
+  DIGITANDO: 'digitando',
+  CONCLUIDO: 'concluido',
   DOCUMENTACAO: 'documentando',
   DOCUMENTOS_AVERBACAO: 'averbando',
   AGUARDANDO: 'aguardando',
@@ -79,6 +101,11 @@ const LEGACY_STAGE_VALUE_MAP = {
   CONECTADO: 'conectado',
   QUALIFICACAO: 'qualificacao',
   PROPOSTA: 'proposta',
+  SIMULADO: 'simulado',
+  PROPOSTA_ENVIADA: 'proposta_enviada',
+  ACEITO: 'aceito',
+  DIGITANDO: 'digitando',
+  CONCLUIDO: 'concluido',
   DOCUMENTACAO: 'documentacao',
   DOCUMENTOS_AVERBACAO: 'documentos_averbacao',
   AGUARDANDO: 'aguardando',
@@ -94,6 +121,11 @@ const STAGE_PRESENTATION = {
   CONECTADO: { icon: Link2, tone: 'info' },
   QUALIFICACAO: { icon: ClipboardList, tone: 'info' },
   PROPOSTA: { icon: FileText, tone: 'info' },
+  SIMULADO: { icon: ClipboardList, tone: 'info' },
+  PROPOSTA_ENVIADA: { icon: FileText, tone: 'info' },
+  ACEITO: { icon: FileCheck2, tone: 'success' },
+  DIGITANDO: { icon: FileSignature, tone: 'info' },
+  CONCLUIDO: { icon: BadgeCheck, tone: 'success' },
   DOCUMENTACAO: { icon: FileSignature, tone: 'info' },
   DOCUMENTOS_AVERBACAO: { icon: FileCheck2, tone: 'info' },
   AGUARDANDO: { icon: Hourglass, tone: 'warning' },
@@ -138,6 +170,11 @@ const PRIMARY_ACTION_MAP = {
   CONECTADO: PRIMARY_ACTION_PRESETS.keepEngagement,
   QUALIFICACAO: PRIMARY_ACTION_PRESETS.qualify,
   PROPOSTA: PRIMARY_ACTION_PRESETS.proposal,
+  SIMULADO: PRIMARY_ACTION_PRESETS.proposal,
+  PROPOSTA_ENVIADA: PRIMARY_ACTION_PRESETS.closeDeal,
+  ACEITO: PRIMARY_ACTION_PRESETS.closeDeal,
+  DIGITANDO: PRIMARY_ACTION_PRESETS.closeDeal,
+  CONCLUIDO: PRIMARY_ACTION_PRESETS.closeDeal,
   DOCUMENTACAO: PRIMARY_ACTION_PRESETS.documentation,
   DOCUMENTOS_AVERBACAO: PRIMARY_ACTION_PRESETS.documentation,
   AGUARDANDO: PRIMARY_ACTION_PRESETS.followUp,
@@ -145,6 +182,22 @@ const PRIMARY_ACTION_MAP = {
   LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
   APROVADO_LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
   RECICLAR: PRIMARY_ACTION_PRESETS.followUp,
+};
+
+const STAGE_SALES_HINTS = {
+  SIMULADO: { hasSimulation: true },
+  PROPOSTA_ENVIADA: { hasSimulation: true, hasProposal: true },
+  ACEITO: { hasSimulation: true, hasProposal: true },
+  DIGITANDO: { hasSimulation: true, hasProposal: true },
+  CONCLUIDO: { hasSimulation: true, hasProposal: true, hasDeal: true },
+};
+
+const SALES_STAGE_ORDER = {
+  SIMULADO: 1,
+  PROPOSTA_ENVIADA: 2,
+  ACEITO: 3,
+  DIGITANDO: 4,
+  CONCLUIDO: 5,
 };
 
 const resolveStageKey = (canonical) => {
@@ -281,17 +334,62 @@ const resolvePrimaryAction = ({ stageKey, hasWhatsApp, needsContactValidation = 
   return preset.default ?? preset.fallback ?? null;
 };
 
+const getStageSalesHints = (stageKey) => {
+  const normalized = normalizeStage(stageKey);
+  return STAGE_SALES_HINTS[normalized] ?? null;
+};
+
+const applyStageSalesHints = (stageKey, state = {}) => {
+  const hints = getStageSalesHints(stageKey);
+  const result = {
+    hasSimulation: Boolean(state?.hasSimulation),
+    hasProposal: Boolean(state?.hasProposal),
+    hasDeal: Boolean(state?.hasDeal),
+  };
+
+  if (hints) {
+    if (hints.hasSimulation) {
+      result.hasSimulation = true;
+    }
+    if (hints.hasProposal) {
+      result.hasProposal = true;
+    }
+    if (hints.hasDeal) {
+      result.hasDeal = true;
+    }
+  }
+
+  if (result.hasDeal) {
+    result.hasProposal = true;
+    result.hasSimulation = true;
+  } else if (result.hasProposal) {
+    result.hasSimulation = true;
+  }
+
+  return result;
+};
+
+const getSalesStageOrder = (stageKey) => {
+  const normalized = normalizeStage(stageKey);
+  return typeof SALES_STAGE_ORDER[normalized] === 'number' ? SALES_STAGE_ORDER[normalized] : null;
+};
+
 export {
   STAGE_LABELS,
   STAGE_PRESENTATION,
   STAGE_VALUE_MAP,
   PRIMARY_ACTION_PRESETS,
   PRIMARY_ACTION_MAP,
+  STAGE_SALES_HINTS,
+  SALES_STAGE_ORDER,
   normalizeStage,
   formatStageLabel,
   getTicketStage,
   getStageInfo,
   resolvePrimaryAction,
+  getStageSalesHints,
+  applyStageSalesHints,
+  getSalesStageOrder,
 };
 
 export const getStageValue = (stageKey, { legacy = false } = {}) => {

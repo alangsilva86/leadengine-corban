@@ -209,6 +209,14 @@ const resolveTicketStrategy = (ticket: any): string | null => {
   return resolveTicketMetadataField(ticket, 'strategy');
 };
 
+const normalizeStageValue = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
 const buildFilterOptions = (tickets: any[]) => {
   const instanceMap = new Map<string, string>();
   const campaignMap = new Map<string, { value: string; label: string }>();
@@ -811,7 +819,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           ticketId,
           calculationSnapshot,
           leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
-          stage: stage ?? null,
+          stage: normalizeStageValue(stage),
           metadata: metadata ?? null,
         });
         const updatedTicketId = result?.ticket?.id ?? ticketId;
@@ -861,7 +869,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           calculationSnapshot,
           leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
           simulationId: simulationId ?? null,
-          stage: stage ?? null,
+          stage: normalizeStageValue(stage),
           metadata: metadata ?? null,
         });
         const updatedTicketId = result?.ticket?.id ?? ticketId;
@@ -916,7 +924,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
           simulationId: simulationId ?? null,
           proposalId: proposalId ?? null,
-          stage: stage ?? null,
+          stage: normalizeStageValue(stage),
           metadata: metadata ?? null,
           closedAt: closedAt ?? null,
         });
