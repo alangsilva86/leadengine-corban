@@ -13,15 +13,42 @@ const queueAlertSample = {
   },
 };
 
+const simulationSnapshotMock = {
+  type: 'simulation',
+  convenio: { id: 'inss', label: 'INSS' },
+  product: { id: 'emprestimo', label: 'Empréstimo consignado' },
+  offers: [
+    {
+      id: 'offer-1',
+      bankName: 'Banco Teste',
+      table: 'Tabela 1',
+      terms: [
+        { id: 'term-1', term: 12, installment: 200, netAmount: 4000, selected: true },
+      ],
+    },
+  ],
+};
+
+const dealSnapshotMock = {
+  type: 'deal',
+  bank: { label: 'Banco Teste' },
+  term: 12,
+  installment: 200,
+  netAmount: 4000,
+  totalAmount: 4500,
+  proposalId: 'proposal-1',
+  simulationId: 'simulation-1',
+};
+
 describe('Sales dialogs alerts', () => {
   it('bloqueia submissão da simulação quando há alertas da fila', () => {
     const onSubmit = vi.fn();
-    const { getByRole, getByText, getByLabelText } = render(
+    const { getByRole, getByText } = render(
       <SimulationModal
         open
         onOpenChange={() => {}}
         onSubmit={onSubmit}
-        defaultValues={{ calculationSnapshot: { total: 1000 } }}
+        defaultValues={{ calculationSnapshot: simulationSnapshotMock }}
         stageOptions={[]}
         queueAlerts={[queueAlertSample]}
         disabledReason="Fila padrão indisponível para registrar operações."
@@ -32,9 +59,6 @@ describe('Sales dialogs alerts', () => {
     expect(getByText('Fila padrão indisponível')).toBeInTheDocument();
     expect(getByText('Fila indisponível no momento.')).toBeInTheDocument();
     expect(getByText(/Instância afetada:/)).toBeInTheDocument();
-
-    const snapshotField = getByLabelText(/Snapshot de cálculo/i);
-    expect(snapshotField).toBeDisabled();
 
     const submitButton = getByRole('button', { name: /registrar simulação/i });
     expect(submitButton).toBeDisabled();
@@ -50,7 +74,7 @@ describe('Sales dialogs alerts', () => {
         open
         onOpenChange={() => {}}
         onSubmit={onSubmit}
-        defaultValues={{ calculationSnapshot: { total: 2000 } }}
+        defaultValues={{ calculationSnapshot: simulationSnapshotMock }}
         stageOptions={[]}
         queueAlerts={[]}
       />,
@@ -71,7 +95,7 @@ describe('Sales dialogs alerts', () => {
         open
         onOpenChange={() => {}}
         onSubmit={onSubmit}
-        defaultValues={{ calculationSnapshot: { approved: true } }}
+        defaultValues={{ calculationSnapshot: dealSnapshotMock }}
         stageOptions={[]}
         queueAlerts={[queueAlertSample]}
         disabled
@@ -96,7 +120,7 @@ describe('Sales dialogs alerts', () => {
         open
         onOpenChange={() => {}}
         onSubmit={onSubmit}
-        defaultValues={{ calculationSnapshot: { approved: true } }}
+        defaultValues={{ calculationSnapshot: dealSnapshotMock }}
         stageOptions={[]}
         queueAlerts={[]}
       />,

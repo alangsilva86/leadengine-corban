@@ -266,6 +266,7 @@ export const ConversationAreaView = ({ timeline, composer, header, sales }) => {
           onOpenDeal={openDeal}
           salesActionsDisabled={salesDisabled}
           salesDisabledReason={salesDisabledReason}
+          salesJourney={sales?.journey ?? null}
         />
       </ConversationDetailsDrawer>
       {simulationModal ? <SimulationModal {...simulationModal} /> : null}
