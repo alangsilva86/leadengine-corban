@@ -73,7 +73,11 @@ const CONVENIO_OPTIONS = [
   },
 ];
 
-const NO_PRODUCT_OPTION = { value: '', label: 'Selecione um produto' };
+const NO_PRODUCT_OPTION = {
+  value: '__placeholder__',
+  label: 'Selecione um produto',
+  disabled: true,
+};
 
 const resolveProductOptions = (convenioId) => {
   const convenio = CONVENIO_OPTIONS.find((option) => option.value === convenioId);
@@ -609,7 +613,7 @@ const SimulationModal = ({
                 </SelectTrigger>
                 <SelectContent>
                   {(productOptions.length > 0 ? productOptions : [NO_PRODUCT_OPTION]).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
                       {option.label}
                     </SelectItem>
                   ))}
