@@ -434,6 +434,10 @@ app.use('/api', authMiddleware, whatsappMessagesRouter);
 app.use('/api', authMiddleware, whatsappUploadsRouter);
 app.use('/api/integrations', authMiddleware, integrationsRouter);
 app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
+// agreementsRouter já define caminhos como `/v1/agreements`, então montamos sob `/api`
+// para expor os endpoints em `/api/v1/agreements`. Mantemos a rota antiga
+// `/api/agreements/v1/agreements` para compatibilidade retroativa.
+app.use('/api', authMiddleware, requireTenant, agreementsRouter);
 app.use('/api/agreements', authMiddleware, requireTenant, agreementsRouter);
 app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
