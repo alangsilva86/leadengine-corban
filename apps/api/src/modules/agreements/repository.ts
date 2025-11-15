@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { prisma as prismaClient } from '../../lib/prisma';
+import { isDatabaseEnabled, prisma as prismaClient } from '../../lib/prisma';
 
 export interface AgreementRecord {
   id: string;
@@ -178,6 +178,16 @@ export class AgreementsRepository {
         { slug: { contains: search, mode: 'insensitive' } },
         { segment: { contains: search, mode: 'insensitive' } },
       ];
+    }
+
+    if (!isDatabaseEnabled) {
+      return {
+        items: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+      };
     }
 
     const [total, items] = await this.prisma.$transaction([
