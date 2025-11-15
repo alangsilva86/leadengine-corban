@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: Ticketz LeadEngine API Contracts
   version: 1.0.0
@@ -14,10 +14,10 @@ tags:
   - name: messages
     description: Operações relacionadas ao envio de mensagens outbound.
   - name: agreements
-    description: Gestão de convênios comerciais, janelas e tabelas de taxas.
-    description: Operações para gestão de acordos comerciais, tabelas e sincronizações com provedores.
+    description: >-
+      Operações para gestão de acordos comerciais, tabelas, janelas e sincronizações com provedores.
 paths:
-  /tickets/{ticketId}/messages:
+  /api/tickets/{ticketId}/messages:
     post:
       operationId: createTicketMessage
       summary: Enfileira uma nova mensagem para um ticket existente
@@ -27,6 +27,12 @@ paths:
         - name: ticketId
           in: path
           required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Chave idempotente que deve corresponder ao corpo da requisição.
           schema:
             type: string
       requestBody:
@@ -60,7 +66,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/v1/agreements:
+  /api/agreements/v1/agreements:
     get:
       operationId: listAgreements
       summary: Lista acordos comerciais
@@ -146,7 +152,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/RateLimitResponse'
     post:
       operationId: createAgreement
       summary: Cria um novo acordo comercial
@@ -195,7 +201,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/v1/agreements/{agreementId}:
+  /api/agreements/v1/agreements/{agreementId}:
     parameters:
       - name: agreementId
         in: path
@@ -287,7 +293,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/v1/agreements/import:
+  /api/agreements/v1/agreements/import:
     post:
       operationId: importAgreements
       summary: Importa acordos comerciais em lote
@@ -339,7 +345,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/v1/agreements/providers/{providerId}/sync:
+  /api/agreements/v1/agreements/providers/{providerId}/sync:
     post:
       operationId: triggerProviderAgreementSync
       summary: Dispara sincronização de acordos para um provedor
@@ -389,7 +395,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /contacts/{contactId}/messages:
+  /api/contacts/{contactId}/messages:
     post:
       operationId: createContactMessage
       summary: Enfileira uma nova mensagem para um contato específico
@@ -399,6 +405,12 @@ paths:
         - name: contactId
           in: path
           required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Opcionalmente garante idempotência quando informado.
           schema:
             type: string
       requestBody:
@@ -432,7 +444,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /integrations/whatsapp/instances/{instanceId}/messages:
+  /api/integrations/whatsapp/instances/{instanceId}/messages:
     post:
       operationId: createInstanceMessage
       summary: Enfileira uma nova mensagem para envio ad-hoc via instância WhatsApp
@@ -442,6 +454,12 @@ paths:
         - name: instanceId
           in: path
           required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Chave idempotente necessária para evitar envios duplicados.
           schema:
             type: string
       requestBody:
@@ -458,154 +476,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/OutboundMessageResponse'
 
-  /api/v1/agreements:
-    get:
-      operationId: listAgreements
-      summary: Lista convênios comerciais configurados para o LeadEngine
-      description: Retorna os convênios cadastrados com janelas de contratação, taxas e histórico de alterações.
-      tags: [agreements]
-      responses:
-        '200':
-          description: Lista de convênios encontrada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgreementCollectionResponse'
-        '401':
-          description: Requer autenticação
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: Limite de requisições excedido
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RateLimitResponse'
-
-  /api/v1/agreements/import:
-    post:
-      operationId: importAgreements
-      summary: Importa convênios a partir de planilha ou arquivo JSON
-      description: Recebe um arquivo CSV, XLSX ou JSON contendo convênios, executa a validação e retorna o resumo do processamento.
-      tags: [agreements]
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file:
-                  type: string
-                  format: binary
-                mode:
-                  type: string
-                  description: Modo de importação (merge ou replace)
-                  enum: [merge, replace]
-      responses:
-        '202':
-          description: Importação aceita e processada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgreementImportResponse'
-        '400':
-          description: Arquivo inválido ou falha de validação
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgreementImportErrorResponse'
-        '401':
-          description: Requer autenticação
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/v1/agreements/{agreementId}:
-    patch:
-      operationId: updateAgreement
-      summary: Atualiza dados de um convênio específico
-      description: Permite alterar dados básicos, janelas, taxas e status de um convênio.
-      tags: [agreements]
-      parameters:
-        - name: agreementId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AgreementUpdateRequest'
-      responses:
-        '200':
-          description: Convênio atualizado com sucesso
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgreementItemResponse'
-        '400':
-          description: Dados inválidos para atualização
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ValidationErrorResponse'
-        '401':
-          description: Requer autenticação
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Convênio não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /api/v1/agreements/providers/{providerId}/sync:
-    post:
-      operationId: syncAgreementProvider
-      summary: Dispara sincronização de convênios para um provedor externo
-      description: Cria uma requisição de sincronização com o provedor informado e retorna o status da operação.
-      tags: [agreements]
-      parameters:
-        - name: providerId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AgreementSyncRequest'
-      responses:
-        '202':
-          description: Sincronização aceita para processamento
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgreementSyncResponse'
-        '401':
-          description: Requer autenticação
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Provedor não encontrado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     RequestMeta:
@@ -673,7 +543,8 @@ components:
           type: integer
           minimum: 0
         toVolume:
-          type: [integer, 'null']
+          type: integer
+          nullable: true
           description: Volume máximo (inclusive) suportado pela faixa. Null indica ausência de limite superior.
           minimum: 0
         value:
@@ -762,7 +633,8 @@ components:
           type: string
           format: date
         endDate:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date
         attributes:
           type: object
@@ -859,11 +731,13 @@ components:
         providerId:
           type: string
         externalCode:
-          type: [string, 'null']
+          type: string
+          nullable: true
         name:
           type: string
         description:
-          type: [string, 'null']
+          type: string
+          nullable: true
         status:
           $ref: '#/components/schemas/AgreementStatus'
         version:
@@ -873,7 +747,8 @@ components:
           type: string
           format: date-time
         validUntil:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         tags:
           type: array
@@ -912,7 +787,8 @@ components:
         providerId:
           type: string
         externalCode:
-          type: [string, 'null']
+          type: string
+          nullable: true
         name:
           type: string
         status:
@@ -924,7 +800,8 @@ components:
           type: string
           format: date-time
         validUntil:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         tableCount:
           type: integer
@@ -932,7 +809,8 @@ components:
         primaryCurrency:
           type: string
         lastSyncedAt:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         createdAt:
           type: string
@@ -1007,7 +885,8 @@ components:
           type: string
           format: date-time
         validUntil:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         tags:
           type: array
@@ -1044,7 +923,8 @@ components:
           type: string
           format: date-time
         validUntil:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         tags:
           type: array
@@ -1142,10 +1022,12 @@ components:
           type: string
           format: date-time
         completedAt:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         expiresAt:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
       additionalProperties: false
     AgreementImportResponse:
@@ -1184,10 +1066,12 @@ components:
           type: string
           format: date-time
         lastSuccessfulSyncAt:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         estimatedCompletionAt:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date-time
         warnings:
           type: array
@@ -1231,7 +1115,7 @@ components:
           properties:
             type:
               type: string
-              const: text
+              enum: ['text']
             text:
               type: string
               description: Conteúdo textual da mensagem
@@ -1269,7 +1153,7 @@ components:
           properties:
             type:
               type: string
-              const: image
+              enum: ['image']
           additionalProperties: false
     DocumentMessagePayload:
       allOf:
@@ -1279,7 +1163,7 @@ components:
           properties:
             type:
               type: string
-              const: document
+              enum: ['document']
           additionalProperties: false
     AudioMessagePayload:
       allOf:
@@ -1289,7 +1173,7 @@ components:
           properties:
             type:
               type: string
-              const: audio
+              enum: ['audio']
           additionalProperties: false
     VideoMessagePayload:
       allOf:
@@ -1299,7 +1183,7 @@ components:
           properties:
             type:
               type: string
-              const: video
+              enum: ['video']
           additionalProperties: false
     LocationMessagePayload:
       allOf:
@@ -1309,7 +1193,7 @@ components:
           properties:
             type:
               type: string
-              const: location
+              enum: ['location']
             text:
               type: string
               description: Texto complementar opcional que acompanha o envio da localização
@@ -1378,7 +1262,7 @@ components:
           properties:
             type:
               type: string
-              const: contact
+              enum: ['contact']
             text:
               type: string
               description: Texto complementar exibido junto ao cartão de contato
@@ -1435,7 +1319,7 @@ components:
       properties:
         type:
           type: string
-          const: text
+          enum: ['text']
         text:
           type: string
           minLength: 1
@@ -1446,7 +1330,7 @@ components:
       properties:
         type:
           type: string
-          const: currency
+          enum: ['currency']
         currency:
           type: object
           required: [amount1000, currencyCode]
@@ -1465,7 +1349,7 @@ components:
       properties:
         type:
           type: string
-          const: date_time
+          enum: ['date_time']
         dateTime:
           allOf:
             - type: object
@@ -1487,7 +1371,7 @@ components:
       properties:
         type:
           type: string
-          const: image
+          enum: ['image']
         image:
           type: object
           required: [link]
@@ -1503,7 +1387,7 @@ components:
       properties:
         type:
           type: string
-          const: document
+          enum: ['document']
         document:
           type: object
           required: [link]
@@ -1522,7 +1406,7 @@ components:
       properties:
         type:
           type: string
-          const: video
+          enum: ['video']
         video:
           type: object
           required: [link]
@@ -1569,7 +1453,7 @@ components:
           properties:
             type:
               type: string
-              const: template
+              enum: ['template']
             text:
               type: string
               description: Texto complementar opcional (exibido como fallback)
@@ -1598,7 +1482,7 @@ components:
       properties:
         type:
           type: string
-          const: poll
+          enum: ['poll']
         poll:
           type: object
           required: [question, options]
@@ -1618,7 +1502,7 @@ components:
       additionalProperties: false
     SendMessageByTicketRequest:
       type: object
-      required: [payload]
+      required: [payload, idempotencyKey]
       properties:
         instanceId:
           type: string
@@ -1627,7 +1511,7 @@ components:
           $ref: '#/components/schemas/MessagePayload'
         idempotencyKey:
           type: string
-          description: Chave utilizada para deduplicação de requisições
+          description: Chave utilizada para deduplicação de requisições que deve corresponder ao cabeçalho Idempotency-Key
       additionalProperties: false
     SendMessageByContactRequest:
       allOf:
@@ -1643,7 +1527,7 @@ components:
           additionalProperties: false
     SendMessageByInstanceRequest:
       type: object
-      required: [to, payload]
+      required: [to, payload, idempotencyKey]
       properties:
         to:
           type: string
@@ -1654,7 +1538,7 @@ components:
           $ref: '#/components/schemas/MessagePayload'
         idempotencyKey:
           type: string
-          description: Chave utilizada para deduplicação de requisições
+          description: Chave utilizada para deduplicação de requisições que deve corresponder ao cabeçalho Idempotency-Key
       additionalProperties: false
     OutboundMessageError:
       type: object
@@ -1675,7 +1559,7 @@ components:
       properties:
         queued:
           type: boolean
-          const: true
+          enum: [true]
         ticketId:
           type: string
         messageId:
@@ -1683,11 +1567,11 @@ components:
         status:
           type: string
         externalId:
-          type: [string, 'null']
+          type: string
+          nullable: true
         error:
-          oneOf:
-            - $ref: '#/components/schemas/OutboundMessageError'
-            - type: 'null'
+          $ref: '#/components/schemas/OutboundMessageError'
+          nullable: true
       additionalProperties: false
     ErrorResponse:
       type: object
@@ -1695,7 +1579,7 @@ components:
       properties:
         success:
           type: boolean
-          const: false
+          enum: [false]
         error:
           type: object
           required: [code, message]
@@ -1746,7 +1630,7 @@ components:
       properties:
         success:
           type: boolean
-          const: false
+          enum: [false]
         error:
           type: object
           required: [code, message]
@@ -1849,7 +1733,8 @@ components:
           type: string
           format: date
         validUntil:
-          type: [string, 'null']
+          type: string
+          nullable: true
           format: date
         status:
           type: string
