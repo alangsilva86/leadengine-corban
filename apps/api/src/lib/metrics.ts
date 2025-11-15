@@ -216,6 +216,7 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     ...BASE_LABEL_CONSTRAINTS,
     agreementId: AGREEMENT_CONSTRAINT,
     origin: ORIGIN_CONSTRAINT,
+  },
   [AGREEMENTS_SYNC_REQUEST_METRIC]: {
     providerId: PROVIDER_CONSTRAINT,
     result: RESULT_CONSTRAINT,
