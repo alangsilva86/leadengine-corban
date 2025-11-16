@@ -18,10 +18,8 @@ const normalizeTenantId = (tenantId: string): string => {
   const trimmed = (tenantId ?? '').trim();
   return trimmed.length ? trimmed : DEFAULT_TENANT_ID;
 };
-const DEFAULT_TENANT_IDS = new Set([
-  (process.env.AUTH_MVP_TENANT_ID ?? 'demo-tenant').trim() || 'demo-tenant',
-  'demo-tenant',
-]);
+
+const DEFAULT_TENANT_IDS = new Set([DEFAULT_TENANT_ID, 'demo-tenant']);
 
 interface DemoAgreementsState {
   agreements: AgreementRecord[];
@@ -121,19 +119,17 @@ const toLower = (value: string | null | undefined): string => (value ?? '').toLo
 const now = () => new Date();
 
 export class DemoAgreementsStore {
-  private readonly stateByTenant = new Map<string, DemoAgreementsState>();
-
-  constructor(tenantIds: string[] = [DEFAULT_TENANT_ID]) {
-    const uniqueTenantIds = Array.from(new Set(tenantIds.map((tenant) => normalizeTenantId(tenant))));
-    for (const tenantId of uniqueTenantIds) {
-      this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
-    }
   private readonly allowedTenants: Set<string>;
   private readonly stateByTenant = new Map<string, DemoAgreementsState>();
 
   constructor(tenantIds?: string[]) {
-    const normalized = (tenantIds ?? Array.from(DEFAULT_TENANT_IDS)).map((tenant) => tenant.trim()).filter(Boolean);
-    this.allowedTenants = new Set(normalized.length ? normalized : ['demo-tenant']);
+    const seedTenantIds = tenantIds && tenantIds.length > 0 ? tenantIds : Array.from(DEFAULT_TENANT_IDS);
+    const normalized = seedTenantIds.map((tenant) => normalizeTenantId(tenant)).filter(Boolean);
+    this.allowedTenants = new Set(normalized.length ? normalized : [DEFAULT_TENANT_ID]);
+
+    for (const tenantId of this.allowedTenants) {
+      this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
+    }
   }
 
   private buildInitialState(tenantId: string): DemoAgreementsState {
@@ -231,9 +227,9 @@ export class DemoAgreementsStore {
     };
   }
 
-  private getState(rawTenantId: string): DemoAgreementsState {
+  private getState(rawTenantId: string): DemoAgreementsState | null {
     const tenantId = normalizeTenantId(rawTenantId);
-  private getState(tenantId: string): DemoAgreementsState | null {
+
     if (!this.allowedTenants.has(tenantId)) {
       return null;
     }
@@ -242,7 +238,6 @@ export class DemoAgreementsStore {
       this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
     }
 
-    return this.stateByTenant.get(tenantId)!;
     return this.stateByTenant.get(tenantId) ?? null;
   }
 
@@ -296,7 +291,6 @@ export class DemoAgreementsStore {
     if (!state) {
       return null;
     }
-
     const agreement = state.agreements.find((item) => item.id === agreementId);
     return agreement ? cloneAgreement(agreement, state, { includeHistory: true }) : null;
   }
@@ -538,7 +532,6 @@ export class DemoAgreementsStore {
     if (!state) {
       return [];
     }
-
     return state.history
       .filter((entry) => entry.agreementId === agreementId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -585,7 +578,6 @@ export class DemoAgreementsStore {
     if (!state) {
       return null;
     }
-
     const job = state.importJobs.find((entry) => entry.checksum === checksum);
     return job ? { ...job, metadata: { ...job.metadata }, createdAt: new Date(job.createdAt) } : null;
   }

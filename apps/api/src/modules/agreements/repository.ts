@@ -248,7 +248,6 @@ const shouldFallbackToDemoStore = (error: unknown): boolean => {
 export class AgreementsRepository {
   private readonly prisma: AgreementsPrismaClient;
   private demoStore: DemoAgreementsStore | null;
-  private readonly demoStore: DemoAgreementsStore | null;
   private fallbackStore: DemoAgreementsStore | null = null;
   private fallbackLogged = false;
 
@@ -257,19 +256,7 @@ export class AgreementsRepository {
     this.demoStore = isDatabaseEnabled ? null : new DemoAgreementsStore();
   }
 
-  private ensureDemoStore(): DemoAgreementsStore {
-    if (!this.demoStore) {
-      this.demoStore = new DemoAgreementsStore();
-    }
-
-    return this.demoStore;
-  }
-
-  private async runWithFallback<TResult>(
-    attempt: () => Promise<TResult>,
-    fallback: (store: DemoAgreementsStore) => Promise<TResult>
-  ): Promise<TResult> {
-  private ensureFallbackStore(): DemoAgreementsStore | null {
+  private ensureFallbackStore(): DemoAgreementsStore {
     if (this.demoStore) {
       return this.demoStore;
     }
@@ -300,30 +287,6 @@ export class AgreementsRepository {
     return undefined;
   }
 
-  private shouldFallbackToDemo(error: unknown): boolean {
-    if (error instanceof DatabaseDisabledError) {
-      return true;
-    }
-
-    if (error instanceof Prisma.PrismaClientInitializationError) {
-      return true;
-    }
-
-    if (error instanceof Prisma.PrismaClientRustPanicError) {
-      return true;
-    }
-
-    if (error instanceof Prisma.PrismaClientUnknownRequestError) {
-      return true;
-    }
-
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      return error.code === 'P2021' || error.code === 'P2010' || error.code === 'P2014';
-    }
-
-    return false;
-  }
-
   private async withStorageFallback<T>(options: StorageOperationOptions<T>): Promise<T> {
     const { tenantId, operation, database, fallback } = options;
 
@@ -332,37 +295,29 @@ export class AgreementsRepository {
     }
 
     try {
-      return await attempt();
+      return await database();
     } catch (error) {
       if (!shouldFallbackToDemoStore(error)) {
         throw error;
       }
 
-      const store = this.ensureDemoStore();
-      return fallback(store);
-      return await database();
-    } catch (error) {
-      if (this.shouldFallbackToDemo(error)) {
-        const store = this.ensureFallbackStore();
-        if (store) {
-          if (!this.fallbackLogged) {
-            this.fallbackLogged = true;
-            logger.warn('[/agreements] storage unavailable — enabling demo fallback store', {
-              tenantId,
-              operation,
-              errorCode: this.extractErrorCode(error),
-            });
-          } else {
-            logger.debug('[/agreements] storage fallback in use', {
-              tenantId,
-              operation,
-            });
-          }
-          return fallback(store);
-        }
+      const store = this.ensureFallbackStore();
+
+      if (!this.fallbackLogged) {
+        this.fallbackLogged = true;
+        logger.warn('[/agreements] storage unavailable — enabling demo fallback store', {
+          tenantId,
+          operation,
+          errorCode: this.extractErrorCode(error),
+        });
+      } else {
+        logger.debug('[/agreements] storage fallback in use', {
+          tenantId,
+          operation,
+        });
       }
 
-      throw error;
+      return fallback(store);
     }
   }
 
@@ -389,9 +344,6 @@ export class AgreementsRepository {
         { segment: { contains: search, mode: 'insensitive' } },
       ];
     }
-    return this.runWithFallback(
-      async () => {
-
     return this.withStorageFallback({
       tenantId,
       operation: 'listAgreements',
@@ -415,13 +367,6 @@ export class AgreementsRepository {
 
         return { items, total, page, limit, totalPages };
       },
-      (store) => store.listAgreements(tenantId, filters, { page, limit })
-    );
-  }
-
-  findAgreementById(tenantId: string, agreementId: string): Promise<AgreementRecord | null> {
-    return this.runWithFallback(
-      () =>
       fallback: (store) => store.listAgreements(tenantId, filters, { page, limit }),
     });
   }
@@ -443,15 +388,6 @@ export class AgreementsRepository {
             },
           },
         }),
-      (store) => store.findAgreementById(tenantId, agreementId)
-    );
-  }
-
-  createAgreement(data: Partial<AgreementRecord> & { tenantId: string; name: string; slug: string }): Promise<AgreementRecord> {
-    return this.runWithFallback(
-      () => this.prisma.agreement.create({ data }),
-      (store) => store.createAgreement(data)
-    );
       fallback: (store) => store.findAgreementById(tenantId, agreementId),
     });
   }
@@ -473,8 +409,6 @@ export class AgreementsRepository {
     agreementId: string,
     data: Partial<AgreementRecord>
   ): Promise<AgreementRecord> {
-    return this.runWithFallback(
-      () =>
     return this.withStorageFallback({
       tenantId,
       operation: 'updateAgreement',
@@ -483,18 +417,6 @@ export class AgreementsRepository {
           where: { id: agreementId },
           data,
         }),
-      (store) => store.updateAgreement(tenantId, agreementId, data)
-    );
-  }
-
-  deleteAgreement(tenantId: string, agreementId: string): Promise<AgreementRecord> {
-    return this.runWithFallback(
-      () =>
-        this.prisma.agreement.delete({
-          where: { id: agreementId },
-        }),
-      (store) => store.deleteAgreement(tenantId, agreementId)
-    );
       fallback: (store) => store.updateAgreement(tenantId, agreementId, data),
     });
   }
@@ -517,8 +439,6 @@ export class AgreementsRepository {
     windowId: string | null,
     payload: Partial<AgreementWindowRecord>
   ): Promise<AgreementWindowRecord> {
-    return this.runWithFallback(
-      () => {
     return this.withStorageFallback({
       tenantId,
       operation: 'upsertWindow',
@@ -538,18 +458,6 @@ export class AgreementsRepository {
           },
         });
       },
-      (store) => store.upsertWindow(tenantId, agreementId, windowId, payload)
-    );
-  }
-
-  deleteWindow(tenantId: string, windowId: string): Promise<AgreementWindowRecord> {
-    return this.runWithFallback(
-      () =>
-        this.prisma.agreementWindow.delete({
-          where: { id: windowId },
-        }),
-      (store) => store.deleteWindow(tenantId, windowId)
-    );
       fallback: (store) => store.upsertWindow(tenantId, agreementId, windowId, payload),
     });
   }
@@ -572,8 +480,6 @@ export class AgreementsRepository {
     rateId: string | null,
     payload: Partial<AgreementRateRecord>
   ): Promise<AgreementRateRecord> {
-    return this.runWithFallback(
-      () => {
     return this.withStorageFallback({
       tenantId,
       operation: 'upsertRate',
@@ -593,18 +499,6 @@ export class AgreementsRepository {
           },
         });
       },
-      (store) => store.upsertRate(tenantId, agreementId, rateId, payload)
-    );
-  }
-
-  deleteRate(tenantId: string, rateId: string): Promise<AgreementRateRecord> {
-    return this.runWithFallback(
-      () =>
-        this.prisma.agreementRate.delete({
-          where: { id: rateId },
-        }),
-      (store) => store.deleteRate(tenantId, rateId)
-    );
       fallback: (store) => store.upsertRate(tenantId, agreementId, rateId, payload),
     });
   }
@@ -626,8 +520,6 @@ export class AgreementsRepository {
     agreementId: string,
     entry: Omit<AgreementHistoryRecord, 'id' | 'tenantId' | 'agreementId' | 'createdAt'>
   ): Promise<AgreementHistoryRecord> {
-    return this.runWithFallback(
-      () =>
     return this.withStorageFallback({
       tenantId,
       operation: 'appendHistoryEntry',
@@ -639,8 +531,6 @@ export class AgreementsRepository {
             agreementId,
           },
         }),
-      (store) => store.appendHistoryEntry(tenantId, agreementId, entry)
-    );
       fallback: (store) => store.appendHistoryEntry(tenantId, agreementId, entry),
     });
   }
@@ -650,8 +540,6 @@ export class AgreementsRepository {
     agreementId: string,
     limit: number
   ): Promise<AgreementHistoryRecord[]> {
-    return this.runWithFallback(
-      () =>
     return this.withStorageFallback({
       tenantId,
       operation: 'listHistory',
@@ -661,8 +549,6 @@ export class AgreementsRepository {
           orderBy: { createdAt: 'desc' },
           take: limit,
         }),
-      (store) => store.listHistory(tenantId, agreementId, limit)
-    );
       fallback: (store) => store.listHistory(tenantId, agreementId, limit),
     });
   }
@@ -672,8 +558,6 @@ export class AgreementsRepository {
     agreementId: string | null,
     payload: Partial<AgreementImportJobRecord>
   ): Promise<AgreementImportJobRecord> {
-    return this.runWithFallback(
-      () =>
     return this.withStorageFallback({
       tenantId,
       operation: 'createImportJob',
@@ -685,8 +569,6 @@ export class AgreementsRepository {
             agreementId,
           },
         }),
-      (store) => store.createImportJob(tenantId, agreementId, payload)
-    );
       fallback: (store) => store.createImportJob(tenantId, agreementId, payload),
     });
   }
@@ -695,13 +577,6 @@ export class AgreementsRepository {
     tenantId: string,
     checksum: string
   ): Promise<AgreementImportJobRecord | null> {
-    return this.runWithFallback(
-      () =>
-        this.prisma.agreementImportJob.findFirst({
-          where: { tenantId, checksum },
-        }),
-      (store) => store.findImportJobByChecksum(tenantId, checksum)
-    );
     return this.withStorageFallback({
       tenantId,
       operation: 'findImportJobByChecksum',
@@ -718,8 +593,6 @@ export class AgreementsRepository {
     jobId: string,
     updates: Partial<AgreementImportJobRecord>
   ): Promise<AgreementImportJobRecord> {
-    return this.runWithFallback(
-      () =>
     return this.withStorageFallback({
       tenantId,
       operation: 'updateImportJob',
@@ -728,14 +601,6 @@ export class AgreementsRepository {
           where: { id: jobId },
           data: updates,
         }),
-      (store) => store.updateImportJob(tenantId, jobId, updates)
-    );
-  }
-
-  async markImportJobProcessing(jobId: string): Promise<AgreementImportJobRecord | null> {
-    return this.runWithFallback(
-      async () =>
-        this.prisma.agreementImportJob.update({
       fallback: (store) => store.updateImportJob(tenantId, jobId, updates),
     });
   }
@@ -750,14 +615,6 @@ export class AgreementsRepository {
             status: 'processing',
             startedAt: new Date(),
           },
-        }),
-      (store) => store.markImportJobProcessing(jobId)
-    );
-  }
-
-  async findPendingImportJobs(limit: number): Promise<AgreementImportJobRecord[]> {
-    return this.runWithFallback(
-      () =>
         });
 
         return updated;
@@ -775,8 +632,6 @@ export class AgreementsRepository {
           orderBy: { createdAt: 'asc' },
           take: limit,
         }),
-      (store) => store.findPendingImportJobs(limit)
-    );
       fallback: (store) => store.findPendingImportJobs(limit),
     });
   }
