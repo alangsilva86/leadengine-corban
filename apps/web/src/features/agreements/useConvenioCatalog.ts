@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { applyAgreementMetadataDefaults, mapProductsToRecord, slugify } from '@ticketz/shared';
 import type {
   AgreementDto,
   AgreementHistoryEntryDto,
@@ -175,31 +176,20 @@ const normalizeAgreement = (agreement: AgreementDto): Agreement => {
   };
 };
 
-const slugify = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-
-const mapProductsToRecord = (products: string[]): Record<string, unknown> =>
-  products.reduce<Record<string, unknown>>((acc, product) => {
-    acc[product] = true;
-    return acc;
-  }, {});
-
 export const serializeAgreement = (agreement: Agreement): AgreementUpdateRequest['data'] => ({
   name: agreement.nome,
   slug: agreement.slug || slugify(agreement.nome),
   status: agreement.status,
   type: agreement.tipo ?? undefined,
-  metadata: {
-    ...agreement.metadata,
-    providerName: agreement.averbadora,
-    responsavel: agreement.responsavel,
-    products: agreement.produtos,
-  },
+  metadata: applyAgreementMetadataDefaults(
+    agreement.metadata,
+    {
+      providerName: agreement.averbadora,
+      responsavel: agreement.responsavel,
+      products: agreement.produtos,
+    },
+    { overwrite: true }
+  ),
   products: mapProductsToRecord(agreement.produtos),
   archived: agreement.archived,
 });
