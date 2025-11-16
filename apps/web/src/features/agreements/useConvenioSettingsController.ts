@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import emitAgreementsTelemetry from '@/features/agreements/utils/telemetry.ts';
-import useConvenioCatalog, { Agreement, serializeAgreement } from './useConvenioCatalog.ts';
+import useConvenioCatalog, { Agreement } from './useConvenioCatalog.ts';
 import { STATUS_OPTIONS } from './convenioSettings.constants.ts';
-import { formatDate, generateId, getErrorMessage, resolveProviderId } from './convenioSettings.utils.ts';
+import { formatDate, getErrorMessage, resolveProviderId } from './convenioSettings.utils.ts';
+import { createHistoryEntry } from './domain/createHistoryEntry.ts';
+import { buildAgreementPayload } from './domain/buildAgreementPayload.ts';
+import { createEmptyAgreement } from './domain/createEmptyAgreement.ts';
 
 type UpdateBasicPayload = {
   nome: string;
@@ -117,13 +120,12 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
     return 'Admin';
   }, [role]);
 
-  const createHistoryEntry = useCallback(
-    (message: string) => ({
-      id: generateId(),
-      author: historyAuthor,
-      message,
-      createdAt: new Date(),
-    }),
+  const buildHistoryEntry = useCallback(
+    (message: string) =>
+      createHistoryEntry({
+        author: historyAuthor,
+        message,
+      }),
     [historyAuthor]
   );
 
@@ -138,16 +140,12 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
       action = 'update',
     }: RunUpdateArgs) => {
       try {
-        const payload = {
-          data: serializeAgreement(nextAgreement),
-          meta: {
-            audit: {
-              actor: historyAuthor,
-              actorRole: role,
-              note,
-            },
-          },
-        } as const;
+        const payload = buildAgreementPayload({
+          agreement: nextAgreement,
+          actor: historyAuthor,
+          actorRole: role,
+          note,
+        });
 
         const response =
           action === 'create'
@@ -172,7 +170,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         return;
       }
 
-      const entry = createHistoryEntry(
+      const entry = buildHistoryEntry(
         `Dados básicos atualizados: ${payload.nome} (${STATUS_OPTIONS.find((item) => item.value === payload.status)?.label ?? payload.status}).`
       );
 
@@ -195,7 +193,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         note: entry.message,
       });
     },
-    [createHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, locked, runUpdate, selected]
   );
 
   const upsertWindow = useCallback(
@@ -209,7 +207,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         ? selected.janelas.map((window) => (window.id === payload.id ? payload : window))
         : [...selected.janelas, payload];
 
-      const entry = createHistoryEntry(
+      const entry = buildHistoryEntry(
         `Janela ${payload.label} ${exists ? 'atualizada' : 'cadastrada'} (${formatDate(payload.start)} até ${formatDate(payload.end)}).`
       );
 
@@ -227,7 +225,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         note: entry.message,
       });
     },
-    [createHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, locked, runUpdate, selected]
   );
 
   const removeWindow = useCallback(
@@ -236,10 +234,11 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         return;
       }
 
+      const entry = buildHistoryEntry('Janela removida do calendário.');
       const next: Agreement = {
         ...selected,
         janelas: selected.janelas.filter((window) => window.id !== windowId),
-        history: [createHistoryEntry('Janela removida do calendário.'), ...selected.history],
+        history: [entry, ...selected.history],
       };
 
       await runUpdate({
@@ -247,10 +246,10 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         toastMessage: 'Janela removida',
         telemetryEvent: 'agreements.window.removed',
         telemetryPayload: { windowId },
-        note: 'Janela removida do calendário.',
+        note: entry.message,
       });
     },
-    [createHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, locked, runUpdate, selected]
   );
 
   const upsertTax = useCallback(
@@ -264,7 +263,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         ? selected.taxas.map((tax) => (tax.id === payload.id ? payload : tax))
         : [...selected.taxas, payload];
 
-      const entry = createHistoryEntry(
+      const entry = buildHistoryEntry(
         `${payload.modalidade} atualizado para ${payload.monthlyRate?.toFixed(2)}% (${payload.produto}).`
       );
 
@@ -282,7 +281,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         note: entry.message,
       });
     },
-    [createHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, locked, runUpdate, selected]
   );
 
   const archiveConvenio = useCallback(
@@ -292,11 +291,12 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         return;
       }
 
+      const entry = buildHistoryEntry('Convênio arquivado pelo gestor.');
       const next: Agreement = {
         ...target,
         archived: true,
         status: target.status === 'ATIVO' ? 'PAUSADO' : target.status,
-        history: [createHistoryEntry('Convênio arquivado pelo gestor.'), ...target.history],
+        history: [entry, ...target.history],
       };
 
       await runUpdate({
@@ -304,11 +304,11 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         toastMessage: 'Convênio arquivado',
         telemetryEvent: 'agreements.archived',
         telemetryPayload: {},
-        note: 'Convênio arquivado pelo gestor.',
+        note: entry.message,
         errorMessage: 'Falha ao arquivar convênio',
       });
     },
-    [convenios, createHistoryEntry, locked, runUpdate]
+    [convenios, buildHistoryEntry, locked, runUpdate]
   );
 
   const createConvenio = useCallback(async () => {
@@ -316,29 +316,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
       return null;
     }
 
-    const convenio: Agreement = {
-      id: generateId(),
-      slug: '',
-      nome: 'Novo convênio',
-      averbadora: '',
-      tipo: 'MUNICIPAL',
-      status: 'EM_IMPLANTACAO',
-      produtos: [],
-      responsavel: '',
-      archived: false,
-      metadata: {},
-      janelas: [],
-      taxas: [],
-      history: [
-        {
-          id: generateId(),
-          author: historyAuthor,
-          message: 'Convênio criado. Complete dados básicos e tabelas.',
-          createdAt: new Date(),
-          metadata: {},
-        },
-      ],
-    };
+    const convenio = createEmptyAgreement({ author: historyAuthor });
 
     const response = await runUpdate({
       nextAgreement: convenio,
