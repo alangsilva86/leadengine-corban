@@ -978,13 +978,10 @@ const SimulationModal = ({
     const effectiveProductLabel = productOption?.label || productLabel || trimmedProductId;
 
     const simulationSnapshot = buildSimulationSnapshot({
-      convenio: { id: convenioId, label: convenioLabel },
-      product: { id: productId, label: productLabel },
-      offers: resolvedOffers,
-      parameters: currentParameters,
       convenio: { id: trimmedConvenioId, label: effectiveConvenioLabel },
       product: { id: trimmedProductId, label: effectiveProductLabel },
-      offers,
+      offers: resolvedOffers,
+      parameters: currentParameters,
     });
 
     const payload = {
@@ -1451,7 +1448,7 @@ const SimulationModal = ({
             Revisado automaticamente com base nas tabelas do convênio. Ajustes manuais ficam registrados no payload.
           </p>
           <Button type="button" onClick={handleSubmit} disabled={isSubmitting || fieldsDisabled}>
-            {isProposalMode ? 'Gerar proposta' : 'Simular proposta'}
+            {isProposalMode ? 'Gerar proposta' : 'Registrar simulação'}
           </Button>
         </DialogFooter>
       </DialogContent>
