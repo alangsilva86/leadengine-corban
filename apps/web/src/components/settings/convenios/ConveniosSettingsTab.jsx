@@ -65,6 +65,243 @@ const ConveniosSettingsTab = () => {
     if (!selected) {
       setDetailsOpen(false);
     }
+    return 'Admin';
+  }, [role]);
+
+  const buildErrorMessage = (apiError, fallback) =>
+    apiError?.payload?.error?.message ?? (apiError instanceof Error ? apiError.message : fallback);
+
+  const buildAuditMeta = (note) => ({
+    audit: {
+      actor: historyAuthor,
+      actorRole: role,
+      note,
+    },
+  });
+
+  const runUpdate = async ({
+    nextAgreement,
+    toastMessage,
+    telemetryEvent,
+    telemetryPayload = {},
+    note,
+    errorMessage = 'Falha ao atualizar convênio',
+    action = 'update',
+  }) => {
+    try {
+      const payload = {
+        data: serializeAgreement(nextAgreement),
+        meta: buildAuditMeta(note),
+      };
+
+      const response =
+        action === 'create'
+          ? await mutations.createAgreement.mutateAsync({ payload })
+          : await mutations.updateAgreement.mutateAsync({ agreementId: nextAgreement.id, payload });
+
+      const agreementId = response?.data?.id ?? nextAgreement.id;
+      toast.success(toastMessage);
+      emitAgreementsTelemetry(telemetryEvent, { ...telemetryPayload, agreementId, role });
+      return response?.data ?? null;
+    } catch (err) {
+      toast.error(buildErrorMessage(err, errorMessage));
+      return null;
+    }
+  };
+
+  const handleUpdateBasic = async (payload) => {
+    if (!selected || locked) {
+      return;
+    }
+
+    const next = {
+      ...selected,
+      nome: payload.nome,
+      averbadora: payload.averbadora,
+      tipo: payload.tipo,
+      status: payload.status,
+      produtos: [...payload.produtos],
+      responsavel: payload.responsavel,
+    };
+
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Dados básicos salvos com sucesso',
+      telemetryEvent: 'agreements.basic.updated',
+      telemetryPayload: { status: payload.status },
+      note: `Dados básicos atualizados: ${payload.nome} (${STATUS_OPTIONS.find((item) => item.value === payload.status)?.label ?? payload.status}).`,
+    });
+  };
+
+  const buildWindowPayload = (payload) => {
+    const current = selected?.janelas.find((window) => window.id === payload.id) ?? null;
+    const metadata = { ...(current?.metadata ?? {}) };
+    metadata.firstDueDate = payload.firstDueDate.toISOString();
+    return {
+      id: payload.id,
+      tableId: current?.tableId ?? null,
+      label: payload.label,
+      startsAt: payload.start.toISOString(),
+      endsAt: payload.end.toISOString(),
+      isActive: current?.isActive ?? true,
+      metadata,
+    };
+  };
+
+  const buildRatePayload = (payload) => {
+    const current = selected?.taxas.find((tax) => tax.id === payload.id) ?? null;
+    const metadata = { ...(current?.metadata ?? {}) };
+    metadata.validFrom = payload.validFrom.toISOString();
+    metadata.validUntil = payload.validUntil ? payload.validUntil.toISOString() : null;
+    metadata.tacFlat = payload.tacFlat ?? 0;
+    metadata.status = payload.status ?? 'Ativa';
+    metadata.tacPercent = payload.tacPercent ?? 0;
+    return {
+      id: payload.id,
+      tableId: current?.tableId ?? null,
+      windowId: current?.windowId ?? null,
+      product: payload.produto,
+      modality: payload.modalidade,
+      termMonths: current?.termMonths ?? null,
+      coefficient: current?.coefficient ?? null,
+      monthlyRate: payload.monthlyRate,
+      annualRate: current?.annualRate ?? null,
+      tacPercentage: payload.tacPercent ?? current?.tacPercentage ?? 0,
+      metadata,
+    };
+  };
+
+  const handleUpsertWindow = async (payload) => {
+    if (!selected || locked) {
+      return;
+    }
+    const note = `Janela ${payload.label || 'do convênio'} (${formatDate(payload.start)} até ${formatDate(payload.end)}) atualizada.`;
+
+    try {
+      const response = await mutations.upsertWindow.mutateAsync({
+        agreementId: selected.id,
+        payload: {
+          data: buildWindowPayload(payload),
+          meta: buildAuditMeta(note),
+        },
+      });
+      const windowId = response?.data?.id ?? payload.id;
+      toast.success('Calendário salvo com sucesso');
+      emitAgreementsTelemetry('agreements.window.upserted', {
+        agreementId: selected.id,
+        windowId,
+        hasOverlap: false,
+        role,
+      });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao salvar calendário'));
+    }
+  };
+
+  const handleRemoveWindow = async (windowId) => {
+    if (!selected || locked) {
+      return;
+    }
+    const note = 'Janela removida do calendário.';
+
+    try {
+      await mutations.removeWindow.mutateAsync({
+        agreementId: selected.id,
+        windowId,
+        meta: buildAuditMeta(note),
+      });
+      toast.success('Janela removida');
+      emitAgreementsTelemetry('agreements.window.removed', { agreementId: selected.id, windowId, role });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao remover janela'));
+    }
+  };
+
+  const handleUpsertTax = async (payload) => {
+    if (!selected || locked) {
+      return;
+    }
+    const note = `${payload.modalidade} atualizada para ${formatPercent(payload.monthlyRate)} (${payload.produto}).`;
+
+    try {
+      const response = await mutations.upsertRate.mutateAsync({
+        agreementId: selected.id,
+        payload: {
+          data: buildRatePayload(payload),
+          meta: buildAuditMeta(note),
+        },
+      });
+      const rateId = response?.data?.id ?? payload.id;
+      toast.success('Taxa salva com sucesso');
+      emitAgreementsTelemetry('agreements.rate.upserted', {
+        agreementId: selected.id,
+        rateId,
+        modalidade: payload.modalidade,
+        produto: payload.produto,
+        role,
+      });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao salvar taxa'));
+    }
+  };
+
+  const handleArchive = async (convenioId) => {
+    const target = convenios.find((item) => item.id === convenioId);
+    if (!target || locked) {
+      return;
+    }
+
+    const next = {
+      ...target,
+      archived: true,
+      status: target.status === 'ATIVO' ? 'PAUSADO' : target.status,
+    };
+
+    await runUpdate({
+      nextAgreement: next,
+      toastMessage: 'Convênio arquivado',
+      telemetryEvent: 'agreements.archived',
+      telemetryPayload: {},
+      note: 'Convênio arquivado pelo gestor.',
+      errorMessage: 'Falha ao arquivar convênio',
+    });
+  };
+
+  const handleCreateConvenio = async () => {
+    if (locked) {
+      return;
+    }
+
+    const convenio = {
+      id: generateId(),
+      nome: 'Novo convênio',
+      averbadora: '',
+      tipo: 'MUNICIPAL',
+      status: 'EM_IMPLANTACAO',
+      produtos: [],
+      responsavel: '',
+      archived: false,
+      metadata: {},
+      janelas: [],
+      taxas: [],
+      history: [],
+    };
+
+    const response = await runUpdate({
+      nextAgreement: convenio,
+      toastMessage: 'Convênio criado',
+      telemetryEvent: 'agreements.created',
+      telemetryPayload: {},
+      note: 'Convênio criado manualmente pelo gestor.',
+      errorMessage: 'Falha ao criar convênio',
+      action: 'create',
+    });
+
+    if (response) {
+      setSelectedId(response.id ?? convenio.id);
+      setDetailsOpen(true);
+    }
+  };
   }, [selected]);
 
   const handleSelectConvenio = (convenioId) => {

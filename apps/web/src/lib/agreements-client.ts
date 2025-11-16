@@ -1,5 +1,5 @@
 import type { components, paths } from '@ticketz/contracts';
-import { apiGet, apiPatch, apiPost, apiUpload } from './api.js';
+import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from './api.js';
 
 export type AgreementDto = components['schemas']['Agreement'];
 export type AgreementWindowDto = components['schemas']['AgreementWindow'];
@@ -13,6 +13,28 @@ export type AgreementSyncResponse = components['schemas']['AgreementSyncResponse
 export type AgreementUpdateRequest = components['schemas']['AgreementUpdateRequest'];
 export type AgreementSyncRequest = components['schemas']['AgreementSyncRequest'];
 export type AgreementCreateRequest = components['schemas']['AgreementCreateRequest'];
+type AgreementAuditMetadata = AgreementUpdateRequest['meta'];
+type ApiMeta = { generatedAt?: string } & Record<string, unknown>;
+
+export type AgreementWindowRequest = {
+  data: AgreementWindowDto;
+  meta?: AgreementAuditMetadata;
+};
+
+export type AgreementRateRequest = {
+  data: AgreementRateDto;
+  meta?: AgreementAuditMetadata;
+};
+
+export type AgreementWindowResponse = {
+  data: AgreementWindowDto;
+  meta: ApiMeta;
+};
+
+export type AgreementRateResponse = {
+  data: AgreementRateDto;
+  meta: ApiMeta;
+};
 
 export type ListAgreementsResponse =
   paths['/api/v1/agreements']['get']['responses'][200]['content']['application/json'];
@@ -54,3 +76,31 @@ export const postAgreementSync = async (
 
 export const uploadAgreements = async (formData: FormData): Promise<ImportAgreementsResponse> =>
   apiUpload('/api/v1/agreements/import', formData);
+
+export const postAgreementWindow = async (
+  agreementId: string,
+  payload: AgreementWindowRequest
+): Promise<AgreementWindowResponse> => apiPost(`/api/v1/agreements/${agreementId}/windows`, payload);
+
+export const deleteAgreementWindow = async (
+  agreementId: string,
+  windowId: string,
+  meta?: AgreementAuditMetadata
+) => {
+  const body = meta ? JSON.stringify({ meta }) : undefined;
+  return apiDelete(`/api/v1/agreements/${agreementId}/windows/${windowId}`, body
+    ? { headers: { 'Content-Type': 'application/json' }, body }
+    : undefined);
+};
+
+export const postAgreementRate = async (
+  agreementId: string,
+  payload: AgreementRateRequest
+): Promise<AgreementRateResponse> => apiPost(`/api/v1/agreements/${agreementId}/rates`, payload);
+
+export const deleteAgreementRate = async (agreementId: string, rateId: string, meta?: AgreementAuditMetadata) => {
+  const body = meta ? JSON.stringify({ meta }) : undefined;
+  return apiDelete(`/api/v1/agreements/${agreementId}/rates/${rateId}`, body
+    ? { headers: { 'Content-Type': 'application/json' }, body }
+    : undefined);
+};
