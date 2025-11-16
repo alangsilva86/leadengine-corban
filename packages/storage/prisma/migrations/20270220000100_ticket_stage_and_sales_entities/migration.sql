@@ -19,6 +19,8 @@ BEGIN
   END IF;
 END $$;
 
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
 ALTER TABLE "tickets"
   ADD COLUMN IF NOT EXISTS "stage" "TicketStage" NOT NULL DEFAULT 'novo';
 
@@ -127,7 +129,8 @@ WITH normalized AS (
             'g'
           )
         )
-      )
+      ),
+      ''
     ) AS normalized_pipeline_step
   FROM "tickets"
 )
