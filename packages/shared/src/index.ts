@@ -11,5 +11,8 @@ export * from './config/index';
 // Utils
 export * from './utils/index';
 
+// Agreements
+export * from './agreements/index';
+
 // Placeholder exports
 export const SHARED_VERSION = '1.0.0';

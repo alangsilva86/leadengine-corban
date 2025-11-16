@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { Prisma } from '@prisma/client';
+import { translateLegacyAgreementFields } from '@ticketz/shared';
 
 import type { Request, Response } from 'express';
 import { Router } from 'express';
@@ -207,14 +208,6 @@ const handleServiceError = (res: Response, error: unknown, context: Record<strin
   respondError(res, status, code, message);
 };
 
-const slugify = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toLowerCase();
-
 const extractAuditMeta = (meta: unknown): AgreementAuditMetadata | null => {
   if (!meta || typeof meta !== 'object') {
     return null;
@@ -237,51 +230,6 @@ const extractAuditMeta = (meta: unknown): AgreementAuditMetadata | null => {
   }
 
   return Object.keys(audit).length ? audit : null;
-};
-
-const translateLegacyAgreementFields = (data: unknown): Record<string, unknown> => {
-  if (!data || typeof data !== 'object') {
-    return {};
-  }
-
-  const source = data as Record<string, unknown>;
-  const normalized: Record<string, unknown> = { ...source };
-
-  if (typeof source.nome === 'string' && typeof normalized.name !== 'string') {
-    normalized.name = source.nome;
-  }
-
-  if (typeof normalized.slug !== 'string' && typeof normalized.name === 'string') {
-    const candidate = slugify(normalized.name as string);
-    normalized.slug = candidate.length ? candidate : (normalized.name as string);
-  }
-
-  if (typeof source.tipo === 'string' && typeof normalized.type !== 'string') {
-    normalized.type = source.tipo;
-  }
-
-  if (!normalized.products && typeof source.produtos === 'object' && source.produtos !== null) {
-    normalized.products = source.produtos;
-  }
-
-  const metadata =
-    typeof normalized.metadata === 'object' && normalized.metadata !== null
-      ? { ...(normalized.metadata as Record<string, unknown>) }
-      : {};
-
-  if (typeof source.averbadora === 'string' && !metadata.providerName) {
-    metadata.providerName = source.averbadora;
-  }
-
-  if (typeof source.responsavel === 'string' && !metadata.responsavel) {
-    metadata.responsavel = source.responsavel;
-  }
-
-  if (Object.keys(metadata).length) {
-    normalized.metadata = metadata;
-  }
-
-  return normalized;
 };
 
 const extractAgreementEnvelope = (body: unknown): { data: unknown; meta: unknown } => {
