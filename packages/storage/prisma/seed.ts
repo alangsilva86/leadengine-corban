@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { demoAgreementsSeed } from '../../../config/demo-agreements';
 
 const prisma = new PrismaClient();
 
@@ -166,6 +167,16 @@ async function main() {
   const toDecimal = (value?: string | number | null) =>
     value === null || value === undefined ? null : new Prisma.Decimal(value);
 
+  for (const seedAgreement of demoAgreementsSeed) {
+    const agreementId = seedAgreement.id ?? seedAgreement.slug;
+    const publishedAt = seedAgreement.publishedAt ? new Date(seedAgreement.publishedAt) : new Date();
+
+    const agreement = await prisma.agreement.upsert({
+      where: { id: agreementId },
+      update: {
+        name: seedAgreement.name,
+        slug: seedAgreement.slug,
+        status: seedAgreement.status ?? 'published',
   const agreementsSeed = [
     {
       id: 'saec-goiania',
@@ -302,6 +313,14 @@ async function main() {
           source: 'seed',
         },
         archived: false,
+        publishedAt,
+      },
+      create: {
+        id: agreementId,
+        tenantId: demoTenant.id,
+        name: seedAgreement.name,
+        slug: seedAgreement.slug,
+        status: seedAgreement.status ?? 'published',
         publishedAt: seedAgreement.publishedAt ?? new Date(),
       },
       create: {
@@ -321,6 +340,17 @@ async function main() {
           source: 'seed',
         },
         archived: false,
+        publishedAt,
+      },
+    });
+
+    for (const tableSeed of (seedAgreement.tables ?? [])) {
+      const tableId = tableSeed.id ?? `${agreement.id}-${tableSeed.name}`;
+      const effectiveFrom = tableSeed.effectiveFrom ? new Date(tableSeed.effectiveFrom) : null;
+      const effectiveTo = tableSeed.effectiveTo ? new Date(tableSeed.effectiveTo) : null;
+
+      const table = await prisma.agreementTable.upsert({
+        where: { id: tableId },
         publishedAt: seedAgreement.publishedAt ?? new Date(),
       },
     });
@@ -333,6 +363,12 @@ async function main() {
           product: tableSeed.product,
           modality: tableSeed.modality,
           version: tableSeed.version,
+          effectiveFrom,
+          effectiveTo,
+          metadata: tableSeed.metadata,
+        },
+        create: {
+          id: tableId,
           effectiveFrom: tableSeed.effectiveFrom,
           effectiveTo: tableSeed.effectiveTo,
           metadata: tableSeed.metadata,
@@ -345,6 +381,8 @@ async function main() {
           product: tableSeed.product,
           modality: tableSeed.modality,
           version: tableSeed.version,
+          effectiveFrom,
+          effectiveTo,
           effectiveFrom: tableSeed.effectiveFrom,
           effectiveTo: tableSeed.effectiveTo,
           metadata: tableSeed.metadata,
@@ -352,6 +390,9 @@ async function main() {
       });
 
       for (const rateSeed of tableSeed.rates ?? []) {
+        const rateId = rateSeed.id ?? `${table.id}-${rateSeed.termMonths ?? 'na'}`;
+        await prisma.agreementRate.upsert({
+          where: { id: rateId },
         await prisma.agreementRate.upsert({
           where: { id: rateSeed.id },
           update: {
@@ -362,6 +403,10 @@ async function main() {
             monthlyRate: toDecimal(rateSeed.monthlyRate),
             annualRate: toDecimal(rateSeed.annualRate),
             tacPercentage: toDecimal(rateSeed.tacPercentage),
+            metadata: rateSeed.metadata ?? { seed: true },
+          },
+          create: {
+            id: rateId,
             metadata: rateSeed.metadata ?? {},
           },
           create: {
@@ -376,6 +421,7 @@ async function main() {
             monthlyRate: toDecimal(rateSeed.monthlyRate),
             annualRate: toDecimal(rateSeed.annualRate),
             tacPercentage: toDecimal(rateSeed.tacPercentage),
+            metadata: rateSeed.metadata ?? { seed: true },
             metadata: rateSeed.metadata ?? {},
           },
         });
@@ -385,6 +431,7 @@ async function main() {
 
   console.log(
     '✅ Convênios demo cadastrados:',
+    demoAgreementsSeed.map((agreement) => agreement.name).join(', '),
     agreementsSeed.map((agreement) => agreement.name).join(', '),
   );
 

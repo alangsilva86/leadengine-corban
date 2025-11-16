@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { isDatabaseEnabled, prisma as prismaClient } from '../../lib/prisma';
+import { DemoAgreementsStore } from './demo-store';
 
 export interface AgreementRecord {
   id: string;
@@ -151,9 +152,11 @@ const defaultPrisma = prismaClient as unknown as AgreementsPrismaClient;
 
 export class AgreementsRepository {
   private readonly prisma: AgreementsPrismaClient;
+  private readonly demoStore: DemoAgreementsStore | null;
 
   constructor(dependencies: AgreementsRepositoryDependencies = {}) {
     this.prisma = dependencies.prisma ?? defaultPrisma;
+    this.demoStore = isDatabaseEnabled ? null : new DemoAgreementsStore();
   }
 
   async listAgreements(
@@ -180,14 +183,8 @@ export class AgreementsRepository {
       ];
     }
 
-    if (!isDatabaseEnabled) {
-      return {
-        items: [],
-        total: 0,
-        page,
-        limit,
-        totalPages: 0,
-      };
+    if (this.demoStore) {
+      return this.demoStore.listAgreements(tenantId, filters, { page, limit });
     }
 
     const [total, items] = await this.prisma.$transaction([
@@ -211,6 +208,9 @@ export class AgreementsRepository {
   }
 
   findAgreementById(tenantId: string, agreementId: string): Promise<AgreementRecord | null> {
+    if (this.demoStore) {
+      return this.demoStore.findAgreementById(tenantId, agreementId);
+    }
     return this.prisma.agreement.findFirst({
       where: { tenantId, id: agreementId },
       include: {
@@ -226,6 +226,9 @@ export class AgreementsRepository {
   }
 
   createAgreement(data: Partial<AgreementRecord> & { tenantId: string; name: string; slug: string }): Promise<AgreementRecord> {
+    if (this.demoStore) {
+      return this.demoStore.createAgreement(data);
+    }
     return this.prisma.agreement.create({
       data,
     });
@@ -236,6 +239,9 @@ export class AgreementsRepository {
     agreementId: string,
     data: Partial<AgreementRecord>
   ): Promise<AgreementRecord> {
+    if (this.demoStore) {
+      return this.demoStore.updateAgreement(tenantId, agreementId, data);
+    }
     return this.prisma.agreement.update({
       where: { id: agreementId },
       data,
@@ -243,6 +249,9 @@ export class AgreementsRepository {
   }
 
   deleteAgreement(tenantId: string, agreementId: string): Promise<AgreementRecord> {
+    if (this.demoStore) {
+      return this.demoStore.deleteAgreement(tenantId, agreementId);
+    }
     return this.prisma.agreement.delete({
       where: { id: agreementId },
     });
@@ -254,6 +263,9 @@ export class AgreementsRepository {
     windowId: string | null,
     payload: Partial<AgreementWindowRecord>
   ): Promise<AgreementWindowRecord> {
+    if (this.demoStore) {
+      return this.demoStore.upsertWindow(tenantId, agreementId, windowId, payload);
+    }
     if (windowId) {
       return this.prisma.agreementWindow.update({
         where: { id: windowId },
@@ -271,6 +283,9 @@ export class AgreementsRepository {
   }
 
   deleteWindow(tenantId: string, windowId: string): Promise<AgreementWindowRecord> {
+    if (this.demoStore) {
+      return this.demoStore.deleteWindow(tenantId, windowId);
+    }
     return this.prisma.agreementWindow.delete({
       where: { id: windowId },
     });
@@ -282,6 +297,9 @@ export class AgreementsRepository {
     rateId: string | null,
     payload: Partial<AgreementRateRecord>
   ): Promise<AgreementRateRecord> {
+    if (this.demoStore) {
+      return this.demoStore.upsertRate(tenantId, agreementId, rateId, payload);
+    }
     if (rateId) {
       return this.prisma.agreementRate.update({
         where: { id: rateId },
@@ -299,6 +317,9 @@ export class AgreementsRepository {
   }
 
   deleteRate(tenantId: string, rateId: string): Promise<AgreementRateRecord> {
+    if (this.demoStore) {
+      return this.demoStore.deleteRate(tenantId, rateId);
+    }
     return this.prisma.agreementRate.delete({
       where: { id: rateId },
     });
@@ -309,6 +330,9 @@ export class AgreementsRepository {
     agreementId: string,
     entry: Omit<AgreementHistoryRecord, 'id' | 'tenantId' | 'agreementId' | 'createdAt'>
   ): Promise<AgreementHistoryRecord> {
+    if (this.demoStore) {
+      return this.demoStore.appendHistoryEntry(tenantId, agreementId, entry);
+    }
     return this.prisma.agreementHistory.create({
       data: {
         ...entry,
@@ -323,6 +347,9 @@ export class AgreementsRepository {
     agreementId: string,
     limit: number
   ): Promise<AgreementHistoryRecord[]> {
+    if (this.demoStore) {
+      return this.demoStore.listHistory(tenantId, agreementId, limit);
+    }
     return this.prisma.agreementHistory.findMany({
       where: { tenantId, agreementId },
       orderBy: { createdAt: 'desc' },
@@ -335,6 +362,9 @@ export class AgreementsRepository {
     agreementId: string | null,
     payload: Partial<AgreementImportJobRecord>
   ): Promise<AgreementImportJobRecord> {
+    if (this.demoStore) {
+      return this.demoStore.createImportJob(tenantId, agreementId, payload);
+    }
     return this.prisma.agreementImportJob.create({
       data: {
         ...payload,
@@ -348,6 +378,9 @@ export class AgreementsRepository {
     tenantId: string,
     checksum: string
   ): Promise<AgreementImportJobRecord | null> {
+    if (this.demoStore) {
+      return this.demoStore.findImportJobByChecksum(tenantId, checksum);
+    }
     return this.prisma.agreementImportJob.findFirst({
       where: { tenantId, checksum },
     });
@@ -358,6 +391,9 @@ export class AgreementsRepository {
     jobId: string,
     updates: Partial<AgreementImportJobRecord>
   ): Promise<AgreementImportJobRecord> {
+    if (this.demoStore) {
+      return this.demoStore.updateImportJob(tenantId, jobId, updates);
+    }
     return this.prisma.agreementImportJob.update({
       where: { id: jobId },
       data: updates,
@@ -365,6 +401,9 @@ export class AgreementsRepository {
   }
 
   async markImportJobProcessing(jobId: string): Promise<AgreementImportJobRecord | null> {
+    if (this.demoStore) {
+      return this.demoStore.markImportJobProcessing(jobId);
+    }
     const updated = await this.prisma.agreementImportJob.update({
       where: { id: jobId },
       data: {
@@ -377,6 +416,9 @@ export class AgreementsRepository {
   }
 
   async findPendingImportJobs(limit: number): Promise<AgreementImportJobRecord[]> {
+    if (this.demoStore) {
+      return this.demoStore.findPendingImportJobs(limit);
+    }
     return this.prisma.agreementImportJob.findMany({
       where: { status: 'pending' },
       orderBy: { createdAt: 'asc' },
