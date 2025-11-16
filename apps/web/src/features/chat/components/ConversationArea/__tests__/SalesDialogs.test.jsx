@@ -114,7 +114,7 @@ describe('Sales dialogs alerts', () => {
   });
 
   it('exibe mensagem amigável quando nenhum convênio está disponível', () => {
-    mockUseConvenioCatalog.mockReturnValueOnce({
+    mockUseConvenioCatalog.mockReturnValue({
       convenios: [],
       isLoading: false,
       error: null,
