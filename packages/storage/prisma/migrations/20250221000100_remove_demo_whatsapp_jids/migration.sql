@@ -5,6 +5,7 @@ DECLARE
     '554123912310:5@s.whatsapp.net',
     '556230301837:10@s.whatsapp.net'
   ];
+  var_id TEXT;
   tenant_slug TEXT := 'demo-tenant';
   deleted_at TIMESTAMP := NOW();
   archive_prefix TEXT := 'whatsapp:instance:archive:';
