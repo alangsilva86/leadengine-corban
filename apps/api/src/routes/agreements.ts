@@ -301,18 +301,17 @@ const parsePayloadWithEnvelope = <TSchema extends z.ZodTypeAny>(
   const { data, meta } = extractAgreementEnvelope(body);
   const source = options.transform ? options.transform(data) : data;
   const payload = schema.parse(source);
-const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
-  schema: TSchema,
-  body: unknown
-): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } => {
-  const { data, meta } = extractAgreementEnvelope(body);
-  const payload = schema.parse(translateLegacyAgreementFields(data));
   const audit = extractAuditMeta(meta);
   return { payload, audit };
 };
 
-const parseAgreementPayloadWithLegacy = <TSchema extends z.ZodTypeAny>(
 const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  body: unknown
+): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } =>
+  parsePayloadWithEnvelope(schema, body);
+
+const parseAgreementPayloadWithLegacy = <TSchema extends z.ZodTypeAny>(
   schema: TSchema,
   body: unknown
 ): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } =>
@@ -361,8 +360,10 @@ router.post(
     }
 
     try {
-      const { payload, audit } = parseAgreementPayloadWithLegacy(CreateAgreementSchema, req.body ?? {});
-      const { payload, audit } = parseAgreementPayload(CreateAgreementSchema, req.body ?? {});
+      const { payload, audit } = parseAgreementPayloadWithLegacy(
+        CreateAgreementSchema,
+        req.body ?? {}
+      );
       const agreement = await agreementsService.createAgreement(
         user.tenantId,
         payload,
@@ -418,29 +419,17 @@ const updateAgreementHandler = asyncHandler(async (req: Request, res: Response) 
     return;
   }
 
-    try {
-      const { payload, audit } = parseAgreementPayloadWithLegacy(UpdateAgreementSchema, req.body ?? {});
-      const { payload, audit } = parseAgreementPayload(UpdateAgreementSchema, req.body ?? {});
-      const agreement = await agreementsService.updateAgreement(
-        user.tenantId,
-        agreementId,
-        payload,
-        buildActor(req),
-        audit
-      );
-      respondSuccess(res, 200, agreement);
-    } catch (error) {
-      handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'update' });
-    }
-  })
-);
   try {
-    const payload = UpdateAgreementSchema.parse(req.body ?? {});
+    const { payload, audit } = parseAgreementPayloadWithLegacy(
+      UpdateAgreementSchema,
+      req.body ?? {}
+    );
     const agreement = await agreementsService.updateAgreement(
       user.tenantId,
       agreementId,
       payload,
-      buildActor(req)
+      buildActor(req),
+      audit
     );
     respondSuccess(res, 200, agreement);
   } catch (error) {
