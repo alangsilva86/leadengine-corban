@@ -311,6 +311,7 @@ const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
   return { payload, audit };
 };
 
+const parseAgreementPayloadWithLegacy = <TSchema extends z.ZodTypeAny>(
 const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
   schema: TSchema,
   body: unknown
@@ -360,6 +361,7 @@ router.post(
     }
 
     try {
+      const { payload, audit } = parseAgreementPayloadWithLegacy(CreateAgreementSchema, req.body ?? {});
       const { payload, audit } = parseAgreementPayload(CreateAgreementSchema, req.body ?? {});
       const agreement = await agreementsService.createAgreement(
         user.tenantId,
@@ -417,6 +419,7 @@ const updateAgreementHandler = asyncHandler(async (req: Request, res: Response) 
   }
 
     try {
+      const { payload, audit } = parseAgreementPayloadWithLegacy(UpdateAgreementSchema, req.body ?? {});
       const { payload, audit } = parseAgreementPayload(UpdateAgreementSchema, req.body ?? {});
       const agreement = await agreementsService.updateAgreement(
         user.tenantId,
