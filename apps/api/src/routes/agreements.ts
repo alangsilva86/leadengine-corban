@@ -301,11 +301,18 @@ const parsePayloadWithEnvelope = <TSchema extends z.ZodTypeAny>(
   const { data, meta } = extractAgreementEnvelope(body);
   const source = options.transform ? options.transform(data) : data;
   const payload = schema.parse(source);
+const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  body: unknown
+): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } => {
+  const { data, meta } = extractAgreementEnvelope(body);
+  const payload = schema.parse(translateLegacyAgreementFields(data));
   const audit = extractAuditMeta(meta);
   return { payload, audit };
 };
 
 const parseAgreementPayloadWithLegacy = <TSchema extends z.ZodTypeAny>(
+const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
   schema: TSchema,
   body: unknown
 ): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } =>
@@ -355,6 +362,7 @@ router.post(
 
     try {
       const { payload, audit } = parseAgreementPayloadWithLegacy(CreateAgreementSchema, req.body ?? {});
+      const { payload, audit } = parseAgreementPayload(CreateAgreementSchema, req.body ?? {});
       const agreement = await agreementsService.createAgreement(
         user.tenantId,
         payload,
@@ -398,23 +406,21 @@ router.get(
   })
 );
 
-router.put(
-  '/v1/agreements/:agreementId',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const user = ensureTenantUser(req, res);
-    if (!user) {
-      return;
-    }
+const updateAgreementHandler = asyncHandler(async (req: Request, res: Response) => {
+  const user = ensureTenantUser(req, res);
+  if (!user) {
+    return;
+  }
 
-    const agreementId = (req.params.agreementId ?? '').trim();
-    if (!agreementId) {
-      respondError(res, 400, 'AGREEMENT_ID_REQUIRED', 'Identificador do convênio é obrigatório.');
-      return;
-    }
+  const agreementId = (req.params.agreementId ?? '').trim();
+  if (!agreementId) {
+    respondError(res, 400, 'AGREEMENT_ID_REQUIRED', 'Identificador do convênio é obrigatório.');
+    return;
+  }
 
     try {
       const { payload, audit } = parseAgreementPayloadWithLegacy(UpdateAgreementSchema, req.body ?? {});
+      const { payload, audit } = parseAgreementPayload(UpdateAgreementSchema, req.body ?? {});
       const agreement = await agreementsService.updateAgreement(
         user.tenantId,
         agreementId,
@@ -428,6 +434,24 @@ router.put(
     }
   })
 );
+  try {
+    const payload = UpdateAgreementSchema.parse(req.body ?? {});
+    const agreement = await agreementsService.updateAgreement(
+      user.tenantId,
+      agreementId,
+      payload,
+      buildActor(req)
+    );
+    respondSuccess(res, 200, agreement);
+  } catch (error) {
+    handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'update' });
+  }
+});
+
+router.patch('/v1/agreements/:agreementId', requireTenant, updateAgreementHandler);
+
+// Mantemos o endpoint via PUT para compatibilidade retroativa até que todos os clientes usem PATCH.
+router.put('/v1/agreements/:agreementId', requireTenant, updateAgreementHandler);
 
 router.delete(
   '/v1/agreements/:agreementId',

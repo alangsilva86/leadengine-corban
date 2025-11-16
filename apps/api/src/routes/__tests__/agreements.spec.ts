@@ -130,6 +130,37 @@ describe('agreementsRouter', () => {
     expect(createAgreementMock).not.toHaveBeenCalled();
   });
 
+  it('accepts PATCH /api/v1/agreements/:agreementId with a valid payload', async () => {
+    const app = buildApp();
+    const payload = { name: 'Convênio Atualizado', tags: ['venda-direta'] };
+
+    const response = await request(app)
+      .patch('/api/v1/agreements/agreement-1')
+      .send(payload);
+
+    expect(response.status).toBe(200);
+    expect(updateAgreementMock).toHaveBeenCalledWith(
+      'tenant-1',
+      'agreement-1',
+      payload,
+      expect.objectContaining({ id: 'user-1', name: 'User' })
+    );
+  });
+
+  it('rejects PATCH /api/v1/agreements/:agreementId with invalid data', async () => {
+    const app = buildApp();
+
+    const response = await request(app)
+      .patch('/api/v1/agreements/agreement-1')
+      .send({ slug: 'a' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: expect.objectContaining({ code: 'VALIDATION_ERROR' }),
+    });
+    expect(updateAgreementMock).not.toHaveBeenCalled();
+  });
+
   it('stores import file and schedules worker', async () => {
     vi.useFakeTimers();
     const mkdirSpy = vi.spyOn(fs, 'mkdir').mockResolvedValue(undefined as unknown as void);
