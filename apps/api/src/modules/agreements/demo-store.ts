@@ -18,6 +18,10 @@ const normalizeTenantId = (tenantId: string): string => {
   const trimmed = (tenantId ?? '').trim();
   return trimmed.length ? trimmed : DEFAULT_TENANT_ID;
 };
+const DEFAULT_TENANT_IDS = new Set([
+  (process.env.AUTH_MVP_TENANT_ID ?? 'demo-tenant').trim() || 'demo-tenant',
+  'demo-tenant',
+]);
 
 interface DemoAgreementsState {
   agreements: AgreementRecord[];
@@ -124,6 +128,12 @@ export class DemoAgreementsStore {
     for (const tenantId of uniqueTenantIds) {
       this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
     }
+  private readonly allowedTenants: Set<string>;
+  private readonly stateByTenant = new Map<string, DemoAgreementsState>();
+
+  constructor(tenantIds?: string[]) {
+    const normalized = (tenantIds ?? Array.from(DEFAULT_TENANT_IDS)).map((tenant) => tenant.trim()).filter(Boolean);
+    this.allowedTenants = new Set(normalized.length ? normalized : ['demo-tenant']);
   }
 
   private buildInitialState(tenantId: string): DemoAgreementsState {
@@ -223,11 +233,17 @@ export class DemoAgreementsStore {
 
   private getState(rawTenantId: string): DemoAgreementsState {
     const tenantId = normalizeTenantId(rawTenantId);
+  private getState(tenantId: string): DemoAgreementsState | null {
+    if (!this.allowedTenants.has(tenantId)) {
+      return null;
+    }
+
     if (!this.stateByTenant.has(tenantId)) {
       this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
     }
 
     return this.stateByTenant.get(tenantId)!;
+    return this.stateByTenant.get(tenantId) ?? null;
   }
 
   private applySearchFilters(agreements: AgreementRecord[], filters: AgreementListFilters): AgreementRecord[] {
@@ -260,6 +276,10 @@ export class DemoAgreementsStore {
     const page = Math.max(pagination.page, 1);
     const limit = Math.min(Math.max(pagination.limit, 1), 100);
 
+    if (!state) {
+      return { items: [], total: 0, page, limit, totalPages: 0 };
+    }
+
     const filtered = this.applySearchFilters(state.agreements, filters).sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
@@ -273,12 +293,19 @@ export class DemoAgreementsStore {
 
   async findAgreementById(tenantId: string, agreementId: string): Promise<AgreementRecord | null> {
     const state = this.getState(tenantId);
+    if (!state) {
+      return null;
+    }
+
     const agreement = state.agreements.find((item) => item.id === agreementId);
     return agreement ? cloneAgreement(agreement, state, { includeHistory: true }) : null;
   }
 
   async createAgreement(data: Partial<AgreementRecord> & { tenantId: string; name: string; slug: string }): Promise<AgreementRecord> {
     const state = this.getState(data.tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const createdAt = now();
     const record: AgreementRecord = {
@@ -309,6 +336,9 @@ export class DemoAgreementsStore {
     updates: Partial<AgreementRecord>
   ): Promise<AgreementRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const index = state.agreements.findIndex((agreement) => agreement.id === agreementId);
     if (index === -1) {
@@ -331,6 +361,9 @@ export class DemoAgreementsStore {
 
   async deleteAgreement(tenantId: string, agreementId: string): Promise<AgreementRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const index = state.agreements.findIndex((agreement) => agreement.id === agreementId);
     if (index === -1) {
@@ -353,6 +386,9 @@ export class DemoAgreementsStore {
     payload: Partial<AgreementWindowRecord>
   ): Promise<AgreementWindowRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     if (windowId) {
       const index = state.windows.findIndex((window) => window.id === windowId && window.agreementId === agreementId);
@@ -391,6 +427,9 @@ export class DemoAgreementsStore {
 
   async deleteWindow(tenantId: string, windowId: string): Promise<AgreementWindowRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const index = state.windows.findIndex((window) => window.id === windowId);
     if (index === -1) {
@@ -409,6 +448,9 @@ export class DemoAgreementsStore {
     payload: Partial<AgreementRateRecord>
   ): Promise<AgreementRateRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     if (rateId) {
       const index = state.rates.findIndex((rate) => rate.id === rateId && rate.agreementId === agreementId);
@@ -451,6 +493,9 @@ export class DemoAgreementsStore {
 
   async deleteRate(tenantId: string, rateId: string): Promise<AgreementRateRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const index = state.rates.findIndex((rate) => rate.id === rateId);
     if (index === -1) {
@@ -467,6 +512,9 @@ export class DemoAgreementsStore {
     entry: Omit<AgreementHistoryRecord, 'id' | 'tenantId' | 'agreementId' | 'createdAt'>
   ): Promise<AgreementHistoryRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const created: AgreementHistoryRecord = {
       id: randomUUID(),
@@ -487,6 +535,10 @@ export class DemoAgreementsStore {
 
   async listHistory(tenantId: string, agreementId: string, limit: number): Promise<AgreementHistoryRecord[]> {
     const state = this.getState(tenantId);
+    if (!state) {
+      return [];
+    }
+
     return state.history
       .filter((entry) => entry.agreementId === agreementId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -500,6 +552,9 @@ export class DemoAgreementsStore {
     payload: Partial<AgreementImportJobRecord>
   ): Promise<AgreementImportJobRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const job: AgreementImportJobRecord = {
       id: randomUUID(),
@@ -527,6 +582,10 @@ export class DemoAgreementsStore {
 
   async findImportJobByChecksum(tenantId: string, checksum: string): Promise<AgreementImportJobRecord | null> {
     const state = this.getState(tenantId);
+    if (!state) {
+      return null;
+    }
+
     const job = state.importJobs.find((entry) => entry.checksum === checksum);
     return job ? { ...job, metadata: { ...job.metadata }, createdAt: new Date(job.createdAt) } : null;
   }
@@ -537,6 +596,9 @@ export class DemoAgreementsStore {
     updates: Partial<AgreementImportJobRecord>
   ): Promise<AgreementImportJobRecord> {
     const state = this.getState(tenantId);
+    if (!state) {
+      throw new Error('DEMO_STORE_TENANT_UNSUPPORTED');
+    }
 
     const index = state.importJobs.findIndex((job) => job.id === jobId);
     if (index === -1) {

@@ -30,6 +30,7 @@ describe('AgreementsRepository - database disabled', () => {
     );
 
     expect(result.page).toBe(1);
+    expect(result.page).toBe(2);
     expect(result.limit).toBe(50);
     expect(result.total).toBe(demoAgreementsSeed.length);
     expect(result.items).toHaveLength(demoAgreementsSeed.length);
