@@ -282,30 +282,36 @@ router.get(
   })
 );
 
-router.put(
-  '/v1/agreements/:agreementId',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const user = ensureTenantUser(req, res);
-    if (!user) {
-      return;
-    }
+const updateAgreementHandler = asyncHandler(async (req: Request, res: Response) => {
+  const user = ensureTenantUser(req, res);
+  if (!user) {
+    return;
+  }
 
-    const agreementId = (req.params.agreementId ?? '').trim();
-    if (!agreementId) {
-      respondError(res, 400, 'AGREEMENT_ID_REQUIRED', 'Identificador do convênio é obrigatório.');
-      return;
-    }
+  const agreementId = (req.params.agreementId ?? '').trim();
+  if (!agreementId) {
+    respondError(res, 400, 'AGREEMENT_ID_REQUIRED', 'Identificador do convênio é obrigatório.');
+    return;
+  }
 
-    try {
-      const payload = UpdateAgreementSchema.parse(req.body ?? {});
-      const agreement = await agreementsService.updateAgreement(user.tenantId, agreementId, payload, buildActor(req));
-      respondSuccess(res, 200, agreement);
-    } catch (error) {
-      handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'update' });
-    }
-  })
-);
+  try {
+    const payload = UpdateAgreementSchema.parse(req.body ?? {});
+    const agreement = await agreementsService.updateAgreement(
+      user.tenantId,
+      agreementId,
+      payload,
+      buildActor(req)
+    );
+    respondSuccess(res, 200, agreement);
+  } catch (error) {
+    handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'update' });
+  }
+});
+
+router.patch('/v1/agreements/:agreementId', requireTenant, updateAgreementHandler);
+
+// Mantemos o endpoint via PUT para compatibilidade retroativa até que todos os clientes usem PATCH.
+router.put('/v1/agreements/:agreementId', requireTenant, updateAgreementHandler);
 
 router.delete(
   '/v1/agreements/:agreementId',
