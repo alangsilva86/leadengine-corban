@@ -293,6 +293,14 @@ const extractAgreementEnvelope = (body: unknown): { data: unknown; meta: unknown
   return { data: body ?? {}, meta: null };
 };
 
+const parsePayloadWithEnvelope = <TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  body: unknown,
+  options: { transform?: (data: unknown) => unknown } = {}
+): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } => {
+  const { data, meta } = extractAgreementEnvelope(body);
+  const source = options.transform ? options.transform(data) : data;
+  const payload = schema.parse(source);
 const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
   schema: TSchema,
   body: unknown
@@ -301,6 +309,17 @@ const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
   const payload = schema.parse(translateLegacyAgreementFields(data));
   const audit = extractAuditMeta(meta);
   return { payload, audit };
+};
+
+const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  body: unknown
+): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } =>
+  parsePayloadWithEnvelope(schema, body, { transform: translateLegacyAgreementFields });
+
+const extractAuditFromBody = (body: unknown): AgreementAuditMetadata | null => {
+  const { meta } = extractAgreementEnvelope(body);
+  return extractAuditMeta(meta);
 };
 
 router.get(
@@ -446,8 +465,15 @@ router.delete(
       return;
     }
 
+    const audit = extractAuditFromBody(req.body ?? {});
+
     try {
-      const agreement = await agreementsService.archiveAgreement(user.tenantId, agreementId, buildActor(req));
+      const agreement = await agreementsService.archiveAgreement(
+        user.tenantId,
+        agreementId,
+        buildActor(req),
+        audit
+      );
       respondSuccess(res, 200, agreement);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'archive' });
@@ -471,8 +497,14 @@ router.post(
     }
 
     try {
-      const payload = AgreementWindowSchema.parse(req.body ?? {});
-      const window = await agreementsService.upsertWindow(user.tenantId, agreementId, payload, buildActor(req));
+      const { payload, audit } = parsePayloadWithEnvelope(AgreementWindowSchema, req.body ?? {});
+      const window = await agreementsService.upsertWindow(
+        user.tenantId,
+        agreementId,
+        payload,
+        buildActor(req),
+        audit
+      );
       respondSuccess(res, payload.id ? 200 : 201, window);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'window-upsert' });
@@ -496,8 +528,10 @@ router.delete(
       return;
     }
 
+    const audit = extractAuditFromBody(req.body ?? {});
+
     try {
-      await agreementsService.removeWindow(user.tenantId, agreementId, windowId, buildActor(req));
+      await agreementsService.removeWindow(user.tenantId, agreementId, windowId, buildActor(req), audit);
       respondSuccess(res, 200, null);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, agreementId, windowId, action: 'window-delete' });
@@ -521,8 +555,14 @@ router.post(
     }
 
     try {
-      const payload = AgreementRateSchema.parse(req.body ?? {});
-      const rate = await agreementsService.upsertRate(user.tenantId, agreementId, payload, buildActor(req));
+      const { payload, audit } = parsePayloadWithEnvelope(AgreementRateSchema, req.body ?? {});
+      const rate = await agreementsService.upsertRate(
+        user.tenantId,
+        agreementId,
+        payload,
+        buildActor(req),
+        audit
+      );
       respondSuccess(res, payload.id ? 200 : 201, rate);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'rate-upsert' });
@@ -546,8 +586,10 @@ router.delete(
       return;
     }
 
+    const audit = extractAuditFromBody(req.body ?? {});
+
     try {
-      await agreementsService.removeRate(user.tenantId, agreementId, rateId, buildActor(req));
+      await agreementsService.removeRate(user.tenantId, agreementId, rateId, buildActor(req), audit);
       respondSuccess(res, 200, null);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, agreementId, rateId, action: 'rate-delete' });

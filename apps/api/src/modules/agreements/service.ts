@@ -379,7 +379,8 @@ export class AgreementsService {
     tenantId: string,
     agreementId: string,
     payload: AgreementWindowPayload,
-    actor: ActorContext | null
+    actor: ActorContext | null,
+    audit?: AgreementAuditMetadata | null
   ): Promise<AgreementWindowDto> {
     const existing = await this.repository.findAgreementById(tenantId, agreementId);
     if (!existing) {
@@ -420,6 +421,7 @@ export class AgreementsService {
       action: payload.id ? 'window.updated' : 'window.created',
       message: `Janela ${result.label} ${payload.id ? 'atualizada' : 'criada'}`,
       metadata: { windowId: result.id },
+      audit,
     });
 
     const dto = mapWindow(result);
@@ -432,7 +434,8 @@ export class AgreementsService {
     tenantId: string,
     agreementId: string,
     windowId: string,
-    actor: ActorContext | null
+    actor: ActorContext | null,
+    audit?: AgreementAuditMetadata | null
   ): Promise<void> {
     const existing = await this.repository.findAgreementById(tenantId, agreementId);
     if (!existing) {
@@ -453,6 +456,7 @@ export class AgreementsService {
       action: 'window.deleted',
       message: `Janela ${windowId} removida`,
       metadata: { windowId },
+      audit,
     });
 
     this.emitAgreementEvent(agreementId, 'agreement.window.deleted', { windowId });
@@ -462,7 +466,8 @@ export class AgreementsService {
     tenantId: string,
     agreementId: string,
     payload: AgreementRatePayload,
-    actor: ActorContext | null
+    actor: ActorContext | null,
+    audit?: AgreementAuditMetadata | null
   ): Promise<AgreementRateDto> {
     const existing = await this.repository.findAgreementById(tenantId, agreementId);
     if (!existing) {
@@ -517,6 +522,7 @@ export class AgreementsService {
       action: payload.id ? 'rate.updated' : 'rate.created',
       message: `Taxa ${result.product}/${result.modality} ${payload.id ? 'atualizada' : 'criada'}`,
       metadata: { rateId: result.id },
+      audit,
     });
 
     const dto = mapRate(result);
@@ -528,7 +534,8 @@ export class AgreementsService {
     tenantId: string,
     agreementId: string,
     rateId: string,
-    actor: ActorContext | null
+    actor: ActorContext | null,
+    audit?: AgreementAuditMetadata | null
   ): Promise<void> {
     const existing = await this.repository.findAgreementById(tenantId, agreementId);
     if (!existing) {
@@ -549,6 +556,7 @@ export class AgreementsService {
       action: 'rate.deleted',
       message: `Taxa ${rateId} removida`,
       metadata: { rateId },
+      audit,
     });
 
     this.emitAgreementEvent(agreementId, 'agreement.rate.deleted', { rateId });
