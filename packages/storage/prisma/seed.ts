@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -161,6 +161,232 @@ async function main() {
   );
 
   const tagsByName = Object.fromEntries(tagRecords.map((tag) => [tag.name, tag]));
+
+  // Criar convênios baseados em cadastros reais da aba de Configurações
+  const toDecimal = (value?: string | number | null) =>
+    value === null || value === undefined ? null : new Prisma.Decimal(value);
+
+  const agreementsSeed = [
+    {
+      id: 'saec-goiania',
+      name: 'Convênio SAEC Goiânia',
+      slug: 'saec-goiania',
+      type: 'municipal',
+      segment: 'servidor-publico',
+      description: 'Tabela municipal de consignado atualizada para servidores de Goiânia.',
+      tags: ['consignado', 'municipal', 'publico'],
+      products: {
+        consignado: {
+          modalities: ['publico'],
+          minMargin: 0.3,
+          maxMargin: 0.45,
+        },
+      },
+      tables: [
+        {
+          id: 'saec-goiania-consignado-2025',
+          name: 'Tabela Consignado 2025',
+          product: 'consignado',
+          modality: 'publico',
+          version: 1,
+          effectiveFrom: new Date('2025-01-01T00:00:00.000Z'),
+          metadata: {
+            channel: 'config',
+            importedAt: new Date().toISOString(),
+          },
+          rates: [
+            {
+              id: 'saec-goiania-consignado-2025-48',
+              termMonths: 48,
+              coefficient: '0.027850',
+              monthlyRate: '0.017200',
+              annualRate: '0.229100',
+              tacPercentage: '0.020000',
+            },
+            {
+              id: 'saec-goiania-consignado-2025-60',
+              termMonths: 60,
+              coefficient: '0.032100',
+              monthlyRate: '0.018900',
+              annualRate: '0.248800',
+              tacPercentage: '0.018000',
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'ipaseal-alagoas',
+      name: 'Convênio IPASEAL Alagoas',
+      slug: 'ipaseal-alagoas',
+      type: 'estadual',
+      segment: 'aposentado-pensionista',
+      description: 'Tabela estadual com linha de crédito híbrida consignado + cartão.',
+      tags: ['consignado', 'cartao', 'estadual'],
+      products: {
+        consignado: {
+          modalities: ['aposentado'],
+          minMargin: 0.28,
+          maxMargin: 0.42,
+        },
+        cartao: {
+          modalities: ['beneficio'],
+          minMargin: 0.22,
+          maxMargin: 0.32,
+        },
+      },
+      tables: [
+        {
+          id: 'ipaseal-consignado-2025',
+          name: 'Consignado Servidores 2025',
+          product: 'consignado',
+          modality: 'aposentado',
+          version: 1,
+          effectiveFrom: new Date('2025-02-01T00:00:00.000Z'),
+          metadata: {
+            channel: 'config',
+            importedAt: new Date().toISOString(),
+          },
+          rates: [
+            {
+              id: 'ipaseal-consignado-2025-72',
+              termMonths: 72,
+              coefficient: '0.026500',
+              monthlyRate: '0.016300',
+              annualRate: '0.212600',
+              tacPercentage: '0.017000',
+            },
+          ],
+        },
+        {
+          id: 'ipaseal-cartao-2025',
+          name: 'Cartão Benefício 2025',
+          product: 'cartao',
+          modality: 'beneficio',
+          version: 1,
+          effectiveFrom: new Date('2025-02-01T00:00:00.000Z'),
+          metadata: {
+            channel: 'config',
+            importedAt: new Date().toISOString(),
+          },
+          rates: [
+            {
+              id: 'ipaseal-cartao-2025-999',
+              termMonths: null,
+              coefficient: '0.015000',
+              monthlyRate: '0.015000',
+              annualRate: '0.194000',
+              tacPercentage: '0.012000',
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  for (const seedAgreement of agreementsSeed) {
+    const agreement = await prisma.agreement.upsert({
+      where: { id: seedAgreement.id },
+      update: {
+        name: seedAgreement.name,
+        slug: seedAgreement.slug,
+        status: 'published',
+        type: seedAgreement.type,
+        segment: seedAgreement.segment,
+        description: seedAgreement.description,
+        tags: seedAgreement.tags,
+        products: seedAgreement.products,
+        metadata: {
+          ...(seedAgreement.metadata ?? {}),
+          seed: true,
+          source: 'seed',
+        },
+        archived: false,
+        publishedAt: seedAgreement.publishedAt ?? new Date(),
+      },
+      create: {
+        id: seedAgreement.id,
+        tenantId: demoTenant.id,
+        name: seedAgreement.name,
+        slug: seedAgreement.slug,
+        status: 'published',
+        type: seedAgreement.type,
+        segment: seedAgreement.segment,
+        description: seedAgreement.description,
+        tags: seedAgreement.tags,
+        products: seedAgreement.products,
+        metadata: {
+          ...(seedAgreement.metadata ?? {}),
+          seed: true,
+          source: 'seed',
+        },
+        archived: false,
+        publishedAt: seedAgreement.publishedAt ?? new Date(),
+      },
+    });
+
+    for (const tableSeed of seedAgreement.tables) {
+      const table = await prisma.agreementTable.upsert({
+        where: { id: tableSeed.id },
+        update: {
+          name: tableSeed.name,
+          product: tableSeed.product,
+          modality: tableSeed.modality,
+          version: tableSeed.version,
+          effectiveFrom: tableSeed.effectiveFrom,
+          effectiveTo: tableSeed.effectiveTo,
+          metadata: tableSeed.metadata,
+        },
+        create: {
+          id: tableSeed.id,
+          tenantId: demoTenant.id,
+          agreementId: agreement.id,
+          name: tableSeed.name,
+          product: tableSeed.product,
+          modality: tableSeed.modality,
+          version: tableSeed.version,
+          effectiveFrom: tableSeed.effectiveFrom,
+          effectiveTo: tableSeed.effectiveTo,
+          metadata: tableSeed.metadata,
+        },
+      });
+
+      for (const rateSeed of tableSeed.rates ?? []) {
+        await prisma.agreementRate.upsert({
+          where: { id: rateSeed.id },
+          update: {
+            product: tableSeed.product,
+            modality: tableSeed.modality,
+            termMonths: rateSeed.termMonths,
+            coefficient: toDecimal(rateSeed.coefficient),
+            monthlyRate: toDecimal(rateSeed.monthlyRate),
+            annualRate: toDecimal(rateSeed.annualRate),
+            tacPercentage: toDecimal(rateSeed.tacPercentage),
+            metadata: rateSeed.metadata ?? {},
+          },
+          create: {
+            id: rateSeed.id,
+            tenantId: demoTenant.id,
+            agreementId: agreement.id,
+            tableId: table.id,
+            product: tableSeed.product,
+            modality: tableSeed.modality,
+            termMonths: rateSeed.termMonths,
+            coefficient: toDecimal(rateSeed.coefficient),
+            monthlyRate: toDecimal(rateSeed.monthlyRate),
+            annualRate: toDecimal(rateSeed.annualRate),
+            tacPercentage: toDecimal(rateSeed.tacPercentage),
+            metadata: rateSeed.metadata ?? {},
+          },
+        });
+      }
+    }
+  }
+
+  console.log(
+    '✅ Convênios demo cadastrados:',
+    agreementsSeed.map((agreement) => agreement.name).join(', '),
+  );
 
   // Criar contatos demo com relacionamentos completos
   const contact1 = await prisma.$transaction(async (tx) => {

@@ -1,5 +1,5 @@
 ALTER TYPE "WhatsAppInstanceStatus" ADD VALUE IF NOT EXISTS 'pending';
 ALTER TYPE "WhatsAppInstanceStatus" ADD VALUE IF NOT EXISTS 'failed';
 
-ALTER TABLE "whatsapp_instances"
-  ALTER COLUMN "status" SET DEFAULT 'pending';
+-- O default será atualizado em uma migration separada, para garantir que o
+-- Postgres reconheça os novos valores do enum antes do ALTER TABLE.
