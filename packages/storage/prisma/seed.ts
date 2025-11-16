@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { demoAgreementsSeed } from '../../../config/demo-agreements';
 
 const prisma = new PrismaClient();
 
@@ -161,6 +162,122 @@ async function main() {
   );
 
   const tagsByName = Object.fromEntries(tagRecords.map((tag) => [tag.name, tag]));
+
+  // Criar convênios baseados em cadastros reais da aba de Configurações
+  const toDecimal = (value?: string | number | null) =>
+    value === null || value === undefined ? null : new Prisma.Decimal(value);
+
+  for (const seedAgreement of demoAgreementsSeed) {
+    const agreementId = seedAgreement.id ?? seedAgreement.slug;
+    const publishedAt = seedAgreement.publishedAt ? new Date(seedAgreement.publishedAt) : new Date();
+
+    const agreement = await prisma.agreement.upsert({
+      where: { id: agreementId },
+      update: {
+        name: seedAgreement.name,
+        slug: seedAgreement.slug,
+        status: seedAgreement.status ?? 'published',
+        type: seedAgreement.type,
+        segment: seedAgreement.segment,
+        description: seedAgreement.description,
+        tags: seedAgreement.tags,
+        products: seedAgreement.products,
+        metadata: {
+          ...(seedAgreement.metadata ?? {}),
+          seed: true,
+          source: 'seed',
+        },
+        archived: false,
+        publishedAt,
+      },
+      create: {
+        id: agreementId,
+        tenantId: demoTenant.id,
+        name: seedAgreement.name,
+        slug: seedAgreement.slug,
+        status: seedAgreement.status ?? 'published',
+        type: seedAgreement.type,
+        segment: seedAgreement.segment,
+        description: seedAgreement.description,
+        tags: seedAgreement.tags,
+        products: seedAgreement.products,
+        metadata: {
+          ...(seedAgreement.metadata ?? {}),
+          seed: true,
+          source: 'seed',
+        },
+        archived: false,
+        publishedAt,
+      },
+    });
+
+    for (const tableSeed of (seedAgreement.tables ?? [])) {
+      const tableId = tableSeed.id ?? `${agreement.id}-${tableSeed.name}`;
+      const effectiveFrom = tableSeed.effectiveFrom ? new Date(tableSeed.effectiveFrom) : null;
+      const effectiveTo = tableSeed.effectiveTo ? new Date(tableSeed.effectiveTo) : null;
+
+      const table = await prisma.agreementTable.upsert({
+        where: { id: tableId },
+        update: {
+          name: tableSeed.name,
+          product: tableSeed.product,
+          modality: tableSeed.modality,
+          version: tableSeed.version,
+          effectiveFrom,
+          effectiveTo,
+          metadata: tableSeed.metadata,
+        },
+        create: {
+          id: tableId,
+          tenantId: demoTenant.id,
+          agreementId: agreement.id,
+          name: tableSeed.name,
+          product: tableSeed.product,
+          modality: tableSeed.modality,
+          version: tableSeed.version,
+          effectiveFrom,
+          effectiveTo,
+          metadata: tableSeed.metadata,
+        },
+      });
+
+      for (const rateSeed of tableSeed.rates ?? []) {
+        const rateId = rateSeed.id ?? `${table.id}-${rateSeed.termMonths ?? 'na'}`;
+        await prisma.agreementRate.upsert({
+          where: { id: rateId },
+          update: {
+            product: tableSeed.product,
+            modality: tableSeed.modality,
+            termMonths: rateSeed.termMonths,
+            coefficient: toDecimal(rateSeed.coefficient),
+            monthlyRate: toDecimal(rateSeed.monthlyRate),
+            annualRate: toDecimal(rateSeed.annualRate),
+            tacPercentage: toDecimal(rateSeed.tacPercentage),
+            metadata: rateSeed.metadata ?? { seed: true },
+          },
+          create: {
+            id: rateId,
+            tenantId: demoTenant.id,
+            agreementId: agreement.id,
+            tableId: table.id,
+            product: tableSeed.product,
+            modality: tableSeed.modality,
+            termMonths: rateSeed.termMonths,
+            coefficient: toDecimal(rateSeed.coefficient),
+            monthlyRate: toDecimal(rateSeed.monthlyRate),
+            annualRate: toDecimal(rateSeed.annualRate),
+            tacPercentage: toDecimal(rateSeed.tacPercentage),
+            metadata: rateSeed.metadata ?? { seed: true },
+          },
+        });
+      }
+    }
+  }
+
+  console.log(
+    '✅ Convênios demo cadastrados:',
+    demoAgreementsSeed.map((agreement) => agreement.name).join(', '),
+  );
 
   // Criar contatos demo com relacionamentos completos
   const contact1 = await prisma.$transaction(async (tx) => {

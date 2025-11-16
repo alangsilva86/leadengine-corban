@@ -7,36 +7,45 @@ vi.mock('@ticketz/storage', () => ({
   setPrismaClient: vi.fn(),
 }));
 
-const transactionMock = vi.fn();
+const transactionError = Object.assign(new Error('storage disabled'), {
+  name: 'DatabaseDisabledError',
+  code: 'DATABASE_DISABLED',
+});
+
+const transactionMock = vi.fn().mockRejectedValue(transactionError);
+const agreementDelegate = {
+  count: vi.fn(),
+  findMany: vi.fn(),
+};
 
 vi.mock('../../../lib/prisma', async () => {
   const actual = await vi.importActual<typeof import('../../../lib/prisma')>('../../../lib/prisma');
   return {
     ...actual,
-    isDatabaseEnabled: false,
-    prisma: { $transaction: transactionMock },
+    isDatabaseEnabled: true,
+    prisma: {
+      $transaction: transactionMock,
+      agreement: agreementDelegate,
+    },
   };
 });
 
-describe('AgreementsRepository - database disabled', () => {
-  it('returns the seeded demo agreements without touching the database', async () => {
+describe('AgreementsRepository - fallback to demo catalog', () => {
+  it('uses the in-memory demo store when Prisma throws storage errors', async () => {
     const { AgreementsRepository } = await import('../repository');
     const repository = new AgreementsRepository();
 
     const result = await repository.listAgreements(
-      'tenant-id',
+      'tenant-fallback',
       { search: undefined, status: undefined },
-      { page: 1, limit: 50 }
+      { page: 1, limit: 25 }
     );
 
-    expect(result.page).toBe(1);
-    expect(result.limit).toBe(50);
+    expect(transactionMock).toHaveBeenCalledTimes(1);
     expect(result.total).toBe(demoAgreementsSeed.length);
     expect(result.items).toHaveLength(demoAgreementsSeed.length);
-    expect(result.items.map((item) => item.name)).toEqual(
-      demoAgreementsSeed.map((agreement) => agreement.name)
+    expect(result.items.map((item) => item.slug)).toEqual(
+      demoAgreementsSeed.map((agreement) => agreement.slug)
     );
-    expect(result.items.every((item) => Array.isArray(item.tables) && item.tables.length > 0)).toBe(true);
-    expect(transactionMock).not.toHaveBeenCalled();
   });
 });

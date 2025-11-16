@@ -40,5 +40,8 @@
   "files": [
     "dist",
     "index.d.ts"
-  ]
+  ],
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
 }
