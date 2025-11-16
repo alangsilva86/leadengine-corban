@@ -37,88 +37,169 @@ const ensureDate = (value?: string | null): Date => {
   return parsed ?? new Date();
 };
 
-export type AgreementWindow = Omit<AgreementWindowDto, 'start' | 'end' | 'firstDueDate'> & {
+const toRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+
+const readMetadataString = (metadata: Record<string, unknown>, key: string): string => {
+  const value = metadata[key];
+  return typeof value === 'string' ? value : '';
+};
+
+const normalizeProducts = (
+  products: Record<string, unknown>,
+  metadata: Record<string, unknown>
+): string[] => {
+  if (Array.isArray(metadata.products)) {
+    return metadata.products.filter((item): item is string => typeof item === 'string');
+  }
+
+  return Object.keys(products ?? {});
+};
+
+export type AgreementWindow = {
+  id: string;
+  tableId: string | null;
+  label: string;
   start: Date;
   end: Date;
   firstDueDate: Date;
+  isActive: boolean;
+  metadata: Record<string, unknown>;
 };
 
-export type AgreementRate = Omit<AgreementRateDto, 'validFrom' | 'validUntil'> & {
+export type AgreementRate = {
+  id: string;
+  tableId: string | null;
+  windowId: string | null;
+  product: string;
+  modality: string;
+  termMonths: number | null;
+  coefficient: number | null;
+  monthlyRate: number | null;
+  annualRate: number | null;
+  tacPercentage: number | null;
+  metadata: Record<string, unknown>;
   validFrom: Date;
   validUntil: NullableDate;
 };
 
-export type AgreementHistoryEntry = Omit<AgreementHistoryEntryDto, 'createdAt'> & {
+export type AgreementHistoryEntry = {
+  id: string;
+  author: string;
+  message: string;
   createdAt: Date;
+  metadata: Record<string, unknown>;
 };
 
-export type Agreement = Omit<AgreementDto, 'janelas' | 'taxas' | 'history'> & {
+export type Agreement = {
+  id: string;
+  slug: string;
+  nome: string;
+  averbadora: string;
+  tipo: string | null;
+  status: string;
+  produtos: string[];
+  responsavel: string;
+  archived: boolean;
+  metadata: Record<string, unknown>;
   janelas: AgreementWindow[];
   taxas: AgreementRate[];
   history: AgreementHistoryEntry[];
 };
 
-const normalizeWindow = (window: AgreementWindowDto): AgreementWindow => ({
-  ...window,
-  start: ensureDate(window.start),
-  end: ensureDate(window.end),
-  firstDueDate: ensureDate(window.firstDueDate),
-});
-
-const normalizeRate = (rate: AgreementRateDto): AgreementRate => ({
-  ...rate,
-  validFrom: ensureDate(rate.validFrom),
-  validUntil: rate.validUntil ? parseDate(rate.validUntil) : null,
-});
-
-const normalizeHistoryEntry = (entry: AgreementHistoryEntryDto): AgreementHistoryEntry => ({
-  ...entry,
-  createdAt: ensureDate(entry.createdAt ?? undefined),
-});
-
-const normalizeAgreement = (agreement: AgreementDto): Agreement => ({
-  ...agreement,
-  produtos: Array.isArray(agreement.produtos) ? agreement.produtos : [],
-  janelas: Array.isArray(agreement.janelas) ? agreement.janelas.map(normalizeWindow) : [],
-  taxas: Array.isArray(agreement.taxas) ? agreement.taxas.map(normalizeRate) : [],
-  history: Array.isArray(agreement.history) ? agreement.history.map(normalizeHistoryEntry) : [],
-  archived: Boolean(agreement.archived),
-});
-
-const toDateString = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+const normalizeWindow = (window: AgreementWindowDto): AgreementWindow => {
+  const metadata = toRecord(window.metadata);
+  const firstDueDate =
+    typeof metadata.firstDueDate === 'string'
+      ? metadata.firstDueDate
+      : window.startsAt ?? window.endsAt ?? null;
+  return {
+    id: window.id,
+    tableId: window.tableId ?? null,
+    label: window.label,
+    start: ensureDate(window.startsAt ?? null),
+    end: ensureDate(window.endsAt ?? null),
+    firstDueDate: ensureDate(firstDueDate),
+    isActive: Boolean(window.isActive),
+    metadata,
+  };
 };
 
-export const serializeWindow = (window: AgreementWindow): AgreementWindowDto => ({
-  ...window,
-  start: toDateString(window.start),
-  end: toDateString(window.end),
-  firstDueDate: toDateString(window.firstDueDate),
+const normalizeRate = (rate: AgreementRateDto): AgreementRate => {
+  const metadata = toRecord(rate.metadata);
+  return {
+    id: rate.id,
+    tableId: rate.tableId ?? null,
+    windowId: rate.windowId ?? null,
+    product: rate.product,
+    modality: rate.modality,
+    termMonths: typeof rate.termMonths === 'number' ? rate.termMonths : null,
+    coefficient: typeof rate.coefficient === 'number' ? rate.coefficient : null,
+    monthlyRate: typeof rate.monthlyRate === 'number' ? rate.monthlyRate : null,
+    annualRate: typeof rate.annualRate === 'number' ? rate.annualRate : null,
+    tacPercentage: typeof rate.tacPercentage === 'number' ? rate.tacPercentage : null,
+    metadata,
+    validFrom: ensureDate((metadata.validFrom as string | undefined) ?? null),
+    validUntil: parseDate((metadata.validUntil as string | undefined) ?? null),
+  };
+};
+
+const normalizeHistoryEntry = (entry: AgreementHistoryEntryDto): AgreementHistoryEntry => ({
+  id: entry.id,
+  author: entry.actorName ?? entry.actorId ?? 'Sistema',
+  message: entry.message,
+  createdAt: ensureDate(entry.createdAt ?? null),
+  metadata: toRecord(entry.metadata),
 });
 
-export const serializeRate = (rate: AgreementRate): AgreementRateDto => ({
-  ...rate,
-  validFrom: toDateString(rate.validFrom),
-  validUntil: rate.validUntil ? toDateString(rate.validUntil) : null,
-});
+const normalizeAgreement = (agreement: AgreementDto): Agreement => {
+  const metadata = toRecord(agreement.metadata);
+  return {
+    id: agreement.id,
+    slug: agreement.slug,
+    nome: agreement.name,
+    averbadora: readMetadataString(metadata, 'providerName') || agreement.slug,
+    tipo: agreement.type ?? null,
+    status: agreement.status,
+    produtos: normalizeProducts(toRecord(agreement.products), metadata),
+    responsavel: readMetadataString(metadata, 'responsavel'),
+    archived: Boolean(agreement.archived),
+    metadata,
+    janelas: Array.isArray(agreement.windows) ? agreement.windows.map(normalizeWindow) : [],
+    taxas: Array.isArray(agreement.rates) ? agreement.rates.map(normalizeRate) : [],
+    history: Array.isArray((agreement as { history?: AgreementHistoryEntryDto[] }).history)
+      ? ((agreement as { history?: AgreementHistoryEntryDto[] }).history ?? []).map(normalizeHistoryEntry)
+      : [],
+  };
+};
+
+const slugify = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+const mapProductsToRecord = (products: string[]): Record<string, unknown> =>
+  products.reduce<Record<string, unknown>>((acc, product) => {
+    acc[product] = true;
+    return acc;
+  }, {});
 
 export const serializeAgreement = (agreement: Agreement): AgreementUpdateRequest['data'] => ({
-  nome: agreement.nome,
-  averbadora: agreement.averbadora,
-  tipo: agreement.tipo,
+  name: agreement.nome,
+  slug: agreement.slug || slugify(agreement.nome),
   status: agreement.status,
-  produtos: agreement.produtos,
-  responsavel: agreement.responsavel,
+  type: agreement.tipo ?? undefined,
+  metadata: {
+    ...agreement.metadata,
+    providerName: agreement.averbadora,
+    responsavel: agreement.responsavel,
+    products: agreement.produtos,
+  },
+  products: mapProductsToRecord(agreement.produtos),
   archived: agreement.archived,
-  janelas: agreement.janelas.map(serializeWindow),
-  taxas: agreement.taxas.map(serializeRate),
-  history: agreement.history.map((entry) => ({
-    ...entry,
-    createdAt: entry.createdAt.toISOString(),
-  })),
 });
 
 type UpdateAgreementVariables = {
@@ -146,11 +227,14 @@ const updateListWithAgreement = (
 
   const items = Array.isArray(current.data) ? [...current.data] : [];
   const index = items.findIndex((item) => item.id === agreement.id);
+  const nextGeneratedAt = meta?.updatedAt ?? current.meta?.generatedAt ?? new Date().toISOString();
+  const baseMeta = { ...(current.meta ?? {}) };
   if (index === -1) {
     return {
       data: [agreement, ...items],
       meta: {
-        fetchedAt: meta?.updatedAt ?? current.meta?.fetchedAt ?? new Date().toISOString(),
+        ...baseMeta,
+        generatedAt: nextGeneratedAt,
       },
     } satisfies ListAgreementsResponse;
   }
@@ -160,7 +244,8 @@ const updateListWithAgreement = (
     ...current,
     data: items,
     meta: {
-      fetchedAt: meta?.updatedAt ?? current.meta?.fetchedAt ?? new Date().toISOString(),
+      ...baseMeta,
+      generatedAt: nextGeneratedAt,
     },
   } satisfies ListAgreementsResponse;
 };

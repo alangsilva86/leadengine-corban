@@ -527,7 +527,7 @@ components:
       additionalProperties: false
     AgreementStatus:
       type: string
-      enum: [draft, active, suspended, terminated, archived]
+      enum: [draft, active, published, suspended, terminated, archived]
       description: Situação operacional do acordo.
     AgreementRateType:
       type: string
@@ -554,7 +554,7 @@ components:
           type: string
           description: Código da moeda ISO-4217 aplicável quando a faixa utiliza valor fixo.
       additionalProperties: false
-    AgreementRateBase:
+    LegacyAgreementRateBase:
       type: object
       required: [type]
       properties:
@@ -588,24 +588,24 @@ components:
             type: string
           description: Identificadores das janelas às quais a taxa se aplica.
       additionalProperties: false
-    AgreementRate:
+    LegacyAgreementRate:
       allOf:
-        - $ref: '#/components/schemas/AgreementRateBase'
+        - $ref: '#/components/schemas/LegacyAgreementRateBase'
         - type: object
           required: [id]
           properties:
             id:
               type: string
           additionalProperties: false
-    AgreementRateInput:
+    LegacyAgreementRateInput:
       allOf:
-        - $ref: '#/components/schemas/AgreementRateBase'
+        - $ref: '#/components/schemas/LegacyAgreementRateBase'
         - type: object
           properties:
             id:
               type: string
           additionalProperties: false
-    AgreementWindowBase:
+    LegacyAgreementWindowBase:
       type: object
       required: [label, timezone, daysOfWeek, startTime, endTime]
       properties:
@@ -641,18 +641,18 @@ components:
           additionalProperties: true
           description: Metadados adicionais específicos da janela.
       additionalProperties: false
-    AgreementWindow:
+    LegacyAgreementWindow:
       allOf:
-        - $ref: '#/components/schemas/AgreementWindowBase'
+        - $ref: '#/components/schemas/LegacyAgreementWindowBase'
         - type: object
           required: [id]
           properties:
             id:
               type: string
           additionalProperties: false
-    AgreementWindowInput:
+    LegacyAgreementWindowInput:
       allOf:
-        - $ref: '#/components/schemas/AgreementWindowBase'
+        - $ref: '#/components/schemas/LegacyAgreementWindowBase'
         - type: object
           properties:
             id:
@@ -677,12 +677,12 @@ components:
         windows:
           type: array
           items:
-            $ref: '#/components/schemas/AgreementWindowInput'
+            $ref: '#/components/schemas/LegacyAgreementWindowInput'
         rates:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/AgreementRateInput'
+            $ref: '#/components/schemas/LegacyAgreementRateInput'
         metadata:
           type: object
           additionalProperties: true
@@ -698,12 +698,12 @@ components:
             windows:
               type: array
               items:
-                $ref: '#/components/schemas/AgreementWindow'
+                $ref: '#/components/schemas/LegacyAgreementWindow'
             rates:
               type: array
               minItems: 1
               items:
-                $ref: '#/components/schemas/AgreementRate'
+                $ref: '#/components/schemas/LegacyAgreementRate'
           additionalProperties: false
     AgreementTableInput:
       allOf:
@@ -910,7 +910,7 @@ components:
         meta:
           $ref: '#/components/schemas/RequestMeta'
       additionalProperties: false
-    AgreementUpdatePayload:
+    LegacyAgreementUpdatePayload:
       type: object
       properties:
         name:
@@ -938,12 +938,12 @@ components:
           type: object
           additionalProperties: true
       additionalProperties: false
-    AgreementUpdateRequest:
+    LegacyAgreementUpdateRequest:
       type: object
       required: [data]
       properties:
         data:
-          $ref: '#/components/schemas/AgreementUpdatePayload'
+          $ref: '#/components/schemas/LegacyAgreementUpdatePayload'
         meta:
           $ref: '#/components/schemas/RequestMeta'
       additionalProperties: false
@@ -1030,7 +1030,7 @@ components:
           nullable: true
           format: date-time
       additionalProperties: false
-    AgreementImportResponse:
+    LegacyAgreementImportResponse:
       type: object
       required: [data, meta]
       properties:
@@ -1662,143 +1662,160 @@ components:
       additionalProperties: false
     AgreementType:
       type: string
-      enum: [MUNICIPAL, ESTADUAL, FEDERAL]
-    AgreementStatus:
-      type: string
-      enum: [EM_IMPLANTACAO, ATIVO, PAUSADO, ENCERRADO]
+      enum: [municipal, estadual, federal, other]
     AgreementWindow:
       type: object
-      required: [id, start, end, firstDueDate]
+      required: [id, label, isActive, metadata]
       properties:
         id:
           type: string
+        tableId:
+          type: string
+          nullable: true
         label:
           type: string
-        start:
+        startsAt:
           type: string
-          format: date
-        end:
+          format: date-time
+          nullable: true
+        endsAt:
           type: string
-          format: date
-        firstDueDate:
-          type: string
-          format: date
-      additionalProperties: false
-    AgreementBankReference:
-      type: object
-      required: [id, name]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-      additionalProperties: false
-    AgreementTableReference:
-      type: object
-      required: [id, name]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
+          format: date-time
+          nullable: true
+        isActive:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
       additionalProperties: false
     AgreementRate:
       type: object
-      required: [id, produto, modalidade, monthlyRate, validFrom]
+      required: [id, product, modality]
       properties:
         id:
           type: string
-        produto:
+        tableId:
           type: string
-        modalidade:
+          nullable: true
+        windowId:
           type: string
-        bank:
-          $ref: '#/components/schemas/AgreementBankReference'
-        table:
-          $ref: '#/components/schemas/AgreementTableReference'
-        termOptions:
-          type: array
-          items:
-            type: integer
+          nullable: true
+        product:
+          type: string
+        modality:
+          type: string
+        termMonths:
+          type: integer
+          nullable: true
+        coefficient:
+          type: number
+          format: float
+          nullable: true
         monthlyRate:
           type: number
           format: float
-        tacPercent:
-          type: number
-          format: float
-        tacFlat:
-          type: number
-          format: float
-        validFrom:
-          type: string
-          format: date
-        validUntil:
-          type: string
           nullable: true
-          format: date
-        status:
-          type: string
+        annualRate:
+          type: number
+          format: float
+          nullable: true
+        tacPercentage:
+          type: number
+          format: float
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
       additionalProperties: false
     AgreementHistoryEntry:
       type: object
-      required: [id, author, message, createdAt]
+      required: [id, action, message, createdAt]
       properties:
         id:
           type: string
-        author:
+        actorId:
+          type: string
+          nullable: true
+        actorName:
+          type: string
+          nullable: true
+        action:
           type: string
         message:
           type: string
         createdAt:
           type: string
           format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
       additionalProperties: false
     Agreement:
       type: object
       required:
         [
           id,
-          nome,
-          averbadora,
-          tipo,
+          tenantId,
+          name,
+          slug,
           status,
-          produtos,
+          tags,
+          products,
+          metadata,
           archived,
-          janelas,
-          taxas,
-          history
+          createdAt,
+          updatedAt
         ]
       properties:
         id:
           type: string
-        nome:
+        tenantId:
           type: string
-        averbadora:
+        name:
           type: string
-        tipo:
-          $ref: '#/components/schemas/AgreementType'
+        slug:
+          type: string
         status:
           $ref: '#/components/schemas/AgreementStatus'
-        produtos:
+        type:
+          $ref: '#/components/schemas/AgreementType'
+          nullable: true
+        segment:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        tags:
           type: array
           items:
             type: string
-        responsavel:
-          type: string
+        products:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
         archived:
           type: boolean
-        janelas:
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        windows:
           type: array
           items:
             $ref: '#/components/schemas/AgreementWindow'
-        taxas:
+        rates:
           type: array
           items:
             $ref: '#/components/schemas/AgreementRate'
-        history:
-          type: array
-          items:
-            $ref: '#/components/schemas/AgreementHistoryEntry'
       additionalProperties: false
     AgreementCollectionResponse:
       type: object
@@ -1810,11 +1827,30 @@ components:
             $ref: '#/components/schemas/Agreement'
         meta:
           type: object
-          required: [fetchedAt]
+          required: [generatedAt]
           properties:
-            fetchedAt:
+            requestId:
+              type: string
+              nullable: true
+            generatedAt:
               type: string
               format: date-time
+            pagination:
+              type: object
+              properties:
+                page:
+                  type: integer
+                limit:
+                  type: integer
+                totalItems:
+                  type: integer
+                totalPages:
+                  type: integer
+                hasNext:
+                  type: boolean
+                hasPrevious:
+                  type: boolean
+              additionalProperties: false
           additionalProperties: false
       additionalProperties: false
     AgreementItemResponse:
@@ -1829,6 +1865,9 @@ components:
             updatedAt:
               type: string
               format: date-time
+            requestId:
+              type: string
+              nullable: true
           additionalProperties: false
       additionalProperties: false
     AgreementUpdateRequest:
@@ -1855,34 +1894,34 @@ components:
     AgreementUpdateInput:
       type: object
       properties:
-        nome:
+        name:
           type: string
-        averbadora:
+        slug:
           type: string
-        tipo:
-          $ref: '#/components/schemas/AgreementType'
         status:
           $ref: '#/components/schemas/AgreementStatus'
-        produtos:
+        type:
+          $ref: '#/components/schemas/AgreementType'
+        segment:
+          type: string
+        description:
+          type: string
+        tags:
           type: array
           items:
             type: string
-        responsavel:
-          type: string
+        products:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
         archived:
           type: boolean
-        janelas:
-          type: array
-          items:
-            $ref: '#/components/schemas/AgreementWindow'
-        taxas:
-          type: array
-          items:
-            $ref: '#/components/schemas/AgreementRate'
-        history:
-          type: array
-          items:
-            $ref: '#/components/schemas/AgreementHistoryEntry'
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
       additionalProperties: false
     AgreementImportError:
       type: object

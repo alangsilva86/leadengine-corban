@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import multer from 'multer';
-import { ZodError } from 'zod';
+import { ZodError, z } from 'zod';
 
 import { logger } from '../config/logger';
 import { asyncHandler } from '../middleware/error-handler';
@@ -19,7 +19,7 @@ import {
   CreateAgreementSchema,
   UpdateAgreementSchema,
 } from '../modules/agreements/validators';
-import { AgreementsService } from '../modules/agreements/service';
+import { AgreementsService, type AgreementAuditMetadata } from '../modules/agreements/service';
 import { formatZodIssues } from '../utils/http-validation';
 import { incrementAgreementImportEnqueued } from '../lib/metrics';
 import { processAgreementImportJobs } from '../workers/agreements-import';
@@ -140,9 +140,9 @@ const respondSuccess = (res: Response, status: number, data: unknown, meta: Reco
     data,
     meta: {
       requestId: res.locals.requestId ?? null,
+      generatedAt: new Date().toISOString(),
       ...meta,
     },
-    error: null,
   });
 };
 
@@ -207,6 +207,102 @@ const handleServiceError = (res: Response, error: unknown, context: Record<strin
   respondError(res, status, code, message);
 };
 
+const slugify = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+const extractAuditMeta = (meta: unknown): AgreementAuditMetadata | null => {
+  if (!meta || typeof meta !== 'object') {
+    return null;
+  }
+
+  const auditCandidate = (meta as { audit?: unknown }).audit;
+  if (!auditCandidate || typeof auditCandidate !== 'object') {
+    return null;
+  }
+
+  const audit: AgreementAuditMetadata = {};
+  if (typeof (auditCandidate as { actor?: unknown }).actor === 'string') {
+    audit.actor = ((auditCandidate as { actor: string }).actor || '').trim();
+  }
+  if (typeof (auditCandidate as { actorRole?: unknown }).actorRole === 'string') {
+    audit.actorRole = ((auditCandidate as { actorRole: string }).actorRole || '').trim();
+  }
+  if (typeof (auditCandidate as { note?: unknown }).note === 'string') {
+    audit.note = ((auditCandidate as { note: string }).note || '').trim();
+  }
+
+  return Object.keys(audit).length ? audit : null;
+};
+
+const translateLegacyAgreementFields = (data: unknown): Record<string, unknown> => {
+  if (!data || typeof data !== 'object') {
+    return {};
+  }
+
+  const source = data as Record<string, unknown>;
+  const normalized: Record<string, unknown> = { ...source };
+
+  if (typeof source.nome === 'string' && typeof normalized.name !== 'string') {
+    normalized.name = source.nome;
+  }
+
+  if (typeof normalized.slug !== 'string' && typeof normalized.name === 'string') {
+    const candidate = slugify(normalized.name as string);
+    normalized.slug = candidate.length ? candidate : (normalized.name as string);
+  }
+
+  if (typeof source.tipo === 'string' && typeof normalized.type !== 'string') {
+    normalized.type = source.tipo;
+  }
+
+  if (!normalized.products && typeof source.produtos === 'object' && source.produtos !== null) {
+    normalized.products = source.produtos;
+  }
+
+  const metadata =
+    typeof normalized.metadata === 'object' && normalized.metadata !== null
+      ? { ...(normalized.metadata as Record<string, unknown>) }
+      : {};
+
+  if (typeof source.averbadora === 'string' && !metadata.providerName) {
+    metadata.providerName = source.averbadora;
+  }
+
+  if (typeof source.responsavel === 'string' && !metadata.responsavel) {
+    metadata.responsavel = source.responsavel;
+  }
+
+  if (Object.keys(metadata).length) {
+    normalized.metadata = metadata;
+  }
+
+  return normalized;
+};
+
+const extractAgreementEnvelope = (body: unknown): { data: unknown; meta: unknown } => {
+  if (body && typeof body === 'object' && 'data' in body) {
+    const envelope = body as { data?: unknown; meta?: unknown };
+    return { data: envelope.data ?? {}, meta: envelope.meta ?? null };
+  }
+
+  return { data: body ?? {}, meta: null };
+};
+
+const parseAgreementPayload = <TSchema extends z.ZodTypeAny>(
+  schema: TSchema,
+  body: unknown
+): { payload: z.infer<TSchema>; audit: AgreementAuditMetadata | null } => {
+  const { data, meta } = extractAgreementEnvelope(body);
+  const payload = schema.parse(translateLegacyAgreementFields(data));
+  const audit = extractAuditMeta(meta);
+  return { payload, audit };
+};
+
 router.get(
   '/v1/agreements',
   requireTenant,
@@ -223,8 +319,10 @@ router.get(
         pagination: {
           page: result.page,
           limit: result.limit,
-          total: result.total,
+          totalItems: result.total,
           totalPages: result.totalPages,
+          hasNext: result.page < result.totalPages,
+          hasPrevious: result.page > 1,
         },
       });
     } catch (error) {
@@ -243,8 +341,13 @@ router.post(
     }
 
     try {
-      const payload = CreateAgreementSchema.parse(req.body ?? {});
-      const agreement = await agreementsService.createAgreement(user.tenantId, payload, buildActor(req));
+      const { payload, audit } = parseAgreementPayload(CreateAgreementSchema, req.body ?? {});
+      const agreement = await agreementsService.createAgreement(
+        user.tenantId,
+        payload,
+        buildActor(req),
+        audit
+      );
       respondSuccess(res, 201, agreement);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, action: 'create' });
@@ -298,8 +401,14 @@ router.put(
     }
 
     try {
-      const payload = UpdateAgreementSchema.parse(req.body ?? {});
-      const agreement = await agreementsService.updateAgreement(user.tenantId, agreementId, payload, buildActor(req));
+      const { payload, audit } = parseAgreementPayload(UpdateAgreementSchema, req.body ?? {});
+      const agreement = await agreementsService.updateAgreement(
+        user.tenantId,
+        agreementId,
+        payload,
+        buildActor(req),
+        audit
+      );
       respondSuccess(res, 200, agreement);
     } catch (error) {
       handleServiceError(res, error, { tenantId: user.tenantId, agreementId, action: 'update' });
