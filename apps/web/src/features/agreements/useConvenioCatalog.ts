@@ -4,18 +4,26 @@ import type {
   AgreementDto,
   AgreementHistoryEntryDto,
   AgreementRateDto,
+  AgreementRateRequest,
+  AgreementWindowRequest,
   AgreementUpdateRequest,
   AgreementWindowDto,
   AgreementCreateRequest,
+  AgreementWindowResponse,
+  AgreementRateResponse,
   ListAgreementsResponse,
   UpdateAgreementResponse,
 } from '@/lib/agreements-client.ts';
 import {
   agreementsKeys,
+  deleteAgreementRate,
+  deleteAgreementWindow,
   fetchAgreements,
   patchAgreement,
   postAgreement,
+  postAgreementRate,
   postAgreementSync,
+  postAgreementWindow,
   uploadAgreements,
 } from '@/lib/agreements-client.ts';
 
@@ -80,6 +88,9 @@ export type AgreementRate = {
   monthlyRate: number | null;
   annualRate: number | null;
   tacPercentage: number | null;
+  tacPercent: number | null;
+  tacFlat: number | null;
+  status: string;
   metadata: Record<string, unknown>;
   validFrom: Date;
   validUntil: NullableDate;
@@ -129,6 +140,12 @@ const normalizeWindow = (window: AgreementWindowDto): AgreementWindow => {
 
 const normalizeRate = (rate: AgreementRateDto): AgreementRate => {
   const metadata = toRecord(rate.metadata);
+  const tacPercentFromMetadata =
+    typeof metadata.tacPercent === 'number' ? metadata.tacPercent : null;
+  const tacFlat = typeof metadata.tacFlat === 'number' ? metadata.tacFlat : null;
+  const status = typeof metadata.status === 'string' && metadata.status.trim().length
+    ? metadata.status
+    : 'Ativa';
   return {
     id: rate.id,
     tableId: rate.tableId ?? null,
@@ -139,7 +156,10 @@ const normalizeRate = (rate: AgreementRateDto): AgreementRate => {
     coefficient: typeof rate.coefficient === 'number' ? rate.coefficient : null,
     monthlyRate: typeof rate.monthlyRate === 'number' ? rate.monthlyRate : null,
     annualRate: typeof rate.annualRate === 'number' ? rate.annualRate : null,
-    tacPercentage: typeof rate.tacPercentage === 'number' ? rate.tacPercentage : null,
+    tacPercentage: typeof rate.tacPercentage === 'number' ? rate.tacPercentage : tacPercentFromMetadata,
+    tacPercent: typeof rate.tacPercentage === 'number' ? rate.tacPercentage : tacPercentFromMetadata,
+    tacFlat,
+    status,
     metadata,
     validFrom: ensureDate((metadata.validFrom as string | undefined) ?? null),
     validUntil: parseDate((metadata.validUntil as string | undefined) ?? null),
@@ -222,6 +242,28 @@ type ImportAgreementsVariables = {
   formData: FormData;
 };
 
+type UpsertWindowVariables = {
+  agreementId: string;
+  payload: AgreementWindowRequest;
+};
+
+type RemoveWindowVariables = {
+  agreementId: string;
+  windowId: string;
+  meta?: AgreementUpdateRequest['meta'];
+};
+
+type UpsertRateVariables = {
+  agreementId: string;
+  payload: AgreementRateRequest;
+};
+
+type RemoveRateVariables = {
+  agreementId: string;
+  rateId: string;
+  meta?: AgreementUpdateRequest['meta'];
+};
+
 const updateListWithAgreement = (
   current: ListAgreementsResponse | undefined,
   agreement: AgreementDto,
@@ -252,6 +294,35 @@ const updateListWithAgreement = (
     meta: {
       ...baseMeta,
       generatedAt: nextGeneratedAt,
+    },
+  } satisfies ListAgreementsResponse;
+};
+
+const updateAgreementPartial = (
+  current: ListAgreementsResponse | undefined,
+  agreementId: string,
+  updater: (agreement: AgreementDto) => AgreementDto,
+  generatedAt?: string
+): ListAgreementsResponse | undefined => {
+  if (!current || !Array.isArray(current.data)) {
+    return current;
+  }
+
+  const index = current.data.findIndex((item) => item.id === agreementId);
+  if (index === -1) {
+    return current;
+  }
+
+  const items = [...current.data];
+  const updatedAgreement = updater(items[index]);
+  items[index] = updatedAgreement;
+
+  return {
+    ...current,
+    data: items,
+    meta: {
+      ...(current.meta ?? {}),
+      generatedAt: generatedAt ?? current.meta?.generatedAt ?? new Date().toISOString(),
     },
   } satisfies ListAgreementsResponse;
 };
@@ -306,6 +377,91 @@ const useConvenioCatalog = () => {
     mutationFn: ({ providerId, payload }: SyncAgreementVariables) => postAgreementSync(providerId, payload),
   });
 
+  const upsertWindowMutation = useMutation({
+    mutationFn: ({ agreementId, payload }: UpsertWindowVariables) => postAgreementWindow(agreementId, payload),
+    onSuccess: (response: AgreementWindowResponse | undefined, variables) => {
+      if (!response?.data) {
+        queryClient.invalidateQueries({ queryKey: agreementsKeys.list() });
+        return;
+      }
+
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+        updateAgreementPartial(
+          current,
+          variables.agreementId,
+          (agreement) => {
+            const windows = Array.isArray(agreement.windows) ? [...agreement.windows] : [];
+            const index = windows.findIndex((item) => item.id === response.data.id);
+            if (index === -1) {
+              windows.push(response.data);
+            } else {
+              windows[index] = response.data;
+            }
+            return { ...agreement, windows } satisfies AgreementDto;
+          },
+          response.meta?.generatedAt as string | undefined
+        )
+      );
+    },
+  });
+
+  const removeWindowMutation = useMutation({
+    mutationFn: ({ agreementId, windowId, meta }: RemoveWindowVariables) =>
+      deleteAgreementWindow(agreementId, windowId, meta),
+    onSuccess: (_response, variables) => {
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+        updateAgreementPartial(current, variables.agreementId, (agreement) => ({
+          ...agreement,
+          windows: Array.isArray(agreement.windows)
+            ? agreement.windows.filter((window) => window.id !== variables.windowId)
+            : [],
+        }))
+      );
+    },
+  });
+
+  const upsertRateMutation = useMutation({
+    mutationFn: ({ agreementId, payload }: UpsertRateVariables) => postAgreementRate(agreementId, payload),
+    onSuccess: (response: AgreementRateResponse | undefined, variables) => {
+      if (!response?.data) {
+        queryClient.invalidateQueries({ queryKey: agreementsKeys.list() });
+        return;
+      }
+
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+        updateAgreementPartial(
+          current,
+          variables.agreementId,
+          (agreement) => {
+            const rates = Array.isArray(agreement.rates) ? [...agreement.rates] : [];
+            const index = rates.findIndex((item) => item.id === response.data.id);
+            if (index === -1) {
+              rates.push(response.data);
+            } else {
+              rates[index] = response.data;
+            }
+            return { ...agreement, rates } satisfies AgreementDto;
+          },
+          response.meta?.generatedAt as string | undefined
+        )
+      );
+    },
+  });
+
+  const removeRateMutation = useMutation({
+    mutationFn: ({ agreementId, rateId, meta }: RemoveRateVariables) => deleteAgreementRate(agreementId, rateId, meta),
+    onSuccess: (_response, variables) => {
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+        updateAgreementPartial(current, variables.agreementId, (agreement) => ({
+          ...agreement,
+          rates: Array.isArray(agreement.rates)
+            ? agreement.rates.filter((rate) => rate.id !== variables.rateId)
+            : [],
+        }))
+      );
+    },
+  });
+
   return {
     convenios,
     meta: query.data?.meta ?? null,
@@ -316,6 +472,10 @@ const useConvenioCatalog = () => {
     mutations: {
       createAgreement: createAgreementMutation,
       updateAgreement: updateAgreementMutation,
+      upsertWindow: upsertWindowMutation,
+      removeWindow: removeWindowMutation,
+      upsertRate: upsertRateMutation,
+      removeRate: removeRateMutation,
       importAgreements: importMutation,
       syncProvider: syncMutation,
     },

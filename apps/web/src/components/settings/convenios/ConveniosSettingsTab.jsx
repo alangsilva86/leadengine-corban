@@ -1186,11 +1186,12 @@ const ConveniosSettingsTab = () => {
   const buildErrorMessage = (apiError, fallback) =>
     apiError?.payload?.error?.message ?? (apiError instanceof Error ? apiError.message : fallback);
 
-  const createHistoryEntry = (message) => ({
-    id: generateId(),
-    author: historyAuthor,
-    message,
-    createdAt: new Date(),
+  const buildAuditMeta = (note) => ({
+    audit: {
+      actor: historyAuthor,
+      actorRole: role,
+      note,
+    },
   });
 
   const runUpdate = async ({
@@ -1205,13 +1206,7 @@ const ConveniosSettingsTab = () => {
     try {
       const payload = {
         data: serializeAgreement(nextAgreement),
-        meta: {
-          audit: {
-            actor: historyAuthor,
-            actorRole: role,
-            note,
-          },
-        },
+        meta: buildAuditMeta(note),
       };
 
       const response =
@@ -1234,10 +1229,6 @@ const ConveniosSettingsTab = () => {
       return;
     }
 
-    const entry = createHistoryEntry(
-      `Dados básicos atualizados: ${payload.nome} (${STATUS_OPTIONS.find((item) => item.value === payload.status)?.label ?? payload.status}).`
-    );
-
     const next = {
       ...selected,
       nome: payload.nome,
@@ -1246,7 +1237,6 @@ const ConveniosSettingsTab = () => {
       status: payload.status,
       produtos: [...payload.produtos],
       responsavel: payload.responsavel,
-      history: [entry, ...selected.history],
     };
 
     await runUpdate({
@@ -1254,86 +1244,120 @@ const ConveniosSettingsTab = () => {
       toastMessage: 'Dados básicos salvos com sucesso',
       telemetryEvent: 'agreements.basic.updated',
       telemetryPayload: { status: payload.status },
-      note: entry.message,
+      note: `Dados básicos atualizados: ${payload.nome} (${STATUS_OPTIONS.find((item) => item.value === payload.status)?.label ?? payload.status}).`,
     });
+  };
+
+  const buildWindowPayload = (payload) => {
+    const current = selected?.janelas.find((window) => window.id === payload.id) ?? null;
+    const metadata = { ...(current?.metadata ?? {}) };
+    metadata.firstDueDate = payload.firstDueDate.toISOString();
+    return {
+      id: payload.id,
+      tableId: current?.tableId ?? null,
+      label: payload.label,
+      startsAt: payload.start.toISOString(),
+      endsAt: payload.end.toISOString(),
+      isActive: current?.isActive ?? true,
+      metadata,
+    };
+  };
+
+  const buildRatePayload = (payload) => {
+    const current = selected?.taxas.find((tax) => tax.id === payload.id) ?? null;
+    const metadata = { ...(current?.metadata ?? {}) };
+    metadata.validFrom = payload.validFrom.toISOString();
+    metadata.validUntil = payload.validUntil ? payload.validUntil.toISOString() : null;
+    metadata.tacFlat = payload.tacFlat ?? 0;
+    metadata.status = payload.status ?? 'Ativa';
+    metadata.tacPercent = payload.tacPercent ?? 0;
+    return {
+      id: payload.id,
+      tableId: current?.tableId ?? null,
+      windowId: current?.windowId ?? null,
+      product: payload.produto,
+      modality: payload.modalidade,
+      termMonths: current?.termMonths ?? null,
+      coefficient: current?.coefficient ?? null,
+      monthlyRate: payload.monthlyRate,
+      annualRate: current?.annualRate ?? null,
+      tacPercentage: payload.tacPercent ?? current?.tacPercentage ?? 0,
+      metadata,
+    };
   };
 
   const handleUpsertWindow = async (payload) => {
     if (!selected || locked) {
       return;
     }
+    const note = `Janela ${payload.label || 'do convênio'} (${formatDate(payload.start)} até ${formatDate(payload.end)}) atualizada.`;
 
-    const exists = selected.janelas.some((window) => window.id === payload.id);
-    const janelas = exists
-      ? selected.janelas.map((window) => (window.id === payload.id ? payload : window))
-      : [...selected.janelas, payload];
-
-    const entry = createHistoryEntry(
-      `Janela ${payload.label} ${exists ? 'atualizada' : 'cadastrada'} (${formatDate(payload.start)} até ${formatDate(payload.end)}).`
-    );
-
-    const next = {
-      ...selected,
-      janelas,
-      history: [entry, ...selected.history],
-    };
-
-    await runUpdate({
-      nextAgreement: next,
-      toastMessage: 'Calendário salvo com sucesso',
-      telemetryEvent: 'agreements.window.upserted',
-      telemetryPayload: { windowId: payload.id, hasOverlap: false },
-      note: entry.message,
-    });
+    try {
+      const response = await mutations.upsertWindow.mutateAsync({
+        agreementId: selected.id,
+        payload: {
+          data: buildWindowPayload(payload),
+          meta: buildAuditMeta(note),
+        },
+      });
+      const windowId = response?.data?.id ?? payload.id;
+      toast.success('Calendário salvo com sucesso');
+      emitAgreementsTelemetry('agreements.window.upserted', {
+        agreementId: selected.id,
+        windowId,
+        hasOverlap: false,
+        role,
+      });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao salvar calendário'));
+    }
   };
 
   const handleRemoveWindow = async (windowId) => {
     if (!selected || locked) {
       return;
     }
+    const note = 'Janela removida do calendário.';
 
-    const next = {
-      ...selected,
-      janelas: selected.janelas.filter((window) => window.id !== windowId),
-      history: [createHistoryEntry('Janela removida do calendário.'), ...selected.history],
-    };
-
-    await runUpdate({
-      nextAgreement: next,
-      toastMessage: 'Janela removida',
-      telemetryEvent: 'agreements.window.removed',
-      telemetryPayload: { windowId },
-      note: 'Janela removida do calendário.',
-    });
+    try {
+      await mutations.removeWindow.mutateAsync({
+        agreementId: selected.id,
+        windowId,
+        meta: buildAuditMeta(note),
+      });
+      toast.success('Janela removida');
+      emitAgreementsTelemetry('agreements.window.removed', { agreementId: selected.id, windowId, role });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao remover janela'));
+    }
   };
 
   const handleUpsertTax = async (payload) => {
     if (!selected || locked) {
       return;
     }
+    const note = `${payload.modalidade} atualizada para ${formatPercent(payload.monthlyRate)} (${payload.produto}).`;
 
-    const exists = selected.taxas.some((tax) => tax.id === payload.id);
-    const taxas = exists
-      ? selected.taxas.map((tax) => (tax.id === payload.id ? payload : tax))
-      : [...selected.taxas, payload];
-
-    const entry = createHistoryEntry(
-      `${payload.modalidade} atualizado para ${formatPercent(payload.monthlyRate)} (${payload.produto}).`
-    );
-
-    const next = {
-      ...selected,
-      taxas,
-      history: [entry, ...selected.history],
-    };
-
-    await runUpdate({
-      nextAgreement: next,
-      toastMessage: 'Taxa salva com sucesso',
-      telemetryEvent: 'agreements.rate.upserted',
-      telemetryPayload: { modalidade: payload.modalidade, produto: payload.produto },
-      note: entry.message,
-    });
+    try {
+      const response = await mutations.upsertRate.mutateAsync({
+        agreementId: selected.id,
+        payload: {
+          data: buildRatePayload(payload),
+          meta: buildAuditMeta(note),
+        },
+      });
+      const rateId = response?.data?.id ?? payload.id;
+      toast.success('Taxa salva com sucesso');
+      emitAgreementsTelemetry('agreements.rate.upserted', {
+        agreementId: selected.id,
+        rateId,
+        modalidade: payload.modalidade,
+        produto: payload.produto,
+        role,
+      });
+    } catch (err) {
+      toast.error(buildErrorMessage(err, 'Falha ao salvar taxa'));
+    }
   };
 
   const handleArchive = async (convenioId) => {
@@ -1346,7 +1370,6 @@ const ConveniosSettingsTab = () => {
       ...target,
       archived: true,
       status: target.status === 'ATIVO' ? 'PAUSADO' : target.status,
-      history: [createHistoryEntry('Convênio arquivado pelo gestor.'), ...target.history],
     };
 
     await runUpdate({
@@ -1373,16 +1396,10 @@ const ConveniosSettingsTab = () => {
       produtos: [],
       responsavel: '',
       archived: false,
+      metadata: {},
       janelas: [],
       taxas: [],
-      history: [
-        {
-          id: generateId(),
-          author: historyAuthor,
-          message: 'Convênio criado. Complete dados básicos e tabelas.',
-          createdAt: new Date(),
-        },
-      ],
+      history: [],
     };
 
     const response = await runUpdate({
