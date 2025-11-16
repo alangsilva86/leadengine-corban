@@ -12,9 +12,13 @@ export type AgreementImportErrorResponse = components['schemas']['AgreementImpor
 export type AgreementSyncResponse = components['schemas']['AgreementSyncResponse'];
 export type AgreementUpdateRequest = components['schemas']['AgreementUpdateRequest'];
 export type AgreementSyncRequest = components['schemas']['AgreementSyncRequest'];
+export type AgreementCreateRequest = components['schemas']['AgreementCreateRequest'];
 
 export type ListAgreementsResponse =
   paths['/api/v1/agreements']['get']['responses'][200]['content']['application/json'];
+
+export type CreateAgreementResponse =
+  paths['/api/v1/agreements']['post']['responses'][201]['content']['application/json'];
 
 export type ImportAgreementsResponse =
   paths['/api/v1/agreements/import']['post']['responses'][202]['content']['application/json'];
@@ -33,6 +37,10 @@ export const agreementsKeys = {
 
 export const fetchAgreements = async (): Promise<ListAgreementsResponse> =>
   apiGet('/api/v1/agreements');
+
+export const postAgreement = async (
+  payload: AgreementCreateRequest
+): Promise<CreateAgreementResponse> => apiPost('/api/v1/agreements', payload);
 
 export const patchAgreement = async (
   agreementId: string,

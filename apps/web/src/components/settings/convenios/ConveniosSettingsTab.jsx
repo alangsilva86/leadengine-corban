@@ -113,6 +113,20 @@ const generateId = () =>
     ? crypto.randomUUID()
     : `id-${Math.random().toString(36).slice(2)}`;
 
+const resolveProviderId = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  const providerId = metadata.providerId;
+  if (typeof providerId !== 'string') {
+    return null;
+  }
+
+  const trimmed = providerId.trim();
+  return trimmed.length ? trimmed : null;
+};
+
 const ConvenioList = ({
   convenios,
   selectedId,
@@ -1186,27 +1200,32 @@ const ConveniosSettingsTab = () => {
     telemetryPayload = {},
     note,
     errorMessage = 'Falha ao atualizar convênio',
+    action = 'update',
   }) => {
     try {
-      await mutations.updateAgreement.mutateAsync({
-        agreementId: nextAgreement.id,
-        payload: {
-          data: serializeAgreement(nextAgreement),
-          meta: {
-            audit: {
-              actor: historyAuthor,
-              actorRole: role,
-              note,
-            },
+      const payload = {
+        data: serializeAgreement(nextAgreement),
+        meta: {
+          audit: {
+            actor: historyAuthor,
+            actorRole: role,
+            note,
           },
         },
-      });
+      };
+
+      const response =
+        action === 'create'
+          ? await mutations.createAgreement.mutateAsync({ payload })
+          : await mutations.updateAgreement.mutateAsync({ agreementId: nextAgreement.id, payload });
+
+      const agreementId = response?.data?.id ?? nextAgreement.id;
       toast.success(toastMessage);
-      emitAgreementsTelemetry(telemetryEvent, { ...telemetryPayload, agreementId: nextAgreement.id, role });
-      return true;
+      emitAgreementsTelemetry(telemetryEvent, { ...telemetryPayload, agreementId, role });
+      return response?.data ?? null;
     } catch (err) {
       toast.error(buildErrorMessage(err, errorMessage));
-      return false;
+      return null;
     }
   };
 
@@ -1366,17 +1385,18 @@ const ConveniosSettingsTab = () => {
       ],
     };
 
-    const succeeded = await runUpdate({
+    const response = await runUpdate({
       nextAgreement: convenio,
       toastMessage: 'Convênio criado',
       telemetryEvent: 'agreements.created',
       telemetryPayload: {},
       note: 'Convênio criado manualmente pelo gestor.',
       errorMessage: 'Falha ao criar convênio',
+      action: 'create',
     });
 
-    if (succeeded) {
-      setSelectedId(convenio.id);
+    if (response) {
+      setSelectedId(response.id ?? convenio.id);
       setDetailsOpen(true);
     }
   };
@@ -1391,19 +1411,26 @@ const ConveniosSettingsTab = () => {
       return;
     }
 
+    const providerId = resolveProviderId(selected.metadata);
+    if (!providerId) {
+      toast.error('Sincronização disponível apenas para convênios integrados.');
+      return;
+    }
+
     try {
       await mutations.syncProvider.mutateAsync({
-        providerId: selected.id,
+        providerId,
         payload: { requestedBy: role, reason: 'manual-trigger' },
       });
       toast.success('Sincronização enviada para processamento');
-      emitAgreementsTelemetry('agreements.sync.triggered', { agreementId: selected.id, role });
+      emitAgreementsTelemetry('agreements.sync.triggered', { agreementId: selected.id, providerId, role });
     } catch (err) {
       toast.error(buildErrorMessage(err, 'Falha ao acionar sincronização'));
     }
   };
 
   const sheetOpen = detailsOpen && Boolean(selected);
+  const selectedProviderId = selected ? resolveProviderId(selected.metadata) : null;
 
   return (
     <div className="space-y-6">
@@ -1489,7 +1516,7 @@ const ConveniosSettingsTab = () => {
                   variant="outline"
                   size="sm"
                   onClick={handleSyncProvider}
-                  disabled={mutations.syncProvider.isPending || locked}
+                  disabled={mutations.syncProvider.isPending || locked || !selectedProviderId}
                 >
                   <RefreshCw className={cn('mr-2 h-4 w-4', mutations.syncProvider.isPending ? 'animate-spin' : '')} />
                   Sincronizar provedor
