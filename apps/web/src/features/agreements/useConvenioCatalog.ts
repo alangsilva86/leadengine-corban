@@ -6,6 +6,7 @@ import type {
   AgreementRateDto,
   AgreementUpdateRequest,
   AgreementWindowDto,
+  AgreementCreateRequest,
   ListAgreementsResponse,
   UpdateAgreementResponse,
 } from '@/lib/agreements-client.ts';
@@ -13,6 +14,7 @@ import {
   agreementsKeys,
   fetchAgreements,
   patchAgreement,
+  postAgreement,
   postAgreementSync,
   uploadAgreements,
 } from '@/lib/agreements-client.ts';
@@ -207,6 +209,10 @@ type UpdateAgreementVariables = {
   payload: AgreementUpdateRequest;
 };
 
+type CreateAgreementVariables = {
+  payload: AgreementCreateRequest;
+};
+
 type SyncAgreementVariables = {
   providerId: string;
   payload?: Parameters<typeof postAgreementSync>[1];
@@ -276,6 +282,19 @@ const useConvenioCatalog = () => {
     },
   });
 
+  const createAgreementMutation = useMutation({
+    mutationFn: ({ payload }: CreateAgreementVariables) => postAgreement(payload),
+    onSuccess: (response) => {
+      if (!response?.data) {
+        return;
+      }
+
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+        updateListWithAgreement(current, response.data, response.meta)
+      );
+    },
+  });
+
   const importMutation = useMutation({
     mutationFn: ({ formData }: ImportAgreementsVariables) => uploadAgreements(formData),
     onSuccess: () => {
@@ -295,6 +314,7 @@ const useConvenioCatalog = () => {
     error: (query.error as Error | null) ?? null,
     refetch: query.refetch,
     mutations: {
+      createAgreement: createAgreementMutation,
       updateAgreement: updateAgreementMutation,
       importAgreements: importMutation,
       syncProvider: syncMutation,

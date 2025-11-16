@@ -21,23 +21,25 @@ vi.mock('sonner', () => ({
   toast: toastMock,
 }));
 
-const buildFetchMock = () => {
+const buildFetchMock = (initialAgreements) => {
   const state = {
-    agreements: [
-      {
-        id: 'agreement-1',
-        nome: 'Convênio A',
-        averbadora: 'Org Municipal',
-        tipo: 'MUNICIPAL',
-        status: 'ATIVO',
-        produtos: ['Consignado tradicional'],
-        responsavel: 'Ana',
-        archived: false,
-        janelas: [],
-        taxas: [],
-        history: [],
-      },
-    ],
+    agreements:
+      initialAgreements ?? [
+        {
+          id: 'agreement-1',
+          nome: 'Convênio A',
+          averbadora: 'Org Municipal',
+          tipo: 'MUNICIPAL',
+          status: 'ATIVO',
+          produtos: ['Consignado tradicional'],
+          responsavel: 'Ana',
+          archived: false,
+          janelas: [],
+          taxas: [],
+          history: [],
+          metadata: { providerId: 'provider-1' },
+        },
+      ],
   };
 
   const buildResponse = (body, init = {}) =>
@@ -55,6 +57,28 @@ const buildFetchMock = () => {
         data: state.agreements,
         meta: { fetchedAt: new Date().toISOString() },
       });
+    }
+
+    if (url.endsWith('/api/v1/agreements') && method === 'POST') {
+      const created = {
+        id: 'agreement-2',
+        nome: 'Convênio Criado',
+        averbadora: 'Secretaria Municipal',
+        tipo: 'MUNICIPAL',
+        status: 'EM_IMPLANTACAO',
+        produtos: [],
+        responsavel: 'Equipe Comercial',
+        archived: false,
+        janelas: [],
+        taxas: [],
+        history: [],
+        metadata: { providerId: 'provider-1' },
+      };
+      state.agreements = [created, ...state.agreements];
+      return buildResponse({
+        data: created,
+        meta: { updatedAt: new Date().toISOString() },
+      }, { status: 201 });
     }
 
     if (url.endsWith('/api/v1/agreements/import') && method === 'POST') {
@@ -146,12 +170,11 @@ describe('ConveniosSettingsTab', () => {
     });
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     fetchMock = buildFetchMock();
     globalThis.fetch = fetchMock;
     toastMock.success.mockReset();
     toastMock.error.mockReset();
-    await renderComponent();
   });
 
   afterEach(() => {
@@ -163,6 +186,7 @@ describe('ConveniosSettingsTab', () => {
   });
 
   it('importa convênios e atualiza a lista com o retorno da API', async () => {
+    await renderComponent();
     await waitFor(() => expect(screen.getByText('Convênio A')).toBeInTheDocument());
 
     const importButton = screen.getByRole('button', { name: /Importar planilha/i });
@@ -189,6 +213,7 @@ describe('ConveniosSettingsTab', () => {
   });
 
   it('exibe mensagem de erro seguindo payload da API ao salvar dados básicos inválidos', async () => {
+    await renderComponent();
     await waitFor(() => expect(screen.getByText('Convênio A')).toBeInTheDocument());
 
     await act(async () => {
@@ -211,5 +236,58 @@ describe('ConveniosSettingsTab', () => {
       expect(toastMock.error).toHaveBeenCalledWith('data/meta/error: Nome obrigatório')
     );
     expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it('cria convênio chamando POST /api/v1/agreements e seleciona o retorno da API', async () => {
+    await renderComponent();
+    await waitFor(() => expect(screen.getByText('Convênio A')).toBeInTheDocument());
+
+    const createButton = screen.getByRole('button', { name: /novo convênio/i });
+    await act(async () => {
+      fireEvent.click(createButton);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agreements', expect.objectContaining({ method: 'POST' })));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Convênio criado'));
+  });
+
+  it('impede sincronização quando o convênio não possui providerId', async () => {
+    fetchMock = buildFetchMock([
+      {
+        id: 'agreement-1',
+        nome: 'Convênio sem provedor',
+        averbadora: 'Org Municipal',
+        tipo: 'MUNICIPAL',
+        status: 'ATIVO',
+        produtos: ['Consignado tradicional'],
+        responsavel: 'Ana',
+        archived: false,
+        janelas: [],
+        taxas: [],
+        history: [],
+        metadata: {},
+      },
+    ]);
+    globalThis.fetch = fetchMock;
+    await renderComponent();
+
+    await waitFor(() => expect(screen.getByText('Convênio sem provedor')).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Convênio sem provedor'));
+    });
+
+    const syncButton = screen.getByRole('button', { name: /Sincronizar provedor/i });
+    await act(async () => {
+      fireEvent.click(syncButton);
+    });
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith('Sincronização disponível apenas para convênios integrados.')
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/agreements/providers/'),
+      expect.anything()
+    );
   });
 });
