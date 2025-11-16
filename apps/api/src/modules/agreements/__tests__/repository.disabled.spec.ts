@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { demoAgreementsSeed } from '../../../../../../config/demo-agreements';
 
+vi.mock('@ticketz/storage', () => ({
+  ensureTicketStageSupport: vi.fn(),
+  setPrismaClient: vi.fn(),
+}));
+
 const transactionMock = vi.fn();
 
 vi.mock('../../../lib/prisma', async () => {
@@ -21,9 +26,10 @@ describe('AgreementsRepository - database disabled', () => {
     const result = await repository.listAgreements(
       'tenant-id',
       { search: undefined, status: undefined },
-      { page: 2, limit: 50 }
+      { page: 1, limit: 50 }
     );
 
+    expect(result.page).toBe(1);
     expect(result.page).toBe(2);
     expect(result.limit).toBe(50);
     expect(result.total).toBe(demoAgreementsSeed.length);

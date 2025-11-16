@@ -12,6 +12,12 @@ import type {
 } from './repository';
 import { demoAgreementsSeed } from '../../../../../config/demo-agreements';
 
+const DEFAULT_TENANT_ID = (process.env.AUTH_MVP_TENANT_ID ?? 'demo-tenant').trim() || 'demo-tenant';
+
+const normalizeTenantId = (tenantId: string): string => {
+  const trimmed = (tenantId ?? '').trim();
+  return trimmed.length ? trimmed : DEFAULT_TENANT_ID;
+};
 const DEFAULT_TENANT_IDS = new Set([
   (process.env.AUTH_MVP_TENANT_ID ?? 'demo-tenant').trim() || 'demo-tenant',
   'demo-tenant',
@@ -115,6 +121,13 @@ const toLower = (value: string | null | undefined): string => (value ?? '').toLo
 const now = () => new Date();
 
 export class DemoAgreementsStore {
+  private readonly stateByTenant = new Map<string, DemoAgreementsState>();
+
+  constructor(tenantIds: string[] = [DEFAULT_TENANT_ID]) {
+    const uniqueTenantIds = Array.from(new Set(tenantIds.map((tenant) => normalizeTenantId(tenant))));
+    for (const tenantId of uniqueTenantIds) {
+      this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
+    }
   private readonly allowedTenants: Set<string>;
   private readonly stateByTenant = new Map<string, DemoAgreementsState>();
 
@@ -218,6 +231,8 @@ export class DemoAgreementsStore {
     };
   }
 
+  private getState(rawTenantId: string): DemoAgreementsState {
+    const tenantId = normalizeTenantId(rawTenantId);
   private getState(tenantId: string): DemoAgreementsState | null {
     if (!this.allowedTenants.has(tenantId)) {
       return null;
@@ -227,6 +242,7 @@ export class DemoAgreementsStore {
       this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
     }
 
+    return this.stateByTenant.get(tenantId)!;
     return this.stateByTenant.get(tenantId) ?? null;
   }
 
