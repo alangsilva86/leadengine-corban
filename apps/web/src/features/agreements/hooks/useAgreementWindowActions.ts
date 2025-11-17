@@ -1,22 +1,29 @@
 import { useCallback } from 'react';
-import { formatDate } from '@/features/agreements/convenioSettings.utils.ts';
+import { toast } from 'sonner';
+import { formatDate, getErrorMessage } from '@/features/agreements/convenioSettings.utils.ts';
 import agreementsLogger from '@/features/agreements/utils/agreementsLogger.ts';
+import emitAgreementsTelemetry from '@/features/agreements/utils/telemetry.ts';
+import { buildAgreementWindowRequest } from '@/features/agreements/domain/buildAgreementWindowRequest.ts';
 
-import type { Agreement } from '@/features/agreements/useConvenioCatalog.ts';
-import type { BuildHistoryEntry, RunAgreementUpdate, WindowPayload } from './types.ts';
+import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog.ts';
+import type { BuildHistoryEntry, WindowPayload } from './types.ts';
 
 type UseAgreementWindowActionsArgs = {
   selected: Agreement | null;
   locked: boolean;
-  runUpdate: RunAgreementUpdate;
   buildHistoryEntry: BuildHistoryEntry;
+  historyAuthor: string;
+  role: string;
+  mutations: Pick<UseConvenioCatalogReturn['mutations'], 'upsertWindow' | 'removeWindow'>;
 };
 
 const useAgreementWindowActions = ({
   selected,
   locked,
-  runUpdate,
   buildHistoryEntry,
+  historyAuthor,
+  role,
+  mutations,
 }: UseAgreementWindowActionsArgs) => {
   const upsertWindow = useCallback(
     async (payload: WindowPayload) => {
@@ -33,11 +40,12 @@ const useAgreementWindowActions = ({
         `Janela ${payload.label} ${exists ? 'atualizada' : 'cadastrada'} (${formatDate(payload.start)} até ${formatDate(payload.end)}).`
       );
 
-      const next: Agreement = {
-        ...selected,
-        janelas,
-        history: [entry, ...selected.history],
-      };
+      const request = buildAgreementWindowRequest({
+        window: payload,
+        actor: historyAuthor,
+        actorRole: role,
+        note: entry.message,
+      });
 
       const action = exists ? 'update-window' : 'create-window';
 
@@ -50,19 +58,23 @@ const useAgreementWindowActions = ({
       });
 
       try {
-        await runUpdate({
-          nextAgreement: next,
-          toastMessage: 'Calendário salvo com sucesso',
-          telemetryEvent: 'agreements.window.upserted',
-          telemetryPayload: { windowId: payload.id, hasOverlap: false },
-          note: entry.message,
+        await mutations.upsertWindow.mutateAsync({
+          agreementId: selected.id,
+          payload: request,
+        });
+        toast.success('Calendário salvo com sucesso');
+        emitAgreementsTelemetry('agreements.window.upserted', {
+          windowId: payload.id,
+          hasOverlap: false,
+          agreementId: selected.id,
+          role,
         });
 
         agreementsLogger.info('window', 'post', '🎉 Passo lúdico concluído: janela registrada no calendário mágico.', {
           action,
           agreementId: selected.id,
           windowId: payload.id,
-          status: next.status,
+          status: selected.status,
           result: 'success',
         });
       } catch (error) {
@@ -74,10 +86,11 @@ const useAgreementWindowActions = ({
           result: 'failure',
           error: error instanceof Error ? error.message : String(error),
         });
+        toast.error(getErrorMessage(error, 'Falha ao salvar janela'));
         throw error;
       }
     },
-    [buildHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, historyAuthor, locked, mutations.upsertWindow, role, selected]
   );
 
   const removeWindow = useCallback(
@@ -87,11 +100,14 @@ const useAgreementWindowActions = ({
       }
 
       const entry = buildHistoryEntry('Janela removida do calendário.');
-      const next: Agreement = {
-        ...selected,
-        janelas: selected.janelas.filter((window) => window.id !== windowId),
-        history: [entry, ...selected.history],
-      };
+
+      const meta = {
+        audit: {
+          actor: historyAuthor,
+          actorRole: role,
+          note: entry.message,
+        },
+      } satisfies ReturnType<typeof buildAgreementWindowRequest>['meta'];
 
       agreementsLogger.info('window', 'pre', '📚 Passo didático: preparando remoção da janela temporal.', {
         action: 'remove-window',
@@ -101,19 +117,23 @@ const useAgreementWindowActions = ({
       });
 
       try {
-        await runUpdate({
-          nextAgreement: next,
-          toastMessage: 'Janela removida',
-          telemetryEvent: 'agreements.window.removed',
-          telemetryPayload: { windowId },
-          note: entry.message,
+        await mutations.removeWindow.mutateAsync({
+          agreementId: selected.id,
+          windowId,
+          meta,
+        });
+        toast.success('Janela removida');
+        emitAgreementsTelemetry('agreements.window.removed', {
+          agreementId: selected.id,
+          windowId,
+          role,
         });
 
         agreementsLogger.info('window', 'post', '🎉 Passo lúdico concluído: janela removida do mapa temporal.', {
           action: 'remove-window',
           agreementId: selected.id,
           windowId,
-          status: next.status,
+          status: selected.status,
           result: 'success',
         });
       } catch (error) {
@@ -125,10 +145,11 @@ const useAgreementWindowActions = ({
           result: 'failure',
           error: error instanceof Error ? error.message : String(error),
         });
+        toast.error(getErrorMessage(error, 'Falha ao remover janela'));
         throw error;
       }
     },
-    [buildHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, historyAuthor, locked, mutations.removeWindow, role, selected]
   );
 
   return { upsertWindow, removeWindow };
