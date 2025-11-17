@@ -1,4 +1,5 @@
-import { NotFoundError, PhoneNormalizationError } from '@ticketz/core';
+import { NotFoundError } from '@ticketz/core';
+import { PhoneNormalizationError } from '../../utils/phone';
 import type { CreateTicketDTO, Message, SendMessageDTO, Ticket, TicketStatus } from '../../types/tickets';
 import { prisma } from '../../lib/prisma';
 import { findTicketsByContact, findTicketById as storageFindTicketById } from '@ticketz/storage';

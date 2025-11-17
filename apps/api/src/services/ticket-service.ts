@@ -1954,6 +1954,7 @@ const whatsappSendModule = createWhatsAppSendModule({
 export const sendOnTicket = whatsappSendModule.sendOnTicket;
 export const sendToContact = whatsappSendModule.sendToContact;
 export const sendAdHoc = whatsappSendModule.sendAdHoc;
+export { rateKeyForInstance, resolveInstanceRateLimit } from './tickets/whatsapp-send';
 
 const salesOperations = createSalesOperations(broadcastSalesOperationResult);
 
