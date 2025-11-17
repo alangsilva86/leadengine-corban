@@ -8,8 +8,6 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react';
-import { apiGet } from '../../lib/api.js';
-import { onAuthTokenChange, onTenantIdChange } from '../../lib/auth.js';
 import { isWhatsAppDebugEnabled } from '../debug/featureFlags.js';
 import { getRuntimeEnv } from '../../lib/runtime-env.js';
 import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
@@ -99,6 +97,8 @@ const BASE_JOURNEY_STAGES: JourneyStage[] = [
 
 type UseOnboardingJourneyOptions = {
   initialPage?: StoredOnboardingPage | null;
+  currentUser?: CurrentUserLike | null;
+  loadingCurrentUser?: boolean;
 };
 
 export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
@@ -107,8 +107,8 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
   const [selectedAgreement, setSelectedAgreement] = useState<OnboardingAgreement | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<string>('disconnected');
   const [activeCampaign, setActiveCampaign] = useState<Record<string, unknown> | null>(null);
-  const [me, setMe] = useState<CurrentUserLike | null>(null);
-  const [loadingCurrentUser, setLoadingCurrentUser] = useState<boolean>(true);
+  const providedCurrentUser = options?.currentUser ?? null;
+  const loadingCurrentUser = Boolean(options?.loadingCurrentUser);
 
   const debugDisabled = !WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug;
   const shouldRestorePage = options?.initialPage == null;
@@ -119,39 +119,6 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     }
     return currentPage;
   }, [currentPage, debugDisabled]);
-
-  const loadCurrentUser = useCallback(
-    async (signal?: AbortSignal) => {
-      setLoadingCurrentUser(true);
-
-      try {
-        const payload = await apiGet<{ data?: CurrentUserLike | null }>('/api/auth/me', { signal });
-
-        if (signal?.aborted) {
-          return;
-        }
-
-        setMe(payload?.data ?? null);
-      } catch (error: any) {
-        if (error?.name === 'AbortError' || signal?.aborted) {
-          return;
-        }
-
-        if (error?.status === 401) {
-          setMe(null);
-          return;
-        }
-
-        console.warn('Failed to load current user from API', error);
-        setMe(null);
-      } finally {
-        if (!signal?.aborted) {
-          setLoadingCurrentUser(false);
-        }
-      }
-    },
-    []
-  );
 
   useEffect(() => {
     try {
@@ -233,46 +200,18 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     return stageIndex === -1 ? 0 : stageIndex;
   }, [currentPage, onboardingStages]);
 
-  useEffect(() => {
-    let abortController = new AbortController();
-
-    const run = () => {
-      loadCurrentUser(abortController.signal);
-    };
-
-    run();
-
-    const unsubscribeToken = onAuthTokenChange(() => {
-      abortController.abort();
-      abortController = new AbortController();
-      run();
-    });
-
-    const unsubscribeTenant = onTenantIdChange(() => {
-      abortController.abort();
-      abortController = new AbortController();
-      run();
-    });
-
-    return () => {
-      abortController.abort();
-      unsubscribeToken?.();
-      unsubscribeTenant?.();
-    };
-  }, [loadCurrentUser]);
-
   const currentUser = useMemo<CurrentUserLike | null>(() => {
-    if (!me?.id) {
+    if (!providedCurrentUser?.id) {
       return null;
     }
 
-    const tenantId = (me.tenantId ?? me.tenant?.id ?? null) as string | null;
+    const tenantId = (providedCurrentUser.tenantId ?? providedCurrentUser.tenant?.id ?? null) as string | null;
 
     return {
-      ...me,
+      ...providedCurrentUser,
       tenantId,
     };
-  }, [me]);
+  }, [providedCurrentUser]);
 
   const computeNextSetupPage = useCallback((): OnboardingPage => {
     if (whatsappStatus === 'connected') {

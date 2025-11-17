@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { isWhatsAppDebugEnabled } from '@/features/debug/featureFlags.js';
+import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import {
   Sidebar,
   SidebarContent,
@@ -172,6 +173,12 @@ const LayoutShell = ({
 }) => {
   const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
   const isSidebarCollapsed = state === 'collapsed';
+  const { user, logout, status: authStatus } = useAuth();
+  const displayName = user?.name ?? 'Operador';
+  const displayRole = user?.role ?? 'Sem papel definido';
+  const handleLogout = () => {
+    logout?.();
+  };
 
   const handleNavigate = (page) => (event) => {
     event.preventDefault();
@@ -273,10 +280,16 @@ const LayoutShell = ({
               <User className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1 space-y-0.5 group-data-[collapsible=icon]:hidden">
-              <p className="truncate text-sm font-medium leading-none">João Silva</p>
-              <p className="text-xs text-muted-foreground">Agente</p>
+              <p className="truncate text-sm font-medium leading-none">{displayName}</p>
+              <p className="text-xs text-muted-foreground">{displayRole}</p>
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleLogout}
+              disabled={authStatus === 'checking'}
+            >
               <LogOut className="h-4 w-4" />
               <span className="sr-only">Sair</span>
             </Button>

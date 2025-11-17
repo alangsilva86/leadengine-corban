@@ -1,4 +1,4 @@
-import { getTenantId, onTenantIdChange } from './auth.js';
+import { getAuthToken, getTenantId, onAuthTokenChange, onTenantIdChange } from './auth.js';
 import { computeBackoffDelay, parseRetryAfterMs } from './rate-limit.js';
 import { getEnvVar } from './runtime-env.js';
 
@@ -75,9 +75,14 @@ export const API_BASE_URL = (() => {
 })();
 
 let persistedTenantId = getTenantId();
+let persistedAuthToken = getAuthToken();
 
 onTenantIdChange((nextTenant) => {
   persistedTenantId = nextTenant;
+});
+
+onAuthTokenChange((nextToken) => {
+  persistedAuthToken = nextToken;
 });
 
 const baseHeaders = () => {
@@ -102,6 +107,10 @@ const baseHeaders = () => {
   }
   if (tenantId) {
     headers['x-tenant-id'] = tenantId;
+  }
+
+  if (persistedAuthToken) {
+    headers.Authorization = `Bearer ${persistedAuthToken}`;
   }
 
   return headers;
@@ -184,6 +193,14 @@ export const buildUrl = (path) => {
   return `${trimmedBase}${normalizedPath}`;
 };
 
+const dispatchUnauthorizedEvent = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const event = new CustomEvent('leadengine:auth-unauthorized');
+  window.dispatchEvent(event);
+};
+
 const handleResponse = async (response) => {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
@@ -195,6 +212,9 @@ const handleResponse = async (response) => {
     const retryAfterHeader = response.headers.get('Retry-After');
     if (retryAfterHeader) {
       error.retryAfter = retryAfterHeader;
+    }
+    if (response.status === 401) {
+      dispatchUnauthorizedEvent();
     }
     throw error;
   }
