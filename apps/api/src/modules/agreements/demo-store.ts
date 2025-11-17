@@ -14,7 +14,7 @@ import { demoAgreementsSeed } from '../../../../../config/demo-agreements';
 
 const DEFAULT_TENANT_ID = (process.env.AUTH_MVP_TENANT_ID ?? 'demo-tenant').trim() || 'demo-tenant';
 
-const normalizeTenantId = (tenantId: string): string => {
+const normalizeTenantId = (tenantId?: string): string => {
   const trimmed = (tenantId ?? '').trim();
   return trimmed.length ? trimmed : DEFAULT_TENANT_ID;
 };
@@ -227,18 +227,22 @@ export class DemoAgreementsStore {
     };
   }
 
-  private getState(rawTenantId: string): DemoAgreementsState | null {
-    const tenantId = normalizeTenantId(rawTenantId);
-
-    if (!this.allowedTenants.has(tenantId)) {
-      return null;
-    }
-
+  private bootstrapTenantState(tenantId: string): DemoAgreementsState {
     if (!this.stateByTenant.has(tenantId)) {
       this.stateByTenant.set(tenantId, this.buildInitialState(tenantId));
     }
 
-    return this.stateByTenant.get(tenantId) ?? null;
+    return this.stateByTenant.get(tenantId)!;
+  }
+
+  private getState(rawTenantId: string): DemoAgreementsState | null {
+    const tenantId = normalizeTenantId(rawTenantId);
+
+    if (!this.allowedTenants.has(tenantId)) {
+      this.allowedTenants.add(tenantId);
+    }
+
+    return this.bootstrapTenantState(tenantId);
   }
 
   private applySearchFilters(agreements: AgreementRecord[], filters: AgreementListFilters): AgreementRecord[] {
