@@ -17,6 +17,7 @@ import {
   Phone,
   Globe,
   Save,
+  Plus,
 } from 'lucide-react';
 import QueuesTab from './settings/QueuesTab.jsx';
 import AiSettingsTab from './settings/AiSettingsTab';
