@@ -122,7 +122,7 @@ interface AgreementsPrismaClient extends PrismaClient {
   agreementTable: PrismaDelegate<AgreementTableRecord>;
   agreementWindow: PrismaDelegate<AgreementWindowRecord>;
   agreementRate: PrismaDelegate<AgreementRateRecord>;
-  agreementHistory: PrismaDelegate<AgreementHistoryRecord>;
+  agreementHistoryEntry: PrismaDelegate<AgreementHistoryRecord>;
   agreementImportJob: PrismaDelegate<AgreementImportJobRecord> & {
     updateMany(args: unknown): Promise<{ count: number }>;
   };
@@ -499,7 +499,7 @@ export class AgreementsRepository {
       tenantId,
       operation: 'appendHistoryEntry',
       database: () =>
-        this.prisma.agreementHistory.create({
+        this.prisma.agreementHistoryEntry.create({
           data: {
             ...entry,
             tenantId,
@@ -519,7 +519,7 @@ export class AgreementsRepository {
       tenantId,
       operation: 'listHistory',
       database: () =>
-        this.prisma.agreementHistory.findMany({
+        this.prisma.agreementHistoryEntry.findMany({
           where: { tenantId, agreementId },
           orderBy: { createdAt: 'desc' },
           take: limit,
