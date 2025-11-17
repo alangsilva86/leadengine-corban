@@ -16,6 +16,11 @@ export interface UserMutationLabels {
   result?: UserMutationResult;
 }
 
+export interface UserMutationContext {
+  roleChanged?: boolean;
+  statusChanged?: boolean;
+}
+
 export const userMetricsRegistry = new Registry();
 
 const userMutationsCounter = new Counter<
@@ -27,16 +32,62 @@ const userMutationsCounter = new Counter<
   registers: [userMetricsRegistry],
 });
 
+type UserMetricLabel = 'tenantId' | 'actorRole' | 'result';
+
+const buildMetricLabels = (labels: UserMutationLabels): Record<UserMetricLabel, string> => ({
+  tenantId: labels.tenantId ?? 'unknown',
+  actorRole: labels.actorRole ?? 'unknown',
+  result: labels.result ?? 'success',
+});
+
+const userInviteCreatedCounter = new Counter<UserMetricLabel>({
+  name: 'user_invite_created_total',
+  help: 'Total de convites criados para usuários internos por tenant e role do ator.',
+  labelNames: ['tenantId', 'actorRole', 'result'],
+  registers: [userMetricsRegistry],
+});
+
+const userRoleUpdatedCounter = new Counter<UserMetricLabel>({
+  name: 'user_role_updated_total',
+  help: 'Total de alterações de role realizadas para usuários internos.',
+  labelNames: ['tenantId', 'actorRole', 'result'],
+  registers: [userMetricsRegistry],
+});
+
+const userStatusToggledCounter = new Counter<UserMetricLabel>({
+  name: 'user_status_toggled_total',
+  help: 'Total de ativações/desativações de contas internas.',
+  labelNames: ['tenantId', 'actorRole', 'result'],
+  registers: [userMetricsRegistry],
+});
+
 export const recordUserMutation = (
   operation: UserMutationOperation,
-  labels: UserMutationLabels = {}
+  labels: UserMutationLabels = {},
+  context: UserMutationContext = {}
 ): void => {
+  const metricLabels = buildMetricLabels(labels);
+
   userMutationsCounter.inc({
     operation,
-    tenantId: labels.tenantId ?? 'unknown',
-    actorRole: labels.actorRole ?? 'unknown',
-    result: labels.result ?? 'success',
+    ...metricLabels,
   });
+
+  if (operation === 'invite_user') {
+    userInviteCreatedCounter.inc(metricLabels);
+  }
+
+  if (operation === 'update_user' && context.roleChanged) {
+    userRoleUpdatedCounter.inc(metricLabels);
+  }
+
+  if (operation === 'update_user' && context.statusChanged) {
+    userStatusToggledCounter.inc(metricLabels);
+  }
+
+  if (operation === 'deactivate_user') {
+    userStatusToggledCounter.inc(metricLabels);
+  }
 };
 
 export const resetUserMetrics = (): void => {
