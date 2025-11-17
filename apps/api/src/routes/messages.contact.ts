@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from 'express';
-import { ZodError } from 'zod';
 
-import { SendByContactSchema, normalizePayload } from '@ticketz/contracts';
+import { SendByContactSchema } from '@ticketz/contracts';
 import { asyncHandler } from '../middleware/error-handler';
 import { sendToContact } from '../services/ticket-service';
+import { validateMessageSendRequest } from './messages/shared';
 
 const router: Router = Router();
 
@@ -11,34 +11,24 @@ router.post(
   '/contacts/:contactId/messages',
   asyncHandler(async (req: Request, res: Response) => {
     const { contactId } = req.params;
-    let parsed;
+    const validationResult = await validateMessageSendRequest({
+      schema: SendByContactSchema,
+      req,
+      res,
+    });
 
-    try {
-      parsed = SendByContactSchema.parse(req.body ?? {});
-    } catch (error) {
-      if (error instanceof ZodError) {
-        res.status(422).json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Corpo da requisição inválido.',
-            details: error.issues,
-          },
-        });
-        return;
-      }
-      throw error;
+    if (!validationResult) {
+      return;
     }
 
-    const normalizedPayload = normalizePayload(parsed.payload);
-    const idempotencyKey = parsed.idempotencyKey ?? req.get('Idempotency-Key') ?? undefined;
+    const { parsed, payload, idempotencyKey } = validationResult;
 
     const response = await sendToContact({
       operatorId: req.user?.id,
       contactId,
       instanceId: parsed.instanceId,
       to: parsed.to,
-      payload: normalizedPayload,
+      payload,
       idempotencyKey,
     });
 
