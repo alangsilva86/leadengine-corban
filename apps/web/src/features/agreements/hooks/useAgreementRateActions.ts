@@ -1,9 +1,10 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
-import emitAgreementsTelemetry from '@/features/agreements/utils/telemetry.ts';
-import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog.ts';
-import agreementsLogger from '@/features/agreements/utils/agreementsLogger.ts';
-import type { BuildHistoryEntry, TaxPayload } from './types.ts';
+import emitAgreementsTelemetry from '@/features/agreements/utils/telemetry';
+import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog';
+import agreementsLogger from '@/features/agreements/utils/agreementsLogger';
+import type { AgreementRateRequest } from '@/lib/agreements-client';
+import type { BuildHistoryEntry, TaxPayload } from './types';
 
 type UseAgreementRateActionsArgs = {
   selected: Agreement | null;
@@ -28,10 +29,29 @@ const useAgreementRateActions = ({
         return;
       }
 
+      const toAgreementRate = (tax: TaxPayload): Agreement['taxas'][number] => ({
+        id: tax.id,
+        tableId: null,
+        windowId: null,
+        product: tax.produto,
+        modality: tax.modalidade,
+        termMonths: null,
+        coefficient: null,
+        monthlyRate: tax.monthlyRate,
+        annualRate: null,
+        tacPercentage: tax.tacPercent,
+        tacPercent: tax.tacPercent,
+        tacFlat: tax.tacFlat,
+        status: selected.status,
+        metadata: {},
+        validFrom: tax.validFrom,
+        validUntil: tax.validUntil,
+      });
+
       const exists = selected.taxas.some((tax) => tax.id === payload.id);
-      const taxas = exists
-        ? selected.taxas.map((tax) => (tax.id === payload.id ? payload : tax))
-        : [...selected.taxas, payload];
+      const taxas: Agreement['taxas'] = exists
+        ? selected.taxas.map((tax) => (tax.id === payload.id ? toAgreementRate(payload) : tax))
+        : [...selected.taxas, toAgreementRate(payload)];
 
       const entry = buildHistoryEntry(
         `${payload.modalidade} atualizado para ${payload.monthlyRate?.toFixed(2)}% (${payload.produto}).`
@@ -52,23 +72,25 @@ const useAgreementRateActions = ({
       });
 
       try {
+        const rateData: Partial<AgreementRateRequest['data']> = {
+          ...(exists ? { id: payload.id } : {}),
+          product: payload.produto,
+          modality: payload.modalidade,
+          monthlyRate: payload.monthlyRate,
+          tacPercentage: payload.tacPercent,
+          metadata: {
+            tacPercent: payload.tacPercent,
+            tacFlat: payload.tacFlat,
+            validFrom: payload.validFrom.toISOString(),
+            validUntil: payload.validUntil ? payload.validUntil.toISOString() : null,
+            status: next.status,
+          },
+        };
+
         await mutations.upsertRate.mutateAsync({
           agreementId: selected.id,
           payload: {
-            data: {
-              id: payload.id,
-              product: payload.produto,
-              modality: payload.modalidade,
-              monthlyRate: payload.monthlyRate,
-              tacPercentage: payload.tacPercent,
-              metadata: {
-                tacPercent: payload.tacPercent,
-                tacFlat: payload.tacFlat,
-                validFrom: payload.validFrom.toISOString(),
-                validUntil: payload.validUntil ? payload.validUntil.toISOString() : null,
-                status: next.status,
-              },
-            },
+            data: rateData as AgreementRateRequest['data'],
             meta: {
               audit: {
                 actor: historyAuthor,

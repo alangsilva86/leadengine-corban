@@ -2,8 +2,9 @@
 import '@testing-library/jest-dom/vitest';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { UseMutationResult } from '@tanstack/react-query';
 
-import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog.ts';
+import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog';
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -16,10 +17,28 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('@/features/agreements/utils/telemetry.ts', () => ({
+vi.mock('@/features/agreements/utils/telemetry', () => ({
   __esModule: true,
   default: (...args: unknown[]) => telemetryMock(...args),
 }));
+
+const createMutationMock = <TData = any, TVariables = any>(): UseMutationResult<TData, Error, TVariables, unknown> => ({
+  mutateAsync: vi.fn(),
+  mutate: vi.fn(),
+  data: undefined as TData | undefined,
+  error: null,
+  variables: undefined,
+  isError: false,
+  isIdle: true,
+  isPending: false,
+  isSuccess: false,
+  status: 'idle',
+  reset: vi.fn(),
+  failureCount: 0,
+  failureReason: null,
+  isPaused: false,
+  context: undefined,
+});
 
 const createAgreement = (overrides: Partial<Agreement> = {}): Agreement => ({
   id: 'agreement-1',
@@ -48,13 +67,25 @@ const createHistoryEntry = (message: string) => ({
 
 const buildHistoryEntry = vi.fn((message: string) => createHistoryEntry(message));
 const runUpdateMock = vi.fn();
-const upsertRateMutation = { mutateAsync: vi.fn() };
+const upsertRateMutation = createMutationMock();
+
+const createMutations = (): UseConvenioCatalogReturn['mutations'] => ({
+  createAgreement: createMutationMock(),
+  updateAgreement: createMutationMock(),
+  upsertWindow: createMutationMock(),
+  removeWindow: createMutationMock(),
+  upsertRate: createMutationMock(),
+  removeRate: createMutationMock(),
+  importAgreements: createMutationMock(),
+  syncProvider: createMutationMock(),
+});
 
 describe('agreement action hooks', () => {
   beforeEach(() => {
     buildHistoryEntry.mockClear();
     runUpdateMock.mockReset();
     upsertRateMutation.mutateAsync.mockReset();
+    upsertRateMutation.mutate.mockReset();
     toastError.mockReset();
     toastSuccess.mockReset();
     telemetryMock.mockReset();
@@ -63,7 +94,7 @@ describe('agreement action hooks', () => {
   describe('useAgreementBasicActions', () => {
     it('updates agreement basic data and records history', async () => {
       const selected = createAgreement();
-      const { default: useAgreementBasicActions } = await import('../useAgreementBasicActions.ts');
+      const { default: useAgreementBasicActions } = await import('../useAgreementBasicActions');
       runUpdateMock.mockResolvedValue({ id: 'agreement-1' });
 
       const { result } = renderHook(() =>
@@ -95,7 +126,7 @@ describe('agreement action hooks', () => {
 
     it('handles creation flow and resets pending agreement', async () => {
       const selected = createAgreement();
-      const { default: useAgreementBasicActions } = await import('../useAgreementBasicActions.ts');
+      const { default: useAgreementBasicActions } = await import('../useAgreementBasicActions');
       const setPending = vi.fn();
       const setSelectedId = vi.fn();
       runUpdateMock.mockResolvedValue({ id: 'agreement-2' });
@@ -138,13 +169,16 @@ describe('agreement action hooks', () => {
         firstDueDate: new Date('2024-02-10'),
       } as const;
 
-      const upsertWindowMutation = { mutateAsync: vi.fn().mockResolvedValue(null) };
-      const removeWindowMutation = { mutateAsync: vi.fn().mockResolvedValue(null) };
+      const upsertWindowMutation = createMutationMock();
+      upsertWindowMutation.mutateAsync = vi.fn().mockResolvedValue(null);
+      const removeWindowMutation = createMutationMock();
+      removeWindowMutation.mutateAsync = vi.fn().mockResolvedValue(null);
       const mutations = {
+        ...createMutations(),
         upsertWindow: upsertWindowMutation,
         removeWindow: removeWindowMutation,
-      } as unknown as Pick<UseConvenioCatalogReturn['mutations'], 'upsertWindow' | 'removeWindow'>;
-      const { default: useAgreementWindowActions } = await import('../useAgreementWindowActions.ts');
+      };
+      const { default: useAgreementWindowActions } = await import('../useAgreementWindowActions');
 
       const initialAgreement = createAgreement({ janelas: [] });
 
@@ -209,7 +243,7 @@ describe('agreement action hooks', () => {
   describe('useAgreementRateActions', () => {
     it('upserts rate entries', async () => {
       const selected = createAgreement({ taxas: [] });
-      const { default: useAgreementRateActions } = await import('../useAgreementRateActions.ts');
+      const { default: useAgreementRateActions } = await import('../useAgreementRateActions');
       upsertRateMutation.mutateAsync.mockResolvedValue({
         data: {
           id: 'tax-1',
@@ -228,7 +262,7 @@ describe('agreement action hooks', () => {
           buildHistoryEntry,
           historyAuthor: 'Alice',
           role: 'admin',
-          mutations: { upsertRate: upsertRateMutation } as unknown as UseConvenioCatalogReturn['mutations'],
+          mutations: { ...createMutations(), upsertRate: upsertRateMutation },
         })
       );
 
@@ -247,18 +281,17 @@ describe('agreement action hooks', () => {
         await result.current.upsertTax(taxPayload);
       });
 
-      expect(upsertRateMutation.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          agreementId: selected.id,
-          payload: expect.objectContaining({
-            data: expect.objectContaining({
-              product: taxPayload.produto,
-              modality: taxPayload.modalidade,
-              monthlyRate: taxPayload.monthlyRate,
-            }),
-          }),
-        })
-      );
+      expect(upsertRateMutation.mutateAsync).toHaveBeenCalled();
+      const call = upsertRateMutation.mutateAsync.mock.calls[0]?.[0];
+      expect(call).toMatchObject({
+        agreementId: selected.id,
+      });
+      expect(call?.payload?.data).toMatchObject({
+        product: taxPayload.produto,
+        modality: taxPayload.modalidade,
+        monthlyRate: taxPayload.monthlyRate,
+      });
+      expect(call?.payload?.data).not.toHaveProperty('id');
       expect(telemetryMock).toHaveBeenCalledWith('agreements.rate.upserted', expect.any(Object));
       expect(toastSuccess).toHaveBeenCalledWith('Taxa salva com sucesso');
     });
@@ -267,7 +300,7 @@ describe('agreement action hooks', () => {
   describe('useAgreementLifecycleActions', () => {
     it('archives agreements when allowed', async () => {
       const agreements = [createAgreement()];
-      const { default: useAgreementLifecycleActions } = await import('../useAgreementLifecycleActions.ts');
+      const { default: useAgreementLifecycleActions } = await import('../useAgreementLifecycleActions');
       runUpdateMock.mockResolvedValue(null);
 
       const { result } = renderHook(() =>
@@ -293,23 +326,15 @@ describe('agreement action hooks', () => {
 
   describe('useAgreementProviderActions', () => {
     it('syncs provider data when possible', async () => {
-      const { default: useAgreementProviderActions } = await import('../useAgreementProviderActions.ts');
-      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      const { default: useAgreementProviderActions } = await import('../useAgreementProviderActions');
+      const mutations = { ...createMutations(), syncProvider: createMutationMock() };
+      mutations.syncProvider.mutateAsync = vi.fn().mockResolvedValue(undefined);
       const { result } = renderHook(() =>
         useAgreementProviderActions({
           selected: createAgreement(),
           locked: false,
           role: 'admin',
-          mutations: {
-            createAgreement: { mutateAsync: vi.fn() },
-            updateAgreement: { mutateAsync: vi.fn() },
-            upsertWindow: { mutateAsync: vi.fn() },
-            removeWindow: { mutateAsync: vi.fn() },
-            upsertRate: { mutateAsync: vi.fn() },
-            removeRate: { mutateAsync: vi.fn() },
-            importAgreements: { mutateAsync: vi.fn() },
-            syncProvider: { mutateAsync, isPending: false },
-          },
+          mutations,
         })
       );
 
@@ -317,7 +342,7 @@ describe('agreement action hooks', () => {
         await result.current.syncProvider();
       });
 
-      expect(mutateAsync).toHaveBeenCalledWith({
+      expect(mutations.syncProvider.mutateAsync).toHaveBeenCalledWith({
         providerId: 'provider-123',
         payload: { requestedBy: 'admin', reason: 'manual-trigger' },
       });
@@ -330,23 +355,15 @@ describe('agreement action hooks', () => {
     });
 
     it('guards against missing provider ids', async () => {
-      const { default: useAgreementProviderActions } = await import('../useAgreementProviderActions.ts');
-      const mutateAsync = vi.fn();
+      const { default: useAgreementProviderActions } = await import('../useAgreementProviderActions');
+      const mutations = { ...createMutations(), syncProvider: createMutationMock() };
+      mutations.syncProvider.mutateAsync = vi.fn();
       const { result } = renderHook(() =>
         useAgreementProviderActions({
           selected: createAgreement({ metadata: {} }),
           locked: false,
           role: 'admin',
-          mutations: {
-            createAgreement: { mutateAsync: vi.fn() },
-            updateAgreement: { mutateAsync: vi.fn() },
-            upsertWindow: { mutateAsync: vi.fn() },
-            removeWindow: { mutateAsync: vi.fn() },
-            upsertRate: { mutateAsync: vi.fn() },
-            removeRate: { mutateAsync: vi.fn() },
-            importAgreements: { mutateAsync: vi.fn() },
-            syncProvider: { mutateAsync, isPending: false },
-          },
+          mutations,
         })
       );
 
@@ -354,7 +371,7 @@ describe('agreement action hooks', () => {
         await result.current.syncProvider();
       });
 
-      expect(mutateAsync).not.toHaveBeenCalled();
+      expect(mutations.syncProvider.mutateAsync).not.toHaveBeenCalled();
       expect(toastError).toHaveBeenCalledWith('Sincronização disponível apenas para convênios integrados.');
     });
   });

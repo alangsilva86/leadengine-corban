@@ -1,17 +1,17 @@
 import { useMemo } from 'react';
 import useAgreementSelection, {
   type AgreementSelectionState,
-} from '@/features/agreements/hooks/useAgreementSelection.ts';
-import useAgreementBasicActions from '@/features/agreements/hooks/useAgreementBasicActions.ts';
-import useAgreementWindowActions from '@/features/agreements/hooks/useAgreementWindowActions.ts';
-import useAgreementRateActions from '@/features/agreements/hooks/useAgreementRateActions.ts';
-import useAgreementLifecycleActions from '@/features/agreements/hooks/useAgreementLifecycleActions.ts';
-import useAgreementProviderActions from '@/features/agreements/hooks/useAgreementProviderActions.ts';
-import useAgreementUpdateRunner from '@/features/agreements/hooks/useAgreementUpdateRunner.ts';
-import { createHistoryEntryBuilder } from '@/features/agreements/domain/createHistoryEntryBuilder.ts';
+} from '@/features/agreements/hooks/useAgreementSelection';
+import useAgreementBasicActions from '@/features/agreements/hooks/useAgreementBasicActions';
+import useAgreementWindowActions from '@/features/agreements/hooks/useAgreementWindowActions';
+import useAgreementRateActions from '@/features/agreements/hooks/useAgreementRateActions';
+import useAgreementLifecycleActions from '@/features/agreements/hooks/useAgreementLifecycleActions';
+import useAgreementProviderActions from '@/features/agreements/hooks/useAgreementProviderActions';
+import useAgreementUpdateRunner from '@/features/agreements/hooks/useAgreementUpdateRunner';
+import { createHistoryEntryBuilder } from '@/features/agreements/domain/createHistoryEntryBuilder';
 
-import type { UseConvenioCatalogReturn } from './useConvenioCatalog.ts';
-import type { TaxPayload, UpdateBasicPayload, WindowPayload } from './hooks/types.ts';
+import type { UseConvenioCatalogReturn } from './useConvenioCatalog';
+import type { TaxPayload, UpdateBasicPayload, WindowPayload } from './hooks/types';
 
 type ControllerState = AgreementSelectionState;
 
