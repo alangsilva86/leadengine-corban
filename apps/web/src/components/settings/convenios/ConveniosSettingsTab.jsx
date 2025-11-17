@@ -26,6 +26,7 @@ const ConveniosSettingsTab = () => {
       error,
       selectedProviderId,
       isSyncingProvider,
+      isCreating,
     },
     actions: {
       setRole,
@@ -39,6 +40,7 @@ const ConveniosSettingsTab = () => {
       removeWindow,
       upsertTax,
       syncProvider,
+      cancelPending,
     },
     helpers: { mutation: importMutation },
   } = useConvenioSettingsController();
@@ -58,6 +60,16 @@ const ConveniosSettingsTab = () => {
   const handleCreateConvenio = useCallback(async () => {
     await createAgreement(createConvenio);
   }, [createAgreement, createConvenio]);
+
+  const handleDetailsChange = useCallback(
+    (value) => {
+      if (!value) {
+        cancelPending();
+      }
+      setDetailsOpen(value);
+    },
+    [cancelPending, setDetailsOpen]
+  );
 
   return (
     <div className="space-y-6">
@@ -85,7 +97,7 @@ const ConveniosSettingsTab = () => {
       </Card>
       <AgreementDetailSheet
         open={sheetOpen}
-        onOpenChange={setDetailsOpen}
+        onOpenChange={handleDetailsChange}
         selected={selected}
         isDesktop={isDesktop}
         requireApproval={requireApproval}
@@ -98,6 +110,7 @@ const ConveniosSettingsTab = () => {
         onUpsertWindow={upsertWindow}
         onRemoveWindow={removeWindow}
         onUpsertTax={upsertTax}
+        isCreating={isCreating}
       />
       <AgreementImportDialog
         open={importOpen}

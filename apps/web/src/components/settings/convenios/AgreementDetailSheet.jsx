@@ -22,6 +22,7 @@ const AgreementDetailSheet = ({
   onUpsertWindow,
   onRemoveWindow,
   onUpsertTax,
+  isCreating,
 }) => (
   <Sheet open={open} onOpenChange={onOpenChange}>
     {selected ? (
@@ -67,6 +68,7 @@ const AgreementDetailSheet = ({
               onRemoveWindow={onRemoveWindow}
               onUpsertTax={onUpsertTax}
               readOnly={locked}
+              isCreating={isCreating}
             />
           </Suspense>
         </div>

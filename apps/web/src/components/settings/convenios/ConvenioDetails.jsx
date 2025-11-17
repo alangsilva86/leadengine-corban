@@ -4,7 +4,7 @@ import TaxesCard from './taxes/TaxesCard.jsx';
 import SimulationPreview from './simulation/SimulationPreview.jsx';
 import HistoryCard from './history/HistoryCard.jsx';
 
-const ConvenioDetails = ({ convenio, onUpdateBasic, onUpsertWindow, onRemoveWindow, onUpsertTax, readOnly }) => {
+const ConvenioDetails = ({ convenio, onUpdateBasic, onUpsertWindow, onRemoveWindow, onUpsertTax, readOnly, isCreating }) => {
   if (!convenio) {
     return (
       <div className="flex min-h-[280px] items-center justify-center rounded-lg border border-dashed border-border/60 text-sm text-muted-foreground">
@@ -27,8 +27,18 @@ const ConvenioDetails = ({ convenio, onUpdateBasic, onUpsertWindow, onRemoveWind
         onSave={onUpdateBasic}
         disabled={readOnly}
       />
-      <CalendarCard windows={convenio.janelas} onUpsert={onUpsertWindow} onRemove={onRemoveWindow} readOnly={readOnly} />
-      <TaxesCard products={convenio.produtos} taxes={convenio.taxas} onUpsert={onUpsertTax} readOnly={readOnly} />
+      <CalendarCard
+        windows={convenio.janelas}
+        onUpsert={onUpsertWindow}
+        onRemove={onRemoveWindow}
+        readOnly={readOnly || Boolean(isCreating)}
+      />
+      <TaxesCard
+        products={convenio.produtos}
+        taxes={convenio.taxas}
+        onUpsert={onUpsertTax}
+        readOnly={readOnly || Boolean(isCreating)}
+      />
       <SimulationPreview products={convenio.produtos} windows={convenio.janelas} taxes={convenio.taxas} />
       <HistoryCard history={convenio.history ?? []} />
     </div>

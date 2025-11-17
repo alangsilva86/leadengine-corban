@@ -58,6 +58,7 @@ type ControllerState = {
   error: Error | null;
   selectedProviderId: string | null;
   isSyncingProvider: boolean;
+  isCreating: boolean;
 };
 
 type ControllerActions = {
@@ -72,6 +73,7 @@ type ControllerActions = {
   removeWindow: (windowId: string) => Promise<void>;
   upsertTax: (payload: TaxPayload) => Promise<void>;
   syncProvider: () => Promise<void>;
+  cancelPending: () => void;
 };
 
 type ImportDialogState = {
@@ -88,10 +90,16 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
   const [role, setRole] = useState('admin');
   const [requireApproval, setRequireApproval] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingAgreement, setPendingAgreement] = useState<Agreement | null>(null);
 
   const { convenios, isLoading, isFetching, error, refetch, mutations } = useConvenioCatalog();
 
   useEffect(() => {
+    if (pendingAgreement) {
+      setSelectedId(pendingAgreement.id);
+      return;
+    }
+
     if (!convenios.length) {
       setSelectedId(null);
       return;
@@ -103,9 +111,21 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
       }
       return convenios[0]?.id ?? null;
     });
-  }, [convenios]);
+  }, [convenios, pendingAgreement]);
 
-  const selected = useMemo(() => convenios.find((item) => item.id === selectedId) ?? null, [convenios, selectedId]);
+  const selected = useMemo(
+    () => pendingAgreement ?? convenios.find((item) => item.id === selectedId) ?? null,
+    [convenios, pendingAgreement, selectedId]
+  );
+
+  const isCreating = Boolean(pendingAgreement && pendingAgreement.id === selected?.id);
+
+  const displayedConvenios = useMemo(() => {
+    if (!pendingAgreement) {
+      return convenios;
+    }
+    return [pendingAgreement, ...convenios.filter((item) => item.id !== pendingAgreement.id)];
+  }, [convenios, pendingAgreement]);
 
   const readOnly = role === 'seller';
   const locked = readOnly || (requireApproval && role === 'coordinator');
@@ -185,15 +205,24 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
         history: [entry, ...selected.history],
       };
 
-      await runUpdate({
+      const isCreating = Boolean(pendingAgreement && pendingAgreement.id === selected.id);
+
+      const response = await runUpdate({
         nextAgreement: next,
-        toastMessage: 'Dados básicos salvos com sucesso',
-        telemetryEvent: 'agreements.basic.updated',
-        telemetryPayload: { status: payload.status },
+        toastMessage: isCreating ? 'Convênio criado com sucesso' : 'Dados básicos salvos com sucesso',
+        telemetryEvent: isCreating ? 'agreements.created' : 'agreements.basic.updated',
+        telemetryPayload: isCreating ? {} : { status: payload.status },
         note: entry.message,
+        errorMessage: isCreating ? 'Falha ao criar convênio' : 'Falha ao atualizar dados básicos',
+        action: isCreating ? 'create' : 'update',
       });
+
+      if (isCreating && response?.id) {
+        setPendingAgreement(null);
+        setSelectedId(response.id);
+      }
     },
-    [buildHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, locked, pendingAgreement, runUpdate, selected]
   );
 
   const upsertWindow = useCallback(
@@ -317,24 +346,19 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
     }
 
     const convenio = createEmptyAgreement({ author: historyAuthor });
+    setPendingAgreement(convenio);
+    setSelectedId(convenio.id);
 
-    const response = await runUpdate({
-      nextAgreement: convenio,
-      toastMessage: 'Convênio criado',
-      telemetryEvent: 'agreements.created',
-      telemetryPayload: {},
-      note: 'Convênio criado manualmente pelo gestor.',
-      errorMessage: 'Falha ao criar convênio',
-      action: 'create',
-    });
-
-    const agreementId = response?.id ?? convenio.id;
-    setSelectedId(agreementId);
-    return agreementId;
-  }, [historyAuthor, locked, runUpdate]);
+    return convenio.id;
+  }, [historyAuthor, locked]);
 
   const selectConvenio = useCallback((id: string | null) => {
+    setPendingAgreement(null);
     setSelectedId(id);
+  }, []);
+
+  const cancelPending = useCallback(() => {
+    setPendingAgreement(null);
   }, []);
 
   const syncProvider = useCallback(async () => {
@@ -368,13 +392,14 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
       requireApproval,
       readOnly,
       locked,
-      convenios,
+      convenios: displayedConvenios,
       selected,
       isLoading,
       isFetching,
       error,
       selectedProviderId,
       isSyncingProvider: mutations.syncProvider.isPending,
+      isCreating,
     },
     actions: {
       setRole,
@@ -388,6 +413,7 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
       removeWindow,
       upsertTax,
       syncProvider,
+      cancelPending,
     },
     helpers: {
       mutation: mutations.importAgreements,
