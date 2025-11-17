@@ -48,30 +48,52 @@ import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
 import { getRuntimeEnv } from '@/lib/runtime-env.js';
 import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
+import {
+  CONTEXTUAL_NAVIGATION_IDS,
+  NAVIGATION_PAGES,
+  PRIMARY_NAVIGATION_IDS,
+} from '@/features/navigation/routes.ts';
 
 const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
 const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;
 const showWhatsappDebug = isWhatsAppDebugEnabled() || shouldShowWhatsappDebug;
 
+const NAVIGATION_ICON_MAP = {
+  [NAVIGATION_PAGES.dashboard.id]: Home,
+  [NAVIGATION_PAGES.channels.id]: QrCode,
+  [NAVIGATION_PAGES.campaigns.id]: Megaphone,
+  [NAVIGATION_PAGES.inbox.id]: MessageSquare,
+  [NAVIGATION_PAGES.contacts.id]: Users,
+  [NAVIGATION_PAGES.crm.id]: Layers,
+  [NAVIGATION_PAGES.agreements.id]: Briefcase,
+  [NAVIGATION_PAGES.reports.id]: BarChart3,
+  [NAVIGATION_PAGES['whatsapp-debug'].id]: Bug,
+  [NAVIGATION_PAGES['baileys-logs'].id]: ScrollText,
+  [NAVIGATION_PAGES.settings.id]: Settings,
+};
+
 const NAVIGATION_ITEMS = (() => {
-  const primary = [
-    { id: 'dashboard', label: 'Visão Geral', icon: Home },
-    { id: 'channels', label: 'Instâncias & Canais', icon: QrCode },
-    { id: 'campaigns', label: 'Campanhas', icon: Megaphone },
-    { id: 'inbox', label: 'Inbox', icon: MessageSquare },
-  ];
+  const buildNavigationSection = (ids) =>
+    ids
+      .map((id) => {
+        if (id === NAVIGATION_PAGES['whatsapp-debug'].id && !showWhatsappDebug) {
+          return null;
+        }
 
-  const contextual = [
-    { id: 'contacts', label: 'Contatos', icon: Users },
-    { id: 'crm', label: 'CRM', icon: Layers },
-    { id: 'agreements', label: 'Convênios', icon: Briefcase },
-    { id: 'reports', label: 'Relatórios', icon: BarChart3 },
-    ...(showWhatsappDebug ? [{ id: 'whatsapp-debug', label: 'Debug WhatsApp', icon: Bug }] : []),
-    { id: 'baileys-logs', label: 'Logs Baileys', icon: ScrollText },
-    { id: 'settings', label: 'Configurações', icon: Settings },
-  ];
+        const definition = NAVIGATION_PAGES[id];
+        if (!definition) {
+          return null;
+        }
 
-  return { primary, contextual };
+        const IconComponent = NAVIGATION_ICON_MAP[id] ?? Menu;
+        return { ...definition, icon: IconComponent };
+      })
+      .filter(Boolean);
+
+  return {
+    primary: buildNavigationSection(PRIMARY_NAVIGATION_IDS),
+    contextual: buildNavigationSection(CONTEXTUAL_NAVIGATION_IDS),
+  };
 })();
 
 const LayoutHeader = ({ children, className }) => (

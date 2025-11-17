@@ -13,6 +13,7 @@ import useOnboardingJourney from './features/onboarding/useOnboardingJourney.js'
 import { Button } from '@/components/ui/button.jsx';
 import AuthProvider, { useAuth } from './features/auth/AuthProvider.jsx';
 import LoginPage from './features/auth/Login.tsx';
+import { NAVIGATION_PAGES, ONBOARDING_PAGE_IDS } from '@/features/navigation/routes.ts';
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
 const CrmModule = lazy(() => import('./features/crm/CrmModule.jsx'));
@@ -88,6 +89,8 @@ const RouteErrorBoundary = () => {
   );
 };
 
+const ONBOARDING_PAGE_SET = new Set(ONBOARDING_PAGE_IDS);
+
 const dispatchGlobalNavigation = (targetPage) => {
   if (typeof window === 'undefined') {
     return;
@@ -109,40 +112,21 @@ const OnboardingRoute = ({ initialPage, journeyKind = 'app' }) => {
 
   const handleRouteNavigate = useCallback(
     (nextPage) => {
-      if (nextPage === 'contacts') {
+      const definition = NAVIGATION_PAGES[nextPage];
+      const shouldUpdateOnboarding = ONBOARDING_PAGE_SET.has(nextPage);
+
+      if (definition?.path) {
         dispatchGlobalNavigation(nextPage);
-        navigate('/contacts');
+        if (shouldUpdateOnboarding) {
+          handleNavigate(nextPage);
+        }
+        navigate(definition.path);
         return;
       }
 
-      if (nextPage === 'crm') {
-        dispatchGlobalNavigation(nextPage);
-        navigate('/crm');
-        return;
-      }
-
-      if (nextPage === 'channels') {
-        dispatchGlobalNavigation(nextPage);
+      if (shouldUpdateOnboarding) {
         handleNavigate(nextPage);
-        navigate('/channels');
-        return;
       }
-
-      if (nextPage === 'campaigns') {
-        dispatchGlobalNavigation(nextPage);
-        handleNavigate(nextPage);
-        navigate('/campaigns');
-        return;
-      }
-
-      if (nextPage === 'dashboard') {
-        dispatchGlobalNavigation(nextPage);
-        handleNavigate(nextPage);
-        navigate('/');
-        return;
-      }
-
-      handleNavigate(nextPage);
     },
     [handleNavigate, navigate]
   );

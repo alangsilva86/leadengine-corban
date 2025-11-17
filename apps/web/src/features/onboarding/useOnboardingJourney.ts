@@ -2,6 +2,7 @@ import { createElement, lazy, useCallback, useMemo, useRef, type ComponentType, 
 import { isWhatsAppDebugEnabled } from '../debug/featureFlags.js';
 import { getRuntimeEnv } from '../../lib/runtime-env.js';
 import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
+import { ONBOARDING_PAGE_IDS } from '@/features/navigation/routes.ts';
 import type { ChatCommandCenterContainerProps } from '../chat/containers/ChatCommandCenterContainer';
 import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstances.jsx';
 import AcceptInviteStep, { type InviteDetails } from './components/AcceptInviteStep.tsx';
@@ -32,21 +33,7 @@ type CurrentUserLike = {
 
 type OnboardingJourneyKind = 'app' | 'invite';
 
-const ONBOARDING_PAGES: readonly StoredOnboardingPage[] = [
-  'dashboard',
-  'channels',
-  'campaigns',
-  'agreements',
-  'inbox',
-  'reports',
-  'settings',
-  'baileys-logs',
-  'whatsapp-debug',
-  'whatsapp',
-  'accept-invite',
-  'team',
-  'complete',
-];
+const ONBOARDING_PAGES: readonly StoredOnboardingPage[] = ONBOARDING_PAGE_IDS;
 
 const Dashboard = lazy(() => import('../../components/Dashboard.jsx'));
 const AgreementGrid = lazy(() => import('../../components/AgreementGrid.jsx'));
