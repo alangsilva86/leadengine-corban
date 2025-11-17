@@ -431,7 +431,7 @@ describe('Outbound message routes', () => {
     expect(updatedEvent).toBeDefined();
     expect((updatedEvent?.payload as { status?: string })?.status).toBe('SENT');
 
-    const metricsSnapshot = renderMetrics();
+    const metricsSnapshot = await renderMetrics();
     expect(metricsSnapshot).toContain(
       'whatsapp_outbound_total{instanceId="instance-001",origin="ticket-service",status="SENT",tenantId="tenant-123"} 1'
     );

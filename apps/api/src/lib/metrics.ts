@@ -1,3 +1,5 @@
+import { resetUserMetrics, userMetricsRegistry } from '../metrics/user-metrics';
+
 const WEBHOOK_METRIC = 'whatsapp_webhook_events_total';
 const WEBHOOK_HELP = '# HELP whatsapp_webhook_events_total Contador de eventos recebidos pelo webhook de WhatsApp';
 const WEBHOOK_TYPE = '# TYPE whatsapp_webhook_events_total counter';
@@ -573,7 +575,7 @@ export const agreementsSyncLastSuccessGauge = {
   },
 };
 
-export const renderMetrics = (): string => {
+export const renderMetrics = async (): Promise<string> => {
   const lines: string[] = [];
 
   lines.push(WEBHOOK_HELP, WEBHOOK_TYPE);
@@ -832,7 +834,23 @@ export const renderMetrics = (): string => {
     }
   }
 
-  return `${lines.join('\n')}\n`;
+  const basePayload = `${lines.join('\n')}\n`;
+
+  const hasUserMetrics = userMetricsRegistry.getMetricsAsArray().length > 0;
+  if (!hasUserMetrics) {
+    return basePayload;
+  }
+
+  const userMetricsSnapshot = await userMetricsRegistry.metrics();
+  if (!userMetricsSnapshot.trim()) {
+    return basePayload;
+  }
+
+  const normalizedSnapshot = userMetricsSnapshot.endsWith('\n')
+    ? userMetricsSnapshot
+    : `${userMetricsSnapshot}\n`;
+
+  return `${basePayload}${normalizedSnapshot}`;
 };
 
 export const resetMetrics = (): void => {
@@ -862,4 +880,5 @@ export const resetMetrics = (): void => {
   agreementsSyncDurationStore.clear();
   agreementsSyncLastSuccessStore.clear();
   labelValueTracker.clear();
+  resetUserMetrics();
 };

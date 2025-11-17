@@ -70,6 +70,25 @@ export interface paths {
      */
     post: operations["createInstanceMessage"];
   };
+  "/api/users": {
+    /**
+     * Lista usuários do tenant autenticado
+     * @description Retorna os usuários cadastrados no tenant filtrando por status ativo ou inativo.
+     */
+    get: operations["listUsers"];
+    /** Cria um novo usuário para o tenant */
+    post: operations["createUser"];
+  };
+  "/api/users/invites": {
+    /** Gera um convite para um novo usuário do tenant */
+    post: operations["createUserInvite"];
+  };
+  "/api/users/{userId}": {
+    /** Desativa um usuário do tenant */
+    delete: operations["deactivateUser"];
+    /** Atualiza role ou status de um usuário existente */
+    patch: operations["updateUser"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -566,6 +585,73 @@ export interface components {
       status: string;
       externalId: string | null;
       error: components["schemas"]["OutboundMessageError"];
+    };
+    /**
+     * @description Papel atribuído ao usuário dentro do tenant.
+     * @enum {string}
+     */
+    UserRole: "ADMIN" | "SUPERVISOR" | "AGENT";
+    UserSummary: {
+      id: string;
+      /** Format: email */
+      email: string;
+      name: string;
+      role: components["schemas"]["UserRole"];
+      isActive: boolean;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+      /** Format: date-time */
+      lastLoginAt?: string | null;
+    };
+    CreateUserRequest: {
+      name: string;
+      /** Format: email */
+      email: string;
+      password: string;
+      role: components["schemas"]["UserRole"];
+    };
+    UpdateUserRequest: {
+      role?: components["schemas"]["UserRole"];
+      isActive?: boolean;
+    };
+    UserListResponse: {
+      /** @enum {boolean} */
+      success: true;
+      data: {
+        users: components["schemas"]["UserSummary"][];
+      };
+    };
+    UserMutationResponse: {
+      /** @enum {boolean} */
+      success: true;
+      data: components["schemas"]["UserSummary"];
+    };
+    CreateUserInviteRequest: {
+      /** Format: email */
+      email: string;
+      role: components["schemas"]["UserRole"];
+      expiresInDays?: number;
+    };
+    UserInvite: {
+      id: string;
+      token: string;
+      /** Format: email */
+      email: string;
+      /** Format: date-time */
+      expiresAt?: string | null;
+      /** @enum {string} */
+      status: "pending" | "accepted" | "expired" | "revoked";
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    UserInviteResponse: {
+      /** @enum {boolean} */
+      success: true;
+      data: components["schemas"]["UserInvite"];
     };
     ErrorResponse: {
       /** @enum {boolean} */
@@ -1213,6 +1299,203 @@ export interface operations {
       202: {
         content: {
           "application/json": components["schemas"]["OutboundMessageResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Lista usuários do tenant autenticado
+   * @description Retorna os usuários cadastrados no tenant filtrando por status ativo ou inativo.
+   */
+  listUsers: {
+    parameters: {
+      query?: {
+        /** @description Filtra usuários por status (ativo, inativo ou todos). */
+        status?: "all" | "active" | "inactive";
+      };
+    };
+    responses: {
+      /** @description Coleção de usuários do tenant. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["UserListResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada para o perfil do usuário. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** Cria um novo usuário para o tenant */
+  createUser: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateUserRequest"];
+      };
+    };
+    responses: {
+      /** @description Usuário criado com sucesso. */
+      201: {
+        content: {
+          "application/json": components["schemas"]["UserMutationResponse"];
+        };
+      };
+      /** @description Payload inválido. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Usuário com o mesmo e-mail já existe. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** Gera um convite para um novo usuário do tenant */
+  createUserInvite: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateUserInviteRequest"];
+      };
+    };
+    responses: {
+      /** @description Convite criado com sucesso. */
+      201: {
+        content: {
+          "application/json": components["schemas"]["UserInviteResponse"];
+        };
+      };
+      /** @description Payload inválido. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Usuário com o mesmo e-mail já existe. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** Desativa um usuário do tenant */
+  deactivateUser: {
+    parameters: {
+      path: {
+        userId: string;
+      };
+    };
+    responses: {
+      /** @description Usuário desativado com sucesso. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["UserMutationResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Usuário não encontrado. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Não é permitido desativar o próprio usuário. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** Atualiza role ou status de um usuário existente */
+  updateUser: {
+    parameters: {
+      path: {
+        userId: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateUserRequest"];
+      };
+    };
+    responses: {
+      /** @description Usuário atualizado com sucesso. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["UserMutationResponse"];
+        };
+      };
+      /** @description Payload inválido. */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ValidationErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Operação não autorizada. */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Usuário não encontrado. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

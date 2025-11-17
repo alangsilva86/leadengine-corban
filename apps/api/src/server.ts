@@ -47,6 +47,7 @@ import {
 } from './features/debug/routes/messages';
 import { agreementsProvidersRouter } from './routes/agreements.providers';
 import { tenantsRouter } from './routes/tenants';
+import { usersRouter } from './routes/users';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -329,8 +330,8 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-app.get('/metrics', (_req, res) => {
-  const payload = renderMetrics();
+app.get('/metrics', async (_req, res) => {
+  const payload = await renderMetrics();
   res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
   res.status(200).send(payload);
   logger.info('📈 Métricas Prometheus servidas', {
@@ -448,6 +449,7 @@ app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
 app.use('/api/tenants', authMiddleware, requireTenant, tenantsRouter);
+app.use('/api/users', authMiddleware, requireTenant, usersRouter);
 app.use('/api/v1/agreements', authMiddleware, requireTenant, agreementsProvidersRouter);
 app.use('/api', authMiddleware, preferencesRouter);
 
