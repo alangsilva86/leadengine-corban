@@ -193,11 +193,10 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - `GET /metrics`: exporta métricas Prometheus, incluindo contadores do broker (`lib/metrics.ts`).
 - `GET /api/integrations/metrics`: visão específica das filas/eventos WhatsApp.
 
-### Onboarding & convites
 - `POST /api/onboarding/invites/validate`: confirma se o token recebido por e-mail/SMS ainda está ativo e retorna os metadados do convite (e-mail esperado, sugestão de slug, canal).
 - `POST /api/onboarding/setup`: consome o token, cria o tenant, fila principal, convênio e campanha inicial, registra o primeiro operador como ADMIN e devolve um JWT pronto para ser armazenado no frontend.
-- Variáveis `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER` e `ONBOARDING_PORTAL_BASE_URL` controlam as mensagens enviadas ao operador e o link do portal (`/onboarding`).
-- **Provisionamento em produção**: gere um token inserindo um registro em `onboarding_invites` (via Prisma Studio, seed ou SQL direto) contendo `token`, `email` e, opcionalmente, `organization`/`tenantSlugHint`. Compartilhe o link `${ONBOARDING_PORTAL_BASE_URL}?token=<TOKEN>` com o cliente; o operador valida o convite em `/onboarding`, define o nome/slug da equipe, cria a senha do primeiro administrador e, ao final, sai autenticado com o JWT retornado por `/api/onboarding/setup`. Não há mais necessidade de semear usuários demo quando o fluxo de convites está disponível.
+- `GET /api/onboarding/invitations`, `POST /api/onboarding/invitations`, `POST /api/onboarding/invitations/:id/resend`, `POST /api/onboarding/invitations/:id/revoke`: endpoints autenticados que listam, emitem, reenviam e revogam convites. Eles utilizam o serviço `apps/api/src/services/onboarding-invites-service.ts`, que gera tokens únicos, preenche `organization`/`tenantSlugHint` automaticamente e despacha e-mail/SMS utilizando `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER` e `ONBOARDING_PORTAL_BASE_URL`.
+- **Provisionamento em produção**: use o fluxo automatizado acima — o dashboard passa a expor uma aba "Onboarding" dentro de Configurações com um formulário React Query para emitir convites, copiar o link `${ONBOARDING_PORTAL_BASE_URL}?token=<TOKEN>` e acompanhar status/envios sem sair do app. O operador valida o convite em `/onboarding`, define o nome/slug da equipe, cria a senha do primeiro administrador e, ao final, sai autenticado com o JWT retornado por `/api/onboarding/setup`. Não há mais necessidade de semear usuários demo ou mexer direto em `onboarding_invites`.
 
 ---
 
@@ -215,6 +214,7 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - Socket.IO client para eventos de tickets/mensagens em tempo real.
 - QR code generator (`features/whatsapp/`) para pareamento de instâncias.
 - Debug dashboards (`features/debug/`) conectados às métricas da API.
+- Nova aba "Onboarding" em `components/Settings` alimentada por React Query para emissão, reenvio e revogação de convites usando os novos endpoints protegidos.
 - **Portal público `/onboarding`** com três etapas (aceite do convite → provisionamento de equipe → conexão WhatsApp). Ele usa o hook `useOnboardingJourney` em modo `journeyKind=invite`, renderiza `AcceptInviteStep`, `TeamSetupStep` e `OnboardingCompleteStep` e compartilha o mesmo provider de instâncias para desbloquear o pareamento imediatamente após o cadastro.
 
 ---

@@ -16,6 +16,7 @@ import { leadsRouter } from './routes/leads';
 import { contactsRouter, contactTasksRouter } from './routes/contacts';
 import { authRouter } from './routes/auth';
 import { onboardingRouter } from './routes/onboarding';
+import { onboardingInvitationsRouter } from './routes/onboarding-invitations';
 import { integrationWebhooksRouter, webhooksRouter } from './routes/webhooks';
 import { integrationsRouter } from './routes/integrations';
 import { leadEngineRouter } from './routes/lead-engine';
@@ -408,6 +409,7 @@ app.get('/_diag/ai-auto-reply', async (_req, res) => {
 
 // Rotas públicas (sem autenticação)
 app.use('/api/auth', authRouter);
+app.use('/api/onboarding/invitations', authMiddleware, onboardingInvitationsRouter);
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);

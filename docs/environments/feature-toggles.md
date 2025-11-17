@@ -25,3 +25,10 @@ railway variables set FEATURE_DEBUG_WHATSAPP=true --service leadengine-corban-we
 
 Substitua `true` por `false` para desativar. Nenhum rebuild é disparado; apenas um restart rápido do container é recomendado para
 propagar o novo valor.
+
+## Fluxo automatizado de convites
+
+O módulo de convites (`/api/onboarding/invitations` e a nova aba "Onboarding" do dashboard) não depende de feature flag, mas sim
+das variáveis `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER`, `ONBOARDING_PORTAL_BASE_URL` e `VITE_AUTH_PROVIDER=invite`.
+Mantenha esses valores alinhados entre API e Web para habilitar o fluxo completo (emissão → envio → acompanhamento) sem precisar
+editar registros manualmente no banco.
