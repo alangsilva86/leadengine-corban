@@ -3,7 +3,6 @@ import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { cn } from '@/lib/utils.js';
-import useStatusToneClasses from '@/hooks/use-status-tone-classes.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 import InstanceBadge from '../Shared/InstanceBadge.jsx';
 
@@ -49,8 +48,7 @@ const formatTime = (iso) => {
 
 const QueueListItem = ({ ticket, selected, onSelect, selectedForBulk = false, onToggleSelection }) => {
   const windowStats = ticket?.window;
-  const { label: slaLabel, tone: slaTone } = resolveWindowStatus(windowStats?.remainingMinutes ?? null);
-  const slaToneClasses = useStatusToneClasses(slaTone, { uppercase: false, className: 'text-xs' });
+  const { label: slaLabel } = resolveWindowStatus(windowStats?.remainingMinutes ?? null);
   const lastInbound = formatTime(ticket?.timeline?.lastInboundAt);
   const lastOutbound = formatTime(ticket?.timeline?.lastOutboundAt);
   const agentTyping = ticket?.timeline?.typing;

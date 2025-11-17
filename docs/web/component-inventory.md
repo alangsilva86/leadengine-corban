@@ -86,7 +86,6 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 ### Global hooks (`apps/web/src/hooks`)
 
 - `use-media-query.js`
-- `use-status-tone-classes.js`
 
 ### Feature hooks
 
