@@ -127,8 +127,15 @@ describe('agreement action hooks', () => {
   });
 
   describe('useAgreementWindowActions', () => {
-    it('upserts and removes agreement windows', async () => {
-      const selected = createAgreement({ janelas: [] });
+    it('upserts agreement windows according to the dialog intent and removes entries when requested', async () => {
+      const baseWindow = {
+        id: 'window-1',
+        label: 'Janeiro',
+        start: new Date('2024-01-01'),
+        end: new Date('2024-01-31'),
+        firstDueDate: new Date('2024-02-10'),
+      } as const;
+
       const upsertWindowMutation = { mutateAsync: vi.fn().mockResolvedValue(null) };
       const removeWindowMutation = { mutateAsync: vi.fn().mockResolvedValue(null) };
       const mutations = {
@@ -137,44 +144,62 @@ describe('agreement action hooks', () => {
       } as unknown as Pick<UseConvenioCatalogReturn['mutations'], 'upsertWindow' | 'removeWindow'>;
       const { default: useAgreementWindowActions } = await import('../useAgreementWindowActions.ts');
 
-      const { result } = renderHook(() =>
-        useAgreementWindowActions({
-          selected,
-          locked: false,
-          buildHistoryEntry,
-          historyAuthor: 'Admin',
-          role: 'admin',
-          mutations,
-        })
-      );
+      const initialAgreement = createAgreement({ janelas: [] });
 
-      const windowPayload = {
-        id: 'window-1',
-        label: 'Janeiro',
-        start: new Date('2024-01-01'),
-        end: new Date('2024-01-31'),
-        firstDueDate: new Date('2024-02-10'),
-      } satisfies Parameters<typeof result.current.upsertWindow>[0];
+      const { result, rerender } = renderHook(
+        (props: Parameters<typeof useAgreementWindowActions>[0]) => useAgreementWindowActions(props),
+        {
+          initialProps: {
+            selected: initialAgreement,
+            locked: false,
+            buildHistoryEntry,
+            historyAuthor: 'Admin',
+            role: 'admin',
+            mutations,
+          },
+        }
+      );
 
       await act(async () => {
-        await result.current.upsertWindow(windowPayload);
+        await result.current.upsertWindow({ ...baseWindow, mode: 'create' });
       });
 
-      expect(upsertWindowMutation.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          agreementId: selected.id,
-          payload: expect.objectContaining({
-            data: expect.objectContaining({ id: 'window-1' }),
-          }),
-        })
-      );
+      const createCall = upsertWindowMutation.mutateAsync.mock.calls[0]?.[0];
+      expect(createCall?.payload?.data).not.toHaveProperty('id');
+
+      const agreementWithWindow = createAgreement({
+        janelas: [
+          {
+            ...baseWindow,
+            tableId: null,
+            isActive: true,
+            metadata: {},
+          },
+        ],
+      });
+
+      rerender({
+        selected: agreementWithWindow,
+        locked: false,
+        buildHistoryEntry,
+        historyAuthor: 'Admin',
+        role: 'admin',
+        mutations,
+      });
+
+      await act(async () => {
+        await result.current.upsertWindow({ ...baseWindow, mode: 'update' });
+      });
+
+      const updateCall = upsertWindowMutation.mutateAsync.mock.calls.at(-1)?.[0];
+      expect(updateCall?.payload?.data?.id).toBe('window-1');
 
       await act(async () => {
         await result.current.removeWindow('window-1');
       });
 
       expect(removeWindowMutation.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ agreementId: selected.id, windowId: 'window-1' })
+        expect.objectContaining({ agreementId: agreementWithWindow.id, windowId: 'window-1' })
       );
     });
   });

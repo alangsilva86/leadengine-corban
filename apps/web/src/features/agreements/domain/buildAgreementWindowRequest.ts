@@ -20,6 +20,7 @@ type BuildAgreementWindowRequestParams = {
   actorRole: string;
   note?: string;
   meta?: AgreementWindowRequest['meta'];
+  includeId?: boolean;
 };
 
 export const buildAgreementWindowRequest = ({
@@ -28,6 +29,16 @@ export const buildAgreementWindowRequest = ({
   actorRole,
   note,
   meta,
+  includeId = true,
+}: BuildAgreementWindowRequestParams): AgreementWindowRequest => {
+  const tableId = resolveTableId(window);
+  const metadata = (() => {
+    const firstDueDate = toIsoString(window.firstDueDate);
+    return firstDueDate ? { firstDueDate } : {};
+  })();
+
+  const data: AgreementWindowRequest['data'] = {
+    ...(includeId ? { id: window.id } : {}),
 }: BuildAgreementWindowRequestParams): AgreementWindowRequest => {
   const tableId = resolveTableId(window);
 
@@ -37,6 +48,10 @@ export const buildAgreementWindowRequest = ({
     startsAt: toIsoString(window.start),
     endsAt: toIsoString(window.end),
     isActive: true,
+    metadata,
+    ...(tableId ? { tableId } : {}),
+  };
+
     metadata: (() => {
       const firstDueDate = toIsoString(window.firstDueDate);
       return firstDueDate ? { firstDueDate } : {};

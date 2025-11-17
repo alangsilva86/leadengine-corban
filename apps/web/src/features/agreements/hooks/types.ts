@@ -15,6 +15,7 @@ export type WindowPayload = {
   start: Date;
   end: Date;
   firstDueDate: Date;
+  mode?: 'create' | 'update';
 };
 
 export type TaxPayload = {

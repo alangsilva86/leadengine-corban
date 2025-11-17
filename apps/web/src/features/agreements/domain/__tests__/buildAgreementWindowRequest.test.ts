@@ -58,4 +58,15 @@ describe('buildAgreementWindowRequest', () => {
 
     expect(withTable.data.tableId).toBe('table-1');
   });
+
+  it('omits identifier when instructed', () => {
+    const request = buildAgreementWindowRequest({
+      window: baseWindow,
+      actor: 'Admin',
+      actorRole: 'admin',
+      includeId: false,
+    });
+
+    expect('id' in request.data).toBe(false);
+  });
 });
