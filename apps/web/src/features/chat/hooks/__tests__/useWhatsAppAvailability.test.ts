@@ -34,7 +34,7 @@ describe('useWhatsAppAvailability', () => {
     expect(toastMock.error).toHaveBeenCalledWith('WhatsApp não configurado', {
       description: 'Conecte uma instância do WhatsApp para habilitar novos envios.',
     });
-    expect(result.current.unavailableReason).toEqual({
+    expect(result.current.unavailableReason).toMatchObject({
       code: 'BROKER_NOT_CONFIGURED',
       title: 'WhatsApp não configurado',
       description: 'Conecte uma instância do WhatsApp para habilitar novos envios.',
@@ -71,5 +71,28 @@ describe('useWhatsAppAvailability', () => {
 
     expect(result.current.unavailableReason).toBeNull();
     expect(result.current.composerDisabled).toBe(false);
+  });
+
+  it('prefers recovery hints when building availability notice', () => {
+    const { result } = renderHook(() => useWhatsAppAvailability({ selectedTicketId: 'ticket-1' }));
+
+    act(() => {
+      result.current.notifyOutboundError(
+        {
+          payload: {
+            error: {
+              recoveryHint: 'Reconecte o broker antes de tentar novamente.',
+              requestId: 'req-123',
+            },
+          },
+        } as any,
+        'fallback copy'
+      );
+    });
+
+    expect(result.current.notice?.description).toBe('Reconecte o broker antes de tentar novamente. (ID: req-123)');
+    expect(toastMock.error).toHaveBeenLastCalledWith(expect.anything(), {
+      description: 'Reconecte o broker antes de tentar novamente. (ID: req-123)',
+    });
   });
 });

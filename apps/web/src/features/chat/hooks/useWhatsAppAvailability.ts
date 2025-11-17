@@ -51,7 +51,7 @@ export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailab
             ? error.payload.requestId
             : error?.requestId ?? null;
       const description =
-        copy.description ?? recoveryHint ?? fallback;
+        recoveryHint ?? copy.description ?? fallback;
       const enrichedDescription = requestId ? `${description} (ID: ${requestId})` : description;
 
       toast.error(title, { description: enrichedDescription });
