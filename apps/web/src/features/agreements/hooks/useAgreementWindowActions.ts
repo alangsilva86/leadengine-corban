@@ -45,6 +45,7 @@ const useAgreementWindowActions = ({
         actor: historyAuthor,
         actorRole: role,
         note: entry.message,
+        includeId: exists,
       });
 
       const action = exists ? 'update-window' : 'create-window';
