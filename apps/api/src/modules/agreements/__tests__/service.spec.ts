@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AgreementImportJobRecord, AgreementsRepository } from '../repository';
+import type { AgreementImportJobRecord, AgreementsRepository, AgreementRecord } from '../repository';
 import { AgreementsService } from '../service';
 
 const buildLogger = () => ({
@@ -14,6 +14,14 @@ describe('AgreementsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  const slugConflictError = {
+    name: 'PrismaClientKnownRequestError',
+    code: 'P2002',
+    meta: {
+      target: ['agreements_tenantId_slug_key'],
+    },
+  };
 
   it('rejects updates when agreement does not belong to tenant', async () => {
     const repository: Partial<AgreementsRepository> = {
@@ -34,6 +42,72 @@ describe('AgreementsService', () => {
 
     expect(repository.findAgreementById).toHaveBeenCalledWith('tenant-1', 'agreement-1');
     expect(repository.updateAgreement).not.toHaveBeenCalled();
+  });
+
+  it('returns a friendly error when slug already exists during creation', async () => {
+    const repository: Partial<AgreementsRepository> = {
+      createAgreement: vi.fn().mockRejectedValue(slugConflictError),
+    };
+
+    const logger = buildLogger();
+    const service = new AgreementsService({
+      repository: repository as AgreementsRepository,
+      logger,
+    });
+
+    await expect(
+      service.createAgreement('tenant-1', { name: 'Novo Convênio', slug: 'novo-convenio' }, { id: 'actor', name: 'Actor' })
+    ).rejects.toMatchObject({ code: 'AGREEMENT_SLUG_CONFLICT', status: 409 });
+
+    expect(repository.createAgreement).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[/agreements] slug conflict on create',
+      expect.objectContaining({ tenantId: 'tenant-1', slug: 'novo-convenio' })
+    );
+  });
+
+  it('returns a friendly error when slug already exists during update', async () => {
+    const existing: AgreementRecord = {
+      id: 'agreement-1',
+      tenantId: 'tenant-1',
+      name: 'Convênio existente',
+      slug: 'existing',
+      status: 'draft',
+      type: null,
+      segment: null,
+      description: null,
+      tags: [],
+      products: {},
+      metadata: {},
+      archived: false,
+      publishedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      tables: [],
+      windows: [],
+      rates: [],
+      history: [],
+    };
+
+    const repository: Partial<AgreementsRepository> = {
+      findAgreementById: vi.fn().mockResolvedValue(existing),
+      updateAgreement: vi.fn().mockRejectedValue(slugConflictError),
+    };
+
+    const logger = buildLogger();
+    const service = new AgreementsService({
+      repository: repository as AgreementsRepository,
+      logger,
+    });
+
+    await expect(
+      service.updateAgreement('tenant-1', 'agreement-1', { slug: 'novo-convenio' }, { id: 'actor', name: 'Actor' })
+    ).rejects.toMatchObject({ code: 'AGREEMENT_SLUG_CONFLICT', status: 409 });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[/agreements] slug conflict on update',
+      expect.objectContaining({ tenantId: 'tenant-1', agreementId: 'agreement-1', slug: 'novo-convenio' })
+    );
   });
 
   it('returns existing import job when checksum was already processed', async () => {

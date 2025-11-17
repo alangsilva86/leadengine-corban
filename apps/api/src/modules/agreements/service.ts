@@ -199,6 +199,43 @@ const mapHistory = (record: AgreementHistoryRecord): AgreementHistoryDto => ({
   metadata: { ...record.metadata },
 });
 
+const readErrorCode = (error: unknown): string | null => {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const candidate = error as { code?: unknown };
+  return typeof candidate.code === 'string' ? candidate.code : null;
+};
+
+const includesSlugTarget = (target: unknown): boolean => {
+  if (!target) {
+    return false;
+  }
+
+  const targets = Array.isArray(target) ? target : [target];
+  return targets.some(
+    (item) => typeof item === 'string' && item.toLowerCase().includes('slug')
+  );
+};
+
+const isSlugConflictError = (error: unknown): boolean => {
+  const code = readErrorCode(error);
+  if (code !== 'P2002') {
+    return false;
+  }
+
+  const candidate = error as { meta?: { target?: unknown } };
+  const target = candidate.meta?.target;
+  return includesSlugTarget(target) || target === undefined;
+};
+
+const createSlugConflictError = () =>
+  Object.assign(new Error('Slug já em uso. Atualize o nome do convênio e tente novamente.'), {
+    code: 'AGREEMENT_SLUG_CONFLICT',
+    status: 409,
+  });
+
 const mapImportJob = (record: AgreementImportJobRecord): AgreementImportJobDto => ({
   id: record.id,
   agreementId: record.agreementId,
@@ -253,20 +290,35 @@ export class AgreementsService {
     actor: ActorContext | null,
     audit?: AgreementAuditMetadata | null
   ): Promise<AgreementDto> {
-    const created = await this.repository.createAgreement({
-      tenantId,
-      name: payload.name!,
-      slug: payload.slug!,
-      status: payload.status ?? 'draft',
-      type: payload.type ?? null,
-      segment: payload.segment ?? null,
-      description: payload.description ?? null,
-      tags: payload.tags ?? [],
-      products: payload.products ?? {},
-      metadata: payload.metadata ?? {},
-      archived: payload.archived ?? false,
-      publishedAt: payload.publishedAt ?? null,
-    });
+    let created: AgreementRecord;
+    try {
+      created = await this.repository.createAgreement({
+        tenantId,
+        name: payload.name!,
+        slug: payload.slug!,
+        status: payload.status ?? 'draft',
+        type: payload.type ?? null,
+        segment: payload.segment ?? null,
+        description: payload.description ?? null,
+        tags: payload.tags ?? [],
+        products: payload.products ?? {},
+        metadata: payload.metadata ?? {},
+        archived: payload.archived ?? false,
+        publishedAt: payload.publishedAt ?? null,
+      });
+    } catch (error) {
+      if (isSlugConflictError(error)) {
+        const slugReference = payload.slug ?? payload.name ?? 'convênio';
+        this.logger.warn('[/agreements] slug conflict on create', {
+          tenantId,
+          slug: slugReference,
+          error,
+        });
+        throw createSlugConflictError();
+      }
+
+      throw error;
+    }
 
     await this.appendHistory(tenantId, created.id, {
       actor,
@@ -302,19 +354,36 @@ export class AgreementsService {
       throw Object.assign(new Error('Agreement not found'), { code: 'AGREEMENT_NOT_FOUND', status: 404 });
     }
 
-    const updated = await this.repository.updateAgreement(tenantId, agreementId, {
-      name: payload.name ?? existing.name,
-      slug: payload.slug ?? existing.slug,
-      status: payload.status ?? existing.status,
-      type: payload.type ?? existing.type,
-      segment: payload.segment ?? existing.segment,
-      description: payload.description ?? existing.description,
-      tags: payload.tags ?? existing.tags,
-      products: payload.products ?? existing.products,
-      metadata: payload.metadata ?? existing.metadata,
-      archived: payload.archived ?? existing.archived,
-      publishedAt: payload.publishedAt ?? existing.publishedAt,
-    });
+    let updated: AgreementRecord;
+
+    try {
+      updated = await this.repository.updateAgreement(tenantId, agreementId, {
+        name: payload.name ?? existing.name,
+        slug: payload.slug ?? existing.slug,
+        status: payload.status ?? existing.status,
+        type: payload.type ?? existing.type,
+        segment: payload.segment ?? existing.segment,
+        description: payload.description ?? existing.description,
+        tags: payload.tags ?? existing.tags,
+        products: payload.products ?? existing.products,
+        metadata: payload.metadata ?? existing.metadata,
+        archived: payload.archived ?? existing.archived,
+        publishedAt: payload.publishedAt ?? existing.publishedAt,
+      });
+    } catch (error) {
+      if (isSlugConflictError(error)) {
+        const slugReference = payload.slug ?? existing.slug ?? payload.name ?? 'convênio';
+        this.logger.warn('[/agreements] slug conflict on update', {
+          tenantId,
+          agreementId,
+          slug: slugReference,
+          error,
+        });
+        throw createSlugConflictError();
+      }
+
+      throw error;
+    }
 
     await this.appendHistory(tenantId, agreementId, {
       actor,

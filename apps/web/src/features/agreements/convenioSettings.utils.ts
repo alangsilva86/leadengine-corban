@@ -38,6 +38,12 @@ export const resolveProviderId = (metadata: Agreement['metadata'] | null | undef
   return trimmed.length ? trimmed : null;
 };
 
-export const getErrorMessage = (error: unknown, fallback: string) =>
-  (error as { payload?: { error?: { message?: string } } })?.payload?.error?.message ??
-  (error instanceof Error ? error.message : fallback);
+export const getErrorMessage = (error: unknown, fallback: string) => {
+  const payloadError = (error as { payload?: { error?: { message?: string; code?: string } } })?.payload?.error;
+
+  if (payloadError?.code === 'AGREEMENT_SLUG_CONFLICT') {
+    return payloadError.message ?? 'Slug já em uso. Atualize o nome do convênio antes de salvar.';
+  }
+
+  return payloadError?.message ?? (error instanceof Error ? error.message : fallback);
+};
