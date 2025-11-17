@@ -7,8 +7,16 @@ import { Label } from '@/components/ui/label.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { useAuth } from './AuthProvider.jsx';
 import { getTenantId } from '@/lib/auth.js';
+import { getEnvVar } from '@/lib/runtime-env.js';
 
-const initialTenant = getTenantId() ?? '';
+const resolveEnvString = (value: unknown) => (typeof value === 'string' ? value : '');
+
+const storedTenant = getTenantId() ?? '';
+const defaultTenantHint = resolveEnvString(getEnvVar('VITE_DEFAULT_TENANT_HINT', ''));
+const initialTenant = storedTenant || defaultTenantHint;
+const prefillEmail = resolveEnvString(getEnvVar('VITE_AUTH_PREFILL_EMAIL', ''));
+const prefillPassword = resolveEnvString(getEnvVar('VITE_AUTH_PREFILL_PASSWORD', ''));
+const authProvider = resolveEnvString(getEnvVar('VITE_AUTH_PROVIDER', 'internal')).toLowerCase();
 
 const normalize = (value: string) => value.trim();
 
@@ -23,9 +31,11 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { status, loading, login, recoverPassword, selectTenant } = useAuth();
   const [mode, setMode] = useState<'login' | 'recover'>('login');
-  const [form, setForm] = useState({ email: '', password: '', tenantSlug: initialTenant });
+  const [form, setForm] = useState({ email: prefillEmail, password: prefillPassword, tenantSlug: initialTenant });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const showOnboardingShortcut = authProvider === 'invite';
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -165,13 +175,23 @@ export default function LoginPage() {
                 Voltar para o login
               </button>
             )}
-            <p>
-              Precisa de ajuda? Entre em contato com o suporte ou{' '}
-              <Link to="/" className="text-primary underline-offset-2 hover:underline">
-                volte para a página inicial
-              </Link>
-              .
-            </p>
+            {showOnboardingShortcut ? (
+              <p>
+                Recebeu um convite?{' '}
+                <Link to="/onboarding" className="text-primary underline-offset-2 hover:underline">
+                  Iniciar onboarding guiado
+                </Link>
+                .
+              </p>
+            ) : (
+              <p>
+                Precisa de ajuda? Entre em contato com o suporte ou{' '}
+                <Link to="/" className="text-primary underline-offset-2 hover:underline">
+                  volte para a página inicial
+                </Link>
+                .
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

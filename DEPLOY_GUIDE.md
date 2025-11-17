@@ -50,11 +50,14 @@ nano .env
 
 **⚠️ IMPORTANTE**: Altere os seguintes valores obrigatoriamente:
 
-- `POSTGRES_PASSWORD`: Use uma senha forte
-- `JWT_SECRET`: Gere com `openssl rand -base64 64`
-- `FRONTEND_URL`: Seu domínio real
-- `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula
-- `VITE_API_URL`: URL da API (ex: https://api.seudominio.com)
+- `DATABASE_URL`: string completa de conexão PostgreSQL usada pela API (Compose já exporta, mas pipelines como Render exigem o valor explícito).
+- `POSTGRES_PASSWORD`: Use uma senha forte para o banco interno (caso utilize Compose).
+- `JWT_SECRET`: Gere com `openssl rand -base64 64` — sem ele a emissão de tokens falhará.
+- `FRONTEND_URL`: Seu domínio real.
+- `CORS_ALLOWED_ORIGINS`: Caso tenha múltiplos domínios/frontends que consomem a API, liste-os separados por vírgula.
+- `VITE_API_URL`: URL da API (ex: https://api.seudominio.com) consumida pelo frontend.
+- `VITE_AUTH_PROVIDER`, `VITE_DEFAULT_TENANT_HINT`, `VITE_AUTH_PREFILL_EMAIL`, `VITE_AUTH_PREFILL_PASSWORD`: controlam o formulário de login e o link "Iniciar onboarding guiado" quando o provider é `invite`.
+- `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER` e `ONBOARDING_PORTAL_BASE_URL`: habilitam o envio de convites e o link público `/onboarding`.
 - Remova qualquer variável `WHATSAPP_MODE` legada; o transporte HTTP é o único modo disponível e a aplicação aborta o boot se detectar a variável. Configure `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY` e (se aplicável) `WHATSAPP_WEBHOOK_HMAC_SECRET`.
 
 ### 1.1. Nota sobre o sidecar legado
@@ -172,7 +175,7 @@ Variáveis de ambiente (além das já mencionadas na seção de configuração g
 
 - **Rewrites**: adicione `/* -> /index.html` caso utilize o modo SPA (padrão).
 - **Cache**: habilite também o diretório `./.pnpm-store` para reaproveitar o cache entre builds do frontend.
-- **Variáveis**: defina `VITE_API_URL`, `VITE_DEMO_TENANT_ID`, `VITE_DEMO_OPERATOR_EMAIL`, `VITE_DEMO_OPERATOR_PASSWORD` e, se necessário, `VITE_API_AUTH_TOKEN`.
+- **Variáveis**: defina `VITE_API_URL`, `VITE_WS_URL`, `VITE_AUTH_PROVIDER`, `VITE_DEFAULT_TENANT_HINT`, `VITE_AUTH_PREFILL_EMAIL` e `VITE_AUTH_PREFILL_PASSWORD` (opcional). Use `VITE_AUTH_PROVIDER=invite` para exibir o link do portal público.
 
 > ⚠️ Se o **WhatsApp Broker** também estiver hospedado no Render, inclua/reveja as rotas permitidas para aceitar `POST /instances/:id/pair` (ou o fallback `POST /instances/:id/request-pairing-code`). A API passa a utilizar esses endpoints para iniciar o pareamento e solicitar novos QR Codes; certifique-se de que o serviço do broker esteja atualizado para respondê-los.
 
@@ -182,14 +185,24 @@ Além das variáveis já definidas na seção de configuração (como `DATABASE_
 
 - **Serviço da API**
   - `JWT_SECRET`, `POSTGRES_PASSWORD`, `DATABASE_URL` (ou parâmetros individuais), `REDIS_URL` (quando aplicável).
+  - `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER`, `ONBOARDING_PORTAL_BASE_URL` apontando para a URL pública do frontend (`https://app.seudominio.com/onboarding`).
   - Garanta que exista um operador demo com e-mail/senha conhecidos rodando `pnpm --filter @ticketz/api db:seed` após provisionar o banco ou criando o usuário manualmente.
 - **Serviço Web (frontend)**
   - `VITE_API_URL`: URL pública da API (ex.: `https://api.seudominio.com`).
-  - `VITE_DEMO_TENANT_ID`: tenant padrão para o operador demo (ex.: `demo-tenant`).
-  - `VITE_DEMO_OPERATOR_EMAIL` e `VITE_DEMO_OPERATOR_PASSWORD`: credenciais que serão pré-preenchidas no modal de login do frontend.
+  - `VITE_WS_URL`: host usado pelo Socket.IO público.
+  - `VITE_AUTH_PROVIDER`: `internal` (padrão) ou `invite` para expor o CTA "Iniciar onboarding guiado".
+  - `VITE_DEFAULT_TENANT_HINT`: tenant sugerido no formulário de login.
+  - `VITE_AUTH_PREFILL_EMAIL` e `VITE_AUTH_PREFILL_PASSWORD`: pré-preenchimento opcional para ambientes de QA.
   - (Opcional) `VITE_API_AUTH_TOKEN`: token JWT estático usado apenas como fallback caso nenhuma sessão seja gerada no navegador.
 
 > 🔐 Caso prefira não armazenar a senha do operador em variáveis do Render, gere manualmente um JWT válido com o comando `pnpm --filter @ticketz/api exec ts-node scripts/generate-jwt.ts --email operador@exemplo.com` e preencha o valor em `VITE_API_AUTH_TOKEN`. Sem o token ou o usuário seedado, o modal de autenticação não conseguirá criar a sessão demo.
+
+### 👤 Provisionar operadores via onboarding
+
+1. Gere um token e registre em `onboarding_invites` (pode usar Prisma Studio, `psql` ou um script de seed). Campos mínimos: `token`, `email`, `channel` (`email`/`sms`), `organization` e, opcionalmente, `tenantSlugHint`.
+2. Configure `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER` e `ONBOARDING_PORTAL_BASE_URL` apontando para a URL pública do frontend (`https://app.seudominio.com/onboarding`).
+3. Envie para o cliente o link `${ONBOARDING_PORTAL_BASE_URL}?token=<TOKEN>`; o operador valida o convite, cadastra nome/slug e senha e a API executa `/api/onboarding/setup`, criando tenant, fila, campanha e primeiro administrador.
+4. Após a conclusão, o operador recebe o JWT na resposta e já pode continuar o fluxo conectando o WhatsApp diretamente no portal.
 
 ## 🔍 Verificação
 

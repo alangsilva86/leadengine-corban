@@ -88,6 +88,9 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
       USE_REAL_DATA: ${USE_REAL_DATA:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      ONBOARDING_INVITE_EMAIL_FROM: ${ONBOARDING_INVITE_EMAIL_FROM:-noreply@example.com}
+      ONBOARDING_INVITE_SMS_SENDER: ${ONBOARDING_INVITE_SMS_SENDER:-Ticketz}
+      ONBOARDING_PORTAL_BASE_URL: ${ONBOARDING_PORTAL_BASE_URL:-https://leadengine-corban.up.railway.app/onboarding}
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
@@ -126,6 +129,12 @@ services:
     environment:
       NGINX_WORKER_PROCESSES: auto
       NGINX_WORKER_CONNECTIONS: 1024
+      VITE_API_URL: ${VITE_API_URL:-https://ticketzapi-production.up.railway.app}
+      VITE_WS_URL: ${VITE_WS_URL:-wss://ticketzapi-production.up.railway.app}
+      VITE_AUTH_PROVIDER: ${VITE_AUTH_PROVIDER:-invite}
+      VITE_DEFAULT_TENANT_HINT: ${VITE_DEFAULT_TENANT_HINT:-}
+      VITE_AUTH_PREFILL_EMAIL: ${VITE_AUTH_PREFILL_EMAIL:-}
+      VITE_AUTH_PREFILL_PASSWORD: ${VITE_AUTH_PREFILL_PASSWORD:-}
     ports:
       - "${WEB_PORT:-80}:80"
     depends_on:

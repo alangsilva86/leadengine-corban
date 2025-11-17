@@ -2,7 +2,7 @@ import { getEnvVar } from './runtime-env.js';
 
 const DEFAULT_TENANT_ID = (() => {
   const envTenant =
-    getEnvVar('VITE_DEMO_TENANT_ID') ||
+    getEnvVar('VITE_DEFAULT_TENANT_HINT') ||
     getEnvVar('VITE_API_TENANT_ID') ||
     getEnvVar('VITE_TENANT_ID') ||
     'demo-tenant';

@@ -13,6 +13,9 @@ import { getRuntimeEnv } from '../../lib/runtime-env.js';
 import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
 import type { ChatCommandCenterContainerProps } from '../chat/containers/ChatCommandCenterContainer';
 import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstances.jsx';
+import AcceptInviteStep, { type InviteDetails } from './components/AcceptInviteStep.tsx';
+import TeamSetupStep, { type TeamSetupResult } from './components/TeamSetupStep.tsx';
+import OnboardingCompleteStep from './components/OnboardingCompleteStep.tsx';
 
 type OnboardingPage =
   | 'dashboard'
@@ -23,12 +26,15 @@ type OnboardingPage =
   | 'reports'
   | 'settings'
   | 'baileys-logs'
-  | 'whatsapp-debug';
+  | 'whatsapp-debug'
+  | 'accept-invite'
+  | 'team'
+  | 'complete';
 
 type StoredOnboardingPage = OnboardingPage | 'whatsapp';
 
 type JourneyStage = {
-  id: 'dashboard' | 'channels' | 'campaigns' | 'inbox';
+  id: OnboardingPage;
   label: string;
 };
 
@@ -45,6 +51,8 @@ type OnboardingAgreement = {
   [key: string]: unknown;
 };
 
+type OnboardingJourneyKind = 'app' | 'invite';
+
 const ONBOARDING_PAGES: readonly StoredOnboardingPage[] = [
   'dashboard',
   'channels',
@@ -56,6 +64,9 @@ const ONBOARDING_PAGES: readonly StoredOnboardingPage[] = [
   'baileys-logs',
   'whatsapp-debug',
   'whatsapp',
+  'accept-invite',
+  'team',
+  'complete',
 ];
 
 const Dashboard = lazy(() => import('../../components/Dashboard.jsx'));
@@ -77,9 +88,9 @@ const shouldEnableWhatsappDebug = frontendFeatureFlags.whatsappDebug;
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
 
-const normalizePage = (page?: StoredOnboardingPage | null): OnboardingPage => {
+const normalizePage = (page?: StoredOnboardingPage | null, fallback: OnboardingPage = 'dashboard'): OnboardingPage => {
   if (!page) {
-    return 'dashboard';
+    return fallback;
   }
 
   if (page === 'whatsapp') {
@@ -89,29 +100,57 @@ const normalizePage = (page?: StoredOnboardingPage | null): OnboardingPage => {
   return page as OnboardingPage;
 };
 
-const BASE_JOURNEY_STAGES: JourneyStage[] = [
+const APP_JOURNEY_STAGES: JourneyStage[] = [
   { id: 'channels', label: 'Instâncias & Canais' },
   { id: 'campaigns', label: 'Campanhas' },
   { id: 'inbox', label: 'Inbox' },
 ];
 
+const INVITE_JOURNEY_STAGES: JourneyStage[] = [
+  { id: 'accept-invite', label: 'Validar convite' },
+  { id: 'team', label: 'Equipe & Operador' },
+  { id: 'channels', label: 'Conectar WhatsApp' },
+];
+
+const readInviteTokenFromLocation = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const url = new URL(window.location.href);
+    return url.searchParams.get('token') ?? url.searchParams.get('invite');
+  } catch {
+    return null;
+  }
+};
+
 type UseOnboardingJourneyOptions = {
   initialPage?: StoredOnboardingPage | null;
   currentUser?: CurrentUserLike | null;
   loadingCurrentUser?: boolean;
+  journeyKind?: OnboardingJourneyKind;
+  initialInviteToken?: string | null;
 };
 
 export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
-  const normalizedInitialPage = normalizePage(options?.initialPage ?? null);
+  const journeyKind: OnboardingJourneyKind = options?.journeyKind ?? 'app';
+  const defaultPage: OnboardingPage = journeyKind === 'invite' ? 'accept-invite' : 'dashboard';
+  const normalizedInitialPage = normalizePage(options?.initialPage ?? null, defaultPage);
   const [currentPage, setCurrentPage] = useState<OnboardingPage>(normalizedInitialPage);
   const [selectedAgreement, setSelectedAgreement] = useState<OnboardingAgreement | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<string>('disconnected');
   const [activeCampaign, setActiveCampaign] = useState<Record<string, unknown> | null>(null);
+  const [inviteDetails, setInviteDetails] = useState<InviteDetails | null>(null);
+  const [teamSetupResult, setTeamSetupResult] = useState<TeamSetupResult | null>(null);
+  const [initialInviteToken, setInitialInviteToken] = useState<string | null>(
+    () => options?.initialInviteToken ?? readInviteTokenFromLocation()
+  );
   const providedCurrentUser = options?.currentUser ?? null;
   const loadingCurrentUser = Boolean(options?.loadingCurrentUser);
+  const storageKey = journeyKind === 'invite' ? `${STORAGE_KEY}_invite` : STORAGE_KEY;
 
   const debugDisabled = !WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug;
-  const shouldRestorePage = options?.initialPage == null;
+  const shouldRestorePage = journeyKind === 'invite' || options?.initialPage == null;
 
   const safeCurrentPage = useMemo<OnboardingPage>(() => {
     if (debugDisabled && currentPage === 'whatsapp-debug') {
@@ -122,10 +161,10 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = typeof window === 'undefined' ? null : localStorage.getItem(storageKey);
       if (!raw) return;
       const persisted = JSON.parse(raw);
-      const restoredPage = normalizePage(persisted.currentPage as StoredOnboardingPage | null);
+      const restoredPage = normalizePage(persisted.currentPage as StoredOnboardingPage | null, defaultPage);
       const safeRestoredPage = debugDisabled && restoredPage === 'whatsapp-debug' ? 'dashboard' : restoredPage;
 
       if (shouldRestorePage) {
@@ -137,10 +176,13 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
       setSelectedAgreement(persisted.selectedAgreement || null);
       setWhatsappStatus(persisted.whatsappStatus || 'disconnected');
       setActiveCampaign(persisted.activeCampaign || null);
+      setInviteDetails(persisted.inviteDetails || null);
+      setTeamSetupResult(persisted.teamSetupResult || null);
+      setInitialInviteToken(persisted.initialInviteToken || null);
     } catch (error) {
       console.warn('Failed to restore onboarding state', error);
     }
-  }, [debugDisabled, shouldRestorePage]);
+  }, [debugDisabled, shouldRestorePage, storageKey, defaultPage, journeyKind]);
 
   useEffect(() => {
     const payload = {
@@ -148,15 +190,27 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
       selectedAgreement,
       whatsappStatus,
       activeCampaign,
+      inviteDetails,
+      teamSetupResult,
+      initialInviteToken,
       updatedAt: Date.now(),
     };
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(storageKey, JSON.stringify(payload));
     } catch (error) {
       console.warn('Failed to persist onboarding state', error);
     }
-  }, [safeCurrentPage, selectedAgreement, whatsappStatus, activeCampaign]);
+  }, [
+    safeCurrentPage,
+    selectedAgreement,
+    whatsappStatus,
+    activeCampaign,
+    inviteDetails,
+    teamSetupResult,
+    initialInviteToken,
+    storageKey,
+  ]);
 
   useEffect(() => {
     const handleExternalNavigation = (event: Event) => {
@@ -193,12 +247,18 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     };
   }, [debugDisabled]);
 
-  const onboardingStages = useMemo<JourneyStage[]>(() => [...BASE_JOURNEY_STAGES], []);
+  const onboardingStages = useMemo<JourneyStage[]>(
+    () => (journeyKind === 'invite' ? [...INVITE_JOURNEY_STAGES] : [...APP_JOURNEY_STAGES]),
+    [journeyKind]
+  );
 
   const activeStep = useMemo<number>(() => {
-    const stageIndex = onboardingStages.findIndex((stage) => stage.id === currentPage);
-    return stageIndex === -1 ? 0 : stageIndex;
-  }, [currentPage, onboardingStages]);
+    const stageIndex = onboardingStages.findIndex((stage) => stage.id === safeCurrentPage);
+    if (stageIndex === -1) {
+      return journeyKind === 'invite' && safeCurrentPage === 'complete' ? onboardingStages.length - 1 : 0;
+    }
+    return stageIndex;
+  }, [journeyKind, onboardingStages, safeCurrentPage]);
 
   const currentUser = useMemo<CurrentUserLike | null>(() => {
     if (!providedCurrentUser?.id) {
@@ -214,12 +274,22 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
   }, [providedCurrentUser]);
 
   const computeNextSetupPage = useCallback((): OnboardingPage => {
+    if (journeyKind === 'invite') {
+      if (!inviteDetails) {
+        return 'accept-invite';
+      }
+      if (!teamSetupResult) {
+        return 'team';
+      }
+      return whatsappStatus === 'connected' ? 'complete' : 'channels';
+    }
+
     if (whatsappStatus === 'connected') {
       return activeCampaign ? 'inbox' : 'campaigns';
     }
 
     return 'channels';
-  }, [activeCampaign, whatsappStatus]);
+  }, [activeCampaign, inviteDetails, journeyKind, teamSetupResult, whatsappStatus]);
 
   const handleNavigate = useCallback(
     (nextPage: StoredOnboardingPage) => {
@@ -235,15 +305,17 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
   );
 
   const renderPage = useCallback((): ReactNode => {
+    const resolvedTenantId =
+      selectedAgreement?.tenantId !== undefined && selectedAgreement?.tenantId !== null
+        ? String(selectedAgreement.tenantId)
+        : teamSetupResult?.tenant?.id ?? null;
+
     const providerProps = {
       key:
         selectedAgreement?.id !== undefined && selectedAgreement?.id !== null
           ? String(selectedAgreement.id)
-          : 'default-whatsapp-provider',
-      tenantId:
-        selectedAgreement?.tenantId !== undefined && selectedAgreement?.tenantId !== null
-          ? String(selectedAgreement.tenantId)
-          : null,
+          : resolvedTenantId ?? 'default-whatsapp-provider',
+      tenantId: resolvedTenantId,
       agreementId:
         selectedAgreement?.id !== undefined && selectedAgreement?.id !== null
           ? String(selectedAgreement.id)
@@ -252,6 +324,85 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
       initialFetch: true,
       pauseWhenHidden: false,
     };
+
+    if (journeyKind === 'invite') {
+      switch (safeCurrentPage) {
+        case 'team':
+          if (!inviteDetails) {
+            return createElement(AcceptInviteStep, {
+              invite: null,
+              onboarding: { stages: onboardingStages, activeStep },
+              initialToken: initialInviteToken,
+              onInviteValidated: (details: InviteDetails) => {
+                setInviteDetails(details);
+                setTeamSetupResult(null);
+                setInitialInviteToken(details.token);
+                setCurrentPage('team');
+              },
+              onContinue: () => setCurrentPage('team'),
+            });
+          }
+          return createElement(TeamSetupStep, {
+            invite: inviteDetails,
+            onboarding: { stages: onboardingStages, activeStep },
+            onBack: () => {
+              setTeamSetupResult(null);
+              setCurrentPage('accept-invite');
+            },
+            onProvisioned: (result: TeamSetupResult) => {
+              setTeamSetupResult(result);
+            },
+            onContinue: () => setCurrentPage('channels'),
+          });
+        case 'channels':
+        case 'whatsapp':
+          return createElement(
+            WhatsAppInstancesProvider,
+            providerProps,
+            createElement(WhatsAppConnect, {
+              selectedAgreement,
+              status: whatsappStatus,
+              activeCampaign,
+              onboarding: {
+                stages: onboardingStages,
+                activeStep,
+              },
+              onStatusChange: setWhatsappStatus,
+              onCampaignReady: setActiveCampaign,
+              onContinue: () => setCurrentPage('complete'),
+              onBack: () => setCurrentPage('team'),
+            }),
+          );
+        case 'complete':
+          return createElement(OnboardingCompleteStep, {
+            result: teamSetupResult,
+            onboarding: { stages: onboardingStages, activeStep },
+            onRestart: () => {
+              setInviteDetails(null);
+              setTeamSetupResult(null);
+              setSelectedAgreement(null);
+              setActiveCampaign(null);
+              setWhatsappStatus('disconnected');
+              setInitialInviteToken(null);
+              setCurrentPage('accept-invite');
+            },
+          });
+        case 'accept-invite':
+        default:
+          return createElement(AcceptInviteStep, {
+            invite: inviteDetails,
+            onboarding: { stages: onboardingStages, activeStep },
+            initialToken: initialInviteToken,
+            onInviteValidated: (details: InviteDetails) => {
+              setInviteDetails(details);
+              setTeamSetupResult(null);
+              setInitialInviteToken(details.token);
+              setCurrentPage('team');
+            },
+            onContinue: () => setCurrentPage('team'),
+          });
+      }
+    }
 
     switch (safeCurrentPage) {
       case 'dashboard':
@@ -369,6 +520,10 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     currentUser,
     computeNextSetupPage,
     shouldEnableWhatsappDebug,
+    journeyKind,
+    inviteDetails,
+    initialInviteToken,
+    teamSetupResult,
   ]);
 
   return {
@@ -379,6 +534,9 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     selectedAgreement,
     whatsappStatus,
     activeCampaign,
+    inviteDetails,
+    teamSetupResult,
+    journeyKind,
     currentUser,
     loadingCurrentUser,
     handleNavigate,

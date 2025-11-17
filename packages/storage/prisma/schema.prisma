@@ -56,7 +56,29 @@ model Tenant {
   agreementHistory    AgreementHistoryEntry[]
   agreementImportJobs AgreementImportJob[]
 
+  onboardingInvites OnboardingInvite[]
+
   @@map("tenants")
+}
+
+model OnboardingInvite {
+  id             String   @id @default(cuid())
+  token          String   @unique
+  email          String
+  channel        String   @default("email")
+  organization   String?
+  tenantSlugHint String?
+  metadata       Json     @default("{}")
+  expiresAt      DateTime?
+  acceptedAt     DateTime?
+  acceptedTenantId String?
+  acceptedUserId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [acceptedTenantId], references: [id])
+
+  @@map("onboarding_invites")
 }
 
 enum ContactInteractionChannel {
