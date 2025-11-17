@@ -47,7 +47,7 @@ const useAgreementUpdateRunner = ({
         return response?.data ?? null;
       } catch (err) {
         toast.error(getErrorMessage(err, errorMessage));
-        return null;
+        throw err;
       }
     },
     [historyAuthor, mutations.createAgreement, mutations.updateAgreement, role]

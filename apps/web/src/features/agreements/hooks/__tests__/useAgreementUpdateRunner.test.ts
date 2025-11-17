@@ -123,13 +123,13 @@ describe('useAgreementUpdateRunner', () => {
       })
     );
 
-    const response = await result.current({
-      nextAgreement: createAgreement(),
-      toastMessage: 'Atualizado',
-      telemetryEvent: 'agreements.updated',
-    });
-
-    expect(response).toBeNull();
+    await expect(
+      result.current({
+        nextAgreement: createAgreement(),
+        toastMessage: 'Atualizado',
+        telemetryEvent: 'agreements.updated',
+      })
+    ).rejects.toThrow('Request failed');
     expect(toastError).toHaveBeenCalledWith('Falha ao atualizar convênio');
   });
 });
