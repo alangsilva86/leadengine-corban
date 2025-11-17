@@ -26,10 +26,13 @@ Repositório central: `packages/storage/src/repositories/ai-repository.ts`.
 - `GET /api/ai/config` – retorna as configurações atuais (ou defaults do ambiente).
 - `PUT /api/ai/config` – persiste ajustes com validação de schema JSON.
 - `GET /api/ai/mode` / `POST /api/ai/mode` – controla o modo padrão (`IA_AUTO`, `COPILOTO`, `HUMANO`) por tenant/fila.
+- `POST /api/ai/reply` – streaming SSE com tool calling; cai no fallback stub quando a IA estiver desabilitada.
 - `POST /api/ai/suggest` – chama a Responses API (ou fallback) com Structured Outputs.
 - `POST /api/ai/memory/upsert` – grava/atualiza memória contextual para sincronizar com o chat.
 
 Os handlers ficam em `apps/api/src/routes/ai.ts` e registram telemetria via `logger.info`.
+
+> 2025-04-27: `aiRouter` virou o único entrypoint; os routers/controller antigos em `apps/api/src/routes/ai/*` foram removidos para evitar drift de código morto.
 
 ## Observabilidade inicial
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2025-04-27
+
+### Removed
+- Deleted the redundant AI routers/controllers under `apps/api/src/routes/ai/*` after confirming that `aiRouter` already expõe todos os endpoints de modo/config/sugestão/reply/memória.
+
+### Documentation
+- Registramos no playbook da Sprint 1 que `apps/api/src/routes/ai.ts` é o único entrypoint e listamos os endpoints ativos, oficializando o descarte do código legado.
+
 ## 2025-04-19
 
 ### Changed
