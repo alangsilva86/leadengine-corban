@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ReplyStreamer } from '../reply-streamer';
+import { ReplyStreamer, mergeToolDefinitions, sanitizeMetadata } from '../reply-streamer';
 
 const buildLogger = () => ({
   info: vi.fn(),
@@ -193,5 +193,41 @@ describe('ReplyStreamer', () => {
     expect(runCall?.[0].status).toBe('success');
 
     vi.useRealTimers();
+  });
+});
+
+describe('sanitizeMetadata', () => {
+  it('converts primitive values to strings and removes empty entries', () => {
+    const result = sanitizeMetadata({ foo: 'bar', count: 2, empty: null });
+    expect(result).toEqual({ foo: 'bar', count: '2' });
+  });
+
+  it('returns undefined for invalid input', () => {
+    expect(sanitizeMetadata()).toBeUndefined();
+    expect(sanitizeMetadata(null)).toBeUndefined();
+  });
+});
+
+describe('mergeToolDefinitions', () => {
+  it('merges config and registry tools without duplicates', () => {
+    const configTools = [
+      { function: { name: 'lookup', description: 'Lookup tool' } },
+      { function: { name: 'send_message' } },
+    ];
+    const registryTools = [
+      { function: { name: 'lookup' } },
+      { name: 'create_ticket' },
+    ];
+
+    const merged = mergeToolDefinitions(configTools, registryTools);
+    expect(merged).toHaveLength(3);
+    expect((merged[0] as { function?: { name?: string } }).function?.name).toBe('lookup');
+    expect((merged[1] as { function?: { name?: string } }).function?.name).toBe('send_message');
+    expect((merged[2] as { name?: string }).name).toBe('create_ticket');
+  });
+
+  it('ignores entries without a name', () => {
+    const merged = mergeToolDefinitions([{ function: {} }], [{ name: '' }]);
+    expect(merged).toHaveLength(0);
   });
 });
