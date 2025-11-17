@@ -8,6 +8,7 @@ import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { resolveTenantId } from './campaigns';
+import { normalizeString, parseDateParam } from '../utils/request-parsers';
 import {
   getSalesFunnelForDimension,
   getSalesFunnelSummary,
@@ -160,14 +161,6 @@ const accumulate = (acc: MetricAccumulator, allocation: LeadAllocationWithCampai
   }
 };
 
-const normalizeString = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
 const resolveDimension = (
   allocation: LeadAllocationWithCampaign,
   dimension: DimensionKey
@@ -286,17 +279,6 @@ const resolveSalesDimensionValue = (dimension: DimensionKey, metadata: GroupMeta
     default:
       return 'unknown';
   }
-};
-
-const parseDateParam = (value: unknown): Date | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const timestamp = Date.parse(value);
-  if (Number.isNaN(timestamp)) {
-    return null;
-  }
-  return new Date(timestamp);
 };
 
 const ensureChronologicalRange = (from: Date, to: Date): { from: Date; to: Date } => {

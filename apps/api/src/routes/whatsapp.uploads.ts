@@ -3,6 +3,7 @@ import multer from 'multer';
 
 import { asyncHandler } from '../middleware/error-handler';
 import { saveWhatsAppMedia } from '../services/whatsapp-media-service';
+import { normalizeString } from '../utils/request-parsers';
 
 const router: Router = Router();
 
@@ -36,15 +37,6 @@ const ensureAuthenticatedUser = (req: Request, res: Response) => {
   return req.user;
 };
 
-const normalizeString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
-
 router.post(
   '/whatsapp/uploads',
   upload.single('file'),
@@ -67,12 +59,12 @@ router.post(
       return;
     }
 
-    const explicitFileName = normalizeString(req.body?.fileName);
-    const explicitMimeType = normalizeString(req.body?.mimeType);
-    const ticketId = normalizeString(req.body?.ticketId);
-    const contactId = normalizeString(req.body?.contactId);
-    const instanceId = normalizeString(req.body?.instanceId);
-    const messageId = normalizeString(req.body?.messageId);
+    const explicitFileName = normalizeString(req.body?.fileName) ?? undefined;
+    const explicitMimeType = normalizeString(req.body?.mimeType) ?? undefined;
+    const ticketId = normalizeString(req.body?.ticketId) ?? undefined;
+    const contactId = normalizeString(req.body?.contactId) ?? undefined;
+    const instanceId = normalizeString(req.body?.instanceId) ?? undefined;
+    const messageId = normalizeString(req.body?.messageId) ?? undefined;
 
     const originalName = explicitFileName ?? normalizeString(file.originalname) ?? undefined;
     const mimeType = explicitMimeType ?? normalizeString(file.mimetype) ?? undefined;
