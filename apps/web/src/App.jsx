@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback } from 'react';
+import { Suspense, lazy, useCallback, useEffect } from 'react';
 import {
   RouterProvider,
   createBrowserRouter,
@@ -11,6 +11,8 @@ import Layout from './components/Layout.jsx';
 import './App.css';
 import useOnboardingJourney from './features/onboarding/useOnboardingJourney.js';
 import { Button } from '@/components/ui/button.jsx';
+import AuthProvider, { useAuth } from './features/auth/AuthProvider.jsx';
+import LoginPage from './features/auth/Login.tsx';
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
 const CrmModule = lazy(() => import('./features/crm/CrmModule.jsx'));
@@ -97,8 +99,11 @@ const dispatchGlobalNavigation = (targetPage) => {
 
 const OnboardingRoute = ({ initialPage }) => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const { safeCurrentPage, onboarding, handleNavigate, renderPage } = useOnboardingJourney({
     initialPage,
+    currentUser: user,
+    loadingCurrentUser: authLoading,
   });
 
   const handleRouteNavigate = useCallback(
@@ -165,30 +170,106 @@ const CrmBoundary = () => (
   </Suspense>
 );
 
+const AuthGate = ({ children }) => {
+  const { status, loading } = useAuth();
+
+  if (status === 'checking' || loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Validando sessão...
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
+const LogoutRoute = () => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let mounted = true;
+    const run = async () => {
+      try {
+        await logout?.();
+      } finally {
+        if (mounted) {
+          navigate('/login', { replace: true });
+        }
+      }
+    };
+    run();
+    return () => {
+      mounted = false;
+    };
+  }, [logout, navigate]);
+
+  return <PageFallback />;
+};
+
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <OnboardingRoute initialPage={null} />,
+    element: (
+      <AuthGate>
+        <OnboardingRoute initialPage={null} />
+      </AuthGate>
+    ),
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/channels',
-    element: <OnboardingRoute initialPage="channels" />,
+    element: (
+      <AuthGate>
+        <OnboardingRoute initialPage="channels" />
+      </AuthGate>
+    ),
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/campaigns',
-    element: <OnboardingRoute initialPage="campaigns" />,
+    element: (
+      <AuthGate>
+        <OnboardingRoute initialPage="campaigns" />
+      </AuthGate>
+    ),
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/contacts/*',
-    element: <ContactsBoundary />,
+    element: (
+      <AuthGate>
+        <ContactsBoundary />
+      </AuthGate>
+    ),
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/crm/*',
-    element: <CrmBoundary />,
+    element: (
+      <AuthGate>
+        <CrmBoundary />
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/login',
+    element: <LoginPage />,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/logout',
+    element: (
+      <AuthGate>
+        <LogoutRoute />
+      </AuthGate>
+    ),
     errorElement: <RouteErrorBoundary />,
   },
   {
@@ -199,7 +280,11 @@ const router = createBrowserRouter([
 ]);
 
 function App() {
-  return <RouterProvider router={router} fallbackElement={<PageFallback />} />;
+  return (
+    <AuthProvider>
+      <RouterProvider router={router} fallbackElement={<PageFallback />} />
+    </AuthProvider>
+  );
 }
 
 export default App;

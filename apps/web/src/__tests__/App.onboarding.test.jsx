@@ -30,14 +30,33 @@ vi.mock('@/lib/api.js', () => ({
   apiGet: (...args) => apiGetMock(...args),
 }));
 
-const onAuthTokenChangeMock = vi.fn(() => () => {});
-const onTenantIdChangeMock = vi.fn(() => () => {});
+const authState = {
+  value: {
+    status: 'authenticated',
+    loading: false,
+    user: { id: 'user-1', tenantId: 'tenant-1' },
+    login: vi.fn(),
+    logout: vi.fn(),
+    recoverPassword: vi.fn(),
+    refresh: vi.fn(),
+    selectTenant: vi.fn(),
+  },
+};
 
-vi.mock('../lib/auth.js', () => ({
-  onAuthTokenChange: (...args) => onAuthTokenChangeMock(...args),
-  onTenantIdChange: (...args) => onTenantIdChangeMock(...args),
-  getAuthToken: () => 'mock-token',
-}));
+vi.mock('../features/auth/AuthProvider.jsx', () => {
+  const React = require('react');
+  const AuthContext = React.createContext(authState.value);
+  const useAuth = () => React.useContext(AuthContext);
+  const AuthProvider = ({ children }) => (
+    <AuthContext.Provider value={authState.value}>{children}</AuthContext.Provider>
+  );
+  return {
+    __esModule: true,
+    AuthProvider,
+    default: AuthProvider,
+    useAuth,
+  };
+});
 
 vi.mock('../components/Layout.jsx', () => ({
   default: ({ children, onboarding, currentPage, onNavigate }) => {
@@ -113,6 +132,16 @@ describe('App onboarding journey', () => {
     layoutMockState.calls = [];
     localStorage.clear();
     apiGetMock.mockImplementation(defaultApiGetImplementation);
+    authState.value = {
+      status: 'authenticated',
+      loading: false,
+      user: { id: 'user-1', tenantId: 'tenant-1' },
+      login: vi.fn(),
+      logout: vi.fn(),
+      recoverPassword: vi.fn(),
+      refresh: vi.fn(),
+      selectTenant: vi.fn(),
+    };
   });
 
   afterEach(() => {
