@@ -6,27 +6,24 @@ import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
-import { 
-  Settings as SettingsIcon, 
-  Users, 
-  Bell, 
-  Shield, 
-  Database, 
+import {
+  Settings as SettingsIcon,
+  Bell,
+  Shield,
+  Database,
   Webhook,
   Key,
   Mail,
   Phone,
   Globe,
   Save,
-  Plus,
-  Trash2,
-  Edit
 } from 'lucide-react';
 import QueuesTab from './settings/QueuesTab.jsx';
 import AiSettingsTab from './settings/AiSettingsTab';
 import MetaSettingsTab from './settings/MetaSettingsTab';
 import ConveniosSettingsTab from './settings/convenios/ConveniosSettingsTab.jsx';
 import OnboardingInvitesTab from './settings/OnboardingInvitesTab';
+import UsersSettingsTab from '@/features/users/components/UsersSettingsTab';
 
 const Settings = () => {
   const [settings, setSettings] = useState({
@@ -47,12 +44,6 @@ const Settings = () => {
       ipWhitelist: false,
     }
   });
-
-  const [users] = useState([
-    { id: 1, name: 'João Silva', email: 'joao@corban.com', role: 'Admin', status: 'Ativo' },
-    { id: 2, name: 'Maria Santos', email: 'maria@corban.com', role: 'Agente', status: 'Ativo' },
-    { id: 3, name: 'Pedro Costa', email: 'pedro@corban.com', role: 'Supervisor', status: 'Inativo' },
-  ]);
 
   const handleSettingChange = (category, key, value) => {
     setSettings(prev => ({
@@ -172,61 +163,7 @@ const Settings = () => {
 
         {/* Gerenciamento de Usuários */}
         <TabsContent value="users" className="space-y-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Usuários da Equipe</CardTitle>
-                <CardDescription>Gerencie os membros da sua equipe e suas permissões</CardDescription>
-              </div>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Novo Usuário
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2">Nome</th>
-                      <th className="text-left p-2">E-mail</th>
-                      <th className="text-left p-2">Função</th>
-                      <th className="text-left p-2">Status</th>
-                      <th className="text-right p-2">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user) => (
-                      <tr key={user.id} className="border-b">
-                        <td className="p-2 font-medium">{user.name}</td>
-                        <td className="p-2 textForegroundMuted">{user.email}</td>
-                        <td className="p-2">
-                          <Badge variant={user.role === 'Admin' ? 'default' : 'secondary'}>
-                            {user.role}
-                          </Badge>
-                        </td>
-                        <td className="p-2">
-                          <Badge variant={user.status === 'Ativo' ? 'default' : 'secondary'}>
-                            {user.status}
-                          </Badge>
-                        </td>
-                        <td className="p-2 text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="outline" size="sm">
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+          <UsersSettingsTab />
         </TabsContent>
 
         {/* Notificações */}

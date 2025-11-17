@@ -10,6 +10,7 @@ import { apiPost } from '@/lib/api.js';
 import { setAuthToken, setTenantId } from '@/lib/auth.js';
 import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
+import { normalizePersonName, normalizeSlugInput } from '../utils/normalizers.ts';
 
 export type TeamSetupResult = {
   tenant: { id: string; name: string; slug: string };
@@ -30,14 +31,12 @@ export type TeamSetupStepProps = {
   onContinue: () => void;
 };
 
-const normalizeSlugInput = (value: string): string => value.replace(/[^a-z0-9-]/g, '').replace(/-{2,}/g, '-');
-
 const TeamSetupStep = ({ invite, onboarding, onBack, onProvisioned, onContinue }: TeamSetupStepProps) => {
   const { refresh, selectTenant } = useAuth();
   const [form, setForm] = useState({
     tenantName: invite.organization ?? 'Nova equipe',
-    tenantSlug: invite.tenantSlugHint ?? (invite.organization ? normalizeSlugInput(invite.organization.toLowerCase()) : ''),
-    operatorName: invite.organization ? `${invite.organization} Admin` : '',
+    tenantSlug: invite.tenantSlugHint ?? (invite.organization ? normalizeSlugInput(invite.organization) : ''),
+    operatorName: invite.organization ? normalizePersonName(`${invite.organization} Admin`) : '',
     password: '',
     confirmPassword: '',
   });
@@ -52,7 +51,13 @@ const TeamSetupStep = ({ invite, onboarding, onBack, onProvisioned, onContinue }
   );
 
   const handleChange = (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
-    const value = field === 'tenantSlug' ? normalizeSlugInput(event.target.value) : event.target.value;
+    let value = event.target.value;
+    if (field === 'tenantSlug') {
+      value = normalizeSlugInput(value);
+    }
+    if (field === 'operatorName') {
+      value = normalizePersonName(value);
+    }
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
