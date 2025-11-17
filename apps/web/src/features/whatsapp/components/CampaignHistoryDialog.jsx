@@ -13,13 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { apiGet } from '@/lib/api.js';
 import { Loader2, History } from 'lucide-react';
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
-
-const statusTone = {
-  active: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
-  paused: 'bg-amber-500/15 text-amber-200 border-amber-500/40',
-  ended: 'bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground-muted)] border-[color:var(--color-inbox-border)]',
-  archived: 'bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground-muted)] border-[color:var(--color-inbox-border)]',
-};
+import { getCampaignStatusTone, statusMeta } from '../utils/campaign-helpers.js';
 
 const CampaignHistoryDialog = ({ agreementId }) => {
   const { log, warn } = usePlayfulLogger('🎯 LeadEngine • Campanhas');
@@ -73,12 +67,11 @@ const CampaignHistoryDialog = ({ agreementId }) => {
   }, [agreementId, log, warn, open]);
 
   const renderStatus = (campaign) => {
-    const tone =
-      statusTone[campaign.status] ||
-      'bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)] border-[color:var(--color-inbox-border)]';
+    const tone = getCampaignStatusTone(campaign.status);
+    const label = statusMeta[campaign.status]?.label ?? campaign.status;
     return (
-      <Badge variant="outline" className={`border ${tone}`}>
-        {campaign.status}
+      <Badge variant="status" tone={tone} className="gap-2 text-[0.65rem] font-semibold uppercase">
+        {label}
       </Badge>
     );
   };
