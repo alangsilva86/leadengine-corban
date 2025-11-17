@@ -1,224 +1,24 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { applyAgreementMetadataDefaults, mapProductsToRecord, slugify } from '@ticketz/shared';
-import type {
-  AgreementDto,
-  AgreementHistoryEntryDto,
-  AgreementRateDto,
-  AgreementRateRequest,
-  AgreementWindowRequest,
-  AgreementUpdateRequest,
-  AgreementWindowDto,
-  AgreementCreateRequest,
-  AgreementWindowResponse,
-  AgreementRateResponse,
-  ListAgreementsResponse,
-  UpdateAgreementResponse,
-} from '@/lib/agreements-client.ts';
 import {
   getProductsByAgreement,
   toAgreementOptions,
   type AgreementOption,
   type AgreementProductOption,
 } from './agreementsSelectors.ts';
+import type { AgreementDto } from '@/lib/agreements-client.ts';
 import {
-  agreementsKeys,
-  deleteAgreementRate,
-  deleteAgreementWindow,
-  fetchAgreements,
-  patchAgreement,
-  postAgreement,
-  postAgreementRate,
-  postAgreementSync,
-  postAgreementWindow,
-  uploadAgreements,
-} from '@/lib/agreements-client.ts';
-
-type NullableDate = Date | null;
-
-const parseDate = (value?: string | null): NullableDate => {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
-};
-
-const ensureDate = (value?: string | null): Date => {
-  const parsed = parseDate(value);
-  return parsed ?? new Date();
-};
-
-const toRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
-
-const readMetadataString = (metadata: Record<string, unknown>, key: string): string => {
-  const value = metadata[key];
-  return typeof value === 'string' ? value : '';
-};
-
-const normalizeProducts = (
-  products: Record<string, unknown>,
-  metadata: Record<string, unknown>
-): string[] => {
-  if (Array.isArray(metadata.products)) {
-    return metadata.products.filter((item): item is string => typeof item === 'string');
-  }
-
-  return Object.keys(products ?? {});
-};
-
-export type AgreementWindow = {
-  id: string;
-  tableId: string | null;
-  label: string;
-  start: Date;
-  end: Date;
-  firstDueDate: Date;
-  isActive: boolean;
-  metadata: Record<string, unknown>;
-};
-
-export type AgreementRate = {
-  id: string;
-  tableId: string | null;
-  windowId: string | null;
-  product: string;
-  modality: string;
-  termMonths: number | null;
-  coefficient: number | null;
-  monthlyRate: number | null;
-  annualRate: number | null;
-  tacPercentage: number | null;
-  tacPercent: number | null;
-  tacFlat: number | null;
-  status: string;
-  metadata: Record<string, unknown>;
-  validFrom: Date;
-  validUntil: NullableDate;
-};
-
-export type AgreementHistoryEntry = {
-  id: string;
-  author: string;
-  message: string;
-  createdAt: Date;
-  metadata: Record<string, unknown>;
-};
-
-export type Agreement = {
-  id: string;
-  slug: string;
-  nome: string;
-  averbadora: string;
-  tipo: string | null;
-  status: string;
-  produtos: string[];
-  responsavel: string;
-  archived: boolean;
-  metadata: Record<string, unknown>;
-  janelas: AgreementWindow[];
-  taxas: AgreementRate[];
-  history: AgreementHistoryEntry[];
-};
-
-const normalizeWindow = (window: AgreementWindowDto): AgreementWindow => {
-  const metadata = toRecord(window.metadata);
-  const firstDueDate =
-    typeof metadata.firstDueDate === 'string'
-      ? metadata.firstDueDate
-      : window.startsAt ?? window.endsAt ?? null;
-  return {
-    id: window.id,
-    tableId: window.tableId ?? null,
-    label: window.label,
-    start: ensureDate(window.startsAt ?? null),
-    end: ensureDate(window.endsAt ?? null),
-    firstDueDate: ensureDate(firstDueDate),
-    isActive: Boolean(window.isActive),
-    metadata,
-  };
-};
-
-const normalizeRate = (rate: AgreementRateDto): AgreementRate => {
-  const metadata = toRecord(rate.metadata);
-  const tacPercentFromMetadata =
-    typeof metadata.tacPercent === 'number' ? metadata.tacPercent : null;
-  const tacFlat = typeof metadata.tacFlat === 'number' ? metadata.tacFlat : null;
-  const status = typeof metadata.status === 'string' && metadata.status.trim().length
-    ? metadata.status
-    : 'Ativa';
-  return {
-    id: rate.id,
-    tableId: rate.tableId ?? null,
-    windowId: rate.windowId ?? null,
-    product: rate.product,
-    modality: rate.modality,
-    termMonths: typeof rate.termMonths === 'number' ? rate.termMonths : null,
-    coefficient: typeof rate.coefficient === 'number' ? rate.coefficient : null,
-    monthlyRate: typeof rate.monthlyRate === 'number' ? rate.monthlyRate : null,
-    annualRate: typeof rate.annualRate === 'number' ? rate.annualRate : null,
-    tacPercentage: typeof rate.tacPercentage === 'number' ? rate.tacPercentage : tacPercentFromMetadata,
-    tacPercent: typeof rate.tacPercentage === 'number' ? rate.tacPercentage : tacPercentFromMetadata,
-    tacFlat,
-    status,
-    metadata,
-    validFrom: ensureDate((metadata.validFrom as string | undefined) ?? null),
-    validUntil: parseDate((metadata.validUntil as string | undefined) ?? null),
-  };
-};
-
-const normalizeHistoryEntry = (entry: AgreementHistoryEntryDto): AgreementHistoryEntry => ({
-  id: entry.id,
-  author: entry.actorName ?? entry.actorId ?? 'Sistema',
-  message: entry.message,
-  createdAt: ensureDate(entry.createdAt ?? null),
-  metadata: toRecord(entry.metadata),
-});
-
-const normalizeAgreement = (agreement: AgreementDto): Agreement => {
-  const metadata = toRecord(agreement.metadata);
-  return {
-    id: agreement.id,
-    slug: agreement.slug,
-    nome: agreement.name,
-    averbadora: readMetadataString(metadata, 'providerName') || agreement.slug,
-    tipo: agreement.type ?? null,
-    status: agreement.status,
-    produtos: normalizeProducts(toRecord(agreement.products), metadata),
-    responsavel: readMetadataString(metadata, 'responsavel'),
-    archived: Boolean(agreement.archived),
-    metadata,
-    janelas: Array.isArray(agreement.windows) ? agreement.windows.map(normalizeWindow) : [],
-    taxas: Array.isArray(agreement.rates) ? agreement.rates.map(normalizeRate) : [],
-    history: Array.isArray((agreement as { history?: AgreementHistoryEntryDto[] }).history)
-      ? ((agreement as { history?: AgreementHistoryEntryDto[] }).history ?? []).map(normalizeHistoryEntry)
-      : [],
-  };
-};
-
-export const serializeAgreement = (agreement: Agreement): AgreementUpdateRequest['data'] => ({
-  name: agreement.nome,
-  slug: agreement.slug || slugify(agreement.nome),
-  status: agreement.status,
-  type: agreement.tipo ?? undefined,
-  metadata: applyAgreementMetadataDefaults(
-    agreement.metadata,
-    {
-      providerName: agreement.averbadora,
-      responsavel: agreement.responsavel,
-      products: agreement.produtos,
-    },
-    { overwrite: true }
-  ),
-  products: mapProductsToRecord(agreement.produtos),
-  archived: agreement.archived,
-});
+  agreementsRepository,
+  type AgreementCreateRequest,
+  type AgreementRateRequest,
+  type AgreementRateResponse,
+  type AgreementSyncRequest,
+  type AgreementUpdateRequest,
+  type AgreementWindowRequest,
+  type AgreementWindowResponse,
+  type ListAgreementsResponse,
+  type UpdateAgreementResponse,
+} from './domain/agreementsRepository.ts';
 
 type UpdateAgreementVariables = {
   agreementId: string;
@@ -231,7 +31,7 @@ type CreateAgreementVariables = {
 
 type SyncAgreementVariables = {
   providerId: string;
-  payload?: Parameters<typeof postAgreementSync>[1];
+  payload?: AgreementSyncRequest;
 };
 
 type ImportAgreementsVariables = {
@@ -327,13 +127,13 @@ const useConvenioCatalog = () => {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: agreementsKeys.list(),
-    queryFn: fetchAgreements,
+    queryKey: agreementsRepository.keys.list(),
+    queryFn: agreementsRepository.list,
   });
 
   const convenios = useMemo(
-    () => (Array.isArray(query.data?.data) ? query.data.data.map(normalizeAgreement) : []),
-    [query.data?.data]
+    () => agreementsRepository.normalizeList(query.data),
+    [query.data]
   );
 
   const agreementOptions = useMemo(() => toAgreementOptions(convenios), [convenios]);
@@ -343,51 +143,54 @@ const useConvenioCatalog = () => {
   );
 
   const updateAgreementMutation = useMutation({
-    mutationFn: ({ agreementId, payload }: UpdateAgreementVariables) => patchAgreement(agreementId, payload),
+    mutationFn: ({ agreementId, payload }: UpdateAgreementVariables) =>
+      agreementsRepository.update(agreementId, payload),
     onSuccess: (response) => {
       if (!response?.data) {
         return;
       }
 
-      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsRepository.keys.list(), (current) =>
         updateListWithAgreement(current, response.data, response.meta)
       );
     },
   });
 
   const createAgreementMutation = useMutation({
-    mutationFn: ({ payload }: CreateAgreementVariables) => postAgreement(payload),
+    mutationFn: ({ payload }: CreateAgreementVariables) => agreementsRepository.create(payload),
     onSuccess: (response) => {
       if (!response?.data) {
         return;
       }
 
-      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsRepository.keys.list(), (current) =>
         updateListWithAgreement(current, response.data, response.meta)
       );
     },
   });
 
   const importMutation = useMutation({
-    mutationFn: ({ formData }: ImportAgreementsVariables) => uploadAgreements(formData),
+    mutationFn: ({ formData }: ImportAgreementsVariables) => agreementsRepository.importMany(formData),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: agreementsKeys.list() });
+      queryClient.invalidateQueries({ queryKey: agreementsRepository.keys.list() });
     },
   });
 
   const syncMutation = useMutation({
-    mutationFn: ({ providerId, payload }: SyncAgreementVariables) => postAgreementSync(providerId, payload),
+    mutationFn: ({ providerId, payload }: SyncAgreementVariables) =>
+      agreementsRepository.syncProvider(providerId, payload),
   });
 
   const upsertWindowMutation = useMutation({
-    mutationFn: ({ agreementId, payload }: UpsertWindowVariables) => postAgreementWindow(agreementId, payload),
+    mutationFn: ({ agreementId, payload }: UpsertWindowVariables) =>
+      agreementsRepository.upsertWindow(agreementId, payload),
     onSuccess: (response: AgreementWindowResponse | undefined, variables) => {
       if (!response?.data) {
-        queryClient.invalidateQueries({ queryKey: agreementsKeys.list() });
+        queryClient.invalidateQueries({ queryKey: agreementsRepository.keys.list() });
         return;
       }
 
-      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsRepository.keys.list(), (current) =>
         updateAgreementPartial(
           current,
           variables.agreementId,
@@ -409,9 +212,9 @@ const useConvenioCatalog = () => {
 
   const removeWindowMutation = useMutation({
     mutationFn: ({ agreementId, windowId, meta }: RemoveWindowVariables) =>
-      deleteAgreementWindow(agreementId, windowId, meta),
+      agreementsRepository.removeWindow(agreementId, windowId, meta),
     onSuccess: (_response, variables) => {
-      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsRepository.keys.list(), (current) =>
         updateAgreementPartial(current, variables.agreementId, (agreement) => ({
           ...agreement,
           windows: Array.isArray(agreement.windows)
@@ -423,14 +226,15 @@ const useConvenioCatalog = () => {
   });
 
   const upsertRateMutation = useMutation({
-    mutationFn: ({ agreementId, payload }: UpsertRateVariables) => postAgreementRate(agreementId, payload),
+    mutationFn: ({ agreementId, payload }: UpsertRateVariables) =>
+      agreementsRepository.upsertRate(agreementId, payload),
     onSuccess: (response: AgreementRateResponse | undefined, variables) => {
       if (!response?.data) {
-        queryClient.invalidateQueries({ queryKey: agreementsKeys.list() });
+        queryClient.invalidateQueries({ queryKey: agreementsRepository.keys.list() });
         return;
       }
 
-      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsRepository.keys.list(), (current) =>
         updateAgreementPartial(
           current,
           variables.agreementId,
@@ -451,9 +255,10 @@ const useConvenioCatalog = () => {
   });
 
   const removeRateMutation = useMutation({
-    mutationFn: ({ agreementId, rateId, meta }: RemoveRateVariables) => deleteAgreementRate(agreementId, rateId, meta),
+    mutationFn: ({ agreementId, rateId, meta }: RemoveRateVariables) =>
+      agreementsRepository.removeRate(agreementId, rateId, meta),
     onSuccess: (_response, variables) => {
-      queryClient.setQueryData<ListAgreementsResponse>(agreementsKeys.list(), (current) =>
+      queryClient.setQueryData<ListAgreementsResponse>(agreementsRepository.keys.list(), (current) =>
         updateAgreementPartial(current, variables.agreementId, (agreement) => ({
           ...agreement,
           rates: Array.isArray(agreement.rates)
@@ -497,5 +302,8 @@ export const useAgreementProducts = (): Map<string, AgreementProductOption[]> =>
   const { productsByAgreement } = useConvenioCatalog();
   return productsByAgreement;
 };
+
+export type { Agreement, AgreementHistoryEntry, AgreementRate, AgreementWindow } from './domain/normalizers.ts';
+export { serializeAgreement } from './domain/normalizers.ts';
 
 export default useConvenioCatalog;
