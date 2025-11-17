@@ -1,21 +1,26 @@
 import { useCallback } from 'react';
-
-import type { Agreement } from '@/features/agreements/useConvenioCatalog.ts';
+import { toast } from 'sonner';
+import emitAgreementsTelemetry from '@/features/agreements/utils/telemetry.ts';
+import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog.ts';
 import agreementsLogger from '@/features/agreements/utils/agreementsLogger.ts';
-import type { BuildHistoryEntry, RunAgreementUpdate, TaxPayload } from './types.ts';
+import type { BuildHistoryEntry, TaxPayload } from './types.ts';
 
 type UseAgreementRateActionsArgs = {
   selected: Agreement | null;
   locked: boolean;
-  runUpdate: RunAgreementUpdate;
   buildHistoryEntry: BuildHistoryEntry;
+  historyAuthor: string;
+  role: string;
+  mutations: Pick<UseConvenioCatalogReturn['mutations'], 'upsertRate'>;
 };
 
 const useAgreementRateActions = ({
   selected,
   locked,
-  runUpdate,
   buildHistoryEntry,
+  historyAuthor,
+  role,
+  mutations,
 }: UseAgreementRateActionsArgs) => {
   const upsertTax = useCallback(
     async (payload: TaxPayload) => {
@@ -47,13 +52,36 @@ const useAgreementRateActions = ({
       });
 
       try {
-        await runUpdate({
-          nextAgreement: next,
-          toastMessage: 'Taxa salva com sucesso',
-          telemetryEvent: 'agreements.rate.upserted',
-          telemetryPayload: { modalidade: payload.modalidade, produto: payload.produto },
-          note: entry.message,
+        await mutations.upsertRate.mutateAsync({
+          agreementId: selected.id,
+          payload: {
+            data: {
+              id: payload.id,
+              product: payload.produto,
+              modality: payload.modalidade,
+              monthlyRate: payload.monthlyRate,
+              tacPercentage: payload.tacPercent,
+              metadata: {
+                tacPercent: payload.tacPercent,
+                tacFlat: payload.tacFlat,
+                validFrom: payload.validFrom.toISOString(),
+                validUntil: payload.validUntil ? payload.validUntil.toISOString() : null,
+                status: next.status,
+              },
+            },
+            meta: {
+              audit: {
+                actor: historyAuthor,
+                actorRole: role,
+                note: entry.message,
+              },
+            },
+          },
         });
+
+        const telemetryPayload = { modalidade: payload.modalidade, produto: payload.produto, agreementId: selected.id };
+        emitAgreementsTelemetry('agreements.rate.upserted', telemetryPayload);
+        toast.success('Taxa salva com sucesso');
 
         agreementsLogger.info('rate', 'post', '🎉 Passo lúdico concluído: taxa registrada com brilho.', {
           action: 'upsert-rate',
@@ -74,7 +102,7 @@ const useAgreementRateActions = ({
         throw error;
       }
     },
-    [buildHistoryEntry, locked, runUpdate, selected]
+    [buildHistoryEntry, historyAuthor, locked, mutations.upsertRate, role, selected]
   );
 
   return { upsertTax };

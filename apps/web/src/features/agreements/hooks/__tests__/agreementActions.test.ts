@@ -48,11 +48,13 @@ const createHistoryEntry = (message: string) => ({
 
 const buildHistoryEntry = vi.fn((message: string) => createHistoryEntry(message));
 const runUpdateMock = vi.fn();
+const upsertRateMutation = { mutateAsync: vi.fn() };
 
 describe('agreement action hooks', () => {
   beforeEach(() => {
     buildHistoryEntry.mockClear();
     runUpdateMock.mockReset();
+    upsertRateMutation.mutateAsync.mockReset();
     toastError.mockReset();
     toastSuccess.mockReset();
     telemetryMock.mockReset();
@@ -208,14 +210,25 @@ describe('agreement action hooks', () => {
     it('upserts rate entries', async () => {
       const selected = createAgreement({ taxas: [] });
       const { default: useAgreementRateActions } = await import('../useAgreementRateActions.ts');
-      runUpdateMock.mockResolvedValue(null);
+      upsertRateMutation.mutateAsync.mockResolvedValue({
+        data: {
+          id: 'tax-1',
+          product: 'Produto A',
+          modality: 'Modalidade A',
+          monthlyRate: 2.5,
+          metadata: {},
+        },
+        meta: {},
+      } as unknown as UseConvenioCatalogReturn['mutations']['upsertRate']);
 
       const { result } = renderHook(() =>
         useAgreementRateActions({
           selected,
           locked: false,
-          runUpdate: runUpdateMock,
           buildHistoryEntry,
+          historyAuthor: 'Alice',
+          role: 'admin',
+          mutations: { upsertRate: upsertRateMutation } as unknown as UseConvenioCatalogReturn['mutations'],
         })
       );
 
@@ -234,11 +247,20 @@ describe('agreement action hooks', () => {
         await result.current.upsertTax(taxPayload);
       });
 
-      expect(runUpdateMock).toHaveBeenCalledWith(
+      expect(upsertRateMutation.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
-          telemetryEvent: 'agreements.rate.upserted',
+          agreementId: selected.id,
+          payload: expect.objectContaining({
+            data: expect.objectContaining({
+              product: taxPayload.produto,
+              modality: taxPayload.modalidade,
+              monthlyRate: taxPayload.monthlyRate,
+            }),
+          }),
         })
       );
+      expect(telemetryMock).toHaveBeenCalledWith('agreements.rate.upserted', expect.any(Object));
+      expect(toastSuccess).toHaveBeenCalledWith('Taxa salva com sucesso');
     });
   });
 
