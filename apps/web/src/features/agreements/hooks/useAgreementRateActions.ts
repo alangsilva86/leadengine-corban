@@ -29,6 +29,7 @@ const useAgreementRateActions = ({
         return;
       }
 
+      const status = 'Ativa';
       const toAgreementRate = (tax: TaxPayload): Agreement['taxas'][number] => ({
         id: tax.id,
         tableId: null,
@@ -42,8 +43,8 @@ const useAgreementRateActions = ({
         tacPercentage: tax.tacPercent,
         tacPercent: tax.tacPercent,
         tacFlat: tax.tacFlat,
-        status: selected.status,
-        metadata: {},
+        status,
+        metadata: { status },
         validFrom: tax.validFrom,
         validUntil: tax.validUntil,
       });
@@ -83,7 +84,7 @@ const useAgreementRateActions = ({
             tacFlat: payload.tacFlat,
             validFrom: payload.validFrom.toISOString(),
             validUntil: payload.validUntil ? payload.validUntil.toISOString() : null,
-            status: next.status,
+            status,
           },
         };
 
