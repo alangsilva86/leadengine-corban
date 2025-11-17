@@ -1,3 +1,5 @@
+import { formatCurrency as formatCurrencyHelper } from '@/lib/formatters/currency.ts';
+
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 const clampDate = (target, start, end) => {
@@ -142,8 +144,7 @@ export const computeWindowStatus = (window) => {
   return 'Ativa';
 };
 
-export const formatCurrency = (value) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+export const formatCurrency = (value, options) => formatCurrencyHelper(value, options);
 
 export const formatPercent = (value) =>
   `${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
