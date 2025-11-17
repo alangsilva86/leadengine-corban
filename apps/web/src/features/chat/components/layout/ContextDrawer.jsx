@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils.js';
-import { useIsMobile } from '@/hooks/use-mobile.js';
+import { useIsMobile } from '@/hooks/use-media-query.js';
 import { Drawer, DrawerContent } from '@/components/ui/drawer.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 
