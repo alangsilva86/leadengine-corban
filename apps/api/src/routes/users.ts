@@ -153,6 +153,7 @@ router.post(
       tenantId,
       actorId: req.user!.id,
       targetUserId: user.id,
+      metrics: ['user_mutations_total'],
     });
 
     res.status(201).json({
@@ -206,6 +207,7 @@ router.post(
       tenantId,
       actorId: req.user!.id,
       inviteId: invite.id,
+      metrics: ['user_mutations_total', 'user_invite_created_total'],
     });
 
     res.status(201).json({
@@ -240,6 +242,8 @@ router.patch(
     }
 
     const data: Prisma.UserUpdateInput = {};
+    const roleChanged = typeof req.body.role === 'string' && req.body.role !== user.role;
+    const statusChanged = typeof req.body.isActive === 'boolean' && req.body.isActive !== user.isActive;
     if (req.body.role) {
       data.role = req.body.role;
     }
@@ -252,16 +256,31 @@ router.patch(
       data,
     });
 
-    recordUserMutation('update_user', {
-      tenantId,
-      actorRole: req.user!.role,
-    });
+    const logMetrics = ['user_mutations_total'];
+    if (roleChanged) {
+      logMetrics.push('user_role_updated_total');
+    }
+    if (statusChanged) {
+      logMetrics.push('user_status_toggled_total');
+    }
+
+    recordUserMutation(
+      'update_user',
+      {
+        tenantId,
+        actorRole: req.user!.role,
+      },
+      { roleChanged, statusChanged }
+    );
 
     auditLogger.info('[Users] Usuário atualizado', {
       operation: 'update_user',
       tenantId,
       actorId: req.user!.id,
       targetUserId: updated.id,
+      roleChanged,
+      statusChanged,
+      metrics: logMetrics,
     });
 
     res.json({
@@ -296,16 +315,21 @@ router.delete(
       data: { isActive: false },
     });
 
-    recordUserMutation('deactivate_user', {
-      tenantId,
-      actorRole: req.user!.role,
-    });
+    recordUserMutation(
+      'deactivate_user',
+      {
+        tenantId,
+        actorRole: req.user!.role,
+      },
+      { statusChanged: user.isActive }
+    );
 
     auditLogger.info('[Users] Usuário desativado', {
       operation: 'deactivate_user',
       tenantId,
       actorId: req.user!.id,
       targetUserId: updated.id,
+      metrics: ['user_mutations_total', 'user_status_toggled_total'],
     });
 
     res.json({

@@ -23,7 +23,7 @@
     "dev": "pnpm -r --parallel dev",
     "lint": "eslint --max-warnings=0 --ignore-pattern 'dist/**' --ignore-pattern 'apps/**/dist/**' --ignore-pattern 'apps/api/src/routes/webhooks.test.ts' .",
     "typecheck": "pnpm exec tsc --noEmit",
-    "test": "pnpm --filter @ticketz/api exec vitest run src/routes/__tests__/campaigns.e2e.spec.ts",
+    "test": "pnpm --filter @ticketz/api exec vitest run src/routes/__tests__/campaigns.e2e.spec.ts src/routes/__tests__/users.routes.spec.ts && pnpm --filter web exec vitest run src/features/users/__tests__/UsersSettingsTab.test.tsx",
     "test:playwright": "pnpm exec playwright test",
     "api:dev": "pnpm --filter @ticketz/api dev",
     "web:dev": "pnpm --filter web dev",

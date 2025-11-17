@@ -292,8 +292,8 @@ Todos os contratos formais vivem em `packages/contracts/openapi.yaml` e são con
 
 ## Capítulo 8 – Observabilidade, scripts e automação
 
-- **Logs**: `@ticketz/shared/logger` usa Winston com níveis configuráveis (`LOG_LEVEL`). Logs ficam em `apps/api/logs/*` quando configurado.
-- **Métricas**: Prometheus (`/metrics`), contadores específicos de WhatsApp (`whatsappHttpRequestsCounter`) e dashboards no frontend debug.
+- **Logs**: `@ticketz/shared/logger` usa Winston com níveis configuráveis (`LOG_LEVEL`). Logs ficam em `apps/api/logs/*` quando configurado. As rotas de usuários (`apps/api/src/routes/users.ts`) registram eventos de auditoria com o prefixo `[Users]` e um campo `metrics` indicando quais contadores foram afetados (ex.: criação de convite adiciona `user_invite_created_total`). Consulte estes logs para rastrear quem executou cada ação (campos `actorId`/`targetUserId`).
+- **Métricas**: Prometheus (`/metrics`), contadores específicos de WhatsApp (`whatsappHttpRequestsCounter`) e dashboards no frontend debug. O capítulo de gestão de usuários agora exporta `user_invite_created_total`, `user_role_updated_total` e `user_status_toggled_total` via o mesmo endpoint para facilitar RBAC/auditoria — filtre por `tenantId`/`actorRole` para entender quantos convites, alterações de função ou ativações/desativações foram aplicadas.
 - **Scripts** (`/scripts`):
   - `doctor.mjs` – checagem de ambiente.
   - `health-check.sh` – valida endpoints health.
