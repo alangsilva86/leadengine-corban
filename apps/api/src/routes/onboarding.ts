@@ -11,31 +11,13 @@ import { buildSessionPayload } from './auth';
 import { getOnboardingConfig } from '../config/onboarding';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
+import { formatPublicInviteResponse, normalizeInviteEmail } from '../services/onboarding-invites-service';
 
 const router = Router();
 
 const onboardingConfig = getOnboardingConfig();
 
-const normalizeEmail = (value: string): string => value.trim().toLowerCase();
 const normalizeToken = (value: string): string => value.trim();
-
-const formatInviteResponse = (invite: {
-  token: string;
-  email: string;
-  channel: string;
-  organization: string | null;
-  tenantSlugHint: string | null;
-  expiresAt: Date | null;
-  acceptedAt: Date | null;
-}) => ({
-  token: invite.token,
-  email: invite.email,
-  channel: invite.channel,
-  organization: invite.organization,
-  tenantSlugHint: invite.tenantSlugHint,
-  expiresAt: invite.expiresAt?.toISOString() ?? null,
-  acceptedAt: invite.acceptedAt?.toISOString() ?? null,
-});
 
 const inviteValidation = [
   body('token').isString().trim().isLength({ min: 8 }).withMessage('Token inválido.'),
@@ -82,7 +64,7 @@ router.post(
       return;
     }
 
-    res.json({ success: true, data: formatInviteResponse(invite) });
+    res.json({ success: true, data: formatPublicInviteResponse(invite) });
   })
 );
 
@@ -95,7 +77,7 @@ router.post(
     const tenantName = req.body.tenant.name.trim();
     const requestedSlug = req.body.tenant.slug ? req.body.tenant.slug.trim() : null;
     const operatorName = req.body.operator.name.trim();
-    const operatorEmail = normalizeEmail(req.body.operator.email);
+    const operatorEmail = normalizeInviteEmail(req.body.operator.email);
     const operatorPassword: string = req.body.operator.password;
 
     const invite = await prisma.onboardingInvite.findUnique({ where: { token } });
@@ -124,7 +106,7 @@ router.post(
       return;
     }
 
-    if (normalizeEmail(invite.email) !== operatorEmail) {
+    if (normalizeInviteEmail(invite.email) !== operatorEmail) {
       res.status(409).json({
         success: false,
         error: { code: 'INVITE_EMAIL_MISMATCH', message: 'O e-mail informado não corresponde ao convite recebido.' },
