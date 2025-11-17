@@ -287,7 +287,7 @@ class OnboardingInvitesService {
       ...metadata,
       revokedAt,
       revokedBy: options.requestedBy?.id ?? null,
-      revokedReason: options.reason?.trim() || metadata.revokedReason ?? null,
+      revokedReason: (options.reason?.trim() || metadata.revokedReason) ?? null,
     };
 
     const updated = await prisma.onboardingInvite.update({
