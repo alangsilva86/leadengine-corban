@@ -4,11 +4,22 @@ import { demoAgreementsSeed } from '../../../config/demo-agreements';
 
 const prisma = new PrismaClient();
 type TenantRecord = Awaited<ReturnType<typeof prisma.tenant.upsert>>;
+type UserRecord = Awaited<ReturnType<typeof prisma.user.upsert>>;
+
+type TenantSeedConfig = {
+  id: string;
+  name: string;
+  slug: string;
+  adminEmail: string;
+  adminPassword?: string;
+  agentEmail?: string;
+  agentPassword?: string;
+};
 
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...');
 
-  const tenantSeeds = [
+  const tenantSeeds: TenantSeedConfig[] = [
     {
       id: 'demo-tenant',
       name: 'Demo Tenant',
@@ -23,12 +34,17 @@ async function main() {
       adminEmail: 'admin@acme.test',
       agentEmail: 'agent@acme.test',
     },
+    {
+      id: 'acessus-tenant',
+      name: 'Acessus',
+      slug: 'acessus',
+      adminEmail: 'kellen.chiarato@somosacessus.com',
+      adminPassword: 'Acessus01',
+    },
   ];
 
   const seededTenants: TenantRecord[] = [];
-  let demoAgentUser: TenantRecord | null = null;
-  const adminPasswordHash = bcrypt.hashSync('admin123', 10);
-  const agentPasswordHash = bcrypt.hashSync('agent123', 10);
+  let demoAgentUser: UserRecord | null = null;
 
   for (const seed of tenantSeeds) {
     const tenant = await prisma.tenant.upsert({
@@ -48,6 +64,9 @@ async function main() {
 
     seededTenants.push(tenant);
     console.log('✅ Tenant criado:', tenant.name);
+
+    const adminPasswordHash = bcrypt.hashSync(seed.adminPassword ?? 'admin123', 10);
+    const agentPasswordHash = bcrypt.hashSync(seed.agentPassword ?? 'agent123', 10);
 
     const defaultQueue = await prisma.queue.upsert({
       where: {
@@ -106,42 +125,45 @@ async function main() {
       },
     });
 
-    const agentUser = await prisma.user.upsert({
-      where: {
-        tenantId_email: {
+    let agentUser: UserRecord | null = null;
+    if (seed.agentEmail) {
+      agentUser = await prisma.user.upsert({
+        where: {
+          tenantId_email: {
+            tenantId: tenant.id,
+            email: seed.agentEmail,
+          },
+        },
+        update: {},
+        create: {
           tenantId: tenant.id,
+          name: `${tenant.name} Agent`,
           email: seed.agentEmail,
+          phone: '+5511888888888',
+          role: 'AGENT',
+          isActive: true,
+          passwordHash: agentPasswordHash,
+          settings: {
+            notifications: true,
+            theme: 'light',
+          },
         },
-      },
-      update: {},
-      create: {
-        tenantId: tenant.id,
-        name: `${tenant.name} Agent`,
-        email: seed.agentEmail,
-        phone: '+5511888888888',
-        role: 'AGENT',
-        isActive: true,
-        passwordHash: agentPasswordHash,
-        settings: {
-          notifications: true,
-          theme: 'light',
-        },
-      },
-    });
+      });
 
-    await prisma.userQueue.upsert({
-      where: {
-        userId_queueId: {
+      await prisma.userQueue.upsert({
+        where: {
+          userId_queueId: {
+            userId: agentUser.id,
+            queueId: defaultQueue.id,
+          },
+        },
+        update: {},
+        create: {
           userId: agentUser.id,
           queueId: defaultQueue.id,
         },
-      },
-      update: {},
-      create: {
-        userId: agentUser.id,
-        queueId: defaultQueue.id,
-      },
-    });
+      });
+    }
 
     console.log('✅ Usuários criados para:', tenant.name);
     if (seed.id === 'demo-tenant') {
