@@ -33,7 +33,8 @@
     "start:api": "pnpm --filter @ticketz/api start",
     "start:web": "pnpm --filter web run start",
     "test:whatsapp": "pnpm exec tsx scripts/whatsapp-smoke-test.ts",
-    "ts-prune": "pnpm exec ts-prune"
+    "ts-prune": "pnpm exec ts-prune",
+    "media-retry:worker": "pnpm --filter @ticketz/api exec tsx src/cli/media-retry-cron.ts"
   },
   "dependencies": {
     "@prisma/client": "5.22.0"
