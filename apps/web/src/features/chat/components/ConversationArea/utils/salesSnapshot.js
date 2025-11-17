@@ -1,3 +1,5 @@
+import { formatCurrency as formatCurrencyHelper } from '@/lib/formatters/currency.ts';
+
 const asRecord = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : null);
 
 const toStringSafe = (value) => {
@@ -543,16 +545,8 @@ export const buildDealSnapshot = ({
   closedAt: closedAt ?? null,
 });
 
-export const formatCurrency = (value, { fallback = '--' } = {}) => {
-  if (value === null || value === undefined || value === '') {
-    return fallback;
-  }
-  const number = parseNumber(value);
-  if (!Number.isFinite(number)) {
-    return fallback;
-  }
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number);
-};
+export const formatCurrency = (value, options = {}) =>
+  formatCurrencyHelper(value, { fallback: '--', ...options });
 
 export const formatTermLabel = (value, { fallback = '--' } = {}) => {
   const term = parseInteger(value);

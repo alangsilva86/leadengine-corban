@@ -3,15 +3,11 @@ import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+import { formatCurrency } from '@/lib/formatters/currency.ts';
 import useCrmAging from '../hooks/useCrmAging';
 import { useCrmViewContext, useCrmViewState } from '../state/view-context';
 import type { LeadAgingBucket } from '../state/leads';
 import emitCrmTelemetry from '../utils/telemetry';
-
-const formatCurrency = (value: number | null | undefined) => {
-  if (!value) return '—';
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
-};
 
 const LeadAgingView = () => {
   const { filters } = useCrmViewState();
@@ -67,7 +63,13 @@ const LeadAgingView = () => {
                         }}
                       >
                         <span className="text-sm font-semibold text-foreground">{cell?.leadCount ?? 0}</span>
-                        <span className="text-[0.7rem] text-muted-foreground">{formatCurrency(cell?.potentialValue ?? null)}</span>
+                        <span className="text-[0.7rem] text-muted-foreground">
+                          {formatCurrency(cell?.potentialValue ?? null, {
+                            fallback: '—',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
                         {cell && cell.leadCount > 0 ? (
                           <Button
                             type="button"
