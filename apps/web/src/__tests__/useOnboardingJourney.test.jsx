@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { STORAGE_KEY } from '../features/onboarding/useOnboardingState.js';
 
-const STORAGE_KEY = 'leadengine_onboarding_v1';
 const INVITE_STORAGE_KEY = `${STORAGE_KEY}_invite`;
 
 // Import after setup
@@ -34,6 +34,7 @@ describe('useOnboardingJourney', () => {
     );
 
     expect(result.current.safeCurrentPage).toBe('channels');
+    expect(result.current.page).toBeTruthy();
     expect(result.current.onboarding.whatsappStatus).toBe('connected');
     expect(result.current.computeNextSetupPage()).toBe('inbox');
     expect(result.current.onboarding.stages.map((stage) => stage.id)).toEqual([
@@ -77,6 +78,7 @@ describe('useOnboardingJourney', () => {
     );
 
     await waitFor(() => expect(result.current.safeCurrentPage).toBe('team'));
+    expect(result.current.page).toBeTruthy();
     expect(result.current.inviteDetails).toEqual(persistedState.inviteDetails);
     expect(result.current.onboarding.stages.map((stage) => stage.id)).toEqual([
       'accept-invite',
