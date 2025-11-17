@@ -17,7 +17,7 @@ import { suggestWithAi, AiServiceError } from '../services/ai/openai-client';
 import { RESPONSES_API_URL, aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
 import { logger } from '../config/logger';
 import { getRegisteredTools, executeTool } from '../services/ai/tool-registry';
-import { ReplyStreamer } from './reply-streamer';
+import { ReplyStreamer, mergeToolDefinitions, sanitizeMetadata } from './reply-streamer';
 import { ensureTenantId, readQueueParam } from './ai/utils';
 
 const router: Router = Router();
@@ -412,14 +412,6 @@ router.post(
         });
       }
 
-      const sanitizeMetadata = (raw?: Record<string, unknown> | null): Record<string, string> | undefined => {
-        if (!raw || typeof raw !== 'object') return undefined;
-        const entries = Object.entries(raw)
-          .filter(([, value]) => value !== undefined && value !== null)
-          .map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]);
-        return entries.length > 0 ? (Object.fromEntries(entries) as Record<string, string>) : undefined;
-      };
-
       const normalizeContentType = (role: 'user' | 'assistant' | 'system'): 'input_text' | 'output_text' => {
         if (role === 'assistant') {
           return 'output_text';
@@ -457,22 +449,7 @@ router.post(
           ? (config.tools as Array<Record<string, unknown>>)
           : [];
 
-      const uniqueToolNames = new Set<string>();
-      const mergedTools: Array<Record<string, unknown>> = [];
-
-      for (const tool of [...configTools, ...registryPayloads]) {
-        const toolName =
-          typeof tool === 'object' && tool !== null
-            ? (tool as any)?.function?.name ?? (tool as any)?.name
-            : null;
-        if (toolName && uniqueToolNames.has(toolName)) {
-          continue;
-        }
-        if (toolName) {
-          uniqueToolNames.add(toolName);
-        }
-        mergedTools.push(tool);
-      }
+      const mergedTools = mergeToolDefinitions(configTools, registryPayloads);
 
       const requestBody: Record<string, unknown> = {
         model: config.model ?? envAiConfig.defaultModel,

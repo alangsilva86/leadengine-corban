@@ -3,6 +3,67 @@ import type { Prisma } from '@prisma/client';
 import type { Logger } from 'pino';
 import type { AiToolExecutionResult } from '../services/ai/tool-registry';
 
+export type ToolDefinition = Record<string, unknown>;
+
+export const sanitizeMetadata = (
+  raw?: Record<string, unknown> | null
+): Record<string, string> | undefined => {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+
+  const entries = Object.entries(raw)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]);
+
+  return entries.length > 0 ? (Object.fromEntries(entries) as Record<string, string>) : undefined;
+};
+
+const extractToolName = (tool: ToolDefinition): string | null => {
+  if (!tool || typeof tool !== 'object') {
+    return null;
+  }
+
+  const nested = (tool as { function?: { name?: unknown }; name?: unknown }) ?? {};
+  const nestedName = nested.function?.name;
+  if (typeof nestedName === 'string' && nestedName.trim().length > 0) {
+    return nestedName;
+  }
+
+  const fallbackName = nested.name;
+  if (typeof fallbackName === 'string' && fallbackName.trim().length > 0) {
+    return fallbackName;
+  }
+
+  return null;
+};
+
+export const mergeToolDefinitions = (
+  primary?: ToolDefinition[] | null,
+  secondary?: ToolDefinition[] | null
+): ToolDefinition[] => {
+  const merged: ToolDefinition[] = [];
+  const seen = new Set<string>();
+
+  const candidates = [...((primary ?? []) as ToolDefinition[]), ...((secondary ?? []) as ToolDefinition[])];
+
+  for (const tool of candidates) {
+    if (!tool || typeof tool !== 'object') {
+      continue;
+    }
+
+    const name = extractToolName(tool);
+    if (!name || seen.has(name)) {
+      continue;
+    }
+
+    seen.add(name);
+    merged.push(tool);
+  }
+
+  return merged;
+};
+
 type ExecuteTool = (
   name: string,
   params: Record<string, unknown>,
