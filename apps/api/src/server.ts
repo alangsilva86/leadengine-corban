@@ -12,8 +12,11 @@ import { errorHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { authMiddleware, requireTenant } from './middleware/auth';
 import { ticketsRouter } from './routes/tickets';
+import { ticketsMessagesRouter } from './routes/tickets.messages';
+import { ticketNotesRouter } from './routes/tickets.notes';
 import { leadsRouter } from './routes/leads';
-import { contactsRouter, contactTasksRouter } from './routes/contacts';
+import { contactsRouter } from './routes/contacts';
+import { contactTasksRouter } from './routes/contact-tasks';
 import { authRouter } from './routes/auth';
 import { onboardingRouter } from './routes/onboarding';
 import { onboardingInvitationsRouter } from './routes/onboarding-invitations';
@@ -431,6 +434,8 @@ app.use('/api', debugMessagesRouter);
 
 // Rotas protegidas (com autenticação)
 app.use('/api/tickets', authMiddleware, requireTenant, ticketsRouter);
+app.use('/api/tickets', authMiddleware, requireTenant, ticketNotesRouter);
+app.use('/api/tickets', authMiddleware, requireTenant, ticketsMessagesRouter);
 app.use('/api/leads', authMiddleware, requireTenant, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api/tasks', authMiddleware, contactTasksRouter);

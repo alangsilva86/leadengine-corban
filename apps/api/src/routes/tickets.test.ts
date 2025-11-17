@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@ticketz/storage', () => import('../test-utils/storage-mock'));
 
 import { ticketsRouter } from './tickets';
+import { ticketsMessagesRouter } from './tickets.messages';
+import { ticketNotesRouter } from './tickets.notes';
 import { errorHandler } from '../middleware/error-handler';
 import { registerSocketServer, type SocketServerAdapter } from '../lib/socket-registry';
 import { resetTicketStore } from '@ticketz/storage';
@@ -45,6 +47,8 @@ const startTestServer = async () => {
     next();
   });
   app.use('/api/tickets', ticketsRouter);
+  app.use('/api/tickets', ticketNotesRouter);
+  app.use('/api/tickets', ticketsMessagesRouter);
   app.use(errorHandler);
 
   return new Promise<{ server: Server; url: string }>((resolve) => {
