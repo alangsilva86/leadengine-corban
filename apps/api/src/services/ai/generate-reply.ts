@@ -1,14 +1,13 @@
 import { getAiConfig, upsertAiConfig, recordAiRun } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
 import {
+  RESPONSES_API_URL,
   aiConfig as envAiConfig,
   isAiEnabled,
   normalizeOpenAiModel,
   resolveDefaultAiMode,
 } from '../../config/ai';
 import { logger } from '../../config/logger';
-
-const RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
 
 interface GenerateReplyOptions {
   tenantId: string;
