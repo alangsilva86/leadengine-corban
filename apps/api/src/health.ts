@@ -1,5 +1,7 @@
 import { getWhatsAppMode } from './config/whatsapp';
 import type { WhatsAppTransportMode } from './config/whatsapp';
+import { getBrokerObservabilitySnapshot } from './services/broker-observability';
+import { getBrokerCircuitBreakerMetrics } from './services/whatsapp-broker-client-protected';
 
 export type HealthPayload = {
   status: 'ok';
@@ -16,6 +18,14 @@ export type HealthPayload = {
     };
     mode: WhatsAppTransportMode;
     transportMode: WhatsAppTransportMode;
+    broker: {
+      circuitBreaker: ReturnType<typeof getBrokerCircuitBreakerMetrics>;
+      lastSuccessAt: string | null;
+      lastFailureAt: string | null;
+      consecutiveFailures: number;
+      degraded: boolean;
+      lastError: ReturnType<typeof getBrokerObservabilitySnapshot>['lastError'];
+    };
   };
 };
 
@@ -47,6 +57,8 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     transport: mode,
     disabled: false,
   };
+  const brokerSnapshot = getBrokerObservabilitySnapshot();
+  const circuitBreaker = getBrokerCircuitBreakerMetrics();
 
   return {
     status: 'ok',
@@ -58,6 +70,14 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
       runtime,
       mode: runtime.mode,
       transportMode: mode,
+      broker: {
+        circuitBreaker,
+        lastSuccessAt: brokerSnapshot.lastSuccessAt,
+        lastFailureAt: brokerSnapshot.lastFailureAt,
+        consecutiveFailures: brokerSnapshot.consecutiveFailures,
+        degraded: brokerSnapshot.degraded,
+        lastError: brokerSnapshot.lastError,
+      },
     },
   };
 };

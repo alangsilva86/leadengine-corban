@@ -29,6 +29,12 @@ describe('buildHealthPayload', () => {
       transport: 'http',
       disabled: false,
     });
+    expect(payload.whatsapp.broker).toMatchObject({
+      degraded: false,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      circuitBreaker: expect.any(Object),
+    });
   });
 
   it('throws when WHATSAPP_MODE is defined', async () => {

@@ -232,6 +232,28 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
     });
   });
 
+  it('exposes offline notice with request metadata for transient broker errors', async () => {
+    sendMessageMutate.mockImplementation((_payload, options) => {
+      options?.onError?.({
+        status: 502,
+        message: 'BROKER_ERROR',
+        payload: { error: { code: 'BROKER_ERROR', requestId: 'req-123', recoveryHint: 'Guardamos a mensagem.' } },
+      });
+    });
+
+    render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
+    const props = ConversationAreaMock.props;
+    props.onSendMessage?.({ content: 'Oi', attachments: [] });
+
+    await waitFor(() => {
+      expect(ConversationAreaMock.props?.composerNotice).toMatchObject({
+        code: 'BROKER_ERROR',
+        requestId: 'req-123',
+        actionLabel: 'Reconectar ao WhatsApp',
+      });
+    });
+  });
+
   it('sincroniza modo de IA com API e persiste alterações', async () => {
     apiMock.apiGet.mockResolvedValueOnce({ mode: 'auto' });
 

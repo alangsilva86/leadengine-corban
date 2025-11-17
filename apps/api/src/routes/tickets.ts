@@ -44,6 +44,8 @@ import {
   type WhatsAppTransportSendMessagePayload,
 } from '../features/whatsapp-transport';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
+import { whatsappOutboundMetrics } from '../lib/metrics';
+import { recordBrokerFailure, recordBrokerSuccess } from '../services/broker-observability';
 import {
   hasStructuredContactData,
   hasValidLocationData,
@@ -157,6 +159,49 @@ const serializeError = (error: unknown): Record<string, unknown> => {
   return {
     message: safeTruncate(error, 500),
   } satisfies Record<string, unknown>;
+};
+
+const resolveRequestId = (req: Request, error?: unknown): string => {
+  if (error instanceof WhatsAppBrokerError && error.requestId) {
+    return error.requestId;
+  }
+  if (error instanceof WhatsAppTransportError && error.requestId) {
+    return error.requestId;
+  }
+  const headerValue = typeof req.rid === 'string' && req.rid.length > 0 ? req.rid : null;
+  if (headerValue) {
+    return headerValue;
+  }
+  return `rid_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+};
+
+const resolveBrokerStatus = (error: unknown): number | null => {
+  if (error instanceof WhatsAppBrokerError) {
+    return typeof error.brokerStatus === 'number' ? error.brokerStatus : null;
+  }
+  if (error instanceof WhatsAppTransportError) {
+    return typeof error.status === 'number' ? error.status : null;
+  }
+  return null;
+};
+
+const resolveBrokerCode = (error: unknown): string | null => {
+  if (error instanceof WhatsAppBrokerError) {
+    return error.brokerCode ?? null;
+  }
+  if (error instanceof WhatsAppTransportError) {
+    return error.code ?? null;
+  }
+  return null;
+};
+
+const buildRecoveryHint = (requestId: string | null): string => {
+  const base =
+    'Guardamos a mensagem e ela será reenviada automaticamente assim que o WhatsApp voltar a responder.';
+  if (requestId) {
+    return `${base} ID da falha: ${requestId}.`;
+  }
+  return base;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -808,13 +853,21 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = resolveRequestTenantId(req);
     const chatId = normalizeString(req.body.chatId);
-    const ticketId = normalizeString(req.body.ticketId);
-    const text = normalizeString(req.body.text) ?? normalizeString(req.body.content);
-    const instanceOverride = normalizeString(req.body.iid) ?? normalizeString(req.body.instanceId);
-    const mediaPayload = chatId ? normalizeOutboundMedia(req.body.media) : null;
-    const transport = getWhatsAppTransport();
+  const ticketId = normalizeString(req.body.ticketId);
+  const text = normalizeString(req.body.text) ?? normalizeString(req.body.content);
+  const instanceOverride = normalizeString(req.body.iid) ?? normalizeString(req.body.instanceId);
+  const mediaPayload = chatId ? normalizeOutboundMedia(req.body.media) : null;
+  const transport = getWhatsAppTransport();
+  const baseRequestId = resolveRequestId(req);
+  const requestWithRid = req as Request & { rid?: string };
+  if (!requestWithRid.rid) {
+    requestWithRid.rid = baseRequestId;
+  }
+  if (!res.getHeader('X-Request-Id')) {
+    res.setHeader('X-Request-Id', baseRequestId);
+  }
 
-    if (!chatId && ticketId) {
+  if (!chatId && ticketId) {
       const rawType = typeof req.body.type === 'string' ? req.body.type.trim().toUpperCase() : 'TEXT';
       const normalizedType = allowedMessageTypes.has(rawType) ? (rawType as MessageType) : 'TEXT';
       const metadata = isRecord(req.body.metadata)
@@ -869,6 +922,13 @@ router.post(
         metadata.previewUrl = req.body.previewUrl;
       }
 
+      const attemptContext = {
+        tenantId,
+        ticketId,
+        chatId: null,
+        instanceId: instanceOverride ?? null,
+      } as const;
+
       try {
         const message = await sendTicketMessage(tenantId, req.user?.id, {
           ticketId,
@@ -883,6 +943,16 @@ router.post(
           quotedMessageId: normalizeString(req.body.quotedMessageId) ?? undefined,
           metadata,
           idempotencyKey: normalizeString(req.body.idempotencyKey) ?? undefined,
+        });
+
+        recordBrokerSuccess({ ...attemptContext, brokerStatus: 200, requestId: baseRequestId });
+        logger.info('📤 [Tickets] outbound registrado (ticket path)', {
+          requestId: baseRequestId,
+          tenantId,
+          ticketId: message.ticketId,
+          messageId: message.id,
+          instanceId: message.instanceId ?? attemptContext.instanceId,
+          messageType: message.type ?? normalizedType,
         });
 
         res.status(201).json({
@@ -907,18 +977,34 @@ router.post(
         }
 
         if (error instanceof WhatsAppBrokerError || error instanceof WhatsAppTransportError) {
+          const requestId = resolveRequestId(req, error);
+          const brokerStatus = resolveBrokerStatus(error) ?? 502;
+          const brokerCode = resolveBrokerCode(error) ?? 'BROKER_ERROR';
+          recordBrokerFailure({
+            ...attemptContext,
+            brokerStatus,
+            errorCode: brokerCode,
+            requestId,
+          });
+          logger.error('🚨 [Tickets] outbound falhou (ticket path)', {
+            tenantId,
+            ticketId,
+            instanceId: attemptContext.instanceId,
+            brokerStatus,
+            brokerCode,
+            requestId,
+            error,
+          });
           res.status(502).json({
             success: false,
             error: {
               code: 'BROKER_ERROR',
               message: error instanceof Error ? error.message : String(error),
-              ...(error instanceof WhatsAppBrokerError
-                ? {
-                    brokerCode: error.brokerCode,
-                    brokerStatus: error.brokerStatus,
-                    requestId: error.requestId,
-                  }
-                : {}),
+              brokerCode,
+              brokerStatus,
+              requestId,
+              ticketId,
+              recoveryHint: buildRecoveryHint(requestId),
             },
           });
           return;
@@ -1031,7 +1117,20 @@ router.post(
         messagePayload.metadata = messageMetadata;
       }
 
+      const startedAt = Date.now();
       const brokerResponse = await transport.sendMessage(instanceId, messagePayload);
+      const latencyMs = Date.now() - startedAt;
+      const metricBase = {
+        origin: 'tickets.router',
+        tenantId,
+        instanceId,
+      } as const;
+      const outboundStatus =
+        typeof (brokerResponse as Record<string, unknown>).status === 'string'
+          ? ((brokerResponse as Record<string, unknown>).status as string)
+          : 'SENT';
+      whatsappOutboundMetrics.incTotal({ ...metricBase, status: outboundStatus });
+      whatsappOutboundMetrics.observeLatency(metricBase, latencyMs);
 
       const externalId = brokerResponse.externalId ?? `TEMP-${Date.now()}`;
       const ticketContext = await findOrCreateOpenTicketByChat({
@@ -1051,12 +1150,31 @@ router.post(
         type: mediaPayload ? 'media' : 'text',
         text: text ?? mediaPayload?.storage.caption ?? null,
         media: mediaPayload ? mediaPayload.storage : null,
-        metadata: {
-          source: 'baileys',
-          brokerResponse: safeTruncate(brokerResponse),
-          instanceId,
-        },
+          metadata: {
+            source: 'baileys',
+            brokerResponse: safeTruncate(brokerResponse),
+            instanceId,
+          },
         timestamp: Date.now(),
+      });
+
+      recordBrokerSuccess({
+        tenantId,
+        ticketId: ticketContext.ticket.id,
+        chatId: normalizedChatId,
+        instanceId,
+        brokerStatus: 200,
+        requestId: baseRequestId,
+      });
+      logger.info('📤 [Tickets] outbound enviado', {
+        tenantId,
+        ticketId: ticketContext.ticket.id,
+        chatId: normalizedChatId,
+        instanceId,
+        brokerStatus: 200,
+        requestId: baseRequestId,
+        messageId: message.id,
+        externalId: message.externalId ?? externalId,
       });
 
       emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
@@ -1093,6 +1211,9 @@ router.post(
       });
 
       const errorId = `ERR-${Date.now()}`;
+      const requestId = resolveRequestId(req, error);
+      const brokerStatus = resolveBrokerStatus(error) ?? 502;
+      const brokerCode = resolveBrokerCode(error) ?? 'BROKER_ERROR';
       const { message } = await upsertMessageByExternalId({
         tenantId,
         ticketId: ticketContext.ticket.id,
@@ -1106,10 +1227,36 @@ router.post(
           source: 'baileys',
           brokerError: serializeError(error),
           instanceId,
+          retry: {
+            status: 'pending',
+            reason: brokerCode,
+            requestId,
+            capturedAt: new Date().toISOString(),
+          },
         },
         timestamp: Date.now(),
       });
 
+      recordBrokerFailure({
+        tenantId,
+        ticketId: ticketContext.ticket.id,
+        chatId: normalizedChatId,
+        instanceId,
+        brokerStatus,
+        errorCode: brokerCode,
+        requestId,
+        recoveryQueued: true,
+      });
+      logger.error('🚨 [Tickets] outbound falhou', {
+        tenantId,
+        ticketId: ticketContext.ticket.id,
+        chatId: normalizedChatId,
+        instanceId,
+        brokerStatus,
+        brokerCode,
+        requestId,
+        error,
+      });
       emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
 
       res.status(502).json({
@@ -1117,13 +1264,12 @@ router.post(
         error: {
           code: 'BROKER_ERROR',
           message: error instanceof Error ? error.message : String(error),
-          ...(error instanceof WhatsAppBrokerError
-            ? {
-                brokerCode: error.brokerCode,
-                brokerStatus: error.brokerStatus,
-                requestId: error.requestId,
-              }
-            : {}),
+          brokerCode,
+          brokerStatus,
+          requestId,
+          ticketId: ticketContext.ticket.id,
+          queuedMessageId: message.id,
+          recoveryHint: buildRecoveryHint(requestId),
         },
       });
     }

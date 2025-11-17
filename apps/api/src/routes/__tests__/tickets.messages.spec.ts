@@ -6,6 +6,7 @@ import {
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
 } from '../../services/whatsapp-broker-client';
+import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 
 const {
   findOrCreateOpenTicketByChatMock,
@@ -18,6 +19,11 @@ const {
 }));
 
 const sendMessageMock = vi.fn();
+
+const brokerObservabilityMocks = vi.hoisted(() => ({
+  recordBrokerSuccessMock: vi.fn(),
+  recordBrokerFailureMock: vi.fn(),
+}));
 
 vi.mock('@ticketz/storage', async () => {
   const actual = await import('../../test-utils/storage-mock');
@@ -52,6 +58,18 @@ vi.mock('../../features/whatsapp-transport', () => ({
   }),
 }));
 
+vi.mock('../../services/broker-observability', () => ({
+  recordBrokerSuccess: brokerObservabilityMocks.recordBrokerSuccessMock,
+  recordBrokerFailure: brokerObservabilityMocks.recordBrokerFailureMock,
+  getBrokerObservabilitySnapshot: () => ({
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    consecutiveFailures: 0,
+    degraded: false,
+    lastError: null,
+  }),
+}));
+
 import { ticketsRouter } from '../tickets';
 import { errorHandler } from '../../middleware/error-handler';
 
@@ -81,6 +99,8 @@ describe('POST /api/tickets/messages validations', () => {
     findOrCreateOpenTicketByChatMock.mockReset();
     upsertMessageByExternalIdMock.mockReset();
     transportSendMessageMock.mockReset();
+    brokerObservabilityMocks.recordBrokerSuccessMock.mockReset();
+    brokerObservabilityMocks.recordBrokerFailureMock.mockReset();
 
     findOrCreateOpenTicketByChatMock.mockResolvedValue({
       ticket: { id: 'ticket-mock' },
@@ -319,5 +339,54 @@ describe('POST /api/tickets/messages validations', () => {
         message: 'WhatsApp broker not configured',
       },
     });
+  });
+
+  it('records broker success context for direct chat sends', async () => {
+    const app = buildApp();
+    const response = await request(app)
+      .post('/api/tickets/messages')
+      .send({ chatId: '558899999999@s.whatsapp.net', content: 'Ping' });
+
+    expect(response.status).toBe(200);
+    expect(brokerObservabilityMocks.recordBrokerSuccessMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-123',
+        chatId: '558899999999@s.whatsapp.net',
+        brokerStatus: 200,
+      })
+    );
+  });
+
+  it('annotates WhatsApp transport failures with retry hints and requestId', async () => {
+    const app = buildApp();
+    const transportError = new WhatsAppTransportError('Broker offline', {
+      code: 'BROKER_TIMEOUT',
+      status: 504,
+      requestId: 'req-offline',
+    });
+    transportSendMessageMock.mockRejectedValueOnce(transportError);
+
+    const response = await request(app)
+      .post('/api/tickets/messages')
+      .send({ chatId: '558899999999@s.whatsapp.net', content: 'Teste' });
+
+    expect(response.status).toBe(502);
+    expect(response.body?.error?.requestId).toBe('req-offline');
+    expect(response.body?.error?.brokerCode).toBe('BROKER_TIMEOUT');
+    expect(response.body?.error?.queuedMessageId).toBe('message-mock');
+    expect(response.body?.error?.recoveryHint).toMatch(/Guardamos a mensagem/i);
+    expect(brokerObservabilityMocks.recordBrokerFailureMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-123',
+        chatId: '558899999999@s.whatsapp.net',
+        errorCode: 'BROKER_TIMEOUT',
+        brokerStatus: 504,
+        requestId: 'req-offline',
+        recoveryQueued: true,
+      })
+    );
+    const metadataArg = upsertMessageByExternalIdMock.mock.calls.at(-1)?.[0]?.metadata as Record<string, unknown>;
+    expect(metadataArg?.retry?.requestId).toBe('req-offline');
+    expect(metadataArg?.retry?.reason).toBe('BROKER_TIMEOUT');
   });
 });
