@@ -2,6 +2,12 @@
 
 Este guia descreve como consumir as rotas de acordos comerciais recém modeladas no contrato OpenAPI disponível em `packages/contracts/openapi.yaml`. Os exemplos utilizam os tipos TypeScript gerados por `@ticketz/contracts` para manter o cliente alinhado ao que está documentado.
 
+## Modo de armazenamento
+
+- **Produção / dados reais**: por padrão, quando o serviço tem acesso a um banco configurado (`DATABASE_URL`), todas as operações persistem diretamente nas tabelas `agreements_*`. Falhas de schema ou permissões são propagadas para que o time de operações corrija a instância ao invés de ocultar o erro.
+- **Catálogo demo (opcional)**: defina `AGREEMENTS_DEMO_MODE=true` apenas em ambientes de demonstração/local para servir os dados embarcados em memória. Nesse modo nenhuma escrita toca o banco e as rotas retornam exclusivamente o seed `config/demo-agreements.ts`.
+- **Fallback automático**: foi removido; apenas o modo demo explícito usa mocks. Se o banco estiver indisponível e o modo demo não estiver habilitado, a API responderá com erro (`5xx`).
+
 ## Autenticação, rate limit e versionamento
 
 - **Autenticação**: todas as rotas exigem o header `Authorization: Bearer <access-token>` emitido pelo LeadEngine. Chamadas sem credenciais válidas retornam `401` com o payload padrão `ErrorResponse`.

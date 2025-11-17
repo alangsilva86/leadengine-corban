@@ -1,6 +1,7 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { type PrismaClient } from '@prisma/client';
 import { logger } from '../../config/logger';
-import { DatabaseDisabledError, isDatabaseEnabled, prisma as prismaClient } from '../../lib/prisma';
+import { isDatabaseEnabled, prisma as prismaClient } from '../../lib/prisma';
+import { getAgreementsConfig } from './config';
 import { DemoAgreementsStore } from './demo-store';
 
 export interface AgreementRecord {
@@ -158,167 +159,30 @@ interface StorageOperationOptions<T> {
 
 const defaultPrisma = prismaClient as unknown as AgreementsPrismaClient;
 
-const STORAGE_DISABLED_ERROR_CODES = new Set(['DATABASE_DISABLED', 'STORAGE_DATABASE_DISABLED']);
-const STORAGE_UNAVAILABLE_PRISMA_CODES = new Set([
-  'P1000',
-  'P1001',
-  'P1002',
-  'P1003',
-  'P1008',
-  'P1009',
-  'P1010',
-  'P1011',
-  'P1012',
-  'P1013',
-  'P1014',
-  'P1015',
-  'P1016',
-  'P1017',
-  'P2000',
-  'P2001',
-  'P2002',
-  'P2003',
-  'P2004',
-  'P2005',
-  'P2006',
-  'P2007',
-  'P2008',
-  'P2009',
-  'P2010',
-  'P2021',
-  'P2022',
-  'P2023',
-  'P2024',
-]);
-
-const hasErrorName = (error: unknown, name: string): boolean => {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-
-  const candidate = error as { name?: unknown };
-  return typeof candidate.name === 'string' && candidate.name === name;
-};
-
-const readErrorCode = (error: unknown): string | null => {
-  if (typeof error !== 'object' || error === null) {
-    return null;
-  }
-
-  const candidate = error as { code?: unknown };
-  return typeof candidate.code === 'string' ? candidate.code : null;
-};
-
-const isConstructor = (candidate: unknown): candidate is new (...args: unknown[]) => unknown =>
-  typeof candidate === 'function';
-
-const shouldFallbackToDemoStore = (error: unknown): boolean => {
-  if (!error) {
-    return false;
-  }
-
-  if (error instanceof DatabaseDisabledError || hasErrorName(error, 'DatabaseDisabledError')) {
-    return true;
-  }
-
-  const PrismaClientInitializationError = Prisma?.PrismaClientInitializationError;
-  const PrismaClientRustPanicError = Prisma?.PrismaClientRustPanicError;
-  const PrismaClientKnownRequestError = Prisma?.PrismaClientKnownRequestError;
-
-  if (isConstructor(PrismaClientInitializationError) && error instanceof PrismaClientInitializationError) {
-    return true;
-  }
-
-  if (isConstructor(PrismaClientRustPanicError) && error instanceof PrismaClientRustPanicError) {
-    return true;
-  }
-
-  if (isConstructor(PrismaClientKnownRequestError) && error instanceof PrismaClientKnownRequestError) {
-    return STORAGE_UNAVAILABLE_PRISMA_CODES.has(error.code);
-  }
-
-  const code = readErrorCode(error);
-  if (!code) {
-    return false;
-  }
-
-  return STORAGE_DISABLED_ERROR_CODES.has(code) || STORAGE_UNAVAILABLE_PRISMA_CODES.has(code);
-};
-
 export class AgreementsRepository {
   private readonly prisma: AgreementsPrismaClient;
-  private demoStore: DemoAgreementsStore | null;
-  private fallbackStore: DemoAgreementsStore | null = null;
-  private fallbackLogged = false;
+  private readonly demoStore: DemoAgreementsStore | null;
+  private readonly demoMode: boolean;
 
   constructor(dependencies: AgreementsRepositoryDependencies = {}) {
     this.prisma = dependencies.prisma ?? defaultPrisma;
-    this.demoStore = isDatabaseEnabled ? null : new DemoAgreementsStore();
-  }
+    const { demoModeEnabled } = getAgreementsConfig();
+    this.demoMode = demoModeEnabled || !isDatabaseEnabled;
+    this.demoStore = this.demoMode ? new DemoAgreementsStore() : null;
 
-  private ensureFallbackStore(): DemoAgreementsStore {
-    if (this.demoStore) {
-      return this.demoStore;
+    if (this.demoMode) {
+      logger.warn('[/agreements] Demo mode enabled — database operations are disabled.');
     }
-
-    if (!this.fallbackStore) {
-      this.fallbackStore = new DemoAgreementsStore();
-    }
-
-    return this.fallbackStore;
-  }
-
-  private extractErrorCode(error: unknown): string | undefined {
-    if (error instanceof DatabaseDisabledError) {
-      return error.code;
-    }
-
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      return error.code;
-    }
-
-    if (error && typeof error === 'object' && 'code' in error) {
-      const { code } = error as { code?: string };
-      if (typeof code === 'string') {
-        return code;
-      }
-    }
-
-    return undefined;
   }
 
   private async withStorageFallback<T>(options: StorageOperationOptions<T>): Promise<T> {
-    const { tenantId, operation, database, fallback } = options;
+    const { database, fallback } = options;
 
     if (this.demoStore) {
       return fallback(this.demoStore);
     }
 
-    try {
-      return await database();
-    } catch (error) {
-      if (!shouldFallbackToDemoStore(error)) {
-        throw error;
-      }
-
-      const store = this.ensureFallbackStore();
-
-      if (!this.fallbackLogged) {
-        this.fallbackLogged = true;
-        logger.warn('[/agreements] storage unavailable — enabling demo fallback store', {
-          tenantId,
-          operation,
-          errorCode: this.extractErrorCode(error),
-        });
-      } else {
-        logger.debug('[/agreements] storage fallback in use', {
-          tenantId,
-          operation,
-        });
-      }
-
-      return fallback(store);
-    }
+    return database();
   }
 
   async listAgreements(
