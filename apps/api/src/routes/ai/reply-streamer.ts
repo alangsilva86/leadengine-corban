@@ -1,12 +1,10 @@
 import type { Prisma } from '@prisma/client';
 import { recordAiRun } from '@ticketz/storage';
 
-import { aiConfig as envAiConfig, isAiEnabled } from '../../config/ai';
+import { RESPONSES_API_URL, aiConfig as envAiConfig, isAiEnabled } from '../../config/ai';
 import { logger } from '../../config/logger';
 import { getRegisteredTools, executeTool } from '../../services/ai/tool-registry';
 import { ensureAiConfig } from './config-controller';
-
-const RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
 
 export type ReplyMessage = {
   role: 'user' | 'assistant' | 'system';

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { logger } from './logger';
 
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+const DEFAULT_RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
 const RELEASE_SUFFIX_REGEX = /-(?:20\d{2}-\d{2}-\d{2}|latest)$/i;
 
 type AiAssistantMode = 'IA_AUTO' | 'COPILOTO' | 'HUMANO';
@@ -12,6 +13,7 @@ const aiEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_MODEL: z.string().min(1).default(DEFAULT_OPENAI_MODEL),
   OPENAI_VECTOR_STORE_ID: z.string().min(1).optional(),
+  OPENAI_RESPONSES_API_URL: z.string().min(1).optional(),
   AI_STREAM_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
   AI_TOOL_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
   AI_TOOL_MAX_RETRIES: z.coerce.number().int().min(0).max(5).optional(),
@@ -97,6 +99,7 @@ export const resolveDefaultAiMode = (): AiAssistantMode => {
 
 const defaultAssistantMode = resolveDefaultAiMode();
 const defaultModel = normalizeOpenAiModel(env.OPENAI_MODEL, DEFAULT_OPENAI_MODEL);
+const resolvedResponsesApiUrl = env.OPENAI_RESPONSES_API_URL?.trim();
 
 export const aiConfig = {
   apiKey: env.OPENAI_API_KEY,
@@ -111,6 +114,10 @@ export const aiConfig = {
 };
 
 export const isAiEnabled = Boolean(aiConfig.apiKey);
+export const RESPONSES_API_URL =
+  resolvedResponsesApiUrl && resolvedResponsesApiUrl.length > 0
+    ? resolvedResponsesApiUrl
+    : DEFAULT_RESPONSES_API_URL;
 
 // Função para logar configuração (chamada após inicialização)
 export function logAiConfiguration() {
