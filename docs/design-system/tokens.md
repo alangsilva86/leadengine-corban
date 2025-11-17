@@ -109,7 +109,6 @@ Este documento consolida os _design tokens_ consumidos pelo LeadEngine. Cada tok
 
 Algumas áreas legadas ainda dependem da paleta `slate`/`white` para garantir compatibilidade com integrações externas. Elas foram mapeadas em `config/forbidden-tailwind-exceptions.json` e não devem receber novas ocorrências de classes proibidas. Sempre que tocar nesses módulos, planeje a migração para tokens e remova a exceção correspondente.
 
-- `apps/web/src/components/ui/glass-panel.*` — stories do antigo painel de vidro aguardam estabilização do componente definitivo.
 - `apps/web/src/features/chat/components/**/*` — fluxo de chat com widgets herdados dependentes de estilos externos.
 - `apps/web/src/features/whatsapp/components/**/*` — componentes do conector WhatsApp que compartilham estilos com a SDK do parceiro.
 - `apps/web/src/features/whatsapp/connect/index.tsx` — onboarding em revisão junto a parceiros comerciais.
