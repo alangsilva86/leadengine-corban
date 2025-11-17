@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import ConveniosSettingsTab from '../ConveniosSettingsTab.jsx';
@@ -249,6 +249,11 @@ describe('ConveniosSettingsTab', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agreements', expect.objectContaining({ method: 'POST' })));
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Convênio criado'));
+    await waitFor(() => {
+      const sheet = document.querySelector('[data-slot="sheet-content"]');
+      expect(sheet).not.toBeNull();
+      expect(within(sheet).getByText('Convênio Criado')).toBeInTheDocument();
+    });
   });
 
   it('impede sincronização quando o convênio não possui providerId', async () => {
@@ -289,5 +294,66 @@ describe('ConveniosSettingsTab', () => {
       expect.stringContaining('/api/v1/agreements/providers/'),
       expect.anything()
     );
+  });
+
+  it('abre o sheet ao selecionar um convênio existente', async () => {
+    await renderComponent();
+    await waitFor(() => expect(screen.getByText('Convênio A')).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Convênio A'));
+    });
+
+    await waitFor(() => {
+      const sheet = document.querySelector('[data-slot="sheet-content"]');
+      expect(sheet).not.toBeNull();
+      expect(within(sheet).getByText('Convênio A')).toBeInTheDocument();
+    });
+  });
+
+  it('reabre o sheet quando o usuário fecha manualmente e seleciona novamente', async () => {
+    await renderComponent();
+    await waitFor(() => expect(screen.getByText('Convênio A')).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Convênio A'));
+    });
+
+    await waitFor(() => expect(document.querySelector('[data-slot="sheet-content"]')).not.toBeNull());
+
+    const closeButton = screen.getByRole('button', { name: /Close/i });
+    await act(async () => {
+      fireEvent.click(closeButton);
+    });
+
+    await waitFor(() => expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Convênio A'));
+    });
+
+    await waitFor(() => {
+      const sheet = document.querySelector('[data-slot="sheet-content"]');
+      expect(sheet).not.toBeNull();
+      expect(within(sheet).getByText('Convênio A')).toBeInTheDocument();
+    });
+  });
+
+  it('arquiva convênio direto da listagem', async () => {
+    await renderComponent();
+    await waitFor(() => expect(screen.getByText('Convênio A')).toBeInTheDocument());
+
+    const archiveButton = screen.getByRole('button', { name: /Arquivar/i });
+    await act(async () => {
+      fireEvent.click(archiveButton);
+    });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/agreements/agreement-1',
+        expect.objectContaining({ method: 'PATCH' })
+      )
+    );
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Convênio arquivado'));
   });
 });
