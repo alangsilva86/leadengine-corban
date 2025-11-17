@@ -486,6 +486,8 @@ const useConvenioCatalog = () => {
   } as const;
 };
 
+export type UseConvenioCatalogReturn = ReturnType<typeof useConvenioCatalog>;
+
 export const useAgreementOptions = (): AgreementOption[] => {
   const { agreementOptions } = useConvenioCatalog();
   return agreementOptions;
