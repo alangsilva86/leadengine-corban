@@ -96,6 +96,12 @@ Adicionados testes para validar:
 - Rejeição de valores inválidos
 - Retorno correto no formato do frontend
 
+### 6. Fonte única de verdade para o modo padrão
+
+- O módulo `apps/api/src/services/ai/config-helpers.ts` concentra `DEFAULT_MODE`, o schema padrão de sugestões e os helpers de normalização (`normalizeModeFromFrontend`/`modeToFrontend`).
+- O valor padrão definitivo documentado e utilizado pelo backend permanece `COPILOTO` (equivalente ao modo `assist` no frontend) para garantir um fallback seguro.
+- Novos testes unitários (`config-helpers.test.ts`) garantem que os helpers compartilhem o mesmo comportamento, evitando divergências entre controladores.
+
 ## Arquivos Modificados
 
 1. `apps/api/src/routes/ai.ts` - Lógica de normalização e conversão

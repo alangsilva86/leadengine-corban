@@ -9,135 +9,23 @@ import {
   type UpsertAiConfigInput,
   recordAiSuggestion,
   upsertAiMemory,
-  type AiAssistantMode,
   recordAiRun,
 } from '@ticketz/storage';
-import type { Prisma } from '@prisma/client';
 import { suggestWithAi, AiServiceError } from '../services/ai/openai-client';
 import { RESPONSES_API_URL, aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
 import { logger } from '../config/logger';
 import { getRegisteredTools, executeTool } from '../services/ai/tool-registry';
 import { ReplyStreamer, mergeToolDefinitions, sanitizeMetadata } from './reply-streamer';
 import { ensureTenantId, readQueueParam } from './ai/utils';
+import {
+  DEFAULT_MODE,
+  buildConfigUpsertPayload,
+  defaultSuggestionSchema,
+  modeToFrontend,
+  normalizeModeFromFrontend,
+} from '../services/ai/config-helpers';
 
 const router: Router = Router();
-
-const defaultSuggestionSchema: Prisma.JsonValue = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['next_step', 'tips', 'objections', 'confidence'],
-  properties: {
-    next_step: { type: 'string' },
-    tips: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['title', 'message'],
-        additionalProperties: false,
-        properties: {
-          title: { type: 'string' },
-          message: { type: 'string' },
-        },
-      },
-    },
-    objections: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['label', 'reply'],
-        additionalProperties: false,
-        properties: {
-          label: { type: 'string' },
-          reply: { type: 'string' },
-        },
-      },
-    },
-    confidence: { type: 'number' },
-  },
-};
-
-const DEFAULT_MODE: AiAssistantMode = 'COPILOTO';
-
-// Mapeamento de modos do frontend para o backend
-const normalizeModeFromFrontend = (mode: string): AiAssistantMode | null => {
-  const normalized = mode.trim().toLowerCase();
-  
-  // Aceitar valores do frontend
-  if (normalized === 'assist') return 'COPILOTO';
-  if (normalized === 'auto' || normalized === 'autonomous') return 'IA_AUTO';
-  if (normalized === 'manual') return 'HUMANO';
-  
-  // Aceitar valores do backend (case-insensitive)
-  if (normalized === 'copiloto') return 'COPILOTO';
-  if (normalized === 'ia_auto') return 'IA_AUTO';
-  if (normalized === 'humano') return 'HUMANO';
-  
-  return null;
-};
-
-// Converter modo do backend para formato do frontend
-const modeToFrontend = (mode: AiAssistantMode): string => {
-  if (mode === 'COPILOTO') return 'assist';
-  if (mode === 'IA_AUTO') return 'auto';
-  if (mode === 'HUMANO') return 'manual';
-  return 'assist'; // fallback
-};
-
-type AiConfigRecord = Awaited<ReturnType<typeof getAiConfig>>;
-
-const buildConfigUpsertPayload = (
-  tenantId: string,
-  queueId: string | null,
-  existing: AiConfigRecord,
-  overrides: Partial<UpsertAiConfigInput> = {}
-): UpsertAiConfigInput => {
-  const temperature = overrides.temperature ?? existing?.temperature;
-  const maxOutputTokens = overrides.maxOutputTokens ?? existing?.maxOutputTokens ?? null;
-  const systemPromptReply = overrides.systemPromptReply ?? existing?.systemPromptReply ?? null;
-  const systemPromptSuggest = overrides.systemPromptSuggest ?? existing?.systemPromptSuggest ?? null;
-  const structuredOutputSchema =
-    overrides.structuredOutputSchema ?? existing?.structuredOutputSchema ?? null;
-  const tools = overrides.tools ?? existing?.tools ?? null;
-  const vectorStoreEnabled = overrides.vectorStoreEnabled ?? existing?.vectorStoreEnabled;
-  const vectorStoreIds = overrides.vectorStoreIds ?? existing?.vectorStoreIds;
-  const streamingEnabled = overrides.streamingEnabled ?? existing?.streamingEnabled;
-  const defaultMode = overrides.defaultMode ?? existing?.defaultMode ?? DEFAULT_MODE;
-  const confidenceThreshold =
-    overrides.confidenceThreshold ?? existing?.confidenceThreshold;
-  const fallbackPolicy = overrides.fallbackPolicy ?? existing?.fallbackPolicy;
-
-  const payload: UpsertAiConfigInput = {
-    tenantId,
-    queueId,
-    scopeKey: queueId ?? '__global__',
-    model: overrides.model ?? existing?.model ?? envAiConfig.defaultModel,
-    maxOutputTokens,
-    systemPromptReply,
-    systemPromptSuggest,
-    structuredOutputSchema,
-    tools,
-    defaultMode,
-  };
-
-  if (temperature !== undefined) {
-    payload.temperature = temperature;
-  }
-  if (vectorStoreEnabled !== undefined) {
-    payload.vectorStoreEnabled = vectorStoreEnabled;
-  }
-  payload.vectorStoreIds = vectorStoreIds ?? [];
-  if (streamingEnabled !== undefined) {
-    payload.streamingEnabled = streamingEnabled;
-  }
-  if (confidenceThreshold !== undefined) {
-    payload.confidenceThreshold = confidenceThreshold;
-  }
-  if (fallbackPolicy !== undefined) {
-    payload.fallbackPolicy = fallbackPolicy ?? null;
-  }
-
-  return payload;
-};
 
 const modeValidators = [
   body('mode')

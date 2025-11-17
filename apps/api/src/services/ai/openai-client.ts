@@ -8,6 +8,7 @@ import { getAiConfig, upsertAiConfig } from '@ticketz/storage';
 import { recordAiRun } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
 import { logger } from '../../config/logger';
+import type { AiConfigRecord } from './config-helpers';
 
 export class AiServiceError extends Error {
   status: number;
@@ -62,8 +63,6 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 const MAX_SUGGESTION_ATTEMPTS = 3;
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const RETRY_BASE_DELAY_MS = 400;
-
-type AiConfigRecord = Awaited<ReturnType<typeof getAiConfig>>;
 
 const clampString = (value: string, limit = 512): string => (value.length > limit ? value.slice(0, limit) : value);
 
