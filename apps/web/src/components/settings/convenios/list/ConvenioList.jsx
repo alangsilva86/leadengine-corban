@@ -1,4 +1,4 @@
-import { Archive, Plus, RefreshCw, Upload } from 'lucide-react';
+import { Archive, Plus, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.jsx';
 import { cn } from '@/lib/utils.js';
 import { STATUS_OPTIONS } from '@/features/agreements/convenioSettings.constants.ts';
+import AgreementImportButton from '../AgreementImportButton.jsx';
 
 const ConvenioList = ({
   convenios,
@@ -28,9 +29,7 @@ const ConvenioList = ({
         </CardDescription>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Button type="button" variant="outline" onClick={onOpenImport} disabled={readOnly}>
-          <Upload className="mr-2 h-4 w-4" /> Importar planilha
-        </Button>
+        <AgreementImportButton onClick={onOpenImport} disabled={readOnly} />
         <Button type="button" variant="ghost" onClick={onRefresh} disabled={isFetching}>
           <RefreshCw className={cn('mr-2 h-4 w-4', isFetching ? 'animate-spin' : '')} /> Atualizar
         </Button>
