@@ -77,7 +77,8 @@ let contactTasksRouter: express.Router;
 let errorHandler: RequestHandler;
 
 beforeAll(async () => {
-  ({ contactsRouter, contactTasksRouter } = await import('../contacts'));
+  ({ contactsRouter } = await import('../contacts'));
+  ({ contactTasksRouter } = await import('../contact-tasks'));
   ({ errorHandler } = await import('../../middleware/error-handler'));
 });
 

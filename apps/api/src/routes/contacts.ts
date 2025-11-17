@@ -1,16 +1,12 @@
 import { Router, type Request, type Response } from 'express';
-import { ZodError, z } from 'zod';
+import { ZodError } from 'zod';
 
 import {
   BulkContactsActionSchema,
-  ContactStatusSchema,
-  ContactTaskStatusSchema,
   CreateContactInteractionPayloadSchema,
   CreateContactPayloadSchema,
-  CreateContactTaskPayloadSchema,
   MergeContactsDTOSchema,
   UpdateContactPayloadSchema,
-  UpdateContactTaskPayloadSchema,
   WhatsappActionPayloadSchema,
 } from '@ticketz/core';
 import type { ContactFilters } from '@ticketz/core';
@@ -18,17 +14,14 @@ import type { NormalizedMessagePayload } from '@ticketz/contracts';
 import {
   applyBulkContactsAction,
   createContact,
-  createContactTask,
   findContactsByIds,
   getContactById,
   listContactInteractions,
   listContactTags,
-  listContactTasks,
   listContacts,
   logContactInteraction,
   mergeContacts,
   updateContact,
-  updateContactTask,
 } from '@ticketz/storage';
 
 import { asyncHandler } from '../middleware/error-handler';
@@ -36,6 +29,12 @@ import { requireTenant } from '../middleware/auth';
 import { respondWithValidationError } from '../utils/http-validation';
 import { sendToContact } from '../services/ticket-service';
 import { ConflictError, NotFoundError } from '@ticketz/core';
+import {
+  ContactIdParamSchema,
+  ListContactsQuerySchema,
+  PaginationQuerySchema,
+  parseOrRespond,
+} from './contacts/schemas';
 
 type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) => NormalizedMessagePayload;
 
@@ -49,131 +48,6 @@ const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
 };
 
 const router: Router = Router();
-const tasksRouter: Router = Router();
-
-const TagsParamSchema = z.preprocess((value) => {
-  if (Array.isArray(value)) {
-    const tags = value
-      .map((item) => (typeof item === 'string' ? item : String(item)))
-      .map((item) => item.trim())
-      .filter(Boolean);
-    return tags.length ? tags : undefined;
-  }
-
-  if (typeof value === 'string') {
-    const tags = value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    return tags.length ? tags : undefined;
-  }
-
-  return undefined;
-}, z.array(z.string()).optional());
-
-const StatusParamSchema = z.preprocess((value) => {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-
-  const rawItems = Array.isArray(value)
-    ? value.map((entry) => (typeof entry === 'string' ? entry : String(entry)))
-    : typeof value === 'string' && value.trim()
-    ? value.split(',').map((entry) => entry.trim())
-    : [];
-
-  if (!rawItems.length) {
-    return undefined;
-  }
-
-  const normalized = rawItems
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0 && entry.toLowerCase() !== 'all');
-
-  return normalized.length > 0 ? normalized : undefined;
-}, z.array(ContactStatusSchema).optional());
-
-const DateParamSchema = z.preprocess((value) => {
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  return undefined;
-}, z.date().optional());
-
-const BooleanParamSchema = z.preprocess((value) => {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true') {
-      return true;
-    }
-    if (normalized === 'false') {
-      return false;
-    }
-  }
-
-  return undefined;
-}, z.boolean().optional());
-
-const PaginationQuerySchema = z.object({
-  page: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().positive().max(100).optional(),
-  sortBy: z.string().optional(),
-  sortOrder: z.enum(['asc', 'desc']).optional(),
-});
-
-const ListContactsQuerySchema = PaginationQuerySchema.extend({
-  search: z.string().optional(),
-  status: StatusParamSchema,
-  tags: TagsParamSchema,
-  lastInteractionFrom: DateParamSchema,
-  lastInteractionTo: DateParamSchema,
-  hasOpenTickets: BooleanParamSchema,
-  isBlocked: BooleanParamSchema,
-  hasWhatsapp: BooleanParamSchema,
-});
-
-const TaskStatusParamSchema = z.preprocess((value) => {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value.split(',').map((item) => item.trim());
-  }
-
-  return undefined;
-}, z.array(ContactTaskStatusSchema).optional());
-
-const ListContactTasksQuerySchema = PaginationQuerySchema.extend({
-  status: TaskStatusParamSchema,
-});
-
-const ContactIdParamSchema = z.object({ contactId: z.string().uuid() });
-const TaskIdParamSchema = z.object({ taskId: z.string().uuid() });
-
-const parseOrRespond = <T>(schema: z.ZodSchema<T>, payload: unknown, res: Response): T | null => {
-  try {
-    return schema.parse(payload);
-  } catch (error) {
-    if (error instanceof ZodError) {
-      respondWithValidationError(res, error.issues);
-      return null;
-    }
-    throw error;
-  }
-};
 
 router.get(
   '/',
@@ -496,97 +370,4 @@ router.post(
   })
 );
 
-router.get(
-  '/:contactId/tasks',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
-    if (!params) {
-      return;
-    }
-
-    const query = parseOrRespond(ListContactTasksQuerySchema, req.query, res);
-    if (!query) {
-      return;
-    }
-
-    const tenantId = req.user!.tenantId;
-    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
-    if (typeof query.page === 'number' && Number.isFinite(query.page)) {
-      pagination.page = query.page;
-    }
-    if (typeof query.limit === 'number' && Number.isFinite(query.limit)) {
-      pagination.limit = query.limit;
-    }
-    if (typeof query.sortBy === 'string' && query.sortBy.trim()) {
-      pagination.sortBy = query.sortBy.trim();
-    }
-    if (query.sortOrder) {
-      pagination.sortOrder = query.sortOrder;
-    }
-
-    const pageValue = pagination.page ?? 1;
-    const limitValue = pagination.limit ?? 20;
-    const sortOrderValue = pagination.sortOrder ?? 'desc';
-    const statusFilterTasks =
-      Array.isArray(query.status) && query.status.length > 0 ? query.status : undefined;
-
-    const result = await listContactTasks({
-      tenantId,
-      contactId: params.contactId,
-      page: pageValue,
-      limit: limitValue,
-      sortOrder: sortOrderValue,
-      ...(pagination.sortBy ? { sortBy: pagination.sortBy } : {}),
-      ...(statusFilterTasks ? { status: statusFilterTasks } : {}),
-    });
-    res.json({ success: true, data: result });
-  })
-);
-
-router.post(
-  '/:contactId/tasks',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const params = parseOrRespond(ContactIdParamSchema, req.params, res);
-    if (!params) {
-      return;
-    }
-
-    const body = parseOrRespond(CreateContactTaskPayloadSchema, req.body, res);
-    if (!body) {
-      return;
-    }
-
-    const tenantId = req.user!.tenantId;
-    const task = await createContactTask({ tenantId, contactId: params.contactId, payload: body });
-    res.status(201).json({ success: true, data: task });
-  })
-);
-
-tasksRouter.patch(
-  '/tasks/:taskId',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const params = parseOrRespond(TaskIdParamSchema, req.params, res);
-    if (!params) {
-      return;
-    }
-
-    const body = parseOrRespond(UpdateContactTaskPayloadSchema, req.body, res);
-    if (!body) {
-      return;
-    }
-
-    const tenantId = req.user!.tenantId;
-    const task = await updateContactTask({ tenantId, taskId: params.taskId, payload: body });
-
-    if (!task) {
-      throw new NotFoundError('Task', params.taskId);
-    }
-
-    res.json({ success: true, data: task });
-  })
-);
-
-export { router as contactsRouter, tasksRouter as contactTasksRouter };
+export { router as contactsRouter };
