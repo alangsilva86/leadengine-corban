@@ -14,14 +14,13 @@ import {
 } from '@ticketz/storage';
 import type { Prisma } from '@prisma/client';
 import { suggestWithAi, AiServiceError } from '../services/ai/openai-client';
-import { aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
+import { RESPONSES_API_URL, aiConfig as envAiConfig, isAiEnabled } from '../config/ai';
 import { logger } from '../config/logger';
 import { getRegisteredTools, executeTool } from '../services/ai/tool-registry';
 import { ReplyStreamer } from './reply-streamer';
 import { ensureTenantId, readQueueParam } from './ai/utils';
 
 const router: Router = Router();
-const RESPONSES_API_URL = 'https://api.openai.com/v1/responses';
 
 const defaultSuggestionSchema: Prisma.JsonValue = {
   type: 'object',
