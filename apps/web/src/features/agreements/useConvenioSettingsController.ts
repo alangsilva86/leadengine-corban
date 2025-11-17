@@ -67,8 +67,10 @@ const useConvenioSettingsController = (): UseConvenioSettingsControllerReturn =>
   const { upsertWindow, removeWindow } = useAgreementWindowActions({
     selected: selection.context.selected,
     locked: selection.context.locked,
-    runUpdate,
     buildHistoryEntry,
+    historyAuthor: selection.context.historyAuthor,
+    role: selection.context.role,
+    mutations: selection.context.mutations,
   });
 
   const { upsertTax } = useAgreementRateActions({

@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Agreement } from '@/features/agreements/useConvenioCatalog.ts';
+import type { Agreement, UseConvenioCatalogReturn } from '@/features/agreements/useConvenioCatalog.ts';
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -129,15 +129,22 @@ describe('agreement action hooks', () => {
   describe('useAgreementWindowActions', () => {
     it('upserts and removes agreement windows', async () => {
       const selected = createAgreement({ janelas: [] });
+      const upsertWindowMutation = { mutateAsync: vi.fn().mockResolvedValue(null) };
+      const removeWindowMutation = { mutateAsync: vi.fn().mockResolvedValue(null) };
+      const mutations = {
+        upsertWindow: upsertWindowMutation,
+        removeWindow: removeWindowMutation,
+      } as unknown as Pick<UseConvenioCatalogReturn['mutations'], 'upsertWindow' | 'removeWindow'>;
       const { default: useAgreementWindowActions } = await import('../useAgreementWindowActions.ts');
-      runUpdateMock.mockResolvedValue(null);
 
       const { result } = renderHook(() =>
         useAgreementWindowActions({
           selected,
           locked: false,
-          runUpdate: runUpdateMock,
           buildHistoryEntry,
+          historyAuthor: 'Admin',
+          role: 'admin',
+          mutations,
         })
       );
 
@@ -153,9 +160,12 @@ describe('agreement action hooks', () => {
         await result.current.upsertWindow(windowPayload);
       });
 
-      expect(runUpdateMock).toHaveBeenCalledWith(
+      expect(upsertWindowMutation.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
-          nextAgreement: expect.objectContaining({ janelas: [windowPayload] }),
+          agreementId: selected.id,
+          payload: expect.objectContaining({
+            data: expect.objectContaining({ id: 'window-1' }),
+          }),
         })
       );
 
@@ -163,10 +173,8 @@ describe('agreement action hooks', () => {
         await result.current.removeWindow('window-1');
       });
 
-      expect(runUpdateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          telemetryEvent: 'agreements.window.removed',
-        })
+      expect(removeWindowMutation.mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ agreementId: selected.id, windowId: 'window-1' })
       );
     });
   });
