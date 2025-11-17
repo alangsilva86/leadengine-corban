@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
   Drawer,
   DrawerClose,
@@ -20,29 +19,16 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import {
   buildDealSnapshot,
   normalizeDealSnapshot,
   normalizeProposalSnapshot,
 } from './utils/salesSnapshot.js';
+import QueueAlerts from './QueueAlerts.jsx';
+import { QUEUE_ALERTS_ACTIONS, queueAlertsReducer } from './utils/simulationReducers.js';
+import { NO_STAGE_VALUE, normalizeStageState, resolveStageValue } from '@/features/chat/utils/simulation.js';
 
-const NO_STAGE_VALUE = '__none__';
 const METADATA_PLACEHOLDER = '{\n  "origin": "crm"\n}';
-
-const normalizeStageState = (value) => {
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value.trim();
-  }
-  return NO_STAGE_VALUE;
-};
-
-const resolveStageValue = (value) => {
-  if (typeof value === 'string' && value !== NO_STAGE_VALUE && value.trim().length > 0) {
-    return value.trim();
-  }
-  return '';
-};
 
 const formatClosedDate = (value) => {
   if (!value) {
@@ -68,37 +54,6 @@ const toIsoString = (value) => {
 
 const FINAL_STAGE_HINTS = ['ganho', 'concluido', 'liquid', 'aprovado'];
 
-const useQueueAlerts = (queueAlerts) =>
-  useMemo(() => {
-    if (!Array.isArray(queueAlerts)) {
-      return [];
-    }
-
-    return queueAlerts
-      .map((entry, index) => {
-        const payload = entry && typeof entry === 'object' ? entry.payload ?? {} : {};
-        const message =
-          payload && typeof payload.message === 'string' && payload.message.trim().length > 0
-            ? payload.message.trim()
-            : 'Fila padrão indisponível para registrar deals.';
-        const reason =
-          payload && typeof payload.reason === 'string' && payload.reason.trim().length > 0
-            ? payload.reason.trim()
-            : null;
-        const instanceId =
-          payload && typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
-            ? payload.instanceId.trim()
-            : null;
-
-        return {
-          message,
-          reason,
-          instanceId,
-          index,
-        };
-      })
-      .slice(0, 3);
-  }, [queueAlerts]);
 
 const DealDrawer = ({
   open,
@@ -125,10 +80,20 @@ const DealDrawer = ({
   const [metadataText, setMetadataText] = useState('');
   const [proposalContext, setProposalContext] = useState(null);
   const [errors, setErrors] = useState({});
+  const [normalizedAlerts, dispatchQueueAlerts] = useReducer(queueAlertsReducer, []);
 
-  const normalizedAlerts = useQueueAlerts(queueAlerts);
   const alertsActive = normalizedAlerts.length > 0;
   const fieldsDisabled = disabled || alertsActive;
+
+  useEffect(() => {
+    dispatchQueueAlerts({
+      type: QUEUE_ALERTS_ACTIONS.SYNC,
+      payload: {
+        alerts: queueAlerts,
+        fallbackMessage: 'Fila padrão indisponível para registrar deals.',
+      },
+    });
+  }, [queueAlerts]);
 
   useEffect(() => {
     if (!open) {
@@ -187,8 +152,6 @@ const DealDrawer = ({
 
     return JSON.stringify(snapshot, null, 2);
   }, [bankName, closedAt, installment, netAmount, proposalContext, proposalId, productLabel, simulationId, term, totalAmount]);
-
-  const normalizedAlertsActive = alertsActive;
 
   const description = useMemo(() => {
     if (fieldsDisabled && disabledReason) {
@@ -292,30 +255,7 @@ const DealDrawer = ({
         </DrawerHeader>
         <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           <div className="space-y-4">
-            {normalizedAlertsActive ? (
-              <div className="space-y-2">
-                {normalizedAlerts.map((alert) => (
-                  <Alert
-                    key={`${alert.reason ?? 'missing'}-${alert.instanceId ?? alert.index}`}
-                    className="border-amber-300/80 bg-amber-50 text-amber-900"
-                  >
-                    <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden />
-                    <AlertTitle>Fila padrão indisponível</AlertTitle>
-                    <AlertDescription>
-                      <p>{alert.message}</p>
-                      {alert.instanceId ? (
-                        <p className="text-xs text-amber-800/90">
-                          Instância afetada: <span className="font-semibold">{alert.instanceId}</span>
-                        </p>
-                      ) : null}
-                      {alert.reason ? (
-                        <p className="text-xs uppercase tracking-wide text-amber-700/70">Código: {alert.reason}</p>
-                      ) : null}
-                    </AlertDescription>
-                  </Alert>
-                ))}
-              </div>
-            ) : null}
+            <QueueAlerts alerts={normalizedAlerts} disabledReason={disabledReason} />
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
