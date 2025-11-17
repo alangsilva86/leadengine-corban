@@ -8,7 +8,7 @@ import {
 } from '@ticketz/storage';
 import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
-import { AUTH_MVP_BYPASS_TENANT_ID } from '../middleware/auth';
+import { requireTenant } from '../middleware/auth';
 import { leadEngineClient } from '../services/lead-engine-client';
 import { logger } from '../config/logger';
 import { agreementDefinitions } from '../config/lead-engine';
@@ -21,12 +21,13 @@ import {
   isStorageUnavailableError,
 } from '../data/lead-allocation-store';
 import { prisma } from '../lib/prisma';
+import { resolveRequestTenantId } from '../services/tenant-service';
 
 const router: Router = Router();
 
-const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
+router.use(requireTenant);
 
-const ensureTenantContext = (_req: Request): string => DEFAULT_TENANT_ID;
+const ensureTenantContext = (req: Request): string => resolveRequestTenantId(req);
 
 const normalizeClassificationValue = (value: unknown): string | null => {
   if (typeof value !== 'string') {

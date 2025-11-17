@@ -27,31 +27,23 @@ const buildRequest = (
 };
 
 describe('campaigns route utilities', () => {
-  beforeEach(() => {
-    process.env.AUTH_MVP_TENANT_ID = 'env-tenant';
-  });
-
   describe('resolveTenantId', () => {
-    it('prefers tenantId from query parameters', () => {
-      const req = buildRequest({ query: { tenantId: 'query-tenant' } });
+    it('returns tenant from authenticated user when no overrides are present', () => {
+      const req = buildRequest({ user: { tenantId: 'tenant-123' } });
 
-      expect(resolveTenantId(req)).toBe('query-tenant');
+      expect(resolveTenantId(req)).toBe('tenant-123');
     });
 
-    it('falls back to header and user when query is missing', () => {
-      const req = buildRequest({ headers: { 'x-tenant-id': 'header-tenant' } });
+    it('allows explicit tenantId when it matches authenticated tenant', () => {
+      const req = buildRequest({ user: { tenantId: 'tenant-123' }, query: { tenantId: 'tenant-123' } });
 
-      expect(resolveTenantId(req)).toBe('header-tenant');
-
-      const userReq = buildRequest({ user: { tenantId: 'user-tenant' } });
-
-      expect(resolveTenantId(userReq)).toBe('user-tenant');
+      expect(resolveTenantId(req)).toBe('tenant-123');
     });
 
-    it('uses environment fallback when no tenant can be resolved from request', () => {
-      const req = buildRequest();
+    it('throws when headers attempt to override tenant context', () => {
+      const req = buildRequest({ user: { tenantId: 'tenant-123' }, headers: { 'x-tenant-id': 'tenant-999' } });
 
-      expect(resolveTenantId(req)).toBe('env-tenant');
+      expect(() => resolveTenantId(req)).toThrowErrorMatchingInlineSnapshot('"Tentativa de acesso a dados de outro tenant."');
     });
   });
 

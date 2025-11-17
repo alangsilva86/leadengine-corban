@@ -386,18 +386,6 @@ reportsRouter.get(
     const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
     const tenantId = resolveTenantId(req);
 
-    if (!tenantId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'TENANT_REQUIRED',
-          message: 'tenantId é obrigatório.',
-        },
-        requestId,
-      });
-      return;
-    }
-
     const now = new Date();
     const defaultFrom = new Date(now.getTime() - 6 * DAY_IN_MS);
 

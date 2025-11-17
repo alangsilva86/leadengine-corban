@@ -4,11 +4,12 @@ import { body, param, query } from 'express-validator';
 import { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../middleware/error-handler';
-import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
+import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
+import { resolveRequestTenantId } from '../services/tenant-service';
 import { getCampaignMetrics } from '@ticketz/storage';
 import { getUseRealDataFlag } from '../config/feature-flags';
 import type { CampaignDTO, CampaignWarning } from './campaigns.types';
@@ -247,8 +248,6 @@ const buildCampaignResponseSafely = async (
 const router = Router();
 const SAFE_MODE = process.env.SAFE_MODE === 'true';
 
-const DEFAULT_TENANT_ID = AUTH_MVP_BYPASS_TENANT_ID || 'demo-tenant';
-
 const normalizeTenantSlug = (value: string | null | undefined): string | undefined => {
   if (typeof value !== 'string') {
     return undefined;
@@ -293,29 +292,6 @@ const normalizeQueryValue = (value: unknown): string | undefined => {
   }
 
   return undefined;
-};
-
-const normalizeTenantCandidate = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const readTenantHeader = (req: Request): string | undefined => {
-  const viaFn = req.header?.('x-tenant-id');
-  if (typeof viaFn === 'string') {
-    return viaFn;
-  }
-
-  const rawHeader = req.headers?.['x-tenant-id'];
-  if (Array.isArray(rawHeader)) {
-    return rawHeader.find((entry): entry is string => typeof entry === 'string');
-  }
-
-  return typeof rawHeader === 'string' ? rawHeader : undefined;
 };
 
 const extractStatuses = (value: unknown): CampaignStatus[] => {
@@ -388,38 +364,7 @@ export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
   return filters;
 };
 
-export const resolveTenantId = (req: Request): string | undefined => {
-  const queryTenant = normalizeTenantCandidate(
-    Array.isArray(req.query?.tenantId)
-      ? req.query.tenantId.find((entry): entry is string => typeof entry === 'string')
-      : req.query?.tenantId
-  );
-  if (queryTenant) {
-    return queryTenant;
-  }
-
-  const headerTenant = normalizeTenantCandidate(readTenantHeader(req));
-  if (headerTenant) {
-    return headerTenant;
-  }
-
-  const userTenant = normalizeTenantCandidate(req.user?.tenantId);
-  if (userTenant) {
-    return userTenant;
-  }
-
-  const envTenant = normalizeTenantCandidate(process.env.AUTH_MVP_TENANT_ID);
-  if (envTenant) {
-    return envTenant;
-  }
-
-  const configuredTenant = normalizeTenantCandidate(AUTH_MVP_BYPASS_TENANT_ID);
-  if (configuredTenant && configuredTenant !== 'demo-tenant') {
-    return configuredTenant;
-  }
-
-  return undefined;
-};
+export const resolveTenantId = (req: Request): string => resolveRequestTenantId(req);
 
 type StoreCampaignResult = {
   items: CampaignDTO[];
@@ -554,12 +499,11 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const requestedTenantId = req.user?.tenantId ?? DEFAULT_TENANT_ID;
+    const requestedTenantId = resolveRequestTenantId(req);
     const rawAgreementId = typeof req.body?.agreementId === 'string' ? req.body.agreementId.trim() : '';
-    const resolvedAgreementId = rawAgreementId || DEFAULT_TENANT_ID;
+    const resolvedAgreementId = rawAgreementId || requestedTenantId;
     const rawAgreementName = normalizeClassificationValue(req.body?.agreementName);
-    const resolvedAgreementName =
-      rawAgreementName ?? (resolvedAgreementId === DEFAULT_TENANT_ID ? 'DEMO' : null);
+    const resolvedAgreementName = rawAgreementName ?? null;
     const rawInstanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
     const resolvedInstanceId = rawInstanceId || 'alan';
     const rawBrokerIdInput = typeof req.body?.brokerId === 'string' ? req.body.brokerId.trim() : '';
@@ -733,7 +677,7 @@ router.post(
     }
 
     if (!instance) {
-      const placeholderTenantId = explicitTenantId || requestedTenantId || resolvedAgreementId || DEFAULT_TENANT_ID;
+      const placeholderTenantId = explicitTenantId || requestedTenantId || resolvedAgreementId;
 
       logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
         ...baseLogContext,
@@ -839,7 +783,7 @@ router.post(
       return undefined;
     };
 
-    const preferredTenantId = pickFirst(fallbackTenantIdCandidates) ?? DEFAULT_TENANT_ID;
+    const preferredTenantId = pickFirst(fallbackTenantIdCandidates) ?? requestedTenantId;
     const preferredSlug =
       normalizeTenantSlug(preferredTenantId) ?? pickFirst(fallbackSlugCandidates);
     const preferredName =
@@ -885,8 +829,7 @@ router.post(
       instanceTenantId ||
       explicitTenantId ||
       requestedTenantId ||
-      resolvedAgreementId ||
-      DEFAULT_TENANT_ID;
+      resolvedAgreementId;
 
     if (tenantRecord && instance.tenantId !== tenantRecord.id) {
       instance = await prisma.whatsAppInstance.update({
@@ -1392,18 +1335,6 @@ router.get(
     const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
     const tenantId = resolveTenantId(req);
 
-    if (!tenantId) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'TENANT_REQUIRED',
-          message: 'tenantId é obrigatório.',
-        },
-        requestId,
-      });
-      return;
-    }
-
     const useRealData = getUseRealDataFlag();
     const { agreementId, instanceId, productType, marginType, strategy, tags, statuses } = buildFilters(req.query);
     const logContext = {
@@ -1806,7 +1737,7 @@ router.delete(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? DEFAULT_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const campaignId = readCampaignIdParam(req);
     if (!campaignId) {
       res.status(400).json({

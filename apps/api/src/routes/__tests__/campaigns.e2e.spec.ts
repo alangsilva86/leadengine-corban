@@ -187,7 +187,7 @@ describe('GET /api/campaigns', () => {
     );
   });
 
-  it('returns 400 when no tenant can be resolved', async () => {
+  it('returns 403 when tenant context is missing', async () => {
     featureFlagsState.useRealData = false;
     requireTenantBehavior = (_req, _res, next) => {
       const requestWithUser = _req as express.Request & { user?: AuthenticatedUser };
@@ -195,18 +195,16 @@ describe('GET /api/campaigns', () => {
       requestWithUser.user.tenantId = '';
       next();
     };
-    delete process.env.AUTH_MVP_TENANT_ID;
 
     const app = buildApp();
     const response = await request(app).get('/api/campaigns');
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
     expect(response.body).toMatchObject({
       success: false,
       error: {
-        code: 'TENANT_REQUIRED',
+        code: 'FORBIDDEN',
       },
-      requestId: expect.any(String),
     });
     expect(campaignFindMany).not.toHaveBeenCalled();
   });

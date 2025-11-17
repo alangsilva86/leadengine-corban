@@ -129,3 +129,12 @@ export {
   upsertIntegrationState,
   deleteIntegrationState,
 } from './repositories/integration-state-repository';
+
+export {
+  TenantAccessError,
+  type TenantScopedUser,
+  normalizeTenantId,
+  ensureTenantFromUser,
+  assertTenantConsistency,
+  resolveTenantAccess,
+} from './tenant/tenant-access';

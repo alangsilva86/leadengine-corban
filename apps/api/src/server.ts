@@ -44,6 +44,7 @@ import {
   buildDisabledDebugMessagesRouter,
 } from './features/debug/routes/messages';
 import { agreementsProvidersRouter } from './routes/agreements.providers';
+import { tenantsRouter } from './routes/tenants';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -408,7 +409,7 @@ app.get('/_diag/ai-auto-reply', async (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
-app.use('/api/lead-engine', leadEngineRouter);
+app.use('/api/lead-engine', authMiddleware, requireTenant, leadEngineRouter);
 app.use('/api/ai', authMiddleware, requireTenant, aiRouter);
 app.use('/api/crm', authMiddleware, crmRouter);
 app.use('/api/debug/wa', (req, res, next) => {
@@ -424,8 +425,8 @@ app.use('/api/debug/wa', (req, res, next) => {
 app.use('/api', debugMessagesRouter);
 
 // Rotas protegidas (com autenticação)
-app.use('/api/tickets', authMiddleware, ticketsRouter);
-app.use('/api/leads', authMiddleware, leadsRouter);
+app.use('/api/tickets', authMiddleware, requireTenant, ticketsRouter);
+app.use('/api/leads', authMiddleware, requireTenant, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api/tasks', authMiddleware, contactTasksRouter);
 app.use('/api', authMiddleware, ticketMessagesRouter);
@@ -442,6 +443,7 @@ app.use('/api/agreements', authMiddleware, requireTenant, agreementsRouter);
 app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
 app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
 app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
+app.use('/api/tenants', authMiddleware, requireTenant, tenantsRouter);
 app.use('/api/v1/agreements', authMiddleware, requireTenant, agreementsProvidersRouter);
 app.use('/api', authMiddleware, preferencesRouter);
 

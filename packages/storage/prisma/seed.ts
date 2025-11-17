@@ -3,132 +3,152 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { demoAgreementsSeed } from '../../../config/demo-agreements';
 
 const prisma = new PrismaClient();
+type TenantRecord = Awaited<ReturnType<typeof prisma.tenant.upsert>>;
 
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...');
 
-  // Criar tenant demo
-  const demoTenant = await prisma.tenant.upsert({
-    where: { slug: 'demo-tenant' },
-    update: {},
-    create: {
+  const tenantSeeds = [
+    {
       id: 'demo-tenant',
       name: 'Demo Tenant',
       slug: 'demo-tenant',
-      isActive: true,
-      settings: {
-        timezone: 'America/Sao_Paulo',
-        language: 'pt-BR',
+      adminEmail: 'admin@ticketz.com',
+      agentEmail: 'agente@ticketz.com',
+    },
+    {
+      id: 'acme-tenant',
+      name: 'Acme Finance',
+      slug: 'acme-tenant',
+      adminEmail: 'admin@acme.test',
+      agentEmail: 'agent@acme.test',
+    },
+  ];
+
+  const seededTenants: TenantRecord[] = [];
+  const adminPasswordHash = bcrypt.hashSync('admin123', 10);
+  const agentPasswordHash = bcrypt.hashSync('agent123', 10);
+
+  for (const seed of tenantSeeds) {
+    const tenant = await prisma.tenant.upsert({
+      where: { slug: seed.slug },
+      update: {},
+      create: {
+        id: seed.id,
+        name: seed.name,
+        slug: seed.slug,
+        isActive: true,
+        settings: {
+          timezone: 'America/Sao_Paulo',
+          language: 'pt-BR',
+        },
       },
-    },
-  });
+    });
 
-  console.log('✅ Tenant demo criado:', demoTenant.name);
+    seededTenants.push(tenant);
+    console.log('✅ Tenant criado:', tenant.name);
 
-  // Criar fila padrão
-  const defaultQueue = await prisma.queue.upsert({
-    where: { 
-      tenantId_name: {
-        tenantId: demoTenant.id,
-        name: 'Atendimento Geral'
-      }
-    },
-    update: {},
-    create: {
-      tenantId: demoTenant.id,
-      name: 'Atendimento Geral',
-      description: 'Fila padrão para atendimento geral',
-      color: '#3B82F6',
-      isActive: true,
-      orderIndex: 0,
-    },
-  });
-
-  console.log('✅ Fila padrão criada:', defaultQueue.name);
-
-  // Criar usuário admin
-  const passwordHash = bcrypt.hashSync('admin123', 10);
-  const adminUser = await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: demoTenant.id,
-        email: 'admin@ticketz.com'
-      }
-    },
-    update: {},
-    create: {
-      tenantId: demoTenant.id,
-      name: 'Administrador',
-      email: 'admin@ticketz.com',
-      phone: '+5511999999999',
-      role: 'ADMIN',
-      isActive: true,
-      passwordHash,
-      settings: {
-        notifications: true,
-        theme: 'light',
+    const defaultQueue = await prisma.queue.upsert({
+      where: {
+        tenantId_name: {
+          tenantId: tenant.id,
+          name: 'Atendimento Geral',
+        },
       },
-    },
-  });
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        name: 'Atendimento Geral',
+        description: 'Fila padrão para atendimento geral',
+        color: '#3B82F6',
+        isActive: true,
+        orderIndex: 0,
+      },
+    });
 
-  console.log('✅ Usuário admin criado:', adminUser.email);
+    console.log('✅ Fila padrão criada:', defaultQueue.name, 'para', tenant.name);
 
-  // Associar usuário à fila
-  await prisma.userQueue.upsert({
-    where: {
-      userId_queueId: {
+    const adminUser = await prisma.user.upsert({
+      where: {
+        tenantId_email: {
+          tenantId: tenant.id,
+          email: seed.adminEmail,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        name: `${tenant.name} Admin`,
+        email: seed.adminEmail,
+        phone: '+5511999999999',
+        role: 'ADMIN',
+        isActive: true,
+        passwordHash: adminPasswordHash,
+        settings: {
+          notifications: true,
+          theme: 'light',
+        },
+      },
+    });
+
+    await prisma.userQueue.upsert({
+      where: {
+        userId_queueId: {
+          userId: adminUser.id,
+          queueId: defaultQueue.id,
+        },
+      },
+      update: {},
+      create: {
         userId: adminUser.id,
         queueId: defaultQueue.id,
-      }
-    },
-    update: {},
-    create: {
-      userId: adminUser.id,
-      queueId: defaultQueue.id,
-    },
-  });
-
-  // Criar usuário agente
-  const agentPasswordHash = bcrypt.hashSync('agent123', 10);
-  const agentUser = await prisma.user.upsert({
-    where: {
-      tenantId_email: {
-        tenantId: demoTenant.id,
-        email: 'agente@ticketz.com'
-      }
-    },
-    update: {},
-    create: {
-      tenantId: demoTenant.id,
-      name: 'Agente Demo',
-      email: 'agente@ticketz.com',
-      phone: '+5511888888888',
-      role: 'AGENT',
-      isActive: true,
-      passwordHash: agentPasswordHash,
-      settings: {
-        notifications: true,
-        theme: 'light',
       },
-    },
-  });
+    });
 
-  console.log('✅ Usuário agente criado:', agentUser.email);
+    const agentUser = await prisma.user.upsert({
+      where: {
+        tenantId_email: {
+          tenantId: tenant.id,
+          email: seed.agentEmail,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        name: `${tenant.name} Agent`,
+        email: seed.agentEmail,
+        phone: '+5511888888888',
+        role: 'AGENT',
+        isActive: true,
+        passwordHash: agentPasswordHash,
+        settings: {
+          notifications: true,
+          theme: 'light',
+        },
+      },
+    });
 
-  // Associar agente à fila
-  await prisma.userQueue.upsert({
-    where: {
-      userId_queueId: {
+    await prisma.userQueue.upsert({
+      where: {
+        userId_queueId: {
+          userId: agentUser.id,
+          queueId: defaultQueue.id,
+        },
+      },
+      update: {},
+      create: {
         userId: agentUser.id,
         queueId: defaultQueue.id,
-      }
-    },
-    update: {},
-    create: {
-      userId: agentUser.id,
-      queueId: defaultQueue.id,
-    },
-  });
+      },
+    });
+
+    console.log('✅ Usuários criados para:', tenant.name);
+  }
+
+  const demoTenant = seededTenants.find((tenant) => tenant.id === 'demo-tenant');
+  if (!demoTenant) {
+    throw new Error('Demo tenant not seeded.');
+  }
 
   // Criar tags base para contatos
   const tagDefinitions = [

@@ -48,7 +48,6 @@ vi.mock('../../lib/prisma', () => ({
 }));
 
 vi.mock('../../middleware/auth', () => ({
-  AUTH_MVP_BYPASS_TENANT_ID: undefined,
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 

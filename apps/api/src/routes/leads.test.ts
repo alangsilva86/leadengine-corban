@@ -194,4 +194,13 @@ describe('Leads routes', () => {
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
   });
+
+  it('rejects lead listing when tenant header mismatches authenticated tenant', async () => {
+    const app = buildApp();
+    const response = await request(app).get('/?page=1').set('x-tenant-id', 'tenant-other');
+
+    expect(response.status).toBe(403);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error.code).toBe('FORBIDDEN');
+  });
 });

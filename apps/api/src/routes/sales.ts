@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { SalesStage } from '@ticketz/core';
 
-import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
+import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { asyncHandler } from '../middleware/error-handler';
 import {
@@ -11,6 +11,7 @@ import {
   getSalesSimulationFilters,
   simulateTicketSales,
 } from '../services/ticket-service';
+import { resolveRequestTenantId } from '../services/tenant-service';
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.post(
   metadataValidator,
   validateRequest,
   asyncHandler(async (req, res) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const result = await simulateTicketSales({
       tenantId,
       ticketId: req.body.ticketId,
@@ -84,7 +85,7 @@ router.post(
   metadataValidator,
   validateRequest,
   asyncHandler(async (req, res) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const result = await createTicketSalesProposal({
       tenantId,
       ticketId: req.body.ticketId,
@@ -120,7 +121,7 @@ router.post(
   metadataValidator,
   validateRequest,
   asyncHandler(async (req, res) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const result = await createTicketSalesDeal({
       tenantId,
       ticketId: req.body.ticketId,

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request } from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,6 +46,18 @@ const startTestServer = async (
   return new Promise<{ server: Server; url: string }>((resolve) => {
     const app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as Request).user = {
+        id: 'user-1',
+        tenantId: 'tenant-123',
+        email: 'agent@example.com',
+        name: 'Agent',
+        role: 'ADMIN',
+        isActive: true,
+        permissions: ['campaigns:read', 'campaigns:write'],
+      } as Request['user'];
+      next();
+    });
     app.use('/api/lead-engine', leadEngineRouter);
     app.use(errorHandler);
 
@@ -157,6 +169,23 @@ describe('Lead Engine campaigns routes', () => {
       expect(response.status).toBe(200);
       expect(body.success).toBe(true);
       expect(body.data.name).toBe('Alias Campaign');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects requests when tenant header mismatches authenticated context', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/lead-engine/campaigns`, {
+        headers: { 'x-tenant-id': 'tenant-other' },
+      });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe('FORBIDDEN');
     } finally {
       await stopTestServer(server);
     }

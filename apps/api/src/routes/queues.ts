@@ -2,9 +2,10 @@ import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
 import { Prisma } from '@prisma/client';
 import { asyncHandler } from '../middleware/error-handler';
-import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
+import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
+import { resolveRequestTenantId } from '../services/tenant-service';
 
 const queueSelect = {
   id: true,
@@ -63,7 +64,7 @@ router.get(
   '/',
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
 
     const queues = await prisma.queue.findMany({
       where: { tenantId },
@@ -87,7 +88,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const {
       name,
       description,
@@ -138,7 +139,7 @@ router.patch(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const { queueId } = req.params;
 
     const updates: Record<string, unknown> = {};
@@ -215,7 +216,7 @@ router.patch(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const items = (req.body.items as Array<{ id: string; orderIndex: number }>).filter(Boolean);
 
     const queueIds = await prisma.queue.findMany({
@@ -269,7 +270,7 @@ router.delete(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const { queueId } = req.params;
 
     const deleted = await prisma.queue.deleteMany({

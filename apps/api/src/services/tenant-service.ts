@@ -1,5 +1,9 @@
 import { Prisma, type Tenant } from '@prisma/client';
 
+import type { Request } from 'express';
+
+import { assertTenantConsistency, ensureTenantFromUser, normalizeTenantId } from '@ticketz/storage';
+
 import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
@@ -93,4 +97,74 @@ export const ensureTenantRecord = async (
 
     throw error;
   }
+};
+
+const readTenantHeader = (req: Request): string | null => {
+  const header = req.headers['x-tenant-id'];
+
+  if (Array.isArray(header)) {
+    return header.find((entry): entry is string => typeof entry === 'string')?.trim() ?? null;
+  }
+
+  if (typeof header === 'string') {
+    const trimmed = header.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  const viaFn = req.header?.('x-tenant-id');
+  if (typeof viaFn === 'string') {
+    const trimmed = viaFn.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  return null;
+};
+
+const readTenantQuery = (req: Request): string | null => {
+  const candidate = req.query?.tenantId;
+
+  if (Array.isArray(candidate)) {
+    for (const entry of candidate) {
+      const normalized = normalizeTenantId(entry);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+
+  return normalizeTenantId(candidate);
+};
+
+const buildTenantLogContext = (req: Request, source: string): Record<string, unknown> => ({
+  source,
+  requestId: req.rid ?? null,
+  path: req.originalUrl ?? req.url ?? null,
+  userId: req.user?.id ?? null,
+});
+
+export const resolveRequestTenantId = (req: Request, requestedTenantId?: unknown): string => {
+  const payloadTenant = normalizeTenantId(requestedTenantId);
+  const tenantId = ensureTenantFromUser(req.user, buildTenantLogContext(req, 'user'));
+
+  if (payloadTenant) {
+    assertTenantConsistency(tenantId, payloadTenant, buildTenantLogContext(req, 'payload'));
+  }
+
+  const headerTenant = readTenantHeader(req);
+  if (headerTenant) {
+    assertTenantConsistency(tenantId, headerTenant, buildTenantLogContext(req, 'header'));
+  }
+
+  const queryTenant = readTenantQuery(req);
+  if (queryTenant) {
+    assertTenantConsistency(tenantId, queryTenant, buildTenantLogContext(req, 'query'));
+  }
+
+  return tenantId;
+};
+
+export const ensureTenantParamAccess = (req: Request, tenantId?: string | null): string => {
+  const normalized = normalizeTenantId(tenantId);
+  return resolveRequestTenantId(req, normalized ?? undefined);
 };
