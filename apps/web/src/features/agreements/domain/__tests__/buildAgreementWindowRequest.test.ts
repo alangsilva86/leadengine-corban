@@ -40,4 +40,22 @@ describe('buildAgreementWindowRequest', () => {
     expect(request.meta).toMatchObject({ scope: 'windows' });
     expect(request.meta?.audit).toEqual({ actor: 'User', actorRole: 'seller', note: 'Atualizou janela' });
   });
+
+  it('omits empty table identifier but preserves valid ones', () => {
+    const withoutTable = buildAgreementWindowRequest({
+      window: baseWindow,
+      actor: 'Admin',
+      actorRole: 'admin',
+    });
+
+    expect('tableId' in withoutTable.data).toBe(false);
+
+    const withTable = buildAgreementWindowRequest({
+      window: { ...baseWindow, tableId: 'table-1' } as typeof baseWindow & { tableId: string },
+      actor: 'Admin',
+      actorRole: 'admin',
+    });
+
+    expect(withTable.data.tableId).toBe('table-1');
+  });
 });
