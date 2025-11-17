@@ -38,6 +38,7 @@ const API_URL = process.env.API_URL.replace(/\/+$/, '');
 const WEBHOOK_KEY = getWebhookApiKey();
 const TENANT_ID = process.env.TENANT_ID;
 const INSTANCE_ID = process.env.INSTANCE_ID;
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN ?? process.env.API_ACCESS_TOKEN ?? null;
 const TEST_PHONE = process.env.TEST_PHONE ?? '+5511999999999';
 const TEST_NAME = process.env.TEST_NAME ?? 'QA Bot';
 const MESSAGE_TEXT =
@@ -141,6 +142,40 @@ const resolveSocketIoClient = async () => {
 };
 
 const sanitizePhone = (phone) => phone.replace(/\D+/g, '');
+
+const sendOutboundSmokeMessage = async ({ ticketId, content }) => {
+  if (!ACCESS_TOKEN) {
+    throw new Error('ACCESS_TOKEN is required to trigger outbound smoke test');
+  }
+  const response = await fetch(`${API_URL}/api/tickets/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      'x-tenant-id': TENANT_ID,
+      'x-request-id': `smoke-out-${randomUUID()}`,
+    },
+    body: JSON.stringify({
+      ticketId,
+      content,
+      metadata: {
+        source: 'smoke-test',
+        scenario: 'outbound_validation',
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(async () => ({ raw: await response.text() }));
+  if (!response.ok) {
+    const message = payload?.error?.message ?? response.statusText;
+    const requestId = payload?.error?.requestId ?? payload?.requestId ?? null;
+    throw new Error(
+      `POST /api/tickets/messages returned ${response.status}: ${message}${requestId ? ` (requestId=${requestId})` : ''}`
+    );
+  }
+
+  return payload;
+};
 
 const sendInboundWebhook = async ({ messageId, requestId }) => {
   const payload = {
@@ -403,6 +438,20 @@ const main = async () => {
   }
 
   console.info('✅ Message persisted and visible via REST API');
+
+  if (ACCESS_TOKEN && ticket.id) {
+    console.info('✉️ Validating outbound send via /api/tickets/messages');
+    const outboundContent = `Fluxo outbound • ${new Date().toISOString()}`;
+    const outboundPayload = await sendOutboundSmokeMessage({ ticketId: ticket.id, content: outboundContent });
+    const outboundMessageId =
+      outboundPayload?.data?.message?.id ?? outboundPayload?.data?.messageId ?? outboundPayload?.data?.message_id ?? null;
+    console.info('✅ Outbound message accepted by API', {
+      ticketId: ticket.id,
+      messageId: outboundMessageId,
+    });
+  } else {
+    console.warn('⚠️ ACCESS_TOKEN not provided; skipping outbound smoke test.');
+  }
 
   if (socket.connected) {
     socket.disconnect();

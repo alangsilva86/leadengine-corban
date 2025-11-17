@@ -55,6 +55,20 @@ const buildErrorState = (error, previousState) => {
   const message = getActionableStatusMessage(status) ?? fallbackMessage;
   const payload =
     error?.response?.data ?? error?.data ?? previousState?.payload ?? null;
+  const requestId =
+    typeof error?.response?.data?.error?.requestId === 'string'
+      ? error.response.data.error.requestId
+      : typeof error?.data?.error?.requestId === 'string'
+        ? error.data.error.requestId
+        : typeof payload?.error?.requestId === 'string'
+          ? payload.error.requestId
+          : null;
+  const recoveryHint =
+    typeof error?.response?.data?.error?.recoveryHint === 'string'
+      ? error.response.data.error.recoveryHint
+      : typeof error?.data?.error?.recoveryHint === 'string'
+        ? error.data.error.recoveryHint
+        : null;
 
   return {
     message,
@@ -62,6 +76,8 @@ const buildErrorState = (error, previousState) => {
     fallbackMessage,
     payload,
     timestamp: new Date().toISOString(),
+    requestId,
+    recoveryHint,
   };
 };
 
@@ -357,6 +373,14 @@ const BaileysLogs = () => {
                 <p className="text-xs text-amber-800/70 dark:text-amber-100/70">
                   Detalhes técnicos: {error.fallbackMessage}
                 </p>
+              ) : null}
+              {error.requestId ? (
+                <p className="text-xs text-amber-800/70 dark:text-amber-100/70">
+                  ID da falha: <code>{error.requestId}</code>
+                </p>
+              ) : null}
+              {error.recoveryHint ? (
+                <p className="text-xs text-amber-800/70 dark:text-amber-100/70">{error.recoveryHint}</p>
               ) : null}
             </div>
 

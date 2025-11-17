@@ -147,9 +147,9 @@ export const useConversationExperience = ({
   onTakeOver,
   onGiveBackToAi,
   sales = {},
+  composerNotice: composerNoticeProp = null,
 }) => {
   const disabled = Boolean(composerDisabled);
-  const composerNotice = disabled && composerDisabledReason ? composerDisabledReason : null;
 
   const ticketId = ticket?.id ?? null;
   const tenantId = ticket?.tenantId ?? null;
@@ -691,6 +691,23 @@ export const useConversationExperience = ({
   const handleInstanceRefresh = useCallback(() => {
     return loadInstances({ forceRefresh: true }).catch(() => {});
   }, [loadInstances]);
+
+  const composerNotice = useMemo(() => {
+    const directNotice = composerNoticeProp ?? (disabled && composerDisabledReason ? composerDisabledReason : null);
+    if (!directNotice) {
+      return null;
+    }
+    if (!directNotice.action || directNotice.onAction) {
+      return directNotice;
+    }
+    if (directNotice.action === 'refresh_instances') {
+      return {
+        ...directNotice,
+        onAction: () => handleInstanceRefresh(),
+      };
+    }
+    return directNotice;
+  }, [composerNoticeProp, composerDisabledReason, disabled, handleInstanceRefresh]);
 
   const selectedInstanceConnected =
     selectedInstanceOption?.connected ?? instanceOptions.length === 0;

@@ -1180,6 +1180,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     sendError: controller.sendMessageMutation.error,
     composerDisabled: availability.composerDisabled,
     composerDisabledReason: availability.unavailableReason,
+    composerNotice: availability.notice,
     onContactFieldSave: fieldUpdaters.onContactFieldSave,
     onDealFieldSave: fieldUpdaters.onDealFieldSave,
     nextStepValue: fieldUpdaters.nextStepValue,

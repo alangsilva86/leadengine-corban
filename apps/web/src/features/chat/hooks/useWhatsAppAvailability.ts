@@ -15,13 +15,22 @@ interface UseWhatsAppAvailabilityInput {
 
 export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailabilityInput) => {
   const [unavailability, setUnavailability] = useState<ReturnType<typeof resolveWhatsAppErrorCopy> | null>(null);
+  const [notice, setNotice] = useState<(ReturnType<typeof resolveWhatsAppErrorCopy> & {
+    requestId?: string | null;
+    action?: string | null;
+    actionLabel?: string | null;
+    queuedMessageId?: string | null;
+    timestamp?: string;
+  }) | null>(null);
 
   useEffect(() => {
     setUnavailability(null);
+    setNotice(null);
   }, [selectedTicketId]);
 
   const resetAvailability = useCallback(() => {
     setUnavailability(null);
+    setNotice(null);
   }, []);
 
   const notifyOutboundError = useCallback(
@@ -29,13 +38,41 @@ export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailab
       const fallback = fallbackMessage || 'Não foi possível enviar a mensagem.';
       const copy = resolveWhatsAppErrorCopy(error?.payload?.code ?? error?.code, error?.message ?? fallback);
       const title = copy.title ?? 'Falha ao enviar mensagem';
-      const description = copy.description ?? fallback;
+      const recoveryHint =
+        typeof error?.payload?.recoveryHint === 'string'
+          ? error.payload.recoveryHint
+          : typeof error?.payload?.error?.recoveryHint === 'string'
+            ? error.payload.error.recoveryHint
+            : null;
+      const requestId =
+        typeof error?.payload?.error?.requestId === 'string'
+          ? error.payload.error.requestId
+          : typeof error?.payload?.requestId === 'string'
+            ? error.payload.requestId
+            : error?.requestId ?? null;
+      const description =
+        copy.description ?? recoveryHint ?? fallback;
+      const enrichedDescription = requestId ? `${description} (ID: ${requestId})` : description;
 
-      toast.error(title, { description });
+      toast.error(title, { description: enrichedDescription });
 
-      setUnavailability(copy.code === 'BROKER_NOT_CONFIGURED' ? copy : null);
+      const banner = {
+        ...copy,
+        description: enrichedDescription,
+        requestId,
+        action: 'refresh_instances' as const,
+        actionLabel: 'Reconectar ao WhatsApp',
+        queuedMessageId:
+          typeof error?.payload?.error?.queuedMessageId === 'string'
+            ? error.payload.error.queuedMessageId
+            : null,
+        timestamp: new Date().toISOString(),
+      };
 
-      return copy;
+      setNotice(banner);
+      setUnavailability(copy.code === 'BROKER_NOT_CONFIGURED' ? banner : null);
+
+      return banner;
     },
     []
   );
@@ -43,6 +80,7 @@ export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailab
   return {
     unavailableReason: unavailability,
     composerDisabled: Boolean(unavailability),
+    notice,
     notifyOutboundError,
     resetAvailability,
   } as const;

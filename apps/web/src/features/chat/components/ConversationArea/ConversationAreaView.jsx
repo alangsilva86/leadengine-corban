@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils.js';
+import { Button } from '@/components/ui/button.jsx';
 import ConversationHeader from './ConversationHeader.jsx';
 import ContactDetailsPanel from './ContactDetailsPanel.jsx';
 import PrimaryActionBanner from './PrimaryActionBanner.jsx';
@@ -41,6 +42,23 @@ const ComposerSection = forwardRef(
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-[0_6px_20px_-12px_rgba(217,119,6,0.55)]">
           <p className="font-medium">{notice.title ?? 'Envio indisponível'}</p>
           {notice.description ? <p className="mt-1 text-amber-800">{notice.description}</p> : null}
+          {notice.requestId ? (
+            <p className="mt-1 text-xs text-amber-700/80">
+              ID da falha: <code>{notice.requestId}</code>
+            </p>
+          ) : null}
+          {notice.actionLabel ? (
+            <div className="mt-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => notice.onAction?.()}
+              >
+                {notice.actionLabel}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <Composer
