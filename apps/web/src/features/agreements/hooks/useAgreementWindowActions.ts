@@ -31,7 +31,9 @@ const useAgreementWindowActions = ({
         return;
       }
 
-      const exists = selected.janelas.some((window) => window.id === payload.id);
+      const intent = payload.mode ?? 'update';
+      const exists =
+        intent === 'create' ? false : selected.janelas.some((window) => window.id === payload.id);
       const janelas = exists
         ? selected.janelas.map((window) => (window.id === payload.id ? payload : window))
         : [...selected.janelas, payload];

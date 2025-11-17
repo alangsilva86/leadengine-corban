@@ -61,6 +61,7 @@ const WindowDialog = ({ open, onClose, onSubmit, initialValue, windows, disabled
       id: form.id ?? generateId(),
       label: form.label || 'Janela',
       ...candidate,
+      mode: form.id ? 'update' : 'create',
     });
     onClose();
   };
