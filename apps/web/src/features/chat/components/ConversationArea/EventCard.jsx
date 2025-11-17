@@ -17,6 +17,7 @@ import {
   formatCurrency,
   formatTermLabel,
 } from './utils/salesSnapshot.js';
+import { formatJson } from '@/features/chat/utils/simulation.js';
 
 const TYPE_PRESENTATION = {
   note: { icon: StickyNote, toneClass: 'text-[color:var(--accent-inbox-primary)]' },
@@ -31,17 +32,6 @@ const STAGE_TONE_CLASSES = {
   warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
   success: 'border-success-soft-border bg-success-soft text-success-strong',
   neutral: 'border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
-};
-
-const formatJson = (value) => {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch (error) {
-    return null;
-  }
 };
 
 const SalesStageChip = ({ stageKey, stageLabel }) => {

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Copy, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Copy } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -10,25 +10,9 @@ import {
 } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Label } from '@/components/ui/label.jsx';
-import { Input } from '@/components/ui/input.jsx';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.jsx';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion.jsx';
 import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.ts';
 import { findActiveWindow, getActiveRates } from '@/features/agreements/agreementsSelectors.ts';
 import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
@@ -46,105 +30,28 @@ import {
 import { createProposalMessageFromEntries } from './utils/proposalMessage.js';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { useClipboard } from '@/hooks/use-clipboard.js';
+import SimulationForm from './SimulationForm.jsx';
+import QueueAlerts from './QueueAlerts.jsx';
+import {
+  NO_STAGE_VALUE,
+  ensureUniqueTerms,
+  formatDateInput,
+  formatJson,
+  normalizeStageState,
+  parseDateInput,
+  resolveStageValue,
+} from '@/features/chat/utils/simulation.js';
+import {
+  SELECTION_ACTIONS,
+  QUEUE_ALERTS_ACTIONS,
+  createSelectionFallback,
+  queueAlertsReducer,
+  selectionReducer,
+} from './utils/simulationReducers.js';
 
-const NO_STAGE_VALUE = '__none__';
 const DEFAULT_BASE_VALUE = '350';
 const DEFAULT_SELECTED_TERMS = [72, 84];
 const DEFAULT_TERM_POOL = [12, 24, 36, 48, 60, 72, 84];
-
-const CALCULATION_MODE_OPTIONS = [
-  {
-    value: 'margin',
-    label: 'Margem disponível',
-    description: 'Informe a parcela/margem mensal disponível do cliente.',
-  },
-  {
-    value: 'net',
-    label: 'Valor líquido desejado',
-    description: 'Calcular automaticamente a margem necessária para liberar um líquido.',
-  },
-];
-
-const formatJson = (value) => {
-  if (!value || typeof value !== 'object') {
-    return '';
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return '';
-  }
-};
-const normalizeStageState = (value) => {
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value.trim();
-  }
-  return NO_STAGE_VALUE;
-};
-
-const resolveStageValue = (value) => {
-  if (typeof value === 'string' && value !== NO_STAGE_VALUE && value.trim().length > 0) {
-    return value.trim();
-  }
-  return '';
-};
-
-const formatDateInput = (date) => {
-  const safe = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
-  const year = safe.getFullYear();
-  const month = String(safe.getMonth() + 1).padStart(2, '0');
-  const day = String(safe.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const parseDateInput = (value) => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return null;
-  }
-  const [year, month, day] = value.split('-').map(Number);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-    return null;
-  }
-  const date = new Date(year, month - 1, day);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const ensureUniqueTerms = (terms) =>
-  Array.from(new Set((Array.isArray(terms) ? terms : []).filter((term) => Number.isFinite(term)))).sort(
-    (a, b) => a - b,
-  );
-
-const useQueueAlerts = (queueAlerts) =>
-  useMemo(() => {
-    if (!Array.isArray(queueAlerts)) {
-      return [];
-    }
-
-    return queueAlerts
-      .map((entry, index) => {
-        const payload = entry && typeof entry === 'object' ? entry.payload ?? {} : {};
-        const message =
-          payload && typeof payload.message === 'string' && payload.message.trim().length > 0
-            ? payload.message.trim()
-            : 'Fila padrão indisponível para registrar operações de vendas.';
-        const reason =
-          payload && typeof payload.reason === 'string' && payload.reason.trim().length > 0
-            ? payload.reason.trim()
-            : null;
-        const instanceId =
-          payload && typeof payload.instanceId === 'string' && payload.instanceId.trim().length > 0
-            ? payload.instanceId.trim()
-            : null;
-
-        return {
-          message,
-          reason,
-          instanceId,
-          index,
-        };
-      })
-      .slice(0, 3);
-  }, [queueAlerts]);
 
 const SimulationModal = ({
   open,
@@ -180,13 +87,23 @@ const SimulationModal = ({
     offers: createDefaultSimulationForm().offers,
     parameters: null,
   }));
-  const [selection, setSelection] = useState([]);
+  const [selection, dispatchSelection] = useReducer(selectionReducer, []);
+  const [normalizedAlerts, dispatchQueueAlerts] = useReducer(queueAlertsReducer, []);
   const [errors, setErrors] = useState({});
 
-  const normalizedAlerts = useQueueAlerts(queueAlerts);
   const alertsActive = normalizedAlerts.length > 0;
   const fieldsDisabled = disabled || alertsActive;
   const hasAgreementOptions = agreementOptions.length > 0;
+
+  useEffect(() => {
+    dispatchQueueAlerts({
+      type: QUEUE_ALERTS_ACTIONS.SYNC,
+      payload: {
+        alerts: queueAlerts,
+        fallbackMessage: 'Fila padrão indisponível para registrar operações de vendas.',
+      },
+    });
+  }, [queueAlerts]);
 
   const handleConvenioChange = (value) => {
     setConvenioId(value);
@@ -518,9 +435,12 @@ const SimulationModal = ({
     if (isProposalMode) {
       const proposalSnapshot = normalizeProposalSnapshot(defaultValues.calculationSnapshot ?? null);
       const proposalSelection = createProposalSelection(proposalSnapshot?.offers ?? baseSnapshot.offers ?? []);
-      setSelection(proposalSelection);
+      dispatchSelection({ type: SELECTION_ACTIONS.RESET, payload: proposalSelection });
     } else {
-      setSelection(createProposalSelection(baseSnapshot.offers ?? []));
+      dispatchSelection({
+        type: SELECTION_ACTIONS.RESET,
+        payload: createProposalSelection(baseSnapshot.offers ?? []),
+      });
     }
 
     const hasSnapshot = Boolean(defaultValues.calculationSnapshot);
@@ -640,33 +560,33 @@ const SimulationModal = ({
       visibleOffers.flatMap((offer) => offer.terms.map((term) => `${offer.id}::${term.id}`)),
     );
 
-    setSelection((prev) => {
-      const filtered = prev.filter((entry) => validKeys.has(`${entry.offerId}::${entry.termId}`));
-      if (filtered.length > 0) {
-        return filtered;
-      }
-      if (visibleOffers.length === 0) {
-        return filtered;
-      }
-      return visibleOffers.flatMap((offer) => {
-        const primary = offer.terms[0];
-        return primary ? [{ offerId: offer.id, termId: primary.id }] : [];
-      });
+    dispatchSelection({
+      type: SELECTION_ACTIONS.SYNC_WITH_OFFERS,
+      payload: {
+        validKeys,
+        fallbackSelection: createSelectionFallback(visibleOffers),
+      },
     });
   }, [open, visibleOffers]);
 
-  const handleToggleTermSelection = (offerId, termId, checked) => {
-    setSelection((prev) => {
-      const exists = prev.some((entry) => entry.offerId === offerId && entry.termId === termId);
-      if (checked && !exists) {
-        return [...prev, { offerId, termId }];
-      }
-      if (!checked && exists) {
-        return prev.filter((entry) => !(entry.offerId === offerId && entry.termId === termId));
-      }
-      return prev;
+  const handleToggleOfferSelection = (offerId, termId, checked) => {
+    dispatchSelection({
+      type: SELECTION_ACTIONS.TOGGLE,
+      payload: { offerId, termId, checked },
     });
   };
+
+  const handleTermOptionToggle = useCallback((term, checked) => {
+    setSelectedTerms((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(term);
+      } else {
+        next.delete(term);
+      }
+      return ensureUniqueTerms(Array.from(next));
+    });
+  }, []);
 
   const handleAddCustomTerm = () => {
     const parsed = Number.parseInt(customTermInput, 10);
@@ -832,24 +752,6 @@ const SimulationModal = ({
     return issues;
   }, [activeTaxes.length, activeWindow, baseValueNumber, calculationMode, calculationResult.issues, productId, selectedConvenio, selectedTermsSorted.length]);
 
-  const renderCalculationAlerts = () => {
-    if (calculationIssues.length === 0) {
-      return null;
-    }
-    return (
-      <Alert variant="warning" className="border-amber-400/60 bg-amber-50 text-amber-900">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Não foi possível gerar todas as condições</AlertTitle>
-        <AlertDescription>
-          <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
-            {calculationIssues.map((issue) => (
-              <li key={issue}>{issue}</li>
-            ))}
-          </ul>
-        </AlertDescription>
-      </Alert>
-    );
-  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
@@ -862,223 +764,43 @@ const SimulationModal = ({
           </DialogDescription>
         </DialogHeader>
 
-        {alertsActive ? (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Fila padrão indisponível</AlertTitle>
-            <AlertDescription>
-              <p className="text-sm text-muted-foreground">{disabledReason}</p>
-              <ul className="mt-2 space-y-1 text-sm">
-                {normalizedAlerts.map((alert) => (
-                  <li key={alert.index}>
-                    {alert.message}
-                    {alert.instanceId ? (
-                      <span className="text-muted-foreground"> — Instância afetada: {alert.instanceId}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
+        <QueueAlerts alerts={normalizedAlerts} disabledReason={disabledReason} />
 
-        <div className="mt-4 space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="sales-convenio">Convênio</Label>
-              {errors.convenio ? <p className="text-xs text-rose-400">{errors.convenio}</p> : null}
-              <Select
-                value={convenioId}
-                onValueChange={handleConvenioChange}
-                disabled={fieldsDisabled}
-              >
-                <SelectTrigger id="sales-convenio">
-                  <SelectValue
-                    placeholder={
-                      hasAgreementOptions ? 'Selecione um convênio' : 'Nenhum convênio disponível'
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {hasAgreementOptions ? (
-                    agreementOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="__empty__" disabled>
-                      Nenhum convênio disponível
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              {errors.convenio ? <p className="text-sm text-destructive">{errors.convenio}</p> : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sales-product">Produto</Label>
-              {errors.product ? <p className="text-xs text-rose-400">{errors.product}</p> : null}
-              <Select
-                value={productId}
-                onValueChange={handleProductChange}
-                disabled={fieldsDisabled || !convenioId}
-              >
-                <SelectTrigger id="sales-product">
-                  <SelectValue
-                    placeholder={
-                      !convenioId
-                        ? 'Selecione um convênio primeiro'
-                        : productOptions.length > 0
-                            ? 'Selecione um produto'
-                            : 'Nenhum produto disponível'
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {!convenioId ? (
-                    <SelectItem value="__select-convenio__" disabled>
-                      Selecione um convênio primeiro
-                    </SelectItem>
-                  ) : productOptions.length > 0 ? (
-                    productOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="__no-products__" disabled>
-                      Nenhum produto disponível para este convênio
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              {errors.product ? <p className="text-sm text-destructive">{errors.product}</p> : null}
-              {convenioId && productOptions.length === 0 ? (
-                <p className="text-xs text-foreground-muted">
-                  Este convênio ainda não possui produtos configurados. Atualize as configurações para continuar.
-                </p>
-              ) : null}
-            </div>
-            {!hasAgreementOptions ? (
-              <p className="text-xs text-foreground-muted">
-                Nenhum convênio disponível no momento. Configure um convênio para liberar o cadastro.
-              </p>
-            ) : null}
-            <div className="space-y-2">
-              <Label>Data da simulação</Label>
-              <Input
-                type="date"
-                value={simulationDateInput}
-                onChange={(event) => setSimulationDateInput(event.target.value)}
-                disabled={fieldsDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                Usada para validar a janela vigente e a vigência das taxas configuradas.
-              </p>
-            </div>
-          </div>
+        <SimulationForm
+          errors={errors}
+          convenioId={convenioId}
+          onConvenioChange={handleConvenioChange}
+          agreementOptions={agreementOptions}
+          hasAgreementOptions={hasAgreementOptions}
+          fieldsDisabled={fieldsDisabled}
+          productId={productId}
+          onProductChange={handleProductChange}
+          productOptions={productOptions}
+          simulationDateInput={simulationDateInput}
+          onSimulationDateChange={(event) => setSimulationDateInput(event.target.value)}
+          calculationMode={calculationMode}
+          onCalculationModeChange={setCalculationMode}
+          baseValueInput={baseValueInput}
+          onBaseValueInputChange={(event) => setBaseValueInput(event.target.value)}
+          availableTermOptions={availableTermOptions}
+          selectedTerms={selectedTermsSorted}
+          onToggleTerm={handleTermOptionToggle}
+          customTermInput={customTermInput}
+          onCustomTermInputChange={setCustomTermInput}
+          onAddCustomTerm={handleAddCustomTerm}
+          calculationIssues={calculationIssues}
+          stage={stage}
+          stageOptions={stageOptions}
+          onStageChange={setStage}
+          leadId={leadId}
+          onLeadIdChange={(event) => setLeadId(event.target.value)}
+          simulationId={simulationId}
+          onSimulationIdChange={(event) => setSimulationId(event.target.value)}
+          metadataText={metadataText}
+          onMetadataChange={(event) => setMetadataText(event.target.value)}
+        />
 
-          <div className="rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Base de cálculo</Label>
-                <RadioGroup
-                  value={calculationMode}
-                  onValueChange={setCalculationMode}
-                  className="grid gap-2 sm:grid-cols-2"
-                  disabled={fieldsDisabled}
-                >
-                  {CALCULATION_MODE_OPTIONS.map((option) => (
-                    <label
-                      key={option.value}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm shadow-sm"
-                    >
-                      <RadioGroupItem value={option.value} />
-                      <div>
-                        <p className="font-medium text-foreground">{option.label}</p>
-                        <p className="text-xs text-muted-foreground">{option.description}</p>
-                      </div>
-                    </label>
-                  ))}
-                </RadioGroup>
-              </div>
-              <div className="space-y-2">
-                <Label>{calculationMode === 'margin' ? 'Margem disponível (R$)' : 'Valor líquido desejado (R$)'}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={baseValueInput}
-                  onChange={(event) => setBaseValueInput(event.target.value)}
-                  placeholder={calculationMode === 'margin' ? 'Ex.: 350' : 'Ex.: 5000'}
-                  disabled={fieldsDisabled}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {calculationMode === 'margin'
-                    ? 'Valor da parcela disponível para consignar.'
-                    : 'Valor líquido que o cliente espera receber.'}
-                </p>
-              </div>
-            </div>
-            <div className="mt-4 space-y-3">
-              <Label>Prazos desejados</Label>
-              <div className="flex flex-wrap gap-2">
-                {availableTermOptions.map((term) => {
-                  const checked = selectedTermsSorted.includes(term);
-                  return (
-                    <label
-                      key={term}
-                      className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-sm"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(value) =>
-                          setSelectedTerms((current) => {
-                            const next = new Set(current);
-                            if (value) {
-                              next.add(term);
-                            } else {
-                              next.delete(term);
-                            }
-                            return ensureUniqueTerms(Array.from(next));
-                          })
-                        }
-                        disabled={fieldsDisabled}
-                      />
-                      {term} meses
-                    </label>
-                  );
-                })}
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="flex flex-1 items-center gap-2">
-                  <Input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={customTermInput}
-                    onChange={(event) => setCustomTermInput(event.target.value)}
-                    placeholder="Adicionar prazo manual"
-                    disabled={fieldsDisabled}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddCustomTerm}
-                    disabled={fieldsDisabled || !customTermInput}
-                  >
-                    <Plus className="mr-2 h-4 w-4" /> Adicionar
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Combine prazos diferentes para comparar as tabelas dos bancos.
-                </p>
-              </div>
-            </div>
-            <div className="mt-4">{renderCalculationAlerts()}</div>
-          </div>
-
+        <div className="mt-6 space-y-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Condições calculadas</h3>
@@ -1125,7 +847,7 @@ const SimulationModal = ({
                                 id={`${offer.id}-term-${term.id}`}
                                 checked={term.selected}
                                 onCheckedChange={(checked) =>
-                                  handleToggleTermSelection(offer.id, term.id, Boolean(checked))
+                                  handleToggleOfferSelection(offer.id, term.id, Boolean(checked))
                                 }
                                 disabled={fieldsDisabled}
                               />
@@ -1162,64 +884,6 @@ const SimulationModal = ({
             )}
             {errors.selection ? <p className="text-sm text-destructive">{errors.selection}</p> : null}
           </div>
-
-          <Accordion type="single" collapsible className="rounded-xl border border-border/60 bg-muted/10">
-            <AccordionItem value="advanced">
-              <AccordionTrigger className="px-4">Opções avançadas</AccordionTrigger>
-              <AccordionContent className="px-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Etapa (opcional)</Label>
-                    <Select value={stage} onValueChange={setStage} disabled={fieldsDisabled || stageOptions.length === 0}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma etapa" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem key="__none__" value={NO_STAGE_VALUE}>
-                          Sem alteração
-                        </SelectItem>
-                        {stageOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Lead (opcional)</Label>
-                    <Input
-                      value={leadId}
-                      onChange={(event) => setLeadId(event.target.value)}
-                      placeholder="Identificador do lead"
-                      disabled={fieldsDisabled}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Simulação (opcional)</Label>
-                    <Input
-                      value={simulationId}
-                      onChange={(event) => setSimulationId(event.target.value)}
-                      placeholder="Identificador da simulação"
-                      disabled={fieldsDisabled}
-                    />
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  <Label>Metadata (JSON opcional)</Label>
-                  <Textarea
-                    value={metadataText}
-                    onChange={(event) => setMetadataText(event.target.value)}
-                    placeholder="{ }"
-                    className="font-mono text-xs"
-                    rows={4}
-                    disabled={fieldsDisabled}
-                  />
-                  {errors.metadata ? <p className="text-sm text-destructive">{errors.metadata}</p> : null}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
 
           <div className="space-y-2">
             <Label>Pré-visualização do payload</Label>
