@@ -16,7 +16,6 @@ vi.mock('./routes/lead-engine', () => ({ leadEngineRouter: express.Router() }));
 vi.mock('./middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
-  AUTH_MVP_BYPASS_TENANT_ID: 'demo-tenant',
 }));
 vi.mock('./middleware/error-handler', () => ({
   errorHandler: (_err: unknown, _req: unknown, _res: unknown, next: () => void) => next(),

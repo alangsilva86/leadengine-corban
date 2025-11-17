@@ -16,7 +16,7 @@ import type {
   MessageType,
 } from '../types/tickets';
 import { asyncHandler } from '../middleware/error-handler';
-import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
+import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import {
   addTicketNote,
@@ -33,7 +33,7 @@ import {
   type ListTicketsOptions,
 } from '../services/ticket-service';
 import { getSocketServer } from '../lib/socket-registry';
-import { getDefaultInstanceId, getDefaultTenantId } from '../config/whatsapp';
+import { getDefaultInstanceId } from '../config/whatsapp';
 import { logger } from '../config/logger';
 import {
   WhatsAppBrokerError,
@@ -52,6 +52,7 @@ import {
   normalizeLocationPayload,
   normalizeTemplatePayload,
 } from '../utils/message-normalizers';
+import { resolveRequestTenantId } from '../services/tenant-service';
 
 const router: Router = Router();
 
@@ -534,7 +535,7 @@ router.get(
           } satisfies ListTicketsOptions)
         : undefined;
 
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const result = options
       ? await listTickets(tenantId, filters, pagination, options)
       : await listTickets(tenantId, filters, pagination);
@@ -560,7 +561,7 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = ensureTicketId(req.params.id);
     const include = sanitizeIncludeOptions(parseListParam(req.query.include));
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const ticket = await getTicketById(tenantId, ticketId, {
       include,
     });
@@ -576,7 +577,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const createTicketDTO: CreateTicketDTO = {
       tenantId,
       contactId: req.body.contactId,
@@ -606,7 +607,7 @@ router.put(
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = ensureTicketId(req.params.id);
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
 
     const updateData: UpdateTicketDTO = {
       status: req.body.status,
@@ -639,7 +640,7 @@ router.post(
     const ticketId = ensureTicketId(req.params.id);
     const status = req.body.status as TicketStatus;
     const reason = typeof req.body.reason === 'string' ? req.body.reason : undefined;
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
 
     const updateData: UpdateTicketDTO = {
       status,
@@ -666,7 +667,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = ensureTicketId(req.params.id);
     const userId = req.body.userId as string;
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const ticket = await assignTicket(tenantId, ticketId, userId);
 
     res.json({
@@ -693,7 +694,7 @@ router.post(
     };
 
     const note = await addTicketNote(
-      req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID,
+      resolveRequestTenantId(req),
       ticketId,
       {
         id: req.user!.id,
@@ -720,7 +721,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const ticketId = ensureTicketId(req.params.id);
     const reason = req.body.reason as string | undefined;
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const ticket = await closeTicket(tenantId, ticketId, reason, req.user!.id);
 
     res.json({
@@ -758,7 +759,7 @@ router.get(
       sortOrder,
     };
 
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const result = await listMessages(tenantId, ticketId, pagination);
     const windowState = typeof req.query.window === 'string' ? req.query.window.trim().toLowerCase() : undefined;
     if (windowState === 'open') {
@@ -805,8 +806,7 @@ router.post(
   sendMessageValidation,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
-    const headerTenantId = normalizeString(req.header('x-tenant-id'));
-    const tenantId = req.user?.tenantId ?? headerTenantId ?? getDefaultTenantId();
+    const tenantId = resolveRequestTenantId(req);
     const chatId = normalizeString(req.body.chatId);
     const ticketId = normalizeString(req.body.ticketId);
     const text = normalizeString(req.body.text) ?? normalizeString(req.body.content);

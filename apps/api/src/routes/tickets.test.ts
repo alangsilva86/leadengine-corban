@@ -332,4 +332,21 @@ describe('Tickets routes', () => {
       await stopTestServer(server);
     }
   });
+
+  it('rejects ticket queries when tenant header mismatches authenticated tenant', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/tickets`, {
+        headers: { 'x-tenant-id': 'tenant-other' },
+      });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe('FORBIDDEN');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
 });

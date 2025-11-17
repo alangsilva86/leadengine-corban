@@ -40,16 +40,26 @@ let errorHandler: express.RequestHandler;
 const buildApp = () => {
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    (req as express.Request).user = {
+      id: 'user-1',
+      tenantId: 'tenant-test',
+      email: 'agent@example.com',
+      name: 'Agent',
+      role: 'ADMIN',
+      isActive: true,
+      permissions: ['campaigns:read'],
+    } as express.Request['user'];
+    next();
+  });
   app.use('/api/lead-engine', leadEngineRouter);
   app.use(errorHandler as express.RequestHandler);
   return app;
 };
 
 beforeAll(async () => {
-  process.env.AUTH_MVP_TENANT_ID = process.env.AUTH_MVP_TENANT_ID ?? 'tenant-test';
   process.env.LEAD_ENGINE_BROKER_BASE_URL = process.env.LEAD_ENGINE_BROKER_BASE_URL ?? 'https://broker.example.com';
   process.env.LEAD_ENGINE_BASIC_TOKEN = process.env.LEAD_ENGINE_BASIC_TOKEN ?? 'basic-token-value';
-  process.env.AUTH_MVP_BYPASS_TENANT_ID = process.env.AUTH_MVP_BYPASS_TENANT_ID ?? 'tenant-test';
   ({ leadEngineRouter } = await import('../lead-engine'));
   ({ errorHandler } = await import('../../middleware/error-handler'));
 });
@@ -61,29 +71,15 @@ afterEach(() => {
 });
 
 describe('Lead Engine allocations routes', () => {
-  const originalTenant = process.env.AUTH_MVP_TENANT_ID;
-  const originalBypassTenant = process.env.AUTH_MVP_BYPASS_TENANT_ID;
   const originalBaseUrl = process.env.LEAD_ENGINE_BROKER_BASE_URL;
   const originalBasicToken = process.env.LEAD_ENGINE_BASIC_TOKEN;
 
   beforeEach(() => {
-    process.env.AUTH_MVP_TENANT_ID = 'tenant-test';
-    process.env.AUTH_MVP_BYPASS_TENANT_ID = 'tenant-test';
     process.env.LEAD_ENGINE_BROKER_BASE_URL = 'https://broker.example.com';
     process.env.LEAD_ENGINE_BASIC_TOKEN = 'basic-token-value';
   });
 
   afterEach(() => {
-    if (originalTenant === undefined) {
-      delete process.env.AUTH_MVP_TENANT_ID;
-    } else {
-      process.env.AUTH_MVP_TENANT_ID = originalTenant;
-    }
-    if (originalBypassTenant === undefined) {
-      delete process.env.AUTH_MVP_BYPASS_TENANT_ID;
-    } else {
-      process.env.AUTH_MVP_BYPASS_TENANT_ID = originalBypassTenant;
-    }
     if (originalBaseUrl === undefined) {
       delete process.env.LEAD_ENGINE_BROKER_BASE_URL;
     } else {

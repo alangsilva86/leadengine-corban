@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query, body } from 'express-validator';
 import { LeadSource, LeadStatus } from '@prisma/client';
 import { asyncHandler } from '../middleware/error-handler';
-import { AUTH_MVP_BYPASS_TENANT_ID, requireTenant } from '../middleware/auth';
+import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { ValidationError, NotFoundError } from '@ticketz/core';
@@ -11,6 +11,7 @@ import {
   buildPaginationValidators,
   parsePaginationParams,
 } from '../utils/pagination';
+import { resolveRequestTenantId } from '../services/tenant-service';
 
 const paginationValidation = [
   ...buildPaginationValidators(),
@@ -114,7 +115,7 @@ router.get(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const { page, limit, skip } = parsePaginationParams(req.query as Record<string, unknown>);
     const { status } = req.query as Partial<{ status: string[] }>;
 
@@ -154,7 +155,7 @@ router.post(
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.user?.tenantId ?? AUTH_MVP_BYPASS_TENANT_ID;
+    const tenantId = resolveRequestTenantId(req);
     const contactId = req.body.contactId as string;
 
     const contact = await prisma.contact.findUnique({ where: { id: contactId } });

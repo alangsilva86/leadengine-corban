@@ -8,7 +8,6 @@ vi.mock('@ticketz/storage', () => import('../test-utils/storage-mock'));
 
 vi.mock('../middleware/auth', () => ({
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),
-  AUTH_MVP_BYPASS_TENANT_ID: 'tenant-mock',
 }));
 
 vi.mock('../config/logger', () => ({
@@ -178,6 +177,31 @@ describe('Sales routes', () => {
       expect(Array.isArray(listBody.data.items)).toBe(true);
       expect(listBody.data.items[0].salesTimeline).toHaveLength(1);
       expect(listBody.data.items[0].salesTimeline[0].type).toBe('simulation.created');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects simulation requests when tenant header mismatches authenticated context', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/sales/simulate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-other',
+        },
+        body: JSON.stringify({
+          ticketId: 'ticket-1',
+          calculationSnapshot: { monthly: 400 },
+        }),
+      });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe('FORBIDDEN');
     } finally {
       await stopTestServer(server);
     }
