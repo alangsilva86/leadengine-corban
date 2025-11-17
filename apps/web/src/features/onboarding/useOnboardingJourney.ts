@@ -233,6 +233,58 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
       pauseWhenHidden: false,
     };
 
+    type RenderWhatsappStepOverrides = {
+      journeyKind?: OnboardingJourneyKind;
+      providerProps?: typeof providerProps;
+      handlers?: {
+        onStatusChange?: (status: string) => void;
+        onCampaignReady?: (campaign: ActiveCampaign) => void;
+      };
+      nextPage?: StoredOnboardingPage;
+      backPage?: StoredOnboardingPage;
+    };
+
+    const renderWhatsappStep = (
+      step: StoredOnboardingPage,
+      overrides: RenderWhatsappStepOverrides = {}
+    ): ReactNode => {
+      if (step !== 'channels' && step !== 'whatsapp') {
+        return null;
+      }
+
+      const {
+        journeyKind: overridesJourneyKind,
+        providerProps: overridesProviderProps,
+        handlers,
+        nextPage,
+        backPage,
+      } = overrides;
+
+      const resolvedJourneyKind = overridesJourneyKind ?? journeyKind;
+      const resolvedNextPage =
+        nextPage ?? (resolvedJourneyKind === 'invite' ? 'complete' : 'campaigns');
+      const resolvedBackPage =
+        backPage ?? (resolvedJourneyKind === 'invite' ? 'team' : 'agreements');
+
+      return createElement(
+        WhatsAppInstancesProvider,
+        overridesProviderProps ?? providerProps,
+        createElement(WhatsAppConnect, {
+          selectedAgreement,
+          status: whatsappStatus,
+          activeCampaign,
+          onboarding: {
+            stages: onboardingStages,
+            activeStep,
+          },
+          onStatusChange: handlers?.onStatusChange ?? setWhatsappStatus,
+          onCampaignReady: handlers?.onCampaignReady ?? setActiveCampaign,
+          onContinue: () => setCurrentPage(resolvedNextPage),
+          onBack: () => setCurrentPage(resolvedBackPage),
+        })
+      );
+    };
+
     if (journeyKind === 'invite') {
       switch (safeCurrentPage) {
         case 'team':
@@ -264,23 +316,16 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
           });
         case 'channels':
         case 'whatsapp':
-          return createElement(
-            WhatsAppInstancesProvider,
+          return renderWhatsappStep(safeCurrentPage, {
+            journeyKind,
             providerProps,
-            createElement(WhatsAppConnect, {
-              selectedAgreement,
-              status: whatsappStatus,
-              activeCampaign,
-              onboarding: {
-                stages: onboardingStages,
-                activeStep,
-              },
+            handlers: {
               onStatusChange: setWhatsappStatus,
               onCampaignReady: setActiveCampaign,
-              onContinue: () => setCurrentPage('complete'),
-              onBack: () => setCurrentPage('team'),
-            }),
-          );
+            },
+            nextPage: 'complete',
+            backPage: 'team',
+          });
         case 'complete':
           return createElement(OnboardingCompleteStep, {
             result: teamSetupResult,
@@ -342,23 +387,16 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
         });
       case 'channels':
       case 'whatsapp':
-        return createElement(
-          WhatsAppInstancesProvider,
+        return renderWhatsappStep(safeCurrentPage, {
+          journeyKind,
           providerProps,
-          createElement(WhatsAppConnect, {
-            selectedAgreement,
-            status: whatsappStatus,
-            activeCampaign,
-            onboarding: {
-              stages: onboardingStages,
-              activeStep,
-            },
+          handlers: {
             onStatusChange: setWhatsappStatus,
             onCampaignReady: setActiveCampaign,
-            onContinue: () => setCurrentPage('campaigns'),
-            onBack: () => setCurrentPage('agreements'),
-          }),
-        );
+          },
+          nextPage: 'campaigns',
+          backPage: 'agreements',
+        });
       case 'campaigns':
         return createElement(
           WhatsAppInstancesProvider,
