@@ -1,6 +1,6 @@
-import { type PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { logger } from '../../config/logger';
-import { isDatabaseEnabled, prisma as prismaClient } from '../../lib/prisma';
+import { DatabaseDisabledError, isDatabaseEnabled, prisma as prismaClient } from '../../lib/prisma';
 import { getAgreementsConfig } from './config';
 import { DemoAgreementsStore } from './demo-store';
 
@@ -157,12 +157,69 @@ interface StorageOperationOptions<T> {
   fallback: (store: DemoAgreementsStore) => Promise<T>;
 }
 
+const STORAGE_DISABLED_ERROR_CODES = new Set(['DATABASE_DISABLED', 'STORAGE_DATABASE_DISABLED']);
+const STORAGE_UNAVAILABLE_PRISMA_CODES = new Set([
+  'P1000',
+  'P1001',
+  'P1002',
+  'P1003',
+  'P1008',
+  'P1009',
+  'P1010',
+  'P1011',
+  'P1012',
+  'P1013',
+  'P1014',
+  'P1015',
+  'P1016',
+  'P1017',
+  'P2000',
+  'P2001',
+  'P2002',
+  'P2003',
+  'P2004',
+  'P2005',
+  'P2006',
+  'P2007',
+  'P2008',
+  'P2009',
+  'P2010',
+  'P2021',
+  'P2022',
+  'P2023',
+  'P2024',
+]);
+
 const defaultPrisma = prismaClient as unknown as AgreementsPrismaClient;
+
+const hasErrorName = (error: unknown, name: string): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  if ('name' in error && typeof (error as { name?: unknown }).name === 'string') {
+    return (error as { name: string }).name === name;
+  }
+
+  return false;
+};
+
+const readErrorCode = (error: unknown): string | null => {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  if ('code' in error && typeof (error as { code?: unknown }).code === 'string') {
+    return (error as { code: string }).code;
+  }
+
+  return null;
+};
 
 export class AgreementsRepository {
   private readonly prisma: AgreementsPrismaClient;
-  private readonly demoStore: DemoAgreementsStore | null;
   private readonly demoMode: boolean;
+  private demoStore: DemoAgreementsStore | null;
 
   constructor(dependencies: AgreementsRepositoryDependencies = {}) {
     this.prisma = dependencies.prisma ?? defaultPrisma;
@@ -175,14 +232,68 @@ export class AgreementsRepository {
     }
   }
 
-  private async withStorageFallback<T>(options: StorageOperationOptions<T>): Promise<T> {
-    const { database, fallback } = options;
-
-    if (this.demoStore) {
-      return fallback(this.demoStore);
+  private getOrCreateDemoStore(): DemoAgreementsStore {
+    if (!this.demoStore) {
+      this.demoStore = new DemoAgreementsStore();
     }
 
-    return database();
+    return this.demoStore;
+  }
+
+  private shouldFallbackForError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+
+    if (error instanceof DatabaseDisabledError || hasErrorName(error, 'DatabaseDisabledError')) {
+      return true;
+    }
+
+    const hasInitializationError = typeof Prisma.PrismaClientInitializationError === 'function';
+    if (hasInitializationError && error instanceof Prisma.PrismaClientInitializationError) {
+      return true;
+    }
+
+    const hasRustPanicError = typeof Prisma.PrismaClientRustPanicError === 'function';
+    if (hasRustPanicError && error instanceof Prisma.PrismaClientRustPanicError) {
+      return true;
+    }
+
+    const hasKnownRequestError = typeof Prisma.PrismaClientKnownRequestError === 'function';
+    if (hasKnownRequestError && error instanceof Prisma.PrismaClientKnownRequestError) {
+      return STORAGE_UNAVAILABLE_PRISMA_CODES.has(error.code);
+    }
+
+    const code = readErrorCode(error);
+    if (code && (STORAGE_DISABLED_ERROR_CODES.has(code) || STORAGE_UNAVAILABLE_PRISMA_CODES.has(code))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private async withStorageFallback<T>(options: StorageOperationOptions<T>): Promise<T> {
+    const { database, fallback, tenantId, operation } = options;
+
+    if (this.demoMode) {
+      return fallback(this.getOrCreateDemoStore());
+    }
+
+    try {
+      return await database();
+    } catch (error) {
+      if (this.shouldFallbackForError(error)) {
+        logger.warn('[/agreements] storage unavailable — using demo fallback', {
+          tenantId: tenantId ?? 'unknown',
+          operation,
+          error,
+        });
+        const store = this.getOrCreateDemoStore();
+        return fallback(store);
+      }
+
+      throw error;
+    }
   }
 
   async listAgreements(

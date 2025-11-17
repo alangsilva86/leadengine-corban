@@ -42,15 +42,17 @@ const createPrismaMock = async () => {
   } as const;
 };
 
-const createFailingPrismaMock = async () => {
+const createFailingPrismaMock = async (errorFactory: () => Error = () => new Error('boom')) => {
   const actual = await vi.importActual<typeof import('../../../lib/prisma')>(
     '../../../lib/prisma'
   );
 
   const failingDelegate = {
-    count: vi.fn().mockRejectedValue(new Error('boom')),
-    findMany: vi.fn().mockRejectedValue(new Error('boom')),
+    count: vi.fn().mockResolvedValue(0),
+    findMany: vi.fn().mockResolvedValue([]),
   } as never;
+
+  const rejectWithError = () => Promise.reject(errorFactory());
 
   return {
     module: {
@@ -62,7 +64,7 @@ const createFailingPrismaMock = async () => {
         agreementRate: {} as never,
         agreementHistory: {} as never,
         agreementImportJob: {} as never,
-        $transaction: vi.fn().mockRejectedValue(new Error('boom')),
+        $transaction: vi.fn().mockImplementation(rejectWithError),
       },
     },
   } as const;
@@ -110,5 +112,30 @@ describe('AgreementsRepository storage strategy', () => {
     await expect(
       repository.listAgreements('tenant-real', { search: undefined, status: undefined }, { page: 1, limit: 25 })
     ).rejects.toThrow('boom');
+  });
+
+  it('falls back to demo agreements when the database layer is disabled', async () => {
+    const actualPrisma = await vi.importActual<typeof import('../../../lib/prisma')>(
+      '../../../lib/prisma'
+    );
+    const prismaMock = await createFailingPrismaMock(
+      () => new actualPrisma.DatabaseDisabledError({ model: 'Agreement', operation: 'findMany' })
+    );
+    vi.doMock('../../../lib/prisma', () => prismaMock.module);
+
+    const { refreshAgreementsConfig } = await import('../config');
+    refreshAgreementsConfig({ demoModeEnabled: false });
+
+    const { AgreementsRepository } = await import('../repository');
+    const repository = new AgreementsRepository();
+
+    const result = await repository.listAgreements(
+      'tenant-real',
+      { search: undefined, status: undefined },
+      { page: 1, limit: 25 }
+    );
+
+    expect(result.total).toBe(demoAgreementsSeed.length);
+    expect(result.items).toHaveLength(demoAgreementsSeed.length);
   });
 });
