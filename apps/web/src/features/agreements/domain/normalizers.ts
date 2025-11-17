@@ -89,6 +89,8 @@ export type AgreementRate = {
   tacPercent: number | null;
   tacFlat: number | null;
   status: string;
+  produto?: string;
+  modalidade?: string;
   metadata: Record<string, unknown>;
   validFrom: Date;
   validUntil: NullableDate;
@@ -104,6 +106,8 @@ export const normalizeRate = (rate: AgreementRateDto): AgreementRate => {
     : 'Ativa';
   return {
     id: rate.id,
+    produto: rate.product,
+    modalidade: rate.modality,
     tableId: rate.tableId ?? null,
     windowId: rate.windowId ?? null,
     product: rate.product,

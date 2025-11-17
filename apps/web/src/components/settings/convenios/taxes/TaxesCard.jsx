@@ -25,7 +25,14 @@ const TaxesCard = ({ products, taxes, onUpsert, readOnly }) => {
     setProduct(products[0]);
   }, [product, products]);
 
-  const filteredTaxes = useMemo(() => (taxes ?? []).filter((tax) => tax.produto === product), [taxes, product]);
+  const filteredTaxes = useMemo(
+    () =>
+      (taxes ?? []).filter((tax) => {
+        const rateProduct = tax.produto ?? tax.product;
+        return rateProduct === product;
+      }),
+    [taxes, product]
+  );
 
   return (
     <Card>

@@ -32,6 +32,8 @@ const useAgreementRateActions = ({
       const status = 'Ativa';
       const toAgreementRate = (tax: TaxPayload): Agreement['taxas'][number] => ({
         id: tax.id,
+        produto: tax.produto,
+        modalidade: tax.modalidade,
         tableId: null,
         windowId: null,
         product: tax.produto,
