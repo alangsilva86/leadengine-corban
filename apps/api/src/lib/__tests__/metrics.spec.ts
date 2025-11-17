@@ -15,7 +15,7 @@ describe('metrics collectors', () => {
     resetMetrics();
   });
 
-  it('enforces cardinality limits for high churn labels', () => {
+  it('enforces cardinality limits for high churn labels', async () => {
     for (let index = 0; index < 110; index += 1) {
       whatsappWebhookEventsCounter.inc({
         origin: 'webhook',
@@ -26,17 +26,17 @@ describe('metrics collectors', () => {
       });
     }
 
-    const snapshot = renderMetrics();
+    const snapshot = await renderMetrics();
     expect(snapshot).toContain('tenantId="tenant-0"');
     expect(snapshot).toContain('tenantId="overflow"');
     expect(snapshot).not.toContain('tenantId="tenant-109"');
   });
 
-  it('fills default base labels when they are not provided', () => {
+  it('fills default base labels when they are not provided', async () => {
     whatsappOutboundMetrics.incTotal({ status: 'SENT' });
     inboundMessagesProcessedCounter.inc();
 
-    const snapshot = renderMetrics();
+    const snapshot = await renderMetrics();
     expect(snapshot).toContain(
       'whatsapp_outbound_total{instanceId="unknown",origin="unknown",status="SENT",tenantId="unknown"} 1'
     );
@@ -46,7 +46,7 @@ describe('metrics collectors', () => {
     expect(snapshot).not.toContain('transport=');
   });
 
-  it('exposes counters for delivery success and socket reconnections', () => {
+  it('exposes counters for delivery success and socket reconnections', async () => {
     whatsappOutboundDeliverySuccessCounter.inc({
       origin: 'ticket-service',
       tenantId: 'tenant-metrics',
@@ -62,7 +62,7 @@ describe('metrics collectors', () => {
       reason: 'INSTANCE_NOT_CONNECTED',
     });
 
-    const snapshot = renderMetrics();
+    const snapshot = await renderMetrics();
     expect(snapshot).toContain(
       'whatsapp_outbound_delivery_success_total{instanceId="inst-42",messageType="text",origin="ticket-service",status="DELIVERED",tenantId="tenant-metrics"} 1'
     );
@@ -71,7 +71,7 @@ describe('metrics collectors', () => {
     );
   });
 
-  it('tracks outbound latency without including transport labels', () => {
+  it('tracks outbound latency without including transport labels', async () => {
     whatsappOutboundMetrics.observeLatency(
       {
         origin: 'ticket-service',
@@ -81,7 +81,7 @@ describe('metrics collectors', () => {
       123
     );
 
-    const snapshot = renderMetrics();
+    const snapshot = await renderMetrics();
     expect(snapshot).toContain(
       'whatsapp_outbound_latency_ms_sum{instanceId="inst-99",origin="ticket-service",tenantId="tenant-latency"} 123'
     );

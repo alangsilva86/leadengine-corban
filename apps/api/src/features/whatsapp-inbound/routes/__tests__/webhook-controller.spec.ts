@@ -242,7 +242,7 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
 
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ ok: false, code: 'INVALID_SIGNATURE' });
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="invalid_signature"[^}]*result="rejected"[^}]*\} 1/
     );
@@ -258,7 +258,7 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
 
       expect(response.status).toBe(401);
       expect(response.body.code).toBe('INVALID_SIGNATURE');
-      const metrics = renderMetrics();
+      const metrics = await renderMetrics();
       expect(metrics).toMatch(
         /whatsapp_webhook_events_total\{[^}]*reason="invalid_signature"[^}]*result="rejected"[^}]*\} 1/
       );
@@ -555,7 +555,7 @@ describe('WhatsApp webhook Baileys event logging', () => {
       normalizedIndex: 0,
     });
 
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).not.toMatch(/invalid_contract/);
   });
 
@@ -691,7 +691,7 @@ describe('WhatsApp webhook instance resolution', () => {
 
     await inboundQueueTesting.waitForIdle();
 
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="ingest_failed"[^}]*result="failed"[^}]*\} 1/
     );
@@ -1234,7 +1234,7 @@ describe('WhatsApp webhook poll choice events', () => {
       })
     );
 
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice"[^}]*result="accepted"[^}]*\} 1/
     );
@@ -1795,7 +1795,7 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(response.status).toBe(204);
     expect(triggerPollChoiceInboxNotificationMock).not.toHaveBeenCalled();
 
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_missing_tenant"[^}]*result="failed"[^}]*\} 1/
     );
@@ -1850,7 +1850,7 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(response.status).toBe(204);
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledTimes(1);
 
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_ingest_rejected"[^}]*result="failed"[^}]*\} 1/
     );
@@ -1908,7 +1908,7 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(response.status).toBe(204);
     expect(recordPollChoiceVoteMock).toHaveBeenCalledTimes(1);
 
-    const metrics = renderMetrics();
+    const metrics = await renderMetrics();
     expect(metrics).toMatch(
       /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_duplicate"[^}]*result="ignored"[^}]*\} 1/
     );

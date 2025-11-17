@@ -138,7 +138,7 @@ describe('Sales routes', () => {
       expect(timeline).toHaveLength(1);
       expect(timeline[0].stage).toBe(SalesStage.QUALIFICACAO);
 
-      const metricsSnapshot = renderMetrics();
+      const metricsSnapshot = await renderMetrics();
       expect(metricsSnapshot).toMatch(
         /sales_simulation_total\{[^}]*stage="QUALIFICACAO"[^}]*tenantId="tenant-123"/
       );
@@ -251,7 +251,7 @@ describe('Sales routes', () => {
       expect(body.data.event.type).toBe('proposal.created');
       expect(body.data.ticket.stage).toBe(SalesStage.PROPOSTA);
 
-      const metricsSnapshot = renderMetrics();
+      const metricsSnapshot = await renderMetrics();
       expect(metricsSnapshot).toMatch(
         /sales_proposal_total\{[^}]*stage="PROPOSTA"[^}]*tenantId="tenant-123"/
       );
