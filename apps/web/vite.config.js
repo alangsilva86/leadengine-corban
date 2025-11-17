@@ -48,7 +48,6 @@ export default defineConfig({
           if (id.includes('@tanstack/react-query')) return 'vendor-query'
           if (id.includes('recharts')) return 'vendor-recharts'
           if (id.includes('@radix-ui')) return 'vendor-radix'
-          if (id.includes('framer-motion')) return 'vendor-motion'
           if (id.includes('lucide-react')) return 'vendor-icons'
         },
       },
