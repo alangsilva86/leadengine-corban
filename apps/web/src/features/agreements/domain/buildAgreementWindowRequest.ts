@@ -39,11 +39,6 @@ export const buildAgreementWindowRequest = ({
 
   const data: AgreementWindowRequest['data'] = {
     ...(includeId ? { id: window.id } : {}),
-}: BuildAgreementWindowRequestParams): AgreementWindowRequest => {
-  const tableId = resolveTableId(window);
-
-  const data: AgreementWindowRequest['data'] = {
-    id: window.id,
     label: window.label,
     startsAt: toIsoString(window.start),
     endsAt: toIsoString(window.end),
@@ -51,16 +46,6 @@ export const buildAgreementWindowRequest = ({
     metadata,
     ...(tableId ? { tableId } : {}),
   };
-
-    metadata: (() => {
-      const firstDueDate = toIsoString(window.firstDueDate);
-      return firstDueDate ? { firstDueDate } : {};
-    })(),
-  };
-
-  if (tableId) {
-    data.tableId = tableId;
-  }
 
   return {
     data,
