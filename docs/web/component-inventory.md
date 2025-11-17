@@ -32,7 +32,6 @@ The reusable UI building blocks live in `apps/web/src/components/ui/`:
 - `avatar.jsx`
 - `badge.jsx`
 - `breadcrumb.jsx`
-- `button-group.jsx`
 - `button.jsx`
 - `button.stories.jsx`
 - `calendar.jsx`
@@ -47,8 +46,6 @@ The reusable UI building blocks live in `apps/web/src/components/ui/`:
 - `drawer.jsx`
 - `dropdown-menu.jsx`
 - `form.jsx`
-- `glass-panel.jsx`
-- `glass-panel.stories.jsx`
 - `hover-card.jsx`
 - `input-otp.jsx`
 - `input.jsx`
