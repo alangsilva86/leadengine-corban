@@ -21,9 +21,11 @@
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
-    "@ticketz/core": "workspace:*"
+    "@ticketz/core": "workspace:*",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "prisma": "5.22.0",
     "tsup": "^8.5.0",
     "typescript": "^5.3.3",

@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import type { Tenant, User } from '@prisma/client';
 import { logger } from '../config/logger';
-import { isMvpAuthBypassEnabled } from '../config/feature-flags';
-import { isDatabaseEnabled, prisma } from '../lib/prisma';
-import { ensureTenantRecord } from '../services/tenant-service';
+import { prisma } from '../lib/prisma';
 
-type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
+export type UserRole = 'ADMIN' | 'SUPERVISOR' | 'AGENT';
 
 // =============================================================================
 // Types
@@ -19,6 +18,12 @@ export interface AuthenticatedUser {
   role: UserRole;
   isActive: boolean;
   permissions: string[];
+  tenant?: {
+    id: string;
+    name: string;
+    slug: string;
+    settings: Record<string, unknown>;
+  };
 }
 
 // Estender o tipo Request para incluir user
@@ -34,44 +39,12 @@ declare global {
 // Utilities
 // =============================================================================
 
-const MVP_AUTH_BYPASS_ENABLED = isMvpAuthBypassEnabled();
+export const AUTH_MVP_BYPASS_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const ACCESS_TOKEN_TYPE = 'access';
 
-const DEFAULT_AUTH_MVP_USER_ID = '00000000-0000-4000-8000-000000000001';
-
-const isUuid = (value: string): boolean =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-
-const resolveBypassUserId = (): string => {
-  const raw = process.env.AUTH_MVP_USER_ID?.trim();
-  if (!raw) {
-    return DEFAULT_AUTH_MVP_USER_ID;
-  }
-
-  if (isUuid(raw)) {
-    return raw;
-  }
-
-  logger.warn('[Auth] AUTH_MVP_USER_ID não é um UUID válido; usando fallback default', {
-    provided: raw,
-  });
-  return DEFAULT_AUTH_MVP_USER_ID;
-};
-
-const AUTH_MVP_USER_ID = resolveBypassUserId();
-const AUTH_MVP_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
-const AUTH_MVP_USER_NAME = process.env.AUTH_MVP_USER_NAME || 'MVP Anonymous';
-const AUTH_MVP_USER_EMAIL =
-  process.env.AUTH_MVP_USER_EMAIL || 'mvp-anonymous@leadengine.local';
-const AUTH_MVP_ROLE = (process.env.AUTH_MVP_ROLE || 'ADMIN') as UserRole;
-const AUTH_MVP_PASSWORD_HASH = createHash('sha256')
-  .update(process.env.AUTH_MVP_PASSWORD || 'mvp-bypass')
-  .digest('hex');
-
-/**
- * Define permissões baseadas no papel do usuário
- */
-function getPermissionsByRole(role: UserRole): string[] {
-  const permissions: Record<string, string[]> = {
+export function getPermissionsByRole(role: UserRole): string[] {
+  const permissions: Record<UserRole, string[]> = {
     ADMIN: [
       'users:read',
       'users:write',
@@ -114,118 +87,125 @@ function getPermissionsByRole(role: UserRole): string[] {
   return permissions[role] || [];
 }
 
-const isProductionEnv = process.env.NODE_ENV === 'production';
-
-const normalizeRole = (role?: string | UserRole): UserRole => {
-  const normalized = (role || '').toString().trim().toUpperCase();
-  if (normalized === 'ADMIN' || normalized === 'SUPERVISOR' || normalized === 'AGENT') {
-    return normalized;
-  }
-  return 'AGENT';
+type TokenPayload = jwt.JwtPayload & {
+  sub: string;
+  tenantId: string;
+  permissions?: string[];
+  type?: 'access' | 'refresh';
 };
 
-const buildMvpBypassUser = (): AuthenticatedUser => {
-  const resolvedRole = normalizeRole(AUTH_MVP_ROLE);
-  return {
-    id: AUTH_MVP_USER_ID,
-    tenantId: AUTH_MVP_TENANT_ID,
-    email: AUTH_MVP_USER_EMAIL,
-    name: AUTH_MVP_USER_NAME,
-    role: resolvedRole,
-    isActive: true,
-    permissions: getPermissionsByRole(resolvedRole),
-  };
-};
+const normalizeJsonObject = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
-export const AUTH_MVP_BYPASS_USER_ID = AUTH_MVP_USER_ID;
-export const AUTH_MVP_BYPASS_TENANT_ID = AUTH_MVP_TENANT_ID;
-export const AUTH_MVP_BYPASS_USER_EMAIL = AUTH_MVP_USER_EMAIL;
-export const AUTH_MVP_BYPASS_USER_NAME = AUTH_MVP_USER_NAME;
+const buildAuthenticatedUser = (
+  user: User & { tenant?: Tenant | null },
+  permissions?: string[]
+): AuthenticatedUser => ({
+  id: user.id,
+  tenantId: user.tenantId,
+  email: user.email,
+  name: user.name,
+  role: user.role as UserRole,
+  isActive: user.isActive,
+  permissions: permissions && permissions.length ? permissions : getPermissionsByRole(user.role as UserRole),
+  tenant: user.tenant
+    ? {
+        id: user.tenant.id,
+        name: user.tenant.name,
+        slug: user.tenant.slug,
+        settings: normalizeJsonObject(user.tenant.settings),
+      }
+    : undefined,
+});
 
-/**
- * Resolve o usuário padrão utilizado no modo demonstração.
- */
-export const resolveDemoUser = (): AuthenticatedUser => buildMvpBypassUser();
+const respondUnauthorized = (res: Response, message = 'Token inválido ou ausente', code = 'UNAUTHORIZED') =>
+  res.status(401).json({
+    success: false,
+    error: {
+      code,
+      message,
+    },
+  });
 
-let ensureDemoUserPromise: Promise<void> | null = null;
+const respondForbidden = (res: Response, message = 'Acesso negado para este tenant', code = 'FORBIDDEN') =>
+  res.status(403).json({
+    success: false,
+    error: {
+      code,
+      message,
+    },
+  });
 
-const ensureDemoUserRecord = async (): Promise<void> => {
-  if (!isDatabaseEnabled) {
-    return;
-  }
+const fetchUserFromDatabase = async (userId: string, tenantId: string) =>
+  prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      tenant: true,
+    },
+  }).then((user) => {
+    if (!user) {
+      return null;
+    }
 
-  if (!ensureDemoUserPromise) {
-    const resolvedRole = normalizeRole(AUTH_MVP_ROLE);
-    ensureDemoUserPromise = ensureTenantRecord(AUTH_MVP_TENANT_ID, {
-      source: 'auth.ensureDemoUserRecord',
-    })
-      .then(() =>
-        prisma.user.upsert({
-          where: { id: AUTH_MVP_USER_ID },
-          update: {
-            tenantId: AUTH_MVP_TENANT_ID,
-            email: AUTH_MVP_USER_EMAIL,
-            name: AUTH_MVP_USER_NAME,
-            role: resolvedRole,
-            isActive: true,
-            passwordHash: AUTH_MVP_PASSWORD_HASH,
-          },
-          create: {
-            id: AUTH_MVP_USER_ID,
-            tenantId: AUTH_MVP_TENANT_ID,
-            email: AUTH_MVP_USER_EMAIL,
-            name: AUTH_MVP_USER_NAME,
-            role: resolvedRole,
-            isActive: true,
-            passwordHash: AUTH_MVP_PASSWORD_HASH,
-            settings: {},
-          },
-        })
-      )
-      .then(() => undefined)
-      .catch((error) => {
-        ensureDemoUserPromise = null;
-        logger.warn('[Auth] Falha ao garantir usuário demo', { error });
-        throw error;
-      });
-  }
+    if (!user.isActive || user.tenantId !== tenantId) {
+      return null;
+    }
 
-  await ensureDemoUserPromise;
-};
+    if (!user.tenant || !user.tenant.isActive) {
+      return null;
+    }
 
-const ensureUserContext = async (req: Request): Promise<AuthenticatedUser> => {
-  if (!req.user) {
-    await ensureDemoUserRecord();
-    req.user = resolveDemoUser();
-  }
-  return req.user;
-};
+    return user;
+  });
 
 // =============================================================================
 // Middleware Functions
 // =============================================================================
 
-/**
- * Middleware de autenticação (modo demo)
- */
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   if (req.method === 'OPTIONS') {
     return next();
   }
 
   try {
-    if (!MVP_AUTH_BYPASS_ENABLED && isProductionEnv) {
-      logger.debug(
-        '[Auth] MVP bypass desativado explicitamente, mas autenticação clássica foi removida. Aplicando usuário demo.'
-      );
+    const authorization = req.headers.authorization;
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return respondUnauthorized(res);
     }
 
-    await ensureUserContext(req);
+    const token = authorization.replace('Bearer ', '').trim();
+    if (!token) {
+      return respondUnauthorized(res);
+    }
+
+    const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
+
+    if (!payload.sub || !payload.tenantId) {
+      return respondUnauthorized(res);
+    }
+
+    if (payload.type && payload.type !== ACCESS_TOKEN_TYPE) {
+      return respondForbidden(res, 'Token não é do tipo de acesso');
+    }
+
+    const userRecord = await fetchUserFromDatabase(payload.sub, payload.tenantId);
+
+    if (!userRecord) {
+      return respondUnauthorized(res, 'Usuário não encontrado ou inativo');
+    }
+
+    req.user = buildAuthenticatedUser(userRecord, payload.permissions);
     next();
   } catch (error) {
-    logger.error('[Auth] Erro inesperado no middleware de autenticação', {
-      error,
-    });
+    if (error instanceof jwt.TokenExpiredError) {
+      return respondUnauthorized(res, 'Token expirado', 'TOKEN_EXPIRED');
+    }
+
+    if (error instanceof jwt.JsonWebTokenError) {
+      return respondUnauthorized(res, 'Token inválido', 'TOKEN_INVALID');
+    }
+
+    logger.error('[Auth] Erro inesperado no middleware de autenticação', { error });
     return res.status(500).json({
       success: false,
       error: {
@@ -236,18 +216,22 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   }
 };
 
-/**
- * Middleware para verificar se o usuário pertence ao tenant
- */
-export const requireTenant = async (req: Request, _res: Response, next: NextFunction) => {
+export const requireTenant = async (req: Request, res: Response, next: NextFunction) => {
   if (req.method === 'OPTIONS') {
     return next();
   }
 
-  try {
-    await ensureUserContext(req);
-    next();
-  } catch (error) {
-    next(error);
+  if (!req.user) {
+    return respondUnauthorized(res);
   }
+
+  if (!req.user.isActive) {
+    return respondForbidden(res, 'Usuário inativo');
+  }
+
+  if (!req.user.tenantId) {
+    return respondForbidden(res, 'Tenant não configurado');
+  }
+
+  next();
 };
