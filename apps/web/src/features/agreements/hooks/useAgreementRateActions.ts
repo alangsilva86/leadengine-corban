@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import type { Agreement } from '@/features/agreements/useConvenioCatalog.ts';
+import agreementsLogger from '@/features/agreements/utils/agreementsLogger.ts';
 import type { BuildHistoryEntry, RunAgreementUpdate, TaxPayload } from './types.ts';
 
 type UseAgreementRateActionsArgs = {
@@ -37,13 +38,41 @@ const useAgreementRateActions = ({
         history: [entry, ...selected.history],
       };
 
-      await runUpdate({
-        nextAgreement: next,
-        toastMessage: 'Taxa salva com sucesso',
-        telemetryEvent: 'agreements.rate.upserted',
-        telemetryPayload: { modalidade: payload.modalidade, produto: payload.produto },
-        note: entry.message,
+      agreementsLogger.info('rate', 'pre', '📚 Passo didático: preparando a taxa para subir ao palco.', {
+        action: 'upsert-rate',
+        agreementId: selected.id,
+        status: selected.status,
+        taxId: payload.id,
+        payload: { modalidade: payload.modalidade, produto: payload.produto },
       });
+
+      try {
+        await runUpdate({
+          nextAgreement: next,
+          toastMessage: 'Taxa salva com sucesso',
+          telemetryEvent: 'agreements.rate.upserted',
+          telemetryPayload: { modalidade: payload.modalidade, produto: payload.produto },
+          note: entry.message,
+        });
+
+        agreementsLogger.info('rate', 'post', '🎉 Passo lúdico concluído: taxa registrada com brilho.', {
+          action: 'upsert-rate',
+          agreementId: selected.id,
+          status: next.status,
+          taxId: payload.id,
+          result: 'success',
+        });
+      } catch (error) {
+        agreementsLogger.error('rate', 'error', '⚠️ Intuição alertou um tropeço ao salvar a taxa.', {
+          action: 'upsert-rate',
+          agreementId: selected.id,
+          status: selected.status,
+          taxId: payload.id,
+          result: 'failure',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     },
     [buildHistoryEntry, locked, runUpdate, selected]
   );
