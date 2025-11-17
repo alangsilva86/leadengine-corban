@@ -95,6 +95,7 @@ const baseHeaders = () => {
 
   if (!tenantId) {
     const envTenant =
+      getEnvVar('VITE_DEFAULT_TENANT_HINT') ??
       getEnvVar('VITE_API_TENANT_ID') ?? getEnvVar('VITE_TENANT_ID') ?? undefined;
     if (typeof envTenant === 'string') {
       const normalized = envTenant.trim();

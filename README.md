@@ -120,9 +120,10 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
 - **Backend**: crie `apps/api/.env` (ou `.env.local`) baseado nas chaves usadas em produção.
   - Campos essenciais: `PORT`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `JWT_SECRET`, `DATABASE_URL`, `WHATSAPP_BROKER_URL`, `WHATSAPP_BROKER_API_KEY`, `WHATSAPP_WEBHOOK_API_KEY`, `WHATSAPP_WEBHOOK_HMAC_SECRET`, `AUTH_MVP_*`, `LEAD_ENGINE_*`, `REDIS_URL` (quando aplicável).
   - Configure os limites de falha do circuito outbound via `WHATSAPP_OUTBOUND_CIRCUIT_MAX_FAILURES`, `WHATSAPP_OUTBOUND_CIRCUIT_WINDOW_MS` e `WHATSAPP_OUTBOUND_CIRCUIT_COOLDOWN_MS` para personalizar tolerância e cooldown de envio.
+  - O onboarding guiado utiliza `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER` e `ONBOARDING_PORTAL_BASE_URL` para validar tokens e montar os links enviados ao operador inicial.
   - O modo HTTP é fixo: a variável legada `WHATSAPP_MODE` foi removida e a API aborta a inicialização caso ela esteja definida.
   - Use `docs/environments/ticketzapi-production.env` como referência de produção.
-- **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000` e `VITE_WS_URL=ws://localhost:4000`.
+- **Frontend**: crie `apps/web/.env.local` com `VITE_API_URL=http://localhost:4000`, `VITE_WS_URL=ws://localhost:4000` e os ajustes de autenticação `VITE_AUTH_PROVIDER`, `VITE_DEFAULT_TENANT_HINT`, `VITE_AUTH_PREFILL_EMAIL` e `VITE_AUTH_PREFILL_PASSWORD` (opcionais para pré-preencher o formulário de login).
 
 ### 5. Banco de dados & Prisma
 ```bash
@@ -192,6 +193,12 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - `GET /metrics`: exporta métricas Prometheus, incluindo contadores do broker (`lib/metrics.ts`).
 - `GET /api/integrations/metrics`: visão específica das filas/eventos WhatsApp.
 
+### Onboarding & convites
+- `POST /api/onboarding/invites/validate`: confirma se o token recebido por e-mail/SMS ainda está ativo e retorna os metadados do convite (e-mail esperado, sugestão de slug, canal).
+- `POST /api/onboarding/setup`: consome o token, cria o tenant, fila principal, convênio e campanha inicial, registra o primeiro operador como ADMIN e devolve um JWT pronto para ser armazenado no frontend.
+- Variáveis `ONBOARDING_INVITE_EMAIL_FROM`, `ONBOARDING_INVITE_SMS_SENDER` e `ONBOARDING_PORTAL_BASE_URL` controlam as mensagens enviadas ao operador e o link do portal (`/onboarding`).
+- **Provisionamento em produção**: gere um token inserindo um registro em `onboarding_invites` (via Prisma Studio, seed ou SQL direto) contendo `token`, `email` e, opcionalmente, `organization`/`tenantSlugHint`. Compartilhe o link `${ONBOARDING_PORTAL_BASE_URL}?token=<TOKEN>` com o cliente; o operador valida o convite em `/onboarding`, define o nome/slug da equipe, cria a senha do primeiro administrador e, ao final, sai autenticado com o JWT retornado por `/api/onboarding/setup`. Não há mais necessidade de semear usuários demo quando o fluxo de convites está disponível.
+
 ---
 
 ## Capítulo 5 – Palco do frontend
@@ -208,6 +215,7 @@ O comando `pnpm run build` encadeia libs → API → Web. Use `pnpm run test:wha
 - Socket.IO client para eventos de tickets/mensagens em tempo real.
 - QR code generator (`features/whatsapp/`) para pareamento de instâncias.
 - Debug dashboards (`features/debug/`) conectados às métricas da API.
+- **Portal público `/onboarding`** com três etapas (aceite do convite → provisionamento de equipe → conexão WhatsApp). Ele usa o hook `useOnboardingJourney` em modo `journeyKind=invite`, renderiza `AcceptInviteStep`, `TeamSetupStep` e `OnboardingCompleteStep` e compartilha o mesmo provider de instâncias para desbloquear o pareamento imediatamente após o cadastro.
 
 ---
 

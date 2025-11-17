@@ -97,13 +97,14 @@ const dispatchGlobalNavigation = (targetPage) => {
   window.dispatchEvent(event);
 };
 
-const OnboardingRoute = ({ initialPage }) => {
+const OnboardingRoute = ({ initialPage, journeyKind = 'app' }) => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { safeCurrentPage, onboarding, handleNavigate, renderPage } = useOnboardingJourney({
     initialPage,
     currentUser: user,
     loadingCurrentUser: authLoading,
+    journeyKind,
   });
 
   const handleRouteNavigate = useCallback(
@@ -188,6 +189,22 @@ const AuthGate = ({ children }) => {
   return children;
 };
 
+const OnboardingPortalRoute = () => {
+  const { user, loading: authLoading } = useAuth();
+  const { renderPage } = useOnboardingJourney({
+    initialPage: 'accept-invite',
+    journeyKind: 'invite',
+    currentUser: user,
+    loadingCurrentUser: authLoading,
+  });
+
+  return (
+    <Suspense fallback={<PageFallback />}>
+      {renderPage()}
+    </Suspense>
+  );
+};
+
 const LogoutRoute = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -217,7 +234,7 @@ const router = createBrowserRouter([
     path: '/',
     element: (
       <AuthGate>
-        <OnboardingRoute initialPage={null} />
+        <OnboardingRoute initialPage={null} journeyKind="app" />
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -226,7 +243,7 @@ const router = createBrowserRouter([
     path: '/channels',
     element: (
       <AuthGate>
-        <OnboardingRoute initialPage="channels" />
+        <OnboardingRoute initialPage="channels" journeyKind="app" />
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -235,7 +252,7 @@ const router = createBrowserRouter([
     path: '/campaigns',
     element: (
       <AuthGate>
-        <OnboardingRoute initialPage="campaigns" />
+        <OnboardingRoute initialPage="campaigns" journeyKind="app" />
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -270,6 +287,11 @@ const router = createBrowserRouter([
         <LogoutRoute />
       </AuthGate>
     ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/onboarding',
+    element: <OnboardingPortalRoute />, 
     errorElement: <RouteErrorBoundary />,
   },
   {

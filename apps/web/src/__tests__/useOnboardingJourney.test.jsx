@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const STORAGE_KEY = 'leadengine_onboarding_v1';
+const INVITE_STORAGE_KEY = `${STORAGE_KEY}_invite`;
 
 // Import after setup
 import useOnboardingJourney from '../features/onboarding/useOnboardingJourney.js';
@@ -37,7 +38,6 @@ describe('useOnboardingJourney', () => {
     expect(result.current.computeNextSetupPage()).toBe('inbox');
     expect(result.current.onboarding.stages.map((stage) => stage.id)).toEqual([
       'channels',
-      'agreements',
       'campaigns',
       'inbox',
     ]);
@@ -60,5 +60,41 @@ describe('useOnboardingJourney', () => {
 
     expect(result.current.currentUser).toEqual({ ...mockUser, tenantId: 'tenant-abc' });
     expect(result.current.loadingCurrentUser).toBe(false);
+  });
+
+  it('restores invite journey state with separate storage key', async () => {
+    const persistedState = {
+      currentPage: 'team',
+      inviteDetails: { token: 'token-abc', email: 'owner@example.com' },
+      teamSetupResult: { tenant: { id: 'tenant-slug', name: 'Tenant', slug: 'tenant-slug' } },
+      initialInviteToken: 'token-abc',
+    };
+
+    localStorage.setItem(INVITE_STORAGE_KEY, JSON.stringify(persistedState));
+
+    const { result } = renderHook(() =>
+      useOnboardingJourney({ journeyKind: 'invite', initialPage: 'accept-invite' })
+    );
+
+    await waitFor(() => expect(result.current.safeCurrentPage).toBe('team'));
+    expect(result.current.inviteDetails).toEqual(persistedState.inviteDetails);
+    expect(result.current.onboarding.stages.map((stage) => stage.id)).toEqual([
+      'accept-invite',
+      'team',
+      'channels',
+    ]);
+  });
+
+  it('persists initial invite token for the portal flow', async () => {
+    renderHook(() =>
+      useOnboardingJourney({ journeyKind: 'invite', initialInviteToken: 'token-from-url' })
+    );
+
+    await waitFor(() => {
+      const raw = localStorage.getItem(INVITE_STORAGE_KEY);
+      expect(raw).toBeTruthy();
+      const stored = JSON.parse(raw);
+      expect(stored.initialInviteToken).toBe('token-from-url');
+    });
   });
 });

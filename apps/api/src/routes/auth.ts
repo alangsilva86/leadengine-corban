@@ -79,7 +79,7 @@ const signToken = (
     { expiresIn: type === 'access' ? ACCESS_TOKEN_EXPIRES_IN : REFRESH_TOKEN_EXPIRES_IN }
   );
 
-const buildSessionPayload = (user: User, tenant: Tenant, permissions: string[]) => ({
+export const buildSessionPayload = (user: User, tenant: Tenant, permissions: string[]) => ({
   token: {
     accessToken: signToken(user, tenant, permissions, 'access'),
     refreshToken: signToken(user, tenant, permissions, 'refresh'),
