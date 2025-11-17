@@ -49,6 +49,7 @@ import {
 import { agreementsProvidersRouter } from './routes/agreements.providers';
 import { tenantsRouter } from './routes/tenants';
 import { usersRouter } from './routes/users';
+import { initializeBrokerCircuitBreaker, getBrokerCircuitBreakerMetrics } from './services/whatsapp-broker-client-protected';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -194,6 +195,21 @@ const io = new SocketIOServer(server, {
 });
 
 registerSocketServer(io);
+
+try {
+  initializeBrokerCircuitBreaker();
+  const brokerCircuitBreakerMetrics = getBrokerCircuitBreakerMetrics();
+
+  if (!brokerCircuitBreakerMetrics.initialized) {
+    logger.error('Broker circuit breaker reported uninitialized state immediately after initialization', {
+      brokerCircuitBreakerMetrics,
+    });
+  } else {
+    logger.info('Broker circuit breaker initialized successfully', brokerCircuitBreakerMetrics);
+  }
+} catch (error) {
+  logger.error('Failed to initialize broker circuit breaker', { error });
+}
 
 // Configurações básicas
 const NODE_ENV = process.env.NODE_ENV || 'development';
