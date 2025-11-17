@@ -16,6 +16,12 @@ import type {
   UpdateAgreementResponse,
 } from '@/lib/agreements-client.ts';
 import {
+  getProductsByAgreement,
+  toAgreementOptions,
+  type AgreementOption,
+  type AgreementProductOption,
+} from './agreementsSelectors.ts';
+import {
   agreementsKeys,
   deleteAgreementRate,
   deleteAgreementWindow,
@@ -330,6 +336,12 @@ const useConvenioCatalog = () => {
     [query.data?.data]
   );
 
+  const agreementOptions = useMemo(() => toAgreementOptions(convenios), [convenios]);
+  const productsByAgreement = useMemo(
+    () => getProductsByAgreement(agreementOptions),
+    [agreementOptions]
+  );
+
   const updateAgreementMutation = useMutation({
     mutationFn: ({ agreementId, payload }: UpdateAgreementVariables) => patchAgreement(agreementId, payload),
     onSuccess: (response) => {
@@ -454,6 +466,8 @@ const useConvenioCatalog = () => {
 
   return {
     convenios,
+    agreementOptions,
+    productsByAgreement,
     meta: query.data?.meta ?? null,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
@@ -470,6 +484,16 @@ const useConvenioCatalog = () => {
       syncProvider: syncMutation,
     },
   } as const;
+};
+
+export const useAgreementOptions = (): AgreementOption[] => {
+  const { agreementOptions } = useConvenioCatalog();
+  return agreementOptions;
+};
+
+export const useAgreementProducts = (): Map<string, AgreementProductOption[]> => {
+  const { productsByAgreement } = useConvenioCatalog();
+  return productsByAgreement;
 };
 
 export default useConvenioCatalog;

@@ -61,6 +61,25 @@ describe('Sales dialogs alerts', () => {
           archived: false,
         },
       ],
+      agreementOptions: [
+        {
+          value: 'inss',
+          label: 'INSS',
+          products: [
+            { value: 'Empréstimo consignado', label: 'Empréstimo consignado' },
+            { value: 'Cartão consignado', label: 'Cartão consignado' },
+          ],
+        },
+      ],
+      productsByAgreement: new Map([
+        [
+          'inss',
+          [
+            { value: 'Empréstimo consignado', label: 'Empréstimo consignado' },
+            { value: 'Cartão consignado', label: 'Cartão consignado' },
+          ],
+        ],
+      ]),
       isLoading: false,
       error: null,
     });
@@ -116,6 +135,8 @@ describe('Sales dialogs alerts', () => {
   it('exibe mensagem amigável quando nenhum convênio está disponível', () => {
     mockUseConvenioCatalog.mockReturnValue({
       convenios: [],
+      agreementOptions: [],
+      productsByAgreement: new Map(),
       isLoading: false,
       error: null,
     });

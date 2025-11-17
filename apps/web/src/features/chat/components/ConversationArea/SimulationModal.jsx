@@ -30,6 +30,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion.jsx';
 import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.ts';
+import { findActiveWindow, getActiveRates } from '@/features/agreements/agreementsSelectors.ts';
 import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 import {
   buildProposalSnapshot,
@@ -74,166 +75,6 @@ const formatJson = (value) => {
     return '';
   }
 };
-const PRODUCT_LABEL_MAP = {
-  emprestimo: 'Empréstimo consignado',
-  consigned_credit: 'Empréstimo consignado',
-  cartao_consignado: 'Cartão consignado',
-  cartao_beneficio: 'Cartão benefício',
-  benefit_card: 'Cartão benefício',
-  fgts: 'Antecipação FGTS',
-  fgts_advance: 'Antecipação FGTS',
-  credit_card: 'Cartão consignado',
-  payroll_portability: 'Portabilidade de salário',
-};
-
-const normalizeString = (value) => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : '';
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value);
-  }
-  return '';
-};
-
-const formatProductLabel = (value) => {
-  const normalized = normalizeString(value);
-  if (!normalized) {
-    return '';
-  }
-
-  const mapped = PRODUCT_LABEL_MAP[normalized];
-  if (mapped) {
-    return mapped;
-  }
-
-  return normalized
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-    .replace(/(^|\s)([a-z])/g, (match) => match.toUpperCase());
-};
-
-const normalizeProductOption = (entry) => {
-  if (!entry) {
-    return null;
-  }
-
-  if (typeof entry === 'string' || typeof entry === 'number') {
-    const value = normalizeString(entry);
-    if (!value) {
-      return null;
-    }
-    return { value, label: formatProductLabel(value) };
-  }
-
-  if (typeof entry === 'object') {
-    const value =
-      normalizeString(entry.id) ||
-      normalizeString(entry.value) ||
-      normalizeString(entry.key) ||
-      normalizeString(entry.slug) ||
-      normalizeString(entry.code);
-
-    if (!value) {
-      return null;
-    }
-
-    const label =
-      normalizeString(entry.label) ||
-      normalizeString(entry.name) ||
-      normalizeString(entry.title) ||
-      normalizeString(entry.description) ||
-      formatProductLabel(value);
-
-    return { value, label: label || formatProductLabel(value) };
-  }
-
-  return null;
-};
-
-const normalizeAgreementProducts = (agreement) => {
-  if (!agreement || typeof agreement !== 'object') {
-    return [];
-  }
-
-  const sources = [
-    agreement.products,
-    agreement.allowedProducts,
-    agreement.availableProducts,
-    agreement.productOptions,
-    agreement.productTypes,
-    agreement.productScope,
-    agreement.produtos,
-    agreement.productos,
-    agreement.productList,
-    agreement?.metadata?.products,
-    agreement?.metadata?.allowedProducts,
-    agreement?.metadata?.productOptions,
-    agreement?.metadata?.productScope,
-  ]
-    .map((candidate) => (candidate instanceof Set ? Array.from(candidate) : candidate))
-    .filter((candidate) => Array.isArray(candidate) && candidate.length > 0);
-
-  const collected = [];
-
-  for (const source of sources) {
-    collected.push(...source.map((entry) => normalizeProductOption(entry)).filter(Boolean));
-  }
-
-  if (Array.isArray(agreement.taxas)) {
-    collected.push(
-      ...agreement.taxas
-        .map((tax) => (tax && typeof tax === 'object' ? tax.produto ?? tax.product : tax))
-        .map((entry) => normalizeProductOption(entry))
-        .filter(Boolean),
-    );
-  }
-
-  const unique = new Map();
-
-  collected.forEach((option) => {
-    if (option && option.value && !unique.has(option.value)) {
-      unique.set(option.value, { value: option.value, label: option.label || formatProductLabel(option.value) });
-    }
-  });
-
-  return Array.from(unique.values());
-};
-
-const normalizeAgreementOption = (agreement) => {
-  if (!agreement || typeof agreement !== 'object') {
-    return null;
-  }
-
-  if (agreement.archived === true) {
-    return null;
-  }
-
-  const value =
-    normalizeString(agreement.id) ||
-    normalizeString(agreement.identifier) ||
-    normalizeString(agreement.slug) ||
-    normalizeString(agreement.code);
-  if (!value) {
-    return null;
-  }
-
-  const label =
-    normalizeString(agreement.nome) ||
-    normalizeString(agreement.name) ||
-    normalizeString(agreement.displayName) ||
-    normalizeString(agreement.label) ||
-    formatProductLabel(value);
-
-  return {
-    value,
-    label: label || value,
-    products: normalizeAgreementProducts(agreement),
-  };
-};
-
 const normalizeStageState = (value) => {
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim();
@@ -318,28 +159,9 @@ const SimulationModal = ({
   queueAlerts = [],
 }) => {
   const isProposalMode = mode === 'proposal';
-  const { convenios } = useConvenioCatalog();
+  const { convenios, agreementOptions, productsByAgreement } = useConvenioCatalog();
   const ticketId = defaultValues?.ticketId ?? null;
   const clipboard = useClipboard();
-
-  const agreementOptions = useMemo(
-    () =>
-      convenios
-        .map((agreement) => normalizeAgreementOption(agreement))
-        .filter((option) => option && option.value)
-        .map((option) => ({ value: option.value, label: option.label, products: option.products })),
-    [convenios]
-  );
-
-  const productsByAgreement = useMemo(() => {
-    const map = new Map();
-    agreementOptions.forEach((option) => {
-      if (option.products && option.products.length > 0) {
-        map.set(option.value, option.products);
-      }
-    });
-    return map;
-  }, [agreementOptions]);
 
   const [stage, setStage] = useState(() => normalizeStageState(defaultValues.stage));
   const [leadId, setLeadId] = useState(defaultValues.leadId ?? '');
@@ -402,40 +224,15 @@ const SimulationModal = ({
 
   const simulationDate = useMemo(() => parseDateInput(simulationDateInput) ?? new Date(), [simulationDateInput]);
 
-  const activeWindow = useMemo(() => {
-    if (!selectedConvenio) {
-      return null;
-    }
-    return (
-      selectedConvenio.janelas ?? []
-    ).find((window) =>
-      window.start instanceof Date &&
-      window.end instanceof Date &&
-      simulationDate >= window.start &&
-      simulationDate <= window.end,
-    ) ?? null;
-  }, [selectedConvenio, simulationDate]);
+  const activeWindow = useMemo(
+    () => findActiveWindow(selectedConvenio, simulationDate),
+    [selectedConvenio, simulationDate]
+  );
 
-  const activeTaxes = useMemo(() => {
-    if (!selectedConvenio || !productId) {
-      return [];
-    }
-    return (selectedConvenio.taxas ?? []).filter((tax) => {
-      if (tax.produto !== productId) {
-        return false;
-      }
-      if (typeof tax.status === 'string' && tax.status.toLowerCase() !== 'ativa') {
-        return false;
-      }
-      if (tax.validFrom instanceof Date && simulationDate < tax.validFrom) {
-        return false;
-      }
-      if (tax.validUntil instanceof Date && simulationDate > tax.validUntil) {
-        return false;
-      }
-      return true;
-    });
-  }, [productId, selectedConvenio, simulationDate]);
+  const activeTaxes = useMemo(
+    () => getActiveRates(selectedConvenio, productId, simulationDate),
+    [productId, selectedConvenio, simulationDate]
+  );
 
   const availableTermOptions = useMemo(() => {
     const terms = new Set();
