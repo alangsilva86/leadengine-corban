@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,7 +12,7 @@ const loggerMock = {
 
 const prismaMock = {
   user: {
-    upsert: vi.fn(),
+    findUnique: vi.fn(),
   },
 };
 
@@ -19,80 +20,119 @@ vi.mock('../../config/logger', () => ({
   logger: loggerMock,
 }));
 
-vi.mock('../../config/feature-flags', () => ({
-  isMvpAuthBypassEnabled: () => false,
-}));
-
 vi.mock('../../lib/prisma', () => ({
   prisma: prismaMock,
-  isDatabaseEnabled: true,
 }));
 
-describe('auth middleware demo mode', () => {
+describe('auth middleware (JWT)', () => {
+  const ORIGINAL_SECRET = process.env.JWT_SECRET;
+
   beforeEach(() => {
     vi.resetModules();
-    loggerMock.info.mockReset();
-    loggerMock.warn.mockReset();
+    prismaMock.user.findUnique.mockReset();
     loggerMock.error.mockReset();
-    loggerMock.debug.mockReset();
-    prismaMock.user.upsert.mockReset();
-    prismaMock.user.upsert.mockResolvedValue(undefined);
+    process.env.JWT_SECRET = 'test-secret';
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    if (ORIGINAL_SECRET === undefined) {
+      delete process.env.JWT_SECRET;
+    } else {
+      process.env.JWT_SECRET = ORIGINAL_SECRET;
+    }
   });
 
-  const loadAuthModule = () => import('../auth');
+  const loadAuthModule = async () => import('../auth');
 
-  it('anexa o usuário demo em rotas protegidas', async () => {
-    const { authMiddleware, resolveDemoUser } = await loadAuthModule();
+  it('attaches a user when the token is valid', async () => {
+    const { authMiddleware } = await loadAuthModule();
+
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      tenantId: 'tenant-1',
+      email: 'user@example.com',
+      name: 'Test User',
+      role: 'ADMIN',
+      isActive: true,
+      tenant: {
+        id: 'tenant-1',
+        name: 'Tenant 1',
+        slug: 'tenant-1',
+        isActive: true,
+        settings: {},
+      },
+    });
+
+    const token = jwt.sign(
+      {
+        sub: 'user-1',
+        tenantId: 'tenant-1',
+        type: 'access',
+      },
+      'test-secret',
+      { expiresIn: '15m' }
+    );
 
     const app = express();
     app.get('/protected', authMiddleware, (req, res) => {
-      res.status(200).json({
-        ok: true,
-        user: req.user,
-      });
+      res.status(200).json({ ok: true, user: req.user });
+    });
+
+    const response = await request(app)
+      .get('/protected')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toMatchObject({
+      id: 'user-1',
+      tenantId: 'tenant-1',
+      role: 'ADMIN',
+    });
+    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects requests without a token', async () => {
+    const { authMiddleware } = await loadAuthModule();
+
+    const app = express();
+    app.get('/protected', authMiddleware, (_req, res) => {
+      res.status(200).json({ ok: true });
     });
 
     const response = await request(app).get('/protected');
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true });
-    expect(response.body.user).toMatchObject(resolveDemoUser());
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ success: false });
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
   });
 
-  it('garante tenant padrão via requireTenant', async () => {
-    const { authMiddleware, requireTenant, resolveDemoUser } = await loadAuthModule();
+  it('requireTenant enforces authenticated tenants', async () => {
+    const { requireTenant } = await loadAuthModule();
 
     const app = express();
     app.get(
-      '/lead-engine',
-      authMiddleware,
+      '/tenant-only',
+      (req, _res, next) => {
+        req.user = {
+          id: 'user-2',
+          tenantId: '',
+          email: 'inactive@example.com',
+          name: 'Inactive',
+          role: 'AGENT',
+          isActive: false,
+          permissions: [],
+        };
+        next();
+      },
       requireTenant,
-      (req, res) => {
-        res.status(200).json({ tenantId: req.user?.tenantId });
+      (_req, res) => {
+        res.status(200).json({ tenantId: 'tenant-2' });
       }
     );
 
-    const response = await request(app).get('/lead-engine');
+    const response = await request(app).get('/tenant-only');
 
-    expect(response.status).toBe(200);
-    expect(response.body.tenantId).toBe(resolveDemoUser().tenantId);
-  });
-
-  it('upserts demo user record even when bypass is disabled', async () => {
-    const { authMiddleware } = await loadAuthModule();
-
-    const app = express();
-    app.get('/seed-check', authMiddleware, (_req, res) => {
-      res.status(204).end();
-    });
-
-    const response = await request(app).get('/seed-check');
-
-    expect(response.status).toBe(204);
-    expect(prismaMock.user.upsert).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(403);
   });
 });

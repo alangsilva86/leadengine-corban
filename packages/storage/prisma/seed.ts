@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { demoAgreementsSeed } from '../../../config/demo-agreements';
 
@@ -47,7 +47,7 @@ async function main() {
   console.log('✅ Fila padrão criada:', defaultQueue.name);
 
   // Criar usuário admin
-  const passwordHash = createHash('sha256').update('admin123').digest('hex');
+  const passwordHash = bcrypt.hashSync('admin123', 10);
   const adminUser = await prisma.user.upsert({
     where: {
       tenantId_email: {
@@ -89,7 +89,7 @@ async function main() {
   });
 
   // Criar usuário agente
-  const agentPasswordHash = createHash('sha256').update('agent123').digest('hex');
+  const agentPasswordHash = bcrypt.hashSync('agent123', 10);
   const agentUser = await prisma.user.upsert({
     where: {
       tenantId_email: {
