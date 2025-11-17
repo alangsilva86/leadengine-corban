@@ -4,6 +4,16 @@ import type { WindowPayload } from '@/features/agreements/hooks/types.ts';
 const toIsoString = (value: Date | null | undefined): string | undefined =>
   value ? new Date(value).toISOString() : undefined;
 
+const resolveTableId = (window: WindowPayload): string | undefined => {
+  const candidate = (window as { tableId?: string | null }).tableId;
+  if (typeof candidate !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = candidate.trim();
+  return trimmed.length ? trimmed : undefined;
+};
+
 type BuildAgreementWindowRequestParams = {
   window: WindowPayload;
   actor: string;
@@ -18,10 +28,11 @@ export const buildAgreementWindowRequest = ({
   actorRole,
   note,
   meta,
-}: BuildAgreementWindowRequestParams): AgreementWindowRequest => ({
-  data: {
+}: BuildAgreementWindowRequestParams): AgreementWindowRequest => {
+  const tableId = resolveTableId(window);
+
+  const data: AgreementWindowRequest['data'] = {
     id: window.id,
-    tableId: null,
     label: window.label,
     startsAt: toIsoString(window.start),
     endsAt: toIsoString(window.end),
@@ -30,15 +41,23 @@ export const buildAgreementWindowRequest = ({
       const firstDueDate = toIsoString(window.firstDueDate);
       return firstDueDate ? { firstDueDate } : {};
     })(),
-  },
-  meta: {
-    ...(meta ?? {}),
-    audit: {
-      actor,
-      actorRole,
-      note,
+  };
+
+  if (tableId) {
+    data.tableId = tableId;
+  }
+
+  return {
+    data,
+    meta: {
+      ...(meta ?? {}),
+      audit: {
+        actor,
+        actorRole,
+        note,
+      },
     },
-  },
-});
+  };
+};
 
 export default buildAgreementWindowRequest;
