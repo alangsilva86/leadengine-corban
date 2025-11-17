@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import type { Agreement } from '@/features/agreements/useConvenioCatalog.ts';
+import agreementsLogger from '@/features/agreements/utils/agreementsLogger.ts';
 import type { BuildHistoryEntry, RunAgreementUpdate } from './types.ts';
 
 type UseAgreementLifecycleActionsArgs = {
@@ -31,14 +32,38 @@ const useAgreementLifecycleActions = ({
         history: [entry, ...target.history],
       };
 
-      await runUpdate({
-        nextAgreement: next,
-        toastMessage: 'Convênio arquivado',
-        telemetryEvent: 'agreements.archived',
-        telemetryPayload: {},
-        note: entry.message,
-        errorMessage: 'Falha ao arquivar convênio',
+      agreementsLogger.info('lifecycle', 'pre', '📚 Passo didático: arquivando convênio com cuidado artesanal.', {
+        action: 'archive',
+        agreementId: target.id,
+        status: target.status,
       });
+
+      try {
+        await runUpdate({
+          nextAgreement: next,
+          toastMessage: 'Convênio arquivado',
+          telemetryEvent: 'agreements.archived',
+          telemetryPayload: {},
+          note: entry.message,
+          errorMessage: 'Falha ao arquivar convênio',
+        });
+
+        agreementsLogger.info('lifecycle', 'post', '🎉 Passo lúdico concluído: convênio repousando no arquivo encantado.', {
+          action: 'archive',
+          agreementId: target.id,
+          status: next.status,
+          result: 'success',
+        });
+      } catch (error) {
+        agreementsLogger.error('lifecycle', 'error', '⚠️ Intuição alertou um tropeço ao arquivar o convênio.', {
+          action: 'archive',
+          agreementId: target.id,
+          status: target.status,
+          result: 'failure',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     },
     [buildHistoryEntry, convenios, locked, runUpdate]
   );
