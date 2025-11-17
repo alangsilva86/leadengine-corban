@@ -100,7 +100,7 @@ const dispatchGlobalNavigation = (targetPage) => {
 const OnboardingRoute = ({ initialPage, journeyKind = 'app' }) => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const { safeCurrentPage, onboarding, handleNavigate, renderPage } = useOnboardingJourney({
+  const { safeCurrentPage, onboarding, handleNavigate, page } = useOnboardingJourney({
     initialPage,
     currentUser: user,
     loadingCurrentUser: authLoading,
@@ -154,7 +154,7 @@ const OnboardingRoute = ({ initialPage, journeyKind = 'app' }) => {
       onboarding={onboarding}
       fullWidthContent={safeCurrentPage === 'inbox'}
     >
-      <Suspense fallback={<PageFallback />}>{renderPage()}</Suspense>
+      <Suspense fallback={<PageFallback />}>{page}</Suspense>
     </Layout>
   );
 };
@@ -191,7 +191,7 @@ const AuthGate = ({ children }) => {
 
 const OnboardingPortalRoute = () => {
   const { user, loading: authLoading } = useAuth();
-  const { renderPage } = useOnboardingJourney({
+  const { page } = useOnboardingJourney({
     initialPage: 'accept-invite',
     journeyKind: 'invite',
     currentUser: user,
@@ -200,7 +200,7 @@ const OnboardingPortalRoute = () => {
 
   return (
     <Suspense fallback={<PageFallback />}>
-      {renderPage()}
+      {page}
     </Suspense>
   );
 };
