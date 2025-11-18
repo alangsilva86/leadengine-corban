@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.jsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
-import { AlertTriangle } from 'lucide-react';
+import { AlertOctagon, AlertTriangle } from 'lucide-react';
 import TermSelector from './TermSelector.jsx';
 import { NO_STAGE_VALUE } from '@/features/chat/utils/simulation.js';
 
@@ -27,22 +27,44 @@ const CALCULATION_MODE_OPTIONS = [
   },
 ];
 
-const CalculationIssues = ({ issues }) => {
-  if (!Array.isArray(issues) || issues.length === 0) {
+const CalculationIssues = ({ blockingIssues = [], warningIssues = [] }) => {
+  const hasBlocking = Array.isArray(blockingIssues) && blockingIssues.length > 0;
+  const hasWarnings = Array.isArray(warningIssues) && warningIssues.length > 0;
+
+  if (!hasBlocking && !hasWarnings) {
     return null;
   }
+
   return (
-    <Alert variant="warning" className="border-amber-400/60 bg-amber-50 text-amber-900">
-      <AlertTriangle className="h-4 w-4" />
-      <AlertTitle>Não foi possível gerar todas as condições</AlertTitle>
-      <AlertDescription>
-        <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
-          {issues.map((issue) => (
-            <li key={issue}>{issue}</li>
-          ))}
-        </ul>
-      </AlertDescription>
-    </Alert>
+    <div className="space-y-3">
+      {hasBlocking ? (
+        <Alert variant="destructive" className="border-destructive/40 bg-destructive/10 text-destructive">
+          <AlertOctagon className="h-4 w-4" />
+          <AlertTitle>Resolva antes de enviar</AlertTitle>
+          <AlertDescription>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
+              {blockingIssues.map((issue, index) => (
+                <li key={`blocking-${index}`}>{issue}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {hasWarnings ? (
+        <Alert variant="warning" className="border-amber-400/60 bg-amber-50 text-amber-900">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Algumas condições falharam</AlertTitle>
+          <AlertDescription>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-sm">
+              {warningIssues.map((issue, index) => (
+                <li key={`warning-${index}`}>{issue}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
   );
 };
 
@@ -68,7 +90,8 @@ const SimulationForm = ({
   customTermInput,
   onCustomTermInputChange,
   onAddCustomTerm,
-  calculationIssues,
+  blockingIssues,
+  warningIssues,
   stage,
   stageOptions,
   onStageChange,
@@ -210,7 +233,7 @@ const SimulationForm = ({
         onAddCustomTerm={onAddCustomTerm}
       />
       <div className="mt-4">
-        <CalculationIssues issues={calculationIssues} />
+        <CalculationIssues blockingIssues={blockingIssues} warningIssues={warningIssues} />
       </div>
     </div>
 
