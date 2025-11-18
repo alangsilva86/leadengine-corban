@@ -17,6 +17,8 @@ import { NAVIGATION_PAGES, ONBOARDING_PAGE_IDS } from '@/features/navigation/rou
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
 const CrmModule = lazy(() => import('./features/crm/CrmModule.jsx'));
+const TenantAdminListPage = lazy(() => import('./features/tenant-admin/pages/TenantListPage.tsx'));
+const TenantAdminFormPage = lazy(() => import('./features/tenant-admin/pages/TenantFormPage.tsx'));
 
 export const PageFallback = () => (
   <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">
@@ -255,6 +257,39 @@ const router = createBrowserRouter([
     element: (
       <AuthGate>
         <CrmBoundary />
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/admin/tenants',
+    element: (
+      <AuthGate>
+        <Suspense fallback={<PageFallback />}>
+          <TenantAdminListPage />
+        </Suspense>
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/admin/tenants/new',
+    element: (
+      <AuthGate>
+        <Suspense fallback={<PageFallback />}>
+          <TenantAdminFormPage />
+        </Suspense>
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/admin/tenants/:tenantId',
+    element: (
+      <AuthGate>
+        <Suspense fallback={<PageFallback />}>
+          <TenantAdminFormPage />
+        </Suspense>
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,

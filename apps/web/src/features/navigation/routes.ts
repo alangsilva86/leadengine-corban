@@ -18,6 +18,7 @@ export const NAVIGATION_PAGES = {
   'whatsapp-debug': { id: 'whatsapp-debug', label: 'Debug WhatsApp', path: null },
   'baileys-logs': { id: 'baileys-logs', label: 'Logs Baileys', path: null },
   settings: { id: 'settings', label: 'Configurações', path: null },
+  'tenant-admin': { id: 'tenant-admin', label: 'Tenant Admin', path: '/admin/tenants' },
   whatsapp: { id: 'whatsapp', label: 'Conectar WhatsApp', path: null },
   'accept-invite': { id: 'accept-invite', label: 'Validar convite', path: '/onboarding' },
   team: { id: 'team', label: 'Equipe & Operador', path: '/onboarding' },
@@ -42,6 +43,7 @@ export const CONTEXTUAL_NAVIGATION_IDS = [
   NAVIGATION_PAGES['whatsapp-debug'].id,
   NAVIGATION_PAGES['baileys-logs'].id,
   NAVIGATION_PAGES.settings.id,
+  NAVIGATION_PAGES['tenant-admin'].id,
 ] as const satisfies readonly NavigationPageId[];
 
 export const ONBOARDING_PAGE_IDS = [
