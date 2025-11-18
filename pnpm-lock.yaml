@@ -292,6 +292,9 @@ importers:
       '@ticketz/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@ticketz/wa-contracts':
+        specifier: workspace:*
+        version: link:../../packages/wa-contracts
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
