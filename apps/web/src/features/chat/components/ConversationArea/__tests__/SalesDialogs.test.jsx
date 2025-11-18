@@ -55,31 +55,49 @@ describe('Sales dialogs alerts', () => {
         {
           id: 'inss',
           nome: 'INSS',
-          produtos: ['Empréstimo consignado', 'Cartão consignado'],
-          taxas: [],
-          janelas: [],
+          produtos: ['emprestimo', 'cartao'],
+          taxas: [
+            {
+              id: 'tax-1',
+              produto: 'emprestimo',
+              status: 'ativa',
+              validFrom: new Date('2020-01-01'),
+              validUntil: new Date('2030-12-31'),
+              termOptions: [72, 84],
+              bank: { id: 'bank-1', name: 'Banco Teste' },
+              table: { id: 'table-1', name: 'Tabela 1' },
+            },
+          ],
+          janelas: [
+            {
+              id: 'window-1',
+              label: 'Disponível',
+              start: new Date('2020-01-01'),
+              end: new Date('2030-12-31'),
+            },
+          ],
           archived: false,
         },
       ],
-      agreementOptions: [
-        {
-          value: 'inss',
-          label: 'INSS',
-          products: [
-            { value: 'Empréstimo consignado', label: 'Empréstimo consignado' },
-            { value: 'Cartão consignado', label: 'Cartão consignado' },
-          ],
-        },
-      ],
-      productsByAgreement: new Map([
-        [
-          'inss',
-          [
-            { value: 'Empréstimo consignado', label: 'Empréstimo consignado' },
-            { value: 'Cartão consignado', label: 'Cartão consignado' },
-          ],
+        agreementOptions: [
+          {
+            value: 'inss',
+            label: 'INSS',
+            products: [
+              { value: 'emprestimo', label: 'Empréstimo consignado' },
+              { value: 'cartao', label: 'Cartão consignado' },
+            ],
+          },
         ],
-      ]),
+        productsByAgreement: new Map([
+          [
+            'inss',
+            [
+              { value: 'emprestimo', label: 'Empréstimo consignado' },
+              { value: 'cartao', label: 'Cartão consignado' },
+            ],
+          ],
+        ]),
       isLoading: false,
       error: null,
     });
@@ -113,7 +131,7 @@ describe('Sales dialogs alerts', () => {
 
   it('envia simulação quando não há bloqueios', async () => {
     const onSubmit = vi.fn().mockResolvedValue();
-    const { getByRole } = render(
+    const { getByRole, getByPlaceholderText } = render(
       <SimulationModal
         open
         onOpenChange={() => {}}
@@ -124,7 +142,13 @@ describe('Sales dialogs alerts', () => {
       />,
     );
 
+    const baseValueInput = getByPlaceholderText('Ex.: 350');
+    fireEvent.change(baseValueInput, { target: { value: '500' } });
+
     const submitButton = getByRole('button', { name: /registrar simulação/i });
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+    });
     fireEvent.click(submitButton);
 
     await waitFor(() => {
@@ -202,6 +226,70 @@ describe('Sales dialogs alerts', () => {
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('sinaliza erro e não envia simulação com metadata inválida', async () => {
+    const onSubmit = vi.fn();
+    const { getByRole, getByPlaceholderText, getByText } = render(
+      <SimulationModal
+        open
+        onOpenChange={() => {}}
+        onSubmit={onSubmit}
+        defaultValues={{ calculationSnapshot: simulationSnapshotMock }}
+        stageOptions={[]}
+        queueAlerts={[]}
+      />,
+    );
+
+    const baseValueInput = getByPlaceholderText('Ex.: 350');
+    fireEvent.change(baseValueInput, { target: { value: '500' } });
+
+    fireEvent.click(getByText(/opções avançadas/i));
+
+    const metadataInput = getByPlaceholderText('{ }');
+    fireEvent.change(metadataInput, { target: { value: 'invalid json' } });
+
+    const submitButton = getByRole('button', { name: /registrar simulação/i });
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+    });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(getByText('Metadata deve ser um JSON válido.')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
+  it('sinaliza erro e não envia deal com metadata inválida', async () => {
+    const onSubmit = vi.fn();
+    const { getByRole, getByPlaceholderText, getByText } = render(
+      <DealDrawer
+        open
+        onOpenChange={() => {}}
+        onSubmit={onSubmit}
+        defaultValues={{ calculationSnapshot: dealSnapshotMock }}
+        stageOptions={[]}
+        queueAlerts={[]}
+      />,
+    );
+
+    fireEvent.click(getByText(/ver detalhes avançados/i));
+
+    const metadataInput = getByPlaceholderText(/origin/i);
+    fireEvent.change(metadataInput, { target: { value: 'invalid json' } });
+
+    const submitButton = getByRole('button', { name: /registrar deal/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(getByText('Metadata deve ser um JSON válido.')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(onSubmit).not.toHaveBeenCalled();
     });
   });
 });
