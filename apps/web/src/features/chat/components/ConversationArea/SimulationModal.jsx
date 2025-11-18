@@ -67,7 +67,15 @@ const SimulationModal = ({
   queueAlerts = [],
 }) => {
   const isProposalMode = mode === 'proposal';
-  const { convenios, agreementOptions, productsByAgreement } = useConvenioCatalog();
+  const {
+    convenios: rawConvenios,
+    agreementOptions: rawAgreementOptions,
+    productsByAgreement: rawProductsByAgreement,
+  } = useConvenioCatalog();
+  const convenios = Array.isArray(rawConvenios) ? rawConvenios : [];
+  const agreementOptions = Array.isArray(rawAgreementOptions) ? rawAgreementOptions : [];
+  const productsByAgreement =
+    rawProductsByAgreement instanceof Map ? rawProductsByAgreement : new Map();
   const ticketId = defaultValues?.ticketId ?? null;
   const clipboard = useClipboard();
 
