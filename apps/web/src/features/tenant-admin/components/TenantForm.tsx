@@ -22,6 +22,8 @@ const defaultState: TenantFormState = {
   name: '',
   slug: '',
   isActive: true,
+  adminEmail: '',
+  adminPassword: '',
   settingsText: '{\n  "timezone": "America/Sao_Paulo"\n}',
 };
 
@@ -79,6 +81,20 @@ const TenantForm = ({
       setError('Slug inválido. Utilize apenas letras minúsculas, números e hifens.');
       return false;
     }
+    if (mode === 'create') {
+      if (!formState.adminEmail.trim()) {
+        setError('Informe o e-mail do administrador do tenant.');
+        return false;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formState.adminEmail.trim())) {
+        setError('Informe um e-mail válido para o administrador.');
+        return false;
+      }
+      if (!formState.adminPassword || formState.adminPassword.length < 8) {
+        setError('Defina uma senha com pelo menos 8 caracteres para o administrador.');
+        return false;
+      }
+    }
     if (formState.settingsText.trim()) {
       try {
         JSON.parse(formState.settingsText);
@@ -134,6 +150,37 @@ const TenantForm = ({
           <p className="text-xs text-muted-foreground">Usado em URLs e integrações. Somente minúsculas, números e hifens.</p>
         </div>
       </div>
+
+      {mode === 'create' ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="tenant-admin-email">E-mail do administrador</Label>
+            <Input
+              id="tenant-admin-email"
+              type="email"
+              value={formState.adminEmail}
+              onChange={handleChange('adminEmail')}
+              placeholder="admin@tenant.com"
+              required
+              disabled={isLoading || submitting}
+            />
+            <p className="text-xs text-muted-foreground">Será usado como login inicial do tenant.</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tenant-admin-password">Senha provisória</Label>
+            <Input
+              id="tenant-admin-password"
+              type="password"
+              value={formState.adminPassword}
+              onChange={handleChange('adminPassword')}
+              placeholder="********"
+              required
+              disabled={isLoading || submitting}
+            />
+            <p className="text-xs text-muted-foreground">O admin poderá trocá-la depois.</p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
         <div className="flex items-center justify-between gap-3">

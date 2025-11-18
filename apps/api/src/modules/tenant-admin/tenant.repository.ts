@@ -9,6 +9,7 @@ import type {
   TenantSettings,
   UpdateTenantInput,
 } from './tenant.types';
+import bcrypt from 'bcryptjs';
 
 export interface TenantRepositoryDependencies {
   prisma?: PrismaClient;
@@ -52,12 +53,29 @@ export class TenantRepository implements ITenantRepository {
   }
 
   async create(data: CreateTenantInput): Promise<TenantEntity> {
-    const record = await this.prisma.tenant.create({
-      data: {
-        name: data.name,
-        slug: data.slug,
-        settings: data.settings ?? {},
-      },
+    const passwordHash = await bcrypt.hash(data.adminUser.password, 10);
+    const record = await this.prisma.$transaction(async (tx) => {
+      const tenantRecord = await tx.tenant.create({
+        data: {
+          name: data.name,
+          slug: data.slug,
+          settings: data.settings ?? {},
+        },
+      });
+
+      await tx.user.create({
+        data: {
+          tenantId: tenantRecord.id,
+          email: data.adminUser.email,
+          name: data.adminUser.name,
+          role: 'ADMIN',
+          passwordHash,
+          isActive: true,
+          settings: {},
+        },
+      });
+
+      return tenantRecord;
     });
 
     return toEntity(record);

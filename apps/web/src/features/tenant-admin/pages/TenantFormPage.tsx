@@ -42,19 +42,27 @@ const TenantFormPage = () => {
       name: detailsQuery.data.name,
       slug: detailsQuery.data.slug,
       isActive: detailsQuery.data.isActive,
+      adminEmail: '',
+      adminPassword: '',
       settingsText: JSON.stringify(detailsQuery.data.settings ?? {}, null, 2),
     };
   }, [detailsQuery.data]);
 
   const handleSubmit = async (values: TenantFormState) => {
     try {
-      const payload = {
+      const basePayload = {
         name: values.name.trim(),
         slug: values.slug.trim(),
         settings: parseSettings(values.settingsText),
       };
 
       if (isCreate) {
+        const payload = {
+          ...basePayload,
+          adminEmail: values.adminEmail.trim(),
+          adminPassword: values.adminPassword,
+        };
+
         const tenant = await createMutation.mutateAsync(payload);
         if (!values.isActive) {
           await toggleMutation.mutateAsync({ id: tenant.id, isActive: false });
@@ -68,7 +76,7 @@ const TenantFormPage = () => {
         return;
       }
 
-      await updateMutation.mutateAsync({ id: tenantId, payload });
+      await updateMutation.mutateAsync({ id: tenantId, payload: basePayload });
       toast.success('Tenant atualizado com sucesso.');
       await detailsQuery.refetch();
     } catch (error) {

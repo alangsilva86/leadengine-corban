@@ -31,10 +31,17 @@ export interface TenantPlanSnapshot {
   featureFlags?: Record<string, boolean>;
 }
 
+export interface TenantAdminUser {
+  name: string;
+  email: string;
+  password: string;
+}
+
 export interface CreateTenantInput {
   name: string;
   slug: string;
   settings?: TenantSettings;
+  adminUser: TenantAdminUser;
 }
 
 export interface UpdateTenantInput {

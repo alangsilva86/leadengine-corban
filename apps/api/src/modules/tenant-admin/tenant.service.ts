@@ -33,6 +33,16 @@ const normalizeSettings = (settings?: TenantSettings): TenantSettings => {
 
 const normalizeSlug = (slug: string, fallback: string): string => toSlug(slug || fallback, fallback);
 
+const toArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((v) => v?.toString?.() ?? '').filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return [value];
+  }
+  return [];
+};
+
 export class TenantAdminService {
   private readonly repository: ITenantRepository;
   private readonly logger: typeof defaultLogger;
@@ -47,6 +57,11 @@ export class TenantAdminService {
       name: input.name.trim(),
       slug: normalizeSlug(input.slug, input.name),
       settings: normalizeSettings(input.settings),
+      adminUser: {
+        email: input.adminUser.email.trim().toLowerCase(),
+        password: input.adminUser.password,
+        name: input.adminUser.name?.trim() || input.name.trim(),
+      },
     };
 
     try {
@@ -55,6 +70,10 @@ export class TenantAdminService {
       return tenant;
     } catch (error) {
       if (isUniqueViolation(error)) {
+        const metaTargets = toArray((error as Prisma.PrismaClientKnownRequestError).meta?.target);
+        if (metaTargets.some((target) => target.includes('email'))) {
+          throw new ConflictError('E-mail do administrador já está em uso.', { email: payload.adminUser.email });
+        }
         throw new ConflictError('Tenant slug already exists', { slug: payload.slug });
       }
       throw error;

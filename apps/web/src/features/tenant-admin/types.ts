@@ -41,6 +41,9 @@ export interface ListTenantsParams {
 export interface TenantPayload {
   name: string;
   slug: string;
+  adminEmail: string;
+  adminPassword: string;
+  adminName?: string;
   settings?: TenantSettings;
 }
 
@@ -48,5 +51,7 @@ export interface TenantFormState {
   name: string;
   slug: string;
   isActive: boolean;
+  adminEmail: string;
+  adminPassword: string;
   settingsText: string;
 }

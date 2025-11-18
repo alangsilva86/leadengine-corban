@@ -4,16 +4,30 @@ import { TenantSettingsSchema } from './tenant.types';
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export const CreateTenantSchema = z.object({
-  name: z.string().trim().min(3).max(120),
-  slug: z
-    .string()
-    .trim()
-    .min(3)
-    .max(60)
-    .regex(slugRegex, 'Slug deve conter apenas letras minúsculas, números e hifens.'),
-  settings: TenantSettingsSchema.optional(),
-});
+export const CreateTenantSchema = z
+  .object({
+    name: z.string().trim().min(3).max(120),
+    slug: z
+      .string()
+      .trim()
+      .min(3)
+      .max(60)
+      .regex(slugRegex, 'Slug deve conter apenas letras minúsculas, números e hifens.'),
+    adminEmail: z.string().trim().toLowerCase().email(),
+    adminPassword: z.string().min(8).max(120),
+    adminName: z.string().trim().min(3).max(120).optional(),
+    settings: TenantSettingsSchema.optional(),
+  })
+  .transform((data) => ({
+    name: data.name,
+    slug: data.slug,
+    settings: data.settings,
+    adminUser: {
+      email: data.adminEmail,
+      password: data.adminPassword,
+      name: data.adminName ?? data.name,
+    },
+  }));
 
 export const UpdateTenantSchema = z.object({
   name: z.string().trim().min(3).max(120).optional(),
