@@ -57,6 +57,17 @@ vi.mock('../../middleware/auth', async () => {
   };
 });
 
+const { MockDatabaseDisabledError } = vi.hoisted(() => ({
+  MockDatabaseDisabledError: class MockDatabaseDisabledError extends Error {
+    public code = 'DATABASE_DISABLED';
+
+    constructor(message?: string) {
+      super(message ?? 'Database disabled');
+      this.name = 'DatabaseDisabledError';
+    }
+  },
+}));
+
 vi.mock('../../lib/prisma', () => ({
   prisma: {
     queue: {
@@ -80,7 +91,17 @@ vi.mock('../../lib/prisma', () => ({
     },
   },
   isDatabaseEnabled: true,
+  DatabaseDisabledError: MockDatabaseDisabledError,
 }));
+
+vi.hoisted(() => {
+  (globalThis as Record<string, unknown>).emitMessageCreatedEvents = vi.fn();
+  (globalThis as Record<string, unknown>).resolveDispatchInstanceId = vi.fn(async () => ({
+    dispatchInstanceId: 'broker-1',
+    brokerId: 'broker-1',
+  }));
+  return {};
+});
 
 import { ticketMessagesRouter } from '../messages.ticket';
 import { contactMessagesRouter } from '../messages.contact';
@@ -149,6 +170,7 @@ type MockContact = {
   id: string;
   tenantId: string;
   name: string;
+  primaryPhone: string | null;
   phone: string | null;
   email: string | null;
   document: string | null;
@@ -221,6 +243,7 @@ describe('Outbound message routes', () => {
       id: 'contact-123',
       tenantId: 'tenant-123',
       name: 'John Doe',
+      primaryPhone: '+554499999999',
       phone: '+554499999999',
       email: null,
       document: null,
@@ -277,6 +300,9 @@ describe('Outbound message routes', () => {
         id,
         tenantId: data.tenantId as string,
         name: (data.name as string) ?? 'Novo Contato',
+        primaryPhone: ((data as { primaryPhone?: string }).primaryPhone as string | undefined) ??
+          ((data as { phone?: string }).phone as string | undefined) ??
+          null,
         phone: (data.phone as string) ?? null,
         email: (data.email as string) ?? null,
         document: (data.document as string) ?? null,
@@ -436,6 +462,60 @@ describe('Outbound message routes', () => {
       'whatsapp_outbound_total{instanceId="instance-001",origin="ticket-service",status="SENT",tenantId="tenant-123"} 1'
     );
     expect(metricsSnapshot).not.toContain('transport=');
+  });
+
+  it('prevents sending messages to tickets from another tenant', async () => {
+    const foreignContact: MockContact = {
+      id: 'contact-foreign',
+      tenantId: 'tenant-foreign',
+      name: 'Foreign Contact',
+      primaryPhone: '+5544988887777',
+      phone: '+5544988887777',
+      email: null,
+      document: null,
+      avatar: null,
+      tags: [],
+      customFields: {},
+      lastInteractionAt: new Date(),
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    contacts.set(foreignContact.id, foreignContact);
+
+    const ticket = await createTicket({
+      tenantId: 'tenant-foreign',
+      contactId: foreignContact.id,
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+    tickets.set(ticket.id, ticket);
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'foreign-ticket')
+      .send({
+        instanceId: 'instance-001',
+        payload: {
+          type: 'text',
+          text: 'Mensagem não autorizada',
+        },
+        idempotencyKey: 'foreign-ticket',
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'TICKET_NOT_FOUND',
+        requestId: null,
+      },
+    });
+    expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
   it('returns a descriptive error when the ticket has no default WhatsApp instance', async () => {
@@ -748,6 +828,7 @@ describe('Outbound message routes', () => {
       id: 'contact-fallback',
       tenantId,
       name: 'Fallback Contact',
+      primaryPhone: '+551197778888',
       phone: '+551197778888',
       email: null,
       document: null,
