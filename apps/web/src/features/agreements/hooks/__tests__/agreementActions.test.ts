@@ -22,23 +22,14 @@ vi.mock('@/features/agreements/utils/telemetry', () => ({
   default: (...args: unknown[]) => telemetryMock(...args),
 }));
 
-const createMutationMock = <TData = any, TVariables = any>(): UseMutationResult<TData, Error, TVariables, unknown> => ({
-  mutateAsync: vi.fn(),
-  mutate: vi.fn(),
-  data: undefined as TData | undefined,
-  error: null,
-  variables: undefined,
-  isError: false,
-  isIdle: true,
-  isPending: false,
-  isSuccess: false,
-  status: 'idle',
-  reset: vi.fn(),
-  failureCount: 0,
-  failureReason: null,
-  isPaused: false,
-  context: undefined,
-});
+const createMutationMock = <TData = any, TVariables = any>() =>
+  ({
+    mutateAsync: vi.fn(),
+    mutate: vi.fn(),
+  } as unknown as UseMutationResult<TData, Error, TVariables, unknown> & {
+    mutateAsync: ReturnType<typeof vi.fn>;
+    mutate: ReturnType<typeof vi.fn>;
+  });
 
 const createAgreement = (overrides: Partial<Agreement> = {}): Agreement => ({
   id: 'agreement-1',
@@ -84,8 +75,8 @@ describe('agreement action hooks', () => {
   beforeEach(() => {
     buildHistoryEntry.mockClear();
     runUpdateMock.mockReset();
-    upsertRateMutation.mutateAsync.mockReset();
-    upsertRateMutation.mutate.mockReset();
+    upsertRateMutation.mutateAsync.mockClear();
+    upsertRateMutation.mutate.mockClear();
     toastError.mockReset();
     toastSuccess.mockReset();
     telemetryMock.mockReset();
@@ -328,7 +319,7 @@ describe('agreement action hooks', () => {
     it('syncs provider data when possible', async () => {
       const { default: useAgreementProviderActions } = await import('../useAgreementProviderActions');
       const mutations = { ...createMutations(), syncProvider: createMutationMock() };
-      mutations.syncProvider.mutateAsync = vi.fn().mockResolvedValue(undefined);
+      mutations.syncProvider.mutateAsync.mockResolvedValue(undefined);
       const { result } = renderHook(() =>
         useAgreementProviderActions({
           selected: createAgreement(),
@@ -357,7 +348,7 @@ describe('agreement action hooks', () => {
     it('guards against missing provider ids', async () => {
       const { default: useAgreementProviderActions } = await import('../useAgreementProviderActions');
       const mutations = { ...createMutations(), syncProvider: createMutationMock() };
-      mutations.syncProvider.mutateAsync = vi.fn();
+      mutations.syncProvider.mutateAsync.mockClear();
       const { result } = renderHook(() =>
         useAgreementProviderActions({
           selected: createAgreement({ metadata: {} }),

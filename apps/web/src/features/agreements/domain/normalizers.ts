@@ -142,13 +142,38 @@ export const normalizeHistoryEntry = (entry: AgreementHistoryEntryDto): Agreemen
   metadata: toRecord(entry.metadata),
 });
 
+const normalizeAgreementStatus = (status: string | null | undefined): AgreementDto['status'] => {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  switch (normalized) {
+    case 'archived':
+    case 'draft':
+    case 'active':
+    case 'published':
+    case 'suspended':
+    case 'terminated':
+      return normalized;
+    default:
+      return 'active';
+  }
+};
+
+const normalizeAgreementType = (
+  type: string | null | undefined
+): AgreementDto['type'] | null => {
+  const normalized = typeof type === 'string' ? type.trim().toLowerCase() : '';
+  if (normalized === 'municipal' || normalized === 'estadual' || normalized === 'federal' || normalized === 'other') {
+    return normalized;
+  }
+  return null;
+};
+
 export type Agreement = {
   id: string;
   slug: string;
   nome: string;
   averbadora: string;
-  tipo: string | null;
-  status: string;
+  tipo: AgreementDto['type'] | null;
+  status: AgreementDto['status'];
   produtos: string[];
   responsavel: string;
   archived: boolean;
@@ -165,8 +190,8 @@ export const normalizeAgreement = (agreement: AgreementDto): Agreement => {
     slug: agreement.slug,
     nome: agreement.name,
     averbadora: readMetadataString(metadata, 'providerName') || agreement.slug,
-    tipo: agreement.type ?? null,
-    status: agreement.status,
+    tipo: normalizeAgreementType(agreement.type),
+    status: normalizeAgreementStatus(agreement.status),
     produtos: normalizeProducts(toRecord(agreement.products), metadata),
     responsavel: readMetadataString(metadata, 'responsavel'),
     archived: Boolean(agreement.archived),
@@ -182,8 +207,8 @@ export const normalizeAgreement = (agreement: AgreementDto): Agreement => {
 export const serializeAgreement = (agreement: Agreement): AgreementUpdateRequest['data'] => ({
   name: agreement.nome,
   slug: agreement.slug || slugify(agreement.nome),
-  status: agreement.status,
-  type: agreement.tipo ?? undefined,
+  status: normalizeAgreementStatus(agreement.status),
+  type: normalizeAgreementType(agreement.tipo) ?? undefined,
   metadata: applyAgreementMetadataDefaults(
     agreement.metadata,
     {
