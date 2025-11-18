@@ -158,6 +158,7 @@ const sharedCorsSettings = {
     'x-api-key',
     'x-platform-admin-token',
     'x-platform-admin',
+    'idempotency-key',
   ] as string[],
 };
 
