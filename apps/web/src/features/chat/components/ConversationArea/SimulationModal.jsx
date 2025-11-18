@@ -520,19 +520,20 @@ const SimulationModal = ({
       return;
     }
 
+    const catalogProductOptions = productsByAgreement.get(convenioId);
+    const catalogHasOptions = Array.isArray(catalogProductOptions) && catalogProductOptions.length > 0;
+
     if (productOptions.length === 0) {
-      if (productId !== '') {
-        setProductId('');
-      }
-      if (productLabel !== '') {
-        setProductLabel('');
-      }
       return;
     }
 
     const productOption = productOptions.find((option) => option.value === productId);
     if (!productOption) {
-      const fallback = productOptions[0];
+      if (!catalogHasOptions) {
+        return;
+      }
+
+      const fallback = catalogProductOptions[0];
       const fallbackValue = fallback?.value ?? '';
       const fallbackLabel = fallback?.label ?? '';
       if (productId !== fallbackValue) {
@@ -555,6 +556,7 @@ const SimulationModal = ({
     productId,
     productLabel,
     productOptions,
+    productsByAgreement,
     selectedConvenio,
   ]);
 
