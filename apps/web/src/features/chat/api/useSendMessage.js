@@ -21,6 +21,77 @@ const generateIdempotencyKey = () => {
   return `web-${Date.now().toString(36)}-${rand}`;
 };
 
+const normalizeOutboundErrorDetails = (errorLike, fallbackMessage) => {
+  const source = errorLike && typeof errorLike === 'object' ? errorLike : {};
+  const rawMessage =
+    typeof source.message === 'string' && source.message.trim().length > 0
+      ? source.message.trim()
+      : typeof fallbackMessage === 'string' && fallbackMessage.trim().length > 0
+        ? fallbackMessage.trim()
+        : 'Não foi possível enviar a mensagem.';
+  const normalizedCode =
+    typeof source.code === 'string' && source.code.trim().length > 0
+      ? source.code.trim().toUpperCase()
+      : null;
+  const normalizedRequestId =
+    typeof source.requestId === 'string' && source.requestId.trim().length > 0
+      ? source.requestId.trim()
+      : null;
+  const normalizedRecoveryHint =
+    typeof source.recoveryHint === 'string' && source.recoveryHint.trim().length > 0
+      ? source.recoveryHint.trim()
+      : null;
+  const normalizedStatus =
+    typeof source.status === 'number'
+      ? source.status
+      : typeof source.httpStatus === 'number'
+        ? source.httpStatus
+        : null;
+
+  return {
+    ...source,
+    code: normalizedCode,
+    message: rawMessage,
+    requestId: normalizedRequestId,
+    recoveryHint: normalizedRecoveryHint,
+    status: normalizedStatus,
+  };
+};
+
+const ensureErrorPayload = (errorLike, normalizedError) => {
+  if (!normalizedError) {
+    return errorLike;
+  }
+
+  if (!errorLike || typeof errorLike !== 'object') {
+    return {
+      error: normalizedError,
+      payload: { error: normalizedError },
+    };
+  }
+
+  const payload =
+    errorLike.payload && typeof errorLike.payload === 'object' && errorLike.payload !== null
+      ? errorLike.payload
+      : {};
+
+  payload.error = normalizedError;
+  if (normalizedError.requestId && !payload.requestId) {
+    payload.requestId = normalizedError.requestId;
+  }
+  if (normalizedError.recoveryHint && !payload.recoveryHint) {
+    payload.recoveryHint = normalizedError.recoveryHint;
+  }
+
+  errorLike.payload = payload;
+  errorLike.error = normalizedError;
+  if (typeof normalizedError.status === 'number' && typeof errorLike.status !== 'number') {
+    errorLike.status = normalizedError.status;
+  }
+
+  return errorLike;
+};
+
 const normalizeMessageType = (rawType, hasMedia) => {
   const normalized = typeof rawType === 'string' ? rawType.trim().toLowerCase() : '';
   if (!normalized && hasMedia) {
@@ -165,7 +236,9 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
           );
 
           if (response?.error) {
-            const retryInfo = isRetryableResult(response);
+            const normalizedError = normalizeOutboundErrorDetails(response.error, response.error?.message);
+            const normalizedResponse = { ...response, error: normalizedError };
+            const retryInfo = isRetryableResult(normalizedResponse);
             const nextAttempt = attempt + 1;
             if (retryInfo.retryable && nextAttempt < MAX_RETRY_ATTEMPTS) {
               const delayMs = computeBackoffDelay(nextAttempt, { baseMs: 750, maxMs: 6000 });
@@ -191,7 +264,7 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
               });
             }
 
-            return response ?? null;
+            return normalizedResponse;
           }
 
           if (attempt > 0) {
@@ -203,12 +276,20 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
 
           return response ?? null;
         } catch (error) {
-          lastError = error;
-          const retryable = shouldRetryError(error);
+          const normalizedError = normalizeOutboundErrorDetails(
+            error?.payload?.error ?? error,
+            error?.message
+          );
+          const enrichedError = ensureErrorPayload(error, normalizedError);
+          lastError = enrichedError;
+          const retryable = shouldRetryError(enrichedError);
           const nextAttempt = attempt + 1;
-          const requestId = extractRequestId(error);
-          const code = extractErrorCode(error);
-          const status = typeof error?.status === 'number' ? error.status : null;
+          const requestId = normalizedError.requestId ?? extractRequestId(enrichedError);
+          const code = normalizedError.code ?? extractErrorCode(enrichedError);
+          const status =
+            typeof enrichedError?.status === 'number'
+              ? enrichedError.status
+              : normalizedError.status;
 
           if (!retryable || nextAttempt >= MAX_RETRY_ATTEMPTS) {
             if (retryable && nextAttempt >= MAX_RETRY_ATTEMPTS) {
@@ -220,7 +301,7 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
                 requestId,
               });
             }
-            throw error;
+            throw enrichedError;
           }
 
           const delayMs = computeBackoffDelay(nextAttempt, { baseMs: 750, maxMs: 6000 });

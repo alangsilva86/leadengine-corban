@@ -682,11 +682,30 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
           });
         },
         onError: (error: any) => {
-          const fallbackMessage = error?.message ?? 'Erro inesperado ao enviar';
-          availability.notifyOutboundError(error, fallbackMessage);
+          const normalizedPayloadError = error?.payload?.error ?? error?.error ?? null;
+          const fallbackMessage =
+            normalizedPayloadError?.recoveryHint ??
+            normalizedPayloadError?.message ??
+            error?.message ??
+            'Erro inesperado ao enviar';
+          const outboundError = normalizedPayloadError
+            ? {
+                ...(typeof error === 'object' && error !== null ? error : {}),
+                message: fallbackMessage,
+                payload: {
+                  ...(typeof error?.payload === 'object' && error?.payload !== null ? error.payload : {}),
+                  error: normalizedPayloadError,
+                  requestId:
+                    error?.payload?.requestId ?? normalizedPayloadError.requestId ?? null,
+                  recoveryHint:
+                    error?.payload?.recoveryHint ?? normalizedPayloadError.recoveryHint ?? null,
+                },
+              }
+            : error;
+          availability.notifyOutboundError(outboundError, fallbackMessage);
           emitInboxTelemetry('chat.outbound_error', {
             ticketId: controller.selectedTicketId,
-            error: error?.message,
+            error: normalizedPayloadError?.code ?? error?.message,
             hasTemplate: Boolean(template),
           });
         },

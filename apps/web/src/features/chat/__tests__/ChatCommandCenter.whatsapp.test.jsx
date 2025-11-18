@@ -254,6 +254,34 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
     });
   });
 
+  it('exibe toast com requestId ao falhar com erro 500 do broker', async () => {
+    sendMessageMutate.mockImplementation((_payload, options) => {
+      options?.onError?.({
+        status: 500,
+        message: 'Erro interno',
+        error: {
+          code: 'BROKER_ERROR',
+          message: 'Instância falhou',
+          requestId: 'req-500',
+          recoveryHint: 'Reinicie a instância antes de reenviar.',
+        },
+      });
+    });
+
+    render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
+    const props = ConversationAreaMock.props;
+    props.onSendMessage?.({ content: 'Falhou', attachments: [] });
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          description: expect.stringContaining('req-500'),
+        })
+      );
+    });
+  });
+
   it('sincroniza modo de IA com API e persiste alterações', async () => {
     apiMock.apiGet.mockResolvedValueOnce({ mode: 'auto' });
 
