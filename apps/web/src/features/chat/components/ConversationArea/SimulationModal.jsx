@@ -11,11 +11,8 @@ import {
 import { Button } from '@/components/ui/button.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
-import { Checkbox } from '@/components/ui/checkbox.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.ts';
 import { findActiveWindow, getActiveRates, normalizeString } from '@/features/agreements/agreementsSelectors.ts';
-import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 import {
   buildProposalSnapshot,
   buildSimulationSnapshot,
@@ -39,13 +36,10 @@ import {
   parseDateInput,
   resolveStageValue,
 } from '@/features/chat/utils/simulation.js';
-import {
-  SELECTION_ACTIONS,
-  QUEUE_ALERTS_ACTIONS,
-  createSelectionFallback,
-  queueAlertsReducer,
-  selectionReducer,
-} from './utils/simulationReducers.js';
+import { QUEUE_ALERTS_ACTIONS, queueAlertsReducer } from './utils/simulationReducers.js';
+import useSimulationCalculation from './hooks/useSimulationCalculation.js';
+import useProposalSelection from './hooks/useProposalSelection.js';
+import SimulationOfferList from './SimulationOfferList.jsx';
 
 const DEFAULT_BASE_VALUE = '350';
 const DEFAULT_SELECTED_TERMS = [72, 84];
@@ -92,7 +86,7 @@ const SimulationModal = ({
     offers: createDefaultSimulationForm().offers,
     parameters: null,
   }));
-  const [selection, dispatchSelection] = useReducer(selectionReducer, []);
+  const [initialSelection, setInitialSelection] = useState([]);
   const [normalizedAlerts, dispatchQueueAlerts] = useReducer(queueAlertsReducer, []);
   const [errors, setErrors] = useState({});
 
@@ -200,157 +194,24 @@ const SimulationModal = ({
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [baseValueInput]);
 
-  const calculationEnabled =
-    Boolean(selectedConvenio) &&
-    Boolean(productId) &&
-    Boolean(activeWindow) &&
-    activeTaxes.length > 0 &&
-    selectedTermsSorted.length > 0 &&
-    baseValueNumber !== null;
-  const calculationResult = useMemo(() => {
-    if (!calculationEnabled) {
-      return { offers: [], parameters: null, issues: [] };
-    }
-
-    const issues = [];
-    const termList = selectedTermsSorted;
-    const offers = activeTaxes
-      .map((tax, index) => {
-        const offerId = tax.id ?? `offer-${index + 1}`;
-        const bankName = tax.bank?.name ?? `Banco ${index + 1}`;
-        const tableName = tax.table?.name ?? tax.modalidade ?? '';
-
-        const terms = termList
-          .map((term) => {
-            try {
-              const simulation = simulateConvenioDeal({
-                margem: calculationMode === 'margin' ? baseValueNumber : undefined,
-                targetNetAmount: calculationMode === 'net' ? baseValueNumber : undefined,
-                prazoMeses: term,
-                dataSimulacao: simulationDate,
-                janela: activeWindow,
-                taxa: tax,
-              });
-
-              return {
-                id: `${offerId}-${term}`,
-                term,
-                installment: simulation.installment,
-                netAmount: simulation.netAmount,
-                totalAmount: simulation.grossAmount,
-                coefficient: simulation.coefficient,
-                tacValue: simulation.tacValue,
-                source: 'auto',
-                calculation: {
-                  baseType: calculationMode,
-                  baseValue: baseValueNumber,
-                  simulationDate: simulationDateInput,
-                  windowId: activeWindow?.id ?? null,
-                  windowLabel: activeWindow?.label ?? null,
-                  taxId: tax.id ?? null,
-                  modality: tax.modalidade ?? null,
-                  product: tax.produto ?? null,
-                  monthlyRate: simulation.details.monthlyRate,
-                  dailyRate: simulation.details.dailyRate,
-                  graceDays: simulation.details.graceDays,
-                  presentValueUnit: simulation.details.presentValueUnit,
-                  tacPercent: simulation.details.tacPercent,
-                  tacFlat: simulation.details.tacFlat,
-                },
-                metadata: {
-                  bankId: tax.bank?.id ?? null,
-                  tableId: tax.table?.id ?? null,
-                },
-              };
-            } catch (error) {
-              issues.push({
-                type: 'term_calculation',
-                severity: 'warning',
-                message: error instanceof Error ? error.message : 'Falha ao calcular condição.',
-                context: `${bankName} • ${term} meses`,
-              });
-              return null;
-            }
-          })
-          .filter(Boolean);
-
-        if (terms.length === 0) {
-          return null;
-        }
-
-        return {
-          id: offerId,
-          bankId: tax.bank?.id ?? `bank-${index + 1}`,
-          bankName,
-          table: tableName,
-          tableId: tax.table?.id ?? '',
-          taxId: tax.id ?? '',
-          modality: tax.modalidade ?? '',
-          rank: index + 1,
-          source: 'auto',
-          metadata: {
-            produto: tax.produto ?? null,
-          },
-          terms,
-        };
-      })
-      .filter(Boolean);
-
-    const parameters = {
-      baseType: calculationMode,
-      baseValue: baseValueNumber,
-      simulationDate: simulationDateInput,
-      windowId: activeWindow?.id ?? null,
-      windowLabel: activeWindow?.label ?? null,
-      termOptions: termList,
-      taxIds: activeTaxes.map((tax) => tax.id).filter(Boolean),
-    };
-    return { offers, parameters, issues };
-  }, [
-    activeTaxes,
-    activeWindow,
-    baseValueNumber,
-    calculationEnabled,
+  const { calculationEnabled, calculationResult, visibleOffers, currentParameters } = useSimulationCalculation({
+    convenio: selectedConvenio,
+    productId,
+    selectedTerms: selectedTermsSorted,
+    baseValue: baseValueNumber,
     calculationMode,
     simulationDate,
     simulationDateInput,
-    selectedTermsSorted,
-  ]);
+    activeWindow,
+    activeTaxes,
+    prefilledSnapshot,
+  });
 
-  const displayOffers = useMemo(() => {
-    if (calculationResult.offers.length > 0) {
-      return calculationResult.offers;
-    }
-    return prefilledSnapshot.offers ?? [];
-  }, [calculationResult.offers, prefilledSnapshot.offers]);
-
-  const visibleOffers = useMemo(() => {
-    if (displayOffers.length === 0) {
-      return [];
-    }
-
-    const sorted = [...displayOffers].sort((a, b) => {
-      const rankAValue = Number(a?.rank);
-      const rankBValue = Number(b?.rank);
-      const rankA = Number.isFinite(rankAValue) ? rankAValue : Number.MAX_SAFE_INTEGER;
-      const rankB = Number.isFinite(rankBValue) ? rankBValue : Number.MAX_SAFE_INTEGER;
-      if (rankA === rankB) {
-        const bankA = typeof a?.bankName === 'string' ? a.bankName : '';
-        const bankB = typeof b?.bankName === 'string' ? b.bankName : '';
-        return bankA.localeCompare(bankB);
-      }
-      return rankA - rankB;
-    });
-
-    return sorted.slice(0, 3);
-  }, [displayOffers]);
-
-  const currentParameters = useMemo(() => {
-    if (calculationResult.parameters) {
-      return calculationResult.parameters;
-    }
-    return prefilledSnapshot.parameters ?? null;
-  }, [calculationResult.parameters, prefilledSnapshot.parameters]);
+  const { selection, handleToggleOfferSelection } = useProposalSelection({
+    open,
+    visibleOffers,
+    initialSelection,
+  });
 
   const selectionSet = useMemo(
     () => new Set(selection.map((entry) => `${entry.offerId}::${entry.termId}`)),
@@ -463,12 +324,9 @@ const SimulationModal = ({
     if (isProposalMode) {
       const proposalSnapshot = normalizeProposalSnapshot(defaultValues.calculationSnapshot ?? null);
       const proposalSelection = createProposalSelection(proposalSnapshot?.offers ?? baseSnapshot.offers ?? []);
-      dispatchSelection({ type: SELECTION_ACTIONS.RESET, payload: proposalSelection });
+      setInitialSelection(proposalSelection);
     } else {
-      dispatchSelection({
-        type: SELECTION_ACTIONS.RESET,
-        payload: createProposalSelection(baseSnapshot.offers ?? []),
-      });
+      setInitialSelection(createProposalSelection(baseSnapshot.offers ?? []));
     }
 
     const hasSnapshot = Boolean(defaultValues.calculationSnapshot);
@@ -580,31 +438,6 @@ const SimulationModal = ({
       return typeof fallback === 'number' ? [fallback] : [];
     });
   }, [availableTermOptions, open]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const validKeys = new Set(
-      visibleOffers.flatMap((offer) => offer.terms.map((term) => `${offer.id}::${term.id}`)),
-    );
-
-    dispatchSelection({
-      type: SELECTION_ACTIONS.SYNC_WITH_OFFERS,
-      payload: {
-        validKeys,
-        fallbackSelection: createSelectionFallback(visibleOffers),
-      },
-    });
-  }, [open, visibleOffers]);
-
-  const handleToggleOfferSelection = (offerId, termId, checked) => {
-    dispatchSelection({
-      type: SELECTION_ACTIONS.TOGGLE,
-      payload: { offerId, termId, checked },
-    });
-  };
 
   const handleTermOptionToggle = useCallback((term, checked) => {
     setSelectedTerms((current) => {
@@ -829,89 +662,13 @@ const SimulationModal = ({
         />
 
         <div className="mt-6 space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">Condições calculadas</h3>
-              {currentParameters?.windowLabel ? (
-                <Badge variant="outline" className="text-xs">
-                  Janela {currentParameters.windowLabel}
-                </Badge>
-              ) : null}
-            </div>
-            {resolvedOffers.length === 0 ? (
-              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-                Configure convênio, produto e parâmetros para gerar as condições automaticamente.
-              </div>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-3">
-                {resolvedOffers.map((offer) => (
-                  <div
-                    key={offer.id}
-                    className="flex flex-col gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{offer.bankName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {offer.table || 'Tabela não informada'}
-                          {offer.modality ? ` • ${offer.modality}` : ''}
-                        </p>
-                      </div>
-                      {offer.source === 'auto' ? (
-                        <Badge variant="outline" className="text-xs text-primary">
-                          Automático
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <div className="space-y-3">
-                      {offer.terms.map((term) => (
-                        <div
-                          key={term.id}
-                          className="rounded-lg border border-border/50 bg-background/70 p-3 shadow-sm"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-2 text-xs font-medium text-foreground">
-                              <Checkbox
-                                id={`${offer.id}-term-${term.id}`}
-                                checked={term.selected}
-                                onCheckedChange={(checked) =>
-                                  handleToggleOfferSelection(offer.id, term.id, Boolean(checked))
-                                }
-                                disabled={fieldsDisabled}
-                              />
-                              {term.term} meses
-                            </label>
-                            <Badge variant="outline" className="text-[10px] uppercase">
-                              coef {term.coefficient?.toFixed(4) ?? '—'}
-                            </Badge>
-                          </div>
-                          <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                            <div className="rounded-md bg-muted/60 p-2">
-                              <dt className="text-muted-foreground">Parcela</dt>
-                              <dd className="font-semibold text-foreground">{formatCurrency(term.installment ?? 0)}</dd>
-                            </div>
-                            <div className="rounded-md bg-muted/60 p-2">
-                              <dt className="text-muted-foreground">Valor bruto</dt>
-                              <dd className="font-semibold text-foreground">{formatCurrency(term.totalAmount ?? 0)}</dd>
-                            </div>
-                            <div className="rounded-md bg-muted/60 p-2">
-                              <dt className="text-muted-foreground">Valor líquido</dt>
-                              <dd className="font-semibold text-emerald-600">{formatCurrency(term.netAmount ?? 0)}</dd>
-                            </div>
-                            <div className="rounded-md bg-muted/60 p-2">
-                              <dt className="text-muted-foreground">TAC</dt>
-                              <dd className="font-semibold text-foreground">{formatCurrency(term.tacValue ?? 0)}</dd>
-                            </div>
-                          </dl>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {errors.selection ? <p className="text-sm text-destructive">{errors.selection}</p> : null}
-          </div>
+          <SimulationOfferList
+            offers={resolvedOffers}
+            currentParameters={currentParameters}
+            fieldsDisabled={fieldsDisabled}
+            errors={errors}
+            onToggleOfferSelection={handleToggleOfferSelection}
+          />
 
           <div className="space-y-2">
             <Label>Pré-visualização do payload</Label>
