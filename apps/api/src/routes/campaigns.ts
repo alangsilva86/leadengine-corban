@@ -1,83 +1,35 @@
 import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import { body, param, query } from 'express-validator';
-import { Prisma } from '@prisma/client';
 
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
-import { prisma } from '../lib/prisma';
-import { toSlug } from '../lib/slug';
-import { logger } from '../config/logger';
 import { resolveRequestTenantId } from '../services/tenant-service';
-import { getCampaignMetrics } from '@ticketz/storage';
-import { getUseRealDataFlag } from '../config/feature-flags';
-import type { CampaignDTO, CampaignWarning } from './campaigns.types';
-import {
-  fetchLeadEngineCampaigns,
-  type LeadEngineCampaignFilters,
-} from '../services/campaigns-upstream';
 import { mapPrismaError } from '../utils/prisma-error';
+import type { CampaignDTO } from './campaigns.types';
+import {
+  buildFilters,
+  createCampaignValidators,
+  deleteCampaignValidators,
+  listCampaignValidators,
+  normalizeClassificationValue,
+  normalizeStatus,
+  normalizeTagsInput,
+  parseMetadataPayload,
+  readNumericField,
+  updateCampaignValidators,
+} from './campaigns.validators';
+import {
+  CampaignServiceError,
+  createCampaign,
+  deleteCampaign,
+  listCampaigns,
+  updateCampaign,
+} from '../services/campaigns-service';
 
-type CampaignMetadata = Record<string, unknown> | null | undefined;
+export { buildFilters };
 
-const CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'ended'] as const;
-
-type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
-
-const DEFAULT_STATUS: CampaignStatus = 'active';
-const LOG_CONTEXT = '[/api/campaigns]';
-
-type RawCampaignMetrics = Awaited<ReturnType<typeof getCampaignMetrics>>;
-
-const createEmptyRawMetrics = (): RawCampaignMetrics =>
-  ({
-    total: 0,
-    allocated: 0,
-    contacted: 0,
-    won: 0,
-    lost: 0,
-    averageResponseSeconds: 0,
-  } as RawCampaignMetrics);
-
-const toSafeError = (error: unknown): Record<string, unknown> => {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-    };
-  }
-
-  return {
-    message: String(error),
-  };
-};
-
-type CampaignWithInstance = Prisma.CampaignGetPayload<{
-  include: {
-    whatsappInstance: {
-      select: {
-        id: true;
-        name: true;
-      };
-    };
-  };
-}>;
-
-const buildCampaignHistoryEntry = (action: string, actorId: string, details?: Record<string, unknown>) => ({
-  action,
-  by: actorId,
-  at: new Date().toISOString(),
-  ...(details ?? {}),
-});
-
-const appendCampaignHistory = (metadata: CampaignMetadata, entry: ReturnType<typeof buildCampaignHistoryEntry>): Prisma.JsonObject => {
-  const base: Record<string, unknown> = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
-  const history = Array.isArray(base.history) ? [...(base.history as unknown[])] : [];
-  history.push(entry);
-  base.history = history.slice(-50);
-  return base as Prisma.JsonObject;
-};
+export const resolveTenantId = (req: Request): string => resolveRequestTenantId(req);
 
 const readCampaignIdParam = (req: Request): string | null => {
   const rawId = req.params?.id;
@@ -88,1135 +40,172 @@ const readCampaignIdParam = (req: Request): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-const readMetadata = (metadata: CampaignMetadata): Record<string, unknown> => {
-  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-    return metadata as Record<string, unknown>;
-  }
-  return {};
-};
-
-const readNumeric = (source: Record<string, unknown>, key: string): number | null => {
-  const value = source[key];
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const toFixedNumber = (input: number | null, fractionDigits = 2): number | null => {
-  if (input === null) {
-    return null;
-  }
-  return Number(input.toFixed(fractionDigits));
-};
-
-const normalizeClassificationValue = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const normalizeTagsInput = (value: unknown): string[] => {
-  if (!value) {
-    return [];
-  }
-
-  const values: string[] = [];
-
-  const pushValue = (entry: unknown) => {
-    if (typeof entry === 'string') {
-      entry
-        .split(',')
-        .map((token) => token.trim())
-        .filter((token) => token.length > 0)
-        .forEach((token) => values.push(token));
-      return;
-    }
-
-    if (entry !== null && entry !== undefined) {
-      const asString = String(entry).trim();
-      if (asString.length > 0) {
-        values.push(asString);
-      }
-    }
-  };
-
-  if (Array.isArray(value)) {
-    value.forEach(pushValue);
-  } else {
-    pushValue(value);
-  }
-
-  return Array.from(new Set(values));
-};
-
-const buildCampaignBase = (campaign: CampaignWithInstance): Omit<CampaignDTO, 'metrics'> => {
-  const metadata = readMetadata(campaign.metadata as CampaignMetadata);
-  const { whatsappInstance, tags, productType, marginType, strategy, ...campaignData } = campaign;
-  const instanceId = campaign.whatsappInstanceId ?? whatsappInstance?.id ?? null;
-  const instanceName = whatsappInstance?.name ?? null;
-  const normalizedTags = Array.isArray(tags)
-    ? Array.from(
-        new Set(
-          tags
-            .filter((value): value is string => typeof value === 'string')
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0)
-        )
-      )
-    : [];
-  const marginValue = readNumeric(metadata, 'margin');
-
-  return {
-    ...campaignData,
-    agreementId: campaignData.agreementId ?? null,
-    agreementName: campaignData.agreementName ?? null,
-    instanceId,
-    instanceName,
-    metadata,
-    productType: normalizeClassificationValue(productType),
-    marginType: normalizeClassificationValue(marginType),
-    marginValue,
-    strategy: normalizeClassificationValue(strategy),
-    tags: normalizedTags,
-  } as Omit<CampaignDTO, 'metrics'>;
-};
-
-const computeCampaignMetrics = (
-  campaign: CampaignWithInstance,
-  metadata: Record<string, unknown>,
-  rawMetrics: RawCampaignMetrics
-): CampaignDTO['metrics'] => {
-  const budget = readNumeric(metadata, 'budget');
-  const cplTarget = readNumeric(metadata, 'cplTarget');
-  const cpl = budget !== null && rawMetrics.total > 0 ? toFixedNumber(budget / rawMetrics.total) : null;
-
-  return {
-    ...rawMetrics,
-    budget,
-    cplTarget,
-    cpl,
-  } as CampaignDTO['metrics'];
-};
-
-const buildCampaignResponse = async (
-  campaign: CampaignWithInstance,
-  rawMetrics?: RawCampaignMetrics
-): Promise<CampaignDTO> => {
-  const base = buildCampaignBase(campaign);
-  const metricsSource =
-    rawMetrics ?? (campaign.tenantId ? await getCampaignMetrics(campaign.tenantId, campaign.id) : createEmptyRawMetrics());
-  const metrics = computeCampaignMetrics(campaign, base.metadata, metricsSource);
-
-  return {
-    ...base,
-    metrics,
-  } satisfies CampaignDTO;
-};
-
-const buildCampaignResponseSafely = async (
-  campaign: CampaignWithInstance,
-  logContext: Record<string, unknown>
-): Promise<{ data: CampaignDTO; warnings?: CampaignWarning[] }> => {
-  try {
-    return {
-      data: await buildCampaignResponse(campaign),
-    };
-  } catch (metricsError) {
-    logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
-      ...logContext,
-      error: toSafeError(metricsError),
-    });
-
-    return {
-      data: await buildCampaignResponse(campaign, createEmptyRawMetrics()),
-      warnings: [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }],
-    };
-  }
-};
-
-const router = Router();
-const SAFE_MODE = process.env.SAFE_MODE === 'true';
-
-const normalizeTenantSlug = (value: string | null | undefined): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const slug = toSlug(value, '');
-  return slug.length > 0 ? slug : undefined;
-};
-
-const normalizeStatus = (value: unknown): CampaignStatus | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-
-  if ((CAMPAIGN_STATUSES as readonly string[]).includes(normalized)) {
-    return normalized as CampaignStatus;
-  }
-
-  return null;
-};
-
-const normalizeQueryValue = (value: unknown): string | undefined => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      if (typeof entry === 'string') {
-        const trimmed = entry.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
-      }
-    }
-  }
-
-  return undefined;
-};
-
-const extractStatuses = (value: unknown): CampaignStatus[] => {
-  if (value === undefined) {
-    return [];
-  }
-
-  const rawValues: string[] = [];
-
-  if (typeof value === 'string') {
-    rawValues.push(...value.split(','));
-  } else if (Array.isArray(value)) {
-    value.forEach((entry) => {
-      if (typeof entry === 'string') {
-        rawValues.push(...entry.split(','));
-      }
-    });
-  }
-
-  const normalized = rawValues
-    .map((status) => normalizeStatus(status))
-    .filter((status): status is CampaignStatus => Boolean(status));
-
-  return Array.from(new Set(normalized));
-};
-
-export interface CampaignQueryFilters {
-  agreementId?: string;
-  instanceId?: string;
-  productType?: string | null;
-  marginType?: string | null;
-  strategy?: string | null;
-  tags: string[];
-  statuses: CampaignStatus[];
-}
-
-export const buildFilters = (query: Request['query']): CampaignQueryFilters => {
-  const agreementId = normalizeQueryValue(query.agreementId);
-  const instanceId = normalizeQueryValue(query.instanceId);
-  const statuses = extractStatuses(query.status);
-  const productType = normalizeClassificationValue(normalizeQueryValue(query.productType));
-  const marginType = normalizeClassificationValue(normalizeQueryValue(query.marginType));
-  const strategy = normalizeClassificationValue(normalizeQueryValue(query.strategy));
-  const tags = normalizeTagsInput(query.tags);
-  const filters: CampaignQueryFilters = {
-    tags,
-    statuses: statuses.length > 0 ? statuses : [DEFAULT_STATUS],
-  };
-
-  if (agreementId) {
-    filters.agreementId = agreementId;
-  }
-
-  if (instanceId) {
-    filters.instanceId = instanceId;
-  }
-
-  if (productType !== null) {
-    filters.productType = productType;
-  }
-
-  if (marginType !== null) {
-    filters.marginType = marginType;
-  }
-
-  if (strategy !== null) {
-    filters.strategy = strategy;
-  }
-
-  return filters;
-};
-
-export const resolveTenantId = (req: Request): string => resolveRequestTenantId(req);
-
-type StoreCampaignResult = {
-  items: CampaignDTO[];
-  warnings?: CampaignWarning[];
-};
-
-const loadCampaignsFromStore = async ({
-  tenantId,
-  agreementId,
-  instanceId,
-  productType,
-  marginType,
-  strategy,
-  tags,
-  statuses,
-  requestId,
-}: {
-  tenantId: string;
-  agreementId?: string;
-  instanceId?: string;
-  productType?: string | null;
-  marginType?: string | null;
-  strategy?: string | null;
-  tags: string[];
-  statuses: CampaignStatus[];
-  requestId: string;
-}): Promise<StoreCampaignResult> => {
-  const logContext = {
-    requestId,
-    tenantId,
-    agreementId: agreementId ?? null,
-    instanceId: instanceId ?? null,
-    productType: productType ?? null,
-    marginType: marginType ?? null,
-    strategy: strategy ?? null,
-    tags: tags.join(','),
-    statuses,
-  };
-
-  logger.info(`${LOG_CONTEXT} querying local store`, logContext);
-
-  const campaigns = await prisma.campaign.findMany({
-    where: {
-      tenantId,
-      ...(agreementId ? { agreementId } : {}),
-      ...(instanceId ? { whatsappInstanceId: instanceId } : {}),
-      status: { in: statuses },
-      ...(productType !== undefined && productType !== null ? { productType } : {}),
-      ...(marginType !== undefined && marginType !== null ? { marginType } : {}),
-      ...(strategy !== undefined && strategy !== null ? { strategy } : {}),
-      ...(tags.length > 0 ? { tags: { hasEvery: tags } } : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      whatsappInstance: {
-        select: {
-          id: true,
-          name: true,
-        },
+const handleCampaignError = (res: Response, error: unknown): boolean => {
+  if (error instanceof CampaignServiceError) {
+    const payload: Record<string, unknown> = {
+      success: false,
+      error: {
+        code: error.code,
+        message: error.message,
       },
-    },
-    take: 100,
-  });
-
-  let warnings: CampaignWarning[] | undefined;
-
-  try {
-    const items = await Promise.all(campaigns.map((campaign) => buildCampaignResponse(campaign)));
-    logger.info(`${LOG_CONTEXT} returning campaigns from store`, {
-      ...logContext,
-      count: items.length,
-    });
-    return { items };
-  } catch (metricsError) {
-    logger.warn(`${LOG_CONTEXT} metrics enrichment failed, using empty metrics`, {
-      ...logContext,
-      error: toSafeError(metricsError),
-    });
-    warnings = [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }];
-    const items = await Promise.all(
-      campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()))
-    );
-    logger.info(`${LOG_CONTEXT} returning campaigns from store with fallback metrics`, {
-      ...logContext,
-      count: items.length,
-    });
-    return { items, warnings };
-  }
-};
-
-const respondNotFound = (res: Response): void => {
-  res.status(404).json({
-    success: false,
-    error: {
-      code: 'CAMPAIGN_NOT_FOUND',
-      message: 'Campanha não encontrada.',
-    },
-  });
-};
-
-const canTransition = (from: CampaignStatus, to: CampaignStatus): boolean => {
-  if (from === to) {
+      ...(error.details ?? {}),
+    };
+    res.status(error.status).json(payload);
     return true;
   }
 
-  const matrix: Record<CampaignStatus, CampaignStatus[]> = {
-    draft: ['active', 'ended'],
-    active: ['paused', 'ended'],
-    paused: ['active', 'ended'],
-    ended: [],
-  };
-
-  return matrix[from].includes(to);
+  return false;
 };
+
+const router = Router();
+
+router.get(
+  '/',
+  listCampaignValidators,
+  validateRequest,
+  requireTenant,
+  asyncHandler(async (req: Request, res: Response) => {
+    const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
+    const tenantId = resolveTenantId(req);
+    const filters = buildFilters(req.query);
+
+    try {
+      const { items, warnings, meta } = await listCampaigns({ tenantId, filters, requestId });
+      const payload: {
+        success: true;
+        items: CampaignDTO[];
+        requestId: string;
+        warnings?: typeof warnings;
+        meta?: typeof meta;
+      } = {
+        success: true,
+        items,
+        requestId,
+      };
+
+      if (warnings) {
+        payload.warnings = warnings;
+      }
+
+      if (meta) {
+        payload.meta = meta;
+      }
+
+      res.json(payload);
+    } catch (error) {
+      if (handleCampaignError(res, error)) {
+        return;
+      }
+
+      const mapped = mapPrismaError(error, {
+        connectivity: {
+          code: 'CAMPAIGNS_STORE_UNAVAILABLE',
+          message: 'Storage de campanhas indisponível no momento.',
+          status: 503,
+        },
+        validation: {
+          code: 'INVALID_CAMPAIGN_FILTER',
+          message: 'Parâmetros de filtro inválidos.',
+          status: 400,
+        },
+      });
+
+      if (mapped) {
+        res.status(mapped.status).json({
+          success: false,
+          error: {
+            code: mapped.code,
+            message: mapped.message,
+          },
+          requestId,
+        });
+        return;
+      }
+
+      throw error;
+    }
+  })
+);
 
 router.post(
   '/',
-  body('agreementId').isString().trim().isLength({ min: 1 }),
-  body('agreementName').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
-  body('instanceId').isString().trim().isLength({ min: 1 }),
-  body('brokerId').optional().isString().trim().isLength({ min: 1 }),
-  body('name').optional().isString().trim().isLength({ min: 1 }),
-  body('budget').optional().isFloat({ min: 0 }),
-  body('cplTarget').optional().isFloat({ min: 0 }),
-  body('productType').isString().trim().isLength({ min: 1 }),
-  body('marginType').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
-  body('marginValue').optional({ nullable: true }).isFloat({ min: 0 }),
-  body('strategy').optional({ nullable: true }).isString().trim().isLength({ min: 1 }),
-  body('tags').optional().isArray(),
-  body('tags.*').optional().isString(),
-  body('metadata').optional().isObject(),
+  createCampaignValidators,
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const requestedTenantId = resolveRequestTenantId(req);
-    const rawAgreementId = typeof req.body?.agreementId === 'string' ? req.body.agreementId.trim() : '';
-    const resolvedAgreementId = rawAgreementId || requestedTenantId;
-    const rawAgreementName = normalizeClassificationValue(req.body?.agreementName);
-    const resolvedAgreementName = rawAgreementName ?? null;
-    const rawInstanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId.trim() : '';
-    const resolvedInstanceId = rawInstanceId || 'alan';
-    const rawBrokerIdInput = typeof req.body?.brokerId === 'string' ? req.body.brokerId.trim() : '';
-    const resolvedBrokerId = rawBrokerIdInput || null;
-    const identifierCandidates = Array.from(
-      new Set(
-        [resolvedInstanceId, resolvedBrokerId].filter(
-          (value): value is string => typeof value === 'string' && value.length > 0
-        )
-      )
-    );
-    const providedName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-    const resolvedName = providedName || resolvedAgreementName || `Campanha ${Date.now()}`;
-    const budget = typeof req.body?.budget === 'number' ? req.body.budget : undefined;
-    const cplTarget = typeof req.body?.cplTarget === 'number' ? req.body.cplTarget : undefined;
-    const schedule = req.body?.schedule ?? { type: 'immediate' };
-    const channel = typeof req.body?.channel === 'string' ? req.body.channel : 'whatsapp';
-    const audienceCount = Array.isArray(req.body?.audience) ? req.body.audience.length : 0;
-    const rawProductType = normalizeClassificationValue(req.body?.productType);
-    const productType = rawProductType ?? 'generic';
-    const marginType = normalizeClassificationValue(req.body?.marginType) ?? 'percentage';
-    const marginValue = readNumeric((req.body ?? {}) as Record<string, unknown>, 'marginValue');
-    const strategy = normalizeClassificationValue(req.body?.strategy);
-    const explicitTags = normalizeTagsInput(req.body?.tags);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const rawAgreementId = typeof body.agreementId === 'string' ? body.agreementId.trim() : '';
+    const rawAgreementName = normalizeClassificationValue(body.agreementName);
+    const rawInstanceId = typeof body.instanceId === 'string' ? body.instanceId.trim() : '';
+    const rawBrokerId = typeof body.brokerId === 'string' ? body.brokerId.trim() : '';
+    const providedName = typeof body.name === 'string' ? body.name.trim() : '';
+    const budget = typeof body.budget === 'number' ? body.budget : undefined;
+    const cplTarget = typeof body.cplTarget === 'number' ? body.cplTarget : undefined;
+    const schedule = body.schedule ?? { type: 'immediate' };
+    const channel = typeof body.channel === 'string' ? body.channel : 'whatsapp';
+    const audienceCount = Array.isArray(body.audience) ? body.audience.length : 0;
+    const productType = normalizeClassificationValue(body.productType) ?? 'generic';
+    const marginType = normalizeClassificationValue(body.marginType) ?? 'percentage';
+    const strategy = normalizeClassificationValue(body.strategy);
+    const explicitTags = normalizeTagsInput(body.tags);
     const resolvedTags = Array.from(
       new Set([
         ...explicitTags,
-        ...([productType, marginType, strategy].filter((value): value is string => Boolean(value))),
+        ...([productType, marginType, strategy].filter((value): value is string => Boolean(value)) as string[]),
       ])
     );
-    const userMetadata = isRecord(req.body?.metadata)
-      ? ({ ...(req.body.metadata as Record<string, unknown>) } as Record<string, unknown>)
-      : {};
-
+    const metadata = parseMetadataPayload(body.metadata);
+    const marginValue = readNumericField(body, 'marginValue');
     if (marginValue !== null) {
-      userMetadata.margin = marginValue;
+      metadata.margin = marginValue;
     }
+    const actorId = req.user?.id ?? 'system';
+    const status = normalizeStatus(body.status);
 
-    if (SAFE_MODE) {
-      const now = new Date();
-      const fakeId = `cmp_${Date.now()}`;
-      const metrics = {
-        ...createEmptyRawMetrics(),
-        budget: typeof budget === 'number' ? budget : null,
-        cplTarget: typeof cplTarget === 'number' ? cplTarget : null,
-        cpl: null,
-      } satisfies CampaignDTO['metrics'];
-      const classificationMetadata: Record<string, string> = {};
-      if (productType) {
-        classificationMetadata.productType = productType;
-      }
-      if (marginType) {
-        classificationMetadata.marginType = marginType;
-      }
-      if (strategy) {
-        classificationMetadata.strategy = strategy;
-      }
-      const responsePayload: CampaignDTO = {
-        id: fakeId,
-        tenantId: resolvedAgreementId,
-        agreementId: resolvedAgreementId,
-        agreementName: resolvedAgreementName || null,
-        name: resolvedName,
-        status: 'scheduled',
-        metadata: {
-          safeMode: true,
-          channel,
-          schedule,
-          audienceCount,
-          ...(resolvedTags.length > 0 ? { tags: resolvedTags } : {}),
-          ...(Object.keys(classificationMetadata).length > 0
-            ? { classification: classificationMetadata }
-            : {}),
-          ...userMetadata,
-        },
-        instanceId: resolvedInstanceId,
-        instanceName: resolvedInstanceId,
-        whatsappInstanceId: resolvedInstanceId,
-        createdAt: now,
-        updatedAt: now,
-        metrics,
+    try {
+      const result = await createCampaign({
+        requestedTenantId,
+        explicitTenantId:
+          typeof body.tenantId === 'string' && body.tenantId.trim().length > 0
+            ? body.tenantId.trim()
+            : undefined,
+        agreementId: rawAgreementId,
+        agreementName: rawAgreementName,
+        instanceId: rawInstanceId,
+        brokerId: rawBrokerId || null,
+        name: providedName,
+        budget,
+        cplTarget,
+        schedule,
+        channel,
+        audienceCount,
         productType,
         marginType,
+        marginValue,
         strategy,
         tags: resolvedTags,
+        metadata,
+        actorId,
+        status,
+      });
+
+      const responsePayload: { success: true; data: CampaignDTO; warnings?: typeof result.warnings; meta?: typeof result.meta } = {
+        success: true,
+        data: result.data,
       };
 
-      res.status(201).json({ success: true, data: responsePayload, meta: { safeMode: true } });
-      return;
-    }
-
-    const explicitTenantId =
-      typeof req.body?.tenantId === 'string' && req.body.tenantId.trim().length > 0
-        ? req.body.tenantId.trim()
-        : undefined;
-    const baseLogContext = {
-      requestedTenantId,
-      explicitTenantId: explicitTenantId ?? null,
-      instanceId: resolvedInstanceId,
-      requestedBrokerId: resolvedBrokerId,
-      agreementId: resolvedAgreementId,
-    };
-
-    const tenantIdentifierCandidates = Array.from(
-      new Set(
-        [explicitTenantId, requestedTenantId, resolvedAgreementId].filter(
-          (value): value is string => typeof value === 'string' && value.length > 0
-        )
-      )
-    );
-
-    let instance: Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>> | null = null;
-
-    for (const candidateId of identifierCandidates) {
-      instance = await prisma.whatsAppInstance.findUnique({ where: { id: candidateId } });
-      if (instance) {
-        if (candidateId !== resolvedInstanceId) {
-          logger.info('WhatsApp instance resolved via alternate identifier during campaign creation', {
-            ...baseLogContext,
-            requestedInstanceId: resolvedInstanceId,
-            matchedIdentifier: candidateId,
-            resolvedInstanceId: instance.id,
-          });
-        }
-        break;
-      }
-    }
-
-    if (!instance) {
-      brokerLookup: for (const candidateBrokerId of identifierCandidates) {
-        if (tenantIdentifierCandidates.length > 0) {
-          for (const tenantCandidate of tenantIdentifierCandidates) {
-            instance = await prisma.whatsAppInstance.findUnique({
-              where: {
-                tenantId_brokerId: {
-                  tenantId: tenantCandidate,
-                  brokerId: candidateBrokerId,
-                },
-              },
-            });
-
-            if (instance) {
-              logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
-                ...baseLogContext,
-                requestedInstanceId: resolvedInstanceId,
-                matchedBrokerId: candidateBrokerId,
-                matchedTenantId: tenantCandidate,
-                resolvedInstanceId: instance.id,
-                resolvedBrokerId: instance.brokerId,
-              });
-              break brokerLookup;
-            }
-          }
-        } else {
-          instance = await prisma.whatsAppInstance.findFirst({
-            where: { brokerId: candidateBrokerId },
-          });
-
-          if (instance) {
-            logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
-              ...baseLogContext,
-              requestedInstanceId: resolvedInstanceId,
-              matchedBrokerId: candidateBrokerId,
-              resolvedInstanceId: instance.id,
-              resolvedBrokerId: instance.brokerId,
-            });
-            break;
-          }
-        }
-      }
-    }
-
-    if (!instance) {
-      const placeholderTenantId = explicitTenantId || requestedTenantId || resolvedAgreementId;
-
-      logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
-        ...baseLogContext,
-        tenantId: placeholderTenantId,
-        identifierCandidates,
-      });
-
-      const brokerIdentifier = resolvedBrokerId ?? resolvedInstanceId;
-
-      try {
-        instance = await prisma.whatsAppInstance.create({
-          data: {
-            id: resolvedInstanceId,
-            tenantId: placeholderTenantId,
-            name: resolvedInstanceId,
-            brokerId: brokerIdentifier,
-            status: 'connected',
-            connected: true,
-            metadata: {
-              origin: 'auto-created-for-campaign',
-            },
-          },
-        });
-      } catch (creationError) {
-        if (creationError instanceof Prisma.PrismaClientKnownRequestError && creationError.code === 'P2002') {
-          logger.warn('WhatsApp instance creation hit unique constraint; reusing existing record', {
-            ...baseLogContext,
-            prismaError: creationError.meta,
-            identifierCandidates,
-          });
-
-          const orConditions = identifierCandidates.flatMap((candidate) => {
-            const conditions = [
-              { id: candidate },
-              ...(tenantIdentifierCandidates.length > 0
-                ? tenantIdentifierCandidates.map((tenantCandidate) => ({
-                    AND: [{ tenantId: tenantCandidate }, { brokerId: candidate }],
-                  }))
-                : []),
-              { brokerId: candidate },
-            ];
-
-            return conditions;
-          });
-
-          const findArgs =
-            orConditions.length > 0 ? ({ where: { OR: orConditions } } as const) : ({} as const);
-
-          instance = await prisma.whatsAppInstance.findFirst(findArgs);
-
-          if (!instance) {
-            throw creationError;
-          }
-        } else {
-          throw creationError;
-        }
-      }
-    }
-
-    const instanceTenantId =
-      typeof instance.tenantId === 'string' && instance.tenantId.trim().length > 0
-        ? instance.tenantId.trim()
-        : undefined;
-
-    let tenantRecord = instanceTenantId
-      ? await prisma.tenant.findFirst({
-          where: {
-            OR: [
-              { id: instanceTenantId },
-              ...(normalizeTenantSlug(instanceTenantId)
-                ? [{ slug: normalizeTenantSlug(instanceTenantId) as string }]
-                : []),
-            ],
-          },
-        })
-      : null;
-
-    const fallbackTenantIdCandidates = new Set<string>([
-      ...(explicitTenantId ? [explicitTenantId] : []),
-      ...(requestedTenantId ? [requestedTenantId] : []),
-      ...(resolvedAgreementId ? [resolvedAgreementId] : []),
-      ...(instanceTenantId ? [instanceTenantId] : []),
-    ]);
-
-    const fallbackSlugCandidates = new Set<string>();
-    for (const candidate of [
-      explicitTenantId,
-      requestedTenantId,
-      resolvedAgreementId,
-      resolvedAgreementName,
-      instanceTenantId,
-    ]) {
-      const slug = normalizeTenantSlug(candidate ?? undefined);
-      if (slug) {
-        fallbackSlugCandidates.add(slug);
-      }
-    }
-
-    const pickFirst = <T,>(values: Iterable<T>): T | undefined => {
-      for (const value of values) {
-        return value;
-      }
-      return undefined;
-    };
-
-    const preferredTenantId = pickFirst(fallbackTenantIdCandidates) ?? requestedTenantId;
-    const preferredSlug =
-      normalizeTenantSlug(preferredTenantId) ?? pickFirst(fallbackSlugCandidates);
-    const preferredName =
-      resolvedAgreementName || resolvedAgreementId || preferredTenantId || 'Lead Engine Tenant';
-
-    if (!tenantRecord) {
-      try {
-        tenantRecord = await prisma.tenant.create({
-          data: {
-            id: preferredTenantId,
-            name: preferredName,
-            slug: preferredSlug ?? undefined,
-            settings: {},
-          },
-        });
-      } catch (creationError) {
-        if (creationError instanceof Prisma.PrismaClientKnownRequestError && creationError.code === 'P2002') {
-          const fallbackWhere = {
-            OR: [
-              ...Array.from(fallbackTenantIdCandidates).map((id) => ({ id })),
-              ...(fallbackSlugCandidates.size > 0
-                ? Array.from(fallbackSlugCandidates).map((slug) => ({ slug }))
-                : []),
-              ...(preferredSlug ? [{ slug: preferredSlug }] : []),
-              ...(preferredTenantId ? [{ id: preferredTenantId }] : []),
-            ],
-            ...(preferredSlug ? { slug: preferredSlug } : {}),
-          } as Prisma.TenantWhereInput;
-
-          tenantRecord = await prisma.tenant.findFirst({ where: fallbackWhere });
-
-          if (!tenantRecord) {
-            throw creationError;
-          }
-        } else {
-          throw creationError;
-        }
-      }
-    }
-
-    const resolvedTenantId =
-      tenantRecord?.id ||
-      instanceTenantId ||
-      explicitTenantId ||
-      requestedTenantId ||
-      resolvedAgreementId;
-
-    if (tenantRecord && instance.tenantId !== tenantRecord.id) {
-      instance = await prisma.whatsAppInstance.update({
-        where: { id: instance.id },
-        data: { tenantId: tenantRecord.id },
-      });
-    }
-
-    const tenantId = resolvedTenantId;
-    const effectiveInstanceId = instance.id;
-
-    const actorId = req.user?.id ?? 'system';
-    const normalizedName = resolvedName;
-    const slug = toSlug(normalizedName, '');
-    const requestedStatus = normalizeStatus(req.body?.status) ?? 'draft';
-
-    const metadataBase: Record<string, unknown> = { ...userMetadata };
-    if (slug) {
-      metadataBase.slug = slug;
-    }
-    if (typeof budget === 'number') {
-      metadataBase.budget = budget;
-    }
-    if (typeof cplTarget === 'number') {
-      metadataBase.cplTarget = cplTarget;
-    }
-    const classificationMetadata: Record<string, string> = {};
-    if (productType) {
-      classificationMetadata.productType = productType;
-    }
-    if (marginType) {
-      classificationMetadata.marginType = marginType;
-    }
-    if (strategy) {
-      classificationMetadata.strategy = strategy;
-    }
-    if (Object.keys(classificationMetadata).length > 0) {
-      metadataBase.classification = classificationMetadata;
-    }
-    if (resolvedTags.length > 0) {
-      metadataBase.tags = resolvedTags;
-    }
-
-    const buildCreationMetadata = (
-      extraEntries: ReturnType<typeof buildCampaignHistoryEntry>[] = []
-    ): Prisma.JsonObject => {
-      const entries = [
-        buildCampaignHistoryEntry('created', actorId, {
-          status: requestedStatus,
-          instanceId: instance.id,
-        }),
-        ...extraEntries,
-      ];
-
-      let metadata: CampaignMetadata = metadataBase;
-      for (const entry of entries) {
-        metadata = appendCampaignHistory(metadata, entry);
+      if (result.warnings) {
+        responsePayload.warnings = result.warnings;
       }
 
-      return metadata as Prisma.JsonObject;
-    };
-
-    const existingCampaign = await prisma.campaign.findFirst({
-      where: {
-        ...(tenantId ? { tenantId } : {}),
-        whatsappInstanceId: instance.id,
-        agreementId: resolvedAgreementId,
-        productType: productType,
-        marginType: marginType,
-        strategy: strategy,
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        whatsappInstance: {
-          select: { id: true, name: true },
-        },
-      },
-    });
-
-    let creationExtras: ReturnType<typeof buildCampaignHistoryEntry>[] | null = null;
-
-    if (existingCampaign) {
-      const currentStatus = normalizeStatus(existingCampaign.status) ?? 'draft';
-
-      if (currentStatus === 'ended') {
-        let releasedMetadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
-        if (isRecord(releasedMetadata)) {
-          releasedMetadata = { ...(releasedMetadata as Record<string, unknown>), ...metadataBase };
-        } else {
-          releasedMetadata = metadataBase;
-        }
-        releasedMetadata = appendCampaignHistory(
-          releasedMetadata,
-          buildCampaignHistoryEntry('instance-released', actorId, {
-            reason: 'campaign-ended',
-          })
-        );
-
-        await prisma.campaign.update({
-          where: { id: existingCampaign.id },
-          data: {
-            whatsappInstanceId: null,
-            metadata: releasedMetadata as Prisma.JsonObject,
-            agreementName: resolvedAgreementName ?? existingCampaign.agreementName ?? null,
-            productType,
-            marginType,
-            strategy,
-            tags: resolvedTags,
-          },
-        });
-
-        logger.info('Campaign instance released before recreation', {
-          tenantId,
-          agreementId: resolvedAgreementId,
-          instanceId: instance.id,
-          campaignId: existingCampaign.id,
-        });
-
-        creationExtras = [
-          buildCampaignHistoryEntry('reactivated', actorId, {
-            previousCampaignId: existingCampaign.id,
-            from: currentStatus,
-            to: requestedStatus,
-          }),
-        ];
-      } else if (currentStatus !== requestedStatus) {
-        if (!canTransition(currentStatus, requestedStatus)) {
-          res.status(409).json({
-            success: false,
-            error: {
-              code: 'INVALID_CAMPAIGN_TRANSITION',
-              message: `Transição de ${currentStatus} para ${requestedStatus} não permitida.`,
-            },
-          });
-          return;
-        }
-
-        let metadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
-        if (isRecord(metadata)) {
-          metadata = { ...(metadata as Record<string, unknown>), ...metadataBase };
-        } else {
-          metadata = metadataBase;
-        }
-        metadata = appendCampaignHistory(
-          metadata,
-          buildCampaignHistoryEntry('status-changed', actorId, {
-            from: currentStatus,
-            to: requestedStatus,
-          })
-        );
-
-        if (requestedStatus === 'ended') {
-          metadata = appendCampaignHistory(
-            metadata,
-            buildCampaignHistoryEntry('status-ended', actorId, {
-              from: currentStatus,
-            })
-          );
-        }
-
-        if (requestedStatus === 'active' && currentStatus !== 'active') {
-          metadata = appendCampaignHistory(
-            metadata,
-            buildCampaignHistoryEntry('reactivated', actorId, {
-              from: currentStatus,
-              to: requestedStatus,
-            })
-          );
-        }
-
-        const updatedCampaign = (await prisma.campaign.update({
-          where: { id: existingCampaign.id },
-          data: {
-            status: requestedStatus,
-            metadata: metadata as Prisma.JsonObject,
-            agreementName: resolvedAgreementName ?? existingCampaign.agreementName ?? null,
-            productType,
-            marginType,
-            strategy,
-            tags: resolvedTags,
-          },
-          include: {
-            whatsappInstance: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        })) as CampaignWithInstance;
-
-        logger.info('Campaign status updated via POST /campaigns', {
-          tenantId,
-          agreementId: resolvedAgreementId,
-          instanceId: instance.id,
-          campaignId: existingCampaign.id,
-          fromStatus: currentStatus,
-          toStatus: requestedStatus,
-        });
-
-        const data = await buildCampaignResponse(updatedCampaign);
-        res.json({ success: true, data });
-        return;
-      } else {
-        const tagsChanged = Array.isArray(existingCampaign.tags)
-          ? existingCampaign.tags.length !== resolvedTags.length ||
-            existingCampaign.tags.some((tag) => !resolvedTags.includes(tag))
-          : resolvedTags.length > 0;
-        const classificationChanged =
-          existingCampaign.productType !== productType ||
-          existingCampaign.marginType !== marginType ||
-          existingCampaign.strategy !== strategy ||
-          existingCampaign.agreementName !== (resolvedAgreementName ?? existingCampaign.agreementName ?? null);
-        const metadataNeedsUpdate = Object.keys(metadataBase).length > 0;
-
-        if (classificationChanged || tagsChanged || metadataNeedsUpdate) {
-          let metadata: CampaignMetadata = existingCampaign.metadata as CampaignMetadata;
-          if (isRecord(metadata)) {
-            metadata = { ...(metadata as Record<string, unknown>), ...metadataBase };
-          } else {
-            metadata = metadataBase;
-          }
-
-          const refreshedCampaign = (await prisma.campaign.update({
-            where: { id: existingCampaign.id },
-            data: {
-              agreementName: resolvedAgreementName ?? existingCampaign.agreementName ?? null,
-              productType,
-              marginType,
-              strategy,
-              tags: resolvedTags,
-              metadata: metadata as Prisma.JsonObject,
-            },
-            include: {
-              whatsappInstance: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          })) as CampaignWithInstance;
-
-          logger.info('Campaign reused and refreshed for instance', {
-            tenantId,
-            agreementId: resolvedAgreementId,
-            instanceId: instance.id,
-            campaignId: existingCampaign.id,
-            status: existingCampaign.status,
-            requestedStatus,
-          });
-
-          const data = await buildCampaignResponse(refreshedCampaign);
-          res.json({ success: true, data });
-          return;
-        }
-
-        logger.info('Campaign reused for instance', {
-          tenantId,
-          agreementId: resolvedAgreementId,
-          instanceId: instance.id,
-          campaignId: existingCampaign.id,
-          status: existingCampaign.status,
-          requestedStatus,
-        });
-
-        const data = await buildCampaignResponse(existingCampaign);
-        res.json({ success: true, data });
-        return;
+      if (result.meta) {
+        responsePayload.meta = result.meta;
       }
-    }
 
-    const creationMetadata = buildCreationMetadata(creationExtras ?? []);
-
-    let campaign;
-    try {
-      campaign = (await prisma.campaign.create({
-        data: {
-          tenantId,
-          name: normalizedName,
-          agreementId: resolvedAgreementId,
-          agreementName: resolvedAgreementName || resolvedAgreementId,
-          whatsappInstanceId: instance.id,
-          status: requestedStatus,
-          metadata: creationMetadata as Prisma.JsonObject,
-          productType,
-          marginType,
-          strategy,
-          tags: resolvedTags,
-        },
-        include: {
-          whatsappInstance: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-      })) as CampaignWithInstance;
+      res.status(result.statusCode ?? 201).json(responsePayload);
     } catch (error) {
-      const logContext = {
-        tenantId,
-        agreementId: resolvedAgreementId,
-        instanceId: instance.id,
-      };
-
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const conflictingCampaign = await prisma.campaign.findFirst({
-          where: {
-            tenantId,
-            agreementId: resolvedAgreementId,
-            whatsappInstanceId: instance.id,
-          },
-          include: {
-            whatsappInstance: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
-
-        if (conflictingCampaign) {
-          const currentStatus = normalizeStatus(conflictingCampaign.status) ?? 'draft';
-          const responseLogContext = {
-            ...logContext,
-            campaignId: conflictingCampaign.id,
-          };
-          const { data, warnings } = await buildCampaignResponseSafely(
-            conflictingCampaign as CampaignWithInstance,
-            responseLogContext
-          );
-
-          const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
-            success: true,
-            data,
-          };
-
-          if (warnings) {
-            payload.warnings = warnings;
-          }
-
-          if (currentStatus === requestedStatus) {
-            logger.warn('Campaign already exists for agreement and instance, returning existing record', {
-              ...responseLogContext,
-              requestedStatus,
-            });
-            res.status(200).json(payload);
-            return;
-          }
-
-          logger.warn('Campaign already exists for agreement and instance with different status', {
-            ...responseLogContext,
-            requestedStatus,
-            currentStatus,
-          });
-
-          res.status(409).json({
-            success: false,
-            error: {
-              code: 'CAMPAIGN_ALREADY_EXISTS',
-              message: 'Já existe uma campanha para este acordo e instância.',
-            },
-            conflict: {
-              data,
-              ...(warnings ? { warnings } : {}),
-            },
-          });
-          return;
-        }
-      }
-
-      if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2000', 'P2001'].includes(error.code)) {
-        logger.warn('Invalid parameters for campaign creation', {
-          ...logContext,
-          error: toSafeError(error),
-        });
-
-        res.status(400).json({
-          success: false,
-          error: {
-            code: 'INVALID_CAMPAIGN_DATA',
-            message: 'Dados inválidos para criar a campanha.',
-          },
-        });
+      if (handleCampaignError(res, error)) {
         return;
       }
 
@@ -1239,13 +228,6 @@ router.post(
       });
 
       if (mapped) {
-        const log = mapped.type === 'validation' ? logger.warn.bind(logger) : logger.error.bind(logger);
-        log('Failed to create campaign due to Prisma error', {
-          ...logContext,
-          error: toSafeError(error),
-          mappedError: mapped,
-        });
-
         res.status(mapped.status).json({
           success: false,
           error: {
@@ -1253,278 +235,17 @@ router.post(
             message: mapped.message,
           },
         });
-        return;
-      }
-
-      logger.error('Failed to create campaign, returning fallback', {
-        error,
-        ...logContext,
-      });
-
-      const fallback = await prisma.campaign.findFirst({
-        where: { tenantId },
-        orderBy: { createdAt: 'desc' },
-        include: {
-          whatsappInstance: {
-            select: { id: true, name: true },
-          },
-        },
-      });
-
-      if (fallback) {
-        const responseLogContext = {
-          ...logContext,
-          campaignId: fallback.id,
-        };
-        const { data, warnings } = await buildCampaignResponseSafely(
-          fallback as CampaignWithInstance,
-          responseLogContext
-        );
-        const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
-          success: true,
-          data,
-        };
-
-        if (warnings) {
-          payload.warnings = warnings;
-        }
-
-        res.json(payload);
         return;
       }
 
       throw error;
-    }
-
-    logger.info(creationExtras ? 'Campaign recreated after ended' : 'Campaign created', {
-      tenantId,
-      campaignId: campaign.id,
-      instanceId: effectiveInstanceId,
-      status: campaign.status,
-      previousCampaignId: creationExtras ? existingCampaign?.id ?? null : null,
-    });
-
-    const responseLogContext = {
-      tenantId,
-      agreementId: resolvedAgreementId,
-      instanceId: instance.id,
-      campaignId: campaign.id,
-    };
-    const { data, warnings } = await buildCampaignResponseSafely(campaign, responseLogContext);
-    const payload: { success: true; data: CampaignDTO; warnings?: CampaignWarning[] } = {
-      success: true,
-      data,
-    };
-
-    if (warnings) {
-      payload.warnings = warnings;
-    }
-
-    res.status(201).json(payload);
-  })
-);
-
-router.get(
-  '/',
-  query('status').optional(),
-  query('agreementId').optional().isString().trim(),
-  query('instanceId').optional().isString().trim(),
-  validateRequest,
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
-    const tenantId = resolveTenantId(req);
-
-    const useRealData = getUseRealDataFlag();
-    const { agreementId, instanceId, productType, marginType, strategy, tags, statuses } = buildFilters(req.query);
-    const logContext = {
-      requestId,
-      tenantId,
-      agreementId: agreementId ?? null,
-      instanceId: instanceId ?? null,
-      productType: productType ?? null,
-      marginType: marginType ?? null,
-      strategy: strategy ?? null,
-      tags: tags.join(','),
-      status: statuses,
-    };
-
-    logger.info(`${LOG_CONTEXT} list request received`, logContext);
-
-    try {
-      let upstreamFailed = false;
-
-      if (useRealData) {
-        logger.info(`${LOG_CONTEXT} attempting upstream sync`, {
-          ...logContext,
-          targetStatus: statuses.join(','),
-        });
-
-        try {
-          const upstreamFilters: LeadEngineCampaignFilters = {
-            tenantId,
-            status: statuses.join(','),
-            requestId,
-          };
-
-          if (agreementId) {
-            upstreamFilters.agreementId = agreementId;
-          }
-
-          if (productType) {
-            upstreamFilters.productType = productType;
-          }
-
-          if (marginType) {
-            upstreamFilters.marginType = marginType;
-          }
-
-          if (strategy) {
-            upstreamFilters.strategy = strategy;
-          }
-
-          if (tags.length > 0) {
-            upstreamFilters.tags = tags.join(',');
-          }
-
-          const items = await fetchLeadEngineCampaigns(upstreamFilters);
-
-          logger.info(`${LOG_CONTEXT} upstream responded successfully`, {
-            ...logContext,
-            source: 'upstream',
-            count: items.length,
-          });
-
-          res.json({ success: true, items, requestId });
-          return;
-        } catch (upstreamError) {
-          upstreamFailed = true;
-          const upstreamStatus = (upstreamError as { status?: number }).status;
-
-          if (upstreamStatus === 404) {
-            logger.info(`${LOG_CONTEXT} upstream retornou 404 (sem campanhas)`, logContext);
-            res.json({ success: true, items: [], requestId });
-            return;
-          }
-
-          if (typeof upstreamStatus === 'number' && upstreamStatus >= 500) {
-            logger.error(`${LOG_CONTEXT} upstream failure`, {
-              ...logContext,
-              upstreamStatus,
-              error: toSafeError(upstreamError),
-            });
-          } else {
-            logger.error(`${LOG_CONTEXT} erro inesperado ao consultar upstream`, {
-              ...logContext,
-              error: toSafeError(upstreamError),
-            });
-          }
-
-          logger.warn(`${LOG_CONTEXT} falling back to local store after upstream error`, {
-            ...logContext,
-            upstreamStatus: upstreamStatus ?? null,
-          });
-        }
-      }
-
-      const storeFilters: Parameters<typeof loadCampaignsFromStore>[0] = {
-        tenantId,
-        productType: productType ?? null,
-        marginType: marginType ?? null,
-        strategy: strategy ?? null,
-        tags,
-        statuses,
-        requestId,
-      };
-
-      if (agreementId) {
-        storeFilters.agreementId = agreementId;
-      }
-
-      if (instanceId) {
-        storeFilters.instanceId = instanceId;
-      }
-
-      const { items, warnings } = await loadCampaignsFromStore(storeFilters);
-
-      const payload: {
-        success: true;
-        items: CampaignDTO[];
-        requestId: string;
-        warnings?: CampaignWarning[];
-        meta?: Record<string, unknown>;
-      } = {
-        success: true,
-        items,
-        requestId,
-      };
-
-      if (warnings) {
-        payload.warnings = warnings;
-      }
-
-      payload.meta = {
-        source: upstreamFailed ? 'store-fallback' : 'store',
-        upstreamFallback: upstreamFailed,
-      };
-
-      res.json(payload);
-    } catch (error) {
-      const mapped = mapPrismaError(error, {
-        connectivity: {
-          code: 'CAMPAIGNS_STORE_UNAVAILABLE',
-          message: 'Storage de campanhas indisponível no momento.',
-          status: 503,
-        },
-        validation: {
-          code: 'INVALID_CAMPAIGN_FILTER',
-          message: 'Parâmetros de filtro inválidos.',
-          status: 400,
-        },
-      });
-
-      if (mapped) {
-        const log = mapped.type === 'validation' ? logger.warn.bind(logger) : logger.error.bind(logger);
-        log(`${LOG_CONTEXT} prisma error`, {
-          ...logContext,
-          error: toSafeError(error),
-          mappedError: mapped,
-        });
-
-        res.status(mapped.status).json({
-          success: false,
-          error: {
-            code: mapped.code,
-            message: mapped.message,
-          },
-          requestId,
-        });
-        return;
-      }
-
-      logger.error(`${LOG_CONTEXT} unexpected failure`, {
-        ...logContext,
-        error: toSafeError(error),
-      });
-
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'UNEXPECTED_CAMPAIGNS_ERROR',
-          message: 'Falha inesperada ao listar campanhas.',
-        },
-        requestId,
-      });
     }
   })
 );
 
 router.patch(
   '/:id',
-  param('id').isString().trim().isLength({ min: 1 }),
-  body('name').optional().isString().trim().isLength({ min: 1 }),
-  body('status').optional().isString().trim().isLength({ min: 1 }),
-  body('instanceId').optional({ nullable: true }).isString().trim(),
+  updateCampaignValidators,
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
@@ -1540,8 +261,7 @@ router.patch(
       });
       return;
     }
-    const rawStatus = normalizeStatus(req.body?.status);
-    const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
+
     const rawInstanceId = req.body?.instanceId;
     const requestedInstanceId: string | null | undefined =
       typeof rawInstanceId === 'string'
@@ -1549,195 +269,58 @@ router.patch(
         : rawInstanceId === null
         ? null
         : undefined;
-    const actorId = req.user?.id ?? 'system';
 
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      include: {
-        whatsappInstance: {
-          select: {
-            id: true,
-            name: true,
-          },
+    try {
+      const result = await updateCampaign({
+        campaignId,
+        actorId: req.user?.id ?? 'system',
+        status: normalizeStatus(req.body?.status),
+        name: typeof req.body?.name === 'string' ? req.body.name.trim() : undefined,
+        instanceId: requestedInstanceId,
+      });
+
+      res.json({ success: true, data: result.data });
+    } catch (error) {
+      if (handleCampaignError(res, error)) {
+        return;
+      }
+
+      const mapped = mapPrismaError(error, {
+        connectivity: {
+          code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+          message: 'Storage de campanhas indisponível no momento.',
+          status: 503,
         },
-      },
-    });
-
-    if (!campaign) {
-      respondNotFound(res);
-      return;
-    }
-
-    if (rawName && rawName !== campaign.name) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'CAMPAIGN_RENAME_NOT_ALLOWED',
-          message: 'Renomear campanhas não é permitido.',
+        validation: {
+          code: 'INVALID_CAMPAIGN_DATA',
+          message: 'Dados inválidos para atualizar a campanha.',
+          status: 400,
         },
       });
-      return;
-    }
 
-    const updates: Prisma.CampaignUpdateInput = {};
-    let instanceReassigned = false;
-    const currentStatus = normalizeStatus(campaign.status) ?? 'draft';
-    let metadataAccumulator: CampaignMetadata = readMetadata(campaign.metadata as CampaignMetadata);
-    let metadataDirty = false;
-
-    const updateMetadata = (mutator: (current: Record<string, unknown>) => void) => {
-      const base =
-        metadataAccumulator && typeof metadataAccumulator === 'object' && !Array.isArray(metadataAccumulator)
-          ? { ...(metadataAccumulator as Record<string, unknown>) }
-          : {};
-      mutator(base);
-      metadataAccumulator = base;
-      metadataDirty = true;
-    };
-
-    const appendHistoryEntry = (entry: ReturnType<typeof buildCampaignHistoryEntry>) => {
-      metadataAccumulator = appendCampaignHistory(metadataAccumulator, entry);
-      metadataDirty = true;
-    };
-
-    if (rawStatus && rawStatus !== currentStatus) {
-      if (!canTransition(currentStatus, rawStatus)) {
-        res.status(409).json({
+      if (mapped) {
+        res.status(mapped.status).json({
           success: false,
           error: {
-            code: 'INVALID_CAMPAIGN_TRANSITION',
-            message: `Transição de ${currentStatus} para ${rawStatus} não permitida.`,
+            code: mapped.code,
+            message: mapped.message,
           },
         });
         return;
       }
 
-      updates.status = rawStatus;
-      appendHistoryEntry(
-        buildCampaignHistoryEntry('status-changed', actorId, {
-          from: currentStatus,
-          to: rawStatus,
-        })
-      );
-
-      if (rawStatus === 'ended') {
-        appendHistoryEntry(
-          buildCampaignHistoryEntry('status-ended', actorId, {
-            endedAt: new Date().toISOString(),
-          })
-        );
-      }
+      throw error;
     }
-
-    if (requestedInstanceId !== undefined) {
-      const normalizedRequested =
-        typeof requestedInstanceId === 'string' && requestedInstanceId.trim().length > 0
-          ? requestedInstanceId.trim()
-          : null;
-      const currentInstanceId = campaign.whatsappInstanceId ?? null;
-
-      if ((normalizedRequested ?? null) !== (currentInstanceId ?? null)) {
-        if (normalizedRequested) {
-          const nextInstance = await prisma.whatsAppInstance.findFirst({
-            where: {
-              id: normalizedRequested,
-            },
-            select: {
-              id: true,
-              name: true,
-            },
-          });
-
-          if (!nextInstance) {
-            res.status(404).json({
-              success: false,
-              error: {
-                code: 'INSTANCE_NOT_FOUND',
-                message: 'Instância WhatsApp não encontrada.',
-              },
-            });
-            return;
-          }
-
-          updates.whatsappInstance = { connect: { id: nextInstance.id } };
-          instanceReassigned = true;
-          updateMetadata((base) => {
-            base.reassignedAt = new Date().toISOString();
-            base.previousInstanceId = campaign.whatsappInstanceId ?? null;
-          });
-          appendHistoryEntry(
-            buildCampaignHistoryEntry('instance-reassigned', actorId, {
-              from: campaign.whatsappInstanceId ?? null,
-              to: nextInstance.id,
-            })
-          );
-        } else {
-          const timestamp = new Date().toISOString();
-          updates.whatsappInstance = { disconnect: true };
-          instanceReassigned = true;
-          updateMetadata((base) => {
-            base.reassignedAt = timestamp;
-            base.previousInstanceId = campaign.whatsappInstanceId ?? null;
-            base.unlinkedAt = timestamp;
-          });
-          appendHistoryEntry(
-            buildCampaignHistoryEntry('instance-reassigned', actorId, {
-              from: campaign.whatsappInstanceId ?? null,
-              to: null,
-              disconnect: true,
-            })
-          );
-        }
-      }
-    }
-
-    if (metadataDirty) {
-      updates.metadata = metadataAccumulator as Prisma.JsonObject;
-    }
-
-    if (!updates.status && !updates.metadata && !instanceReassigned) {
-      const data = await buildCampaignResponse(campaign);
-      res.json({ success: true, data });
-      return;
-    }
-
-    const updated = await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: updates,
-      include: {
-        whatsappInstance: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    logger.info('Campaign updated', {
-      tenantId: updated.tenantId,
-      campaignId: campaign.id,
-      status: updated.status,
-      instanceId: updated.whatsappInstanceId,
-      statusChanged: Boolean(updates.status && rawStatus !== currentStatus),
-      instanceReassigned,
-    });
-
-    const data = await buildCampaignResponse(updated as CampaignWithInstance);
-    res.json({
-      success: true,
-      data,
-    });
   })
 );
 
 router.delete(
   '/:id',
-  param('id').isString().trim().isLength({ min: 1 }),
+  deleteCampaignValidators,
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = resolveRequestTenantId(req);
+    const tenantId = resolveTenantId(req);
     const campaignId = readCampaignIdParam(req);
     if (!campaignId) {
       res.status(400).json({
@@ -1749,98 +332,41 @@ router.delete(
       });
       return;
     }
-    const actorId = req.user?.id ?? 'system';
 
-    const campaign = await prisma.campaign.findFirst({
-      where: {
-        id: campaignId,
+    try {
+      const data = await deleteCampaign({
+        campaignId,
         tenantId,
-      },
-      include: {
-        whatsappInstance: {
-          select: {
-            id: true,
-            name: true,
-          },
+        actorId: req.user?.id ?? 'system',
+      });
+
+      res.json({ success: true, data });
+    } catch (error) {
+      if (handleCampaignError(res, error)) {
+        return;
+      }
+
+      const mapped = mapPrismaError(error, {
+        connectivity: {
+          code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+          message: 'Storage de campanhas indisponível no momento.',
+          status: 503,
         },
-      },
-    });
+      });
 
-    if (!campaign) {
-      respondNotFound(res);
-      return;
-    }
-
-    const currentStatus = normalizeStatus(campaign.status) ?? 'draft';
-    const timestamp = new Date().toISOString();
-    let metadataAccumulator: CampaignMetadata = readMetadata(campaign.metadata as CampaignMetadata);
-
-    const updateMetadata = (mutator: (current: Record<string, unknown>) => void) => {
-      const base =
-        metadataAccumulator && typeof metadataAccumulator === 'object' && !Array.isArray(metadataAccumulator)
-          ? { ...(metadataAccumulator as Record<string, unknown>) }
-          : {};
-      mutator(base);
-      metadataAccumulator = base;
-    };
-
-    const appendHistoryEntry = (entry: ReturnType<typeof buildCampaignHistoryEntry>) => {
-      metadataAccumulator = appendCampaignHistory(metadataAccumulator, entry);
-    };
-
-    updateMetadata((base) => {
-      base.deletedAt = timestamp;
-      base.deletedBy = actorId;
-    });
-
-    if (currentStatus !== 'ended') {
-      appendHistoryEntry(
-        buildCampaignHistoryEntry('status-changed', actorId, {
-          from: currentStatus,
-          to: 'ended',
-        })
-      );
-      appendHistoryEntry(
-        buildCampaignHistoryEntry('status-ended', actorId, {
-          endedAt: timestamp,
-        })
-      );
-    }
-
-    appendHistoryEntry(
-      buildCampaignHistoryEntry('deleted', actorId, {
-        previousStatus: currentStatus,
-      })
-    );
-
-    const updated = (await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: {
-        status: 'ended',
-        whatsappInstanceId: null,
-        metadata: metadataAccumulator as Prisma.JsonObject,
-      },
-      include: {
-        whatsappInstance: {
-          select: {
-            id: true,
-            name: true,
+      if (mapped) {
+        res.status(mapped.status).json({
+          success: false,
+          error: {
+            code: mapped.code,
+            message: mapped.message,
           },
-        },
-      },
-    })) as CampaignWithInstance;
+        });
+        return;
+      }
 
-    logger.info('Campaign soft-deleted', {
-      tenantId,
-      campaignId: campaign.id,
-      previousStatus: currentStatus,
-    });
-
-    const data = await buildCampaignResponse(updated);
-    res.json({
-      success: true,
-      data,
-    });
+      throw error;
+    }
   })
 );
 

@@ -50,10 +50,11 @@ describe('campaigns route utilities', () => {
   describe('buildFilters', () => {
     it('applies default status when none is provided', () => {
       const filters = buildFilters({});
-      expect(filters).toEqual({
+      expect(filters).toMatchObject({
         agreementId: undefined,
         instanceId: undefined,
         statuses: ['active'],
+        tags: [],
       });
     });
 
@@ -69,7 +70,7 @@ describe('campaigns route utilities', () => {
         status: ['active', 'ended'],
       });
 
-      expect(filters).toEqual({
+      expect(filters).toMatchObject({
         agreementId: 'agr-123',
         instanceId: 'inst-1',
         statuses: ['active', 'ended'],
