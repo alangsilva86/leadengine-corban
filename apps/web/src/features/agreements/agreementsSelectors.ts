@@ -19,7 +19,7 @@ const PRODUCT_LABEL_MAP: Record<string, string> = {
   payroll_portability: 'Portabilidade de salário',
 };
 
-const normalizeString = (value: unknown): string => {
+export const normalizeString = (value: unknown): string => {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : '';

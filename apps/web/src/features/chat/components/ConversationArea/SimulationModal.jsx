@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import useConvenioCatalog from '@/features/agreements/useConvenioCatalog.ts';
-import { findActiveWindow, getActiveRates } from '@/features/agreements/agreementsSelectors.ts';
+import { findActiveWindow, getActiveRates, normalizeString } from '@/features/agreements/agreementsSelectors.ts';
 import { simulateConvenioDeal, formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 import {
   buildProposalSnapshot,
