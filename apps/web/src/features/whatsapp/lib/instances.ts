@@ -1,3 +1,4 @@
+import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts';
 import { extractQrPayload } from '../utils/qr.js';
 
 export const looksLikeWhatsAppJid = (value: unknown): value is string =>
@@ -401,13 +402,14 @@ export const parseInstancesPayload = (payload: unknown): ParsedInstancesPayload 
   );
 
   if (!qr && (metaQrAvailable !== undefined || metaQrReason)) {
-    qr = { available: metaQrAvailable ?? false, reason: metaQrReason ?? null };
-  } else if (qr && typeof qr === 'object') {
-    if (metaQrAvailable !== undefined && typeof qr.available !== 'boolean') {
-      qr.available = metaQrAvailable;
-    }
-    if (metaQrReason && !qr.reason) {
-      qr.reason = metaQrReason;
+    qr = normalizeQrPayloadContract({
+      available: metaQrAvailable ?? false,
+      reason: metaQrReason ?? null,
+    });
+  } else if (qr && metaQrReason && !qr.reason) {
+    const normalizedMeta = normalizeQrPayloadContract({ reason: metaQrReason });
+    if (normalizedMeta.reason) {
+      qr = { ...qr, reason: normalizedMeta.reason };
     }
   }
 
