@@ -52,7 +52,13 @@ export const normalizeString = (value: unknown): string | null => {
 
 export const normalizeQueryValue = (value: unknown): string | undefined => {
   if (Array.isArray(value)) {
-    return normalizeQueryValue(value[0]);
+    for (const entry of value) {
+      const normalizedEntry = normalizeQueryValue(entry);
+      if (normalizedEntry) {
+        return normalizedEntry;
+      }
+    }
+    return undefined;
   }
 
   const normalized = normalizeString(value);

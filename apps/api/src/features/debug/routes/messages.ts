@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { asyncHandler } from '../../../middleware/error-handler';
 import { prisma } from '../../../lib/prisma';
 import { mapPassthroughMessage } from '@ticketz/storage';
+import { normalizeQueryValue } from '../../../utils/request-parsers';
 import {
   isWhatsAppDebugStreamEnabled,
   registerWhatsAppDebugSink,
@@ -23,19 +24,6 @@ export const normalizeJsonRecord = (value: unknown): Record<string, unknown> => 
 };
 
 const router: Router = Router();
-
-export const normalizeQueryValue = (value: unknown): string | null => {
-  if (Array.isArray(value)) {
-    return normalizeQueryValue(value[0]);
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
 
 const safeStringify = (value: unknown): string => {
   try {
@@ -159,8 +147,8 @@ router.get(
           ? 'INBOUND'
           : null;
 
-    const chatId = normalizeQueryValue(req.query.chatId);
-    const tenantId = normalizeQueryValue(req.query.tenantId);
+    const chatId = normalizeQueryValue(req.query.chatId) ?? null;
+    const tenantId = normalizeQueryValue(req.query.tenantId) ?? null;
 
     const where = buildWhereClause(tenantId, { chatId, direction: directionFilter });
 
@@ -183,8 +171,8 @@ router.get(
 router.get(
   '/_debug/message-by-provider',
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = normalizeQueryValue(req.query.tenantId);
-    const chatId = normalizeQueryValue(req.query.chatId);
+    const tenantId = normalizeQueryValue(req.query.tenantId) ?? null;
+    const chatId = normalizeQueryValue(req.query.chatId) ?? null;
     const providerMessageId =
       normalizeQueryValue(req.query.providerMessageId) ??
       normalizeQueryValue(req.query.messageId) ??
@@ -268,9 +256,9 @@ router.get(
     let limit = Number.isFinite(limitCandidate) && limitCandidate > 0 ? Math.floor(limitCandidate) : 50;
     limit = Math.min(Math.max(limit, 1), 200);
 
-    const chatIdFilter = normalizeQueryValue(req.query.chatId);
+    const chatIdFilter = normalizeQueryValue(req.query.chatId) ?? null;
     const normalizedDirection = normalizeQueryValue(req.query.direction);
-    const tenantIdFilter = normalizeQueryValue(req.query.tenantId);
+    const tenantIdFilter = normalizeQueryValue(req.query.tenantId) ?? null;
     const directionFilter =
       normalizedDirection && normalizedDirection.toLowerCase() === 'outbound'
         ? 'outbound'
