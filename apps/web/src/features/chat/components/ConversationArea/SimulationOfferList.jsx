@@ -1,16 +1,43 @@
 import { Badge } from '@/components/ui/badge.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 import { formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 
-const SimulationOfferList = ({ offers, currentParameters, fieldsDisabled, errors, onToggleOfferSelection }) => (
+const SimulationOfferList = ({
+  offers,
+  currentParameters,
+  fieldsDisabled,
+  errors,
+  onToggleOfferSelection,
+  tableOptions = [],
+  tableFilter = '',
+  onTableFilterChange = () => {},
+}) => (
   <div className="space-y-4">
-    <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <h3 className="text-sm font-semibold text-foreground">Condições calculadas</h3>
-      {currentParameters?.windowLabel ? (
-        <Badge variant="outline" className="text-xs">
-          Janela {currentParameters.windowLabel}
-        </Badge>
-      ) : null}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        {currentParameters?.windowLabel ? (
+          <Badge variant="outline" className="text-xs">
+            Janela {currentParameters.windowLabel}
+          </Badge>
+        ) : null}
+        {tableOptions.length > 0 ? (
+          <Select value={tableFilter} onValueChange={onTableFilterChange} disabled={fieldsDisabled}>
+            <SelectTrigger className="w-full min-w-[200px] sm:w-48">
+              <SelectValue placeholder="Todas as tabelas" />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="">Todas as tabelas</SelectItem>
+              {tableOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
     </div>
     {offers.length === 0 ? (
       <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
