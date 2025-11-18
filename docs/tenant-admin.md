@@ -39,3 +39,19 @@ Todos os endpoints ficam sob `/api/tenant-admin/tenants` e exigem:
 - O middleware `requirePlatformAdmin` é propositalmente simples e documentado:
   será substituído por um provedor dedicado assim que o painel de operadores
   existir.
+
+## Tenant Admin UI
+
+- A interface inicial está disponível no app web em `/admin/tenants`, acessível
+  apenas para usuários autenticados que também enviem o header administrativo.
+- Configure `VITE_PLATFORM_ADMIN_TOKEN` no front-end (ou use o default `true` em
+  desenvolvimento) para que o cliente HTTP inclua automaticamente os headers
+  `x-platform-admin-token` e `x-platform-admin`.
+- Rotas expostas:
+  - `/admin/tenants`: lista paginada com busca, filtros e toggle de status.
+  - `/admin/tenants/new`: formulário para criar tenants (opcionalmente já
+    suspensos; o toggle chama o endpoint de `toggle-active` após a criação).
+  - `/admin/tenants/:tenantId`: edição de nome/slug/settings e controle de
+    status diretamente no formulário.
+- A UI já reserva a seção “Plano & Recursos (em breve)” para exibir, no futuro,
+  o snapshot de planos/features sem exigir alterações estruturais.
