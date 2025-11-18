@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 import { errorHandler } from './middleware/error-handler';
 import { requestLogger } from './middleware/request-logger';
 import { authMiddleware, requireTenant } from './middleware/auth';
+import { requirePlatformAdmin } from './middleware/platform-admin';
 import { ticketsRouter } from './routes/tickets';
 import { leadsRouter } from './routes/leads';
 import { contactsRouter } from './routes/contacts';
@@ -50,6 +51,7 @@ import { agreementsProvidersRouter } from './routes/agreements.providers';
 import { tenantsRouter } from './routes/tenants';
 import { usersRouter } from './routes/users';
 import { initializeBrokerCircuitBreaker, getBrokerCircuitBreakerMetrics } from './services/whatsapp-broker-client-protected';
+import { tenantAdminRouter } from './modules/tenant-admin/tenants.routes';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -433,6 +435,7 @@ app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', authMiddleware, requireTenant, leadEngineRouter);
 app.use('/api/ai', authMiddleware, requireTenant, aiRouter);
+app.use('/api/tenant-admin', authMiddleware, requirePlatformAdmin, tenantAdminRouter);
 app.use('/api/crm', authMiddleware, crmRouter);
 app.use('/api/debug/wa', (req, res, next) => {
   if (!isWhatsappDebugToolsEnabled()) {
