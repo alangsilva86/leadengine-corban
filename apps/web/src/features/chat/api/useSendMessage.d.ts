@@ -1,4 +1,5 @@
 import type { UseMutationResult } from '@tanstack/react-query';
+import type { OutboundMessageResponse } from '@ticketz/contracts';
 
 export type ChatTemplateMetadata = {
   id: string;
@@ -43,11 +44,11 @@ export interface SendMessageMutationVariables {
   mediaFileName?: string | null;
   caption?: string | null;
   quotedMessageId?: string | null;
-  metadata?: ChatMessageMetadata;
+  metadata?: ChatMessageMetadata | null;
   instanceId?: string | null;
 }
 
-export type SendMessageMutationResult = any;
+export type SendMessageMutationResult = OutboundMessageResponse | null;
 
 declare function useSendMessage(args?: {
   fallbackTicketId?: string | null;

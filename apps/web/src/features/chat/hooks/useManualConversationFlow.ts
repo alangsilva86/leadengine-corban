@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import type { OutboundMessageResponse } from '@ticketz/contracts';
 
 import { useManualConversationLauncher } from './useManualConversationLauncher.js';
 
@@ -23,6 +24,8 @@ interface ManualConversationResult {
   ticket?: { id?: string | null } | null;
   ticketId?: string | null;
   message?: { ticketId?: string | null } | null;
+  contact?: { id?: string | null } | null;
+  outboundResponse?: OutboundMessageResponse | null;
 }
 
 interface UseManualConversationFlowInput {

@@ -6,9 +6,11 @@ import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiPostMock = vi.fn();
+const apiGetMock = vi.fn();
 
 vi.mock('@/lib/api.js', () => ({
   apiPost: (...args) => apiPostMock(...args),
+  apiGet: (...args) => apiGetMock(...args),
 }));
 
 const invalidateQueriesMock = vi.fn();
@@ -37,16 +39,23 @@ describe('useManualConversationLauncher', () => {
 
   afterEach(() => {
     apiPostMock.mockReset();
+    apiGetMock.mockReset();
     invalidateQueriesMock.mockReset();
   });
 
   it('envia o payload formatado e retorna o ticket criado', async () => {
-    apiPostMock.mockResolvedValue({
+    apiGetMock.mockResolvedValue({
       data: {
-        ticket: { id: 'ticket-123' },
-        ticketId: 'ticket-123',
-        message: { id: 'message-abc', ticketId: 'ticket-123' },
+        items: [{ id: 'contact-123', phone: '+5511988887766' }],
       },
+    });
+    apiPostMock.mockResolvedValue({
+      queued: true,
+      ticketId: 'ticket-123',
+      messageId: 'message-abc',
+      status: 'PENDING',
+      externalId: null,
+      error: null,
     });
 
     const { result } = renderHook(() => useManualConversationLauncher(), {
@@ -61,15 +70,19 @@ describe('useManualConversationLauncher', () => {
       });
     });
 
-    expect(apiPostMock).toHaveBeenCalledWith('/api/tickets/messages', {
-      chatId: '11988887766',
-      iid: 'instance-001',
-      text: 'Olá',
-      metadata: {
-        origin: 'manual-conversation',
-        phone: '11988887766',
-      },
-    });
+    expect(apiGetMock).toHaveBeenCalledWith(expect.stringContaining('/api/contacts?'));
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/contacts/contact-123/messages',
+      expect.objectContaining({
+        payload: { type: 'text', text: 'Olá' },
+        instanceId: 'instance-001',
+        to: '+11988887766',
+        idempotencyKey: expect.any(String),
+      }),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
+      })
+    );
 
     await waitFor(() => {
       expect(result.current.data?.ticketId).toBe('ticket-123');
@@ -78,6 +91,51 @@ describe('useManualConversationLauncher', () => {
       queryKey: ['chat', 'messages', 'ticket-123'],
     });
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chat', 'tickets'] });
+  });
+
+  it('cria o contato quando necessário antes de enviar', async () => {
+    apiGetMock.mockResolvedValue({ data: { items: [] } });
+    apiPostMock
+      .mockResolvedValueOnce({
+        data: { id: 'contact-new', phone: '+5531988887777' },
+      })
+      .mockResolvedValueOnce({
+        queued: true,
+        ticketId: 'ticket-999',
+        messageId: 'message-new',
+        status: 'PENDING',
+        externalId: null,
+        error: null,
+      });
+
+    const { result } = renderHook(() => useManualConversationLauncher(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.launch({
+        phone: '+55 (31) 98888-7777',
+        message: 'Iniciando',
+        instanceId: 'instance-123',
+      });
+    });
+
+    expect(apiPostMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/contacts',
+      { name: '+5531988887777', phone: '+5531988887777' }
+    );
+    expect(apiPostMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/contacts/contact-new/messages',
+      expect.objectContaining({
+        payload: { type: 'text', text: 'Iniciando' },
+        instanceId: 'instance-123',
+        to: '+5531988887777',
+        idempotencyKey: expect.any(String),
+      }),
+      expect.any(Object)
+    );
   });
 
   it('falha ao enviar quando faltam dados obrigatórios', async () => {
@@ -98,3 +156,4 @@ describe('useManualConversationLauncher', () => {
     ).rejects.toThrow('Selecione uma instância conectada.');
   });
 });
+
