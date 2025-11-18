@@ -464,7 +464,7 @@ app.use('/api/tickets', authMiddleware, requireTenant, ticketsRouter);
 app.use('/api/leads', authMiddleware, requireTenant, leadsRouter);
 app.use('/api/contacts', authMiddleware, contactsRouter);
 app.use('/api/tasks', authMiddleware, contactTasksRouter);
-app.use('/api', authMiddleware, ticketMessagesRouter);
+app.use('/api', authMiddleware, requireTenant, ticketMessagesRouter);
 app.use('/api', authMiddleware, contactMessagesRouter);
 app.use('/api', authMiddleware, whatsappMessagesRouter);
 app.use('/api', authMiddleware, whatsappUploadsRouter);

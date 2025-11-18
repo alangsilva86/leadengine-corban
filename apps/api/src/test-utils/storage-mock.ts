@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DomainError } from '@ticketz/core';
 import type {
   CreateTicketDTO,
   Message,
@@ -21,6 +22,54 @@ import type {
   UpdateSalesDealDTO,
   UpdateTicketDTO,
 } from '../types/tickets';
+
+export class TenantAccessError extends DomainError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'FORBIDDEN', details);
+    this.name = 'TenantAccessError';
+  }
+}
+
+export const normalizeTenantId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+export const ensureTenantFromUser = (
+  user: { id?: string | null; tenantId?: string | null } | null | undefined,
+  details?: Record<string, unknown>
+): string => {
+  const tenantId = normalizeTenantId(user?.tenantId);
+
+  if (!tenantId) {
+    throw new TenantAccessError('Tenant obrigatório para esta operação.', {
+      ...(details ?? {}),
+      userId: user?.id ?? null,
+    });
+  }
+
+  return tenantId;
+};
+
+export const assertTenantConsistency = (
+  tenantId: string,
+  requestedTenantId: unknown,
+  details?: Record<string, unknown>
+): void => {
+  const normalizedRequested = normalizeTenantId(requestedTenantId);
+
+  if (normalizedRequested && normalizedRequested !== tenantId) {
+    throw new TenantAccessError('Tentativa de acesso a dados de outro tenant.', {
+      ...(details ?? {}),
+      tenantId,
+      requestedTenantId: normalizedRequested,
+    });
+  }
+};
 
 export const STORAGE_VERSION = 'test';
 
