@@ -260,7 +260,8 @@ const SimulationModal = ({
               };
             } catch (error) {
               issues.push({
-                type: 'error',
+                type: 'term_calculation',
+                severity: 'warning',
                 message: error instanceof Error ? error.message : 'Falha ao calcular condição.',
                 context: `${bankName} • ${term} meses`,
               });
@@ -747,22 +748,24 @@ const SimulationModal = ({
     await onSubmit?.(payload);
   };
 
-  const calculationIssues = useMemo(() => {
-    const issues = [];
+  const { blockingIssues, warningIssues } = useMemo(() => {
+    const blocking = [];
+    const warnings = [];
+
     if (!selectedConvenio) {
-      issues.push('Selecione um convênio para carregar as tabelas.');
+      blocking.push('Selecione um convênio para carregar as tabelas.');
     }
     if (selectedConvenio && !activeWindow) {
-      issues.push('Nenhuma janela vigente para a data escolhida. Atualize o calendário antes de simular.');
+      blocking.push('Nenhuma janela vigente para a data escolhida. Atualize o calendário antes de simular.');
     }
     if (selectedConvenio && productId && activeTaxes.length === 0) {
-      issues.push('Nenhuma taxa válida para este produto nesta data. Confira as configurações.');
+      blocking.push('Nenhuma taxa válida para este produto nesta data. Confira as configurações.');
     }
     if (selectedTermsSorted.length === 0) {
-      issues.push('Escolha ao menos um prazo para calcular as condições.');
+      blocking.push('Escolha ao menos um prazo para calcular as condições.');
     }
     if (baseValueNumber === null) {
-      issues.push(
+      blocking.push(
         calculationMode === 'margin'
           ? 'Informe a margem disponível para gerar as condições.'
           : 'Informe o valor líquido desejado para calcular a margem.',
@@ -770,13 +773,27 @@ const SimulationModal = ({
     }
     if (calculationResult.issues.length > 0) {
       calculationResult.issues.forEach((issue) => {
-        issues.push(issue.context ? `${issue.context}: ${issue.message}` : issue.message);
+        const formatted = issue.context ? `${issue.context}: ${issue.message}` : issue.message;
+        if (issue.severity === 'warning') {
+          warnings.push(formatted);
+        } else {
+          blocking.push(formatted);
+        }
       });
     }
-    return issues;
-  }, [activeTaxes.length, activeWindow, baseValueNumber, calculationMode, calculationResult.issues, productId, selectedConvenio, selectedTermsSorted.length]);
+    return { blocking, warnings };
+  }, [
+    activeTaxes.length,
+    activeWindow,
+    baseValueNumber,
+    calculationMode,
+    calculationResult.issues,
+    productId,
+    selectedConvenio,
+    selectedTermsSorted.length,
+  ]);
 
-  const hasBlockingIssues = calculationIssues.length > 0 || !ensureSelectionHasItems(selection);
+  const hasBlockingIssues = blockingIssues.length > 0 || !ensureSelectionHasItems(selection);
   const submitDisabled = fieldsDisabled || isSubmitting || hasBlockingIssues;
 
   return (
@@ -815,7 +832,8 @@ const SimulationModal = ({
           customTermInput={customTermInput}
           onCustomTermInputChange={setCustomTermInput}
           onAddCustomTerm={handleAddCustomTerm}
-          calculationIssues={calculationIssues}
+          blockingIssues={blockingIssues}
+          warningIssues={warningIssues}
           stage={stage}
           stageOptions={stageOptions}
           onStageChange={setStage}
