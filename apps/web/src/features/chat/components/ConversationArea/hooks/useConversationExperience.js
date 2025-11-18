@@ -391,6 +391,7 @@ export const useConversationExperience = ({
   const handleSubmitSimulation = useCallback(
     async (input) => {
       if (!createSimulation || !ticketId) {
+        toast.error('Selecione um ticket para registrar a simulação.');
         return;
       }
 
@@ -412,6 +413,7 @@ export const useConversationExperience = ({
   const handleSubmitProposal = useCallback(
     async (input) => {
       if (!createProposal || !ticketId) {
+        toast.error('Selecione um ticket para registrar a proposta.');
         return;
       }
 
@@ -434,6 +436,7 @@ export const useConversationExperience = ({
   const handleSubmitDeal = useCallback(
     async (input) => {
       if (!createDeal || !ticketId) {
+        toast.error('Selecione um ticket para registrar o negócio.');
         return;
       }
 

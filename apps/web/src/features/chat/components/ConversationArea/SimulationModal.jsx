@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
 import {
   Dialog,
@@ -112,6 +113,28 @@ const SimulationModal = ({
     setProductId('');
     setProductLabel('');
   };
+
+  // Auto-seleciona convênio/produto únicos ou default válido
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (!convenioId && agreementOptions.length === 1) {
+      handleConvenioChange(agreementOptions[0].value);
+    }
+  }, [agreementOptions, convenioId, open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const options = productsByAgreement.get(convenioId) ?? [];
+    if (!productId && options.length === 1) {
+      handleProductChange(options[0].value);
+    }
+  }, [convenioId, open, productId, productsByAgreement]);
 
   const handleProductChange = (value) => {
     setProductId(value);
@@ -673,6 +696,7 @@ const SimulationModal = ({
     }
 
     if (!validateForm()) {
+      toast.error('Preencha os campos obrigatórios para registrar a simulação.');
       return;
     }
 
@@ -751,6 +775,9 @@ const SimulationModal = ({
     }
     return issues;
   }, [activeTaxes.length, activeWindow, baseValueNumber, calculationMode, calculationResult.issues, productId, selectedConvenio, selectedTermsSorted.length]);
+
+  const hasBlockingIssues = calculationIssues.length > 0 || !ensureSelectionHasItems(selection);
+  const submitDisabled = fieldsDisabled || isSubmitting || hasBlockingIssues;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -908,7 +935,7 @@ const SimulationModal = ({
           <p className="text-sm text-muted-foreground">
             Revisado automaticamente com base nas tabelas do convênio. Ajustes manuais ficam registrados no payload.
           </p>
-          <Button type="button" onClick={handleSubmit} disabled={isSubmitting || fieldsDisabled}>
+          <Button type="button" onClick={handleSubmit} disabled={submitDisabled}>
             {isProposalMode ? 'Gerar proposta' : 'Registrar simulação'}
           </Button>
         </DialogFooter>
