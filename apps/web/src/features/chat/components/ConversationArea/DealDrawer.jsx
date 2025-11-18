@@ -26,7 +26,12 @@ import {
 } from './utils/salesSnapshot.js';
 import QueueAlerts from './QueueAlerts.jsx';
 import { QUEUE_ALERTS_ACTIONS, queueAlertsReducer } from './utils/simulationReducers.js';
-import { NO_STAGE_VALUE, normalizeStageState, resolveStageValue } from '@/features/chat/utils/simulation.js';
+import {
+  NO_STAGE_VALUE,
+  normalizeStageState,
+  parseMetadataText,
+  resolveStageValue,
+} from '@/features/chat/utils/simulation.js';
 
 const METADATA_PLACEHOLDER = '{\n  "origin": "crm"\n}';
 
@@ -185,15 +190,9 @@ const DealDrawer = ({
       nextErrors.closedAt = 'Informe a data de fechamento.';
     }
 
-    if (metadataText.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(metadataText);
-        if (!parsed || typeof parsed !== 'object') {
-          nextErrors.metadata = 'Metadata deve ser um JSON válido.';
-        }
-      } catch {
-        nextErrors.metadata = 'Metadata deve ser um JSON válido.';
-      }
+    const { error: metadataError } = parseMetadataText(metadataText);
+    if (metadataError) {
+      nextErrors.metadata = metadataError;
     }
 
     setErrors(nextErrors);
@@ -209,14 +208,7 @@ const DealDrawer = ({
       return;
     }
 
-    let metadata = null;
-    if (metadataText.trim().length > 0) {
-      try {
-        metadata = JSON.parse(metadataText);
-      } catch {
-        metadata = null;
-      }
-    }
+    const { parsed: metadata } = parseMetadataText(metadataText);
 
     const snapshot = buildDealSnapshot({
       proposal: proposalContext ?? {

@@ -49,3 +49,27 @@ export const ensureUniqueTerms = (terms) =>
   Array.from(new Set((Array.isArray(terms) ? terms : []).filter((term) => Number.isFinite(term)))).sort(
     (a, b) => a - b,
   );
+
+const METADATA_ERROR_MESSAGE = 'Metadata deve ser um JSON válido.';
+
+export const parseMetadataText = (metadataText) => {
+  if (typeof metadataText !== 'string') {
+    return { parsed: null, error: METADATA_ERROR_MESSAGE };
+  }
+
+  const trimmed = metadataText.trim();
+  if (trimmed.length === 0) {
+    return { parsed: null, error: null };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object') {
+      return { parsed: null, error: METADATA_ERROR_MESSAGE };
+    }
+    return { parsed, error: null };
+  } catch {
+    return { parsed: null, error: METADATA_ERROR_MESSAGE };
+  }
+};
+

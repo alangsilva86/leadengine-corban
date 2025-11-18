@@ -34,6 +34,7 @@ import {
   formatJson,
   normalizeStageState,
   parseDateInput,
+  parseMetadataText,
   resolveStageValue,
 } from '@/features/chat/utils/simulation.js';
 import { QUEUE_ALERTS_ACTIONS, queueAlertsReducer } from './utils/simulationReducers.js';
@@ -489,19 +490,10 @@ const SimulationModal = ({
         : 'Escolha ao menos uma condição para registrar a simulação.';
     }
 
-    const metadataErrors = {};
-    if (metadataText.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(metadataText);
-        if (!parsed || typeof parsed !== 'object') {
-          metadataErrors.metadata = 'Metadata deve ser um JSON válido.';
-        }
-      } catch {
-        metadataErrors.metadata = 'Metadata deve ser um JSON válido.';
-      }
+    const { error: metadataError } = parseMetadataText(metadataText);
+    if (metadataError) {
+      nextErrors.metadata = metadataError;
     }
-
-    Object.assign(nextErrors, metadataErrors);
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -517,14 +509,7 @@ const SimulationModal = ({
       return;
     }
 
-    let metadata = null;
-    if (metadataText.trim().length > 0) {
-      try {
-        metadata = JSON.parse(metadataText);
-      } catch {
-        // já validado anteriormente
-      }
-    }
+    const { parsed: metadata } = parseMetadataText(metadataText);
 
     const trimmedConvenioId = normalizeString(convenioId);
     const trimmedProductId = normalizeString(productId);
@@ -597,7 +582,7 @@ const SimulationModal = ({
         }
       });
     }
-    return { blocking, warnings };
+    return { blockingIssues: blocking, warningIssues: warnings };
   }, [
     activeTaxes.length,
     activeWindow,
