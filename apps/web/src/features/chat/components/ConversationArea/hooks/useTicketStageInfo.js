@@ -57,6 +57,12 @@ const useTicketStageInfo = (ticket) => {
       return { id: 'sales-deal', label: 'Registrar negócio' };
     }
 
+    const shouldForceSimulationAction = stageKey === 'PROPOSTA' && !salesState.hasProposal;
+
+    if (shouldForceSimulationAction) {
+      return { id: 'sales-simulate', label: 'Simular proposta' };
+    }
+
     if (salesState.hasSimulation) {
       return { id: 'sales-proposal', label: 'Gerar proposta' };
     }

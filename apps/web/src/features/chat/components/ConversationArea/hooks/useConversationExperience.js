@@ -211,6 +211,8 @@ export const useConversationExperience = ({
   const canOpenProposal = hasSimulation && !hasDeal;
   const canOpenDeal = hasProposal && !hasDeal;
   const contactName = ticket?.contact?.name ?? ticket?.subject ?? '';
+  const shouldForceSimulationAction = ticketStageKey === 'PROPOSTA' && !hasProposal;
+
   const salesJourney = useMemo(
     () => ({
       stageKey: ticketStageKey,
@@ -219,9 +221,11 @@ export const useConversationExperience = ({
         ? { id: 'sales-done', label: 'Contrato concluído', disabled: true }
         : hasProposal
           ? { id: 'sales-deal', label: 'Registrar negócio' }
-          : hasSimulation
-            ? { id: 'sales-proposal', label: 'Gerar proposta' }
-            : { id: 'sales-simulate', label: 'Simular proposta' },
+          : shouldForceSimulationAction
+            ? { id: 'sales-simulate', label: 'Simular proposta' }
+            : hasSimulation
+              ? { id: 'sales-proposal', label: 'Gerar proposta' }
+              : { id: 'sales-simulate', label: 'Simular proposta' },
       actions: {
         canSimulate: canOpenSimulation,
         canPropose: canOpenProposal,
@@ -240,6 +244,7 @@ export const useConversationExperience = ({
       hasDeal,
       hasProposal,
       hasSimulation,
+      shouldForceSimulationAction,
       lastDealEvent,
       lastProposalEvent,
       lastSimulationEvent,
