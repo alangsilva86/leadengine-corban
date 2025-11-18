@@ -443,7 +443,8 @@ app.use('/api/integrations', integrationWebhooksRouter);
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/lead-engine', authMiddleware, requireTenant, leadEngineRouter);
 app.use('/api/ai', authMiddleware, requireTenant, aiRouter);
-app.use('/api/tenant-admin', authMiddleware, requirePlatformAdmin, tenantAdminRouter);
+// Tenant admin endpoints are namespaced under /api/tenant-admin/tenants
+app.use('/api/tenant-admin/tenants', authMiddleware, requirePlatformAdmin, tenantAdminRouter);
 app.use('/api/crm', authMiddleware, crmRouter);
 app.use('/api/debug/wa', (req, res, next) => {
   if (!isWhatsappDebugToolsEnabled()) {
