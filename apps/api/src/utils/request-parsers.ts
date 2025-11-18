@@ -50,6 +50,15 @@ export const normalizeString = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+export const normalizeQueryValue = (value: unknown): string | undefined => {
+  if (Array.isArray(value)) {
+    return normalizeQueryValue(value[0]);
+  }
+
+  const normalized = normalizeString(value);
+  return normalized ?? undefined;
+};
+
 export const safeTruncate = (value: unknown, limit = 2000): string => {
   if (typeof value === 'string') {
     return value.length > limit ? value.slice(0, limit) : value;
