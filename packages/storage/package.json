@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma generate",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "build": "tsup",
     "build:clean": "tsup --clean"
