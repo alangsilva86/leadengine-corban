@@ -4,6 +4,7 @@ import { Request, Response } from 'express';
 import { param } from 'express-validator';
 import { Buffer } from 'node:buffer';
 import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
+import { normalizeQrPayload, type NormalizedQrPayload } from '@ticketz/wa-contracts';
 import { z } from 'zod';
 import {
   whatsappBrokerClient,
@@ -1891,73 +1892,11 @@ export const serializeStoredInstance = (
   };
 };
 
-type NormalizedQr = {
-  qr: string | null;
-  qrCode: string | null;
-  expiresAt: string | null;
-  qrExpiresAt: string | null;
-  available: boolean;
-  reason: 'UNAVAILABLE' | 'EXPIRED' | null;
-};
+type NormalizedQr = NormalizedQrPayload;
 
-export const normalizeQr = (value: unknown): NormalizedQr => {
-  if (!value || typeof value !== 'object') {
-    return {
-      qr: null,
-      qrCode: null,
-      expiresAt: null,
-      qrExpiresAt: null,
-      available: false,
-      reason: 'UNAVAILABLE',
-    };
-  }
+export const normalizeQr = (value: unknown): NormalizedQr => normalizeQrPayload(value);
 
-  const source = value as Record<string, unknown>;
-  const qrSource =
-    typeof source.qr === 'object' && source.qr !== null
-      ? (source.qr as Record<string, unknown>)
-      : {};
-
-  const qrCandidate = pickString(
-    typeof source.qr === 'string' ? source.qr : null,
-    qrSource.qr,
-    qrSource.qrCode,
-    qrSource.qr_code,
-    qrSource.code,
-    source.qrCode,
-    source.qr_code
-  );
-
-  const qrCodeCandidate = pickString(
-    source.qrCode,
-    source.qr_code,
-    qrSource.qrCode,
-    qrSource.qr_code,
-    qrSource.code,
-    typeof source.qr === 'string' ? source.qr : null
-  );
-
-  const qrExpiresAt =
-    pickString(source.qrExpiresAt, source.qr_expires_at, qrSource.expiresAt, qrSource.expires_at) ?? null;
-
-  const expiresAt =
-    pickString(source.expiresAt, source.expires_at, qrSource.expiresAt, qrSource.expires_at) ?? qrExpiresAt;
-
-  const available = Boolean((qrCandidate ?? qrCodeCandidate)?.trim());
-  const reason: NormalizedQr['reason'] =
-    available ? null : qrExpiresAt || expiresAt ? 'EXPIRED' : 'UNAVAILABLE';
-
-  return {
-    qr: qrCandidate,
-    qrCode: qrCodeCandidate ?? qrCandidate,
-    expiresAt,
-    qrExpiresAt,
-    available,
-    reason,
-  };
-};
-
-export const extractQrImageBuffer = (qr: ReturnType<typeof normalizeQr>): Buffer | null => {
+export const extractQrImageBuffer = (qr: NormalizedQr): Buffer | null => {
   const candidate = (qr.qrCode || qr.qr || '').trim();
   if (!candidate) {
     return null;
@@ -2284,7 +2223,7 @@ export type InstanceOperationContext = {
   serialized: ReturnType<typeof serializeStoredInstance>;
   instance: NormalizedInstance;
   status: ReturnType<typeof normalizeInstanceStatusResponse>;
-  qr: ReturnType<typeof normalizeQr>;
+  qr: NormalizedQr;
   instances: NormalizedInstance[];
 };
 
@@ -2336,7 +2275,7 @@ export const resolveInstanceOperationContext = async (
 type InstanceStatusResponsePayload = {
   connected: boolean;
   status: ReturnType<typeof normalizeInstanceStatusResponse>;
-  qr: ReturnType<typeof normalizeQr>;
+  qr: NormalizedQr;
   instance: NormalizedInstance;
   instances: NormalizedInstance[];
   brokerStatus: WhatsAppStatus | null;
@@ -2344,7 +2283,7 @@ type InstanceStatusResponsePayload = {
 
 export const buildInstanceStatusPayload = (
   context: InstanceOperationContext,
-  overrideQr?: ReturnType<typeof normalizeQr>
+  overrideQr?: NormalizedQr
 ): InstanceStatusResponsePayload => {
   const qr = overrideQr ?? context.qr;
   const status = {
@@ -2371,7 +2310,7 @@ export const fetchStatusWithBrokerQr = async (
   tenantId: string,
   stored: StoredInstance,
   options: { refresh?: boolean; fetchSnapshots?: boolean } = {}
-): Promise<{ context: InstanceOperationContext; qr: ReturnType<typeof normalizeQr> }> => {
+): Promise<{ context: InstanceOperationContext; qr: NormalizedQr }> => {
   const { refresh, fetchSnapshots } = options;
   const contextOptions: { refresh?: boolean; fetchSnapshots?: boolean } = {};
   if (typeof refresh === 'boolean') {

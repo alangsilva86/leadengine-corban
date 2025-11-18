@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { normalizeQrPayload } from './qr';
+export type { NormalizedQrPayload, NormalizedQrReason } from './qr';
+
 const metadataSchema = z.record(z.unknown());
 
 const baseSessionSchema = z.object({
@@ -178,8 +181,11 @@ export const v1 = {
   WhatsAppCanonicalErrorSchema,
   CANONICAL_ERRORS,
   resolveCanonicalError,
-  WhatsAppTransportError
+  WhatsAppTransportError,
+  normalizeQrPayload
 };
+
+export { normalizeQrPayload };
 
 export type {
   SendTextInput as SendTextInputV1,

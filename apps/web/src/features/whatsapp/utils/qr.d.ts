@@ -1,20 +1,17 @@
-export interface NormalizedQrPayload {
-  qr: string | null;
-  qrCode: string | null;
-  qrExpiresAt: string | null;
-  expiresAt: string | null;
-  available?: boolean;
-  reason?: string | null;
-}
+import type { NormalizedQrPayload } from '@ticketz/wa-contracts';
+
+export type { NormalizedQrPayload } from '@ticketz/wa-contracts';
 
 export interface QrImageMeta {
   code: string | null;
   immediate: string | null;
   needsGeneration: boolean;
   isBaileys: boolean;
-  available: boolean | undefined;
-  reason: string | null;
+  available: boolean;
+  reason: NormalizedQrPayload['reason'];
 }
+
+export declare function normalizeQrPayload(payload: unknown): NormalizedQrPayload;
 
 export declare function extractQrPayload(payload: unknown): NormalizedQrPayload | null;
 

@@ -45,7 +45,6 @@ import {
   buildInstanceStatusPayload,
   fetchStatusWithBrokerQr,
   normalizeInstanceStatusResponse,
-  normalizeQr,
   extractQrImageBuffer,
   disconnectStoredInstance,
   deleteStoredInstance,
