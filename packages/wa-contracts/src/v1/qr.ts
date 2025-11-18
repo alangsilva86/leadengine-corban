@@ -94,13 +94,12 @@ const mergeQrPayloads = (
       primary.qrExpiresAt ??
       secondary.qrExpiresAt ??
       null,
-    available:
-      typeof secondary.available === 'boolean'
-        ? secondary.available
-        : typeof primary.available === 'boolean'
-          ? primary.available
-          : undefined,
     reason: secondary.reason ?? primary.reason ?? null,
+    ...(typeof secondary.available === 'boolean'
+      ? { available: secondary.available }
+      : typeof primary.available === 'boolean'
+        ? { available: primary.available }
+        : {}),
   };
 };
 
@@ -168,8 +167,8 @@ const parseCandidate = (
       qrCode: qrCodeCandidate ?? directQr ?? null,
       qrExpiresAt: qrExpiresCandidate ?? null,
       expiresAt: expiresCandidate ?? qrExpiresCandidate ?? null,
-      available: availableCandidate,
-      reason: reasonCandidate,
+      ...(availableCandidate !== undefined ? { available: availableCandidate } : {}),
+      ...(reasonCandidate ? { reason: reasonCandidate } : {}),
     };
   }
 
