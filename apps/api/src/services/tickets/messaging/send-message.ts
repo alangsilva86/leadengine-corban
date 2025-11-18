@@ -6,7 +6,12 @@ import {
   findTicketById as storageFindTicketById,
   updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
-import { emitTicketEvent, emitTicketRealtimeEnvelope, buildMessageRealtimeEnvelope, buildTicketRealtimeEnvelope } from '../shared/realtime';
+import {
+  emitTicketEvent,
+  emitTicketRealtimeEnvelope,
+  buildMessageRealtimeEnvelope,
+  buildTicketRealtimeEnvelope,
+} from '../shared/realtime';
 import { resolveTicketAgreementId } from '../shared/realtime';
 import { resolveProviderMessageId, resolveWhatsAppInstanceId, normalizeBrokerStatus } from '../shared/whatsapp';
 import { mergeEnrichmentMetadata } from '../enrichment';
@@ -20,7 +25,7 @@ import {
   type WhatsAppTransport,
   type WhatsAppTransportSendMessagePayload,
 } from '../../../features/whatsapp-transport';
-import type { WhatsAppTransportDependencies } from '../whatsapp-send';
+import { resolveDispatchInstanceId, type WhatsAppTransportDependencies } from '../whatsapp-send';
 import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 import { normalizeContactsPayload, normalizeLocationPayload, normalizeTemplatePayload } from '../../../utils/message-normalizers';
@@ -32,6 +37,47 @@ import {
   recordCircuitSuccess,
 } from '../../../utils/circuit-breaker';
 import { handleDatabaseError, isUniqueViolation } from '../shared/prisma-helpers';
+
+type EmitMessageCreatedContext = {
+  userId?: string | null;
+  instanceId?: string | null;
+  providerMessageId?: string | null;
+};
+
+export const emitMessageCreatedEvents = (
+  tenantId: string,
+  ticket: Ticket,
+  message: Message,
+  context: EmitMessageCreatedContext = {}
+) => {
+  const agreementId = resolveTicketAgreementId(ticket);
+  const userId = context.userId ?? null;
+  const instanceId = context.instanceId ?? null;
+  const providerMessageId = context.providerMessageId ?? null;
+
+  const messageEnvelope = buildMessageRealtimeEnvelope({
+    tenantId,
+    ticket,
+    message,
+    instanceId,
+    providerMessageId,
+  });
+
+  emitTicketEvent(tenantId, ticket.id, 'messages.new', messageEnvelope, userId, agreementId);
+  emitTicketEvent(tenantId, ticket.id, 'message:created', message, userId, agreementId);
+  emitTicketEvent(tenantId, ticket.id, 'ticket.message', messageEnvelope, userId, agreementId);
+  emitTicketEvent(tenantId, ticket.id, 'ticket.message.created', messageEnvelope, userId, agreementId);
+
+  const ticketEnvelope = buildTicketRealtimeEnvelope({
+    tenantId,
+    ticket,
+    message,
+    instanceId,
+    providerMessageId,
+  });
+
+  emitTicketRealtimeEnvelope(tenantId, ticket, ticketEnvelope, userId);
+};
 
 export const emitMessageUpdatedEvents = async (
   tenantId: string,
