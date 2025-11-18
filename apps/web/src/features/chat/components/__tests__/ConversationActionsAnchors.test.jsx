@@ -6,6 +6,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { ConversationHeader } from '../ConversationArea/ConversationHeader.jsx';
 import { CONVERSATION_ACTION_IDS } from '../../actions/commandAnchors.js';
 
+const mockUseSearchUsersQuery = vi.fn(() => ({ data: [], isLoading: false, error: null, refetch: vi.fn() }));
+
+vi.mock('../../api/useSearchUsersQuery.js', () => ({
+  __esModule: true,
+  useSearchUsersQuery: (options) => mockUseSearchUsersQuery(options),
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
@@ -61,6 +68,10 @@ describe('Conversation actions anchors', () => {
 
   afterAll(() => {
     vi.unstubAllGlobals();
+  });
+
+  beforeEach(() => {
+    mockUseSearchUsersQuery.mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() });
   });
 
   afterEach(() => {
@@ -173,5 +184,57 @@ describe('Conversation actions anchors', () => {
 
     expect(onScheduleFollowUp).not.toHaveBeenCalled();
     expect(onFocusComposer).not.toHaveBeenCalled();
+  });
+
+  it('abre o seletor de atribuição e envia o userId escolhido', async () => {
+    const ticket = {
+      id: 'ticket-assign',
+      subject: 'Conversa importante',
+      contact: { id: 'contact-assign', name: 'Cliente', phone: '+55 11 92222-2222' },
+      metadata: {},
+    };
+
+    const onAssign = vi.fn();
+
+    mockUseSearchUsersQuery.mockReturnValue({
+      data: [
+        { id: 'agent-001', name: 'Fernanda Ribeiro' },
+        { id: 'agent-002', name: 'Carlos Nogueira' },
+      ],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(
+      <ConversationHeader
+        ticket={ticket}
+        typingAgents={[]}
+        onAssign={onAssign}
+        onScheduleFollowUp={vi.fn()}
+        onRegisterResult={vi.fn()}
+        onRegisterCallResult={vi.fn()}
+        onSendTemplate={vi.fn()}
+        onCreateNextStep={vi.fn()}
+        onGenerateProposal={vi.fn()}
+      />
+    );
+
+    const assignButton = screen.getByRole('button', { name: /Atribuir/i });
+    fireEvent.click(assignButton);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Buscar agente')).toBeInTheDocument();
+    });
+
+    const agentOption = screen.getByRole('button', { name: 'Fernanda Ribeiro' });
+    fireEvent.click(agentOption);
+
+    const confirmButton = screen.getByRole('button', { name: 'Confirmar' });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(onAssign).toHaveBeenCalledWith(ticket, 'agent-001');
+    });
   });
 });

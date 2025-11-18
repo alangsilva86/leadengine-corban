@@ -55,7 +55,7 @@ export type ChatActionCapabilities = {
 
 export type CommandActionHandlers = {
   onGenerateProposal?: (ticket: unknown) => void;
-  onAssign?: (ticket: unknown) => void;
+  onAssign?: (ticket: unknown, userId?: string | null) => void;
   onRegisterResult?: (payload: unknown) => void | Promise<void>;
   onRegisterCallResult?: (payload: unknown) => void | Promise<void>;
   onScheduleFollowUp?: (ticket: unknown) => void;
@@ -73,6 +73,7 @@ export type CommandActionRuntimeContext = {
   phoneNumber?: string | null;
   timeline?: unknown[];
   ai?: AiAssistantContext;
+  targetUserId?: string | null;
   loadingStates?: {
     registerResult?: boolean;
   };
@@ -146,9 +147,9 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
     shortcut: 'a',
     shortcutDisplay: '/a',
     intent: 'primary',
-    run: ({ ticket, handlers }) => {
+    run: ({ ticket, handlers, targetUserId }) => {
       if (!ticket || !handlers?.onAssign) return;
-      handlers.onAssign(ticket);
+      handlers.onAssign(ticket, targetUserId ?? null);
     },
     canExecute: ({ ticket, handlers, capabilities }) =>
       Boolean(ticket && handlers?.onAssign && isCapabilityEnabled(capabilities?.canAssign)),

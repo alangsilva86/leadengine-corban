@@ -803,24 +803,31 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   );
 
   const assignToMe = useCallback(
-    (ticket?: { id?: string | null }) => {
-      if (!currentUser?.id) {
-        toast.error('Faça login para atribuir tickets', {
-          description: 'Entre novamente para assumir atendimentos na inbox.',
+    (ticket?: { id?: string | null }, targetUserId?: string | null) => {
+      const ticketId = ticket?.id ?? controller.selectedTicketId;
+      if (!ticketId) {
+        toast.error('Selecione um atendimento para atribuir', {
+          description: 'Escolha um ticket antes de definir o responsável.',
         });
         return;
       }
+
+      const resolvedUserId = targetUserId ?? currentUser?.id ?? null;
+      if (!resolvedUserId) {
+        toast.error('Informe o responsável pelo ticket', {
+          description: 'Escolha um agente ou faça login novamente para assumir o atendimento.',
+        });
+        return;
+      }
+
       const payload: TicketAssignMutationVariables = {
-        ticketId: ticket?.id ?? controller.selectedTicketId,
-        userId: currentUser.id,
+        ticketId,
+        userId: resolvedUserId,
       };
-      controller.assignMutation.mutate(
-        payload,
-        {
-          onSuccess: () => toast.success('Ticket atribuído'),
-          onError: (error: any) => toast.error('Erro ao atribuir ticket', { description: error?.message }),
-        }
-      );
+      controller.assignMutation.mutate(payload, {
+        onSuccess: () => toast.success('Ticket atribuído'),
+        onError: (error: any) => toast.error('Erro ao atribuir ticket', { description: error?.message }),
+      });
     },
     [controller, currentUser?.id]
   );
@@ -1138,7 +1145,10 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   const canScheduleFollowUp = Boolean(selectedTicket);
   const canRegisterResult = Boolean(selectedTicket);
 
-  const conversationAssignHandler = canAssign ? () => assignToMe(selectedTicket ?? undefined) : undefined;
+  const conversationAssignHandler = canAssign
+    ? (ticketArg?: { id?: string | null }, targetUserId?: string | null) =>
+        assignToMe(ticketArg ?? selectedTicket ?? undefined, targetUserId ?? null)
+    : undefined;
   const conversationScheduleFollowUpHandler = canScheduleFollowUp ? handleScheduleFollowUp : undefined;
   const conversationRegisterResultHandler = canRegisterResult ? registerResult : undefined;
   const conversationRegisterCallResultHandler = selectedTicket ? handleRegisterCallResult : undefined;

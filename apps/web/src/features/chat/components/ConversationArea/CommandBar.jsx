@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip.jsx';
 import { getAllAnchorIdsForCommand, getPrimaryCommandAnchorId } from '../../actions/commandAnchors.js';
+import AssignTicketPopover from './AssignTicketPopover.jsx';
 
 const ACTION_BUTTON_CLASSES =
   'inline-flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -398,6 +399,17 @@ const CommandBar = ({ context, className }) => {
         aria-label="Ações do atendimento"
       >
         {primary.map((entry) => {
+          if (entry.definition.id === 'assign-owner') {
+            return (
+              <AssignTicketPopover
+                key={entry.definition.id}
+                entry={entry}
+                context={context}
+                focusMap={focusMap}
+                buttonClassName={ACTION_BUTTON_CLASSES}
+              />
+            );
+          }
           if (entry.definition.type === 'menu') {
             return (
               <CommandMenuButton key={entry.definition.id} entry={entry} context={context} focusMap={focusMap} />
