@@ -12,12 +12,7 @@ import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import {
-  assignTicket,
-  closeTicket,
-  createTicket,
-  getTicketById,
-  listTickets,
-  updateTicket,
+  ticketService,
   type TicketIncludeOption,
   type ListTicketsOptions,
 } from '../services/ticket-service';
@@ -35,6 +30,7 @@ import {
 } from '../utils/request-parsers';
 
 const router: Router = Router();
+const { queries, lifecycle } = ticketService;
 
 const allowedStageValues = Object.values(SalesStage);
 
@@ -196,8 +192,8 @@ router.get(
 
     const tenantId = resolveRequestTenantId(req);
     const result = options
-      ? await listTickets(tenantId, filters, pagination, options)
-      : await listTickets(tenantId, filters, pagination);
+      ? await queries.listTickets(tenantId, filters, pagination, options)
+      : await queries.listTickets(tenantId, filters, pagination);
 
     res.json({
       success: true,
@@ -221,7 +217,7 @@ router.get(
     const ticketId = ensureTicketId(req.params.id);
     const include = sanitizeIncludeOptions(parseListParam(req.query.include));
     const tenantId = resolveRequestTenantId(req);
-    const ticket = await getTicketById(tenantId, ticketId, {
+    const ticket = await queries.getTicketById(tenantId, ticketId, {
       include,
     });
 
@@ -249,7 +245,7 @@ router.post(
       metadata: req.body.metadata ?? {},
     };
 
-    const ticket = await createTicket(createTicketDTO);
+    const ticket = await lifecycle.createTicket(createTicketDTO);
 
     res.status(201).json({
       success: true,
@@ -280,7 +276,7 @@ router.put(
       closeReason: req.body.closeReason,
     };
 
-    const ticket = await updateTicket(tenantId, ticketId, updateData);
+    const ticket = await lifecycle.updateTicket(tenantId, ticketId, updateData);
 
     res.json({
       success: true,
@@ -306,7 +302,7 @@ router.post(
       closeReason: reason,
     };
 
-    const ticket = await updateTicket(tenantId, ticketId, updateData);
+    const ticket = await lifecycle.updateTicket(tenantId, ticketId, updateData);
 
     res.json({
       success: true,
@@ -327,7 +323,7 @@ router.post(
     const ticketId = ensureTicketId(req.params.id);
     const userId = req.body.userId as string;
     const tenantId = resolveRequestTenantId(req);
-    const ticket = await assignTicket(tenantId, ticketId, userId);
+    const ticket = await lifecycle.assignTicket(tenantId, ticketId, userId);
 
     res.json({
       success: true,
@@ -348,7 +344,7 @@ router.post(
     const ticketId = ensureTicketId(req.params.id);
     const reason = req.body.reason as string | undefined;
     const tenantId = resolveRequestTenantId(req);
-    const ticket = await closeTicket(tenantId, ticketId, reason, req.user!.id);
+    const ticket = await lifecycle.closeTicket(tenantId, ticketId, reason, req.user!.id);
 
     res.json({
       success: true,
