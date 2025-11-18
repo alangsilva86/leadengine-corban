@@ -438,6 +438,39 @@ describe('Outbound message routes', () => {
     expect(metricsSnapshot).not.toContain('transport=');
   });
 
+  it('returns a descriptive error when the ticket has no default WhatsApp instance', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: {},
+      priority: 'NORMAL',
+      tags: [],
+    });
+    tickets.set(ticket.id, ticket);
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'missing-instance')
+      .send({
+        payload: {
+          type: 'text',
+          text: 'Sem instância configurada',
+        },
+        idempotencyKey: 'missing-instance',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: {
+        code: 'WHATSAPP_INSTANCE_REQUIRED',
+      },
+    });
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
   it('rejects ticket sends without Idempotency-Key header', async () => {
     const ticket = await createTicket({
       tenantId: 'tenant-123',

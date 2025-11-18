@@ -1,4 +1,4 @@
-import { NotFoundError } from '@ticketz/core';
+import { DomainError, NotFoundError } from '@ticketz/core';
 import { PhoneNormalizationError } from '../../utils/phone';
 import type { CreateTicketDTO, Message, SendMessageDTO, Ticket, TicketStatus } from '../../types/tickets';
 import { prisma } from '../../lib/prisma';
@@ -360,7 +360,14 @@ export const createWhatsAppSendModule = (deps: WhatsAppSendModuleDeps) => {
     const targetInstanceId = instanceId ?? deps.resolveWhatsAppInstanceId(ticket);
 
     if (!targetInstanceId) {
-      throw new Error('WHATSAPP_INSTANCE_REQUIRED');
+      throw new DomainError(
+        'Nenhuma instância do WhatsApp está configurada para este ticket. Selecione uma instância ou informe instanceId no envio.',
+        'WHATSAPP_INSTANCE_REQUIRED',
+        {
+          ticketId,
+          tenantId: resolvedTenantId,
+        }
+      );
     }
 
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: targetInstanceId } });
