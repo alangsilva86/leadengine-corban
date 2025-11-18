@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { collectInstancesForTenant } from './service';
+import { collectInstancesForTenant } from '.';
 import type { NormalizedInstance } from './types';
 
 const modeSchema = z.enum(['db', 'snapshot', 'sync']).optional();
