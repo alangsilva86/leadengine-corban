@@ -5,9 +5,9 @@ import type {
   PaginatedResult,
   Ticket,
   TicketStatus,
-} from '../types/tickets';
-import type { TicketNote, TicketNoteVisibility } from '../data/ticket-note-store';
-import type { TicketSalesEvent } from '../data/ticket-sales-event-store';
+} from '../../types/tickets';
+import type { TicketNote, TicketNoteVisibility } from '../../data/ticket-note-store';
+import type { TicketSalesEvent } from '../../data/ticket-sales-event-store';
 
 export type TicketIncludeOption = 'contact' | 'lead' | 'notes';
 

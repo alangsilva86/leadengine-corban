@@ -7,8 +7,8 @@ import {
   findTicketsByContact,
   updateTicket as storageUpdateTicket,
 } from '@ticketz/storage';
-import type { CreateTicketDTO, Ticket, UpdateTicketDTO } from '../../types/tickets';
-import { createTicketNote, type TicketNote } from '../../data/ticket-note-store';
+import type { CreateTicketDTO, Ticket, UpdateTicketDTO } from '../../../types/tickets';
+import { createTicketNote, type TicketNote } from '../../../data/ticket-note-store';
 import type { CreateTicketNoteInput, TicketNoteAuthor } from '../types';
 import { emitTicketEvent, buildTicketRealtimeEnvelope, emitTicketRealtimeEnvelope } from '../shared/realtime';
 import { resolveWhatsAppInstanceId } from '../shared/whatsapp';

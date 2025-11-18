@@ -1,5 +1,5 @@
 import { NotFoundError } from '@ticketz/core';
-import type { Message, PaginatedResult, Pagination } from '../../types/tickets';
+import type { Message, PaginatedResult, Pagination } from '../../../types/tickets';
 import { findTicketById as storageFindTicketById, listMessages as storageListMessages } from '@ticketz/storage';
 import { normalizeMessageMetadata, resolveProviderMessageId } from '../shared/whatsapp';
 

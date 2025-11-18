@@ -5,7 +5,7 @@ import type {
   TicketLeadSummary,
   TicketTimelineSnapshot,
   TicketWindowSnapshot,
-} from '../../types/tickets';
+} from '../../../types/tickets';
 import { listMessages as storageListMessages } from '@ticketz/storage';
 
 type ConversationComputation = {

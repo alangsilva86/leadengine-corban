@@ -1,6 +1,6 @@
-import type { PaginatedResult, Pagination, Ticket, TicketFilters } from '../../types/tickets';
+import type { PaginatedResult, Pagination, Ticket, TicketFilters } from '../../../types/tickets';
 import { listTickets as storageListTickets } from '@ticketz/storage';
-import { listTicketSalesEventsByTickets } from '../../data/ticket-sales-event-store';
+import { listTicketSalesEventsByTickets } from '../../../data/ticket-sales-event-store';
 import type { ListTicketsOptions, TicketHydrated, TicketListResult } from '../types';
 import { calculateInboxMetrics } from '../shared/metrics';
 import { hydrateTicket, resolveTicketHydrations } from './query-helpers';

@@ -1,4 +1,4 @@
-import type { Message, Ticket } from '../../types/tickets';
+import type { Message, Ticket } from '../../../types/tickets';
 
 export const resolveWhatsAppInstanceId = (ticket: Ticket | null | undefined): string | null => {
   if (!ticket || !ticket.metadata || typeof ticket.metadata !== 'object') {
