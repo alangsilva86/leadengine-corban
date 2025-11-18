@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
 
 const MOCK_TEMPLATES = [
@@ -25,6 +25,7 @@ export const TemplatePicker = ({ open, onClose, onSelect }) => {
       <DialogContent className="max-w-md border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]">
         <DialogHeader>
           <DialogTitle>Selecionar template aprovado</DialogTitle>
+          <DialogDescription>Escolha um template aprovado para inserir no chat.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {MOCK_TEMPLATES.map((template) => (
