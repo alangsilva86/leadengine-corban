@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 
 import { asyncHandler } from '../../../middleware/error-handler';
-import { normalizeQueryValue } from './messages';
+import { normalizeQueryValue } from '../../../utils/request-parsers';
 import {
   listWhatsappDebugMessages,
   processWhatsappDebugReplay,
@@ -30,7 +30,7 @@ router.get(
           ? 'INBOUND'
           : null;
 
-    const chatId = normalizeQueryValue(req.query.chatId);
+    const chatId = normalizeQueryValue(req.query.chatId) ?? null;
 
     const data = await listWhatsappDebugMessages({ tenantId, limit, chatId, direction });
 
